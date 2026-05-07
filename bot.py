@@ -11,8 +11,9 @@ import logging
 import requests
 import threading
 import stripe
+import xml.etree.ElementTree as ET
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from flask import Flask, request
 
@@ -1564,233 +1565,6 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # =========================
 
 # =========================
-# BUTTON HANDLER
-# =========================
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-    print("BUTTON CLICKED:", data)
-
-    # =========================
-    # MAIN MENU
-    # =========================
-    if data == "menu_main":
-        await query.message.reply_text(
-            "🏠 Main Menu\n\nChoose what you want to do next:",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # FREE BTC PRICE
-    # =========================
-    if data == "menu_price_btc":
-        price_now, _ = get_best_price("BTC")
-
-        if price_now:
-            await query.message.reply_text(
-                f"📈 BTC Price\n\nBTC: ${price_now:,.2f}\n\nEducational only — not financial advice.",
-                reply_markup=main_menu()
-            )
-        else:
-            await query.message.reply_text(
-                "⚠️ BTC price is unavailable right now. Try again in a few minutes.",
-                reply_markup=main_menu()
-            )
-        return
-
-    # =========================
-    # FREE ALERTS
-    # =========================
-    if data == "menu_alerts_on":
-        set_alerts(query.from_user.id, True)
-        await query.message.reply_text(
-            "🚨 Free alerts are now ON.\n\nI’ll notify you when market movement looks important.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # PRO SIGNALS
-    # =========================
-    if data == "pro_signals":
-        if not is_pro(query.from_user.id):
-            await query.message.reply_text(
-                "⭐ Pro Signals\n\nUpgrade to unlock smarter BUY / SELL / WAIT insights based on stronger market checks.",
-                reply_markup=main_menu()
-            )
-            return
-
-        await query.message.reply_text(
-            "⭐ Pro Signals Active\n\nYou now have access to smarter signal insights.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # PRO PORTFOLIO
-    # =========================
-    if data == "pro_portfolio":
-        if not is_pro(query.from_user.id):
-            await query.message.reply_text(
-                "💼 Pro Portfolio\n\nUpgrade to unlock portfolio-aware insights and smarter risk tracking.",
-                reply_markup=main_menu()
-            )
-            return
-
-        summary = get_portfolio_summary(query.from_user.id)
-        await query.message.reply_text(summary, reply_markup=main_menu())
-        return
-
-    # =========================
-    # PRO SCAM SHIELD
-    # =========================
-    if data == "pro_scanner":
-        if not is_pro(query.from_user.id):
-            await query.message.reply_text(
-                "🛡 Pro Scam Shield\n\nUpgrade to unlock deeper scam checks, link review, and safer crypto guidance.",
-                reply_markup=main_menu()
-            )
-            return
-
-        await query.message.reply_text(
-            "🛡 Pro Scam Shield Active\n\nSend me any suspicious crypto message, wallet address, or link and I’ll scan it.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # UPGRADE TO PRO
-    # =========================
-    if data == "upgrade_pro":
-        await query.message.reply_text(
-            pro_upgrade_message(query.from_user.id),
-            reply_markup=upgrade_payment_menu(query.from_user.id)
-        )
-        return
-
-    # =========================
-    # PAY WITH BTC
-    # =========================
-    if data == "pay_btc":
-        await query.message.reply_text(
-            f"₿ Pay with Bitcoin\n\n"
-            f"Send exactly: {BTC_PRO_PRICE}\n\n"
-            f"BTC address:\n{BTC_PAYMENT_ADDRESS}\n\n"
-            "After sending, type:\n"
-            "/verify_payment YOUR_TXID\n\n"
-            "⚠️ Double-check the address before sending.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # ASK CRYPTO QUESTION
-    # =========================
-    if data == "menu_talk":
-        await query.message.reply_text(
-            "💬 Ask me anything crypto-related.\n\nExample:\nWhat is Bitcoin?\nHow do I avoid crypto scams?\nWhat is a wallet?",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # ABOUT
-    # =========================
-    if data == "menu_about":
-        await query.message.reply_text(
-            "ℹ️ About CoinPilotX\n\nCoinPilotX helps you track crypto prices, receive alerts, review risks, and avoid common scams.\n\nEducational only — not financial advice.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # ADD MONEY SAFELY
-    # =========================
-    if data == "menu_deposit":
-        await query.message.reply_text(
-            "💰 Add Money Safely\n\nUse trusted exchanges like Coinbase, Kraken, Gemini, or Crypto.com.\n\nNever send money to people promising guaranteed returns.\nNever share your seed phrase or private keys.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # BEST EXCHANGES
-    # =========================
-    if data == "menu_exchanges":
-        await query.message.reply_text(
-            "🏦 Best Exchanges\n\nChoose your goal below:",
-            reply_markup=exchange_menu()
-        )
-        return
-
-    if data.startswith("exchange_"):
-        goal = data.replace("exchange_", "")
-        await send_exchange_message(query.message, goal)
-        return
-
-    # =========================
-    # HELP
-    # =========================
-    if data == "menu_help":
-        await query.message.reply_text(
-            help_message(),
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # SCAN YES
-    # =========================
-    if data in ["scan_confirm", "scan_yes"]:
-        text = context.user_data.get("pending_scan")
-
-        if not text:
-            await query.message.reply_text(
-                "Nothing to scan right now.",
-                reply_markup=main_menu()
-            )
-            return
-
-        risk, reasons, expanded_results = analyze_text(text)
-
-        msg = f"🛡️ Message Safety Check\n\nRisk Level: {risk}\n\n"
-
-        if expanded_results:
-            msg += "Links checked:\n"
-            for original, expanded in expanded_results:
-                msg += f"• Original: {original}\n  Destination: {expanded}\n\n"
-
-        msg += "Findings:\n"
-        msg += "\n".join([f"• {r}" for r in reasons]) if reasons else "• No major scam signs found."
-
-        context.user_data.pop("pending_scan", None)
-
-        await query.message.reply_text(msg, reply_markup=main_menu())
-        return
-
-    # =========================
-    # SCAN NO
-    # =========================
-    if data in ["scan_cancel", "scan_no"]:
-        context.user_data.pop("pending_scan", None)
-        await query.message.reply_text(
-            "Scan canceled.",
-            reply_markup=main_menu()
-        )
-        return
-
-    # =========================
-    # FINAL FALLBACK — MUST BE LAST
-    # =========================
-    await query.message.reply_text(
-        "🏠 Back to menu.",
-        reply_markup=main_menu()
-    )
-    return
-# =========================
 # MAJOR UPGRADE LAYER
 # =========================
 
@@ -1826,6 +1600,72 @@ EXCHANGE_PROFILES = {
         "note": "Useful mobile-first option with broad consumer features.",
     },
 }
+NEWS_FEEDS = [
+    ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
+    ("Cointelegraph", "https://cointelegraph.com/rss"),
+]
+SPORTS_EDGE_ENABLED = os.getenv("SPORTS_EDGE_ENABLED", "false").lower() == "true"
+COUNTRY_ALIASES = {
+    "usa": "United States",
+    "us": "United States",
+    "u.s.": "United States",
+    "u.s.a.": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "uae": "United Arab Emirates",
+}
+COUNTRY_PROFILES = {
+    "United States": {"flag": "🇺🇸", "region": "North America", "adoption": "High institutional and retail adoption", "regulation": "Active federal and state oversight", "exchanges": "Coinbase, Kraken, Gemini, Crypto.com", "remittance": "Lower than emerging markets", "institutional": "Very high ETF, custody, and public-company activity", "retail": "Active but sensitive to rates, regulation, and ETF flows", "mining": "Major Bitcoin mining market"},
+    "Canada": {"flag": "🇨🇦", "region": "North America", "adoption": "Moderate to high adoption", "regulation": "Regulated exchange and ETF environment", "exchanges": "Kraken, Coinbase, local regulated platforms", "remittance": "Moderate", "institutional": "Active ETF and custody market", "retail": "Generally cautious and compliance-aware", "mining": "Relevant mining activity in energy-rich provinces"},
+    "Mexico": {"flag": "🇲🇽", "region": "Latin America", "adoption": "Growing adoption around remittances and savings", "regulation": "Developing fintech and crypto oversight", "exchanges": "Bitso, Coinbase access varies, global platforms", "remittance": "High relevance", "institutional": "Emerging", "retail": "Interested in cross-border payments", "mining": "Limited"},
+    "Brazil": {"flag": "🇧🇷", "region": "Latin America", "adoption": "High and growing", "regulation": "Developing crypto asset framework", "exchanges": "Mercado Bitcoin, Binance availability varies, Coinbase", "remittance": "Moderate", "institutional": "Growing bank and fintech activity", "retail": "Strong retail interest", "mining": "Limited"},
+    "Argentina": {"flag": "🇦🇷", "region": "Latin America", "adoption": "High due to inflation and dollar access concerns", "regulation": "Evolving", "exchanges": "Lemon, Ripio, Buenbit, global options vary", "remittance": "Meaningful", "institutional": "Emerging", "retail": "Strong stablecoin and BTC interest", "mining": "Limited"},
+    "United Kingdom": {"flag": "🇬🇧", "region": "Europe", "adoption": "Moderate to high", "regulation": "Strict financial promotions and FCA oversight", "exchanges": "Coinbase, Kraken, Gemini, Crypto.com", "remittance": "Moderate", "institutional": "Active fintech and custody market", "retail": "Risk-aware under strict marketing rules", "mining": "Limited"},
+    "France": {"flag": "🇫🇷", "region": "Europe", "adoption": "Moderate", "regulation": "EU MiCA-aligned oversight", "exchanges": "Coinbase, Kraken, Binance availability varies", "remittance": "Low to moderate", "institutional": "Growing under EU rules", "retail": "Compliance-focused", "mining": "Limited"},
+    "Germany": {"flag": "🇩🇪", "region": "Europe", "adoption": "Moderate to high", "regulation": "Strict custody and BaFin oversight", "exchanges": "Coinbase, Kraken, Bitpanda access", "remittance": "Low to moderate", "institutional": "Strong custody and banking interest", "retail": "Long-term and compliance-oriented", "mining": "Limited"},
+    "United Arab Emirates": {"flag": "🇦🇪", "region": "Middle East", "adoption": "High and rapidly growing", "regulation": "Dedicated virtual asset regimes in Dubai/Abu Dhabi", "exchanges": "Regional and global exchanges where licensed", "remittance": "High relevance for expatriate flows", "institutional": "Very active crypto hub development", "retail": "Strong interest", "mining": "Limited"},
+    "Saudi Arabia": {"flag": "🇸🇦", "region": "Middle East", "adoption": "Growing retail interest", "regulation": "Cautious and developing", "exchanges": "Access varies; users should verify local rules", "remittance": "Relevant", "institutional": "Selective blockchain/Web3 interest", "retail": "Curious but compliance-sensitive", "mining": "Limited"},
+    "Nigeria": {"flag": "🇳🇬", "region": "Africa", "adoption": "Very high grassroots adoption", "regulation": "Evolving banking and exchange guidance", "exchanges": "Local and global access varies", "remittance": "Very high relevance", "institutional": "Growing fintech activity", "retail": "Strong stablecoin, remittance, and savings use", "mining": "Limited"},
+    "South Africa": {"flag": "🇿🇦", "region": "Africa", "adoption": "Moderate to high", "regulation": "Crypto asset service provider framework", "exchanges": "Luno, VALR, global access varies", "remittance": "Moderate", "institutional": "Growing regulated market", "retail": "Active but risk-aware", "mining": "Limited"},
+    "Kenya": {"flag": "🇰🇪", "region": "Africa", "adoption": "Growing peer-to-peer and mobile-money-adjacent interest", "regulation": "Developing", "exchanges": "Local/global access varies", "remittance": "High relevance", "institutional": "Emerging", "retail": "Practical payment and savings interest", "mining": "Limited"},
+    "India": {"flag": "🇮🇳", "region": "Asia", "adoption": "Very large retail user base", "regulation": "Tax-heavy and evolving", "exchanges": "WazirX, CoinDCX, CoinSwitch, global access varies", "remittance": "Meaningful", "institutional": "Growing but cautious", "retail": "High interest despite tax friction", "mining": "Limited"},
+    "China": {"flag": "🇨🇳", "region": "Asia", "adoption": "Restricted mainland trading environment", "regulation": "Very restrictive toward crypto trading/mining", "exchanges": "Mainland access is heavily restricted", "remittance": "Limited via regulated channels", "institutional": "Blockchain interest separate from public crypto trading", "retail": "Restricted", "mining": "Historically major, now restricted domestically"},
+    "Japan": {"flag": "🇯🇵", "region": "Asia", "adoption": "Moderate and regulated", "regulation": "Mature exchange licensing and consumer protection", "exchanges": "bitFlyer, Coincheck, licensed platforms", "remittance": "Low to moderate", "institutional": "Active enterprise and gaming/Web3 interest", "retail": "Conservative but steady", "mining": "Limited"},
+    "South Korea": {"flag": "🇰🇷", "region": "Asia", "adoption": "High retail trading activity", "regulation": "Strict exchange and identity rules", "exchanges": "Upbit, Bithumb, local licensed exchanges", "remittance": "Low to moderate", "institutional": "Growing under regulation", "retail": "Very active and sentiment-driven", "mining": "Limited"},
+    "Singapore": {"flag": "🇸🇬", "region": "Asia", "adoption": "High institutional hub activity", "regulation": "Strict licensing and consumer-risk controls", "exchanges": "Licensed global/regional platforms", "remittance": "Moderate", "institutional": "Very high", "retail": "Cautious under strong risk warnings", "mining": "Limited"},
+    "Australia": {"flag": "🇦🇺", "region": "Oceania", "adoption": "Moderate to high", "regulation": "Developing licensing and tax rules", "exchanges": "CoinSpot, Swyftx, Kraken, Coinbase", "remittance": "Moderate", "institutional": "Growing ETF/custody interest", "retail": "Active but cautious", "mining": "Some renewable-energy-linked interest"},
+    "Haiti": {"flag": "🇭🇹", "region": "Caribbean", "adoption": "Early-stage and education-driven", "regulation": "Limited formal crypto framework", "exchanges": "Access may depend on global platforms, payment rails, and local banking availability", "remittance": "High potential relevance because remittances matter deeply", "institutional": "Limited", "retail": "Interest can center on remittances, savings, and mobile access", "mining": "Limited"},
+    "El Salvador": {"flag": "🇸🇻", "region": "Latin America", "adoption": "High policy visibility because Bitcoin is legal tender", "regulation": "Bitcoin-forward national policy", "exchanges": "Local and global options vary", "remittance": "High relevance", "institutional": "High sovereign Bitcoin visibility", "retail": "Mixed practical adoption", "mining": "Volcano/geothermal mining narrative is relevant"},
+}
+WISDOM_MESSAGES = [
+    "Patience is a position. You do not have to trade every candle.",
+    "Risk management beats prediction. Protect the downside first.",
+    "Never let urgency make decisions for you. Scammers love speed.",
+    "Cycles reward preparation, not panic.",
+    "If you cannot explain the trade, reduce the size.",
+    "Your seed phrase is not support information. It is control of your funds.",
+    "A missed pump is cheaper than a forced mistake.",
+]
+SCAM_STORY_LIBRARY = [
+    {
+        "title": "Fake airdrop wallet drain",
+        "story": "A user connects a wallet to claim a free token, approves a malicious contract, and loses assets.",
+        "avoid": "Use a burner wallet for claims, verify official links, and never approve unlimited access casually.",
+        "pro": "Pro check: review spender permissions, revoke stale approvals, compare the domain to official project channels, and pause when the offer creates urgency.",
+    },
+    {
+        "title": "Impersonated exchange support",
+        "story": "A fake support account asks for a seed phrase or remote access after a withdrawal delay.",
+        "avoid": "Support never needs your seed phrase. Use only official app or website support paths.",
+        "pro": "Pro check: verify handles, avoid screen sharing wallets, document ticket IDs, and lock withdrawals if account access feels compromised.",
+    },
+    {
+        "title": "Romance or mentorship investment scam",
+        "story": "A friendly contact slowly builds trust, then pushes deposits into a fake trading platform.",
+        "avoid": "Do not send funds to platforms introduced by strangers. Test withdrawals before adding money.",
+        "pro": "Pro check: inspect domain age, withdrawal rules, app store legitimacy, and whether profits are only visible inside the platform.",
+    },
+]
 
 
 def init_db():
@@ -1963,6 +1803,29 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS crypto_news_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic TEXT,
+        country TEXT,
+        title TEXT,
+        summary TEXT,
+        sentiment TEXT,
+        source TEXT,
+        url TEXT,
+        published_at TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS engagement_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        feature TEXT,
+        query TEXT,
+        created_at TEXT
+    )
+    """)
 
     conn.commit()
     conn.close()
@@ -1979,6 +1842,12 @@ def help_message():
         "/whales — latest whale-style activity\n"
         "/exchange beginner — smarter exchange recommendation\n"
         "/portfolio_live — real-time portfolio value\n"
+        "/cryptonews — recent crypto news with market read\n"
+        "/marketevents — global event impact on BTC/ETH\n"
+        "/wisdom — daily risk-management wisdom\n"
+        "/scamstories — recent scam examples and prevention\n"
+        "/countrynews Haiti — country crypto intelligence\n"
+        "/sportsedge — experimental sports section\n"
         "/subscribe — Pro subscription options\n"
         "/account — account and subscription status\n"
         "/admin — admin dashboard summary\n\n"
@@ -2004,6 +1873,287 @@ def safe_get_json(url, timeout=8, params=None):
     except Exception as exc:
         logging.info("API request failed: %s", exc)
         return None
+
+
+def log_engagement(user_id, feature, query=""):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO engagement_events (user_id, feature, query, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, feature, query, datetime.now().isoformat())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("Engagement log failed: %s", exc)
+
+
+def clean_html(text):
+    text = re.sub(r"<[^>]+>", " ", text or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def news_sentiment(title, summary):
+    text = f"{title} {summary}".lower()
+    bullish_words = ["etf", "inflow", "surge", "rally", "adoption", "partnership", "approval", "record", "buy", "accumulate", "bull"]
+    bearish_words = ["hack", "lawsuit", "ban", "outflow", "selloff", "crackdown", "exploit", "fraud", "liquidation", "bear", "fine"]
+    bullish = sum(1 for word in bullish_words if word in text)
+    bearish = sum(1 for word in bearish_words if word in text)
+    if bullish > bearish:
+        return "Bullish"
+    if bearish > bullish:
+        return "Bearish"
+    return "Neutral"
+
+
+def fetch_crypto_news(limit=4, country=None):
+    items = []
+    query_country = (country or "").lower()
+    for source, url in NEWS_FEEDS:
+        try:
+            response = requests.get(url, timeout=8)
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+        except Exception as exc:
+            logging.info("RSS fetch failed for %s: %s", source, exc)
+            continue
+
+        for item in root.findall(".//item"):
+            title = clean_html(item.findtext("title"))
+            summary = clean_html(item.findtext("description"))
+            link = item.findtext("link") or ""
+            published = item.findtext("pubDate") or datetime.now().isoformat()
+            if query_country and query_country not in f"{title} {summary}".lower():
+                continue
+            if not title:
+                continue
+            items.append({
+                "title": title[:140],
+                "summary": summary[:220] if summary else "Market story detected, but summary was brief.",
+                "sentiment": news_sentiment(title, summary),
+                "source": source,
+                "url": link,
+                "published_at": published,
+            })
+            if len(items) >= limit:
+                break
+        if len(items) >= limit:
+            break
+
+    if items:
+        cache_crypto_news(items, "country" if country else "global", country or "")
+        return items
+    return get_cached_crypto_news(limit, country=country)
+
+
+def cache_crypto_news(items, topic, country=""):
+    conn = db()
+    cur = conn.cursor()
+    for item in items:
+        cur.execute(
+            """
+            INSERT INTO crypto_news_cache
+            (topic, country, title, summary, sentiment, source, url, published_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                topic,
+                country,
+                item["title"],
+                item["summary"],
+                item["sentiment"],
+                item["source"],
+                item["url"],
+                item["published_at"],
+                datetime.now().isoformat(),
+            )
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_cached_crypto_news(limit=4, country=None):
+    conn = db()
+    cur = conn.cursor()
+    if country:
+        cur.execute(
+            "SELECT title, summary, sentiment, source, url, published_at FROM crypto_news_cache WHERE country=? ORDER BY id DESC LIMIT ?",
+            (country, limit)
+        )
+    else:
+        cur.execute(
+            "SELECT title, summary, sentiment, source, url, published_at FROM crypto_news_cache ORDER BY id DESC LIMIT ?",
+            (limit,)
+        )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "title": title,
+            "summary": summary,
+            "sentiment": sentiment,
+            "source": source,
+            "url": url,
+            "published_at": published_at,
+        }
+        for title, summary, sentiment, source, url, published_at in rows
+    ]
+
+
+def crypto_news_summary(user_id):
+    items = fetch_crypto_news(limit=4)
+    if not items:
+        return (
+            "📰 Crypto News\n\n"
+            "Live news is unavailable right now. Market desk read: watch BTC ETF flows, exchange security headlines, regulatory pressure, and stablecoin liquidity.\n\n"
+            "Interpretation: Neutral until fresh data confirms direction.\n\n"
+            "Educational only — not financial advice."
+        )
+
+    lines = ["📰 Crypto News", ""]
+    for item in items[:4]:
+        lines.append(f"{item['sentiment']}: {item['title']}")
+        lines.append(f"{item['summary']}")
+        lines.append(f"Source: {item['source']}")
+        lines.append("")
+    lines.append("Educational only — not financial advice.")
+    return "\n".join(lines).strip()
+
+
+def market_events_summary(text="", pro=False):
+    event = clean_html(text) if text else "macro news, regulation, rates, ETF flows, exchange security, and global risk sentiment"
+    low = event.lower()
+    btc = "BTC often reacts first as the market's liquidity and sentiment anchor."
+    eth = "ETH may react more strongly when the event affects DeFi, staking, tokenization, or developer activity."
+    sentiment = "Neutral"
+    reasons = []
+
+    if any(word in low for word in ["rate cut", "liquidity", "etf inflow", "approval", "stimulus", "adoption"]):
+        sentiment = "Bullish"
+        reasons.append("more liquidity or adoption can improve risk appetite")
+    if any(word in low for word in ["war", "ban", "hack", "lawsuit", "rate hike", "inflation", "recession", "crackdown"]):
+        sentiment = "Bearish" if sentiment == "Neutral" else "Mixed"
+        reasons.append("risk-off headlines can reduce leverage and appetite for volatile assets")
+    if not reasons:
+        reasons.append("the impact depends on whether traders treat the event as liquidity-positive or risk-off")
+
+    extra = ""
+    if pro:
+        extra = (
+            "\n\nPro lens:\n"
+            "Watch confirmation through BTC dominance, stablecoin supply, ETF flow direction, funding rates, and whether ETH/BTC strengthens or weakens."
+        )
+
+    return (
+        "🌍 Global Event Market Predictions\n\n"
+        f"Event focus: {event[:240]}\n\n"
+        f"Sentiment read: {sentiment}\n"
+        f"BTC: {btc}\n"
+        f"ETH: {eth}\n"
+        f"Why: {'; '.join(reasons).capitalize()}."
+        f"{extra}\n\n"
+        "Educational only — not financial advice."
+    )
+
+
+def daily_wisdom():
+    index = datetime.now().toordinal() % len(WISDOM_MESSAGES)
+    return (
+        "🧠 Crypto Wisdom\n\n"
+        f"{WISDOM_MESSAGES[index]}\n\n"
+        "Small rule for today: size positions so you can still think clearly."
+    )
+
+
+def scam_stories_summary(pro=False):
+    story = SCAM_STORY_LIBRARY[datetime.now().toordinal() % len(SCAM_STORY_LIBRARY)]
+    msg = (
+        "🛡 Recent Crypto Scam Stories\n\n"
+        f"{story['title']}\n"
+        f"What happened: {story['story']}\n"
+        f"How to avoid it: {story['avoid']}"
+    )
+    if pro:
+        msg += f"\n\n{story['pro']}"
+    else:
+        msg += "\n\nPro unlocks a deeper safety breakdown and checklist."
+    return msg
+
+
+def normalize_country(country):
+    raw = clean_html(country).strip()
+    if not raw:
+        return "Haiti"
+    lowered = raw.lower()
+    if lowered in COUNTRY_ALIASES:
+        return COUNTRY_ALIASES[lowered]
+    for known in COUNTRY_PROFILES:
+        if lowered == known.lower():
+            return known
+    return raw.title()
+
+
+def country_news_summary(country, pro=False):
+    country = normalize_country(country)
+    profile = COUNTRY_PROFILES.get(country, {
+        "flag": "🌍",
+        "region": "Global",
+        "adoption": "Adoption varies by banking access, inflation, smartphone usage, and exchange availability",
+        "regulation": "Local rules may be unclear or changing",
+        "exchanges": "Users should verify which licensed exchanges serve their country",
+        "remittance": "Remittance usefulness depends on fees, liquidity, and cash-out options",
+        "institutional": "Institutional activity depends on local banking and securities rules",
+        "retail": "Retail sentiment often follows BTC price, local currency pressure, and social media cycles",
+        "mining": "Mining relevance depends on electricity cost, climate, and legal clarity",
+    })
+    items = fetch_crypto_news(limit=2, country=country)
+
+    lines = [
+        f"{profile['flag']} Country Crypto News: {country}",
+        "",
+        f"Adoption: {profile['adoption']}",
+        f"Regulation: {profile['regulation']}",
+        f"Exchange access: {profile['exchanges']}",
+        f"Scam risk: Watch fake exchange support, wallet-drain links, investment managers, and guaranteed-return pitches.",
+        f"Remittance use: {profile['remittance']}",
+    ]
+
+    if pro:
+        lines.extend([
+            f"Institutional activity: {profile['institutional']}",
+            f"Retail sentiment: {profile['retail']}",
+            f"Mining activity: {profile['mining']}",
+        ])
+
+    if items:
+        lines.extend(["", "Recent headlines:"])
+        for item in items:
+            lines.append(f"{item['sentiment']}: {item['title']} ({item['source']})")
+    else:
+        lines.extend([
+            "",
+            "Recent live country headlines were unavailable, so this is an educational country-level guide instead.",
+        ])
+
+    lines.append("")
+    lines.append("Educational only — not financial advice.")
+    return "\n".join(lines)
+
+
+def sports_edge_summary():
+    if not SPORTS_EDGE_ENABLED:
+        return (
+            "🎲 Sports Edge\n\n"
+            "This section is experimental and disabled by default for compliance safety.\n\n"
+            "When enabled, it should stay informational only: no guaranteed bets, no promises, and no financial claims."
+        )
+    return (
+        "🎲 Sports Edge\n\n"
+        "Experimental read: compare team form, injuries, schedule fatigue, line movement, and bankroll risk before making any decision.\n\n"
+        "Informational only. No guaranteed bets or guaranteed wins."
+    )
 
 
 def get_klines(asset, interval="1h", limit=48):
@@ -2600,6 +2750,18 @@ def main_menu():
             InlineKeyboardButton("🤖 Auto Signals", callback_data="menu_signals"),
         ],
         [
+            InlineKeyboardButton("📰 Crypto News", callback_data="menu_crypto_news"),
+            InlineKeyboardButton("🌍 Market Events", callback_data="menu_market_events"),
+        ],
+        [
+            InlineKeyboardButton("🧠 Crypto Wisdom", callback_data="menu_wisdom"),
+            InlineKeyboardButton("🛡 Scam Stories", callback_data="menu_scam_stories"),
+        ],
+        [
+            InlineKeyboardButton("🇭🇹 Country News", callback_data="menu_country_news"),
+            InlineKeyboardButton("🎲 Sports Edge", callback_data="menu_sports_edge"),
+        ],
+        [
             InlineKeyboardButton("🐋 Whale Alerts", callback_data="menu_whales"),
             InlineKeyboardButton("😬 Fear/Greed", callback_data="menu_feargreed"),
         ],
@@ -2640,6 +2802,50 @@ async def send_exchange_message(message, goal):
     await message.reply_text(exchange_recommendation(goal), reply_markup=main_menu())
 
 
+async def cryptonews_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    log_engagement(update.effective_user.id, "crypto_news")
+    await update.message.reply_text(crypto_news_summary(update.effective_user.id), reply_markup=main_menu())
+
+
+async def marketevents_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    event_text = " ".join(context.args).strip()
+    log_engagement(update.effective_user.id, "market_events", event_text)
+    await update.message.reply_text(
+        market_events_summary(event_text, is_pro(update.effective_user.id)),
+        reply_markup=main_menu()
+    )
+
+
+async def wisdom_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    log_engagement(update.effective_user.id, "wisdom")
+    await update.message.reply_text(daily_wisdom(), reply_markup=main_menu())
+
+
+async def scamstories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    log_engagement(update.effective_user.id, "scam_stories")
+    await update.message.reply_text(scam_stories_summary(is_pro(update.effective_user.id)), reply_markup=main_menu())
+
+
+async def countrynews_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    country = " ".join(context.args).strip() if context.args else "Haiti"
+    log_engagement(update.effective_user.id, "country_news", country)
+    await update.message.reply_text(
+        country_news_summary(country, is_pro(update.effective_user.id)),
+        reply_markup=main_menu()
+    )
+
+
+async def sportsedge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    log_engagement(update.effective_user.id, "sports_edge")
+    await update.message.reply_text(sports_edge_summary(), reply_markup=main_menu())
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -2673,6 +2879,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_analysis_btc":
         await query.message.reply_text(ai_crypto_analysis(user_id, "BTC"), reply_markup=main_menu())
+        return
+
+    if data == "menu_crypto_news":
+        log_engagement(user_id, "crypto_news")
+        await query.message.reply_text(crypto_news_summary(user_id), reply_markup=main_menu())
+        return
+
+    if data == "menu_market_events":
+        log_engagement(user_id, "market_events")
+        await query.message.reply_text(
+            market_events_summary("", is_pro(user_id)),
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_wisdom":
+        log_engagement(user_id, "wisdom")
+        await query.message.reply_text(daily_wisdom(), reply_markup=main_menu())
+        return
+
+    if data == "menu_scam_stories":
+        log_engagement(user_id, "scam_stories")
+        await query.message.reply_text(scam_stories_summary(is_pro(user_id)), reply_markup=main_menu())
+        return
+
+    if data == "menu_country_news":
+        log_engagement(user_id, "country_news", "Haiti")
+        await query.message.reply_text(country_news_summary("Haiti", is_pro(user_id)), reply_markup=main_menu())
+        return
+
+    if data == "menu_sports_edge":
+        log_engagement(user_id, "sports_edge")
+        await query.message.reply_text(sports_edge_summary(), reply_markup=main_menu())
         return
 
     if data == "menu_signals":
@@ -2870,9 +3109,12 @@ def main():
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("account", account_command))
     app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("about", about))
-    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("cryptonews", cryptonews_command))
+    app.add_handler(CommandHandler("marketevents", marketevents_command))
+    app.add_handler(CommandHandler("wisdom", wisdom_command))
+    app.add_handler(CommandHandler("scamstories", scamstories_command))
+    app.add_handler(CommandHandler("countrynews", countrynews_command))
+    app.add_handler(CommandHandler("sportsedge", sportsedge_command))
 
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VOICE, voice_assistant))
