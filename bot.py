@@ -4,6 +4,8 @@
 
 import os
 import re
+import json
+import math
 import sqlite3
 import logging
 import requests
@@ -30,8 +32,8 @@ BOT_NAME = "CoinPilotX"
 DB_FILE = "coinpilotx.db"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-STRIPE_SECRET_KEY = os.getenv("pk_live_51TTVo7FP8qvvGWBIDouaWZFEAS55BIs7sNhnTQoG3ViKYGfrsKhxZNLcxxNV12hVKscsZcxUuc5v8djSwjBGymMv001qSfctBS")
-STRIPE_WEBHOOK_SECRET = os.getenv("whsec_53ae77e0b59c5891c8ac08764311976c3b6bc90f0783b64e0adc7148e9e0b2e1")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 STRIPE_PRO_LINK = "https://buy.stripe.com/14AdR90xmgAy304afs4Vy00"
 
@@ -48,6 +50,14 @@ ADMIN_USER_IDS = set()
 SIGNAL_CHECK_SECONDS = 3600
 HOURLY_UPDATE_SECONDS = 3600
 ALERT_THRESHOLD_PERCENT = 0.25
+WHALE_CHECK_SECONDS = int(os.getenv("WHALE_CHECK_SECONDS", "900"))
+PORTFOLIO_TRACK_SECONDS = int(os.getenv("PORTFOLIO_TRACK_SECONDS", "900"))
+WHALE_NOTIONAL_USD_THRESHOLD = float(os.getenv("WHALE_NOTIONAL_USD_THRESHOLD", "1000000"))
+ADMIN_USER_IDS = {
+    int(x.strip())
+    for x in os.getenv("ADMIN_USER_IDS", "").split(",")
+    if x.strip().isdigit()
+}
 
 # =========================
 # 🌐 WEBHOOK APP (RIGHT AFTER STRIPE)
@@ -395,7 +405,7 @@ def main_menu():
     ])
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = "whsec_YOUR_WEBHOOK_SECRET"
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -1781,6 +1791,1025 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return
 # =========================
+# MAJOR UPGRADE LAYER
+# =========================
+
+SUPPORTED_ASSETS = ["BTC", "ETH", "SOL", "ADA", "XRP", "DOGE", "AVAX", "LINK", "MATIC"]
+CHART_ASSETS = ["BTC", "ETH"]
+EXCHANGE_PROFILES = {
+    "Coinbase": {
+        "best_for": ["beginner", "mobile", "regulated", "simple"],
+        "fees": "Medium",
+        "security": "High",
+        "url": "https://www.coinbase.com",
+        "note": "Best fit when ease of use and US availability matter most.",
+    },
+    "Kraken": {
+        "best_for": ["lowfees", "security", "advanced", "staking"],
+        "fees": "Low",
+        "security": "High",
+        "url": "https://www.kraken.com",
+        "note": "Strong choice for lower fees, security focus, and active traders.",
+    },
+    "Gemini": {
+        "best_for": ["security", "regulated", "beginner"],
+        "fees": "Medium",
+        "security": "High",
+        "url": "https://www.gemini.com",
+        "note": "Good fit for users who prioritize compliance and custody controls.",
+    },
+    "Crypto.com": {
+        "best_for": ["mobile", "card", "rewards"],
+        "fees": "Medium",
+        "security": "Medium",
+        "url": "https://crypto.com",
+        "note": "Useful mobile-first option with broad consumer features.",
+    },
+}
+
+
+def init_db():
+    conn = db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        display_name TEXT,
+        email TEXT,
+        signup_time TEXT,
+        onboarding_complete INTEGER DEFAULT 0,
+        alerts_enabled INTEGER DEFAULT 0,
+        is_pro INTEGER DEFAULT 0,
+        subscription_plan TEXT DEFAULT 'free',
+        subscription_status TEXT DEFAULT 'inactive',
+        subscription_started_at TEXT,
+        subscription_expires_at TEXT,
+        risk_profile TEXT DEFAULT 'balanced',
+        preferred_exchange_goal TEXT DEFAULT 'beginner'
+    )
+    """)
+
+    for statement in [
+        "ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN subscription_plan TEXT DEFAULT 'free'",
+        "ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive'",
+        "ALTER TABLE users ADD COLUMN subscription_started_at TEXT",
+        "ALTER TABLE users ADD COLUMN subscription_expires_at TEXT",
+        "ALTER TABLE users ADD COLUMN risk_profile TEXT DEFAULT 'balanced'",
+        "ALTER TABLE users ADD COLUMN preferred_exchange_goal TEXT DEFAULT 'beginner'",
+    ]:
+        try:
+            cur.execute(statement)
+        except Exception:
+            pass
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS watchlists (
+        user_id INTEGER,
+        asset TEXT,
+        PRIMARY KEY (user_id, asset)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS manual_portfolio (
+        user_id INTEGER,
+        asset TEXT,
+        amount REAL,
+        PRIMARY KEY (user_id, asset)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS paper_portfolio (
+        user_id INTEGER,
+        asset TEXT,
+        amount REAL,
+        PRIMARY KEY (user_id, asset)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS last_prices (
+        user_id INTEGER,
+        asset TEXT,
+        price REAL,
+        PRIMARY KEY (user_id, asset)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS alerts_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        asset TEXT,
+        action TEXT,
+        price REAL,
+        change_pct REAL,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS last_signals (
+        user_id INTEGER,
+        asset TEXT,
+        action TEXT,
+        confidence TEXT,
+        created_at TEXT,
+        PRIMARY KEY (user_id, asset)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS price_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset TEXT,
+        price REAL,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        total_value REAL,
+        holdings_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS whale_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset TEXT,
+        side TEXT,
+        notional_usd REAL,
+        price REAL,
+        source TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_analyses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        asset TEXT,
+        summary TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS chat_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        message TEXT,
+        created_at TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def help_message():
+    return (
+        "ℹ️ CoinPilotX Help\n\n"
+        "/price BTC — live price and signal\n"
+        "/chart BTC — real BTC/ETH live chart\n"
+        "/analysis BTC — AI-style crypto analysis\n"
+        "/signals — auto signal engine summary\n"
+        "/feargreed — market fear/greed read\n"
+        "/whales — latest whale-style activity\n"
+        "/exchange beginner — smarter exchange recommendation\n"
+        "/portfolio_live — real-time portfolio value\n"
+        "/subscribe — Pro subscription options\n"
+        "/account — account and subscription status\n"
+        "/admin — admin dashboard summary\n\n"
+        "Portfolio: /addholding BTC 0.02, /removeholding BTC 0.01, /myportfolio\n"
+        "Alerts: /alerts_on, /alerts_off, /track BTC ETH SOL"
+    )
+
+
+def normalize_asset(asset):
+    asset = (asset or "BTC").upper().strip()
+    return asset if asset in SUPPORTED_ASSETS else asset[:12]
+
+
+def binance_symbol(asset):
+    return f"{normalize_asset(asset)}USDT"
+
+
+def safe_get_json(url, timeout=8, params=None):
+    try:
+        response = requests.get(url, timeout=timeout, params=params)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:
+        logging.info("API request failed: %s", exc)
+        return None
+
+
+def get_klines(asset, interval="1h", limit=48):
+    data = safe_get_json(
+        "https://api.binance.com/api/v3/klines",
+        params={"symbol": binance_symbol(asset), "interval": interval, "limit": limit},
+    )
+    if not data:
+        return []
+
+    candles = []
+    for row in data:
+        try:
+            candles.append({
+                "time": int(row[0]),
+                "open": float(row[1]),
+                "high": float(row[2]),
+                "low": float(row[3]),
+                "close": float(row[4]),
+                "volume": float(row[5]),
+            })
+        except Exception:
+            continue
+    return candles
+
+
+def get_price_history(asset, limit=40):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT price FROM price_history WHERE asset=? ORDER BY id DESC LIMIT ?",
+        (asset, limit)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    prices = [r[0] for r in rows][::-1]
+    if len(prices) >= min(limit, 20):
+        return prices
+
+    candles = get_klines(asset, "1h", limit)
+    if candles:
+        return [c["close"] for c in candles]
+    return prices
+
+
+def calculate_rsi_like(prices):
+    if len(prices) < 6:
+        return None
+
+    gains = []
+    losses = []
+    for i in range(1, len(prices)):
+        change = prices[i] - prices[i - 1]
+        gains.append(max(change, 0))
+        losses.append(abs(min(change, 0)))
+
+    avg_gain = sum(gains) / len(gains)
+    avg_loss = sum(losses) / len(losses)
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+def smart_market_signal(asset, current_price, is_pro_user=False):
+    prices = get_price_history(asset, 40)
+    if len(prices) < 12:
+        return {
+            "action": "WAIT",
+            "confidence": "Low",
+            "reason": "Not enough live market history yet.",
+            "trend": "Unknown",
+            "volatility": "0.00%",
+            "rsi": None,
+            "score": 0,
+        }
+
+    short_prices = prices[-8:]
+    long_prices = prices[-24:] if len(prices) >= 24 else prices
+    short_ma = sum(short_prices) / len(short_prices)
+    long_ma = sum(long_prices) / len(long_prices)
+    momentum_pct = ((prices[-1] - prices[-6]) / prices[-6]) * 100 if len(prices) >= 6 and prices[-6] else 0
+    volatility = ((max(short_prices) - min(short_prices)) / current_price) * 100 if current_price else 0
+    rsi = calculate_rsi_like(prices)
+
+    trend = "Uptrend" if short_ma > long_ma else "Downtrend" if short_ma < long_ma else "Sideways"
+    score = 0
+    reasons = []
+
+    if trend == "Uptrend":
+        score += 2
+        reasons.append("short-term trend is above the broader average")
+    elif trend == "Downtrend":
+        score -= 2
+        reasons.append("short-term trend is below the broader average")
+
+    if rsi is not None:
+        if rsi < 32:
+            score += 2
+            reasons.append("RSI-style reading looks oversold")
+        elif rsi > 72:
+            score -= 2
+            reasons.append("RSI-style reading looks overheated")
+        elif 45 <= rsi <= 60 and trend == "Uptrend":
+            score += 1
+            reasons.append("momentum is healthy without looking overextended")
+
+    if momentum_pct > 1:
+        score += 1
+        reasons.append("recent momentum is positive")
+    elif momentum_pct < -1:
+        score -= 1
+        reasons.append("recent momentum is negative")
+
+    if volatility > 4:
+        score = int(score / 2)
+        reasons.append("volatility is elevated, so confidence is reduced")
+
+    if score >= 3:
+        action = "BUY"
+        confidence = "High" if is_pro_user and score >= 4 else "Medium"
+    elif score <= -3:
+        action = "SELL"
+        confidence = "High" if is_pro_user and score <= -4 else "Medium"
+    else:
+        action = "WAIT"
+        confidence = "Medium" if is_pro_user else "Low"
+
+    if not reasons:
+        reasons.append("market signals are mixed")
+
+    return {
+        "action": action,
+        "confidence": confidence,
+        "reason": "; ".join(reasons).capitalize() + ".",
+        "trend": trend,
+        "volatility": f"{volatility:.2f}%",
+        "rsi": rsi,
+        "score": score,
+    }
+
+
+def ai_crypto_analysis(user_id, asset):
+    asset = normalize_asset(asset)
+    price_now, sources = get_best_price(asset)
+    if not price_now:
+        return f"I could not load live {asset} data right now."
+
+    save_price_history(asset, price_now)
+    signal = smart_market_signal(asset, price_now, is_pro(user_id))
+    fear = get_fear_greed()
+    holding = get_manual_holding(user_id, asset)
+    holding_note = (
+        f"You track {holding:.6f} {asset}, worth about ${holding * price_now:,.2f}."
+        if holding > 0 else
+        f"You do not currently track a {asset} holding."
+    )
+    source_text = ", ".join([f"{name} ${value:,.2f}" for name, value in sources.items()])
+    rsi_text = f"{signal['rsi']:.1f}" if signal["rsi"] is not None else "warming up"
+
+    summary = (
+        f"🧠 AI Crypto Analysis: {asset}\n\n"
+        f"Live price: ${price_now:,.2f}\n"
+        f"Signal: {signal['action']} ({signal['confidence']})\n"
+        f"Trend: {signal['trend']}\n"
+        f"RSI-style score: {rsi_text}\n"
+        f"Volatility: {signal['volatility']}\n"
+        f"Fear/Greed: {fear['label']}\n\n"
+        f"Read: {signal['reason']}\n\n"
+        f"Portfolio context: {holding_note}\n"
+        f"Sources: {source_text or 'live source unavailable'}\n\n"
+        "Educational only. Not financial advice."
+    )
+
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO ai_analyses (user_id, asset, summary, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, asset, summary, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return summary
+
+
+def get_fear_greed():
+    data = safe_get_json("https://api.alternative.me/fng/", timeout=8)
+    try:
+        item = data["data"][0]
+        value = int(item["value"])
+        label = item["value_classification"]
+    except Exception:
+        value = None
+        label = "Unavailable"
+
+    if value is None:
+        advice = "Market mood data is unavailable right now."
+    elif value <= 25:
+        advice = "Fear is high. Watch for panic selling, but wait for confirmation."
+    elif value >= 75:
+        advice = "Greed is high. Avoid chasing candles and consider risk control."
+    else:
+        advice = "Mood is mixed. Let trend and risk rules guide decisions."
+
+    return {"value": value, "label": label, "advice": advice}
+
+
+def chart_url(asset):
+    asset = normalize_asset(asset)
+    candles = get_klines(asset, "1h", 48)
+    if not candles:
+        return None
+
+    labels = [datetime.fromtimestamp(c["time"] / 1000).strftime("%H:%M") for c in candles[-24:]]
+    closes = [round(c["close"], 2) for c in candles[-24:]]
+    config = {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": f"{asset}/USDT live 24h",
+                "data": closes,
+                "borderColor": "#1f8f6f",
+                "backgroundColor": "rgba(31,143,111,0.12)",
+                "fill": True,
+                "pointRadius": 0,
+            }],
+        },
+        "options": {
+            "plugins": {"legend": {"display": True}},
+            "scales": {"x": {"ticks": {"maxTicksLimit": 6}}},
+        },
+    }
+    return "https://quickchart.io/chart?width=900&height=420&c=" + requests.utils.quote(json.dumps(config))
+
+
+def get_whale_activity(asset):
+    asset = normalize_asset(asset)
+    data = safe_get_json(
+        "https://api.binance.com/api/v3/aggTrades",
+        params={"symbol": binance_symbol(asset), "limit": 100},
+    )
+    if not data:
+        return []
+
+    whales = []
+    for trade in data:
+        try:
+            price = float(trade["p"])
+            quantity = float(trade["q"])
+            notional = price * quantity
+            if notional >= WHALE_NOTIONAL_USD_THRESHOLD:
+                whales.append({
+                    "asset": asset,
+                    "side": "SELL pressure" if trade.get("m") else "BUY pressure",
+                    "notional": notional,
+                    "price": price,
+                    "source": "Binance aggregate trades",
+                })
+        except Exception:
+            continue
+    return whales[:5]
+
+
+def save_whale_alert(alert):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO whale_alerts (asset, side, notional_usd, price, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (alert["asset"], alert["side"], alert["notional"], alert["price"], alert["source"], datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+
+def latest_whale_alerts(limit=5):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT asset, side, notional_usd, price, source, created_at FROM whale_alerts ORDER BY id DESC LIMIT ?",
+        (limit,)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def portfolio_live_summary(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT asset, amount FROM manual_portfolio WHERE user_id=? AND amount > 0", (user_id,))
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return "💼 Real-Time Portfolio\n\nNo tracked holdings yet.\nTry: /addholding BTC 0.02"
+
+    total = 0
+    holdings = {}
+    lines = []
+    for asset, amount in rows:
+        price_now, _ = get_best_price(asset)
+        if not price_now:
+            lines.append(f"{asset}: live price unavailable")
+            continue
+        save_price_history(asset, price_now)
+        value = amount * price_now
+        total += value
+        holdings[asset] = {"amount": amount, "price": price_now, "value": value}
+        lines.append(f"{asset}: {amount:.6f} × ${price_now:,.2f} = ${value:,.2f}")
+
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO portfolio_snapshots (user_id, total_value, holdings_json, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, total, json.dumps(holdings), datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    return (
+        "💼 Real-Time Portfolio\n\n"
+        + "\n".join(lines)
+        + f"\n\nEstimated total: ${total:,.2f}\nCoinPilotX tracks only. It never holds funds."
+    )
+
+
+def account_summary(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT display_name, email, is_pro, subscription_plan, subscription_status, risk_profile, preferred_exchange_goal FROM users WHERE user_id=?",
+        (user_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return "Account not found. Use /start first."
+
+    name, email, pro, plan, status, risk, exchange_goal = row
+    return (
+        "👤 Account\n\n"
+        f"Name: {name or 'Not set'}\n"
+        f"Email: {email or 'Not set'}\n"
+        f"Plan: {plan or 'free'}\n"
+        f"Subscription: {status or 'inactive'}\n"
+        f"Pro active: {'Yes' if pro else 'No'}\n"
+        f"Risk profile: {risk or 'balanced'}\n"
+        f"Exchange preference: {exchange_goal or 'beginner'}"
+    )
+
+
+def admin_summary():
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*), SUM(is_pro), SUM(alerts_enabled) FROM users")
+    users, pro_users, alert_users = cur.fetchone()
+    cur.execute("SELECT COUNT(*) FROM alerts_history")
+    alert_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM whale_alerts")
+    whale_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM portfolio_snapshots")
+    snapshot_count = cur.fetchone()[0]
+    conn.close()
+
+    return (
+        "🛠 Admin Dashboard\n\n"
+        f"Users: {users or 0}\n"
+        f"Pro users: {pro_users or 0}\n"
+        f"Alerts enabled: {alert_users or 0}\n"
+        f"Saved alerts: {alert_count}\n"
+        f"Whale alerts: {whale_count}\n"
+        f"Portfolio snapshots: {snapshot_count}"
+    )
+
+
+@webhook_app.route("/health", methods=["GET"])
+def health_check():
+    return {"status": "ok", "bot": BOT_NAME}, 200
+
+
+@webhook_app.route("/admin-dashboard", methods=["GET"])
+def admin_dashboard_route():
+    dashboard_token = os.getenv("ADMIN_DASHBOARD_TOKEN")
+    if dashboard_token and request.args.get("token") != dashboard_token:
+        return "Unauthorized", 401
+
+    summary = admin_summary().replace("\n", "<br>")
+    return f"""
+    <html>
+        <head>
+            <title>CoinPilotX Admin</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; color: #17211f; }}
+                .panel {{ max-width: 720px; border: 1px solid #d8e2df; border-radius: 8px; padding: 24px; }}
+                h1 {{ margin-top: 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="panel">
+                <h1>CoinPilotX Admin</h1>
+                <p>{summary}</p>
+            </div>
+        </body>
+    </html>
+    """, 200
+
+
+def exchange_recommendation(goal, risk_profile="balanced"):
+    goal = (goal or "beginner").lower()
+    scored = []
+    for name, profile in EXCHANGE_PROFILES.items():
+        score = 0
+        if goal in profile["best_for"]:
+            score += 3
+        if risk_profile == "conservative" and profile["security"] == "High":
+            score += 2
+        if goal == "lowfees" and profile["fees"] == "Low":
+            score += 2
+        scored.append((score, name, profile))
+    scored.sort(reverse=True)
+    _, best_name, best = scored[0]
+    alternatives = [name for _, name, _ in scored[1:3]]
+    return (
+        f"🏦 Smarter Exchange Match\n\n"
+        f"Best match: {best_name}\n"
+        f"Why: {best['note']}\n"
+        f"Fees: {best['fees']}\n"
+        f"Security: {best['security']}\n"
+        f"Official site: {best['url']}\n\n"
+        f"Also compare: {', '.join(alternatives)}\n\n"
+        "Use official websites only. CoinPilotX does not create accounts or hold funds."
+    )
+
+
+async def analysis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    asset = normalize_asset(context.args[0] if context.args else "BTC")
+    await update.message.reply_text(ai_crypto_analysis(update.effective_user.id, asset), reply_markup=main_menu())
+
+
+async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    asset = normalize_asset(context.args[0] if context.args else "BTC")
+    if asset not in CHART_ASSETS:
+        await update.message.reply_text("Live charts are available for BTC and ETH right now. Example: /chart ETH")
+        return
+    url = chart_url(asset)
+    if not url:
+        await update.message.reply_text(f"I could not build the live {asset} chart right now.")
+        return
+    await update.message.reply_photo(photo=url, caption=f"📊 {asset} live 24h chart", reply_markup=main_menu())
+
+
+async def feargreed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    fear = get_fear_greed()
+    value = "Unavailable" if fear["value"] is None else str(fear["value"])
+    await update.message.reply_text(
+        f"😬 Market Fear/Greed AI\n\nScore: {value}\nMood: {fear['label']}\n\n{fear['advice']}",
+        reply_markup=main_menu()
+    )
+
+
+async def whales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    asset = normalize_asset(context.args[0] if context.args else "BTC")
+    live = get_whale_activity(asset)
+    for alert in live:
+        save_whale_alert(alert)
+
+    rows = latest_whale_alerts(5)
+    if not rows:
+        await update.message.reply_text(
+            "🐋 Whale Alerts\n\nNo large BTC/ETH style trades detected in the latest scan.",
+            reply_markup=main_menu()
+        )
+        return
+
+    msg = "🐋 Whale Alerts\n\n"
+    for asset, side, notional, price, source, created_at in rows:
+        msg += f"{asset}: {side} near ${price:,.2f}, about ${notional:,.0f}\nSource: {source}\n\n"
+    await update.message.reply_text(msg.strip(), reply_markup=main_menu())
+
+
+async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    user_id = update.effective_user.id
+    assets = get_watchlist(user_id)
+    msg = "🤖 Auto Signal Engine\n\n"
+    for asset in assets:
+        price_now, _ = get_best_price(asset)
+        if not price_now:
+            msg += f"{asset}: live data unavailable\n"
+            continue
+        save_price_history(asset, price_now)
+        signal = smart_market_signal(asset, price_now, is_pro(user_id))
+        msg += f"{asset}: {signal['action']} ({signal['confidence']}) at ${price_now:,.2f}\n{signal['reason']}\n\n"
+    msg += "Educational only. Not financial advice."
+    await update.message.reply_text(msg, reply_markup=main_menu())
+
+
+async def portfolio_live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(portfolio_live_summary(update.effective_user.id), reply_markup=main_menu())
+
+
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(pro_upgrade_message(update.effective_user.id), reply_markup=upgrade_payment_menu(update.effective_user.id))
+
+
+async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(account_summary(update.effective_user.id), reply_markup=main_menu())
+
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("Admin access is not enabled for this account.")
+        return
+    await update.message.reply_text(admin_summary(), reply_markup=main_menu())
+
+
+async def voice_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(
+        "🎙️ Voice Assistant\n\nI can receive voice notes now. Speech-to-text is not connected yet, so send the same question as text and I’ll answer it here.",
+        reply_markup=main_menu()
+    )
+
+
+async def whale_alert_job(context: ContextTypes.DEFAULT_TYPE):
+    new_alerts = []
+    for asset in ["BTC", "ETH"]:
+        for alert in get_whale_activity(asset):
+            save_whale_alert(alert)
+            new_alerts.append(alert)
+
+    if not new_alerts:
+        return
+
+    users = get_users_with_alerts()
+    if not users:
+        return
+
+    alert_lines = []
+    for alert in new_alerts[:3]:
+        alert_lines.append(
+            f"{alert['asset']}: {alert['side']} about ${alert['notional']:,.0f} near ${alert['price']:,.2f}"
+        )
+    msg = "🐋 Whale Alert\n\n" + "\n".join(alert_lines) + "\n\nEducational only. Not financial advice."
+
+    for user_id in users:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=msg)
+        except Exception:
+            continue
+
+
+async def portfolio_tracking_job(context: ContextTypes.DEFAULT_TYPE):
+    for user_id in get_all_users():
+        try:
+            portfolio_live_summary(user_id)
+        except Exception:
+            continue
+
+
+def activate_pro(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE users
+        SET is_pro=1,
+            subscription_plan='pro',
+            subscription_status='active',
+            subscription_started_at=?
+        WHERE user_id=?
+        """,
+        (datetime.now().isoformat(), user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="menu_main")],
+        [
+            InlineKeyboardButton("📈 Live BTC", callback_data="menu_price_btc"),
+            InlineKeyboardButton("📊 BTC/ETH Charts", callback_data="menu_chart_btc"),
+        ],
+        [
+            InlineKeyboardButton("🧠 AI Analysis", callback_data="menu_analysis_btc"),
+            InlineKeyboardButton("🤖 Auto Signals", callback_data="menu_signals"),
+        ],
+        [
+            InlineKeyboardButton("🐋 Whale Alerts", callback_data="menu_whales"),
+            InlineKeyboardButton("😬 Fear/Greed", callback_data="menu_feargreed"),
+        ],
+        [
+            InlineKeyboardButton("💼 Live Portfolio", callback_data="menu_portfolio_live"),
+            InlineKeyboardButton("👤 Account", callback_data="menu_account"),
+        ],
+        [
+            InlineKeyboardButton("🛡️ Scam Shield", callback_data="pro_scanner"),
+            InlineKeyboardButton("💳 Upgrade Pro", callback_data="upgrade_pro"),
+        ],
+        [
+            InlineKeyboardButton("💬 Chat Assistant", callback_data="menu_talk"),
+            InlineKeyboardButton("🏦 Best Exchanges", callback_data="menu_exchanges"),
+        ],
+        [
+            InlineKeyboardButton("💰 Add Money Safely", callback_data="menu_deposit"),
+            InlineKeyboardButton("📘 Help", callback_data="menu_help"),
+        ],
+    ])
+
+
+def exchange_menu():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Beginner", callback_data="exchange_beginner"),
+            InlineKeyboardButton("Low fees", callback_data="exchange_lowfees"),
+        ],
+        [
+            InlineKeyboardButton("Security", callback_data="exchange_security"),
+            InlineKeyboardButton("Mobile", callback_data="exchange_mobile"),
+        ],
+        [InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")],
+    ])
+
+
+async def send_exchange_message(message, goal):
+    await message.reply_text(exchange_recommendation(goal), reply_markup=main_menu())
+
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = query.from_user.id
+
+    if data == "menu_main":
+        await query.message.reply_text("🏠 Main Menu\n\nChoose what you want to do next:", reply_markup=main_menu())
+        return
+
+    if data == "menu_price_btc":
+        price_now, _ = get_best_price("BTC")
+        if price_now:
+            save_price_history("BTC", price_now)
+            signal = smart_market_signal("BTC", price_now, is_pro(user_id))
+            await query.message.reply_text(
+                f"📈 BTC Live Price\n\nBTC: ${price_now:,.2f}\nSignal: {signal['action']} ({signal['confidence']})\n\n{signal['reason']}\n\nEducational only. Not financial advice.",
+                reply_markup=main_menu()
+            )
+        else:
+            await query.message.reply_text("BTC price is unavailable right now.", reply_markup=main_menu())
+        return
+
+    if data == "menu_chart_btc":
+        url = chart_url("BTC")
+        if url:
+            await query.message.reply_photo(photo=url, caption="📊 BTC live 24h chart", reply_markup=main_menu())
+        else:
+            await query.message.reply_text("I could not build the BTC chart right now.", reply_markup=main_menu())
+        return
+
+    if data == "menu_analysis_btc":
+        await query.message.reply_text(ai_crypto_analysis(user_id, "BTC"), reply_markup=main_menu())
+        return
+
+    if data == "menu_signals":
+        msg = "🤖 Auto Signal Engine\n\n"
+        for asset in get_watchlist(user_id):
+            price_now, _ = get_best_price(asset)
+            if not price_now:
+                msg += f"{asset}: live data unavailable\n"
+                continue
+            save_price_history(asset, price_now)
+            signal = smart_market_signal(asset, price_now, is_pro(user_id))
+            msg += f"{asset}: {signal['action']} ({signal['confidence']}) at ${price_now:,.2f}\n{signal['reason']}\n\n"
+        await query.message.reply_text(msg + "Educational only. Not financial advice.", reply_markup=main_menu())
+        return
+
+    if data == "menu_whales":
+        live = get_whale_activity("BTC") + get_whale_activity("ETH")
+        for alert in live:
+            save_whale_alert(alert)
+        rows = latest_whale_alerts(5)
+        msg = "🐋 Whale Alerts\n\n"
+        if rows:
+            for asset, side, notional, price, source, created_at in rows:
+                msg += f"{asset}: {side} about ${notional:,.0f} near ${price:,.2f}\n"
+        else:
+            msg += "No large trades found in the latest scan."
+        await query.message.reply_text(msg, reply_markup=main_menu())
+        return
+
+    if data == "menu_feargreed":
+        fear = get_fear_greed()
+        value = "Unavailable" if fear["value"] is None else str(fear["value"])
+        await query.message.reply_text(
+            f"😬 Market Fear/Greed AI\n\nScore: {value}\nMood: {fear['label']}\n\n{fear['advice']}",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_portfolio_live":
+        await query.message.reply_text(portfolio_live_summary(user_id), reply_markup=main_menu())
+        return
+
+    if data == "menu_account":
+        await query.message.reply_text(account_summary(user_id), reply_markup=main_menu())
+        return
+
+    if data == "menu_alerts_on":
+        set_alerts(user_id, True)
+        await query.message.reply_text("🚨 Alerts are now ON.", reply_markup=main_menu())
+        return
+
+    if data == "pro_signals":
+        await query.message.reply_text(ai_crypto_analysis(user_id, "BTC"), reply_markup=main_menu())
+        return
+
+    if data == "pro_portfolio":
+        await query.message.reply_text(portfolio_live_summary(user_id), reply_markup=main_menu())
+        return
+
+    if data == "pro_scanner":
+        await query.message.reply_text(
+            "🛡 Scam Shield\n\nSend me any suspicious crypto message, wallet address, or link and I’ll scan it.",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "upgrade_pro":
+        await query.message.reply_text(pro_upgrade_message(user_id), reply_markup=upgrade_payment_menu(user_id))
+        return
+
+    if data == "pay_btc":
+        await query.message.reply_text(
+            f"₿ Pay with Bitcoin\n\nSend exactly: {BTC_PRO_PRICE}\n\nBTC address:\n{BTC_PAYMENT_ADDRESS}\n\nAfter sending, type:\n/verify_payment YOUR_TXID",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_talk":
+        await query.message.reply_text(
+            "💬 Chat Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_about":
+        await query.message.reply_text(
+            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nEducational only. Not financial advice.",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_deposit":
+        await query.message.reply_text(
+            "💰 Add Money Safely\n\nCoinPilotX does not hold money or accept deposits.\nUse official exchanges directly and never send funds to someone promising guaranteed returns.",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_exchanges":
+        await query.message.reply_text("🏦 Best Exchanges\n\nChoose your goal:", reply_markup=exchange_menu())
+        return
+
+    if data.startswith("exchange_"):
+        await send_exchange_message(query.message, data.replace("exchange_", ""))
+        return
+
+    if data == "menu_help":
+        await query.message.reply_text(help_message(), reply_markup=main_menu())
+        return
+
+    if data in ["scan_confirm", "scan_yes"]:
+        text = context.user_data.get("pending_scan")
+        if not text:
+            await query.message.reply_text("Nothing to scan right now.", reply_markup=main_menu())
+            return
+
+        risk, reasons, expanded_results = analyze_text(text)
+        msg = f"🛡️ Message Safety Check\n\nRisk Level: {risk}\n\n"
+        if expanded_results:
+            msg += "Links checked:\n"
+            for original, expanded in expanded_results:
+                msg += f"• Original: {original}\n  Destination: {expanded}\n\n"
+        msg += "Findings:\n"
+        msg += "\n".join([f"• {r}" for r in reasons]) if reasons else "• No major scam signs found."
+        context.user_data.pop("pending_scan", None)
+        await query.message.reply_text(msg, reply_markup=main_menu())
+        return
+
+    if data in ["scan_cancel", "scan_no"]:
+        context.user_data.pop("pending_scan", None)
+        await query.message.reply_text("Scan canceled.", reply_markup=main_menu())
+        return
+
+    await query.message.reply_text("🏠 Back to menu.", reply_markup=main_menu())
+
+
+# =========================
 # MENU PUSH JOB
 # =========================
 
@@ -1832,15 +2861,27 @@ def main():
     app.add_handler(CommandHandler("exchange", exchange))
     app.add_handler(CommandHandler("signal", signal))
     app.add_handler(CommandHandler("verify_payment", verify_payment))
+    app.add_handler(CommandHandler("analysis", analysis_command))
+    app.add_handler(CommandHandler("chart", chart_command))
+    app.add_handler(CommandHandler("feargreed", feargreed_command))
+    app.add_handler(CommandHandler("whales", whales_command))
+    app.add_handler(CommandHandler("signals", signals_command))
+    app.add_handler(CommandHandler("portfolio_live", portfolio_live_command))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("account", account_command))
+    app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("about", about))
     app.add_handler(CommandHandler("help", help_command))
 
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.VOICE, voice_assistant))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     job_queue.run_repeating(market_signal_job, interval=SIGNAL_CHECK_SECONDS, first=10)
     job_queue.run_repeating(hourly_market_update, interval=HOURLY_UPDATE_SECONDS, first=30)
+    job_queue.run_repeating(whale_alert_job, interval=WHALE_CHECK_SECONDS, first=45)
+    job_queue.run_repeating(portfolio_tracking_job, interval=PORTFOLIO_TRACK_SECONDS, first=60)
 
     app.run_polling()
 
