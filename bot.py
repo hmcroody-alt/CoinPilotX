@@ -366,7 +366,10 @@ def pro_upgrade_message(user_id):
         "• Smarter BUY / SELL / WAIT signals\n"
         "• Portfolio-aware alerts\n"
         "• Advanced scam protection\n"
-        "• Better timing insights\n\n"
+        "• Better timing insights\n"
+        "• Whale intelligence\n"
+        "• Portfolio decision support\n"
+        "• Scam story breakdowns\n\n"
         "Choose a payment method below."
     )
 
@@ -791,19 +794,19 @@ BTC_PAYMENT_ADDRESS = "0x8DE1A7eAb2C937cdCdC24E8F79B0ac0960040CD8"
 BTC_PRO_PRICE = "0.00025 BTC"
 
 def pro_upgrade_message(user_id):
-    stripe_link = f"{STRIPE_PRO_LINK}?client_reference_id={user_id}"
-
     return (
         "⭐ CoinPilotX Pro\n\n"
-        f"Card price: {PRO_PRICE_MONTHLY}\n\n"
+        f"Card price: {PRO_PRICE_MONTHLY}\n"
+        f"BTC price: {BTC_PRO_PRICE}\n\n"
         "What you unlock:\n"
         "• Smarter BUY / SELL / WAIT signals\n"
         "• Portfolio-aware alerts\n"
         "• Advanced scam protection\n"
-        "• Better timing insights\n\n"
-        "💳 Pay with card:\n"
-        f"{stripe_link}\n\n"
-        "After payment, Pro activates automatically."
+        "• Better timing insights\n"
+        "• Whale intelligence\n"
+        "• Portfolio decision support\n"
+        "• Scam story breakdowns\n\n"
+        "Choose a payment method below."
     )
 
 
@@ -1604,6 +1607,10 @@ NEWS_FEEDS = [
     ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
     ("Cointelegraph", "https://cointelegraph.com/rss"),
 ]
+BLOCKSTREAM_BASE_URL = os.getenv("BLOCKSTREAM_BASE_URL", "https://blockstream.info/api").rstrip("/")
+MEMPOOL_BASE_URL = os.getenv("MEMPOOL_BASE_URL", "https://mempool.space/api").rstrip("/")
+BTC_WHALE_THRESHOLD_BTC = float(os.getenv("BTC_WHALE_THRESHOLD_BTC", "500"))
+BTC_DORMANT_DAYS = int(os.getenv("BTC_DORMANT_DAYS", "3650"))
 SPORTS_EDGE_ENABLED = os.getenv("SPORTS_EDGE_ENABLED", "false").lower() == "true"
 COUNTRY_ALIASES = {
     "usa": "United States",
@@ -1637,6 +1644,29 @@ COUNTRY_PROFILES = {
     "Haiti": {"flag": "🇭🇹", "region": "Caribbean", "adoption": "Early-stage and education-driven", "regulation": "Limited formal crypto framework", "exchanges": "Access may depend on global platforms, payment rails, and local banking availability", "remittance": "High potential relevance because remittances matter deeply", "institutional": "Limited", "retail": "Interest can center on remittances, savings, and mobile access", "mining": "Limited"},
     "El Salvador": {"flag": "🇸🇻", "region": "Latin America", "adoption": "High policy visibility because Bitcoin is legal tender", "regulation": "Bitcoin-forward national policy", "exchanges": "Local and global options vary", "remittance": "High relevance", "institutional": "High sovereign Bitcoin visibility", "retail": "Mixed practical adoption", "mining": "Volcano/geothermal mining narrative is relevant"},
 }
+COUNTRY_PICKER_COUNTRIES = [
+    ("United States", "United States"),
+    ("Canada", "Canada"),
+    ("Mexico", "Mexico"),
+    ("Brazil", "Brazil"),
+    ("Argentina", "Argentina"),
+    ("United Kingdom", "United Kingdom"),
+    ("France", "France"),
+    ("Germany", "Germany"),
+    ("UAE", "UAE"),
+    ("Saudi Arabia", "Saudi Arabia"),
+    ("Nigeria", "Nigeria"),
+    ("South Africa", "South Africa"),
+    ("Kenya", "Kenya"),
+    ("India", "India"),
+    ("China", "China"),
+    ("Japan", "Japan"),
+    ("South Korea", "South Korea"),
+    ("Singapore", "Singapore"),
+    ("Australia", "Australia"),
+    ("Haiti", "Haiti"),
+    ("El Salvador", "El Salvador"),
+]
 WISDOM_MESSAGES = [
     "Patience is a position. You do not have to trade every candle.",
     "Risk management beats prediction. Protect the downside first.",
@@ -1648,22 +1678,28 @@ WISDOM_MESSAGES = [
 ]
 SCAM_STORY_LIBRARY = [
     {
-        "title": "Fake airdrop wallet drain",
-        "story": "A user connects a wallet to claim a free token, approves a malicious contract, and loses assets.",
-        "avoid": "Use a burner wallet for claims, verify official links, and never approve unlimited access casually.",
-        "pro": "Pro check: review spender permissions, revoke stale approvals, compare the domain to official project channels, and pause when the offer creates urgency.",
+        "title": "The fake airdrop that emptied a wallet",
+        "story": "Someone sees a token claim link that looks official. The page asks them to connect their wallet and approve access. Minutes later, valuable tokens are gone.",
+        "trap": "The scam uses urgency, a professional-looking website, and a wallet approval that quietly gives the attacker permission to move assets.",
+        "red_flags": ["Free token with a countdown", "Link shared by a random account", "Wallet asks for broad approval", "Website domain is slightly different from the real project"],
+        "avoid": ["Verify links from official project channels", "Use a burner wallet for claims", "Reject unlimited approvals", "Revoke old permissions often"],
+        "final": "A wallet approval can be as dangerous as sending funds. Slow down before every signature.",
     },
     {
-        "title": "Impersonated exchange support",
-        "story": "A fake support account asks for a seed phrase or remote access after a withdrawal delay.",
-        "avoid": "Support never needs your seed phrase. Use only official app or website support paths.",
-        "pro": "Pro check: verify handles, avoid screen sharing wallets, document ticket IDs, and lock withdrawals if account access feels compromised.",
+        "title": "The fake exchange support takeover",
+        "story": "A user complains online about a delayed withdrawal. A fake support profile replies quickly and sends a private link to 'verify the account.'",
+        "trap": "The attacker copies branding, creates pressure, and asks for login details, seed phrases, or remote screen access.",
+        "red_flags": ["Support starts in DMs", "They ask for seed phrases or 2FA codes", "They rush the user", "The link does not match the exchange domain"],
+        "avoid": ["Use support only inside the official app or website", "Never share seed phrases or codes", "Do not screen-share wallets", "Lock the account if access feels compromised"],
+        "final": "Real support does not need control of your wallet. Anyone asking for it is a danger sign.",
     },
     {
-        "title": "Romance or mentorship investment scam",
-        "story": "A friendly contact slowly builds trust, then pushes deposits into a fake trading platform.",
-        "avoid": "Do not send funds to platforms introduced by strangers. Test withdrawals before adding money.",
-        "pro": "Pro check: inspect domain age, withdrawal rules, app store legitimacy, and whether profits are only visible inside the platform.",
+        "title": "The fake mentor profit dashboard",
+        "story": "A friendly stranger spends weeks building trust, then introduces a trading platform showing steady fake profits. Withdrawals suddenly require taxes, fees, or more deposits.",
+        "trap": "The victim is shown fake gains to make the next deposit feel rational. The money was never really trading.",
+        "red_flags": ["Guaranteed returns", "A stranger chooses the platform", "Small first withdrawal followed by bigger pressure", "Extra fee required before withdrawal"],
+        "avoid": ["Never use platforms introduced by strangers", "Verify licensing and domain history", "Test withdrawals early", "Do not pay fees to unlock alleged profits"],
+        "final": "If profits only exist on a website you cannot independently verify, treat them as unreal.",
     },
 ]
 
@@ -1826,6 +1862,66 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_portfolio_settings (
+        user_id INTEGER PRIMARY KEY,
+        manual_total_usd REAL,
+        manual_override_enabled INTEGER DEFAULT 0
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS portfolio_advice_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        action TEXT,
+        current_value REAL,
+        upside_estimate REAL,
+        downside_estimate REAL,
+        explanation TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS whale_intelligence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        txid TEXT,
+        wallet TEXT,
+        amount_btc REAL,
+        usd_value REAL,
+        movement_type TEXT,
+        sentiment TEXT,
+        explanation TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS transaction_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        query TEXT,
+        txid TEXT,
+        address TEXT,
+        amount_btc REAL,
+        fee_btc REAL,
+        confirmations INTEGER,
+        risk_level TEXT,
+        explanation TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS connected_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        address TEXT,
+        label TEXT,
+        chain TEXT DEFAULT 'BTC',
+        created_at TEXT,
+        last_checked_at TEXT,
+        UNIQUE(user_id, address)
+    )
+    """)
 
     conn.commit()
     conn.close()
@@ -1842,6 +1938,24 @@ def help_message():
         "/whales — latest whale-style activity\n"
         "/exchange beginner — smarter exchange recommendation\n"
         "/portfolio_live — real-time portfolio value\n"
+        "/setbalance 1250 — manually override displayed portfolio balance\n"
+        "/clearbalance — return to live holdings balance\n"
+        "/portfolio_advice — portfolio decision intelligence\n"
+        "/whalebtc — BTC whale intelligence\n"
+        "/whalealerts — latest saved whale alerts\n"
+        "/btcstats — Bitcoin network statistics\n"
+        "/network — network health\n"
+        "/fees — miner fee estimates\n"
+        "/mempool — mempool congestion\n"
+        "/checktx TXID — public transaction explorer\n"
+        "/walletinfo ADDRESS — public wallet intelligence\n"
+        "/connectwallet ADDRESS — track a public wallet address\n"
+        "/walletscan ADDRESS — scam-risk wallet scan\n"
+        "/chainintel — blockchain sentiment read\n"
+        "/marketpressure — whale and exchange-flow pressure\n"
+        "/mining — mining and network strength\n"
+        "/difficulty — Bitcoin difficulty read\n"
+        "/networkhealth — chain health summary\n"
         "/cryptonews — recent crypto news with market read\n"
         "/marketevents — global event impact on BTC/ETH\n"
         "/wisdom — daily risk-management wisdom\n"
@@ -1851,7 +1965,7 @@ def help_message():
         "/subscribe — Pro subscription options\n"
         "/account — account and subscription status\n"
         "/admin — admin dashboard summary\n\n"
-        "Portfolio: /addholding BTC 0.02, /removeholding BTC 0.01, /myportfolio\n"
+        "Portfolio: /addholding BTC 0.02, /setbalance 1250, /portfolio_advice\n"
         "Alerts: /alerts_on, /alerts_off, /track BTC ETH SOL"
     )
 
@@ -1873,6 +1987,537 @@ def safe_get_json(url, timeout=8, params=None):
     except Exception as exc:
         logging.info("API request failed: %s", exc)
         return None
+
+
+def safe_get_text(url, timeout=8):
+    try:
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        return response.text.strip()
+    except Exception as exc:
+        logging.info("Text API request failed: %s", exc)
+        return None
+
+
+def blockstream_json(path):
+    return safe_get_json(f"{BLOCKSTREAM_BASE_URL}{path}", timeout=10)
+
+
+def blockstream_text(path):
+    return safe_get_text(f"{BLOCKSTREAM_BASE_URL}{path}", timeout=10)
+
+
+def mempool_json(path):
+    return safe_get_json(f"{MEMPOOL_BASE_URL}{path}", timeout=10)
+
+
+def btc_sats_to_btc(value):
+    return (value or 0) / 100_000_000
+
+
+def is_btc_txid(value):
+    return bool(re.fullmatch(r"[A-Fa-f0-9]{64}", value or ""))
+
+
+def is_btc_address(value):
+    return bool(re.fullmatch(r"(bc1|[13])[A-Za-z0-9]{25,90}", value or ""))
+
+
+def btc_price_usd():
+    price, _ = get_best_price("BTC")
+    return price or 0
+
+
+def exchange_address_labels():
+    raw = os.getenv("EXCHANGE_BTC_ADDRESSES_JSON", "{}")
+    try:
+        labels = json.loads(raw)
+        if isinstance(labels, dict):
+            return labels
+    except Exception:
+        pass
+    return {}
+
+
+def label_for_address(address):
+    return exchange_address_labels().get(address, "")
+
+
+def btc_tip_height():
+    text = blockstream_text("/blocks/tip/height")
+    try:
+        return int(text)
+    except Exception:
+        return None
+
+
+def btc_tip_hash():
+    return blockstream_text("/blocks/tip/hash")
+
+
+def tx_confirmations(tx, tip_height=None):
+    status = tx.get("status", {}) if tx else {}
+    if not status.get("confirmed"):
+        return 0
+    block_height = status.get("block_height")
+    tip_height = tip_height or btc_tip_height()
+    if not block_height or not tip_height:
+        return 1
+    return max(1, tip_height - block_height + 1)
+
+
+def network_snapshot():
+    fees = mempool_json("/v1/fees/recommended") or {}
+    mempool = mempool_json("/mempool") or {}
+    difficulty = mempool_json("/v1/difficulty-adjustment") or {}
+    height = btc_tip_height()
+    tx_count_text = safe_get_text("https://blockchain.info/q/24hrtransactioncount")
+    hashrate_text = safe_get_text("https://blockchain.info/q/hashrate")
+
+    try:
+        tx_count = int(float(tx_count_text))
+    except Exception:
+        tx_count = None
+    try:
+        hashrate = float(hashrate_text)
+    except Exception:
+        hashrate = None
+
+    mempool_count = mempool.get("count", 0) or 0
+    vsize = mempool.get("vsize", 0) or 0
+    fastest_fee = fees.get("fastestFee")
+    half_hour_fee = fees.get("halfHourFee")
+    hour_fee = fees.get("hourFee")
+
+    if vsize > 80_000_000 or (fastest_fee and fastest_fee > 80):
+        congestion = "High"
+        health = "Congested"
+    elif vsize > 25_000_000 or (fastest_fee and fastest_fee > 30):
+        congestion = "Medium"
+        health = "Busy but functional"
+    else:
+        congestion = "Low"
+        health = "Healthy"
+
+    speed = "Fast" if congestion == "Low" else "Moderate" if congestion == "Medium" else "Slow"
+    return {
+        "height": height,
+        "tx_count_24h": tx_count,
+        "hashrate": hashrate,
+        "fees": fees,
+        "mempool": mempool,
+        "difficulty": difficulty,
+        "congestion": congestion,
+        "health": health,
+        "speed": speed,
+        "fastest_fee": fastest_fee,
+        "half_hour_fee": half_hour_fee,
+        "hour_fee": hour_fee,
+        "mempool_count": mempool_count,
+        "vsize": vsize,
+    }
+
+
+def network_stats_summary(topic="network"):
+    snap = network_snapshot()
+    fee_line = (
+        f"Fees: fastest {snap['fastest_fee']} sat/vB, 30 min {snap['half_hour_fee']} sat/vB, 60 min {snap['hour_fee']} sat/vB"
+        if snap["fastest_fee"] is not None else
+        "Fees: unavailable right now"
+    )
+    tx_line = f"24h transactions: {snap['tx_count_24h']:,}" if snap["tx_count_24h"] else "24h transactions: unavailable"
+    hash_line = f"Hash rate: {snap['hashrate']:,.2f} GH/s" if snap["hashrate"] else "Hash rate: unavailable"
+    diff = snap["difficulty"].get("currentDifficulty") if isinstance(snap["difficulty"], dict) else None
+    diff_line = f"Mining difficulty: {diff:,.0f}" if isinstance(diff, (int, float)) else "Mining difficulty: unavailable"
+
+    if snap["congestion"] == "High":
+        read = "Network congestion is elevated. Higher transaction demand can signal active markets, but users may pay more to move funds."
+    elif snap["congestion"] == "Medium":
+        read = "The network is busy but functional. Confirmation speed may vary with fee choice."
+    else:
+        read = "The network looks healthy. Lower congestion usually means easier confirmations."
+
+    title = {
+        "fees": "⛏ Miner Fees",
+        "mempool": "🧱 Mempool Intelligence",
+        "mining": "⛏ Mining Intelligence",
+        "difficulty": "⚙️ Bitcoin Difficulty",
+        "health": "🟢 Network Health",
+    }.get(topic, "📡 Bitcoin Network Stats")
+
+    return (
+        f"{title}\n\n"
+        f"Block height: {snap['height'] or 'Unavailable'}\n"
+        f"{tx_line}\n"
+        f"Mempool transactions: {snap['mempool_count']:,}\n"
+        f"Network congestion: {snap['congestion']}\n"
+        f"Estimated transaction speed: {snap['speed']}\n"
+        f"{fee_line}\n"
+        f"{diff_line}\n"
+        f"{hash_line}\n\n"
+        f"Interpretation: {read}\n\n"
+        "Educational only — not financial advice."
+    )
+
+
+def tx_value_summary(tx):
+    input_sats = 0
+    output_sats = 0
+    input_addresses = []
+    output_addresses = []
+
+    for vin in tx.get("vin", []):
+        prevout = vin.get("prevout") or {}
+        input_sats += prevout.get("value", 0) or 0
+        address = prevout.get("scriptpubkey_address")
+        if address:
+            input_addresses.append(address)
+
+    for vout in tx.get("vout", []):
+        output_sats += vout.get("value", 0) or 0
+        address = vout.get("scriptpubkey_address")
+        if address:
+            output_addresses.append(address)
+
+    fee_sats = tx.get("fee", max(0, input_sats - output_sats))
+    return {
+        "input_btc": btc_sats_to_btc(input_sats),
+        "output_btc": btc_sats_to_btc(output_sats),
+        "fee_btc": btc_sats_to_btc(fee_sats),
+        "input_addresses": input_addresses,
+        "output_addresses": output_addresses,
+        "largest_output_btc": max([btc_sats_to_btc(v.get("value", 0)) for v in tx.get("vout", [])] or [0]),
+    }
+
+
+def analyze_transaction_risk(tx):
+    values = tx_value_summary(tx)
+    flags = []
+    risk = "Low"
+
+    input_count = len(tx.get("vin", []))
+    output_count = len(tx.get("vout", []))
+    if values["largest_output_btc"] >= BTC_WHALE_THRESHOLD_BTC:
+        flags.append("Large BTC movement detected.")
+        risk = "Medium"
+    if input_count >= 10 and output_count >= 10:
+        flags.append("Many inputs and outputs. This can appear in batching, privacy tools, or complex wallet activity.")
+        risk = "Medium"
+    if output_count >= 20:
+        flags.append("High output count. Review carefully if this was unexpected.")
+        risk = "Medium"
+    if values["fee_btc"] > 0.05:
+        flags.append("Unusually high fee paid compared with normal retail transfers.")
+        risk = "Medium"
+    if not flags:
+        flags.append("No major public-chain red flags detected from this transaction alone.")
+
+    return risk, flags
+
+
+def classify_whale_tx(tx):
+    values = tx_value_summary(tx)
+    largest = values["largest_output_btc"]
+    if largest < BTC_WHALE_THRESHOLD_BTC:
+        return None
+
+    price = btc_price_usd()
+    usd_value = largest * price if price else 0
+    labels = exchange_address_labels()
+    input_labels = [labels.get(addr) for addr in values["input_addresses"] if labels.get(addr)]
+    output_labels = [labels.get(addr) for addr in values["output_addresses"] if labels.get(addr)]
+
+    movement_type = "Massive BTC transfer"
+    sentiment = "Neutral"
+    explanation = "Large BTC moved on-chain. Direction is unclear without verified exchange/wallet labels."
+    wallet = values["output_addresses"][0] if values["output_addresses"] else ""
+
+    if output_labels and not input_labels:
+        movement_type = "Possible exchange inflow"
+        sentiment = "Bearish"
+        explanation = f"Large BTC moved toward a configured public exchange label ({output_labels[0]}). Possible sell pressure increasing."
+    elif input_labels and not output_labels:
+        movement_type = "Possible exchange outflow"
+        sentiment = "Bullish"
+        explanation = f"Large BTC moved away from a configured public exchange label ({input_labels[0]}). Possible accumulation or custody movement."
+    elif input_labels and output_labels:
+        movement_type = "Exchange distribution pattern"
+        sentiment = "Neutral"
+        explanation = "Configured exchange labels appear on both sides. This may be internal reshuffling or liquidity management."
+
+    return {
+        "txid": tx.get("txid", ""),
+        "wallet": wallet,
+        "amount_btc": largest,
+        "usd_value": usd_value,
+        "movement_type": movement_type,
+        "sentiment": sentiment,
+        "explanation": explanation,
+    }
+
+
+def save_whale_intelligence(event):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO whale_intelligence
+        (txid, wallet, amount_btc, usd_value, movement_type, sentiment, explanation, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event["txid"],
+            event["wallet"],
+            event["amount_btc"],
+            event["usd_value"],
+            event["movement_type"],
+            event["sentiment"],
+            event["explanation"],
+            datetime.now().isoformat(),
+        )
+    )
+    conn.commit()
+    conn.close()
+
+
+def scan_btc_whales(limit=25):
+    block_hash = btc_tip_hash()
+    if not block_hash:
+        return []
+    txs = blockstream_json(f"/block/{block_hash}/txs") or []
+    events = []
+    for tx in txs[:limit]:
+        event = classify_whale_tx(tx)
+        if event:
+            save_whale_intelligence(event)
+            events.append(event)
+    return events
+
+
+def latest_whale_intelligence(limit=5):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT txid, wallet, amount_btc, usd_value, movement_type, sentiment, explanation, created_at
+        FROM whale_intelligence
+        ORDER BY id DESC LIMIT ?
+        """,
+        (limit,)
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def whale_intelligence_summary(scan_live=True):
+    events = scan_btc_whales() if scan_live else []
+    rows = latest_whale_intelligence(5)
+    if not rows:
+        return (
+            "🐋 BTC Whale Intelligence\n\n"
+            "No massive BTC transfers were detected in the latest public block scan.\n\n"
+            "Interpretation: Neutral. Whale pressure is quiet based on available public data.\n\n"
+            "Educational only — not financial advice."
+        )
+
+    msg = "🐋 BTC Whale Intelligence\n\n"
+    for txid, wallet, amount, usd, movement, sentiment, explanation, created_at in rows:
+        confidence = "72%" if sentiment != "Neutral" else "58%"
+        msg += (
+            f"{movement}\n"
+            f"Amount: {amount:,.2f} BTC (~${usd:,.0f})\n"
+            f"Sentiment: {sentiment} | Confidence: {confidence}\n"
+            f"Time: {created_at}\n"
+            f"Read: {explanation}\n"
+            f"TX: {txid[:12]}...\n\n"
+        )
+    msg += "Educational only — not financial advice."
+    return msg.strip()
+
+
+def transaction_explorer_summary(user_id, query):
+    query = (query or "").strip()
+    if is_btc_address(query):
+        return wallet_info_summary(user_id, query, save_connection=False)
+    if not is_btc_txid(query):
+        return "I could not read that as a BTC TXID or public BTC address. Send a 64-character transaction hash or public wallet address."
+
+    tx = blockstream_json(f"/tx/{query}")
+    if not tx:
+        return "Transaction not found or public explorer data is unavailable right now. Please check the TXID and try again."
+
+    values = tx_value_summary(tx)
+    confirmations = tx_confirmations(tx)
+    risk, flags = analyze_transaction_risk(tx)
+    status = tx.get("status", {})
+    timestamp = "Unconfirmed"
+    if status.get("block_time"):
+        timestamp = datetime.fromtimestamp(status["block_time"]).isoformat()
+
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO transaction_history
+        (user_id, query, txid, address, amount_btc, fee_btc, confirmations, risk_level, explanation, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, query, query, "", values["output_btc"], values["fee_btc"], confirmations, risk, "; ".join(flags), datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+    return (
+        "🔎 Transaction Explorer\n\n"
+        f"TXID: {query}\n"
+        f"Confirmations: {confirmations}\n"
+        f"Total outputs: {values['output_btc']:,.8f} BTC\n"
+        f"Fee: {values['fee_btc']:,.8f} BTC\n"
+        f"Timestamp: {timestamp}\n"
+        f"Risk level: {risk}\n\n"
+        "Public-chain red flags:\n"
+        + "\n".join([f"• {flag}" for flag in flags])
+        + "\n\nOnly public blockchain data was used. Educational only — not financial advice."
+    )
+
+
+def wallet_stats(address):
+    data = blockstream_json(f"/address/{address}")
+    if not data:
+        return None
+    chain = data.get("chain_stats", {})
+    mempool = data.get("mempool_stats", {})
+    funded = (chain.get("funded_txo_sum", 0) or 0) + (mempool.get("funded_txo_sum", 0) or 0)
+    spent = (chain.get("spent_txo_sum", 0) or 0) + (mempool.get("spent_txo_sum", 0) or 0)
+    tx_count = (chain.get("tx_count", 0) or 0) + (mempool.get("tx_count", 0) or 0)
+    balance_btc = btc_sats_to_btc(funded - spent)
+    return {"raw": data, "balance_btc": balance_btc, "tx_count": tx_count, "funded_btc": btc_sats_to_btc(funded), "spent_btc": btc_sats_to_btc(spent)}
+
+
+def recent_wallet_txs(address, limit=8):
+    txs = blockstream_json(f"/address/{address}/txs") or []
+    return txs[:limit]
+
+
+def wallet_risk_analysis(address):
+    stats = wallet_stats(address)
+    if not stats:
+        return None
+    txs = recent_wallet_txs(address)
+    flags = []
+    risk = "Low"
+
+    if stats["balance_btc"] >= BTC_WHALE_THRESHOLD_BTC:
+        flags.append("Large wallet balance. Whale-movement monitoring is useful.")
+        risk = "Medium"
+    if stats["tx_count"] > 500:
+        flags.append("Very active wallet. Could be exchange, service, bot, or high-frequency wallet behavior.")
+        risk = "Medium"
+    for tx in txs[:5]:
+        tx_risk, tx_flags = analyze_transaction_risk(tx)
+        if tx_risk != "Low":
+            flags.extend(tx_flags[:1])
+            risk = "Medium"
+    if not flags:
+        flags.append("No major public-chain risk pattern detected from recent activity.")
+
+    return risk, flags, stats, txs
+
+
+def wallet_info_summary(user_id, address, save_connection=False):
+    if not is_btc_address(address):
+        return "Please send a public BTC address only. Never send seed phrases, private keys, recovery phrases, or wallet passwords."
+    analysis = wallet_risk_analysis(address)
+    if not analysis:
+        return "Wallet data is unavailable right now. Please verify the address and try again."
+    risk, flags, stats, txs = analysis
+    price = btc_price_usd()
+    usd = stats["balance_btc"] * price if price else 0
+
+    if save_connection:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO connected_wallets
+            (user_id, address, label, chain, created_at, last_checked_at)
+            VALUES (?, ?, ?, 'BTC', ?, ?)
+            """,
+            (user_id, address, "BTC Wallet", datetime.now().isoformat(), datetime.now().isoformat())
+        )
+        cur.execute("UPDATE connected_wallets SET last_checked_at=? WHERE user_id=? AND address=?", (datetime.now().isoformat(), user_id, address))
+        conn.commit()
+        conn.close()
+
+    recent_count = len(txs)
+    return (
+        "👛 Wallet Intelligence\n\n"
+        f"Address: {address}\n"
+        f"Balance: {stats['balance_btc']:,.8f} BTC (~${usd:,.2f})\n"
+        f"Total public transactions: {stats['tx_count']}\n"
+        f"Recent transactions checked: {recent_count}\n"
+        f"Risk level: {risk}\n\n"
+        "Public-chain notes:\n"
+        + "\n".join([f"• {flag}" for flag in flags[:5]])
+        + "\n\nOnly public wallet address data is used. Never share seed phrases or private keys.\n"
+        "Educational only — not financial advice."
+    )
+
+
+def scam_wallet_summary(address):
+    if not is_btc_address(address):
+        return "Send a public BTC address for /walletscan. Never send private keys, seed phrases, recovery phrases, or passwords."
+    analysis = wallet_risk_analysis(address)
+    if not analysis:
+        return "Wallet scan is unavailable right now. Please verify the address and try again."
+    risk, flags, stats, txs = analysis
+    if stats["tx_count"] > 1000:
+        risk = "Medium"
+        flags.append("Extremely high transaction count can resemble service, hopping, or automated movement patterns.")
+    if any(len(tx.get("vout", [])) > 25 for tx in txs):
+        risk = "Medium"
+        flags.append("Recent transactions include many outputs, which can be normal batching or suspicious dispersal.")
+    return (
+        "🚨 Scam Risk Analysis\n\n"
+        f"Risk level: {risk}\n\n"
+        "Why wallet appears suspicious or safe:\n"
+        + "\n".join([f"• {flag}" for flag in flags[:6]])
+        + "\n\nSafety recommendations:\n"
+        "• Do not send funds because someone pressures you.\n"
+        "• Verify addresses through official channels.\n"
+        "• Never share seed phrases, private keys, recovery phrases, or wallet passwords.\n"
+        "• Treat this as risk language, not an accusation of wrongdoing.\n\n"
+        "Educational only — not financial advice."
+    )
+
+
+def chain_pressure_summary():
+    rows = latest_whale_intelligence(10)
+    if not rows:
+        scan_btc_whales()
+        rows = latest_whale_intelligence(10)
+    bullish = sum(1 for row in rows if row[5] == "Bullish")
+    bearish = sum(1 for row in rows if row[5] == "Bearish")
+    neutral = len(rows) - bullish - bearish
+    if bearish > bullish:
+        read = "📉 Large BTC flows lean toward possible sell pressure."
+        sentiment = "Bearish pressure"
+    elif bullish > bearish:
+        read = "📈 Large BTC flows lean toward possible accumulation or custody movement."
+        sentiment = "Bullish pressure"
+    else:
+        read = "Large BTC flows are mixed or quiet."
+        sentiment = "Neutral pressure"
+
+    return (
+        "🧬 Chain Intelligence\n\n"
+        f"Sentiment: {sentiment}\n"
+        f"Whale reads: {bullish} bullish, {bearish} bearish, {neutral} neutral\n"
+        f"Interpretation: {read}\n\n"
+        "Exchange flow labels require public addresses configured in EXCHANGE_BTC_ADDRESSES_JSON.\n\n"
+        "Educational only — not financial advice."
+    )
 
 
 def log_engagement(user_id, feature, query=""):
@@ -2069,16 +2714,23 @@ def daily_wisdom():
 
 def scam_stories_summary(pro=False):
     story = SCAM_STORY_LIBRARY[datetime.now().toordinal() % len(SCAM_STORY_LIBRARY)]
+    red_flags = story["red_flags"] if pro else story["red_flags"][:2]
+    avoid_steps = story["avoid"] if pro else story["avoid"][:2]
     msg = (
-        "🛡 Recent Crypto Scam Stories\n\n"
-        f"{story['title']}\n"
-        f"What happened: {story['story']}\n"
-        f"How to avoid it: {story['avoid']}"
+        "🚨 Real Crypto Scam Story\n\n"
+        f"{story['title']}\n\n"
+        f"What happened:\n{story['story']}\n\n"
+        f"How the victim was trapped:\n{story['trap']}\n\n"
+        "Red flags:\n"
+        + "\n".join([f"• {flag}" for flag in red_flags])
+        + "\n\nHow to avoid it:\n"
+        + "\n".join([f"• {step}" for step in avoid_steps])
+        + f"\n\nFinal warning:\n{story['final']}"
     )
     if pro:
-        msg += f"\n\n{story['pro']}"
+        msg += "\n\nPro safety check: pause, verify the domain, inspect wallet permissions, confirm official support channels, and assume urgency is part of the trap."
     else:
-        msg += "\n\nPro unlocks a deeper safety breakdown and checklist."
+        msg += "\n\nPro unlocks a deeper red-flag and prevention checklist."
     return msg
 
 
@@ -2118,6 +2770,7 @@ def country_news_summary(country, pro=False):
         f"Exchange access: {profile['exchanges']}",
         f"Scam risk: Watch fake exchange support, wallet-drain links, investment managers, and guaranteed-return pitches.",
         f"Remittance use: {profile['remittance']}",
+        "Blockchain activity: CoinPilotX reads public BTC network pressure, whale flow, and congestion as global context; local wallet-growth data is only shown when public data is available.",
     ]
 
     if pro:
@@ -2154,6 +2807,65 @@ def sports_edge_summary():
         "Experimental read: compare team form, injuries, schedule fatigue, line movement, and bankroll risk before making any decision.\n\n"
         "Informational only. No guaranteed bets or guaranteed wins."
     )
+
+
+def country_picker_menu():
+    rows = []
+    for i in range(0, len(COUNTRY_PICKER_COUNTRIES), 2):
+        label, country = COUNTRY_PICKER_COUNTRIES[i]
+        row = [
+            InlineKeyboardButton(label, callback_data=f"countrynews_{country}")
+        ]
+        if i + 1 < len(COUNTRY_PICKER_COUNTRIES):
+            label, country = COUNTRY_PICKER_COUNTRIES[i + 1]
+            row.append(InlineKeyboardButton(label, callback_data=f"countrynews_{country}"))
+        rows.append(row)
+    rows.append([InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")])
+    return InlineKeyboardMarkup(rows)
+
+
+def parse_money_amount(text):
+    cleaned = re.sub(r"[$,\s]", "", text or "")
+    amount = float(cleaned)
+    if amount < 0:
+        raise ValueError("Balance cannot be negative.")
+    return amount
+
+
+def get_portfolio_settings(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT manual_total_usd, manual_override_enabled FROM user_portfolio_settings WHERE user_id=?",
+        (user_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None, False
+    return row[0], bool(row[1])
+
+
+def set_manual_balance(user_id, amount):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR REPLACE INTO user_portfolio_settings (user_id, manual_total_usd, manual_override_enabled) VALUES (?, ?, 1)",
+        (user_id, amount)
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_manual_balance(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR REPLACE INTO user_portfolio_settings (user_id, manual_total_usd, manual_override_enabled) VALUES (?, NULL, 0)",
+        (user_id,)
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_klines(asset, interval="1h", limit=48):
@@ -2441,15 +3153,12 @@ def latest_whale_alerts(limit=5):
     return rows
 
 
-def portfolio_live_summary(user_id):
+def calculate_live_portfolio(user_id):
     conn = db()
     cur = conn.cursor()
     cur.execute("SELECT asset, amount FROM manual_portfolio WHERE user_id=? AND amount > 0", (user_id,))
     rows = cur.fetchall()
     conn.close()
-
-    if not rows:
-        return "💼 Real-Time Portfolio\n\nNo tracked holdings yet.\nTry: /addholding BTC 0.02"
 
     total = 0
     holdings = {}
@@ -2465,20 +3174,197 @@ def portfolio_live_summary(user_id):
         holdings[asset] = {"amount": amount, "price": price_now, "value": value}
         lines.append(f"{asset}: {amount:.6f} × ${price_now:,.2f} = ${value:,.2f}")
 
+    return total, holdings, lines, rows
+
+
+def portfolio_live_summary(user_id, save_snapshot=True):
+    total, holdings, lines, rows = calculate_live_portfolio(user_id)
+    manual_total, override_enabled = get_portfolio_settings(user_id)
+
+    if not rows and not override_enabled:
+        return "💼 Real-Time Portfolio\n\nNo tracked holdings yet.\nTry: /addholding BTC 0.02\n\nOr set a manual balance with /setbalance 1250"
+
+    if save_snapshot:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO portfolio_snapshots (user_id, total_value, holdings_json, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, total, json.dumps(holdings), datetime.now().isoformat())
+        )
+        conn.commit()
+        conn.close()
+
+    live_lines = "\n".join(lines) if lines else "No live holdings are currently tracked."
+
+    if override_enabled:
+        manual_value = manual_total or 0
+        difference = manual_value - total
+        return (
+            "💼 Real-Time Portfolio\n\n"
+            f"Manual balance: ${manual_value:,.2f}\n"
+            f"Live tracked value: ${total:,.2f}\n"
+            f"Difference: ${difference:,.2f}\n\n"
+            f"Tracked holdings:\n{live_lines}\n\n"
+            "Manual balance changes what you see, but it does not overwrite your holdings."
+        )
+
+    return (
+        "💼 Real-Time Portfolio\n\n"
+        + live_lines
+        + f"\n\nEstimated total: ${total:,.2f}\nCoinPilotX tracks only. It never holds funds."
+    )
+
+
+def latest_market_pressure():
+    news_rows = get_cached_crypto_news(limit=5)
+    bullish = sum(1 for item in news_rows if item["sentiment"] == "Bullish")
+    bearish = sum(1 for item in news_rows if item["sentiment"] == "Bearish")
+    whale_rows = latest_whale_alerts(5)
+    whale_sell = sum(1 for row in whale_rows if "SELL" in row[1])
+    whale_buy = sum(1 for row in whale_rows if "BUY" in row[1])
+    chain_rows = latest_whale_intelligence(5)
+    chain_bullish = sum(1 for row in chain_rows if row[5] == "Bullish")
+    chain_bearish = sum(1 for row in chain_rows if row[5] == "Bearish")
+
+    score = bullish - bearish + whale_buy - whale_sell + chain_bullish - chain_bearish
+    if score > 1:
+        label = "Bullish pressure"
+    elif score < -1:
+        label = "Bearish pressure"
+    else:
+        label = "Mixed pressure"
+    return label, score
+
+
+def portfolio_advice_summary(user_id):
+    total, holdings, lines, rows = calculate_live_portfolio(user_id)
+    manual_total, override_enabled = get_portfolio_settings(user_id)
+    display_value = manual_total if override_enabled and manual_total is not None else total
+    difference = (manual_total - total) if override_enabled and manual_total is not None else 0
+    pro = is_pro(user_id)
+    fear = get_fear_greed()
+    pressure_label, pressure_score = latest_market_pressure()
+
+    weighted_score = 0
+    weighted_value = 0
+    risk_points = 0
+    explanation_bits = []
+    upside_total = 0
+    downside_total = 0
+    scenario_lines = []
+    watched_symbols = []
+
+    for asset, data in holdings.items():
+        price = data["price"]
+        value = data["value"]
+        watched_symbols.append(asset)
+        signal = smart_market_signal(asset, price, pro)
+        asset_score = signal.get("score", 0)
+        weighted_score += asset_score * value
+        weighted_value += value
+        volatility_text = signal.get("volatility", "0%").replace("%", "")
+        try:
+            volatility = float(volatility_text)
+        except Exception:
+            volatility = 0
+        if volatility >= 4:
+            risk_points += 2
+        elif volatility >= 2:
+            risk_points += 1
+
+        scenario_pct = 0.03
+        upside = value * scenario_pct
+        downside = value * scenario_pct
+        upside_total += upside
+        downside_total += downside
+        scenario_lines.append(
+            f"If {asset} rises 3%, your {asset} position could increase by about ${upside:,.2f}. If it drops 3%, it could lose about ${downside:,.2f}."
+        )
+        if pro:
+            explanation_bits.append(
+                f"{asset}: {signal['action']} score {asset_score}, {signal['trend']}, volatility {signal['volatility']}"
+            )
+
+    avg_score = (weighted_score / weighted_value) if weighted_value else 0
+    if fear["value"] is not None:
+        if fear["value"] >= 75:
+            avg_score -= 0.75
+            risk_points += 1
+        elif fear["value"] <= 25:
+            avg_score += 0.5
+            risk_points += 1
+
+    avg_score += pressure_score * 0.25
+
+    if not rows and not override_enabled:
+        action = "WAIT"
+        risk_level = "Unknown"
+        reason = "No holdings or manual balance are set yet, so the safest suggestion is to set your balance or add holdings first."
+    else:
+        if avg_score >= 2.5:
+            action = "HOLD" if total > 0 else "WAIT"
+            reason = "Trend and sentiment lean constructive, but position sizing still matters."
+        elif avg_score <= -2.5:
+            action = "SELL" if total > 0 else "WAIT"
+            reason = "Market signals lean defensive and risk control is more important than chasing."
+        elif total > 0:
+            action = "HOLD"
+            reason = "Signals are mixed, so holding and waiting for confirmation is cleaner than forcing a trade."
+        else:
+            action = "WAIT"
+            reason = "There is not enough tracked exposure to justify a stronger portfolio suggestion."
+
+        if risk_points >= 3 or abs(difference) > max(total, 1) * 0.25:
+            risk_level = "High"
+        elif risk_points >= 1 or fear["label"] in ["Extreme Fear", "Extreme Greed"]:
+            risk_level = "Medium"
+        else:
+            risk_level = "Low"
+
+    if not scenario_lines:
+        scenario_lines.append("No tracked asset position is available for a gain/loss estimate yet.")
+
+    manual_text = f"${manual_total:,.2f}" if override_enabled and manual_total is not None else "Not set"
+    symbols = ", ".join(watched_symbols) if watched_symbols else "Portfolio"
+    explanation = (
+        f"Current portfolio value: ${display_value or 0:,.2f}\n"
+        f"Live tracked value: ${total:,.2f}\n"
+        f"Manual balance: {manual_text}\n"
+        f"Difference between manual and live: ${difference:,.2f}\n"
+        f"Suggested action: {action}\n\n"
+        f"Why this suggestion was made:\n{reason}\n"
+        f"Fear/Greed: {fear['label']}\n"
+        f"Recent whale/news pressure: {pressure_label}\n\n"
+        "Potential upside scenario:\n"
+        + "\n".join(scenario_lines)
+        + f"\nTotal possible upside estimate on a 3% move: ${upside_total:,.2f}\n\n"
+        "Potential downside scenario:\n"
+        f"Total possible downside estimate on a 3% move: ${downside_total:,.2f}\n\n"
+        f"Risk level: {risk_level}\n"
+        "What would make the signal change: stronger trend confirmation, lower volatility, a major whale/news shift, or a clear change in Fear/Greed.\n"
+    )
+
+    if pro and explanation_bits:
+        explanation += "\nPro detail:\n" + "\n".join([f"• {bit}" for bit in explanation_bits]) + "\n"
+    elif not pro:
+        explanation += "\nFree view: upgrade to Pro for trend, momentum, volatility, whale pressure, and exposure detail.\n"
+
+    explanation += "\nEducational only — not financial advice."
+
     conn = db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO portfolio_snapshots (user_id, total_value, holdings_json, created_at) VALUES (?, ?, ?, ?)",
-        (user_id, total, json.dumps(holdings), datetime.now().isoformat())
+        """
+        INSERT INTO portfolio_advice_history
+        (user_id, symbol, action, current_value, upside_estimate, downside_estimate, explanation, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, symbols, action, display_value or 0, upside_total, downside_total, explanation, datetime.now().isoformat())
     )
     conn.commit()
     conn.close()
 
-    return (
-        "💼 Real-Time Portfolio\n\n"
-        + "\n".join(lines)
-        + f"\n\nEstimated total: ${total:,.2f}\nCoinPilotX tracks only. It never holds funds."
-    )
+    return "🧭 Portfolio Decision Intelligence\n\n" + explanation
 
 
 def account_summary(user_id):
@@ -2618,23 +3504,102 @@ async def feargreed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def whales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    asset = normalize_asset(context.args[0] if context.args else "BTC")
-    live = get_whale_activity(asset)
-    for alert in live:
-        save_whale_alert(alert)
+    ensure_user(update.effective_user)
+    await update.message.reply_text(whale_intelligence_summary(scan_live=True), reply_markup=main_menu())
 
-    rows = latest_whale_alerts(5)
-    if not rows:
+
+async def whalebtc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(whale_intelligence_summary(scan_live=True), reply_markup=main_menu())
+
+
+async def whalealerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(whale_intelligence_summary(scan_live=False), reply_markup=main_menu())
+
+
+async def btcstats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("network"), reply_markup=main_menu())
+
+
+async def network_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("network"), reply_markup=main_menu())
+
+
+async def fees_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("fees"), reply_markup=main_menu())
+
+
+async def mempool_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("mempool"), reply_markup=main_menu())
+
+
+async def checktx_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
+        await update.message.reply_text("Example: /checktx YOUR_BTC_TXID_OR_PUBLIC_ADDRESS")
+        return
+    query = context.args[0].strip()
+    await update.message.reply_text(transaction_explorer_summary(update.effective_user.id, query), reply_markup=main_menu())
+
+
+async def connectwallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
         await update.message.reply_text(
-            "🐋 Whale Alerts\n\nNo large BTC/ETH style trades detected in the latest scan.",
-            reply_markup=main_menu()
+            "👛 Connect Wallet\n\nSend a public BTC address only:\n/connectwallet bc1...\n\nNever send seed phrases, private keys, recovery phrases, or wallet passwords."
         )
         return
+    address = context.args[0].strip()
+    await update.message.reply_text(wallet_info_summary(update.effective_user.id, address, save_connection=True), reply_markup=main_menu())
 
-    msg = "🐋 Whale Alerts\n\n"
-    for asset, side, notional, price, source, created_at in rows:
-        msg += f"{asset}: {side} near ${price:,.2f}, about ${notional:,.0f}\nSource: {source}\n\n"
-    await update.message.reply_text(msg.strip(), reply_markup=main_menu())
+
+async def walletinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
+        await update.message.reply_text("Example: /walletinfo bc1...\nOnly public BTC addresses are allowed.")
+        return
+    await update.message.reply_text(wallet_info_summary(update.effective_user.id, context.args[0].strip()), reply_markup=main_menu())
+
+
+async def walletscan_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
+        await update.message.reply_text("Example: /walletscan bc1...\nOnly public BTC addresses are allowed.")
+        return
+    await update.message.reply_text(scam_wallet_summary(context.args[0].strip()), reply_markup=main_menu())
+
+
+async def scamintel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    msg = (
+        "🚨 Scam Detection Intelligence\n\n"
+        "CoinPilotX checks public wallet and transaction behavior for risk signals like large drains, high-output dispersal, unusual transfer complexity, and possible mixer-like patterns.\n\n"
+        "Use:\n/walletscan PUBLIC_BTC_ADDRESS\n/checktx TXID\n\n"
+        "Never send seed phrases, private keys, recovery phrases, or wallet passwords.\n\n"
+        "Educational only — not financial advice."
+    )
+    await update.message.reply_text(msg, reply_markup=main_menu())
+
+
+async def chainintel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(chain_pressure_summary(), reply_markup=main_menu())
+
+
+async def marketpressure_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(chain_pressure_summary(), reply_markup=main_menu())
+
+
+async def mining_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("mining"), reply_markup=main_menu())
+
+
+async def difficulty_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("difficulty"), reply_markup=main_menu())
+
+
+async def networkhealth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(network_stats_summary("health"), reply_markup=main_menu())
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2657,6 +3622,40 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def portfolio_live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     await update.message.reply_text(portfolio_live_summary(update.effective_user.id), reply_markup=main_menu())
+
+
+async def setbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
+        await update.message.reply_text("Example: /setbalance 1250")
+        return
+
+    try:
+        amount = parse_money_amount(" ".join(context.args))
+    except Exception:
+        await update.message.reply_text("Please send a valid amount. Example: /setbalance 1250")
+        return
+
+    set_manual_balance(update.effective_user.id, amount)
+    await update.message.reply_text(
+        f"✅ Manual portfolio balance set to ${amount:,.2f}.\n\nYour holdings were not changed. Use /clearbalance to return to live holdings value.",
+        reply_markup=main_menu()
+    )
+
+
+async def clearbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    clear_manual_balance(update.effective_user.id)
+    await update.message.reply_text(
+        "✅ Manual balance cleared.\n\n/portfolio_live will now show live tracked holdings value.",
+        reply_markup=main_menu()
+    )
+
+
+async def portfolio_advice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    log_engagement(update.effective_user.id, "portfolio_advice")
+    await update.message.reply_text(portfolio_advice_summary(update.effective_user.id), reply_markup=main_menu())
 
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2686,6 +3685,10 @@ async def voice_assistant(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def whale_alert_job(context: ContextTypes.DEFAULT_TYPE):
     new_alerts = []
+    try:
+        scan_btc_whales()
+    except Exception:
+        pass
     for asset in ["BTC", "ETH"]:
         for alert in get_whale_activity(asset):
             save_whale_alert(alert)
@@ -2758,7 +3761,7 @@ def main_menu():
             InlineKeyboardButton("🛡 Scam Stories", callback_data="menu_scam_stories"),
         ],
         [
-            InlineKeyboardButton("🇭🇹 Country News", callback_data="menu_country_news"),
+            InlineKeyboardButton("🌍 Country News", callback_data="menu_country_news"),
             InlineKeyboardButton("🎲 Sports Edge", callback_data="menu_sports_edge"),
         ],
         [
@@ -2766,9 +3769,18 @@ def main_menu():
             InlineKeyboardButton("😬 Fear/Greed", callback_data="menu_feargreed"),
         ],
         [
-            InlineKeyboardButton("💼 Live Portfolio", callback_data="menu_portfolio_live"),
-            InlineKeyboardButton("👤 Account", callback_data="menu_account"),
+            InlineKeyboardButton("🧬 Chain Intel", callback_data="menu_chain_intel"),
+            InlineKeyboardButton("📡 BTC Network", callback_data="menu_btc_network"),
         ],
+        [
+            InlineKeyboardButton("🔎 TX Explorer", callback_data="menu_tx_explorer"),
+            InlineKeyboardButton("👛 Wallet Intel", callback_data="menu_wallet_intel"),
+        ],
+        [
+            InlineKeyboardButton("💼 Live Portfolio", callback_data="menu_portfolio_live"),
+            InlineKeyboardButton("🧭 Portfolio Advice", callback_data="menu_portfolio_advice"),
+        ],
+        [InlineKeyboardButton("👤 Account", callback_data="menu_account")],
         [
             InlineKeyboardButton("🛡️ Scam Shield", callback_data="pro_scanner"),
             InlineKeyboardButton("💳 Upgrade Pro", callback_data="upgrade_pro"),
@@ -2905,8 +3917,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "menu_country_news":
-        log_engagement(user_id, "country_news", "Haiti")
-        await query.message.reply_text(country_news_summary("Haiti", is_pro(user_id)), reply_markup=main_menu())
+        await query.message.reply_text("🌍 Choose a country for crypto intelligence:", reply_markup=country_picker_menu())
+        return
+
+    if data.startswith("countrynews_"):
+        country = data.replace("countrynews_", "", 1)
+        log_engagement(user_id, "country_news", country)
+        await query.message.reply_text(country_news_summary(country, is_pro(user_id)), reply_markup=main_menu())
         return
 
     if data == "menu_sports_edge":
@@ -2928,17 +3945,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "menu_whales":
-        live = get_whale_activity("BTC") + get_whale_activity("ETH")
-        for alert in live:
-            save_whale_alert(alert)
-        rows = latest_whale_alerts(5)
-        msg = "🐋 Whale Alerts\n\n"
-        if rows:
-            for asset, side, notional, price, source, created_at in rows:
-                msg += f"{asset}: {side} about ${notional:,.0f} near ${price:,.2f}\n"
-        else:
-            msg += "No large trades found in the latest scan."
-        await query.message.reply_text(msg, reply_markup=main_menu())
+        await query.message.reply_text(whale_intelligence_summary(scan_live=True), reply_markup=main_menu())
         return
 
     if data == "menu_feargreed":
@@ -2950,8 +3957,35 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "menu_chain_intel":
+        await query.message.reply_text(chain_pressure_summary(), reply_markup=main_menu())
+        return
+
+    if data == "menu_btc_network":
+        await query.message.reply_text(network_stats_summary("network"), reply_markup=main_menu())
+        return
+
+    if data == "menu_tx_explorer":
+        await query.message.reply_text(
+            "🔎 TX Explorer\n\nSend a public BTC transaction hash or public BTC address:\n/checktx TXID_OR_ADDRESS\n\nNever send private keys, seed phrases, recovery phrases, or wallet passwords.",
+            reply_markup=main_menu()
+        )
+        return
+
+    if data == "menu_wallet_intel":
+        await query.message.reply_text(
+            "👛 Wallet Intelligence\n\nConnect or inspect a public BTC address only:\n/connectwallet bc1...\n/walletinfo bc1...\n/walletscan bc1...\n\nNever send seed phrases, private keys, recovery phrases, or wallet passwords.",
+            reply_markup=main_menu()
+        )
+        return
+
     if data == "menu_portfolio_live":
         await query.message.reply_text(portfolio_live_summary(user_id), reply_markup=main_menu())
+        return
+
+    if data == "menu_portfolio_advice":
+        log_engagement(user_id, "portfolio_advice")
+        await query.message.reply_text(portfolio_advice_summary(user_id), reply_markup=main_menu())
         return
 
     if data == "menu_account":
@@ -3104,8 +4138,27 @@ def main():
     app.add_handler(CommandHandler("chart", chart_command))
     app.add_handler(CommandHandler("feargreed", feargreed_command))
     app.add_handler(CommandHandler("whales", whales_command))
+    app.add_handler(CommandHandler("whalebtc", whalebtc_command))
+    app.add_handler(CommandHandler("whalealerts", whalealerts_command))
+    app.add_handler(CommandHandler("btcstats", btcstats_command))
+    app.add_handler(CommandHandler("network", network_command))
+    app.add_handler(CommandHandler("fees", fees_command))
+    app.add_handler(CommandHandler("mempool", mempool_command))
+    app.add_handler(CommandHandler("checktx", checktx_command))
+    app.add_handler(CommandHandler("connectwallet", connectwallet_command))
+    app.add_handler(CommandHandler("walletinfo", walletinfo_command))
+    app.add_handler(CommandHandler("walletscan", walletscan_command))
+    app.add_handler(CommandHandler("scamintel", scamintel_command))
+    app.add_handler(CommandHandler("chainintel", chainintel_command))
+    app.add_handler(CommandHandler("marketpressure", marketpressure_command))
+    app.add_handler(CommandHandler("mining", mining_command))
+    app.add_handler(CommandHandler("difficulty", difficulty_command))
+    app.add_handler(CommandHandler("networkhealth", networkhealth_command))
     app.add_handler(CommandHandler("signals", signals_command))
     app.add_handler(CommandHandler("portfolio_live", portfolio_live_command))
+    app.add_handler(CommandHandler("setbalance", setbalance_command))
+    app.add_handler(CommandHandler("clearbalance", clearbalance_command))
+    app.add_handler(CommandHandler("portfolio_advice", portfolio_advice_command))
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("account", account_command))
     app.add_handler(CommandHandler("admin", admin_command))
