@@ -362,14 +362,20 @@ def pro_upgrade_message(user_id):
         "⭐ CoinPilotX Pro\n\n"
         f"Card price: {PRO_PRICE_MONTHLY}\n"
         f"BTC price: {BTC_PRO_PRICE}\n\n"
-        "What you unlock:\n"
-        "• Smarter BUY / SELL / WAIT signals\n"
-        "• Portfolio-aware alerts\n"
-        "• Advanced scam protection\n"
-        "• Better timing insights\n"
+        "Free includes:\n"
+        "• Basic BTC price\n"
+        "• Basic alerts\n"
+        "• Basic news summaries\n"
+        "• Short scam warning\n\n"
+        "Pro unlocks:\n"
+        "• Deeper AI analysis\n"
         "• Whale intelligence\n"
-        "• Portfolio decision support\n"
-        "• Scam story breakdowns\n\n"
+        "• Portfolio decision engine\n"
+        "• Country crypto intelligence\n"
+        "• Advanced scam breakdowns\n"
+        "• Wallet/transaction risk insights\n"
+        "• Market pressure signals\n"
+        "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
         "Choose a payment method below."
     )
 
@@ -798,14 +804,20 @@ def pro_upgrade_message(user_id):
         "⭐ CoinPilotX Pro\n\n"
         f"Card price: {PRO_PRICE_MONTHLY}\n"
         f"BTC price: {BTC_PRO_PRICE}\n\n"
-        "What you unlock:\n"
-        "• Smarter BUY / SELL / WAIT signals\n"
-        "• Portfolio-aware alerts\n"
-        "• Advanced scam protection\n"
-        "• Better timing insights\n"
+        "Free includes:\n"
+        "• Basic BTC price\n"
+        "• Basic alerts\n"
+        "• Basic news summaries\n"
+        "• Short scam warning\n\n"
+        "Pro unlocks:\n"
+        "• Deeper AI analysis\n"
         "• Whale intelligence\n"
-        "• Portfolio decision support\n"
-        "• Scam story breakdowns\n\n"
+        "• Portfolio decision engine\n"
+        "• Country crypto intelligence\n"
+        "• Advanced scam breakdowns\n"
+        "• Wallet/transaction risk insights\n"
+        "• Market pressure signals\n"
+        "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
         "Choose a payment method below."
     )
 
@@ -1144,7 +1156,8 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "help users track a manual crypto portfolio, and scan suspicious crypto messages or links "
         "before users trust them.\n\n"
         "CoinPilotX does not hold user funds, create exchange accounts, or guarantee profits. "
-        "All information is educational only and should not be treated as financial advice.",
+        "All information is educational only and should not be treated as financial advice.\n\n"
+        "Powered by OpenAI + CoinPilotX crypto intelligence.",
         reply_markup=main_menu()
     )
 
@@ -1501,7 +1514,8 @@ async def hourly_market_update(context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
 
-    text = update.message.text.strip().lower()
+    original_text = update.message.text.strip()
+    text = original_text.lower()
 
     # =========================
     # AUTO SCAM DETECTION
@@ -1518,18 +1532,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # NORMAL CONVERSATION
     # =========================
     if is_conversation_message(text):
-        await conversational_reply(update, context)
+        await update.message.reply_text(openai_chat_completion(update.effective_user.id, original_text), reply_markup=main_menu())
         return
 
-    # =========================
-    # DEFAULT FALLBACK
-    # =========================
-    context.user_data["pending_scan"] = text
-
-    await update.message.reply_text(
-        "Do you want me to scan this message for crypto scam risk?",
-        reply_markup=scan_confirm_menu()
-    )
+    await update.message.reply_text(openai_chat_completion(update.effective_user.id, original_text), reply_markup=main_menu())
 
 async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
@@ -1922,6 +1928,17 @@ def init_db():
         UNIQUE(user_id, address)
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        message TEXT,
+        response TEXT,
+        is_pro INTEGER,
+        created_at TEXT
+    )
+    """)
 
     conn.commit()
     conn.close()
@@ -1987,6 +2004,123 @@ def safe_get_json(url, timeout=8, params=None):
     except Exception as exc:
         logging.info("API request failed: %s", exc)
         return None
+
+
+def pro_suffix(user_id):
+    if is_pro(user_id):
+        return "Pro"
+    return "Free"
+
+
+def append_plan_footer(user_id, message):
+    if not message:
+        return message
+    footer = (
+        "⭐ Pro active — you’re receiving deeper CoinPilotX intelligence."
+        if is_pro(user_id)
+        else "⭐ Want deeper AI analysis, whale intelligence, portfolio decision support, and scam protection? Upgrade to CoinPilotX Pro."
+    )
+    if footer in message:
+        return message
+    return f"{message.rstrip()}\n\n{footer}"
+
+
+def append_upgrade_cta(user_id, text):
+    return append_plan_footer(user_id, text)
+
+
+def maybe_limit_for_free(user_id, text, max_chars=900):
+    if is_pro(user_id) or len(text) <= max_chars:
+        return text
+    trimmed = text[:max_chars].rsplit("\n", 1)[0].strip()
+    if not trimmed:
+        trimmed = text[:max_chars].strip()
+    return trimmed + "\n\nFree view: shortened summary."
+
+
+def format_free_vs_pro_response(user_id, free_text, pro_text=None):
+    text = pro_text if is_pro(user_id) and pro_text else free_text
+    return append_plan_footer(user_id, maybe_limit_for_free(user_id, text))
+
+
+def openai_chat_completion(user_id, question):
+    api_key = os.getenv("OPENAI_API_KEY")
+    pro = is_pro(user_id)
+    if not api_key:
+        fallback = (
+            "💬 AI Crypto Assistant\n\n"
+            "OpenAI chat is not connected yet. Add OPENAI_API_KEY in Railway Variables to enable full AI answers.\n\n"
+            "I can still help with built-in CoinPilotX commands like /analysis BTC, /portfolio_advice, /walletscan, and /scamstories.\n\n"
+            "Educational only — not financial advice."
+        )
+        return append_plan_footer(user_id, fallback)
+
+    system_prompt = (
+        "You are CoinPilotX, a premium crypto intelligence assistant powered by OpenAI + CoinPilotX crypto intelligence. "
+        "Act as a cautious crypto analyst, scam protection advisor, blockchain educator, portfolio coach, and market explainer. "
+        "Never guarantee profits, never claim certainty, never ask for seed phrases/private keys/recovery phrases/wallet passwords, "
+        "and do not impersonate a licensed financial advisor. Keep answers concise and safety-focused. "
+    )
+    if pro:
+        system_prompt += (
+            "The user is Pro. Use structured sections: Market Context, Risk Factors, Opportunity Factors, "
+            "Scam/Safety Watch, Suggested Next Step, What Could Change This View. Include confidence and risk language when relevant."
+        )
+        max_tokens = 850
+    else:
+        system_prompt += (
+            "The user is Free. Give a short, simple answer with limited market context. Mention Pro only briefly for deeper analysis."
+        )
+        max_tokens = 260
+
+    payload = {
+        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.35,
+    }
+
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=25,
+        )
+        response.raise_for_status()
+        answer = response.json()["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        logging.info("OpenAI chat failed: %s", exc)
+        answer = (
+            "💬 AI Crypto Assistant\n\n"
+            "The AI assistant is temporarily unavailable. Try again in a moment, or use /analysis BTC, /walletscan, or /portfolio_advice.\n\n"
+            "Educational only — not financial advice."
+        )
+
+    if "Educational only" not in answer and any(word in question.lower() for word in ["buy", "sell", "market", "price", "portfolio", "btc", "eth", "crypto", "invest"]):
+        answer += "\n\nEducational only — not financial advice."
+
+    answer += "\n\nPowered by OpenAI + CoinPilotX crypto intelligence."
+
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO ai_chat_history (user_id, role, message, response, is_pro, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, "user", question, answer, 1 if pro else 0, datetime.now().isoformat())
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("AI chat history save failed: %s", exc)
+
+    return append_plan_footer(user_id, answer)
 
 
 def safe_get_text(url, timeout=8):
@@ -3478,7 +3612,20 @@ def exchange_recommendation(goal, risk_profile="balanced"):
 async def analysis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     asset = normalize_asset(context.args[0] if context.args else "BTC")
-    await update.message.reply_text(ai_crypto_analysis(update.effective_user.id, asset), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, ai_crypto_analysis(user_id, asset))), reply_markup=main_menu())
+
+
+async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    question = " ".join(context.args).strip()
+    if not question:
+        await update.message.reply_text(
+            append_plan_footer(update.effective_user.id, "💬 AI Crypto Assistant\n\nAsk me anything with /ask your question.\nExample: /ask Should I be worried about a wallet asking for approval?"),
+            reply_markup=main_menu()
+        )
+        return
+    await update.message.reply_text(openai_chat_completion(update.effective_user.id, question), reply_markup=main_menu())
 
 
 async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3495,43 +3642,52 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def feargreed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    user_id = update.effective_user.id
     fear = get_fear_greed()
     value = "Unavailable" if fear["value"] is None else str(fear["value"])
     await update.message.reply_text(
-        f"😬 Market Fear/Greed AI\n\nScore: {value}\nMood: {fear['label']}\n\n{fear['advice']}",
+        append_plan_footer(user_id, f"😬 Market Fear/Greed AI\n\nScore: {value}\nMood: {fear['label']}\n\n{fear['advice']}\n\nEducational only — not financial advice."),
         reply_markup=main_menu()
     )
 
 
 async def whales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    await update.message.reply_text(whale_intelligence_summary(scan_live=True), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, whale_intelligence_summary(scan_live=True))), reply_markup=main_menu())
 
 
 async def whalebtc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    await update.message.reply_text(whale_intelligence_summary(scan_live=True), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, whale_intelligence_summary(scan_live=True))), reply_markup=main_menu())
 
 
 async def whalealerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    await update.message.reply_text(whale_intelligence_summary(scan_live=False), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, whale_intelligence_summary(scan_live=False))), reply_markup=main_menu())
 
 
 async def btcstats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("network"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("network")), reply_markup=main_menu())
 
 
 async def network_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("network"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("network")), reply_markup=main_menu())
 
 
 async def fees_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("fees"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("fees")), reply_markup=main_menu())
 
 
 async def mempool_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("mempool"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("mempool")), reply_markup=main_menu())
 
 
 async def checktx_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3540,7 +3696,8 @@ async def checktx_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Example: /checktx YOUR_BTC_TXID_OR_PUBLIC_ADDRESS")
         return
     query = context.args[0].strip()
-    await update.message.reply_text(transaction_explorer_summary(update.effective_user.id, query), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, transaction_explorer_summary(user_id, query))), reply_markup=main_menu())
 
 
 async def connectwallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3567,7 +3724,8 @@ async def walletscan_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not context.args:
         await update.message.reply_text("Example: /walletscan bc1...\nOnly public BTC addresses are allowed.")
         return
-    await update.message.reply_text(scam_wallet_summary(context.args[0].strip()), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, scam_wallet_summary(context.args[0].strip()))), reply_markup=main_menu())
 
 
 async def scamintel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3579,27 +3737,34 @@ async def scamintel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Never send seed phrases, private keys, recovery phrases, or wallet passwords.\n\n"
         "Educational only — not financial advice."
     )
-    await update.message.reply_text(msg, reply_markup=main_menu())
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, msg), reply_markup=main_menu())
 
 
 async def chainintel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(chain_pressure_summary(), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, chain_pressure_summary())), reply_markup=main_menu())
 
 
 async def marketpressure_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(chain_pressure_summary(), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, chain_pressure_summary())), reply_markup=main_menu())
 
 
 async def mining_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("mining"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("mining")), reply_markup=main_menu())
 
 
 async def difficulty_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("difficulty"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("difficulty")), reply_markup=main_menu())
 
 
 async def networkhealth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(network_stats_summary("health"), reply_markup=main_menu())
+    ensure_user(update.effective_user)
+    await update.message.reply_text(append_plan_footer(update.effective_user.id, network_stats_summary("health")), reply_markup=main_menu())
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3616,12 +3781,13 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         signal = smart_market_signal(asset, price_now, is_pro(user_id))
         msg += f"{asset}: {signal['action']} ({signal['confidence']}) at ${price_now:,.2f}\n{signal['reason']}\n\n"
     msg += "Educational only. Not financial advice."
-    await update.message.reply_text(msg, reply_markup=main_menu())
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, msg)), reply_markup=main_menu())
 
 
 async def portfolio_live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    await update.message.reply_text(portfolio_live_summary(update.effective_user.id), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, portfolio_live_summary(user_id))), reply_markup=main_menu())
 
 
 async def setbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3655,7 +3821,8 @@ async def clearbalance_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def portfolio_advice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     log_engagement(update.effective_user.id, "portfolio_advice")
-    await update.message.reply_text(portfolio_advice_summary(update.effective_user.id), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, portfolio_advice_summary(user_id), 1200)), reply_markup=main_menu())
 
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3752,6 +3919,7 @@ def main_menu():
             InlineKeyboardButton("🧠 AI Analysis", callback_data="menu_analysis_btc"),
             InlineKeyboardButton("🤖 Auto Signals", callback_data="menu_signals"),
         ],
+        [InlineKeyboardButton("💬 AI Crypto Assistant", callback_data="menu_ai_assistant")],
         [
             InlineKeyboardButton("📰 Crypto News", callback_data="menu_crypto_news"),
             InlineKeyboardButton("🌍 Market Events", callback_data="menu_market_events"),
@@ -3817,15 +3985,17 @@ async def send_exchange_message(message, goal):
 async def cryptonews_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     log_engagement(update.effective_user.id, "crypto_news")
-    await update.message.reply_text(crypto_news_summary(update.effective_user.id), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, crypto_news_summary(user_id))), reply_markup=main_menu())
 
 
 async def marketevents_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     event_text = " ".join(context.args).strip()
     log_engagement(update.effective_user.id, "market_events", event_text)
+    user_id = update.effective_user.id
     await update.message.reply_text(
-        market_events_summary(event_text, is_pro(update.effective_user.id)),
+        append_plan_footer(user_id, maybe_limit_for_free(user_id, market_events_summary(event_text, is_pro(user_id)))),
         reply_markup=main_menu()
     )
 
@@ -3833,21 +4003,24 @@ async def marketevents_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def wisdom_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     log_engagement(update.effective_user.id, "wisdom")
-    await update.message.reply_text(daily_wisdom(), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, daily_wisdom()), reply_markup=main_menu())
 
 
 async def scamstories_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     log_engagement(update.effective_user.id, "scam_stories")
-    await update.message.reply_text(scam_stories_summary(is_pro(update.effective_user.id)), reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, scam_stories_summary(is_pro(user_id)))), reply_markup=main_menu())
 
 
 async def countrynews_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     country = " ".join(context.args).strip() if context.args else "Haiti"
     log_engagement(update.effective_user.id, "country_news", country)
+    user_id = update.effective_user.id
     await update.message.reply_text(
-        country_news_summary(country, is_pro(update.effective_user.id)),
+        append_plan_footer(user_id, maybe_limit_for_free(user_id, country_news_summary(country, is_pro(user_id)))),
         reply_markup=main_menu()
     )
 
@@ -3890,30 +4063,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "menu_analysis_btc":
-        await query.message.reply_text(ai_crypto_analysis(user_id, "BTC"), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, ai_crypto_analysis(user_id, "BTC"))), reply_markup=main_menu())
+        return
+
+    if data == "menu_ai_assistant":
+        await query.message.reply_text(
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nPowered by OpenAI + CoinPilotX crypto intelligence."),
+            reply_markup=main_menu()
+        )
         return
 
     if data == "menu_crypto_news":
         log_engagement(user_id, "crypto_news")
-        await query.message.reply_text(crypto_news_summary(user_id), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, crypto_news_summary(user_id))), reply_markup=main_menu())
         return
 
     if data == "menu_market_events":
         log_engagement(user_id, "market_events")
         await query.message.reply_text(
-            market_events_summary("", is_pro(user_id)),
+            append_plan_footer(user_id, maybe_limit_for_free(user_id, market_events_summary("", is_pro(user_id)))),
             reply_markup=main_menu()
         )
         return
 
     if data == "menu_wisdom":
         log_engagement(user_id, "wisdom")
-        await query.message.reply_text(daily_wisdom(), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, daily_wisdom()), reply_markup=main_menu())
         return
 
     if data == "menu_scam_stories":
         log_engagement(user_id, "scam_stories")
-        await query.message.reply_text(scam_stories_summary(is_pro(user_id)), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, scam_stories_summary(is_pro(user_id)))), reply_markup=main_menu())
         return
 
     if data == "menu_country_news":
@@ -3923,7 +4103,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("countrynews_"):
         country = data.replace("countrynews_", "", 1)
         log_engagement(user_id, "country_news", country)
-        await query.message.reply_text(country_news_summary(country, is_pro(user_id)), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, country_news_summary(country, is_pro(user_id)))), reply_markup=main_menu())
         return
 
     if data == "menu_sports_edge":
@@ -3941,24 +4121,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_price_history(asset, price_now)
             signal = smart_market_signal(asset, price_now, is_pro(user_id))
             msg += f"{asset}: {signal['action']} ({signal['confidence']}) at ${price_now:,.2f}\n{signal['reason']}\n\n"
-        await query.message.reply_text(msg + "Educational only. Not financial advice.", reply_markup=main_menu())
+        msg += "Educational only. Not financial advice."
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, msg)), reply_markup=main_menu())
         return
 
     if data == "menu_whales":
-        await query.message.reply_text(whale_intelligence_summary(scan_live=True), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, whale_intelligence_summary(scan_live=True))), reply_markup=main_menu())
         return
 
     if data == "menu_feargreed":
         fear = get_fear_greed()
         value = "Unavailable" if fear["value"] is None else str(fear["value"])
         await query.message.reply_text(
-            f"😬 Market Fear/Greed AI\n\nScore: {value}\nMood: {fear['label']}\n\n{fear['advice']}",
+            append_plan_footer(user_id, f"😬 Market Fear/Greed AI\n\nScore: {value}\nMood: {fear['label']}\n\n{fear['advice']}\n\nEducational only — not financial advice."),
             reply_markup=main_menu()
         )
         return
 
     if data == "menu_chain_intel":
-        await query.message.reply_text(chain_pressure_summary(), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, chain_pressure_summary())), reply_markup=main_menu())
         return
 
     if data == "menu_btc_network":
@@ -3980,12 +4161,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "menu_portfolio_live":
-        await query.message.reply_text(portfolio_live_summary(user_id), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, portfolio_live_summary(user_id))), reply_markup=main_menu())
         return
 
     if data == "menu_portfolio_advice":
         log_engagement(user_id, "portfolio_advice")
-        await query.message.reply_text(portfolio_advice_summary(user_id), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, portfolio_advice_summary(user_id), 1200)), reply_markup=main_menu())
         return
 
     if data == "menu_account":
@@ -3998,11 +4179,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "pro_signals":
-        await query.message.reply_text(ai_crypto_analysis(user_id, "BTC"), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, ai_crypto_analysis(user_id, "BTC"))), reply_markup=main_menu())
         return
 
     if data == "pro_portfolio":
-        await query.message.reply_text(portfolio_live_summary(user_id), reply_markup=main_menu())
+        await query.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, portfolio_live_summary(user_id))), reply_markup=main_menu())
         return
 
     if data == "pro_scanner":
@@ -4025,14 +4206,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_talk":
         await query.message.reply_text(
-            "💬 Chat Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.",
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nPowered by OpenAI + CoinPilotX crypto intelligence."),
             reply_markup=main_menu()
         )
         return
 
     if data == "menu_about":
         await query.message.reply_text(
-            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nEducational only. Not financial advice.",
+            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nPowered by OpenAI + CoinPilotX crypto intelligence.\n\nEducational only. Not financial advice.",
             reply_markup=main_menu()
         )
         return
@@ -4135,6 +4316,7 @@ def main():
     app.add_handler(CommandHandler("signal", signal))
     app.add_handler(CommandHandler("verify_payment", verify_payment))
     app.add_handler(CommandHandler("analysis", analysis_command))
+    app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("chart", chart_command))
     app.add_handler(CommandHandler("feargreed", feargreed_command))
     app.add_handler(CommandHandler("whales", whales_command))
