@@ -507,8 +507,50 @@
     );
   }
 
-  function renderSportsDetail(data) {
+  function getSportsDetailPanel() {
     var detail = document.querySelector("[data-sports-detail]");
+    if (detail) {
+      return detail;
+    }
+
+    detail = document.createElement("div");
+    detail.className = "sports-detail";
+    detail.setAttribute("data-sports-detail", "");
+    detail.hidden = true;
+    detail.innerHTML = '<div class="market-loading">Select a game to review position intelligence.</div>';
+
+    var board = document.querySelector(".sports-board");
+    var error = document.querySelector("[data-sports-error]");
+    if (board && error) {
+      board.insertBefore(detail, error);
+    }
+    return detail;
+  }
+
+  function findSportsCardById(gameId) {
+    var cards = document.querySelectorAll("[data-game-id]");
+    for (var index = 0; index < cards.length; index += 1) {
+      if (cards[index].getAttribute("data-game-id") === gameId) {
+        return cards[index];
+      }
+    }
+    return null;
+  }
+
+  function positionSportsDetailPanel(detail, gameId) {
+    var card = findSportsCardById(gameId);
+    var list = document.querySelector("[data-sports-list]");
+    if (card && card.parentNode) {
+      card.parentNode.insertBefore(detail, card.nextSibling);
+      return;
+    }
+    if (list) {
+      list.appendChild(detail);
+    }
+  }
+
+  function renderSportsDetail(data) {
+    var detail = getSportsDetailPanel();
     if (!detail) {
       return;
     }
@@ -523,6 +565,7 @@
 
     detail.hidden = false;
     detail.setAttribute("data-sport-detail", game.league || "live");
+    positionSportsDetailPanel(detail, game.id);
     detail.innerHTML =
       '<div class="sports-detail-grid">' +
         '<div>' +
