@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-labelledby="title desc">
+  <title id="title">CoinPilotX portfolio engine visual</title>
+  <desc id="desc">Original abstract portfolio decision support dashboard.</desc>
+  <defs><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#36e58f"/><stop offset="1" stop-color="#ffd166"/></linearGradient></defs>
+  <rect width="640" height="420" rx="34" fill="#08111f"/>
+  <rect x="72" y="68" width="496" height="284" rx="28" fill="#0d1627" stroke="#6edff6"/>
+  <path d="M128 276V168m80 108V132m80 144v-78m80 78V110m80 166v-48" stroke="url(#p)" stroke-width="22" stroke-linecap="round"/>
+  <rect x="118" y="96" width="166" height="42" rx="14" fill="#111d32" stroke="#36e58f"/>
+  <text x="140" y="124" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="18" font-weight="700">HOLD • Risk 42</text>
+  <path d="M386 104h104m-104 38h136m-136 38h84" stroke="#9daac0" stroke-width="12" stroke-linecap="round"/>
+  <text x="180" y="326" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="22" font-weight="700">Scenario Engine</text>
+</svg>

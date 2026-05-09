@@ -363,6 +363,7 @@ def pro_upgrade_message(user_id):
         "⭐ CoinPilotX Pro\n\n"
         f"Card price: {PRO_PRICE_MONTHLY}\n"
         f"BTC price: {BTC_PRO_PRICE}\n\n"
+        "Free is useful for basic awareness. Pro is built for deeper decision support.\n\n"
         "Free includes:\n"
         "• Basic BTC price\n"
         "• Basic alerts\n"
@@ -377,7 +378,9 @@ def pro_upgrade_message(user_id):
         "• Wallet/transaction risk insights\n"
         "• Market pressure signals\n"
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
-        "Choose a payment method below."
+        "No hidden fees from CoinPilotX. Card payment opens only through the secure button below.\n"
+        "CoinPilotX never holds funds.\n\n"
+        "Choose a payment method below when you are ready."
     )
 
 def upgrade_payment_menu(user_id):
@@ -823,6 +826,7 @@ def pro_upgrade_message(user_id):
         "⭐ CoinPilotX Pro\n\n"
         f"Card price: {PRO_PRICE_MONTHLY}\n"
         f"BTC price: {BTC_PRO_PRICE}\n\n"
+        "Free is useful for basic awareness. Pro is built for deeper decision support.\n\n"
         "Free includes:\n"
         "• Basic BTC price\n"
         "• Basic alerts\n"
@@ -837,7 +841,9 @@ def pro_upgrade_message(user_id):
         "• Wallet/transaction risk insights\n"
         "• Market pressure signals\n"
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
-        "Choose a payment method below."
+        "No hidden fees from CoinPilotX. Card payment opens only through the secure button below.\n"
+        "CoinPilotX never holds funds.\n\n"
+        "Choose a payment method below when you are ready."
     )
 
 
@@ -2032,20 +2038,28 @@ def pro_suffix(user_id):
 
 
 def append_plan_footer(user_id, message):
+    return append_ethical_upgrade_footer(user_id, message)
+
+
+def append_ethical_upgrade_footer(user_id, message, context_type=None):
     if not message:
+        return message
+    tiny_contexts = {"system", "cancel", "example", "menu"}
+    if context_type in tiny_contexts:
         return message
     footer = (
         "⭐ Pro active — you’re receiving deeper CoinPilotX intelligence."
         if is_pro(user_id)
-        else "⭐ Want deeper AI analysis, whale intelligence, portfolio decision support, and scam protection? Upgrade to CoinPilotX Pro."
+        else "⭐ Want deeper analysis, whale intelligence, portfolio decision support, and advanced scam protection? Upgrade to CoinPilotX Pro."
     )
     if footer in message:
         return message
+    # Ethical conversion: transparent, user-controlled CTA for substantial intelligence responses.
     return f"{message.rstrip()}\n\n{footer}"
 
 
 def append_upgrade_cta(user_id, text):
-    return append_plan_footer(user_id, text)
+    return append_ethical_upgrade_footer(user_id, text)
 
 
 def maybe_limit_for_free(user_id, text, max_chars=900):
@@ -2078,7 +2092,9 @@ def openai_chat_completion(user_id, question):
         "You are CoinPilotX, a premium crypto intelligence assistant powered by OpenAI + CoinPilotX crypto intelligence. "
         "Act as a cautious crypto analyst, scam protection advisor, blockchain educator, portfolio coach, and market explainer. "
         "Never guarantee profits, never claim certainty, never ask for seed phrases/private keys/recovery phrases/wallet passwords, "
-        "and do not impersonate a licensed financial advisor. Keep answers concise and safety-focused. "
+        "and do not impersonate a licensed financial advisor. If a user mentions suspicious links, seed phrases, private keys, "
+        "wallet recovery, wallet passwords, approvals, or transaction signing, prioritize safety and clearly say CoinPilotX will never "
+        "ask for your seed phrase, private key, or wallet password. Keep answers concise and safety-focused. "
     )
     if pro:
         system_prompt += (
@@ -2921,7 +2937,7 @@ def country_news_summary(country, pro=False):
         f"Adoption: {profile['adoption']}",
         f"Regulation: {profile['regulation']}",
         f"Exchange access: {profile['exchanges']}",
-        f"Scam risk: Watch fake exchange support, wallet-drain links, investment managers, and guaranteed-return pitches.",
+        f"Scam risk: Watch fake exchange support, wallet-drain links, investment managers, and too-good-to-be-true return pitches.",
         f"Remittance use: {profile['remittance']}",
         "Blockchain activity: CoinPilotX reads public BTC network pressure, whale flow, and congestion as global context; local wallet-growth data is only shown when public data is available.",
     ]
@@ -2953,12 +2969,12 @@ def sports_edge_summary():
         return (
             "🎲 Sports Edge\n\n"
             "This section is experimental and disabled by default for compliance safety.\n\n"
-            "When enabled, it should stay informational only: no guaranteed bets, no promises, and no financial claims."
+            "When enabled, it should stay informational only: no promised bets, no outcome claims, and no financial claims."
         )
     return (
         "🎲 Sports Edge\n\n"
         "Experimental read: compare team form, injuries, schedule fatigue, line movement, and bankroll risk before making any decision.\n\n"
-        "Informational only. No guaranteed bets or guaranteed wins."
+        "Informational only. No promised bets or promised wins."
     )
 
 
@@ -4239,7 +4255,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_deposit":
         await query.message.reply_text(
-            "💰 Add Money Safely\n\nCoinPilotX does not hold money or accept deposits.\nUse official exchanges directly and never send funds to someone promising guaranteed returns.",
+            "💰 Add Money Safely\n\nCoinPilotX does not hold money or accept deposits.\nUse official exchanges directly and never send funds to someone promising certain returns.",
             reply_markup=main_menu()
         )
         return

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-labelledby="title desc">
+  <title id="title">CoinPilotX blockchain network visual</title>
+  <desc id="desc">Original abstract network visualization for blockchain intelligence.</desc>
+  <defs><linearGradient id="n" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6edff6"/><stop offset="1" stop-color="#36e58f"/></linearGradient></defs>
+  <rect width="640" height="420" rx="34" fill="#08111f"/>
+  <g stroke="url(#n)" stroke-width="5" opacity=".65">
+    <path d="M154 146 276 92l126 64 98-48M154 146l44 128 132 54 124-98M402 156l52 74M276 92l54 236"/>
+  </g>
+  <g fill="#0d1627" stroke="url(#n)" stroke-width="6">
+    <circle cx="154" cy="146" r="32"/><circle cx="276" cy="92" r="32"/><circle cx="402" cy="156" r="32"/><circle cx="500" cy="108" r="32"/><circle cx="198" cy="274" r="32"/><circle cx="330" cy="328" r="32"/><circle cx="454" cy="230" r="32"/>
+  </g>
+  <text x="188" y="374" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="24" font-weight="700">Public Chain Intelligence</text>
+</svg>
