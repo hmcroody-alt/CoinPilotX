@@ -9,7 +9,10 @@
 
     if (window.gtag) {
       window.gtag("event", eventName, payload);
-      return;
+    }
+
+    if (window.posthog && window.posthog.capture) {
+      window.posthog.capture(eventName, payload);
     }
 
     if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
@@ -76,6 +79,134 @@
         toggle.setAttribute("aria-label", "Open navigation menu");
       });
     });
+  }
+
+  function renderPlatformStatus(data) {
+    var panel = document.querySelector("[data-platform-status]");
+    if (!panel) {
+      return;
+    }
+    var rows = [
+      ["Market data", data.market_data + " · " + data.market_source],
+      ["Sports Edge", data.sports_edge + " · " + data.sports_source],
+      ["Odds", data.odds_status || "unavailable"],
+      ["AI Assistant", data.ai_assistant],
+      ["Wallet Intel", data.wallet_intelligence],
+      ["Scam Shield", data.scam_shield]
+    ];
+    panel.innerHTML = rows.map(function (row) {
+      return '<div class="status-item"><strong>' + escapeHtml(row[0]) + '</strong><span>' + escapeHtml(row[1]) + '</span></div>';
+    }).join("");
+  }
+
+  async function refreshPlatformStatus() {
+    if (!document.querySelector("[data-platform-status]")) {
+      return;
+    }
+    try {
+      var response = await fetch("/api/platform-status", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("status failed");
+      }
+      renderPlatformStatus(await response.json());
+    } catch (err) {
+      renderPlatformStatus({
+        market_data: "degraded",
+        market_source: "checking",
+        sports_edge: "standby",
+        sports_source: "checking",
+        odds_status: "unavailable",
+        ai_assistant: "checking",
+        wallet_intelligence: "public BTC explorer",
+        scam_shield: "rules active"
+      });
+    }
+  }
+
+  function setupIntelligenceConsole() {
+    var output = document.querySelector("[data-tool-output]");
+    if (!output) {
+      return;
+    }
+    document.querySelectorAll("[data-tool-tab]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var tool = button.getAttribute("data-tool-tab");
+        document.querySelectorAll("[data-tool-tab]").forEach(function (item) {
+          item.classList.toggle("is-active", item === button);
+        });
+        document.querySelectorAll("[data-tool-form]").forEach(function (form) {
+          form.classList.toggle("is-active", form.getAttribute("data-tool-form") === tool);
+        });
+      });
+    });
+
+    function setOutput(text) {
+      output.textContent = text || "No response returned.";
+    }
+
+    async function postJson(url, payload) {
+      var response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      var data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.response || "Request failed");
+      }
+      return data;
+    }
+
+    var aiForm = document.querySelector('[data-tool-form="ai"]');
+    var scamForm = document.querySelector('[data-tool-form="scam"]');
+    var walletForm = document.querySelector('[data-tool-form="wallet"]');
+
+    if (aiForm) {
+      aiForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        setOutput("CoinPilotX AI is thinking...");
+        try {
+          var data = await postJson("/api/ai-assistant", { question: aiForm.elements.question.value });
+          setOutput(data.response);
+        } catch (err) {
+          setOutput(err.message);
+        }
+      });
+    }
+
+    if (scamForm) {
+      scamForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        setOutput("Scanning for scam patterns...");
+        try {
+          var data = await postJson("/api/scam-shield", { text: scamForm.elements.text.value });
+          setOutput(data.response);
+        } catch (err) {
+          setOutput(err.message);
+        }
+      });
+    }
+
+    if (walletForm) {
+      walletForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        setOutput("Checking public BTC wallet data...");
+        try {
+          var address = encodeURIComponent(walletForm.elements.address.value || "");
+          var response = await fetch("/api/wallet-intel?address=" + address, { cache: "no-store" });
+          var data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.response || "Wallet check failed");
+          }
+          setOutput(data.response);
+        } catch (err) {
+          setOutput(err.message);
+        }
+      });
+    }
+
+    refreshPlatformStatus();
+    window.setInterval(refreshPlatformStatus, 60000);
   }
 
   function formatCurrency(value) {
@@ -275,6 +406,20 @@
     );
   }
 
+  function renderMarketSummary(summary) {
+    var node = document.querySelector("[data-market-summary]");
+    if (!node || !summary) {
+      return;
+    }
+    var dominance = typeof summary.btc_dominance_proxy === "number" ? summary.btc_dominance_proxy.toFixed(1) + "%" : "n/a";
+    var trending = (summary.trending_narratives || []).join(", ") || "Loading";
+    var risk = (summary.risk_pockets || []).join(", ") || "Loading";
+    node.innerHTML =
+      '<div class="market-summary-card"><span>BTC dominance proxy</span><strong>' + escapeHtml(dominance) + '</strong></div>' +
+      '<div class="market-summary-card"><span>Trending narratives</span><strong>' + escapeHtml(trending) + '</strong></div>' +
+      '<div class="market-summary-card"><span>Risk pockets</span><strong>' + escapeHtml(risk) + '</strong></div>';
+  }
+
   async function refreshMarketBoard() {
     var list = document.querySelector("[data-market-list]");
     var updated = document.querySelector("[data-market-updated]");
@@ -297,6 +442,7 @@
       list.innerHTML =
         '<div class="market-row market-head"><div>Asset</div><div>Price</div><div>24h</div><div>Volume</div><div>Market Cap</div></div>' +
         markets.map(marketRow).join("");
+      renderMarketSummary(data.summary);
       updated.textContent = (data.warning ? data.warning + " " : "") + "Last updated " + relativeTime(data.updated_at) + " · " + (data.source || "market data");
       if (error) {
         error.hidden = true;
@@ -483,6 +629,7 @@
     document.addEventListener("DOMContentLoaded", function () {
       setupReveal();
       setupMobileNav();
+      setupIntelligenceConsole();
       setupIntelligenceFeed();
       setupMarketBoard();
       setupSportsEdge();
@@ -490,6 +637,7 @@
   } else {
     setupReveal();
     setupMobileNav();
+    setupIntelligenceConsole();
     setupIntelligenceFeed();
     setupMarketBoard();
     setupSportsEdge();

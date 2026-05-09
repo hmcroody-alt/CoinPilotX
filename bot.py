@@ -469,6 +469,48 @@ def sports_edge_api():
     return jsonify(live_sports_edge(game_id=game_id, league=league))
 
 
+@webhook_app.route("/api/platform-status", methods=["GET"])
+def platform_status_api():
+    return jsonify(platform_status())
+
+
+@webhook_app.route("/api/ai-assistant", methods=["POST"])
+def website_ai_assistant_api():
+    payload = request.get_json(silent=True) or {}
+    question = clean_html(payload.get("question", "")).strip()
+    if not question:
+        return jsonify({"ok": False, "response": "Ask a crypto, wallet, scam, market, or sports question first."}), 400
+    return jsonify({
+        "ok": True,
+        "powered_by": "OpenAI + CoinPilotX crypto intelligence" if os.getenv("OPENAI_API_KEY") else "CoinPilotX fallback intelligence",
+        "response": openai_chat_completion(0, question),
+        "safety": "Informational only — not financial advice.",
+    })
+
+
+@webhook_app.route("/api/scam-shield", methods=["POST"])
+def website_scam_shield_api():
+    payload = request.get_json(silent=True) or {}
+    text = clean_html(payload.get("text", "")).strip()
+    if not text:
+        return jsonify({"ok": False, "response": "Paste a suspicious message, link, or crypto pitch first."}), 400
+    return jsonify({"ok": True, **scam_text_intelligence(text)})
+
+
+@webhook_app.route("/api/wallet-intel", methods=["GET"])
+def website_wallet_intel_api():
+    address = request.args.get("address", "").strip()
+    if not address:
+        return jsonify({"ok": False, "response": "Enter a public BTC wallet address. Never enter private keys or seed phrases."}), 400
+    if not is_btc_address(address):
+        return jsonify({"ok": False, "response": "That does not look like a public BTC address. Never enter seed phrases, private keys, or wallet passwords."}), 400
+    return jsonify({
+        "ok": True,
+        "response": wallet_info_summary(0, address, save_connection=False),
+        "safety": "Only public wallet data is used. Informational only — not financial advice.",
+    })
+
+
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     init_db()
@@ -1124,7 +1166,7 @@ def fetch_coingecko_markets():
 
 
 def fetch_coinmarketcap_markets():
-    api_key = os.getenv("COINMARKETCAP_API_KEY")
+    api_key = os.getenv("COINMARKETCAP_API_KEY") or os.getenv("CMC_API_KEY")
     if not api_key:
         return []
     response = requests.get(
@@ -1198,6 +1240,7 @@ def live_market_board(category="top_volume", limit=50):
     if cache_fresh:
         cached = dict(MARKETS_CACHE["data"])
         cached["markets"] = sort_markets(cached.get("markets", []), category)[:limit]
+        cached.setdefault("summary", market_board_summary_metrics(cached.get("markets", [])))
         return cached
 
     warning = None
@@ -1229,6 +1272,7 @@ def live_market_board(category="top_volume", limit=50):
         cached["warning"] = "Live market data temporarily unavailable. Showing last cached data."
         cached["stale"] = True
         cached["markets"] = sort_markets(cached.get("markets", []), category)[:limit]
+        cached.setdefault("summary", market_board_summary_metrics(cached.get("markets", [])))
         return cached
 
     if not markets:
@@ -1238,6 +1282,7 @@ def live_market_board(category="top_volume", limit=50):
             "warning": "Live market data temporarily unavailable. Try again shortly.",
             "stale": False,
             "markets": [],
+            "summary": market_board_summary_metrics([]),
         }
 
     data = {
@@ -1246,11 +1291,32 @@ def live_market_board(category="top_volume", limit=50):
         "warning": warning,
         "stale": False,
         "markets": sort_markets(markets, category)[:limit],
+        "summary": market_board_summary_metrics(markets),
     }
     if markets:
         MARKETS_CACHE["data"] = data
         MARKETS_CACHE["created_at"] = now
     return data
+
+
+def market_board_summary_metrics(markets):
+    valid_caps = [m for m in markets if isinstance(m.get("market_cap"), (int, float)) and m.get("market_cap") > 0]
+    total_cap = sum(m["market_cap"] for m in valid_caps)
+    btc = next((m for m in markets if m.get("symbol") == "BTC"), None)
+    eth = next((m for m in markets if m.get("symbol") == "ETH"), None)
+    btc_dominance = (btc.get("market_cap") / total_cap * 100) if btc and total_cap else None
+    valid_changes = [m for m in markets if isinstance(m.get("change_24h"), (int, float))]
+    avg_change = sum(m["change_24h"] for m in valid_changes) / len(valid_changes) if valid_changes else None
+    gainers = sorted(valid_changes, key=lambda m: m["change_24h"], reverse=True)[:3]
+    losers = sorted(valid_changes, key=lambda m: m["change_24h"])[:3]
+    return {
+        "btc_dominance_proxy": btc_dominance,
+        "btc_change_24h": btc.get("change_24h") if btc else None,
+        "eth_change_24h": eth.get("change_24h") if eth else None,
+        "average_change_24h": avg_change,
+        "trending_narratives": [m.get("symbol") for m in gainers if m.get("symbol")],
+        "risk_pockets": [m.get("symbol") for m in losers if m.get("symbol")],
+    }
 
 
 def get_market_by_symbol(symbol):
@@ -1345,6 +1411,81 @@ def market_board_summary(user_id, category="top_volume"):
     lines.append("")
     lines.append("Educational only — not financial advice.")
     return append_plan_footer(user_id, "\n".join(lines))
+
+
+def scam_text_intelligence(text):
+    lowered = (text or "").lower()
+    checks = [
+        ("Seed phrase/private key request", ["seed phrase", "private key", "recovery phrase", "12 words", "24 words"], "Critical"),
+        ("Fake support or admin pressure", ["support agent", "official support", "telegram admin", "verify your wallet", "sync your wallet"], "High"),
+        ("Fake airdrop or claim lure", ["airdrop", "claim now", "free token", "reward", "allocation"], "Medium"),
+        ("Wallet-drainer approval language", ["approve", "unlimited approval", "connect wallet", "sign message", "permit"], "High"),
+        ("Urgency and fear pressure", ["urgent", "limited time", "act now", "last chance", "account will be locked"], "Medium"),
+        ("Guaranteed return language", ["guaranteed profit", "risk free", "double your", "daily roi", "sure win"], "High"),
+        ("Suspicious link pattern", ["http://", "bit.ly", "tinyurl", ".xyz", ".top", ".click"], "Medium"),
+    ]
+    flags = []
+    severity_score = 0
+    for label, needles, severity in checks:
+        hits = [needle for needle in needles if needle in lowered]
+        if hits:
+            flags.append({"label": label, "severity": severity, "matched": hits[:3]})
+            severity_score += {"Critical": 45, "High": 30, "Medium": 18}.get(severity, 10)
+
+    if severity_score >= 70:
+        risk = "Critical"
+    elif severity_score >= 45:
+        risk = "High"
+    elif severity_score >= 18:
+        risk = "Medium"
+    else:
+        risk = "Low"
+        flags.append({"label": "No obvious high-risk phrase detected", "severity": "Low", "matched": []})
+
+    why = [
+        f"{flag['severity']}: {flag['label']}" + (f" ({', '.join(flag['matched'])})" if flag["matched"] else "")
+        for flag in flags
+    ]
+    recommendations = [
+        "Do not enter seed phrases, private keys, recovery phrases, or wallet passwords.",
+        "Verify links through official websites, not DMs or ads.",
+        "Avoid signing wallet approvals unless you understand the exact permission.",
+        "If urgency is part of the pitch, slow down and verify independently.",
+    ]
+    response = (
+        "🛡 Scam Shield Scan\n\n"
+        f"Risk level: {risk}\n\n"
+        "Why this was flagged:\n"
+        + "\n".join(f"• {item}" for item in why)
+        + "\n\nSafety recommendations:\n"
+        + "\n".join(f"• {item}" for item in recommendations)
+        + "\n\nCoinPilotX will never ask for your seed phrase, private key, or wallet password.\n"
+        "Informational only — not financial advice."
+    )
+    return {"risk": risk, "flags": flags, "recommendations": recommendations, "response": response}
+
+
+def platform_status():
+    market_data = live_market_board(limit=12)
+    sports_data = live_sports_edge()
+    market_ok = bool(market_data.get("markets"))
+    sports_ok = sports_data.get("warning") is None and bool(sports_data.get("games"))
+    openai_ok = bool(os.getenv("OPENAI_API_KEY"))
+    status = {
+        "updated_at": datetime.now().isoformat(),
+        "website": "online",
+        "telegram_bot": "configured" if BOT_TOKEN else "bot token missing",
+        "market_data": "live" if market_ok else "degraded",
+        "market_source": market_data.get("source", "unavailable"),
+        "sports_edge": "live" if sports_ok else "standby",
+        "sports_source": sports_data.get("source", "unavailable"),
+        "odds_status": sports_data.get("odds_status", "unavailable"),
+        "ai_assistant": "online" if openai_ok else "fallback mode",
+        "wallet_intelligence": "public BTC explorer",
+        "scam_shield": "rules active" + (" + AI available" if openai_ok else ""),
+        "safety": "No private keys or seed phrases. Informational only — not financial advice.",
+    }
+    return status
 
 
 SPORTS_EDGE_LEAGUES = [

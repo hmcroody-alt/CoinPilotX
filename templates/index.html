@@ -285,6 +285,10 @@
       transform: translateY(6px);
     }
 
+    .mobile-bottom-nav {
+      display: none;
+    }
+
     .button {
       display: inline-flex;
       align-items: center;
@@ -330,6 +334,18 @@
       border-color: rgba(255, 209, 102, 0.36);
       background: rgba(255, 209, 102, 0.11);
       color: #ffe3a3;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     main {
@@ -1007,6 +1023,116 @@
     .market-error {
       padding: 22px;
       color: var(--muted);
+    }
+
+    .intelligence-console {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .tool-panel,
+    .status-panel {
+      padding: 22px;
+      border: 1px solid rgba(110, 223, 246, 0.18);
+      border-radius: 8px;
+      background: rgba(13, 22, 39, 0.82);
+      box-shadow: var(--shadow);
+    }
+
+    .tool-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .tool-form {
+      display: none;
+      gap: 12px;
+    }
+
+    .tool-form.is-active {
+      display: grid;
+    }
+
+    .tool-form textarea,
+    .tool-form input {
+      width: 100%;
+      min-height: 48px;
+      padding: 13px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(110, 223, 246, 0.18);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      font: inherit;
+      resize: vertical;
+    }
+
+    .tool-form textarea {
+      min-height: 124px;
+    }
+
+    .tool-output {
+      min-height: 120px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      background: rgba(7, 11, 20, 0.7);
+      color: #d6edf4;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+
+    .status-grid {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.045);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-item strong {
+      color: var(--text);
+    }
+
+    .market-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .market-summary-card {
+      padding: 12px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .market-summary-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 5px;
+    }
+
+    .market-summary-card strong {
+      font-size: 16px;
     }
 
     .sports-board {
@@ -1872,7 +1998,9 @@
 
       .sports-list,
       .sports-detail-grid,
-      .sports-hero-panel {
+      .sports-hero-panel,
+      .intelligence-console,
+      .market-summary {
         grid-template-columns: 1fr;
       }
 
@@ -1886,6 +2014,39 @@
 
       .terminal-card {
         animation: none;
+      }
+
+      .mobile-bottom-nav {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        z-index: 50;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid rgba(110, 223, 246, 0.18);
+        border-radius: 12px;
+        background: rgba(7, 11, 20, 0.92);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+      }
+
+      .mobile-bottom-nav a {
+        min-height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.055);
+        font-size: 12px;
+        font-weight: 850;
+        text-align: center;
+      }
+
+      body {
+        padding-bottom: 78px;
       }
     }
 
@@ -1965,6 +2126,12 @@
       <span class="ticker-item">Educational Only</span>
     </div>
   </div>
+
+  <nav class="mobile-bottom-nav" aria-label="Mobile quick actions">
+    <a href="#market-board" data-analytics="view_live_market">Live Market</a>
+    <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
+    <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
+  </nav>
 
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
@@ -2304,6 +2471,59 @@
       </div>
     </section>
 
+    <section id="intelligence-console">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">Live Intelligence Console</div>
+          <h2>Try the intelligence systems before opening Telegram.</h2>
+          <p>Ask the AI backend, scan suspicious crypto messages, check public BTC wallets, and verify platform data status from one live console.</p>
+        </div>
+
+        <div class="intelligence-console">
+          <div class="tool-panel">
+            <div class="tool-tabs" aria-label="CoinPilotX intelligence tools">
+              <button class="filter-button is-active" type="button" data-tool-tab="ai">AI Assistant</button>
+              <button class="filter-button" type="button" data-tool-tab="scam">Scam Shield</button>
+              <button class="filter-button" type="button" data-tool-tab="wallet">Wallet Intel</button>
+            </div>
+
+            <form class="tool-form is-active" data-tool-form="ai">
+              <label class="sr-only" for="ai-question">Ask CoinPilotX AI</label>
+              <textarea id="ai-question" name="question" placeholder="Ask about BTC, ETH, wallet risk, scams, market pressure, or Sports Edge context."></textarea>
+              <button class="button primary" type="submit" data-analytics="try_ai_assistant">Ask CoinPilotX AI</button>
+            </form>
+
+            <form class="tool-form" data-tool-form="scam">
+              <label class="sr-only" for="scam-text">Paste suspicious message</label>
+              <textarea id="scam-text" name="text" placeholder="Paste a suspicious crypto DM, fake airdrop message, support message, or wallet approval text."></textarea>
+              <button class="button gold" type="submit" data-analytics="view_scam_protection">Scan Message</button>
+            </form>
+
+            <form class="tool-form" data-tool-form="wallet">
+              <label class="sr-only" for="wallet-address">Public BTC wallet address</label>
+              <input id="wallet-address" name="address" placeholder="Public BTC wallet address only. Never enter seed phrases or private keys.">
+              <button class="button" type="submit" data-analytics="wallet_intel">Check Public Wallet</button>
+            </form>
+
+            <div class="tool-output" data-tool-output>Choose a tool above. Results appear here with safety-first context.</div>
+            <div class="actions" style="margin-top: 14px;">
+              <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="continue_telegram">Continue in Telegram</a>
+            </div>
+          </div>
+
+          <aside class="status-panel">
+            <span class="live-badge">Platform Status</span>
+            <h3 style="margin-top: 14px;">Live system health</h3>
+            <p>Transparent source status helps users know when data is live, degraded, or in fallback mode.</p>
+            <div class="status-grid" data-platform-status>
+              <div class="status-item"><strong>Status</strong><span>Loading...</span></div>
+            </div>
+            <div class="disclaimer">CoinPilotX never asks for seed phrases, private keys, or wallet passwords. Informational only — not financial advice.</div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
     <section id="market-board">
       <div class="container">
         <div class="section-head center">
@@ -2322,6 +2542,11 @@
               <button class="filter-button" type="button" data-market-filter="top_volume">1D</button>
             </div>
             <div class="market-updated" data-market-updated>Loading live market data...</div>
+          </div>
+          <div class="market-summary" data-market-summary>
+            <div class="market-summary-card"><span>BTC dominance proxy</span><strong>Loading</strong></div>
+            <div class="market-summary-card"><span>Trending</span><strong>Loading</strong></div>
+            <div class="market-summary-card"><span>Risk pockets</span><strong>Loading</strong></div>
           </div>
           <div class="market-list" data-market-list>
             <div class="market-loading">Loading top crypto assets...</div>
