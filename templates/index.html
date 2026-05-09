@@ -8,14 +8,16 @@
   <link rel="canonical" href="https://coinpilotx.app/" />
   <meta property="og:title" content="CoinPilotXAI Inc. | CoinPilotX AI Crypto Intelligence Bot" />
   <meta property="og:description" content="CoinPilotX is powered by CoinPilotXAI Inc. for AI-powered crypto intelligence, whale alerts, scam protection, portfolio tracking, and market insights inside Telegram." />
+  <meta property="og:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://coinpilotx.app/" />
-  <meta property="og:site_name" content="CoinPilotX" />
+  <meta property="og:site_name" content="CoinPilotXAI Inc." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="CoinPilotXAI Inc. | CoinPilotX AI Crypto Intelligence Bot" />
   <meta name="twitter:description" content="CoinPilotX is powered by CoinPilotXAI Inc. for AI market analysis, wallet risk scanning, whale alerts, portfolio intelligence, and scam protection." />
+  <meta name="twitter:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
   <meta name="theme-color" content="#08111f" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -210,6 +212,7 @@
       display: block;
       width: 44px;
       height: 44px;
+      max-height: 72px;
       object-fit: contain;
       border-radius: 10px;
       image-rendering: auto;
@@ -471,6 +474,7 @@
     .hero-logo {
       width: clamp(72px, 10vw, 112px);
       height: clamp(72px, 10vw, 112px);
+      max-height: 112px;
       object-fit: contain;
       border-radius: 18px;
       filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.35));
@@ -2003,6 +2007,7 @@
     .footer-logo {
       width: 42px;
       height: 42px;
+      max-height: 72px;
       object-fit: contain;
       border-radius: 10px;
       filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.28));
@@ -2132,6 +2137,7 @@
       .brand-logo {
         width: 38px;
         height: 38px;
+        max-height: 52px;
       }
 
       .brand-text small {
@@ -2154,6 +2160,7 @@
       .hero-logo {
         width: 68px;
         height: 68px;
+        max-height: 52px;
       }
 
       .grid,
@@ -2350,13 +2357,13 @@
   <header>
     <div class="container">
       <nav aria-label="Main navigation">
-        <a class="brand" href="#top" aria-label="CoinPilotX home">
+        <a class="brand" href="#top" aria-label="CoinPilotXAI Inc. home">
           <span class="logo-wrap">
-            <img class="brand-logo" src="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" alt="CoinPilotX logo" width="44" height="44" decoding="async" />
+            <img class="brand-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="44" height="44" decoding="async" />
           </span>
           <span class="brand-text">
-            <span>CoinPilotX</span>
-            <small>AI Crypto Intelligence</small>
+            <span>CoinPilotXAI Inc.</span>
+            <small>CoinPilotX Platform</small>
           </span>
         </a>
 
@@ -2395,7 +2402,7 @@
       <span class="ticker-item">Scam Shield</span>
       <span class="ticker-item">Portfolio Advice</span>
       <span class="ticker-item">Country Crypto News</span>
-      <span class="ticker-item">Powered by OpenAI</span>
+      <span class="ticker-item">Powered by CoinPilotXAI Inc.</span>
       <span class="ticker-item">Educational Only</span>
       <span class="ticker-item">BTC Intelligence</span>
       <span class="ticker-item">ETH Charts</span>
@@ -2403,7 +2410,7 @@
       <span class="ticker-item">Scam Shield</span>
       <span class="ticker-item">Portfolio Advice</span>
       <span class="ticker-item">Country Crypto News</span>
-      <span class="ticker-item">Powered by OpenAI</span>
+      <span class="ticker-item">Powered by CoinPilotXAI Inc.</span>
       <span class="ticker-item">Educational Only</span>
     </div>
   </div>
@@ -2419,16 +2426,16 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
         <div>
-          <div class="hero-brand" aria-label="CoinPilotX brand">
+          <div class="hero-brand" aria-label="CoinPilotXAI Inc. brand">
             <span class="logo-wrap">
-              <img class="hero-logo" src="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" alt="CoinPilotX logo" width="112" height="112" decoding="async" />
+              <img class="hero-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="112" height="112" decoding="async" />
             </span>
             <div class="hero-brand-copy">
-              <strong>CoinPilotX</strong>
-              <span>AI crypto intelligence inside Telegram</span>
+              <strong>CoinPilotXAI Inc.</strong>
+              <span>CoinPilotX AI crypto intelligence inside Telegram</span>
             </div>
           </div>
-          <div class="eyebrow">Powered by OpenAI + CoinPilotX crypto intelligence</div>
+          <div class="eyebrow">Powered by CoinPilotXAI Inc.</div>
           <h1 id="hero-title">AI Crypto Intelligence Inside Telegram</h1>
           <p class="hero-copy">
             Scan risks, track whales, understand markets, avoid scams, and get clearer crypto context before you act.
@@ -2682,7 +2689,7 @@
             </div>
             <div class="security-item">
               <strong>AI-assisted education</strong>
-              <p class="muted">Powered by OpenAI + CoinPilotX crypto intelligence.</p>
+              <p class="muted">Powered by CoinPilotXAI Inc.</p>
             </div>
             <div class="security-item">
               <strong>Educational only</strong>
@@ -3330,7 +3337,7 @@
             <p>CoinPilotX never holds funds, never asks for seed phrases, never asks for private keys, and uses public wallet addresses or TXIDs only.</p>
           </article>
           <article class="card">
-            <h3>Powered by OpenAI + CoinPilotX crypto intelligence</h3>
+            <h3>Powered by CoinPilotXAI Inc.</h3>
             <p>AI explanations are paired with crypto-specific workflows for market context, wallet risk, scam awareness, and portfolio education.</p>
           </article>
           <article class="card testimonial-note">
@@ -3383,7 +3390,7 @@
           </div>
           <div class="security-item">
             <strong>AI assisted</strong>
-            <p class="muted">Powered by OpenAI + CoinPilotX crypto intelligence.</p>
+            <p class="muted">Powered by CoinPilotXAI Inc.</p>
           </div>
         </div>
       </div>
@@ -3511,8 +3518,8 @@
             <p>Sports Edge is live context for reviewing positions with caution. Informational only — not betting or financial advice. Never risk money you cannot afford to lose.</p>
           </article>
           <article class="faq-card">
-            <h3>What does Powered by OpenAI mean?</h3>
-            <p>CoinPilotX can use OpenAI technology for AI responses plus CoinPilotX crypto intelligence. This does not mean an official partnership.</p>
+            <h3>How does CoinPilotX use AI?</h3>
+            <p>CoinPilotX is powered by CoinPilotXAI Inc. and may use OpenAI technology for AI responses. This does not mean an official OpenAI partnership.</p>
           </article>
         </div>
       </div>
@@ -3541,11 +3548,11 @@
         <div>
           <div class="footer-brand">
             <span class="logo-wrap">
-              <img class="footer-logo" src="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" alt="CoinPilotX logo" width="42" height="42" loading="lazy" decoding="async" />
+              <img class="footer-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="42" height="42" loading="lazy" decoding="async" />
             </span>
             <div>
-              <strong>CoinPilotX</strong>
-              <div>AI crypto intelligence inside Telegram.</div>
+              <strong>CoinPilotXAI Inc.</strong>
+              <div>CoinPilotX AI crypto intelligence inside Telegram.</div>
               <div>AI-powered crypto intelligence focused on education, safety, and market awareness.</div>
               <div>Powered by CoinPilotXAI Inc.</div>
               <div>CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</div>

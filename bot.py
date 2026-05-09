@@ -484,7 +484,7 @@ def website_ai_assistant_api():
         return jsonify({"ok": False, "response": "Ask a crypto, wallet, scam, market, or sports question first."}), 400
     return jsonify({
         "ok": True,
-        "powered_by": "OpenAI + CoinPilotX crypto intelligence" if os.getenv("OPENAI_API_KEY") else "CoinPilotX fallback intelligence",
+        "powered_by": "CoinPilotXAI Inc.",
         "response": openai_chat_completion(0, question),
         "safety": "Informational only — not financial advice.",
     })
@@ -2500,7 +2500,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not onboarding_complete(user_id):
         onboarding_state[user_id] = "name"
         await update.message.reply_text(
-            f"🚀 Welcome to {BOT_NAME}.\nOperated by CoinPilotXAI Inc.\n\nHow do you want me to call you?"
+            f"🚀 Welcome to {BOT_NAME}, powered by CoinPilotXAI Inc.\n\nHow do you want me to call you?"
         )
         return
 
@@ -2524,7 +2524,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "before users trust them.\n\n"
         "CoinPilotX does not hold user funds, create exchange accounts, or guarantee profits. "
         "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Powered by OpenAI + CoinPilotX crypto intelligence.",
+        "Powered by CoinPilotXAI Inc.",
         reply_markup=main_menu()
     )
 
@@ -3503,7 +3503,7 @@ def openai_chat_completion(user_id, question):
         return append_plan_footer(user_id, fallback)
 
     system_prompt = (
-        "You are CoinPilotX, a premium crypto intelligence assistant operated by CoinPilotXAI Inc. and powered by OpenAI + CoinPilotX crypto intelligence. "
+        "You are CoinPilotX, a premium crypto intelligence assistant powered by CoinPilotXAI Inc. It may use OpenAI technology for AI responses. "
         "Act as a cautious crypto analyst, scam protection advisor, blockchain educator, portfolio coach, and market explainer. "
         "Never guarantee profits, never claim certainty, never ask for seed phrases/private keys/recovery phrases/wallet passwords, "
         "and do not impersonate a licensed financial advisor. If a user mentions suspicious links, seed phrases, private keys, "
@@ -3555,7 +3555,7 @@ def openai_chat_completion(user_id, question):
     if "Educational only" not in answer and any(word in question.lower() for word in ["buy", "sell", "market", "price", "portfolio", "btc", "eth", "crypto", "invest"]):
         answer += "\n\nEducational only — not financial advice."
 
-    answer += "\n\nPowered by OpenAI + CoinPilotX crypto intelligence."
+    answer += "\n\nPowered by CoinPilotXAI Inc."
 
     try:
         conn = db()
@@ -5943,7 +5943,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_ai_assistant":
         await query.message.reply_text(
-            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nPowered by OpenAI + CoinPilotX crypto intelligence."),
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nPowered by CoinPilotXAI Inc."),
             reply_markup=main_menu()
         )
         return
@@ -6130,14 +6130,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_talk":
         await query.message.reply_text(
-            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nPowered by OpenAI + CoinPilotX crypto intelligence."),
+            append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk me a crypto question in plain English, or send a suspicious message and I’ll help you inspect it.\n\nPowered by CoinPilotXAI Inc."),
             reply_markup=main_menu()
         )
         return
 
     if data == "menu_about":
         await query.message.reply_text(
-            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nCoinPilotX is powered by CoinPilotXAI Inc.\n\nPowered by OpenAI + CoinPilotX crypto intelligence.\n\nCoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.",
+            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nCoinPilotX is powered by CoinPilotXAI Inc.\n\nCoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.",
             reply_markup=main_menu()
         )
         return
