@@ -519,6 +519,12 @@
       border: 1px solid rgba(54, 229, 143, 0.2);
       border-radius: 8px;
       background: rgba(5, 10, 19, 0.68);
+      transition: border-color 0.22s ease, box-shadow 0.22s ease;
+    }
+
+    .assistant-panel.is-updating {
+      border-color: rgba(110, 223, 246, 0.42);
+      box-shadow: 0 0 34px rgba(110, 223, 246, 0.12);
     }
 
     .assistant-line {
@@ -544,6 +550,13 @@
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.04);
+      transition: border-color 0.22s ease, background 0.22s ease, transform 0.22s ease;
+    }
+
+    .score-widget.is-flashing {
+      transform: translateY(-2px);
+      border-color: rgba(110, 223, 246, 0.4);
+      background: rgba(110, 223, 246, 0.08);
     }
 
     .score-widget span {
@@ -558,6 +571,35 @@
     .score-widget strong {
       color: #dfffee;
       font-size: 18px;
+    }
+
+    .score-widget.positive strong,
+    .terminal-card[data-state="constructive"] .metric.dynamic {
+      color: var(--green);
+    }
+
+    .score-widget.caution strong,
+    .terminal-card[data-state="mixed"] .metric.dynamic,
+    .terminal-card[data-state="updating"] .metric.dynamic {
+      color: var(--gold);
+    }
+
+    .score-widget.danger strong,
+    .terminal-card[data-state="volatile"] .metric.dynamic,
+    .terminal-card[data-state="defensive"] .metric.dynamic {
+      color: var(--danger);
+    }
+
+    .feed-meta {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .feed-message {
+      margin-top: 10px;
+      color: #c5d1e5;
+      font-size: 13px;
     }
 
     .signal-row {
@@ -1475,7 +1517,7 @@
           </div>
         </div>
 
-        <aside class="terminal-card" aria-label="CoinPilotX bot preview">
+        <aside class="terminal-card" aria-label="CoinPilotX live intelligence feed" data-state="updating">
           <div class="terminal-top">
             <span>CoinPilotX Intelligence Feed</span>
             <span class="status-dot" aria-hidden="true"></span>
@@ -1483,51 +1525,53 @@
           <div class="terminal-body">
             <div class="assistant-panel">
               <div class="assistant-line">
-                <strong>AI Assistant Online</strong>
-                <span class="metric">LIVE</span>
+                <strong>Live AI Market Engine</strong>
+                <span class="metric dynamic" data-feed="market_state">LOADING</span>
               </div>
               <div class="score-widgets">
-                <div class="score-widget">
+                <div class="score-widget caution" data-widget="signal">
                   <span>Signal</span>
-                  <strong>72</strong>
+                  <strong data-feed="signal">--</strong>
                 </div>
-                <div class="score-widget">
+                <div class="score-widget caution" data-widget="risk">
                   <span>Risk</span>
-                  <strong>41</strong>
+                  <strong data-feed="risk">--</strong>
                 </div>
-                <div class="score-widget">
+                <div class="score-widget caution" data-widget="action">
                   <span>Action</span>
-                  <strong>WAIT</strong>
+                  <strong data-feed="action">UPDATING</strong>
                 </div>
               </div>
+              <div class="feed-meta">Updated <span data-feed="updated_at">loading live data</span></div>
+              <div class="feed-message" data-feed="message">Educational only — not financial advice.</div>
             </div>
             <div class="signal-row">
               <div>
-                <strong>/analysis BTC</strong>
-                <span>AI market read, trend, volatility, and confidence</span>
+                <strong>BTC Live Price</strong>
+                <span>24h change: <span data-feed="change_24h">--</span></span>
               </div>
-              <div class="metric">LIVE</div>
+              <div class="metric dynamic" data-feed="btc_price">--</div>
             </div>
             <div class="signal-row">
               <div>
-                <strong>/whales</strong>
-                <span>Large BTC movement and market pressure signals</span>
+                <strong>Market Structure</strong>
+                <span>Trend: <span data-feed="trend">--</span></span>
               </div>
-              <div class="metric">🐋</div>
+              <div class="metric dynamic" data-feed="volatility">--</div>
             </div>
             <div class="signal-row">
               <div>
-                <strong>/portfolio_advice</strong>
-                <span>BUY / SELL / WAIT / HOLD educational logic</span>
+                <strong>Whale Pressure</strong>
+                <span>Volume: <span data-feed="volume_pressure">--</span></span>
               </div>
-              <div class="metric">PRO</div>
+              <div class="metric dynamic" data-feed="whale_pressure">--</div>
             </div>
             <div class="signal-row">
               <div>
-                <strong>/walletscan</strong>
-                <span>Public wallet risk checks without private keys</span>
+                <strong>AI Confidence</strong>
+                <span>Fear/Greed: <span data-feed="fear_greed">--</span></span>
               </div>
-              <div class="metric">SAFE</div>
+              <div class="metric dynamic" data-feed="confidence">--</div>
             </div>
           </div>
         </aside>

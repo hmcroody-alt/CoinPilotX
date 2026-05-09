@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import urlparse
-from flask import Flask, request, render_template, send_from_directory
+from flask import Flask, request, render_template, send_from_directory, jsonify
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -56,6 +56,8 @@ ALERT_THRESHOLD_PERCENT = 0.25
 WHALE_CHECK_SECONDS = int(os.getenv("WHALE_CHECK_SECONDS", "900"))
 PORTFOLIO_TRACK_SECONDS = int(os.getenv("PORTFOLIO_TRACK_SECONDS", "900"))
 WHALE_NOTIONAL_USD_THRESHOLD = float(os.getenv("WHALE_NOTIONAL_USD_THRESHOLD", "1000000"))
+INTELLIGENCE_FEED_CACHE = {"data": None, "created_at": None}
+INTELLIGENCE_FEED_CACHE_SECONDS = int(os.getenv("INTELLIGENCE_FEED_CACHE_SECONDS", "15"))
 ADMIN_USER_IDS = {
     int(x.strip())
     for x in os.getenv("ADMIN_USER_IDS", "").split(",")
@@ -442,6 +444,11 @@ def robots_txt():
 @webhook_app.route("/sitemap.xml", methods=["GET"])
 def sitemap_xml():
     return send_from_directory(webhook_app.static_folder, "sitemap.xml", mimetype="application/xml")
+
+
+@webhook_app.route("/api/intelligence-feed", methods=["GET"])
+def intelligence_feed_api():
+    return jsonify(live_intelligence_feed())
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
@@ -3544,6 +3551,173 @@ def get_whale_activity(asset):
         except Exception:
             continue
     return whales[:5]
+
+
+def clamp_number(value, low=0, high=100):
+    return max(low, min(high, int(round(value))))
+
+
+def parse_percent(value):
+    try:
+        return float(str(value).replace("%", "").strip())
+    except Exception:
+        return 0.0
+
+
+def live_intelligence_feed():
+    now = datetime.now()
+    cached_at = INTELLIGENCE_FEED_CACHE.get("created_at")
+    if (
+        INTELLIGENCE_FEED_CACHE.get("data")
+        and cached_at
+        and (now - cached_at).total_seconds() < INTELLIGENCE_FEED_CACHE_SECONDS
+    ):
+        return INTELLIGENCE_FEED_CACHE["data"]
+
+    try:
+        price_now, sources = get_best_price("BTC")
+        if not price_now:
+            raise ValueError("BTC price unavailable")
+
+        candles = get_klines("BTC", "1h", 48)
+        prices = [c["close"] for c in candles] if candles else get_price_history("BTC", 40)
+        volumes = [c["volume"] for c in candles] if candles else []
+        previous_24h = prices[-25] if len(prices) >= 25 else prices[0] if prices else price_now
+        change_24h = ((price_now - previous_24h) / previous_24h) * 100 if previous_24h else 0
+        momentum_pct = ((prices[-1] - prices[-6]) / prices[-6]) * 100 if len(prices) >= 6 and prices[-6] else change_24h
+
+        signal = smart_market_signal("BTC", price_now, True)
+        volatility = parse_percent(signal.get("volatility", "0"))
+        fear = get_fear_greed()
+        fear_value = fear.get("value")
+        whales = get_whale_activity("BTC")
+
+        buy_whale = sum(w["notional"] for w in whales if "BUY" in w.get("side", ""))
+        sell_whale = sum(w["notional"] for w in whales if "SELL" in w.get("side", ""))
+        whale_net = buy_whale - sell_whale
+        if sell_whale > buy_whale * 1.15 and sell_whale:
+            whale_pressure = "sell pressure"
+        elif buy_whale > sell_whale * 1.15 and buy_whale:
+            whale_pressure = "accumulation"
+        elif whales:
+            whale_pressure = "mixed"
+        else:
+            whale_pressure = "quiet"
+
+        volume_pressure = "normal"
+        volume_adjust = 0
+        if len(volumes) >= 12:
+            recent_volume = sum(volumes[-6:]) / 6
+            prior_volume = sum(volumes[-12:-6]) / 6
+            if prior_volume:
+                volume_ratio = recent_volume / prior_volume
+                if volume_ratio >= 1.35 and momentum_pct > 0:
+                    volume_pressure = "rising demand"
+                    volume_adjust = 5
+                elif volume_ratio >= 1.35 and momentum_pct < 0:
+                    volume_pressure = "sell-side pressure"
+                    volume_adjust = -5
+
+        signal_score = 50
+        signal_score += signal.get("score", 0) * 7
+        signal_score += max(-12, min(12, momentum_pct * 2))
+        if fear_value is not None:
+            if 35 <= fear_value <= 65:
+                signal_score += 3
+            elif fear_value <= 20:
+                signal_score -= 4
+            elif fear_value >= 80:
+                signal_score -= 5
+        if whale_pressure == "accumulation":
+            signal_score += 6
+        elif whale_pressure == "sell pressure":
+            signal_score -= 8
+        signal_score += volume_adjust
+        signal_score = clamp_number(signal_score)
+
+        risk_score = 30
+        risk_score += volatility * 8
+        risk_score += abs(change_24h) * 2
+        if whale_pressure == "sell pressure":
+            risk_score += 13
+        elif whale_pressure == "mixed":
+            risk_score += 7
+        if fear_value is None:
+            risk_score += 6
+        elif fear_value <= 20 or fear_value >= 80:
+            risk_score += 10
+        if volume_pressure == "sell-side pressure":
+            risk_score += 8
+        risk_score = clamp_number(risk_score)
+
+        if risk_score >= 78:
+            action = "HIGH VOLATILITY"
+        elif risk_score >= 65:
+            action = "WATCH CLOSELY"
+        elif signal_score >= 68 and risk_score < 55:
+            action = "BUY"
+        elif signal_score >= 56 and risk_score < 64:
+            action = "HOLD"
+        elif signal_score <= 38 or signal.get("action") == "SELL":
+            action = "REDUCE RISK"
+        else:
+            action = "WAIT"
+
+        if risk_score >= 70:
+            market_state = "volatile"
+        elif signal_score >= 65:
+            market_state = "constructive"
+        elif signal_score <= 40:
+            market_state = "defensive"
+        else:
+            market_state = "mixed"
+
+        confidence = 52
+        confidence += 12 if candles else 0
+        confidence += 8 if fear_value is not None else 0
+        confidence += 6 if sources else 0
+        confidence += min(10, len(whales) * 2)
+        confidence -= 8 if volatility >= 4 else 0
+        confidence = clamp_number(confidence, 25, 92)
+
+        data = {
+            "signal": signal_score,
+            "risk": risk_score,
+            "action": action,
+            "btc_price": round(price_now, 2),
+            "change_24h": round(change_24h, 2),
+            "market_state": market_state,
+            "confidence": confidence,
+            "trend": signal.get("trend", "Unknown"),
+            "volatility": f"{volatility:.2f}%",
+            "whale_pressure": whale_pressure,
+            "fear_greed": fear.get("label", "Unavailable"),
+            "volume_pressure": volume_pressure,
+            "updated_at": now.isoformat(),
+            "message": "Signal suggests reviewing market context before acting. Educational only — not financial advice.",
+        }
+    except Exception as exc:
+        logging.info("Live intelligence feed failed: %s", exc)
+        data = {
+            "signal": None,
+            "risk": None,
+            "action": "DATA UNAVAILABLE",
+            "btc_price": None,
+            "change_24h": None,
+            "market_state": "updating",
+            "confidence": None,
+            "trend": "Unavailable",
+            "volatility": "Unavailable",
+            "whale_pressure": "updating",
+            "fear_greed": "Unavailable",
+            "volume_pressure": "updating",
+            "updated_at": now.isoformat(),
+            "message": "Live intelligence is temporarily unavailable. Educational only — not financial advice.",
+        }
+
+    INTELLIGENCE_FEED_CACHE["data"] = data
+    INTELLIGENCE_FEED_CACHE["created_at"] = now
+    return data
 
 
 def save_whale_alert(alert):
