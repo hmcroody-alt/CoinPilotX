@@ -11,9 +11,11 @@ import logging
 import requests
 import threading
 import stripe
+import smtplib
 import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from urllib.parse import urlparse
 from flask import Flask, request, render_template, send_from_directory
 
@@ -40,7 +42,7 @@ STRIPE_PRO_LINK = "https://buy.stripe.com/14AdR90xmgAy304afs4Vy00"
 
 stripe.api_key = STRIPE_SECRET_KEY
 
-BTC_PAYMENT_ADDRESS = "0x8DE1A7eAb2C937cdCdC24E8F79B0ac0960040CD8"
+BTC_PAYMENT_ADDRESS = os.getenv("BTC_PAYMENT_ADDRESS", "0x8DE1A7eAb2C937cdCdC24E8F79B0ac0960040CD8")
 BTC_PRO_PRICE = "0.00025 BTC"
 BTC_PRO_SATS = 25000
 BTC_REQUIRED_CONFIRMATIONS = 1
@@ -444,6 +446,7 @@ def sitemap_xml():
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
+    init_db()
     payload = request.data
     sig_header = request.headers.get("Stripe-Signature")
 
@@ -462,12 +465,58 @@ def stripe_webhook():
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("client_reference_id")
+        payment_status = session.get("payment_status")
 
         print("client_reference_id:", user_id)
 
         if user_id:
-            activate_pro(int(user_id))
-            print(f"✅ Activated PRO for user {user_id}")
+            try:
+                user_id_int = int(user_id)
+            except Exception:
+                print("Invalid client_reference_id:", user_id)
+                return "OK", 200
+
+            customer_details = session.get("customer_details") or {}
+            customer_email = customer_details.get("email") or session.get("customer_email")
+            if customer_email and is_valid_email(customer_email):
+                save_user_email(user_id_int, customer_email)
+
+            if payment_status == "paid":
+                timestamp = datetime.now().isoformat()
+                activate_pro(
+                    user_id_int,
+                    payment_type="stripe",
+                    stripe_customer_id=session.get("customer"),
+                    stripe_session_id=session.get("id"),
+                    subscription_status="active",
+                )
+                save_payment_verification(
+                    user_id_int,
+                    txid=session.get("id"),
+                    payment_type="stripe",
+                    amount=(session.get("amount_total") / 100 if session.get("amount_total") else None),
+                    status="verified",
+                    details=f"Stripe checkout.session.completed at {timestamp}",
+                )
+                send_telegram_confirmation(
+                    user_id_int,
+                    "✅ CoinPilotX Pro activated successfully.\n\n"
+                    "Your card payment was confirmed by Stripe, and your Pro access is now active.\n\n"
+                    "Educational only — not financial advice.\n"
+                    "CoinPilotX will never ask for your seed phrase or private key."
+                )
+                send_subscription_email(user_id_int, "stripe", stripe_session_id=session.get("id"), timestamp=timestamp)
+                print(f"✅ Activated PRO for user {user_id}")
+            else:
+                save_payment_verification(
+                    user_id_int,
+                    txid=session.get("id"),
+                    payment_type="stripe",
+                    amount=None,
+                    status=f"not_activated_{payment_status or 'unknown'}",
+                    details="Stripe checkout completed but payment_status was not paid.",
+                )
+                print(f"Stripe session not activated for user {user_id}: payment_status={payment_status}")
 
     return "OK", 200
 
@@ -544,6 +593,131 @@ def save_user_email(user_id, email):
     cur.execute("UPDATE users SET email=?, onboarding_complete=1 WHERE user_id=?", (email, user_id))
     conn.commit()
     conn.close()
+
+
+def is_valid_email(email):
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (email or "").strip()))
+
+
+def get_user_email(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT email FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else ""
+
+
+def log_email_status(user_id, email, subject, status):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO email_logs (user_id, email, subject, status, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, email, subject, status, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+
+def send_email_confirmation(user_id, to_email, subject, body):
+    if not to_email:
+        log_email_status(user_id, "", subject, "skipped_no_email")
+        return False
+
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    from_email = os.getenv("FROM_EMAIL") or smtp_user
+
+    if not all([smtp_host, smtp_user, smtp_password, from_email]):
+        log_email_status(user_id, to_email, subject, "skipped_smtp_not_configured")
+        return False
+
+    try:
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = from_email
+        message["To"] = to_email
+        message.set_content(body)
+
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+            smtp.starttls()
+            smtp.login(smtp_user, smtp_password)
+            smtp.send_message(message)
+
+        log_email_status(user_id, to_email, subject, "sent")
+        return True
+    except Exception as exc:
+        logging.info("Email confirmation failed: %s", exc)
+        log_email_status(user_id, to_email, subject, "failed")
+        return False
+
+
+def subscription_email_body(plan_name, timestamp, txid=None):
+    txid_line = f"\nTXID reference: {txid}\n" if txid else ""
+    return (
+        "Welcome to CoinPilotX Pro.\n\n"
+        "Your Pro access is active.\n\n"
+        f"Plan: {plan_name}\n"
+        f"Activated at: {timestamp}\n"
+        f"{txid_line}"
+        "Open the Telegram bot:\n"
+        "https://t.me/DocShieldX_bot\n\n"
+        "Safety reminder: CoinPilotX will never ask for your seed phrase, private key, or wallet password.\n\n"
+        "Educational only — not financial advice."
+    )
+
+
+def send_subscription_email(user_id, payment_type, txid=None, stripe_session_id=None, timestamp=None):
+    timestamp = timestamp or datetime.now().isoformat()
+    email = get_user_email(user_id)
+    if payment_type == "btc":
+        subject = "Your CoinPilotX BTC Payment Was Verified"
+        body = subscription_email_body("CoinPilotX Pro - BTC", timestamp, txid=txid)
+    else:
+        subject = "Your CoinPilotX Pro Subscription Is Active"
+        ref = stripe_session_id or txid
+        body = subscription_email_body("CoinPilotX Pro", timestamp, txid=ref)
+    return send_email_confirmation(user_id, email, subject, body)
+
+
+def save_payment_verification(user_id, txid, payment_type, amount, status, details=""):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO payment_verifications (user_id, txid, payment_type, amount, status, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, txid, payment_type, amount, status, details, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+
+def payment_txid_already_verified(txid):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM payment_verifications WHERE txid=? AND status='verified' LIMIT 1", (txid,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def send_telegram_confirmation(user_id, text):
+    if not BOT_TOKEN:
+        return False
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id": user_id, "text": text},
+            timeout=10,
+        )
+        return response.ok
+    except Exception as exc:
+        logging.info("Telegram confirmation failed: %s", exc)
+        return False
 
 
 def get_watchlist(user_id):
@@ -776,10 +950,19 @@ def smart_market_signal(asset, current_price, is_pro_user=False):
 
 def extract_urls(text):
     return re.findall(r"https?://[^\s]+", text)
+
+
+def is_valid_btc_txid(txid):
+    return bool(re.fullmatch(r"[A-Fa-f0-9]{64}", (txid or "").strip()))
+
+
 def verify_btc_tx(txid):
     try:
         url = BLOCKSTREAM_TX_API + txid
-        tx = requests.get(url, timeout=10).json()
+        response = requests.get(url, timeout=10)
+        if response.status_code != 200:
+            return False, 0, 0
+        tx = response.json()
 
         confirmations = 0
         status = tx.get("status", {})
@@ -818,7 +1001,7 @@ def activate_pro(user_id):
 # PRO MESSAGE (ADD HERE)
 # =========================
 
-BTC_PAYMENT_ADDRESS = "0x8DE1A7eAb2C937cdCdC24E8F79B0ac0960040CD8"
+BTC_PAYMENT_ADDRESS = os.getenv("BTC_PAYMENT_ADDRESS", BTC_PAYMENT_ADDRESS)
 BTC_PRO_PRICE = "0.00025 BTC"
 
 def pro_upgrade_message(user_id):
@@ -1566,29 +1749,65 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
 
     try:
-        txid = context.args[0]
+        txid = context.args[0].strip()
     except Exception:
         await update.message.reply_text(
-            "Usage:\n/verify_payment YOUR_TXID",
+            "Usage:\n/verify_payment YOUR_TXID\n\n"
+            "CoinPilotX will verify the transaction before activating Pro.\n"
+            "CoinPilotX will never ask for your seed phrase or private key.",
+            reply_markup=main_menu()
+        )
+        return
+
+    if not is_valid_btc_txid(txid):
+        save_payment_verification(update.effective_user.id, txid, "btc", None, "invalid_txid", "TXID format failed validation.")
+        await update.message.reply_text(
+            "⚠️ That does not look like a valid BTC TXID.\n\n"
+            "A BTC transaction ID is usually 64 hexadecimal characters.\n\n"
+            "Please check it and try:\n/verify_payment YOUR_TXID\n\n"
+            "CoinPilotX will never ask for your seed phrase or private key.",
+            reply_markup=main_menu()
+        )
+        return
+
+    existing_user = payment_txid_already_verified(txid)
+    if existing_user:
+        save_payment_verification(update.effective_user.id, txid, "btc", None, "duplicate_txid", f"Already verified for user {existing_user}.")
+        await update.message.reply_text(
+            "⚠️ This TXID has already been used for a verified CoinPilotX Pro activation.\n\n"
+            "If you believe this is a mistake, contact support with your payment details. Pro will not be activated from a reused TXID.",
             reply_markup=main_menu()
         )
         return
 
     is_paid, paid_sats, confirmations = verify_btc_tx(txid)
+    paid_btc = paid_sats / 100_000_000
 
     if is_paid:
-        activate_pro(update.effective_user.id)
+        timestamp = datetime.now().isoformat()
+        activate_pro(update.effective_user.id, payment_type="btc")
+        save_payment_verification(update.effective_user.id, txid, "btc", paid_btc, "verified", f"Confirmations: {confirmations}")
+        send_subscription_email(update.effective_user.id, "btc", txid=txid, timestamp=timestamp)
         await update.message.reply_text(
-            "✅ BTC payment verified.\n\n"
-            "Your CoinPilotX Pro access is now active.",
+            "✅ Payment verified successfully.\n\n"
+            "Your CoinPilotX Pro access is now active.\n\n"
+            f"TXID: {txid}\n"
+            f"Detected amount: {paid_btc:.8f} BTC\n"
+            f"Confirmations: {confirmations}\n\n"
+            "Educational only — not financial advice.\n"
+            "CoinPilotX will never ask for your seed phrase or private key.",
             reply_markup=main_menu()
         )
     else:
+        status = "pending_or_wrong_amount" if paid_sats else "not_found_or_unpaid"
+        save_payment_verification(update.effective_user.id, txid, "btc", paid_btc, status, f"Confirmations: {confirmations}")
         await update.message.reply_text(
             "⏳ Payment not verified yet.\n\n"
-            f"Detected: {paid_sats} sats\n"
+            "Pro has not been activated because the transaction could not be confirmed for the expected BTC amount yet.\n\n"
+            f"Detected: {paid_btc:.8f} BTC\n"
             f"Confirmations: {confirmations}\n\n"
-            "Make sure you sent the correct BTC amount to the correct address, then try again later.",
+            "Make sure you sent the correct BTC amount to the correct address, then try again later.\n\n"
+            "CoinPilotX will never ask for your seed phrase or private key.",
             reply_markup=main_menu()
         )
 
@@ -1728,7 +1947,7 @@ SCAM_STORY_LIBRARY = [
         "title": "The fake mentor profit dashboard",
         "story": "A friendly stranger spends weeks building trust, then introduces a trading platform showing steady fake profits. Withdrawals suddenly require taxes, fees, or more deposits.",
         "trap": "The victim is shown fake gains to make the next deposit feel rational. The money was never really trading.",
-        "red_flags": ["Guaranteed returns", "A stranger chooses the platform", "Small first withdrawal followed by bigger pressure", "Extra fee required before withdrawal"],
+        "red_flags": ["Claims of certain returns", "A stranger chooses the platform", "Small first withdrawal followed by bigger pressure", "Extra fee required before withdrawal"],
         "avoid": ["Never use platforms introduced by strangers", "Verify licensing and domain history", "Test withdrawals early", "Do not pay fees to unlock alleged profits"],
         "final": "If profits only exist on a website you cannot independently verify, treat them as unreal.",
     },
@@ -1766,6 +1985,9 @@ def init_db():
         "ALTER TABLE users ADD COLUMN subscription_expires_at TEXT",
         "ALTER TABLE users ADD COLUMN risk_profile TEXT DEFAULT 'balanced'",
         "ALTER TABLE users ADD COLUMN preferred_exchange_goal TEXT DEFAULT 'beginner'",
+        "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
+        "ALTER TABLE users ADD COLUMN stripe_session_id TEXT",
+        "ALTER TABLE users ADD COLUMN last_payment_type TEXT",
     ]:
         try:
             cur.execute(statement)
@@ -1964,6 +2186,28 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_verifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        txid TEXT,
+        payment_type TEXT,
+        amount REAL,
+        status TEXT,
+        details TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS email_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        subject TEXT,
+        status TEXT,
+        created_at TEXT
+    )
+    """)
 
     conn.commit()
     conn.close()
@@ -2005,6 +2249,9 @@ def help_message():
         "/countrynews Haiti — country crypto intelligence\n"
         "/sportsedge — experimental sports section\n"
         "/subscribe — Pro subscription options\n"
+        "/setemail you@example.com — save email for payment confirmations\n"
+        "/myemail — show the email saved for confirmations\n"
+        "/verify_payment TXID — verify BTC payment and activate Pro if confirmed\n"
         "/account — account and subscription status\n"
         "/admin — admin dashboard summary\n\n"
         "Portfolio: /addholding BTC 0.02, /setbalance 1250, /portfolio_advice\n"
@@ -3572,6 +3819,14 @@ def admin_summary():
     whale_count = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM portfolio_snapshots")
     snapshot_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM payment_verifications WHERE status='verified'")
+    verified_payments = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM payment_verifications WHERE status!='verified'")
+    failed_verifications = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM email_logs WHERE status='sent'")
+    sent_emails = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM email_logs WHERE status!='sent'")
+    email_issues = cur.fetchone()[0]
     conn.close()
 
     return (
@@ -3581,7 +3836,11 @@ def admin_summary():
         f"Alerts enabled: {alert_users or 0}\n"
         f"Saved alerts: {alert_count}\n"
         f"Whale alerts: {whale_count}\n"
-        f"Portfolio snapshots: {snapshot_count}"
+        f"Portfolio snapshots: {snapshot_count}\n"
+        f"Verified payments: {verified_payments}\n"
+        f"Failed/pending verifications: {failed_verifications}\n"
+        f"Emails sent: {sent_emails}\n"
+        f"Email issues/skipped: {email_issues}"
     )
 
 
@@ -3865,6 +4124,47 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(pro_upgrade_message(update.effective_user.id), reply_markup=upgrade_payment_menu(update.effective_user.id))
 
 
+async def setemail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
+        await update.message.reply_text(
+            "Usage:\n/setemail you@example.com\n\n"
+            "Your email is used for subscription confirmations, account/security notifications, and optional future updates if implemented.",
+            reply_markup=main_menu()
+        )
+        return
+    email = context.args[0].strip().lower()
+    if not is_valid_email(email):
+        await update.message.reply_text(
+            "⚠️ That email format does not look valid.\n\n"
+            "Try:\n/setemail you@example.com",
+            reply_markup=main_menu()
+        )
+        return
+    save_user_email(update.effective_user.id, email)
+    await update.message.reply_text(
+        "✅ Email saved securely for CoinPilotX account and payment confirmations.\n\n"
+        "Your email is never shown publicly.",
+        reply_markup=main_menu()
+    )
+
+
+async def myemail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    email = get_user_email(update.effective_user.id)
+    if email:
+        msg = (
+            f"📧 Email on file:\n{email}\n\n"
+            "Used for subscription confirmations, account/security notifications, and optional future updates if implemented."
+        )
+    else:
+        msg = (
+            "📧 No email is set yet.\n\n"
+            "Optional but recommended for payment confirmations:\n/setemail you@example.com"
+        )
+    await update.message.reply_text(msg, reply_markup=main_menu())
+
+
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     await update.message.reply_text(account_summary(update.effective_user.id), reply_markup=main_menu())
@@ -3925,7 +4225,7 @@ async def portfolio_tracking_job(context: ContextTypes.DEFAULT_TYPE):
             continue
 
 
-def activate_pro(user_id):
+def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, subscription_status="active"):
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -3933,11 +4233,14 @@ def activate_pro(user_id):
         UPDATE users
         SET is_pro=1,
             subscription_plan='pro',
-            subscription_status='active',
-            subscription_started_at=?
+            subscription_status=?,
+            subscription_started_at=?,
+            last_payment_type=COALESCE(?, last_payment_type),
+            stripe_customer_id=COALESCE(?, stripe_customer_id),
+            stripe_session_id=COALESCE(?, stripe_session_id)
         WHERE user_id=?
         """,
-        (datetime.now().isoformat(), user_id)
+        (subscription_status, datetime.now().isoformat(), payment_type, stripe_customer_id, stripe_session_id, user_id)
     )
     conn.commit()
     conn.close()
@@ -4234,7 +4537,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "pay_btc":
         await query.message.reply_text(
-            f"₿ Pay with Bitcoin\n\nSend exactly: {BTC_PRO_PRICE}\n\nBTC address:\n{BTC_PAYMENT_ADDRESS}\n\nAfter sending, type:\n/verify_payment YOUR_TXID",
+            f"₿ Pay with Bitcoin\n\nSend exactly: {BTC_PRO_PRICE}\n\nBTC address:\n{BTC_PAYMENT_ADDRESS}\n\n"
+            "For faster activation:\n"
+            "1. Send payment\n"
+            "2. Type:\n   /verify_payment YOUR_TXID\n"
+            "3. CoinPilotX will verify the transaction and activate Pro if confirmed.\n\n"
+            "Optional but recommended:\n"
+            "Set your email for payment confirmations:\n  /setemail you@example.com\n\n"
+            "CoinPilotX will never ask for your seed phrase or private key.",
             reply_markup=main_menu()
         )
         return
@@ -4377,6 +4687,8 @@ def main():
     app.add_handler(CommandHandler("clearbalance", clearbalance_command))
     app.add_handler(CommandHandler("portfolio_advice", portfolio_advice_command))
     app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("setemail", setemail_command))
+    app.add_handler(CommandHandler("myemail", myemail_command))
     app.add_handler(CommandHandler("account", account_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("cryptonews", cryptonews_command))
