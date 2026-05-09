@@ -541,7 +541,7 @@
           '<p><strong>What Could Change:</strong> ' + escapeHtml(analysis.what_could_change || "") + '</p>' +
           '<p>' + escapeHtml(analysis.disclaimer || "Informational only — not betting or financial advice. Never risk money you cannot afford to lose.") + '</p>' +
           '<div class="sports-ai-prompt">' + escapeHtml(telegramSportsPrompt(game)) + '</div>' +
-          '<div class="actions" style="margin-top: 14px;"><a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="try_sports_ai">Open Telegram Bot</a></div>' +
+          '<div class="sports-telegram-action"><a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="try_sports_ai">Open Telegram Bot</a></div>' +
         '</div>' +
       '</div>';
   }
