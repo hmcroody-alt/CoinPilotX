@@ -65,6 +65,37 @@
     return "$" + value.toLocaleString(undefined, { maximumFractionDigits: 0 });
   }
 
+  function formatCompactCurrency(value) {
+    if (typeof value !== "number") {
+      return "n/a";
+    }
+    if (Math.abs(value) >= 1e12) {
+      return "$" + (value / 1e12).toFixed(2) + "T";
+    }
+    if (Math.abs(value) >= 1e9) {
+      return "$" + (value / 1e9).toFixed(2) + "B";
+    }
+    if (Math.abs(value) >= 1e6) {
+      return "$" + (value / 1e6).toFixed(2) + "M";
+    }
+    if (Math.abs(value) >= 1) {
+      return "$" + value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+    return "$" + value.toFixed(6);
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, function (char) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char];
+    });
+  }
+
   function formatSignedPercent(value) {
     if (typeof value !== "number") {
       return "--";
@@ -197,13 +228,93 @@
     window.setInterval(refreshIntelligenceFeed, 30000);
   }
 
+  var currentMarketFilter = "top_volume";
+  var previousMarketPrices = {};
+
+  function marketRow(item) {
+    var change = typeof item.change_24h === "number" ? item.change_24h : null;
+    var changeClass = change === null ? "" : change >= 0 ? "positive" : "negative";
+    var changeText = change === null ? "n/a" : formatSignedPercent(change);
+    var image = item.image ? '<img src="' + escapeHtml(item.image) + '" alt="" loading="lazy">' : "";
+    var fallback = image ? "" : escapeHtml((item.symbol || "?").slice(0, 2));
+    var priorPrice = previousMarketPrices[item.id || item.symbol];
+    var updated = typeof priorPrice === "number" && typeof item.price === "number" && priorPrice !== item.price;
+    previousMarketPrices[item.id || item.symbol] = item.price;
+
+    return (
+      '<div class="market-row' + (updated ? " is-updated" : "") + '">' +
+        '<div class="market-asset">' +
+          '<div class="coin-icon">' + image + fallback + '</div>' +
+          '<div><div class="asset-name">' + escapeHtml(item.name || "Unknown") + '</div><div class="asset-symbol">' + escapeHtml(item.symbol || "") + '</div></div>' +
+        '</div>' +
+        '<div class="market-value" aria-label="Price">' + formatCompactCurrency(item.price) + '</div>' +
+        '<div class="market-change ' + changeClass + '" aria-label="24 hour change">' + changeText + '</div>' +
+        '<div class="market-value" aria-label="24 hour volume">' + formatCompactCurrency(item.volume_24h) + '</div>' +
+        '<div class="market-value" aria-label="Market cap">' + formatCompactCurrency(item.market_cap) + '</div>' +
+      '</div>'
+    );
+  }
+
+  async function refreshMarketBoard() {
+    var list = document.querySelector("[data-market-list]");
+    var updated = document.querySelector("[data-market-updated]");
+    var error = document.querySelector("[data-market-error]");
+    if (!list || !updated) {
+      return;
+    }
+
+    try {
+      var response = await fetch("/api/markets?category=" + encodeURIComponent(currentMarketFilter), { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Market board request failed");
+      }
+      var data = await response.json();
+      var markets = (data.markets || []).slice(0, 12);
+      if (!markets.length) {
+        throw new Error("No market rows");
+      }
+
+      list.innerHTML =
+        '<div class="market-row market-head"><div>Asset</div><div>Price</div><div>24h</div><div>Volume</div><div>Market Cap</div></div>' +
+        markets.map(marketRow).join("");
+      updated.textContent = (data.warning ? data.warning + " " : "") + "Last updated " + relativeTime(data.updated_at) + " · " + (data.source || "market data");
+      if (error) {
+        error.hidden = true;
+      }
+    } catch (err) {
+      if (error) {
+        error.hidden = false;
+      }
+      updated.textContent = "Live market data temporarily unavailable.";
+    }
+  }
+
+  function setupMarketBoard() {
+    if (!document.querySelector("[data-market-list]")) {
+      return;
+    }
+    document.querySelectorAll("[data-market-filter]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        currentMarketFilter = button.getAttribute("data-market-filter") || "top_volume";
+        document.querySelectorAll("[data-market-filter]").forEach(function (item) {
+          item.classList.toggle("is-active", item === button);
+        });
+        refreshMarketBoard();
+      });
+    });
+    refreshMarketBoard();
+    window.setInterval(refreshMarketBoard, 45000);
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       setupReveal();
       setupIntelligenceFeed();
+      setupMarketBoard();
     });
   } else {
     setupReveal();
     setupIntelligenceFeed();
+    setupMarketBoard();
   }
 })();

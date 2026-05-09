@@ -58,6 +58,8 @@ PORTFOLIO_TRACK_SECONDS = int(os.getenv("PORTFOLIO_TRACK_SECONDS", "900"))
 WHALE_NOTIONAL_USD_THRESHOLD = float(os.getenv("WHALE_NOTIONAL_USD_THRESHOLD", "1000000"))
 INTELLIGENCE_FEED_CACHE = {"data": None, "created_at": None}
 INTELLIGENCE_FEED_CACHE_SECONDS = int(os.getenv("INTELLIGENCE_FEED_CACHE_SECONDS", "15"))
+MARKETS_CACHE = {"data": None, "created_at": None}
+MARKETS_CACHE_SECONDS = int(os.getenv("MARKETS_CACHE_SECONDS", "60"))
 ADMIN_USER_IDS = {
     int(x.strip())
     for x in os.getenv("ADMIN_USER_IDS", "").split(",")
@@ -449,6 +451,12 @@ def sitemap_xml():
 @webhook_app.route("/api/intelligence-feed", methods=["GET"])
 def intelligence_feed_api():
     return jsonify(live_intelligence_feed())
+
+
+@webhook_app.route("/api/markets", methods=["GET"])
+def markets_api():
+    category = request.args.get("category", "top_volume")
+    return jsonify(live_market_board(category=category))
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
@@ -1070,8 +1078,271 @@ def get_coinbase_price(asset):
         return None
 
 
+def normalize_market_item(item):
+    return {
+        "id": item.get("id") or item.get("symbol", "").lower(),
+        "name": item.get("name") or item.get("symbol", "").upper(),
+        "symbol": (item.get("symbol") or "").upper(),
+        "image": item.get("image") or "",
+        "price": item.get("current_price"),
+        "volume_24h": item.get("total_volume"),
+        "change_24h": item.get("price_change_percentage_24h"),
+        "market_cap": item.get("market_cap"),
+    }
+
+
+def fetch_coingecko_markets():
+    headers = {}
+    api_key = os.getenv("COINGECKO_API_KEY")
+    if api_key:
+        headers["x-cg-demo-api-key"] = api_key
+    response = requests.get(
+        "https://api.coingecko.com/api/v3/coins/markets",
+        params={
+            "vs_currency": "usd",
+            "order": "volume_desc",
+            "per_page": 50,
+            "page": 1,
+            "sparkline": "false",
+            "price_change_percentage": "24h",
+        },
+        headers=headers,
+        timeout=12,
+    )
+    response.raise_for_status()
+    return [normalize_market_item(item) for item in response.json()]
+
+
+def fetch_coinmarketcap_markets():
+    api_key = os.getenv("COINMARKETCAP_API_KEY")
+    if not api_key:
+        return []
+    response = requests.get(
+        "https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest",
+        params={"start": 1, "limit": 50, "convert": "USD", "sort": "volume_24h"},
+        headers={"X-CMC_PRO_API_KEY": api_key},
+        timeout=12,
+    )
+    response.raise_for_status()
+    markets = []
+    for item in response.json().get("data", []):
+        quote = item.get("quote", {}).get("USD", {})
+        markets.append({
+            "id": str(item.get("id")),
+            "name": item.get("name"),
+            "symbol": item.get("symbol", "").upper(),
+            "image": "",
+            "price": quote.get("price"),
+            "volume_24h": quote.get("volume_24h"),
+            "change_24h": quote.get("percent_change_24h"),
+            "market_cap": quote.get("market_cap"),
+        })
+    return markets
+
+
+def fetch_coinbase_fallback_markets():
+    markets = []
+    names = {"BTC": "Bitcoin", "ETH": "Ethereum"}
+    for symbol in ["BTC", "ETH"]:
+        try:
+            response = requests.get(
+                f"https://api.exchange.coinbase.com/products/{symbol}-USD/ticker",
+                timeout=8,
+            )
+            response.raise_for_status()
+            item = response.json()
+            markets.append({
+                "id": symbol.lower(),
+                "name": names[symbol],
+                "symbol": symbol,
+                "image": "",
+                "price": float(item.get("price")),
+                "volume_24h": float(item.get("volume", 0)),
+                "change_24h": None,
+                "market_cap": None,
+            })
+        except Exception as exc:
+            logging.info("Coinbase market fallback failed for %s: %s", symbol, exc)
+    return markets
+
+
+def sort_markets(markets, category="top_volume"):
+    category = (category or "top_volume").lower()
+    if category in {"top_market_cap", "market_cap", "cap"}:
+        return sorted(markets, key=lambda x: x.get("market_cap") or 0, reverse=True)
+    if category == "gainers":
+        return sorted(markets, key=lambda x: x.get("change_24h") if x.get("change_24h") is not None else -999, reverse=True)
+    if category == "losers":
+        return sorted(markets, key=lambda x: x.get("change_24h") if x.get("change_24h") is not None else 999)
+    return sorted(markets, key=lambda x: x.get("volume_24h") or 0, reverse=True)
+
+
+def live_market_board(category="top_volume", limit=50):
+    now = datetime.now()
+    cached_at = MARKETS_CACHE.get("created_at")
+    cache_fresh = (
+        MARKETS_CACHE.get("data")
+        and cached_at
+        and (now - cached_at).total_seconds() < MARKETS_CACHE_SECONDS
+    )
+    if cache_fresh:
+        cached = dict(MARKETS_CACHE["data"])
+        cached["markets"] = sort_markets(cached.get("markets", []), category)[:limit]
+        return cached
+
+    warning = None
+    source = "coingecko"
+    markets = []
+    try:
+        markets = fetch_coingecko_markets()
+    except Exception as exc:
+        logging.info("CoinGecko markets failed: %s", exc)
+        warning = "CoinGecko temporarily unavailable."
+
+    if not markets:
+        try:
+            markets = fetch_coinmarketcap_markets()
+            if markets:
+                source = "coinmarketcap"
+        except Exception as exc:
+            logging.info("CoinMarketCap markets failed: %s", exc)
+            warning = "CoinGecko/CoinMarketCap temporarily unavailable."
+
+    if not markets:
+        markets = fetch_coinbase_fallback_markets()
+        if markets:
+            source = "coinbase"
+            warning = "Using Coinbase BTC/ETH fallback only."
+
+    if not markets and MARKETS_CACHE.get("data"):
+        cached = dict(MARKETS_CACHE["data"])
+        cached["warning"] = "Live market data temporarily unavailable. Showing last cached data."
+        cached["stale"] = True
+        cached["markets"] = sort_markets(cached.get("markets", []), category)[:limit]
+        return cached
+
+    if not markets:
+        return {
+            "source": "unavailable",
+            "updated_at": now.isoformat(),
+            "warning": "Live market data temporarily unavailable. Try again shortly.",
+            "stale": False,
+            "markets": [],
+        }
+
+    data = {
+        "source": source,
+        "updated_at": now.isoformat(),
+        "warning": warning,
+        "stale": False,
+        "markets": sort_markets(markets, category)[:limit],
+    }
+    if markets:
+        MARKETS_CACHE["data"] = data
+        MARKETS_CACHE["created_at"] = now
+    return data
+
+
+def get_market_by_symbol(symbol):
+    data = live_market_board(limit=50)
+    symbol = normalize_asset(symbol)
+    for item in data.get("markets", []):
+        if item.get("symbol") == symbol:
+            return item
+    return None
+
+
+def compact_usd(value):
+    if value is None:
+        return "n/a"
+    try:
+        value = float(value)
+    except Exception:
+        return "n/a"
+    if abs(value) >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.2f}B"
+    if abs(value) >= 1_000_000:
+        return f"${value / 1_000_000:.2f}M"
+    if abs(value) >= 1:
+        return f"${value:,.2f}"
+    return f"${value:.6f}"
+
+
+def market_pressure_interpretation(markets):
+    valid = [m for m in markets if isinstance(m.get("change_24h"), (int, float))]
+    if not valid:
+        return "Market breadth is still loading, so review price and volume before acting."
+    positive = sum(1 for m in valid if m["change_24h"] > 0)
+    avg_change = sum(m["change_24h"] for m in valid) / len(valid)
+    top_volume = markets[0].get("symbol") if markets else "BTC"
+    if avg_change > 2 and positive >= len(valid) * 0.6:
+        read = "market data suggests broad positive momentum"
+    elif avg_change < -2 and positive <= len(valid) * 0.4:
+        read = "risk may be elevated because market breadth is weak"
+    else:
+        read = "market conditions look mixed, so confirmation matters"
+    return f"{read}. Top-volume pressure is led by {top_volume}. Review before acting."
+
+
+def market_board_summary(user_id, category="top_volume"):
+    data = live_market_board(category=category, limit=20)
+    markets = data.get("markets", [])
+    selected = markets[:10]
+    if not selected:
+        return (
+            "📊 Live Crypto Markets\n\n"
+            "Live market data temporarily unavailable. Try again shortly.\n\n"
+            "Educational only — not financial advice."
+        )
+
+    title_map = {
+        "top_volume": "Top Volume",
+        "top_market_cap": "Top Market Cap",
+        "gainers": "Top Gainers",
+        "losers": "Top Losers",
+    }
+    title = title_map.get(category, "Live Markets")
+    lines = [
+        f"📊 {title}",
+        f"Source: {data.get('source', 'market data')}",
+        f"Updated: {data.get('updated_at', '')[:19]}",
+    ]
+    if data.get("warning"):
+        lines.append(f"Note: {data['warning']}")
+    lines.append("")
+    for index, item in enumerate(selected, start=1):
+        change = item.get("change_24h")
+        change_text = "n/a" if change is None else f"{change:+.2f}%"
+        lines.append(
+            f"{index}. {item.get('name')} ({item.get('symbol')}) — "
+            f"{compact_usd(item.get('price'))} | 24h {change_text} | Vol {compact_usd(item.get('volume_24h'))}"
+        )
+
+    interpretation = market_pressure_interpretation(selected)
+    if is_pro(user_id):
+        gainers = [m for m in markets if isinstance(m.get("change_24h"), (int, float)) and m["change_24h"] > 0]
+        losers = [m for m in markets if isinstance(m.get("change_24h"), (int, float)) and m["change_24h"] < 0]
+        lines.extend([
+            "",
+            "Pro market pressure read:",
+            interpretation,
+            f"Breadth: {len(gainers)} positive vs {len(losers)} negative among loaded assets.",
+            "Risk context: high-volume downside moves can signal elevated caution; high-volume upside moves can signal stronger momentum.",
+        ])
+    else:
+        lines.extend(["", f"Quick read: {interpretation}"])
+
+    lines.append("")
+    lines.append("Educational only — not financial advice.")
+    return append_plan_footer(user_id, "\n".join(lines))
+
+
 def get_best_price(asset):
     prices = {}
+
+    market_item = get_market_by_symbol(asset)
+    if market_item and market_item.get("price"):
+        prices["CoinGecko"] = float(market_item["price"])
 
     b = get_binance_price(asset)
     c = get_coinbase_price(asset)
@@ -2226,6 +2497,10 @@ def help_message():
         "/price BTC — live price and signal\n"
         "/chart BTC — real BTC/ETH live chart\n"
         "/analysis BTC — AI-style crypto analysis\n"
+        "/markets — live top market cap board\n"
+        "/topvolume — top crypto assets by 24h volume\n"
+        "/gainers — strongest 24h movers\n"
+        "/losers — weakest 24h movers\n"
         "/signals — auto signal engine summary\n"
         "/feargreed — market fear/greed read\n"
         "/whales — latest whale-style activity\n"
@@ -3579,11 +3854,14 @@ def live_intelligence_feed():
         if not price_now:
             raise ValueError("BTC price unavailable")
 
+        btc_market = get_market_by_symbol("BTC") or {}
         candles = get_klines("BTC", "1h", 48)
         prices = [c["close"] for c in candles] if candles else get_price_history("BTC", 40)
         volumes = [c["volume"] for c in candles] if candles else []
         previous_24h = prices[-25] if len(prices) >= 25 else prices[0] if prices else price_now
         change_24h = ((price_now - previous_24h) / previous_24h) * 100 if previous_24h else 0
+        if isinstance(btc_market.get("change_24h"), (int, float)):
+            change_24h = btc_market["change_24h"]
         momentum_pct = ((prices[-1] - prices[-6]) / prices[-6]) * 100 if len(prices) >= 6 and prices[-6] else change_24h
 
         signal = smart_market_signal("BTC", price_now, True)
@@ -4252,6 +4530,26 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(append_plan_footer(user_id, maybe_limit_for_free(user_id, msg)), reply_markup=main_menu())
 
 
+async def markets_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(market_board_summary(update.effective_user.id, "top_market_cap"), reply_markup=main_menu())
+
+
+async def topvolume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(market_board_summary(update.effective_user.id, "top_volume"), reply_markup=main_menu())
+
+
+async def gainers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(market_board_summary(update.effective_user.id, "gainers"), reply_markup=main_menu())
+
+
+async def losers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    await update.message.reply_text(market_board_summary(update.effective_user.id, "losers"), reply_markup=main_menu())
+
+
 async def portfolio_live_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     user_id = update.effective_user.id
@@ -4835,6 +5133,10 @@ def main():
     app.add_handler(CommandHandler("signal", signal))
     app.add_handler(CommandHandler("verify_payment", verify_payment))
     app.add_handler(CommandHandler("analysis", analysis_command))
+    app.add_handler(CommandHandler("markets", markets_command))
+    app.add_handler(CommandHandler("topvolume", topvolume_command))
+    app.add_handler(CommandHandler("gainers", gainers_command))
+    app.add_handler(CommandHandler("losers", losers_command))
     app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("chart", chart_command))
     app.add_handler(CommandHandler("feargreed", feargreed_command))
