@@ -10,6 +10,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://coinpilotx.com" />
   <meta name="theme-color" content="#08111f" />
+  <link rel="icon" type="image/png" href="Coinpilot%20Logo/Logo.png" />
 
   <style>
     :root {
@@ -77,23 +78,60 @@
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       font-weight: 850;
       letter-spacing: 0;
       font-size: 20px;
       white-space: nowrap;
+      transition: transform 0.22s ease, filter 0.22s ease;
     }
 
-    .brand-mark {
-      display: grid;
-      width: 36px;
-      height: 36px;
+    .brand:hover,
+    .hero-brand:hover,
+    .footer-brand:hover {
+      transform: scale(1.025);
+      filter: drop-shadow(0 0 18px rgba(110, 223, 246, 0.24));
+    }
+
+    .logo-wrap {
+      position: relative;
+      display: inline-grid;
       place-items: center;
+      flex: 0 0 auto;
+    }
+
+    .logo-wrap::before {
+      content: "";
+      position: absolute;
+      inset: 7%;
       border-radius: 10px;
-      background: linear-gradient(135deg, var(--green), var(--cyan));
-      color: #06101b;
-      box-shadow: 0 0 30px rgba(54, 229, 143, 0.32);
-      font-weight: 900;
+      background: radial-gradient(circle, rgba(110, 223, 246, 0.32), rgba(54, 229, 143, 0.12), transparent 70%);
+      filter: blur(12px);
+      opacity: 0.72;
+      z-index: -1;
+    }
+
+    .brand-logo {
+      display: block;
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      border-radius: 10px;
+      image-rendering: auto;
+      filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.28));
+    }
+
+    .brand-text {
+      display: inline-flex;
+      flex-direction: column;
+      line-height: 1.05;
+    }
+
+    .brand-text small {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      margin-top: 3px;
     }
 
     .nav-links {
@@ -181,6 +219,38 @@
       font-size: 13px;
       font-weight: 760;
       margin-bottom: 20px;
+    }
+
+    .hero-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 22px;
+      transition: transform 0.22s ease, filter 0.22s ease;
+    }
+
+    .hero-logo {
+      width: clamp(72px, 10vw, 112px);
+      height: clamp(72px, 10vw, 112px);
+      object-fit: contain;
+      border-radius: 18px;
+      filter: drop-shadow(0 18px 34px rgba(0, 0, 0, 0.35));
+    }
+
+    .hero-brand-copy {
+      text-align: left;
+    }
+
+    .hero-brand-copy strong {
+      display: block;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1;
+    }
+
+    .hero-brand-copy span {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 750;
     }
 
     h1 {
@@ -674,6 +744,22 @@
       flex-wrap: wrap;
     }
 
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      transition: transform 0.22s ease, filter 0.22s ease;
+    }
+
+    .footer-logo {
+      width: 42px;
+      height: 42px;
+      object-fit: contain;
+      border-radius: 10px;
+      filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.28));
+    }
+
     .disclaimer {
       color: #ffd9a0;
       border: 1px solid rgba(255, 209, 102, 0.24);
@@ -722,6 +808,15 @@
         display: none;
       }
 
+      .brand-logo {
+        width: 38px;
+        height: 38px;
+      }
+
+      .brand-text small {
+        display: none;
+      }
+
       section {
         padding: 58px 0;
       }
@@ -729,6 +824,15 @@
       .hero {
         min-height: auto;
         padding-top: 54px;
+      }
+
+      .hero-brand {
+        align-items: center;
+      }
+
+      .hero-logo {
+        width: 68px;
+        height: 68px;
       }
 
       .grid,
@@ -789,8 +893,13 @@
     <div class="container">
       <nav aria-label="Main navigation">
         <a class="brand" href="#top" aria-label="CoinPilotX home">
-          <span class="brand-mark">C</span>
-          <span>CoinPilotX</span>
+          <span class="logo-wrap">
+            <img class="brand-logo" src="Coinpilot%20Logo/Logo.png" alt="CoinPilotX logo" width="44" height="44" decoding="async" />
+          </span>
+          <span class="brand-text">
+            <span>CoinPilotX</span>
+            <small>AI Crypto Intelligence</small>
+          </span>
         </a>
 
         <div class="nav-links">
@@ -835,6 +944,15 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
         <div>
+          <div class="hero-brand" aria-label="CoinPilotX brand">
+            <span class="logo-wrap">
+              <img class="hero-logo" src="Coinpilot%20Logo/Logo.png" alt="CoinPilotX logo" width="112" height="112" decoding="async" />
+            </span>
+            <div class="hero-brand-copy">
+              <strong>CoinPilotX</strong>
+              <span>AI crypto intelligence inside Telegram</span>
+            </div>
+          </div>
           <div class="eyebrow">Powered by OpenAI + CoinPilotX crypto intelligence</div>
           <h1 id="hero-title">Your AI Crypto Intelligence Terminal Inside Telegram</h1>
           <p class="hero-copy">
@@ -1432,9 +1550,16 @@
     <div class="container">
       <div class="footer-grid">
         <div>
-          <strong>CoinPilotX</strong>
-          <div>AI crypto intelligence inside Telegram.</div>
-          <div>Educational only — not financial advice.</div>
+          <div class="footer-brand">
+            <span class="logo-wrap">
+              <img class="footer-logo" src="Coinpilot%20Logo/Logo.png" alt="CoinPilotX logo" width="42" height="42" loading="lazy" decoding="async" />
+            </span>
+            <div>
+              <strong>CoinPilotX</strong>
+              <div>AI crypto intelligence inside Telegram.</div>
+              <div>Educational only — not financial advice.</div>
+            </div>
+          </div>
         </div>
         <div class="footer-links">
           <a href="https://t.me/DocShieldX_bot">Telegram</a>
