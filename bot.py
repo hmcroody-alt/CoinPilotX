@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, send_from_directory
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -427,6 +427,16 @@ app = webhook_app
 @webhook_app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
+
+
+@webhook_app.route("/robots.txt", methods=["GET"])
+def robots_txt():
+    return send_from_directory(webhook_app.static_folder, "robots.txt", mimetype="text/plain")
+
+
+@webhook_app.route("/sitemap.xml", methods=["GET"])
+def sitemap_xml():
+    return send_from_directory(webhook_app.static_folder, "sitemap.xml", mimetype="application/xml")
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])

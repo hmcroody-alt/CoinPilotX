@@ -4,13 +4,69 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CoinPilotX | AI Crypto Intelligence Bot</title>
-  <meta name="description" content="AI-powered crypto intelligence, whale alerts, scam protection, portfolio tracking, and market insights inside Telegram." />
+  <meta name="description" content="CoinPilotX is an AI crypto intelligence bot for Telegram with scam protection, whale alerts, portfolio intelligence, blockchain wallet risk scanning, and crypto market analysis." />
+  <link rel="canonical" href="https://coinpilotx.app/" />
   <meta property="og:title" content="CoinPilotX | AI Crypto Intelligence Bot" />
   <meta property="og:description" content="AI-powered crypto intelligence, whale alerts, scam protection, portfolio tracking, and market insights inside Telegram." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://coinpilotx.com" />
+  <meta property="og:url" content="https://coinpilotx.app/" />
+  <meta property="og:site_name" content="CoinPilotX" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="CoinPilotX | AI Crypto Intelligence Bot" />
+  <meta name="twitter:description" content="Telegram crypto bot for AI market analysis, wallet risk scanning, whale alerts, portfolio intelligence, and scam protection." />
   <meta name="theme-color" content="#08111f" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "CoinPilotX",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Telegram",
+        "description": "AI crypto intelligence bot for Telegram with crypto scam protection, whale alerts, portfolio intelligence, and blockchain wallet risk scanning.",
+        "offers": {
+          "@type": "Offer",
+          "price": "14.99",
+          "priceCurrency": "USD"
+        }
+      },
+      {
+        "@type": "Organization",
+        "name": "CoinPilotX",
+        "url": "https://coinpilotx.app/",
+        "sameAs": ["https://t.me/DocShieldX_bot"]
+      },
+      {
+        "@type": "WebSite",
+        "name": "CoinPilotX",
+        "url": "https://coinpilotx.app/",
+        "description": "AI crypto intelligence, crypto scam protection, whale alerts Telegram bot, crypto portfolio intelligence, and blockchain wallet risk scanner."
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is CoinPilotX?",
+            "acceptedAnswer": {"@type": "Answer", "text": "CoinPilotX is an AI crypto intelligence bot for Telegram with market analysis, whale tracking, scam protection, portfolio tools, and global crypto context."}
+          },
+          {
+            "@type": "Question",
+            "name": "Is CoinPilotX financial advice?",
+            "acceptedAnswer": {"@type": "Answer", "text": "No. CoinPilotX is educational software. Educational only — not financial advice."}
+          },
+          {
+            "@type": "Question",
+            "name": "Does CoinPilotX hold my crypto?",
+            "acceptedAnswer": {"@type": "Answer", "text": "No. CoinPilotX never holds user funds and never asks for seed phrases, private keys, recovery phrases, or wallet passwords."}
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 
   <style>
     :root {
@@ -44,8 +100,20 @@
         radial-gradient(circle at 15% 5%, rgba(54, 229, 143, 0.18), transparent 30%),
         radial-gradient(circle at 85% 10%, rgba(110, 223, 246, 0.14), transparent 26%),
         linear-gradient(180deg, #08111f 0%, var(--bg) 38%, #050810 100%);
+      background-size: 120% 120%, 130% 130%, 100% 100%;
+      animation: ambientShift 18s ease-in-out infinite alternate;
       color: var(--text);
       line-height: 1.6;
+    }
+
+    @keyframes ambientShift {
+      from {
+        background-position: 0% 0%, 100% 0%, center;
+      }
+
+      to {
+        background-position: 12% 5%, 85% 12%, center;
+      }
     }
 
     a {
@@ -163,13 +231,15 @@
       color: var(--text);
       font-weight: 760;
       font-size: 14px;
-      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     }
 
     .button:hover {
-      transform: translateY(-1px);
+      transform: translateY(-2px);
       border-color: rgba(110, 223, 246, 0.45);
       background: rgba(255, 255, 255, 0.07);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
     }
 
     .button.primary {
@@ -191,6 +261,7 @@
 
     section {
       padding: 82px 0;
+      scroll-margin-top: 96px;
     }
 
     .hero {
@@ -441,6 +512,15 @@
 
     .card {
       padding: 22px;
+      transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .card:hover,
+    .faq-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(110, 223, 246, 0.24);
+      background: rgba(17, 29, 50, 0.84);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
     }
 
     .card h3,
@@ -520,6 +600,44 @@
 
     .pro-text {
       color: #c8ffe2;
+      background: linear-gradient(90deg, rgba(54, 229, 143, 0.08), rgba(110, 223, 246, 0.04));
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .metric-card {
+      padding: 22px;
+      border: 1px solid rgba(110, 223, 246, 0.18);
+      border-radius: 8px;
+      background: rgba(13, 22, 39, 0.76);
+    }
+
+    .metric-card strong {
+      display: block;
+      color: var(--green);
+      font-size: 26px;
+      margin-bottom: 4px;
+    }
+
+    .step-number {
+      display: inline-grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      color: #06101b;
+      font-weight: 900;
+      margin-bottom: 14px;
+    }
+
+    .testimonial-note {
+      border-style: dashed;
+      color: var(--muted);
     }
 
     .pricing-wrap {
@@ -784,6 +902,7 @@
       .grid,
       .grid.two,
       .screenshot-grid,
+      .metric-grid,
       .security-panel {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -838,6 +957,7 @@
       .grid,
       .grid.two,
       .screenshot-grid,
+      .metric-grid,
       .security-panel,
       .faq-grid {
         grid-template-columns: 1fr;
@@ -903,17 +1023,17 @@
         </a>
 
         <div class="nav-links">
-          <a href="#features">Features</a>
+          <a href="#features" data-analytics="view_features">Features</a>
           <a href="#pro">Pro</a>
           <a href="#intelligence">Intelligence</a>
           <a href="#safety">Safety</a>
-          <a href="#pricing">Pricing</a>
+          <a href="#pricing" data-analytics="view_pricing">Pricing</a>
           <a href="#faq">FAQ</a>
         </div>
 
         <div class="nav-actions">
-          <a class="button" href="https://t.me/DocShieldX_bot">Launch CoinPilotX Free</a>
-          <a class="button primary" href="#pricing">Unlock Pro Intelligence</a>
+          <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Launch CoinPilotX Free</a>
+          <a class="button primary" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
         </div>
       </nav>
     </div>
@@ -960,8 +1080,8 @@
           </p>
 
           <div class="actions">
-            <a class="button primary" href="https://t.me/DocShieldX_bot">Launch CoinPilotX Free</a>
-            <a class="button" href="#pricing">Unlock Pro Intelligence</a>
+            <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Launch CoinPilotX Free</a>
+            <a class="button" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
           </div>
 
           <div class="trust-tags" aria-label="Trust tags">
@@ -1010,6 +1130,48 @@
             </div>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section id="how-it-works">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">Onboarding</div>
+          <h2>How CoinPilotX Works</h2>
+          <p>Start inside Telegram, ask better questions, and build a safer crypto decision routine.</p>
+        </div>
+
+        <div class="grid">
+          <article class="card">
+            <span class="step-number">1</span>
+            <h3>Launch the Telegram bot</h3>
+            <p>Open CoinPilotX and start with live prices, help commands, or the AI assistant.</p>
+          </article>
+          <article class="card">
+            <span class="step-number">2</span>
+            <h3>Ask or scan</h3>
+            <p>Ask a crypto question, check a TXID, or scan a public wallet for risk patterns.</p>
+          </article>
+          <article class="card">
+            <span class="step-number">3</span>
+            <h3>Track your context</h3>
+            <p>Add portfolio holdings, follow market signals, and compare live value against your balance.</p>
+          </article>
+          <article class="card">
+            <span class="step-number">4</span>
+            <h3>Review risks first</h3>
+            <p>Use scam warnings, whale pressure, volatility, and market context before acting.</p>
+          </article>
+          <article class="card">
+            <span class="step-number">5</span>
+            <h3>Upgrade when ready</h3>
+            <p>Unlock deeper Pro intelligence when you want stronger reasoning and scenario analysis.</p>
+          </article>
+        </div>
+
+        <div class="actions" style="justify-content: center; margin-top: 28px;">
+          <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Start Free in Telegram</a>
+        </div>
       </div>
     </section>
 
@@ -1255,7 +1417,7 @@
       </div>
     </section>
 
-    <section id="safety" class="band">
+    <section id="scam-protection" class="band">
       <div class="container">
         <div class="section-head">
           <div class="section-kicker">Scam Protection</div>
@@ -1328,8 +1490,46 @@
             “Educational only — not financial advice. BTC decision quality depends on trend, volatility, whale pressure, portfolio exposure, and your risk tolerance. Free users receive a quick summary. Pro users receive deeper scenario analysis, upside/downside estimates, and what could change the signal.”
           </div>
           <div class="actions" style="justify-content: center;">
-            <a class="button primary" href="https://t.me/DocShieldX_bot">Try the AI Assistant</a>
+            <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Try the AI Assistant</a>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="funnel" class="band">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">Conversion Path</div>
+          <h2>Start Free. Upgrade When You Need Deeper Intelligence.</h2>
+          <p>CoinPilotX is useful on day one, then becomes more powerful as your crypto decisions become more serious.</p>
+        </div>
+
+        <div class="grid">
+          <article class="card">
+            <span class="icon">🟢</span>
+            <h3>Free User</h3>
+            <p>Check prices, read basic news, and ask simple crypto questions.</p>
+          </article>
+          <article class="card">
+            <span class="icon">📚</span>
+            <h3>Serious Learner</h3>
+            <p>Use AI explanations, scam stories, country news, and market events.</p>
+          </article>
+          <article class="card">
+            <span class="icon">⭐</span>
+            <h3>Pro Intelligence User</h3>
+            <p>Unlock portfolio decision support, whale intelligence, wallet risk analysis, and deeper market reasoning.</p>
+          </article>
+          <article class="card">
+            <span class="icon">🔁</span>
+            <h3>Retained Power User</h3>
+            <p>Receive alerts, compare scenarios, review risks, and return daily for smarter crypto context.</p>
+          </article>
+        </div>
+
+        <div class="actions" style="justify-content: center; margin-top: 28px;">
+          <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Launch CoinPilotX Free</a>
+          <a class="button" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
         </div>
       </div>
     </section>
@@ -1338,9 +1538,9 @@
       <div class="container">
         <div class="section-head center">
           <div class="section-kicker">Free vs Pro</div>
-          <h2>Start free. Upgrade when you want deeper intelligence.</h2>
+          <h2>Free shows you the surface. Pro explains what the signal means.</h2>
           <p>
-            Free helps you start. Pro helps you understand the risk behind the signal.
+            Free is useful for simple checks. Pro adds deeper reasoning, risk scoring, and market context when decisions need more care.
           </p>
         </div>
 
@@ -1348,16 +1548,16 @@
           <div class="comparison-row comparison-head" role="row">
             <div role="columnheader">Capability</div>
             <div role="columnheader">Free</div>
-            <div role="columnheader">Pro</div>
+            <div role="columnheader"><span class="pro-badge">Most Intelligent</span> Pro</div>
           </div>
           <div class="comparison-row" role="row">
             <div>Market intelligence</div>
-            <div>Basic price checks, basic crypto news, and limited AI answers</div>
-            <div class="pro-text">Deep OpenAI-powered analysis, market pressure signals, confidence, and risk context</div>
+            <div>Basic BTC/ETH price checks, basic crypto news, and limited AI responses</div>
+            <div class="pro-text">Deep OpenAI-powered analysis, market pressure intelligence, confidence scoring, and risk context</div>
           </div>
           <div class="comparison-row" role="row">
             <div>Portfolio tools</div>
-            <div>Limited portfolio view and live value</div>
+            <div>Limited portfolio tracking and live value view</div>
             <div class="pro-text">Portfolio BUY / SELL / WAIT / HOLD reasoning, exposure analysis, and upside/downside estimates</div>
           </div>
           <div class="comparison-row" role="row">
@@ -1373,7 +1573,7 @@
           <div class="comparison-row" role="row">
             <div>Global intelligence</div>
             <div>Basic country context</div>
-            <div class="pro-text">Country crypto intelligence, market pressure interpretation, and Pro active confirmation</div>
+            <div class="pro-text">Country crypto intelligence, what could change the signal, and Pro active confirmation</div>
           </div>
         </div>
       </div>
@@ -1407,16 +1607,72 @@
             </ul>
 
             <div class="actions" style="margin-top: 24px;">
-              <a class="button primary" href="#">Unlock Pro Intelligence</a>
-              <a class="button gold" href="https://t.me/DocShieldX_bot">Pay with BTC in Telegram</a>
-              <a class="button" href="https://t.me/DocShieldX_bot">Launch CoinPilotX Free</a>
+              <a class="button primary" href="#" data-analytics="pay_card">Unlock Pro Intelligence</a>
+              <a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="pay_btc">Pay with BTC in Telegram</a>
+              <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Launch CoinPilotX Free</a>
             </div>
           </article>
         </div>
       </div>
     </section>
 
-    <section id="trust">
+    <section id="trust" class="band">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">Trust Signals</div>
+          <h2>Built for Safer Crypto Decisions</h2>
+          <p>Honest product capability signals, not inflated user counts or fake reviews.</p>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card">
+            <strong>20+</strong>
+            <span>country intelligence profiles</span>
+          </article>
+          <article class="metric-card">
+            <strong>25+</strong>
+            <span>Telegram bot commands</span>
+          </article>
+          <article class="metric-card">
+            <strong>AI</strong>
+            <span>powered crypto assistant</span>
+          </article>
+          <article class="metric-card">
+            <strong>Public</strong>
+            <span>blockchain intelligence</span>
+          </article>
+          <article class="metric-card">
+            <strong>Shield</strong>
+            <span>scam protection workflow</span>
+          </article>
+          <article class="metric-card">
+            <strong>Telegram</strong>
+            <span>first experience</span>
+          </article>
+        </div>
+
+        <div class="grid two" style="margin-top: 22px;">
+          <article class="card">
+            <h3>Safety-first by design</h3>
+            <p>CoinPilotX never holds funds, never asks for seed phrases, never asks for private keys, and uses public wallet addresses or TXIDs only.</p>
+          </article>
+          <article class="card">
+            <h3>Powered by OpenAI + CoinPilotX crypto intelligence</h3>
+            <p>AI explanations are paired with crypto-specific workflows for market context, wallet risk, scam awareness, and portfolio education.</p>
+          </article>
+          <article class="card testimonial-note">
+            <h3>Early user feedback coming soon</h3>
+            <p>Real user feedback will be added after it is collected and approved.</p>
+          </article>
+          <article class="card testimonial-note">
+            <h3>Early user feedback coming soon</h3>
+            <p>No fake testimonials, no inflated claims, and no guaranteed-profit promises.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="safety">
       <div class="container">
         <div class="section-head center">
           <div class="section-kicker">Safety and Trust</div>
@@ -1489,6 +1745,53 @@
       </div>
     </section>
 
+    <section id="daily-awareness">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">Retention</div>
+          <h2>Built for Daily Crypto Awareness</h2>
+          <p>Make CoinPilotX your daily crypto intelligence check.</p>
+        </div>
+
+        <div class="grid">
+          <article class="card">
+            <span class="icon">🧠</span>
+            <h3>Daily Market Wisdom</h3>
+            <p>Quick risk-management reminders for patience, emotional control, and safer timing.</p>
+          </article>
+          <article class="card">
+            <span class="icon">🐋</span>
+            <h3>Whale Alerts</h3>
+            <p>Public-chain movement and market pressure updates in plain language.</p>
+          </article>
+          <article class="card">
+            <span class="icon">🛡</span>
+            <h3>Scam Story Warnings</h3>
+            <p>Serious cautionary examples with red flags and prevention steps.</p>
+          </article>
+          <article class="card">
+            <span class="icon">💼</span>
+            <h3>Portfolio Snapshots</h3>
+            <p>Track live value, manual balance context, and educational upside/downside scenarios.</p>
+          </article>
+          <article class="card">
+            <span class="icon">🌍</span>
+            <h3>Country Intelligence</h3>
+            <p>Local regulation, adoption, scams, exchange access, and remittance context.</p>
+          </article>
+          <article class="card">
+            <span class="icon">💬</span>
+            <h3>AI Chat Memory</h3>
+            <p>Pro users receive deeper responses and better context for repeat questions.</p>
+          </article>
+        </div>
+
+        <div class="actions" style="justify-content: center; margin-top: 28px;">
+          <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Launch CoinPilotX Free</a>
+        </div>
+      </div>
+    </section>
+
     <section id="faq">
       <div class="container">
         <div class="section-head center">
@@ -1538,8 +1841,8 @@
             <p class="muted">Launch the bot, ask a question, scan a wallet, or compare Free vs Pro.</p>
           </div>
           <div class="actions">
-            <a class="button primary" href="https://t.me/DocShieldX_bot">Launch CoinPilotX Free</a>
-            <a class="button" href="#pricing">Unlock Pro Intelligence</a>
+            <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_bot">Launch CoinPilotX Free</a>
+            <a class="button" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
           </div>
         </div>
       </div>
@@ -1563,14 +1866,16 @@
         </div>
         <div class="footer-links">
           <a href="https://t.me/DocShieldX_bot">Telegram</a>
-          <a href="#features">Features</a>
+          <a href="#features" data-analytics="view_features">Features</a>
           <a href="#pro">Pro</a>
-          <a href="#trust">Safety</a>
+          <a href="#safety">Safety</a>
           <a href="#faq">FAQ</a>
         </div>
         <div>© 2026 CoinPilotX. All rights reserved.</div>
       </div>
     </div>
   </footer>
+  <!-- Add Google Analytics / Plausible script here later -->
+  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>
 </html>
