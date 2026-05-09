@@ -1167,6 +1167,108 @@
       line-height: 1.55;
     }
 
+    .day-signal-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(320px, 1.05fr);
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .day-signal-copy,
+    .day-signal-card {
+      position: relative;
+      overflow: hidden;
+      padding: 24px;
+      border: 1px solid rgba(110, 223, 246, 0.2);
+      border-radius: 10px;
+      background:
+        radial-gradient(circle at top right, rgba(122, 92, 255, 0.18), transparent 34%),
+        linear-gradient(135deg, rgba(13, 22, 39, 0.92), rgba(7, 11, 20, 0.86));
+      box-shadow: var(--shadow);
+    }
+
+    .day-signal-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent, rgba(110, 223, 246, 0.08), transparent);
+      transform: translateX(-100%);
+      animation: shimmerLine 5s ease-in-out infinite;
+    }
+
+    .day-step-meta {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      margin-bottom: 12px;
+      padding: 6px 10px;
+      border: 1px solid rgba(54, 229, 143, 0.22);
+      border-radius: 999px;
+      color: #c3ffe1;
+      background: rgba(54, 229, 143, 0.08);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .day-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .day-options .button {
+      width: 100%;
+      justify-content: center;
+      min-height: 48px;
+      white-space: normal;
+    }
+
+    .day-result {
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid rgba(255, 209, 102, 0.24);
+      border-radius: 10px;
+      background:
+        linear-gradient(135deg, rgba(255, 209, 102, 0.12), rgba(110, 223, 246, 0.07)),
+        rgba(7, 11, 20, 0.72);
+      color: #eefbff;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
+    }
+
+    .day-score {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      margin: 6px 0 12px;
+      color: #ffffff;
+      font-size: clamp(34px, 7vw, 58px);
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    .day-score span {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    @keyframes shimmerLine {
+      0%, 42% {
+        transform: translateX(-100%);
+      }
+
+      72%, 100% {
+        transform: translateX(100%);
+      }
+    }
+
     .status-grid {
       display: grid;
       gap: 10px;
@@ -1987,6 +2089,29 @@
       }
     }
 
+    @media (max-width: 768px) {
+      .day-signal-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .day-signal-copy,
+      .day-signal-card {
+        width: 100%;
+        max-width: 100%;
+        overflow: visible;
+      }
+
+      .day-options {
+        grid-template-columns: 1fr;
+      }
+
+      .day-result {
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+    }
+
     @media (max-width: 680px) {
       .container {
         width: min(100% - 28px, 1120px);
@@ -2175,7 +2300,7 @@
         bottom: 10px;
         z-index: 50;
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         gap: 8px;
         padding: 8px;
         border: 1px solid rgba(110, 223, 246, 0.18);
@@ -2241,6 +2366,7 @@
           <a href="#about">About</a>
           <a href="#market-board" data-analytics="view_live_market">Live Market</a>
           <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
+          <a href="#day-signal" data-analytics="day_signal">Day Signal</a>
           <a href="#pro" data-analytics="compare_pro">Pro</a>
           <a href="#intelligence">Intelligence</a>
           <a href="#safety">Safety</a>
@@ -2252,6 +2378,7 @@
           <a class="button" href="#market-board" data-analytics="view_live_market">Live Market</a>
           <a class="button gold" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
           <a class="button" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
+          <a class="button primary pulse-cta" href="#day-signal" data-analytics="day_signal">Is Today My Day?</a>
           <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
           <a class="button primary pulse-cta" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
         </div>
@@ -2283,6 +2410,7 @@
   <nav class="mobile-bottom-nav" aria-label="Mobile quick actions">
     <a href="#market-board" data-analytics="view_live_market">Live Market</a>
     <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
+    <a class="pulse-cta" href="#day-signal" data-analytics="day_signal">Day Signal</a>
     <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
   </nav>
 
@@ -2311,6 +2439,7 @@
           <div class="actions">
             <a class="button primary pulse-cta" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
             <a class="button primary" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
+            <a class="button primary pulse-cta" href="#day-signal" data-analytics="day_signal">Is Today My Day?</a>
             <a class="button" href="#safety" data-analytics="view_safety">See Safety Features</a>
           </div>
 
@@ -2380,6 +2509,41 @@
             </div>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section id="day-signal" class="band">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">CoinPilotX Day Signal</div>
+          <h2>Is Today My Day?</h2>
+          <p>A quick confidence, readiness, and risk-awareness check before you make a move.</p>
+        </div>
+
+        <div class="day-signal-panel">
+          <div class="day-signal-copy">
+            <span class="live-badge">AI Readiness Tool</span>
+            <h3>Slow down, check your state, then decide with more clarity.</h3>
+            <p>
+              CoinPilotX asks four fast questions about emotion, preparation, opportunity type, and discipline. The result is a motivational Day Score, not a prediction of luck or guaranteed outcome.
+            </p>
+            <ul class="check-list">
+              <li>Confidence and emotional discipline check</li>
+              <li>Opportunity alignment score for crypto, sports, business, or personal decisions</li>
+              <li>Responsible “best move” and “avoid today” guidance</li>
+            </ul>
+          </div>
+
+          <div class="day-signal-card" data-day-signal-card>
+            <div class="day-step-meta" data-day-progress>Ready when you are.</div>
+            <h3 data-day-question>Want to check your Day Signal?</h3>
+            <p data-day-helper>Answer four quick questions. CoinPilotX will return a score, signal, best move, and caution note.</p>
+            <div class="day-options" data-day-options>
+              <button class="button primary pulse-cta" type="button" data-day-start data-analytics="day_signal">Is Today My Day?</button>
+            </div>
+            <div class="day-result" data-day-result hidden></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -2636,6 +2800,7 @@
               <button class="filter-button is-active" type="button" data-tool-tab="ai">AI Assistant</button>
               <button class="filter-button" type="button" data-tool-tab="scam">Scam Shield</button>
               <button class="filter-button" type="button" data-tool-tab="wallet">Wallet Intel</button>
+              <button class="filter-button" type="button" data-tool-tab="day">Day Signal</button>
             </div>
 
             <form class="tool-form is-active" data-tool-form="ai">
@@ -2655,6 +2820,11 @@
               <input id="wallet-address" name="address" placeholder="Public BTC wallet address only. Never enter seed phrases or private keys.">
               <button class="button" type="submit" data-analytics="wallet_intel">Check Public Wallet</button>
             </form>
+
+            <div class="tool-form" data-tool-form="day">
+              <p>Run the CoinPilotX Day Signal readiness check before making a crypto, sports, business, or personal decision.</p>
+              <a class="button primary pulse-cta" href="#day-signal" data-analytics="day_signal">Is Today My Day?</a>
+            </div>
 
             <div class="tool-output" data-tool-output>Choose a tool above to test CoinPilotX intelligence.</div>
             <div class="actions" style="margin-top: 14px;">

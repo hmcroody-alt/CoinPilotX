@@ -511,6 +511,16 @@ def website_wallet_intel_api():
     })
 
 
+@webhook_app.route("/api/day-signal", methods=["POST"])
+def website_day_signal_api():
+    payload = request.get_json(silent=True) or {}
+    answers = payload.get("answers", {})
+    result = build_day_signal(answers)
+    if not result["ok"]:
+        return jsonify(result), 400
+    return jsonify(result)
+
+
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     init_db()
@@ -3367,6 +3377,7 @@ def help_message():
         "/topvolume — top crypto assets by 24h volume\n"
         "/gainers — strongest 24h movers\n"
         "/losers — weakest 24h movers\n"
+        "/daysignal — CoinPilotX Day Signal readiness check\n"
         "/signals — auto signal engine summary\n"
         "/feargreed — market fear/greed read\n"
         "/whales — latest whale-style activity\n"
@@ -5572,6 +5583,169 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
     conn.close()
 
 
+DAY_SIGNAL_QUESTIONS = [
+    {
+        "key": "feeling",
+        "question": "How do you feel today?",
+        "options": [
+            ("confident", "Confident"),
+            ("calm", "Calm"),
+            ("nervous", "Nervous"),
+            ("tired", "Tired"),
+        ],
+    },
+    {
+        "key": "prepared",
+        "question": "How prepared are you for what you want to do today?",
+        "options": [
+            ("very_prepared", "Very prepared"),
+            ("somewhat_prepared", "Somewhat prepared"),
+            ("not_prepared", "Not prepared"),
+            ("guessing", "I'm guessing"),
+        ],
+    },
+    {
+        "key": "opportunity",
+        "question": "What kind of opportunity are you thinking about?",
+        "options": [
+            ("crypto", "Crypto/Trading"),
+            ("sports", "Sports Edge"),
+            ("business", "Business/Money"),
+            ("personal", "Personal decision"),
+        ],
+    },
+    {
+        "key": "walkaway",
+        "question": "Are you willing to walk away if the signal looks risky?",
+        "options": [
+            ("yes", "Yes"),
+            ("maybe", "Maybe"),
+            ("no", "No"),
+        ],
+    },
+]
+
+
+def build_day_signal(answers):
+    if not isinstance(answers, dict):
+        return {"ok": False, "response": "Answer the Day Signal questions first."}
+
+    normalized = {}
+    for question in DAY_SIGNAL_QUESTIONS:
+        value = str(answers.get(question["key"], "")).strip().lower()
+        valid = {option_key for option_key, _ in question["options"]}
+        if value not in valid:
+            return {"ok": False, "response": f"Please answer: {question['question']}"}
+        normalized[question["key"]] = value
+
+    score = (
+        {"confident": 22, "calm": 25, "nervous": 12, "tired": 8}[normalized["feeling"]]
+        + {"very_prepared": 35, "somewhat_prepared": 24, "not_prepared": 8, "guessing": 4}[normalized["prepared"]]
+        + {"crypto": 14, "sports": 12, "business": 17, "personal": 18}[normalized["opportunity"]]
+        + {"yes": 22, "maybe": 12, "no": 0}[normalized["walkaway"]]
+    )
+    score = max(0, min(100, score))
+
+    if score >= 80:
+        signal = "Strong"
+    elif score >= 62:
+        signal = "Moderate"
+    elif score >= 42:
+        signal = "Caution"
+    else:
+        signal = "Not Today"
+
+    opportunity_copy = {
+        "crypto": {
+            "name": "Crypto/Trading",
+            "best": "Review your plan, risk limit, entry reason, and exit rule before touching real money.",
+            "avoid": "Avoid revenge trading, oversized positions, leverage, or chasing a move because it already started.",
+        },
+        "sports": {
+            "name": "Sports Edge",
+            "best": "Compare the matchup data, price, timing, and risk. If the edge is unclear, waiting is a valid position.",
+            "avoid": "Avoid forcing a position just because a game is live or because you want action today.",
+        },
+        "business": {
+            "name": "Business/Money",
+            "best": "Take one researched step, write down the downside, and choose the smallest move that still teaches you something.",
+            "avoid": "Avoid rushed agreements, emotional spending, or decisions you cannot calmly explain tomorrow.",
+        },
+        "personal": {
+            "name": "Personal decision",
+            "best": "Choose the clearest next step, slow the conversation down, and keep the decision reversible if possible.",
+            "avoid": "Avoid making high-stakes choices from fatigue, pressure, pride, or fear of missing out.",
+        },
+    }[normalized["opportunity"]]
+
+    if normalized["prepared"] in {"not_prepared", "guessing"}:
+        ai_message = "Your signal is asking for more preparation before action. The goal today is not bravery. It is clarity."
+    elif normalized["walkaway"] == "no":
+        ai_message = "Your drive is active, but discipline is the missing protection layer. A strong day still needs a stop point."
+    elif normalized["feeling"] == "tired":
+        ai_message = "Your energy looks low, so treat today as a risk-control day. Smaller, slower decisions can protect your future options."
+    elif signal == "Strong":
+        ai_message = "You look emotionally steady and prepared. Keep the confidence grounded in a plan, not impulse."
+    elif signal == "Moderate":
+        ai_message = "There may be room to move, but the signal favors patience, confirmation, and controlled sizing."
+    elif signal == "Caution":
+        ai_message = "The better win today may be avoiding a bad decision. Slow down and let the setup prove itself."
+    else:
+        ai_message = "Today does not look aligned for pressure-based action. Reset, prepare, and come back with a cleaner mind."
+
+    if signal == "Not Today":
+        best_move = "Pause the high-stakes move. Prepare, review, and revisit when your readiness is higher."
+    elif signal == "Caution":
+        best_move = f"Use a checklist first. {opportunity_copy['best']}"
+    else:
+        best_move = opportunity_copy["best"]
+
+    disclaimer = "This is motivational and educational insight only. It is not financial, betting, or life advice."
+    response = (
+        "✨ CoinPilotX Day Signal\n\n"
+        f"Today's Day Score: {score}/100\n\n"
+        f"Signal: {signal}\n\n"
+        f"AI Message:\n{ai_message}\n\n"
+        f"Best Move Today:\n{best_move}\n\n"
+        f"Avoid Today:\n{opportunity_copy['avoid']}\n\n"
+        f"Disclaimer:\n{disclaimer}"
+    )
+
+    return {
+        "ok": True,
+        "score": score,
+        "signal": signal,
+        "message": ai_message,
+        "best_move": best_move,
+        "avoid": opportunity_copy["avoid"],
+        "opportunity": opportunity_copy["name"],
+        "response": response,
+        "disclaimer": disclaimer,
+    }
+
+
+def day_signal_question_menu(step):
+    question = DAY_SIGNAL_QUESTIONS[step]
+    rows = [[InlineKeyboardButton(label, callback_data=f"daysignal_{step}_{option_key}")] for option_key, label in question["options"]]
+    rows.append([InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def send_day_signal_question(message, step):
+    question = DAY_SIGNAL_QUESTIONS[step]
+    await message.reply_text(
+        f"✨ CoinPilotX Day Signal\n\nQuestion {step + 1} of {len(DAY_SIGNAL_QUESTIONS)}:\n{question['question']}",
+        reply_markup=day_signal_question_menu(step),
+    )
+
+
+async def daysignal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    log_engagement(update.effective_user.id, "day_signal")
+    context.user_data["day_signal_answers"] = {}
+    await send_day_signal_question(update.message, 0)
+
+
 def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏠 Main Menu", callback_data="menu_main")],
@@ -5588,6 +5762,7 @@ def main_menu():
             InlineKeyboardButton("🤖 Auto Signals", callback_data="menu_signals"),
         ],
         [InlineKeyboardButton("💬 AI Crypto Assistant", callback_data="menu_ai_assistant")],
+        [InlineKeyboardButton("✨ Is Today My Day?", callback_data="menu_day_signal")],
         [
             InlineKeyboardButton("📰 Crypto News", callback_data="menu_crypto_news"),
             InlineKeyboardButton("🌍 Market Events", callback_data="menu_market_events"),
@@ -5765,6 +5940,41 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             append_plan_footer(user_id, "💬 AI Crypto Assistant\n\nAsk a question with /ask, or just send me a normal message.\n\nI can help with crypto, scams, blockchain, portfolio thinking, and safer financial literacy.\n\nPowered by OpenAI + CoinPilotX crypto intelligence."),
             reply_markup=main_menu()
         )
+        return
+
+    if data == "menu_day_signal":
+        log_engagement(user_id, "day_signal")
+        context.user_data["day_signal_answers"] = {}
+        await send_day_signal_question(query.message, 0)
+        return
+
+    if data.startswith("daysignal_"):
+        parts = data.split("_", 2)
+        if len(parts) != 3 or not parts[1].isdigit():
+            await query.message.reply_text("Let's restart the Day Signal check.", reply_markup=main_menu())
+            return
+        step = int(parts[1])
+        answer = parts[2]
+        if step < 0 or step >= len(DAY_SIGNAL_QUESTIONS):
+            await query.message.reply_text("Let's restart the Day Signal check.", reply_markup=main_menu())
+            return
+
+        question = DAY_SIGNAL_QUESTIONS[step]
+        valid = {option_key for option_key, _ in question["options"]}
+        if answer not in valid:
+            await query.message.reply_text("That answer was not recognized. Please try again.", reply_markup=day_signal_question_menu(step))
+            return
+
+        answers = context.user_data.setdefault("day_signal_answers", {})
+        answers[question["key"]] = answer
+        next_step = step + 1
+        if next_step < len(DAY_SIGNAL_QUESTIONS):
+            await send_day_signal_question(query.message, next_step)
+            return
+
+        result = build_day_signal(answers)
+        context.user_data.pop("day_signal_answers", None)
+        await query.message.reply_text(result["response"], reply_markup=main_menu())
         return
 
     if data == "menu_crypto_news":
@@ -6027,6 +6237,7 @@ def main():
     app.add_handler(CommandHandler("topvolume", topvolume_command))
     app.add_handler(CommandHandler("gainers", gainers_command))
     app.add_handler(CommandHandler("losers", losers_command))
+    app.add_handler(CommandHandler("daysignal", daysignal_command))
     app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("chart", chart_command))
     app.add_handler(CommandHandler("feargreed", feargreed_command))

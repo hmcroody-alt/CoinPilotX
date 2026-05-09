@@ -209,6 +209,150 @@
     window.setInterval(refreshPlatformStatus, 60000);
   }
 
+  function setupDaySignal() {
+    var card = document.querySelector("[data-day-signal-card]");
+    if (!card) {
+      return;
+    }
+
+    var progress = card.querySelector("[data-day-progress]");
+    var questionEl = card.querySelector("[data-day-question]");
+    var helper = card.querySelector("[data-day-helper]");
+    var options = card.querySelector("[data-day-options]");
+    var resultEl = card.querySelector("[data-day-result]");
+    var startButton = card.querySelector("[data-day-start]");
+    var answers = {};
+    var stepIndex = 0;
+
+    var questions = [
+      {
+        key: "feeling",
+        question: "How do you feel today?",
+        helper: "Choose the emotional state that feels most honest right now.",
+        options: [
+          ["confident", "Confident"],
+          ["calm", "Calm"],
+          ["nervous", "Nervous"],
+          ["tired", "Tired"]
+        ]
+      },
+      {
+        key: "prepared",
+        question: "How prepared are you for what you want to do today?",
+        helper: "Readiness matters more than excitement.",
+        options: [
+          ["very_prepared", "Very prepared"],
+          ["somewhat_prepared", "Somewhat prepared"],
+          ["not_prepared", "Not prepared"],
+          ["guessing", "I'm guessing"]
+        ]
+      },
+      {
+        key: "opportunity",
+        question: "What kind of opportunity are you thinking about?",
+        helper: "The score adjusts for the type of decision in front of you.",
+        options: [
+          ["crypto", "Crypto/Trading"],
+          ["sports", "Sports Edge"],
+          ["business", "Business/Money"],
+          ["personal", "Personal decision"]
+        ]
+      },
+      {
+        key: "walkaway",
+        question: "Are you willing to walk away if the signal looks risky?",
+        helper: "Discipline is part of the signal.",
+        options: [
+          ["yes", "Yes"],
+          ["maybe", "Maybe"],
+          ["no", "No"]
+        ]
+      }
+    ];
+
+    function postJson(url, payload) {
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) {
+            throw new Error(data.response || "Day Signal check failed");
+          }
+          return data;
+        });
+      });
+    }
+
+    function renderQuestion() {
+      var item = questions[stepIndex];
+      progress.textContent = "Question " + (stepIndex + 1) + " of " + questions.length;
+      questionEl.textContent = item.question;
+      helper.textContent = item.helper;
+      resultEl.hidden = true;
+      resultEl.textContent = "";
+      options.innerHTML = "";
+      item.options.forEach(function (option) {
+        var button = document.createElement("button");
+        button.className = "button";
+        button.type = "button";
+        button.textContent = option[1];
+        button.addEventListener("click", function () {
+          answers[item.key] = option[0];
+          stepIndex += 1;
+          if (stepIndex < questions.length) {
+            renderQuestion();
+            return;
+          }
+          renderResult();
+        });
+        options.appendChild(button);
+      });
+    }
+
+    async function renderResult() {
+      progress.textContent = "Generating Day Signal";
+      questionEl.textContent = "CoinPilotX is checking readiness, discipline, and risk alignment...";
+      helper.textContent = "This is a responsible confidence check, not a prediction of fate or guaranteed outcome.";
+      options.innerHTML = "";
+      try {
+        var data = await postJson("/api/day-signal", { answers: answers });
+        progress.textContent = "Day Signal Ready";
+        questionEl.textContent = "CoinPilotX Day Signal";
+        helper.textContent = "Use this as a pause point before acting.";
+        resultEl.hidden = false;
+        resultEl.textContent = data.response;
+        var restart = document.createElement("button");
+        restart.className = "button primary pulse-cta";
+        restart.type = "button";
+        restart.textContent = "Check Again";
+        restart.addEventListener("click", start);
+        options.appendChild(restart);
+      } catch (err) {
+        progress.textContent = "Try Again";
+        questionEl.textContent = "Day Signal could not finish.";
+        helper.textContent = err.message;
+        var retry = document.createElement("button");
+        retry.className = "button primary pulse-cta";
+        retry.type = "button";
+        retry.textContent = "Restart Day Signal";
+        retry.addEventListener("click", start);
+        options.appendChild(retry);
+      }
+    }
+
+    function start() {
+      answers = {};
+      stepIndex = 0;
+      renderQuestion();
+    }
+
+    if (startButton) {
+      startButton.addEventListener("click", start);
+    }
+  }
+
   function formatCurrency(value) {
     if (typeof value !== "number") {
       return "--";
@@ -673,6 +817,7 @@
       setupReveal();
       setupMobileNav();
       setupIntelligenceConsole();
+      setupDaySignal();
       setupIntelligenceFeed();
       setupMarketBoard();
       setupSportsEdge();
@@ -681,6 +826,7 @@
     setupReveal();
     setupMobileNav();
     setupIntelligenceConsole();
+    setupDaySignal();
     setupIntelligenceFeed();
     setupMarketBoard();
     setupSportsEdge();
