@@ -247,10 +247,12 @@
       align-items: center;
       gap: 12px;
       flex-wrap: wrap;
+      min-width: 0;
     }
 
     .nav-actions .button {
       white-space: nowrap;
+      flex: 0 0 auto;
     }
 
     .nav-toggle {
@@ -334,6 +336,74 @@
       border-color: rgba(255, 209, 102, 0.36);
       background: rgba(255, 209, 102, 0.11);
       color: #ffe3a3;
+    }
+
+    .button.pulse-cta,
+    .mobile-bottom-nav a.pulse-cta {
+      position: relative;
+      isolation: isolate;
+      border-color: rgba(110, 223, 246, 0.42);
+      color: #06101b;
+      background: linear-gradient(270deg, #00f5ff, #00ff99, #7a5cff, #ffd166, #00f5ff);
+      background-size: 600% 600%;
+      box-shadow:
+        0 0 10px rgba(0, 245, 255, 0.34),
+        0 0 22px rgba(0, 255, 153, 0.25),
+        0 0 42px rgba(122, 92, 255, 0.18);
+      animation: gradientShift 8s ease infinite, pulseGlow 2.4s ease-in-out infinite;
+      transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+    }
+
+    .button.pulse-cta::before,
+    .mobile-bottom-nav a.pulse-cta::before {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      z-index: -1;
+      border-radius: inherit;
+      background: inherit;
+      filter: blur(14px);
+      opacity: 0.44;
+    }
+
+    .button.pulse-cta:hover,
+    .mobile-bottom-nav a.pulse-cta:hover {
+      transform: translateY(-2px) scale(1.03);
+      filter: saturate(1.18);
+      box-shadow:
+        0 0 18px rgba(0, 245, 255, 0.62),
+        0 0 36px rgba(0, 255, 153, 0.42),
+        0 0 62px rgba(122, 92, 255, 0.3);
+    }
+
+    @keyframes gradientShift {
+      0% {
+        background-position: 0% 50%;
+      }
+
+      50% {
+        background-position: 100% 50%;
+      }
+
+      100% {
+        background-position: 0% 50%;
+      }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% {
+        box-shadow:
+          0 0 10px rgba(0, 245, 255, 0.3),
+          0 0 20px rgba(0, 255, 153, 0.22),
+          0 0 36px rgba(122, 92, 255, 0.16);
+      }
+
+      50% {
+        box-shadow:
+          0 0 20px rgba(0, 245, 255, 0.72),
+          0 0 42px rgba(0, 255, 153, 0.48),
+          0 0 70px rgba(122, 92, 255, 0.34);
+      }
     }
 
     .sr-only {
@@ -2167,8 +2237,9 @@
         </div>
 
         <div class="nav-actions">
-          <a class="button" href="#market-board" data-analytics="view_live_market">Live Market</a>
-          <a class="button gold" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
+          <a class="button pulse-cta" href="#market-board" data-analytics="view_live_market">Live Market</a>
+          <a class="button gold pulse-cta" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
+          <a class="button pulse-cta" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
           <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
           <a class="button primary" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
         </div>
@@ -2198,9 +2269,9 @@
   </div>
 
   <nav class="mobile-bottom-nav" aria-label="Mobile quick actions">
-    <a href="#market-board" data-analytics="view_live_market">Live Market</a>
-    <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
-    <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
+    <a class="pulse-cta" href="#market-board" data-analytics="view_live_market">Live Market</a>
+    <a class="pulse-cta" href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
+    <a class="pulse-cta" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
   </nav>
 
   <main id="top">
@@ -2560,7 +2631,7 @@
             <form class="tool-form is-active" data-tool-form="ai">
               <label class="sr-only" for="ai-question">Ask CoinPilotX AI</label>
               <textarea id="ai-question" name="question" placeholder="Ask about BTC, ETH, wallet risk, scams, market pressure, or Sports Edge context."></textarea>
-              <button class="button primary" type="submit" data-analytics="try_ai_assistant">Ask CoinPilotX AI</button>
+              <button class="button primary pulse-cta" type="submit" data-analytics="try_ai_assistant">Ask CoinPilotX AI</button>
             </form>
 
             <form class="tool-form" data-tool-form="scam">
