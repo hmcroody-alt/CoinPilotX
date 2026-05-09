@@ -387,7 +387,8 @@ def pro_upgrade_message(user_id):
         "• Wallet/transaction risk insights\n"
         "• Market pressure signals\n"
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
-        "No hidden fees from CoinPilotX. Card payment opens only through the secure button below.\n"
+        "CoinPilotX is operated by CoinPilotXAI Inc.\n"
+        "No hidden fees from CoinPilotXAI Inc. Card payment opens only through the secure button below.\n"
         "CoinPilotX never holds funds.\n\n"
         "Choose a payment method below when you are ready."
     )
@@ -739,6 +740,7 @@ def subscription_email_body(plan_name, timestamp, txid=None):
         f"Plan: {plan_name}\n"
         f"Activated at: {timestamp}\n"
         f"{txid_line}"
+        "Legal operator: CoinPilotXAI Inc.\n\n"
         "Open the Telegram bot:\n"
         "https://t.me/DocShieldX_bot\n\n"
         "Safety reminder: CoinPilotX will never ask for your seed phrase, private key, or wallet password.\n\n"
@@ -1101,7 +1103,8 @@ def pro_upgrade_message(user_id):
         "• Wallet/transaction risk insights\n"
         "• Market pressure signals\n"
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
-        "No hidden fees from CoinPilotX. Card payment opens only through the secure button below.\n"
+        "CoinPilotX is operated by CoinPilotXAI Inc.\n"
+        "No hidden fees from CoinPilotXAI Inc. Card payment opens only through the secure button below.\n"
         "CoinPilotX never holds funds.\n\n"
         "Choose a payment method below when you are ready."
     )
@@ -2495,7 +2498,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not onboarding_complete(user_id):
         onboarding_state[user_id] = "name"
         await update.message.reply_text(
-            f"🚀 Welcome to {BOT_NAME}.\n\nHow do you want me to call you?"
+            f"🚀 Welcome to {BOT_NAME}.\nOperated by CoinPilotXAI Inc.\n\nHow do you want me to call you?"
         )
         return
 
@@ -2511,7 +2514,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ About CoinPilotX\n\n"
-        "CoinPilotX is a crypto safety and market intelligence assistant founded by Roody Cherie. "
+        "CoinPilotX is a crypto safety and market intelligence assistant operated by CoinPilotXAI Inc. "
         "It is built to help everyday users understand crypto prices, alerts, portfolio movement, "
         "and scam risks in simple language.\n\n"
         "The system can check market prices, provide BUY / SELL / WAIT-style educational signals, "
@@ -3497,7 +3500,7 @@ def openai_chat_completion(user_id, question):
         return append_plan_footer(user_id, fallback)
 
     system_prompt = (
-        "You are CoinPilotX, a premium crypto intelligence assistant powered by OpenAI + CoinPilotX crypto intelligence. "
+        "You are CoinPilotX, a premium crypto intelligence assistant operated by CoinPilotXAI Inc. and powered by OpenAI + CoinPilotX crypto intelligence. "
         "Act as a cautious crypto analyst, scam protection advisor, blockchain educator, portfolio coach, and market explainer. "
         "Never guarantee profits, never claim certainty, never ask for seed phrases/private keys/recovery phrases/wallet passwords, "
         "and do not impersonate a licensed financial advisor. If a user mentions suspicious links, seed phrases, private keys, "
@@ -6116,6 +6119,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "3. CoinPilotX will verify the transaction and activate Pro if confirmed.\n\n"
             "Optional but recommended:\n"
             "Set your email for payment confirmations:\n  /setemail you@example.com\n\n"
+            "CoinPilotX is operated by CoinPilotXAI Inc.\n"
             "CoinPilotX will never ask for your seed phrase or private key.",
             reply_markup=main_menu()
         )
@@ -6130,14 +6134,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_about":
         await query.message.reply_text(
-            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nPowered by OpenAI + CoinPilotX crypto intelligence.\n\nEducational only. Not financial advice.",
+            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nCoinPilotX is operated by CoinPilotXAI Inc.\n\nPowered by OpenAI + CoinPilotX crypto intelligence.\n\nEducational only. Not financial advice.",
             reply_markup=main_menu()
         )
         return
 
     if data == "menu_deposit":
         await query.message.reply_text(
-            "💰 Add Money Safely\n\nCoinPilotX does not hold money or accept deposits.\nUse official exchanges directly and never send funds to someone promising certain returns.",
+            "💰 Add Money Safely\n\nCoinPilotX is operated by CoinPilotXAI Inc. CoinPilotX does not hold money or accept deposits.\nUse official exchanges directly and never send funds to someone promising certain returns.",
             reply_markup=main_menu()
         )
         return
