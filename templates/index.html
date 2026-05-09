@@ -1118,6 +1118,18 @@
       margin-bottom: 16px;
     }
 
+    .tool-tabs .filter-button {
+      flex: 1 1 150px;
+      text-align: center;
+    }
+
+    .tool-tabs .filter-button.is-active {
+      color: #06101b;
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 12px 28px rgba(54, 229, 143, 0.16);
+    }
+
     .tool-form {
       display: none;
       gap: 12px;
@@ -2237,11 +2249,11 @@
         </div>
 
         <div class="nav-actions">
-          <a class="button pulse-cta" href="#market-board" data-analytics="view_live_market">Live Market</a>
-          <a class="button gold pulse-cta" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
-          <a class="button pulse-cta" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
+          <a class="button" href="#market-board" data-analytics="view_live_market">Live Market</a>
+          <a class="button gold" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
+          <a class="button" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
           <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
-          <a class="button primary" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
+          <a class="button primary pulse-cta" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
         </div>
       </nav>
     </div>
@@ -2269,9 +2281,9 @@
   </div>
 
   <nav class="mobile-bottom-nav" aria-label="Mobile quick actions">
-    <a class="pulse-cta" href="#market-board" data-analytics="view_live_market">Live Market</a>
-    <a class="pulse-cta" href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
-    <a class="pulse-cta" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
+    <a href="#market-board" data-analytics="view_live_market">Live Market</a>
+    <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
+    <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
   </nav>
 
   <main id="top">
@@ -2288,27 +2300,25 @@
             </div>
           </div>
           <div class="eyebrow">Powered by OpenAI + CoinPilotX crypto intelligence</div>
-          <h1 id="hero-title">Your AI Crypto Intelligence Terminal Inside Telegram</h1>
+          <h1 id="hero-title">AI Crypto Intelligence Inside Telegram</h1>
           <p class="hero-copy">
-            Track whales, scan wallets, detect scams, compare your portfolio, and receive smarter crypto explanations powered by OpenAI + CoinPilotX intelligence.
+            Scan risks, track whales, understand markets, avoid scams, and get clearer crypto context before you act.
           </p>
           <p class="hero-copy">
-            CoinPilotX helps crypto users understand market signals, wallet risks, scams, whale movement, and portfolio decisions inside Telegram.
+            CoinPilotX brings AI analysis, wallet intelligence, scam protection, portfolio context, and live market tools into one Telegram-first workflow.
           </p>
 
           <div class="actions">
-            <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
-            <a class="button" href="#pro" data-analytics="compare_pro">Compare Free vs Pro</a>
+            <a class="button primary pulse-cta" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
+            <a class="button primary" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
             <a class="button" href="#safety" data-analytics="view_safety">See Safety Features</a>
           </div>
 
           <div class="trust-tags" aria-label="Trust tags">
-            <span class="tag">Powered by OpenAI</span>
-            <span class="tag">Public Blockchain Intelligence</span>
-            <span class="tag">Scam Protection</span>
-            <span class="tag">Whale Tracking</span>
-            <span class="tag">Portfolio Decision Support</span>
             <span class="tag">Never Holds Funds</span>
+            <span class="tag">Never Asks for Seed Phrases</span>
+            <span class="tag">Public Blockchain Data Only</span>
+            <span class="tag">Educational Only</span>
           </div>
         </div>
 
@@ -2646,7 +2656,7 @@
               <button class="button" type="submit" data-analytics="wallet_intel">Check Public Wallet</button>
             </form>
 
-            <div class="tool-output" data-tool-output>Choose a tool above. Results appear here with safety-first context.</div>
+            <div class="tool-output" data-tool-output>Choose a tool above to test CoinPilotX intelligence.</div>
             <div class="actions" style="margin-top: 14px;">
               <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="continue_telegram">Continue in Telegram</a>
             </div>
@@ -2756,7 +2766,7 @@
           <article class="card">
             <div class="screenshot-frame">
               <img src="{{ url_for('static', filename='screenshots/analysis.png') }}" alt="CoinPilotX AI market analysis screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-              <div class="screenshot-fallback">Screenshot unavailable</div>
+              <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>AI Market Analysis</h3>
             <p>Ask CoinPilotX to analyze BTC, ETH, trends, volatility, and market pressure.</p>
@@ -2764,7 +2774,7 @@
           <article class="card">
             <div class="screenshot-frame">
               <img src="{{ url_for('static', filename='screenshots/portfolio.png') }}" alt="CoinPilotX portfolio advice screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-              <div class="screenshot-fallback">Screenshot unavailable</div>
+              <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Portfolio Advice</h3>
             <p>Compare your real balance, live tracked value, and possible upside/downside scenarios.</p>
@@ -2772,7 +2782,7 @@
           <article class="card">
             <div class="screenshot-frame">
               <img src="{{ url_for('static', filename='screenshots/whales.png') }}" alt="CoinPilotX whale intelligence screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-              <div class="screenshot-fallback">Screenshot unavailable</div>
+              <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Whale Intelligence</h3>
             <p>Track large BTC movement, market pressure, wallet activity, and public-chain signals.</p>
@@ -2780,7 +2790,7 @@
           <article class="card">
             <div class="screenshot-frame">
               <img src="{{ url_for('static', filename='screenshots/scamshield.png') }}" alt="CoinPilotX scam shield screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-              <div class="screenshot-fallback">Screenshot unavailable</div>
+              <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Scam Shield</h3>
             <p>Review suspicious messages, wallet risks, scam stories, and dangerous red flags.</p>
@@ -2797,7 +2807,7 @@
           <article class="card">
             <div class="screenshot-frame">
               <img src="{{ url_for('static', filename='screenshots/MainMenu.png') }}" alt="CoinPilotX Telegram main menu screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-              <div class="screenshot-fallback">Screenshot unavailable</div>
+              <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Main Menu</h3>
             <p>Launch intelligence tools, portfolio tracking, scam shield, and Pro options from one clean Telegram menu.</p>
@@ -2805,7 +2815,7 @@
           <article class="card">
             <div class="screenshot-frame">
               <img src="{{ url_for('static', filename='screenshots/CoinPilotxHelp.png') }}" alt="CoinPilotX help command screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-              <div class="screenshot-fallback">Screenshot unavailable</div>
+              <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Command Help</h3>
             <p>Users can quickly discover commands for charts, whales, wallet scans, country news, and portfolio advice.</p>
@@ -3077,7 +3087,7 @@
             <p>
               Upgrade when you need deeper reasoning, wallet intelligence, whale pressure, and portfolio scenario analysis inside Telegram.
             </p>
-            <div class="disclaimer">Educational only — not financial advice.</div>
+            <div class="disclaimer">Start free. Upgrade when you want deeper intelligence. Educational only — not financial advice.</div>
           </div>
 
           <article class="pricing-card featured">
@@ -3087,6 +3097,8 @@
             <div class="btc-price">or 0.00025 BTC</div>
             <p class="muted">Transparent pricing. No hidden fees from CoinPilotX. CoinPilotX never holds user funds.</p>
             <ul>
+              <li>Free: basic market checks, short AI answers, and simple scam warnings</li>
+              <li>Pro: deeper AI reasoning, priority context, and risk breakdowns</li>
               <li>Smarter signals</li>
               <li>Portfolio-aware alerts</li>
               <li>Advanced scam protection</li>
@@ -3097,9 +3109,9 @@
             </ul>
 
             <div class="actions" style="margin-top: 24px;">
-              <a class="button primary" href="#" data-analytics="upgrade_pro">Review Pro Intelligence</a>
-              <a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="pay_btc">Pay with BTC in Telegram</a>
-              <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
+              <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Start Free</a>
+              <a class="button primary pulse-cta" href="https://t.me/DocShieldX_bot" data-analytics="upgrade_pro">Upgrade in Telegram</a>
+              <a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="pay_btc">Pay with BTC</a>
             </div>
           </article>
         </div>
