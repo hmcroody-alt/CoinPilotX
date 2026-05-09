@@ -58,6 +58,26 @@
     });
   }
 
+  function setupMobileNav() {
+    var toggle = document.querySelector("[data-nav-toggle]");
+    var header = document.querySelector("header");
+    if (!toggle || !header) {
+      return;
+    }
+    toggle.addEventListener("click", function () {
+      var open = header.classList.toggle("nav-open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Close navigation menu" : "Open navigation menu");
+    });
+    document.querySelectorAll("[data-nav-panel] a, .nav-actions a").forEach(function (link) {
+      link.addEventListener("click", function () {
+        header.classList.remove("nav-open");
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.setAttribute("aria-label", "Open navigation menu");
+      });
+    });
+  }
+
   function formatCurrency(value) {
     if (typeof value !== "number") {
       return "--";
@@ -313,15 +333,31 @@
     var scoreAway = game.state === "pre" ? "--" : game.away_score;
     var scoreHome = game.state === "pre" ? "--" : game.home_score;
     var active = selectedSportsGame === game.id ? " is-active" : "";
+    var sportClass = " sport-" + escapeHtml(game.league || "live");
+    var odds = game.odds_available ? "Odds: available" : "Odds: unavailable";
+    var risk = game.risk_label || "Review";
     return (
-      '<button class="sports-card' + active + '" type="button" data-game-id="' + escapeHtml(game.id) + '">' +
+      '<button class="sports-card' + sportClass + active + '" type="button" data-game-id="' + escapeHtml(game.id) + '">' +
         '<div class="sports-meta"><span>' + escapeHtml(game.league_label || game.league || "Live") + '</span><span>' + escapeHtml(game.status || "Scheduled") + '</span></div>' +
         '<div class="sports-teams">' +
           '<div class="sports-team-line"><span>' + escapeHtml(game.away_team || "Away") + '</span><span class="sports-score">' + escapeHtml(scoreAway) + '</span></div>' +
           '<div class="sports-team-line"><span>' + escapeHtml(game.home_team || "Home") + '</span><span class="sports-score">' + escapeHtml(scoreHome) + '</span></div>' +
         '</div>' +
-        '<div class="sports-status">Tap for position intelligence and risk context.</div>' +
+        '<div class="sports-status">' + escapeHtml(odds) + ' · Tap for position intelligence.</div>' +
+        '<span class="sports-risk">Risk: ' + escapeHtml(risk) + '</span>' +
       '</button>'
+    );
+  }
+
+  function telegramSportsPrompt(game) {
+    return (
+      "Open CoinPilotX Bot and ask:\\n\\n" +
+      "Analyze this Sports Edge game:\\n" +
+      "League: " + (game.league_label || game.league || "Live") + "\\n" +
+      "Game: " + (game.away_team || "Away") + " at " + (game.home_team || "Home") + "\\n" +
+      "Start/status: " + (game.status || game.start_time || "Unknown") + "\\n" +
+      "Give me position intelligence, risk context, market pressure, and why I should wait or avoid forcing a position.\\n" +
+      "Informational only — not betting or financial advice."
     );
   }
 
@@ -334,24 +370,32 @@
     var analysis = data.analysis;
     if (!game || !analysis) {
       detail.hidden = true;
+      detail.removeAttribute("data-sport-detail");
       detail.innerHTML = '<div class="market-loading">Select a game to review position intelligence.</div>';
       return;
     }
 
     detail.hidden = false;
+    detail.setAttribute("data-sport-detail", game.league || "live");
     detail.innerHTML =
       '<div class="sports-detail-grid">' +
         '<div>' +
           '<span class="sports-action">' + escapeHtml(analysis.action || "REVIEW RISK") + '</span>' +
           '<h3>' + escapeHtml((game.away_team || "Away") + " at " + (game.home_team || "Home")) + '</h3>' +
           '<p>' + escapeHtml(game.league_label || "") + " · " + escapeHtml(game.status || "") + '</p>' +
-          '<p><strong>Risk:</strong> ' + escapeHtml(analysis.risk_level || "Review carefully.") + '</p>' +
+          '<p><strong>Risk:</strong> ' + escapeHtml(analysis.risk_label || game.risk_label || "Review carefully.") + '</p>' +
+          '<p><strong>Odds:</strong> ' + escapeHtml(game.odds_status || "unavailable") + '</p>' +
         '</div>' +
         '<div>' +
-          '<p><strong>Why consider it:</strong> ' + escapeHtml(analysis.why_take || "") + '</p>' +
-          '<p><strong>Why avoid it:</strong> ' + escapeHtml(analysis.why_not || "") + '</p>' +
-          '<p><strong>Data limits:</strong> ' + escapeHtml(analysis.market_context || "") + '</p>' +
-          '<p>' + escapeHtml(analysis.disclaimer || "Informational only. No guaranteed bets or outcomes.") + '</p>' +
+          '<p><strong>Matchup Summary:</strong> ' + escapeHtml(analysis.matchup_summary || "") + '</p>' +
+          '<p><strong>Current Game State:</strong> ' + escapeHtml(analysis.current_game_state || "") + '</p>' +
+          '<p><strong>Market / Odds Context:</strong> ' + escapeHtml(analysis.market_odds_context || analysis.market_context || "") + '</p>' +
+          '<p><strong>Momentum Read:</strong> ' + escapeHtml(analysis.momentum_read || "") + '</p>' +
+          '<p><strong>Why Avoid Forcing It:</strong> ' + escapeHtml(analysis.why_avoid || "") + '</p>' +
+          '<p><strong>What Could Change:</strong> ' + escapeHtml(analysis.what_could_change || "") + '</p>' +
+          '<p>' + escapeHtml(analysis.disclaimer || "Informational only — not betting or financial advice. Never risk money you cannot afford to lose.") + '</p>' +
+          '<div class="sports-ai-prompt">' + escapeHtml(telegramSportsPrompt(game)) + '</div>' +
+          '<div class="actions" style="margin-top: 14px;"><a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="try_sports_ai">Open Telegram Bot</a></div>' +
         '</div>' +
       '</div>';
   }
@@ -360,6 +404,8 @@
     var list = document.querySelector("[data-sports-list]");
     var updated = document.querySelector("[data-sports-updated]");
     var error = document.querySelector("[data-sports-error]");
+    var source = document.querySelector("[data-sports-source]");
+    var odds = document.querySelector("[data-sports-odds]");
     if (!list || !updated) {
       return;
     }
@@ -382,6 +428,12 @@
         list.innerHTML = games.map(sportsCard).join("");
       }
       updated.textContent = (data.warning ? data.warning + " " : "") + "Last updated " + relativeTime(data.updated_at) + " · " + (data.source || "sports data");
+      if (source) {
+        source.textContent = "Source: " + (data.source || "sports data");
+      }
+      if (odds) {
+        odds.textContent = "Odds: " + (data.odds_status || "unavailable");
+      }
       renderSportsDetail(data);
       if (error) {
         error.hidden = true;
@@ -424,18 +476,20 @@
     refreshSportsEdge();
     window.setInterval(function () {
       refreshSportsEdge(selectedSportsGame);
-    }, 30000);
+    }, 60000);
   }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       setupReveal();
+      setupMobileNav();
       setupIntelligenceFeed();
       setupMarketBoard();
       setupSportsEdge();
     });
   } else {
     setupReveal();
+    setupMobileNav();
     setupIntelligenceFeed();
     setupMarketBoard();
     setupSportsEdge();

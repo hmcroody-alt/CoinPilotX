@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 720" role="img" aria-label="CoinPilotX abstract live sports analytics visual">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#07101f"/><stop offset=".52" stop-color="#0e1b32"/><stop offset="1" stop-color="#07120e"/></linearGradient>
+    <radialGradient id="glow" cx=".68" cy=".24" r=".58"><stop offset="0" stop-color="#6edff6" stop-opacity=".48"/><stop offset=".45" stop-color="#36e58f" stop-opacity=".16"/><stop offset="1" stop-color="#36e58f" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0v48" fill="none" stroke="#6edff6" stroke-opacity=".09"/></pattern>
+  </defs>
+  <rect width="1400" height="720" fill="url(#bg)"/>
+  <rect width="1400" height="720" fill="url(#grid)"/>
+  <rect width="1400" height="720" fill="url(#glow)"/>
+  <path d="M90 590C240 425 392 346 548 354c167 8 248 116 418 93 130-18 229-102 344-223" fill="none" stroke="#36e58f" stroke-width="4" stroke-opacity=".55"/>
+  <path d="M135 470h1120" stroke="#6edff6" stroke-opacity=".2" stroke-width="2"/>
+  <g opacity=".92">
+    <rect x="815" y="128" width="354" height="196" rx="24" fill="#0b1628" stroke="#6edff6" stroke-opacity=".34"/>
+    <path d="M861 275c44-78 86-104 127-78 25 16 42 54 65 50 21-4 36-41 70-75" fill="none" stroke="#36e58f" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="897" cy="198" r="34" fill="none" stroke="#ffd166" stroke-width="7"/>
+    <path d="M897 164v68M863 198h68" stroke="#ffd166" stroke-opacity=".55" stroke-width="3"/>
+  </g>
+  <g opacity=".75">
+    <rect x="202" y="126" width="438" height="284" rx="28" fill="#101c30" stroke="#ffd166" stroke-opacity=".28"/>
+    <circle cx="336" cy="268" r="74" fill="none" stroke="#ffd166" stroke-width="9"/>
+    <path d="M268 268h136M336 194v148M286 222c66 34 91 90 82 168M386 222c-66 34-91 90-82 168" fill="none" stroke="#ffd166" stroke-opacity=".55" stroke-width="4"/>
+    <path d="M458 336h116M458 286h94M458 236h132" stroke="#6edff6" stroke-opacity=".55" stroke-width="10" stroke-linecap="round"/>
+  </g>
+  <g fill="#fff" opacity=".32">
+    <circle cx="1082" cy="482" r="3"/><circle cx="1002" cy="566" r="3"/><circle cx="1227" cy="376" r="4"/><circle cx="222" cy="504" r="3"/>
+  </g>
+</svg>

@@ -253,6 +253,38 @@
       white-space: nowrap;
     }
 
+    .nav-toggle {
+      display: none;
+      width: 46px;
+      height: 46px;
+      place-items: center;
+      border: 1px solid rgba(110, 223, 246, 0.2);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .nav-toggle span,
+    .nav-toggle::before,
+    .nav-toggle::after {
+      content: "";
+      display: block;
+      width: 20px;
+      height: 2px;
+      border-radius: 999px;
+      background: currentColor;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .nav-toggle::before {
+      transform: translateY(-6px);
+    }
+
+    .nav-toggle::after {
+      transform: translateY(6px);
+    }
+
     .button {
       display: inline-flex;
       align-items: center;
@@ -981,10 +1013,58 @@
       border: 1px solid rgba(255, 209, 102, 0.2);
       border-radius: 8px;
       background:
+        linear-gradient(90deg, rgba(7, 11, 20, 0.9), rgba(7, 11, 20, 0.62)),
+        url("{{ url_for('static', filename='assets/sports-edge-hero.svg') }}") center / cover,
         radial-gradient(circle at 20% 0%, rgba(255, 209, 102, 0.12), transparent 32%),
         rgba(13, 22, 39, 0.78);
       box-shadow: var(--shadow);
       overflow: hidden;
+    }
+
+    .sports-hero-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(7, 11, 20, 0.62);
+      backdrop-filter: blur(10px);
+    }
+
+    .sports-hero-panel strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #fff3c7;
+      font-size: 18px;
+    }
+
+    .sports-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .live-badge,
+    .source-badge {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .live-badge {
+      color: #c8ffe2;
+      border-color: rgba(54, 229, 143, 0.28);
+      background: rgba(54, 229, 143, 0.1);
+      box-shadow: 0 0 24px rgba(54, 229, 143, 0.12);
     }
 
     .sports-list {
@@ -1000,12 +1080,23 @@
       padding: 16px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.045);
+      background:
+        linear-gradient(180deg, rgba(7, 11, 20, 0.62), rgba(7, 11, 20, 0.88)),
+        rgba(255, 255, 255, 0.045);
+      background-size: cover;
+      background-position: center;
       color: var(--text);
       text-align: left;
       cursor: pointer;
       transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
     }
+
+    .sports-card.sport-nba { background-image: linear-gradient(180deg, rgba(7, 11, 20, 0.58), rgba(7, 11, 20, 0.9)), url("{{ url_for('static', filename='assets/sports-basketball.svg') }}"); }
+    .sports-card.sport-nfl { background-image: linear-gradient(180deg, rgba(7, 11, 20, 0.58), rgba(7, 11, 20, 0.9)), url("{{ url_for('static', filename='assets/sports-football.svg') }}"); }
+    .sports-card.sport-mlb { background-image: linear-gradient(180deg, rgba(7, 11, 20, 0.58), rgba(7, 11, 20, 0.9)), url("{{ url_for('static', filename='assets/sports-baseball.svg') }}"); }
+    .sports-card.sport-nhl { background-image: linear-gradient(180deg, rgba(7, 11, 20, 0.58), rgba(7, 11, 20, 0.9)), url("{{ url_for('static', filename='assets/sports-hockey.svg') }}"); }
+    .sports-card.sport-epl { background-image: linear-gradient(180deg, rgba(7, 11, 20, 0.58), rgba(7, 11, 20, 0.9)), url("{{ url_for('static', filename='assets/sports-soccer.svg') }}"); }
+    .sports-card.sport-tennis { background-image: linear-gradient(180deg, rgba(7, 11, 20, 0.58), rgba(7, 11, 20, 0.9)), url("{{ url_for('static', filename='assets/sports-tennis.svg') }}"); }
 
     .sports-card:hover,
     .sports-card.is-active {
@@ -1051,13 +1142,45 @@
       line-height: 1.45;
     }
 
+    .sports-risk {
+      display: inline-flex;
+      margin-top: 12px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: rgba(255, 209, 102, 0.1);
+      color: #ffe3a3;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
     .sports-detail {
       margin: 0 16px 16px;
       padding: 20px;
       border: 1px solid rgba(110, 223, 246, 0.18);
       border-radius: 8px;
       background: rgba(8, 15, 28, 0.9);
+      background-position: center;
+      background-size: cover;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .sports-detail[data-sport-detail="nba"] { background-image: linear-gradient(90deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.82)), url("{{ url_for('static', filename='assets/sports-basketball.svg') }}"); }
+    .sports-detail[data-sport-detail="nfl"] { background-image: linear-gradient(90deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.82)), url("{{ url_for('static', filename='assets/sports-football.svg') }}"); }
+    .sports-detail[data-sport-detail="mlb"] { background-image: linear-gradient(90deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.82)), url("{{ url_for('static', filename='assets/sports-baseball.svg') }}"); }
+    .sports-detail[data-sport-detail="nhl"] { background-image: linear-gradient(90deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.82)), url("{{ url_for('static', filename='assets/sports-hockey.svg') }}"); }
+    .sports-detail[data-sport-detail="epl"] { background-image: linear-gradient(90deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.82)), url("{{ url_for('static', filename='assets/sports-soccer.svg') }}"); }
+    .sports-detail[data-sport-detail="tennis"] { background-image: linear-gradient(90deg, rgba(8, 15, 28, 0.92), rgba(8, 15, 28, 0.82)), url("{{ url_for('static', filename='assets/sports-tennis.svg') }}"); }
+
+    .sports-ai-prompt {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid rgba(110, 223, 246, 0.18);
+      border-radius: 8px;
+      background: rgba(110, 223, 246, 0.07);
+      color: #d6edf4;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.5;
     }
 
     .sports-detail-grid {
@@ -1557,12 +1680,23 @@
     }
 
     @media (max-width: 980px) {
+      .nav-toggle {
+        display: grid;
+        order: 2;
+        margin-left: auto;
+      }
+
       .nav-links {
         order: 3;
         width: 100%;
+        display: none;
+        flex-direction: column;
+        align-items: stretch;
         gap: 14px;
-        overflow-x: auto;
-        padding: 8px 0 2px;
+        padding: 14px;
+        border: 1px solid rgba(110, 223, 246, 0.16);
+        border-radius: 8px;
+        background: rgba(7, 11, 20, 0.94);
         scrollbar-width: none;
       }
 
@@ -1572,8 +1706,32 @@
       }
 
       .nav-actions {
-        order: 2;
-        margin-left: auto;
+        order: 4;
+        width: 100%;
+        display: none;
+        align-items: stretch;
+        padding: 0 14px 14px;
+        border: 1px solid rgba(110, 223, 246, 0.16);
+        border-top: 0;
+        border-radius: 0 0 8px 8px;
+        background: rgba(7, 11, 20, 0.94);
+      }
+
+      header.nav-open .nav-links,
+      header.nav-open .nav-actions {
+        display: flex;
+      }
+
+      header.nav-open .nav-toggle span {
+        opacity: 0;
+      }
+
+      header.nav-open .nav-toggle::before {
+        transform: translateY(2px) rotate(45deg);
+      }
+
+      header.nav-open .nav-toggle::after {
+        transform: translateY(-2px) rotate(-45deg);
       }
 
       .hero-grid,
@@ -1605,11 +1763,8 @@
       }
 
       .nav-actions {
-        width: 100%;
         justify-content: flex-start;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        padding-bottom: 2px;
+        flex-wrap: wrap;
       }
 
       .brand-logo {
@@ -1716,8 +1871,13 @@
       }
 
       .sports-list,
-      .sports-detail-grid {
+      .sports-detail-grid,
+      .sports-hero-panel {
         grid-template-columns: 1fr;
+      }
+
+      .sports-badges {
+        justify-content: flex-start;
       }
 
       .score-widgets {
@@ -1761,7 +1921,9 @@
           </span>
         </a>
 
-        <div class="nav-links">
+        <button class="nav-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" data-nav-toggle><span></span></button>
+
+        <div class="nav-links" data-nav-panel>
           <a href="#features">Features</a>
           <a href="#about">About</a>
           <a href="#market-board" data-analytics="view_live_market">Live Market</a>
@@ -2178,6 +2340,17 @@
         </div>
 
         <div class="sports-board" aria-live="polite">
+          <div class="sports-hero-panel">
+            <div>
+              <strong>Live game board with position-risk intelligence</strong>
+              <p>CoinPilotX blends public scoreboards, optional odds providers, and sport-specific context into cautious decision support.</p>
+            </div>
+            <div class="sports-badges">
+              <span class="live-badge">LIVE</span>
+              <span class="source-badge" data-sports-source>Source loading</span>
+              <span class="source-badge" data-sports-odds>Odds loading</span>
+            </div>
+          </div>
           <div class="market-controls">
             <div class="market-filters" aria-label="Sports filters">
               <button class="filter-button is-active" type="button" data-sports-filter="all">All Live</button>
@@ -2186,6 +2359,7 @@
               <button class="filter-button" type="button" data-sports-filter="mlb">MLB</button>
               <button class="filter-button" type="button" data-sports-filter="nhl">NHL</button>
               <button class="filter-button" type="button" data-sports-filter="epl">EPL</button>
+              <button class="filter-button" type="button" data-sports-filter="tennis">Tennis</button>
             </div>
             <div class="market-updated" data-sports-updated>Loading live sports edge...</div>
           </div>
@@ -2199,7 +2373,7 @@
         </div>
 
         <div class="disclaimer">
-          Sports Edge is informational only. No guaranteed bets or outcomes. Review risk, price, and your limits before taking any position.
+          Informational only — not betting or financial advice. Never risk money you cannot afford to lose.
         </div>
       </div>
     </section>
@@ -2784,8 +2958,8 @@
             <p>You may connect public wallet addresses for tracking. Never send seed phrases, private keys, recovery phrases, or passwords.</p>
           </article>
           <article class="faq-card">
-            <h3>Does Sports Edge promise outcomes?</h3>
-            <p>No. Sports Edge is informational and experimental. It does not promise bets, wins, or outcomes.</p>
+            <h3>What is Sports Edge?</h3>
+            <p>Sports Edge is live context for reviewing positions with caution. Informational only — not betting or financial advice. Never risk money you cannot afford to lose.</p>
           </article>
           <article class="faq-card">
             <h3>What does Powered by OpenAI mean?</h3>
