@@ -389,7 +389,8 @@ def pro_upgrade_message(user_id):
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
         "CoinPilotX is operated by CoinPilotXAI Inc.\n"
         "No hidden fees from CoinPilotXAI Inc. Card payment opens only through the secure button below.\n"
-        "CoinPilotX never holds funds.\n\n"
+        "CoinPilotX never holds funds.\n"
+        "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
         "Choose a payment method below when you are ready."
     )
 
@@ -744,7 +745,7 @@ def subscription_email_body(plan_name, timestamp, txid=None):
         "Open the Telegram bot:\n"
         "https://t.me/DocShieldX_bot\n\n"
         "Safety reminder: CoinPilotX will never ask for your seed phrase, private key, or wallet password.\n\n"
-        "Educational only — not financial advice."
+        "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice."
     )
 
 
@@ -1105,7 +1106,8 @@ def pro_upgrade_message(user_id):
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
         "CoinPilotX is operated by CoinPilotXAI Inc.\n"
         "No hidden fees from CoinPilotXAI Inc. Card payment opens only through the secure button below.\n"
-        "CoinPilotX never holds funds.\n\n"
+        "CoinPilotX never holds funds.\n"
+        "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
         "Choose a payment method below when you are ready."
     )
 
@@ -2514,14 +2516,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ About CoinPilotX\n\n"
-        "CoinPilotX is a crypto safety and market intelligence assistant operated by CoinPilotXAI Inc. "
+        "CoinPilotX is a crypto safety and market intelligence assistant powered by CoinPilotXAI Inc. "
         "It is built to help everyday users understand crypto prices, alerts, portfolio movement, "
         "and scam risks in simple language.\n\n"
         "The system can check market prices, provide BUY / SELL / WAIT-style educational signals, "
         "help users track a manual crypto portfolio, and scan suspicious crypto messages or links "
         "before users trust them.\n\n"
         "CoinPilotX does not hold user funds, create exchange accounts, or guarantee profits. "
-        "All information is educational only and should not be treated as financial advice.\n\n"
+        "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
         "Powered by OpenAI + CoinPilotX crypto intelligence.",
         reply_markup=main_menu()
     )
@@ -3372,7 +3374,8 @@ def init_db():
 
 def help_message():
     return (
-        "ℹ️ CoinPilotX Help\n\n"
+        "ℹ️ CoinPilotX Help\n"
+        "Powered by CoinPilotXAI Inc.\n\n"
         "/price BTC — live price and signal\n"
         "/chart BTC — real BTC/ETH live chart\n"
         "/analysis BTC — AI-style crypto analysis\n"
@@ -5179,7 +5182,7 @@ def admin_dashboard_route():
     return f"""
     <html>
         <head>
-            <title>CoinPilotX Admin</title>
+            <title>CoinPilotXAI Inc. Admin</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 40px; color: #17211f; }}
                 .panel {{ max-width: 720px; border: 1px solid #d8e2df; border-radius: 8px; padding: 24px; }}
@@ -5188,7 +5191,7 @@ def admin_dashboard_route():
         </head>
         <body>
             <div class="panel">
-                <h1>CoinPilotX Admin</h1>
+                <h1>CoinPilotXAI Inc. Admin</h1>
                 <p>{summary}</p>
             </div>
         </body>
@@ -6134,7 +6137,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_about":
         await query.message.reply_text(
-            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nCoinPilotX is operated by CoinPilotXAI Inc.\n\nPowered by OpenAI + CoinPilotX crypto intelligence.\n\nEducational only. Not financial advice.",
+            "ℹ️ About CoinPilotX\n\nCoinPilotX helps users understand live crypto prices, signals, portfolio movement, whale activity, exchange choices, and scam risks.\n\nCoinPilotX is powered by CoinPilotXAI Inc.\n\nPowered by OpenAI + CoinPilotX crypto intelligence.\n\nCoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.",
             reply_markup=main_menu()
         )
         return
