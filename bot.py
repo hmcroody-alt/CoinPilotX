@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
-from flask import Flask, request
+from flask import Flask, request, render_template
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -63,7 +63,8 @@ ADMIN_USER_IDS = {
 # =========================
 # 🌐 WEBHOOK APP (RIGHT AFTER STRIPE)
 # =========================
-webhook_app = Flask(__name__)
+webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
+app = webhook_app
 
 # =========================
 # STATE VARIABLES
@@ -419,7 +420,15 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
-webhook_app = Flask(__name__)
+webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
+app = webhook_app
+
+
+@webhook_app.route("/", methods=["GET"])
+def home():
+    return render_template("index.html")
+
+
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     payload = request.data

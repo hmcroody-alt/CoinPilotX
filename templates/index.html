@@ -10,7 +10,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://coinpilotx.com" />
   <meta name="theme-color" content="#08111f" />
-  <link rel="icon" type="image/png" href="Coinpilot%20Logo/Logo.png" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" />
 
   <style>
     :root {
@@ -894,7 +894,7 @@
       <nav aria-label="Main navigation">
         <a class="brand" href="#top" aria-label="CoinPilotX home">
           <span class="logo-wrap">
-            <img class="brand-logo" src="Coinpilot%20Logo/Logo.png" alt="CoinPilotX logo" width="44" height="44" decoding="async" />
+            <img class="brand-logo" src="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" alt="CoinPilotX logo" width="44" height="44" decoding="async" />
           </span>
           <span class="brand-text">
             <span>CoinPilotX</span>
@@ -946,7 +946,7 @@
         <div>
           <div class="hero-brand" aria-label="CoinPilotX brand">
             <span class="logo-wrap">
-              <img class="hero-logo" src="Coinpilot%20Logo/Logo.png" alt="CoinPilotX logo" width="112" height="112" decoding="async" />
+              <img class="hero-logo" src="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" alt="CoinPilotX logo" width="112" height="112" decoding="async" />
             </span>
             <div class="hero-brand-copy">
               <strong>CoinPilotX</strong>
@@ -1109,7 +1109,7 @@
         <div class="screenshot-grid">
           <article class="card">
             <div class="screenshot-frame">
-              <img src="screenshots/analysis.png" alt="CoinPilotX AI market analysis screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/analysis.png') }}" alt="CoinPilotX AI market analysis screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">Screenshot unavailable</div>
             </div>
             <h3>AI Market Analysis</h3>
@@ -1117,7 +1117,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="screenshots/portfolio.png" alt="CoinPilotX portfolio advice screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/portfolio.png') }}" alt="CoinPilotX portfolio advice screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">Screenshot unavailable</div>
             </div>
             <h3>Portfolio Advice</h3>
@@ -1125,7 +1125,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="screenshots/whales.png" alt="CoinPilotX whale intelligence screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/whales.png') }}" alt="CoinPilotX whale intelligence screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">Screenshot unavailable</div>
             </div>
             <h3>Whale Intelligence</h3>
@@ -1133,7 +1133,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="screenshots/scamshield.png" alt="CoinPilotX scam shield screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/scamshield.png') }}" alt="CoinPilotX scam shield screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">Screenshot unavailable</div>
             </div>
             <h3>Scam Shield</h3>
@@ -1150,7 +1150,7 @@
         <div class="grid two">
           <article class="card">
             <div class="screenshot-frame">
-              <img src="screenshots/MainMenu.png" alt="CoinPilotX Telegram main menu screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/MainMenu.png') }}" alt="CoinPilotX Telegram main menu screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">Screenshot unavailable</div>
             </div>
             <h3>Main Menu</h3>
@@ -1158,7 +1158,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="screenshots/CoinPilotxHelp.png" alt="CoinPilotX help command screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/CoinPilotxHelp.png') }}" alt="CoinPilotX help command screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">Screenshot unavailable</div>
             </div>
             <h3>Command Help</h3>
@@ -1552,7 +1552,7 @@
         <div>
           <div class="footer-brand">
             <span class="logo-wrap">
-              <img class="footer-logo" src="Coinpilot%20Logo/Logo.png" alt="CoinPilotX logo" width="42" height="42" loading="lazy" decoding="async" />
+              <img class="footer-logo" src="{{ url_for('static', filename='Coinpilot Logo/Logo.png') }}" alt="CoinPilotX logo" width="42" height="42" loading="lazy" decoding="async" />
             </span>
             <div>
               <strong>CoinPilotX</strong>
