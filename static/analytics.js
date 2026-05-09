@@ -85,7 +85,7 @@
   }
 
   function escapeHtml(value) {
-    return String(value || "").replace(/[&<>"']/g, function (char) {
+    return String(value === null || value === undefined ? "" : value).replace(/[&<>"']/g, function (char) {
       return {
         "&": "&amp;",
         "<": "&lt;",
@@ -306,15 +306,138 @@
     window.setInterval(refreshMarketBoard, 45000);
   }
 
+  var currentSportsFilter = "all";
+  var selectedSportsGame = "";
+
+  function sportsCard(game) {
+    var scoreAway = game.state === "pre" ? "--" : game.away_score;
+    var scoreHome = game.state === "pre" ? "--" : game.home_score;
+    var active = selectedSportsGame === game.id ? " is-active" : "";
+    return (
+      '<button class="sports-card' + active + '" type="button" data-game-id="' + escapeHtml(game.id) + '">' +
+        '<div class="sports-meta"><span>' + escapeHtml(game.league_label || game.league || "Live") + '</span><span>' + escapeHtml(game.status || "Scheduled") + '</span></div>' +
+        '<div class="sports-teams">' +
+          '<div class="sports-team-line"><span>' + escapeHtml(game.away_team || "Away") + '</span><span class="sports-score">' + escapeHtml(scoreAway) + '</span></div>' +
+          '<div class="sports-team-line"><span>' + escapeHtml(game.home_team || "Home") + '</span><span class="sports-score">' + escapeHtml(scoreHome) + '</span></div>' +
+        '</div>' +
+        '<div class="sports-status">Tap for position intelligence and risk context.</div>' +
+      '</button>'
+    );
+  }
+
+  function renderSportsDetail(data) {
+    var detail = document.querySelector("[data-sports-detail]");
+    if (!detail) {
+      return;
+    }
+    var game = data.selected_game;
+    var analysis = data.analysis;
+    if (!game || !analysis) {
+      detail.hidden = true;
+      detail.innerHTML = '<div class="market-loading">Select a game to review position intelligence.</div>';
+      return;
+    }
+
+    detail.hidden = false;
+    detail.innerHTML =
+      '<div class="sports-detail-grid">' +
+        '<div>' +
+          '<span class="sports-action">' + escapeHtml(analysis.action || "REVIEW RISK") + '</span>' +
+          '<h3>' + escapeHtml((game.away_team || "Away") + " at " + (game.home_team || "Home")) + '</h3>' +
+          '<p>' + escapeHtml(game.league_label || "") + " · " + escapeHtml(game.status || "") + '</p>' +
+          '<p><strong>Risk:</strong> ' + escapeHtml(analysis.risk_level || "Review carefully.") + '</p>' +
+        '</div>' +
+        '<div>' +
+          '<p><strong>Why consider it:</strong> ' + escapeHtml(analysis.why_take || "") + '</p>' +
+          '<p><strong>Why avoid it:</strong> ' + escapeHtml(analysis.why_not || "") + '</p>' +
+          '<p><strong>Data limits:</strong> ' + escapeHtml(analysis.market_context || "") + '</p>' +
+          '<p>' + escapeHtml(analysis.disclaimer || "Informational only. No guaranteed bets or outcomes.") + '</p>' +
+        '</div>' +
+      '</div>';
+  }
+
+  async function refreshSportsEdge(gameId) {
+    var list = document.querySelector("[data-sports-list]");
+    var updated = document.querySelector("[data-sports-updated]");
+    var error = document.querySelector("[data-sports-error]");
+    if (!list || !updated) {
+      return;
+    }
+
+    var params = "?league=" + encodeURIComponent(currentSportsFilter);
+    if (gameId) {
+      params += "&game_id=" + encodeURIComponent(gameId);
+    }
+
+    try {
+      var response = await fetch("/api/sports-edge" + params, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Sports Edge request failed");
+      }
+      var data = await response.json();
+      var games = (data.games || []).slice(0, 12);
+      if (!games.length) {
+        list.innerHTML = '<div class="market-loading">No live games are available from the public feed right now.</div>';
+      } else {
+        list.innerHTML = games.map(sportsCard).join("");
+      }
+      updated.textContent = (data.warning ? data.warning + " " : "") + "Last updated " + relativeTime(data.updated_at) + " · " + (data.source || "sports data");
+      renderSportsDetail(data);
+      if (error) {
+        error.hidden = true;
+      }
+    } catch (err) {
+      if (error) {
+        error.hidden = false;
+      }
+      updated.textContent = "Live sports data temporarily unavailable.";
+    }
+  }
+
+  function setupSportsEdge() {
+    if (!document.querySelector("[data-sports-list]")) {
+      return;
+    }
+    document.querySelectorAll("[data-sports-filter]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        currentSportsFilter = button.getAttribute("data-sports-filter") || "all";
+        selectedSportsGame = "";
+        document.querySelectorAll("[data-sports-filter]").forEach(function (item) {
+          item.classList.toggle("is-active", item === button);
+        });
+        refreshSportsEdge();
+      });
+    });
+
+    document.addEventListener("click", function (event) {
+      var card = event.target.closest("[data-game-id]");
+      if (!card) {
+        return;
+      }
+      selectedSportsGame = card.getAttribute("data-game-id") || "";
+      document.querySelectorAll("[data-game-id]").forEach(function (item) {
+        item.classList.toggle("is-active", item === card);
+      });
+      refreshSportsEdge(selectedSportsGame);
+    });
+
+    refreshSportsEdge();
+    window.setInterval(function () {
+      refreshSportsEdge(selectedSportsGame);
+    }, 30000);
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       setupReveal();
       setupIntelligenceFeed();
       setupMarketBoard();
+      setupSportsEdge();
     });
   } else {
     setupReveal();
     setupIntelligenceFeed();
     setupMarketBoard();
+    setupSportsEdge();
   }
 })();

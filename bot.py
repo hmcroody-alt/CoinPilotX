@@ -60,6 +60,8 @@ INTELLIGENCE_FEED_CACHE = {"data": None, "created_at": None}
 INTELLIGENCE_FEED_CACHE_SECONDS = int(os.getenv("INTELLIGENCE_FEED_CACHE_SECONDS", "15"))
 MARKETS_CACHE = {"data": None, "created_at": None}
 MARKETS_CACHE_SECONDS = int(os.getenv("MARKETS_CACHE_SECONDS", "60"))
+SPORTS_EDGE_CACHE = {"data": None, "created_at": None}
+SPORTS_EDGE_CACHE_SECONDS = int(os.getenv("SPORTS_EDGE_CACHE_SECONDS", "60"))
 ADMIN_USER_IDS = {
     int(x.strip())
     for x in os.getenv("ADMIN_USER_IDS", "").split(",")
@@ -457,6 +459,13 @@ def intelligence_feed_api():
 def markets_api():
     category = request.args.get("category", "top_volume")
     return jsonify(live_market_board(category=category))
+
+
+@webhook_app.route("/api/sports-edge", methods=["GET"])
+def sports_edge_api():
+    game_id = request.args.get("game_id", "").strip()
+    league = request.args.get("league", "all").strip().lower()
+    return jsonify(live_sports_edge(game_id=game_id, league=league))
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
@@ -1335,6 +1344,287 @@ def market_board_summary(user_id, category="top_volume"):
     lines.append("")
     lines.append("Educational only — not financial advice.")
     return append_plan_footer(user_id, "\n".join(lines))
+
+
+SPORTS_EDGE_LEAGUES = [
+    {"key": "nba", "label": "NBA", "sport": "basketball", "league": "nba"},
+    {"key": "nfl", "label": "NFL", "sport": "football", "league": "nfl"},
+    {"key": "mlb", "label": "MLB", "sport": "baseball", "league": "mlb"},
+    {"key": "nhl", "label": "NHL", "sport": "hockey", "league": "nhl"},
+    {"key": "epl", "label": "EPL", "sport": "soccer", "league": "eng.1"},
+]
+
+
+def parse_score(value):
+    try:
+        return int(float(value))
+    except Exception:
+        return 0
+
+
+def competitor_record(competitor):
+    records = competitor.get("records") or []
+    if records:
+        return records[0].get("summary") or ""
+    return ""
+
+
+def parse_espn_event(event, league_info):
+    competitions = event.get("competitions") or []
+    if not competitions:
+        return None
+    competition = competitions[0]
+    competitors = competition.get("competitors") or []
+    home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
+    away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1] if len(competitors) > 1 else {})
+    status_type = (event.get("status") or {}).get("type") or {}
+    venue = (competition.get("venue") or {}).get("fullName") or ""
+    home_team = home.get("team") or {}
+    away_team = away.get("team") or {}
+    home_score = parse_score(home.get("score"))
+    away_score = parse_score(away.get("score"))
+    state = status_type.get("state") or "pre"
+    is_live = state == "in"
+    is_final = state == "post"
+
+    return {
+        "id": f"{league_info['key']}:{event.get('id')}",
+        "callback_id": f"sportsedge_{league_info['key']}_{event.get('id')}",
+        "event_id": str(event.get("id") or ""),
+        "league": league_info["key"],
+        "league_label": league_info["label"],
+        "name": event.get("name") or f"{away_team.get('displayName', 'Away')} at {home_team.get('displayName', 'Home')}",
+        "short_name": event.get("shortName") or "",
+        "home_team": home_team.get("displayName") or home_team.get("name") or "Home",
+        "away_team": away_team.get("displayName") or away_team.get("name") or "Away",
+        "home_abbr": home_team.get("abbreviation") or "HOME",
+        "away_abbr": away_team.get("abbreviation") or "AWAY",
+        "home_score": home_score,
+        "away_score": away_score,
+        "home_record": competitor_record(home),
+        "away_record": competitor_record(away),
+        "status": status_type.get("shortDetail") or status_type.get("description") or "Scheduled",
+        "state": state,
+        "is_live": is_live,
+        "is_final": is_final,
+        "venue": venue,
+        "start_time": event.get("date") or "",
+    }
+
+
+def fetch_espn_scoreboard(league_info):
+    response = requests.get(
+        f"https://site.api.espn.com/apis/site/v2/sports/{league_info['sport']}/{league_info['league']}/scoreboard",
+        timeout=10,
+    )
+    response.raise_for_status()
+    games = []
+    for event in response.json().get("events", []):
+        parsed = parse_espn_event(event, league_info)
+        if parsed:
+            games.append(parsed)
+    return games
+
+
+def game_sort_key(game):
+    state_rank = {"in": 0, "pre": 1, "post": 2}.get(game.get("state"), 1)
+    return (state_rank, game.get("start_time") or "")
+
+
+def fetch_sports_edge_games(league="all", limit=30):
+    selected = [
+        item for item in SPORTS_EDGE_LEAGUES
+        if league in {"", "all"} or item["key"] == league
+    ] or SPORTS_EDGE_LEAGUES
+    games = []
+    source_notes = []
+    for league_info in selected:
+        try:
+            league_games = fetch_espn_scoreboard(league_info)
+            games.extend(league_games)
+            if league_games:
+                source_notes.append(league_info["label"])
+        except Exception as exc:
+            logging.info("Sports Edge scoreboard failed for %s: %s", league_info["key"], exc)
+    games = sorted(games, key=game_sort_key)[:limit]
+    return games, source_notes
+
+
+def get_sports_edge_games(league="all", limit=30):
+    now = datetime.now()
+    cached_at = SPORTS_EDGE_CACHE.get("created_at")
+    cached_data = SPORTS_EDGE_CACHE.get("data")
+    cache_fresh = cached_data and cached_at and (now - cached_at).total_seconds() < SPORTS_EDGE_CACHE_SECONDS
+
+    if cache_fresh:
+        games = cached_data.get("games", [])
+        if league not in {"", "all"}:
+            games = [game for game in games if game.get("league") == league]
+        return games[:limit], cached_data.get("source", "espn_public_scoreboard"), cached_data.get("warning")
+
+    games, source_notes = fetch_sports_edge_games("all", limit=60)
+    warning = None
+    if not games:
+        warning = "Live sports data temporarily unavailable. Try again shortly."
+    data = {
+        "games": games,
+        "source": "espn_public_scoreboard" + (f" ({', '.join(source_notes)})" if source_notes else ""),
+        "warning": warning,
+    }
+    SPORTS_EDGE_CACHE["data"] = data
+    SPORTS_EDGE_CACHE["created_at"] = now
+    if not games and cached_data:
+        cached_games = cached_data.get("games", [])
+        if league not in {"", "all"}:
+            cached_games = [game for game in cached_games if game.get("league") == league]
+        return cached_games[:limit], cached_data.get("source", "espn_public_scoreboard"), "Showing last cached sports data."
+
+    if league not in {"", "all"}:
+        games = [game for game in games if game.get("league") == league]
+    return games[:limit], data["source"], warning
+
+
+def sports_game_intelligence(game):
+    home_score = game.get("home_score", 0)
+    away_score = game.get("away_score", 0)
+    margin = home_score - away_score
+    abs_margin = abs(margin)
+    leading = game["home_team"] if margin > 0 else game["away_team"] if margin < 0 else "Neither side"
+    state = game.get("state")
+
+    if state == "post":
+        action = "NO LIVE POSITION"
+        risk = "Low for new action because the game is final; use it for review only."
+        why_take = "There is no live entry left. Use the result to study pre-game assumptions and risk control."
+        why_not = "Do not chase finished games through unrelated markets or emotional follow-up bets."
+    elif state == "pre":
+        action = "WAIT FOR CONFIRMATION"
+        risk = "Medium until injuries, lineups, and market price are confirmed."
+        why_take = "A small, planned position may make sense only if your independent research, price, and risk limit agree."
+        why_not = "Avoid forcing a position before lineup, fatigue, travel, weather, or odds context is clear."
+    elif abs_margin >= 12:
+        action = "WATCH CLOSELY"
+        risk = "High because live prices can overreact to a large score gap."
+        why_take = f"{leading} has scoreboard control right now, so momentum may support a cautious trend-following view."
+        why_not = "Large live leads can become expensive to enter, and one run, turnover, injury, or tactical change can flip value."
+    elif abs_margin <= 3:
+        action = "HIGH VOLATILITY"
+        risk = "High because the game is close and one possession or play can change the position quality."
+        why_take = "Close games can create opportunity only when the price compensates for uncertainty."
+        why_not = "This is the easiest zone to overtrade. If you do not already have a plan, waiting is often cleaner."
+    else:
+        action = "REVIEW RISK"
+        risk = "Medium to high because live momentum is present but not decisive."
+        why_take = f"{leading} has a measurable edge on the scoreboard, which may support a cautious lean if other data agrees."
+        why_not = "The edge is not strong enough by itself. Check injuries, pace, foul trouble, fatigue, and price before acting."
+
+    return {
+        "action": action,
+        "risk_level": risk,
+        "why_take": why_take,
+        "why_not": why_not,
+        "market_context": (
+            "CoinPilotX is using public scoreboard context only here. It does not include guaranteed odds, private injury feeds, "
+            "or certainty about outcomes."
+        ),
+        "disclaimer": "Informational only. No guaranteed bets or outcomes. Educational only — not financial advice.",
+    }
+
+
+def find_sports_game(game_id):
+    if not game_id:
+        return None
+    normalized = game_id.replace("_", ":")
+    games, _, _ = get_sports_edge_games(limit=60)
+    for game in games:
+        if game.get("id") == normalized or game.get("event_id") == game_id:
+            return game
+    return None
+
+
+def live_sports_edge(game_id="", league="all"):
+    games, source, warning = get_sports_edge_games(league=league, limit=30)
+    payload = {
+        "source": source,
+        "updated_at": datetime.now().isoformat(),
+        "warning": warning,
+        "games": games,
+        "disclaimer": "Informational only. No guaranteed bets or outcomes. Educational only — not financial advice.",
+    }
+    if game_id:
+        game = find_sports_game(game_id)
+        if game:
+            payload["selected_game"] = game
+            payload["analysis"] = sports_game_intelligence(game)
+        else:
+            payload["warning"] = "That game is no longer available in the live feed."
+    return payload
+
+
+def sports_edge_summary():
+    data = live_sports_edge()
+    games = data.get("games", [])[:8]
+    lines = [
+        "🎲 Live Sports Edge",
+        f"Source: {data.get('source', 'public scoreboard data')}",
+        f"Updated: {data.get('updated_at', '')[:19]}",
+        "",
+    ]
+    if data.get("warning"):
+        lines.append(data["warning"])
+        lines.append("")
+    if not games:
+        lines.extend([
+            "No live games are available from the public feed right now.",
+            "Check back shortly or use this section as a reminder to review risk before taking any position.",
+        ])
+    else:
+        lines.append("Tap a game below for deeper intelligence, or review the live board on the website.")
+        lines.append("")
+        for index, game in enumerate(games, start=1):
+            score = f"{game['away_abbr']} {game['away_score']} - {game['home_score']} {game['home_abbr']}" if game.get("state") != "pre" else "Scheduled"
+            lines.append(f"{index}. {game['league_label']} · {game['away_team']} at {game['home_team']}")
+            lines.append(f"   {score} · {game['status']}")
+    lines.extend([
+        "",
+        "CoinPilotX does not promise wins. Review risk, price, and your limits before acting.",
+        "Informational only. No guaranteed bets or outcomes. Educational only — not financial advice.",
+    ])
+    return "\n".join(lines)
+
+
+def sports_edge_game_summary(game_id):
+    game = find_sports_game(game_id)
+    if not game:
+        return (
+            "🎲 Sports Edge\n\n"
+            "That game is no longer available in the live feed. Try /sportsedge again for the latest list.\n\n"
+            "Informational only. No guaranteed bets or outcomes."
+        )
+    analysis = sports_game_intelligence(game)
+    score = f"{game['away_team']} {game['away_score']} - {game['home_score']} {game['home_team']}" if game.get("state") != "pre" else f"{game['away_team']} at {game['home_team']}"
+    return (
+        "🎲 Sports Edge Intelligence\n\n"
+        f"Game: {score}\n"
+        f"League: {game['league_label']}\n"
+        f"Status: {game['status']}\n\n"
+        f"Position read: {analysis['action']}\n"
+        f"Risk level: {analysis['risk_level']}\n\n"
+        f"Why someone might consider a position:\n{analysis['why_take']}\n\n"
+        f"Why someone might avoid it:\n{analysis['why_not']}\n\n"
+        f"Data limits:\n{analysis['market_context']}\n\n"
+        f"{analysis['disclaimer']}"
+    )
+
+
+def sports_edge_menu():
+    data = live_sports_edge()
+    rows = []
+    for game in data.get("games", [])[:10]:
+        label = f"{game['league_label']} · {game['away_abbr']} @ {game['home_abbr']}"
+        rows.append([InlineKeyboardButton(label[:60], callback_data=game["callback_id"])])
+    rows.append([InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")])
+    return InlineKeyboardMarkup(rows)
 
 
 def get_best_price(asset):
@@ -3493,20 +3783,6 @@ def country_news_summary(country, pro=False):
     return "\n".join(lines)
 
 
-def sports_edge_summary():
-    if not SPORTS_EDGE_ENABLED:
-        return (
-            "🎲 Sports Edge\n\n"
-            "This section is experimental and disabled by default for compliance safety.\n\n"
-            "When enabled, it should stay informational only: no promised bets, no outcome claims, and no financial claims."
-        )
-    return (
-        "🎲 Sports Edge\n\n"
-        "Experimental read: compare team form, injuries, schedule fatigue, line movement, and bankroll risk before making any decision.\n\n"
-        "Informational only. No promised bets or promised wins."
-    )
-
-
 def country_picker_menu():
     rows = []
     for i in range(0, len(COUNTRY_PICKER_COUNTRIES), 2):
@@ -4723,7 +4999,11 @@ def main_menu():
         [InlineKeyboardButton("🏠 Main Menu", callback_data="menu_main")],
         [
             InlineKeyboardButton("📈 Live BTC", callback_data="menu_price_btc"),
+            InlineKeyboardButton("📊 Live Market", callback_data="menu_live_markets"),
+        ],
+        [
             InlineKeyboardButton("📊 BTC/ETH Charts", callback_data="menu_chart_btc"),
+            InlineKeyboardButton("🎲 Live Sports Edge", callback_data="menu_sports_edge"),
         ],
         [
             InlineKeyboardButton("🧠 AI Analysis", callback_data="menu_analysis_btc"),
@@ -4838,7 +5118,7 @@ async def countrynews_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def sportsedge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     log_engagement(update.effective_user.id, "sports_edge")
-    await update.message.reply_text(sports_edge_summary(), reply_markup=main_menu())
+    await update.message.reply_text(sports_edge_summary(), reply_markup=sports_edge_menu())
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4862,6 +5142,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await query.message.reply_text("BTC price is unavailable right now.", reply_markup=main_menu())
+        return
+
+    if data == "menu_live_markets":
+        log_engagement(user_id, "live_markets")
+        await query.message.reply_text(market_board_summary(user_id, "top_volume"), reply_markup=main_menu())
         return
 
     if data == "menu_chart_btc":
@@ -4918,7 +5203,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "menu_sports_edge":
         log_engagement(user_id, "sports_edge")
-        await query.message.reply_text(sports_edge_summary(), reply_markup=main_menu())
+        await query.message.reply_text(sports_edge_summary(), reply_markup=sports_edge_menu())
+        return
+
+    if data.startswith("sportsedge_"):
+        log_engagement(user_id, "sports_edge_game", data)
+        game_id = data.replace("sportsedge_", "", 1).replace("_", ":", 1)
+        await query.message.reply_text(sports_edge_game_summary(game_id), reply_markup=sports_edge_menu())
         return
 
     if data == "menu_signals":
