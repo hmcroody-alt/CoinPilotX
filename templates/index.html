@@ -893,6 +893,50 @@
       color: var(--muted);
     }
 
+    .about-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .about-copy {
+      padding: 30px;
+      border: 1px solid rgba(110, 223, 246, 0.2);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(54, 229, 143, 0.08), rgba(110, 223, 246, 0.05)),
+        rgba(13, 22, 39, 0.82);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+    }
+
+    .about-copy p + p {
+      margin-top: 14px;
+    }
+
+    .about-copy strong {
+      color: #dfffee;
+    }
+
+    .about-note {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border: 1px solid rgba(54, 229, 143, 0.2);
+      border-radius: 8px;
+      color: #c8ffe2;
+      background: rgba(54, 229, 143, 0.08);
+      font-weight: 760;
+    }
+
+    .trust-anchor-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .trust-anchor-list .security-item {
+      min-height: auto;
+    }
+
     .pricing-wrap {
       display: grid;
       grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
@@ -1199,6 +1243,7 @@
       }
 
       .hero-grid,
+      .about-panel,
       .pricing-wrap,
       .cta-strip {
         grid-template-columns: 1fr;
@@ -1355,6 +1400,7 @@
 
         <div class="nav-links">
           <a href="#features">Features</a>
+          <a href="#about">About</a>
           <a href="#pro" data-analytics="compare_pro">Pro</a>
           <a href="#intelligence">Intelligence</a>
           <a href="#safety">Safety</a>
@@ -1578,6 +1624,57 @@
 
         <div class="actions" style="justify-content: center; margin-top: 28px;">
           <a class="button" href="#scam-protection" data-analytics="view_scam_protection">See Scam Protection</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="about">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">About CoinPilotX</div>
+          <h2>Built to help crypto users think more clearly before acting.</h2>
+          <p>CoinPilotX is built independently with a focus on intelligence, safety, and usable crypto education.</p>
+        </div>
+
+        <div class="about-panel">
+          <div class="about-copy">
+            <p>
+              CoinPilotX was created by a cybersecurity and AI enthusiast interested in blockchain intelligence, scam awareness, market psychology, and crypto education.
+            </p>
+            <p>
+              The goal is to help users better understand crypto risks, market signals, wallet activity, scams, and portfolio decisions without turning complex data into hype.
+            </p>
+            <p>
+              The platform focuses on <strong>AI-powered explanations</strong>, <strong>public blockchain intelligence</strong>, <strong>whale tracking</strong>, <strong>scam awareness</strong>, <strong>portfolio context</strong>, and safer decision support inside Telegram.
+            </p>
+            <p>
+              CoinPilotX encourages users to slow down, review risks, and avoid emotional decisions. It does not promise profits or certain outcomes.
+            </p>
+            <div class="about-note">CoinPilotX is continuously evolving with new intelligence, safety, and AI features.</div>
+          </div>
+
+          <div class="trust-anchor-list" aria-label="CoinPilotX trust anchors">
+            <div class="security-item">
+              <strong>Why It Exists</strong>
+              <p class="muted">Crypto scams are increasing, blockchain data is difficult for beginners, and emotional trading can lead to poor decisions. Users deserve clearer context before acting.</p>
+            </div>
+            <div class="security-item">
+              <strong>Private-key boundary</strong>
+              <p class="muted">CoinPilotX never asks for seed phrases, private keys, or wallet passwords.</p>
+            </div>
+            <div class="security-item">
+              <strong>Public data only</strong>
+              <p class="muted">Wallet and transaction intelligence uses public blockchain data only.</p>
+            </div>
+            <div class="security-item">
+              <strong>AI-assisted education</strong>
+              <p class="muted">Powered by OpenAI + CoinPilotX crypto intelligence.</p>
+            </div>
+            <div class="security-item">
+              <strong>Educational only</strong>
+              <p class="muted">Educational only — not financial advice.</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -2295,6 +2392,7 @@
             <div>
               <strong>CoinPilotX</strong>
               <div>AI crypto intelligence inside Telegram.</div>
+              <div>AI-powered crypto intelligence focused on education, safety, and market awareness.</div>
               <div>Educational only — not financial advice.</div>
             </div>
           </div>
@@ -2302,6 +2400,7 @@
         <div class="footer-links">
           <a href="https://t.me/DocShieldX_bot">Telegram</a>
           <a href="#features">Features</a>
+          <a href="#about">About</a>
           <a href="#pro" data-analytics="compare_pro">Pro</a>
           <a href="#safety">Safety</a>
           <a href="#faq">FAQ</a>
