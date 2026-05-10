@@ -6386,7 +6386,9 @@ def admin_summary():
 
 @webhook_app.route("/health", methods=["GET"])
 def health_check():
-    return {"status": "ok", "bot": BOT_NAME}, 200
+    response = jsonify({"ok": True})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, 200
 
 
 @webhook_app.route("/admin-dashboard", methods=["GET"])

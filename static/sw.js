@@ -1,6 +1,5 @@
-const CACHE_NAME = "coinpilotxai-mobile-pwa-v2";
-const CORE_ASSETS = [
-  "/",
+const CACHE_NAME = "coinpilotxai-static-v3";
+const STATIC_ASSETS = [
   "/offline",
   "/manifest.json",
   "/static/analytics.js",
@@ -10,10 +9,37 @@ const CORE_ASSETS = [
   "/icons/apple-touch-icon.png"
 ];
 
+function isNeverCachePath(pathname) {
+  return (
+    pathname === "/health" ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/admin/") ||
+    pathname.startsWith("/debug/") ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/logout") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/account") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password") ||
+    pathname.startsWith("/verify-email") ||
+    pathname === "/stripe-webhook"
+  );
+}
+
+function isStaticAsset(request, pathname) {
+  return (
+    request.destination === "style" ||
+    request.destination === "script" ||
+    request.destination === "image" ||
+    request.destination === "font" ||
+    /\.(?:css|js|png|jpg|jpeg|webp|gif|svg|ico|woff2?|ttf)$/i.test(pathname)
+  );
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(CORE_ASSETS))
+      .then((cache) => cache.addAll(STATIC_ASSETS))
       .then(() => self.skipWaiting())
   );
 });
@@ -34,41 +60,45 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (
-    url.pathname.startsWith("/api/") ||
-    url.pathname.startsWith("/admin/") ||
-    url.pathname.startsWith("/debug/") ||
-    url.pathname === "/stripe-webhook"
-  ) {
-    event.respondWith(fetch(request));
+  if (isNeverCachePath(url.pathname)) {
+    event.respondWith(fetch(request, { cache: "no-store" }).catch((error) => {
+      console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
+      throw error;
+    }));
     return;
   }
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
+      fetch(request, { cache: "no-store" })
+        .catch((error) => {
+          console.log("[CoinPilotXAI SW] navigation fetch failure", url.pathname, error && error.message ? error.message : error);
+          return caches.match("/offline");
         })
-        .catch(() => caches.match("/offline"))
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request)
-        .then((response) => {
-          if (response && response.ok && !url.pathname.startsWith("/api/")) {
+  if (isStaticAsset(request, url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) {
+          return cached;
+        }
+        return fetch(request).then((response) => {
+          if (response && response.ok) {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           }
           return response;
-        })
-        .catch(() => cached);
-      return cached || networkFetch;
-    })
-  );
+        }).catch((error) => {
+          console.log("[CoinPilotXAI SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
+          throw error;
+        });
+      })
+    );
+    return;
+  }
+
+  event.respondWith(fetch(request));
 });

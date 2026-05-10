@@ -3989,6 +3989,59 @@
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
   <script>
     (function () {
+      var failedHealthChecks = 0;
+      var healthTimer = null;
+
+      async function verifyConnection() {
+        console.log("[CoinPilotXAI PWA] navigator.onLine state", navigator.onLine);
+        if (navigator.onLine === false) {
+          failedHealthChecks += 1;
+          if (failedHealthChecks >= 1) {
+            console.log("[CoinPilotXAI PWA] offline mode entered");
+          }
+          return false;
+        }
+        try {
+          var response = await fetch("/health", { cache: "no-store" });
+          console.log("[CoinPilotXAI PWA] /health response status", response.status);
+          if (response.ok) {
+            if (failedHealthChecks >= 2) {
+              console.log("[CoinPilotXAI PWA] offline mode exited");
+            }
+            failedHealthChecks = 0;
+            return true;
+          }
+        } catch (error) {
+          console.log("[CoinPilotXAI PWA] /health fetch failed", error && error.message ? error.message : error);
+        }
+        failedHealthChecks += 1;
+        if (failedHealthChecks >= 2) {
+          console.log("[CoinPilotXAI PWA] offline mode entered");
+        }
+        return false;
+      }
+
+      function startHealthMonitor() {
+        verifyConnection();
+        if (!healthTimer) {
+          healthTimer = window.setInterval(verifyConnection, 5000);
+        }
+      }
+
+      window.addEventListener("online", verifyConnection);
+      window.addEventListener("offline", function () {
+        console.log("[CoinPilotXAI PWA] navigator.onLine state", navigator.onLine);
+        console.log("[CoinPilotXAI PWA] offline mode entered");
+      });
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", startHealthMonitor);
+      } else {
+        startHealthMonitor();
+      }
+    })();
+
+    (function () {
       var installPrompt = null;
       var installButtons = Array.prototype.slice.call(document.querySelectorAll("[data-install-app], [data-install-app-inline]"));
       var iosButtons = Array.prototype.slice.call(document.querySelectorAll("[data-ios-install-help]"));

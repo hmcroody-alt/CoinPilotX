@@ -8,8 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="CoinPilotX" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="manifest" href="/static/manifest.json" />
-  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <title>Offline | CoinPilotXAI Inc.</title>
   <style>
     * { box-sizing: border-box; }
@@ -52,7 +52,7 @@
       font-size: 17px;
       line-height: 1.6;
     }
-    a {
+    button, a {
       display: inline-flex;
       min-height: 44px;
       align-items: center;
@@ -64,16 +64,61 @@
       background: linear-gradient(135deg, #36e58f, #00e5ff);
       font-weight: 850;
       text-decoration: none;
+      border: 0;
+      cursor: pointer;
+      font: inherit;
     }
+    .status { min-height: 24px; }
   </style>
 </head>
 <body>
   <main class="card">
-    <img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI Inc. logo" />
+    <img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" />
     <h1>You’re offline.</h1>
     <p>You’re offline. CoinPilotXAI Inc. needs an internet connection for live intelligence.</p>
     <p>Reconnect to load market data, wallet checks, Sports Edge, and Telegram-powered intelligence.</p>
-    <a href="/">Try Again</a>
+    <p class="status" data-health-status>Checking connection...</p>
+    <button type="button" data-try-again>Try Again</button>
   </main>
+  <script>
+    (function () {
+      var failures = 0;
+      var status = document.querySelector("[data-health-status]");
+      var button = document.querySelector("[data-try-again]");
+
+      async function checkHealth() {
+        console.log("[CoinPilotXAI PWA] navigator.onLine state", navigator.onLine);
+        if (navigator.onLine === false) {
+          failures += 1;
+          if (status) status.textContent = "Browser reports offline. Waiting for connection...";
+          console.log("[CoinPilotXAI PWA] offline mode entered");
+          return false;
+        }
+        try {
+          var response = await fetch("/health", { cache: "no-store" });
+          console.log("[CoinPilotXAI PWA] /health response status", response.status);
+          if (response.ok) {
+            failures = 0;
+            if (status) status.textContent = "Connection restored. Reloading...";
+            console.log("[CoinPilotXAI PWA] offline mode exited");
+            window.location.href = "/";
+            return true;
+          }
+        } catch (error) {
+          console.log("[CoinPilotXAI PWA] /health fetch failed", error && error.message ? error.message : error);
+        }
+        failures += 1;
+        if (status) status.textContent = failures >= 2 ? "Still offline. Retrying..." : "Checking again...";
+        return false;
+      }
+
+      if (button) {
+        button.addEventListener("click", checkHealth);
+      }
+      window.addEventListener("online", checkHealth);
+      window.setInterval(checkHealth, 5000);
+      checkHealth();
+    })();
+  </script>
 </body>
 </html>
