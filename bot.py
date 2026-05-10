@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -46,6 +46,8 @@ from services import (
     user_context as user_context_service,
     wallet_intel as wallet_intel_service,
 )
+from seo import schema as seo_schema
+from seo.content import all_public_paths, country_page, hub_page, market_page, seo_page
 # =========================
 # 💳 STRIPE CONFIG (RIGHT AFTER CONSTANTS)
 # =========================
@@ -492,6 +494,50 @@ def privacy_page():
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
     return render_template("terms.html")
+
+
+def render_seo_landing(page, include_article=False):
+    schema_json = seo_schema.schema_graph(
+        page,
+        include_product=page.get("slug") in {"portfolio-intelligence", "ai-market-analysis", "telegram-crypto-bot"},
+        include_article=include_article,
+    )
+    share_url = quote(page["canonical"], safe="")
+    share_text = quote(f"{page['h1']} by CoinPilotXAI Inc.", safe="")
+    return render_template("seo_page.html", page=page, schema_json=schema_json, share_url=share_url, share_text=share_text)
+
+
+@webhook_app.route("/markets/<symbol>", methods=["GET"])
+def seo_market_page(symbol):
+    page = market_page(symbol)
+    if not page:
+        return redirect(url_for("home"), code=302)
+    return render_seo_landing(page)
+
+
+@webhook_app.route("/country-intelligence/<country_slug>", methods=["GET"])
+def seo_country_page(country_slug):
+    page = country_page(country_slug)
+    if not page:
+        return redirect(url_for("home"), code=302)
+    return render_seo_landing(page)
+
+
+@webhook_app.route("/news", methods=["GET"])
+@webhook_app.route("/insights", methods=["GET"])
+@webhook_app.route("/intel", methods=["GET"])
+def seo_content_hub():
+    slug = request.path.strip("/")
+    page = hub_page(slug)
+    return render_seo_landing(page, include_article=True)
+
+
+@webhook_app.route("/<slug>", methods=["GET"])
+def seo_topic_page(slug):
+    page = seo_page(slug)
+    if not page:
+        return Response("Not found", status=404)
+    return render_seo_landing(page)
 
 
 @webhook_app.route("/offline", methods=["GET"])
@@ -1135,6 +1181,71 @@ def sync_brevo_contact_safe(record, entity_type="user", entity_id=None):
         return {"ok": False, "status": "failed", "error": str(exc)}
 
 
+def get_or_create_referral_code(user_id):
+    if not user_id:
+        return ""
+    conn = db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT referral_code FROM users WHERE user_id=?", (user_id,))
+        row = cur.fetchone()
+        if row and row[0]:
+            conn.close()
+            return row[0]
+        code = "cpx" + secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:10].lower()
+        cur.execute("UPDATE users SET referral_code=?, updated_at=? WHERE user_id=?", (code, datetime.now().isoformat(), user_id))
+        conn.commit()
+        conn.close()
+        return code
+    except Exception:
+        conn.close()
+        return ""
+
+
+@webhook_app.route("/api/referral-link", methods=["GET"])
+def referral_link_api():
+    user_id = account_user_id()
+    if not user_id:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    code = get_or_create_referral_code(user_id)
+    if not code:
+        return jsonify({"ok": False, "message": "Referral link unavailable."}), 500
+    return jsonify({
+        "ok": True,
+        "code": code,
+        "url": f"https://coinpilotx.app/r/{code}",
+        "message": "Share CoinPilotXAI Inc. with people who want safer crypto intelligence. No fake urgency, no spam.",
+    })
+
+
+@webhook_app.route("/r/<referral_code>", methods=["GET"])
+def referral_redirect(referral_code):
+    code = clean_html(referral_code)[:80]
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (code,))
+    row = cur.fetchone()
+    referrer_user_id = row[0] if row else None
+    cur.execute(
+        """
+        INSERT INTO referral_events (referral_code, referrer_user_id, session_id, landing_page, referrer, ip_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            code,
+            referrer_user_id,
+            request.cookies.get("coinpilotxai_session_id", ""),
+            request.path,
+            request.headers.get("Referer", ""),
+            client_ip_hash(),
+            datetime.now().isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(f"/?ref={quote(code)}&utm_source=referral&utm_medium=share&utm_campaign=user_referral", code=302)
+
+
 @webhook_app.route("/api/leads", methods=["POST"])
 def leads_api():
     init_db()
@@ -1276,6 +1387,10 @@ def analytics_summary():
     email_subscribers = cur.fetchone()[0]
     cur.execute("SELECT COUNT(DISTINCT phone) FROM (SELECT phone FROM leads WHERE sms_opt_in=1 AND phone!='' UNION SELECT phone FROM users WHERE sms_opt_in=1 AND phone!='')")
     sms_subscribers = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM analytics_events WHERE created_at>=? AND (referrer LIKE '%google.%' OR referrer LIKE '%bing.%' OR referrer LIKE '%duckduckgo.%' OR referrer LIKE '%search.yahoo.%')", (since_day,))
+    organic_visits = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM referral_events WHERE created_at>=?", (since_day,))
+    referral_clicks = cur.fetchone()[0]
     conversion_rate = (leads_today / visitors_today * 100) if visitors_today else 0
 
     def rows(sql, params=()):
@@ -1294,6 +1409,8 @@ def analytics_summary():
         "brevo_failed_syncs": brevo_failed_syncs,
         "email_subscribers": email_subscribers,
         "sms_subscribers": sms_subscribers,
+        "organic_visits": organic_visits,
+        "referral_clicks": referral_clicks,
         "conversion_rate": conversion_rate,
         "top_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND page_url!='' GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
         "referrers": rows("SELECT COALESCE(NULLIF(referrer,''),'Direct'), COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY COALESCE(NULLIF(referrer,''),'Direct') ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
@@ -1305,6 +1422,9 @@ def analytics_summary():
         "api_failures": rows("SELECT event_name, page_url, metadata, created_at FROM analytics_events WHERE event_name='api_failure' ORDER BY id DESC LIMIT 15"),
         "email_sends": rows("SELECT subject, status, COUNT(*) FROM email_logs WHERE created_at>=? GROUP BY subject, status ORDER BY COUNT(*) DESC LIMIT 12", (since_day,)),
         "brevo_syncs": rows("SELECT entity_type, email, status, list_names, created_at FROM brevo_contact_sync_logs ORDER BY id DESC LIMIT 25"),
+        "top_converting_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND event_name='signup_form_submit' GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
+        "top_intent_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND (page_url LIKE '%crypto%' OR page_url LIKE '%wallet%' OR page_url LIKE '%sports%' OR page_url LIKE '%markets%' OR page_url LIKE '%telegram%') GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 12", (since_day,)),
+        "referral_codes": rows("SELECT referral_code, COUNT(*) FROM referral_events WHERE created_at>=? GROUP BY referral_code ORDER BY COUNT(*) DESC LIMIT 12", (since_day,)),
         "recent": rows("SELECT event_name, page_url, device_type, browser, created_at FROM analytics_events ORDER BY id DESC LIMIT 25"),
         "new_leads": rows("SELECT full_name, email, phone, country, email_opt_in, sms_opt_in, created_at FROM leads ORDER BY id DESC LIMIT 25"),
     }
@@ -1352,6 +1472,8 @@ def admin_analytics_page():
 	      <div class="card"><div>Brevo sync failures</div><div class="metric">{data['brevo_failed_syncs']}</div></div>
 	      <div class="card"><div>Email subscribers</div><div class="metric">{data['email_subscribers']}</div></div>
 	      <div class="card"><div>SMS subscribers</div><div class="metric">{data['sms_subscribers']}</div></div>
+	      <div class="card"><div>Organic search visits</div><div class="metric">{data['organic_visits']}</div></div>
+	      <div class="card"><div>Referral clicks</div><div class="metric">{data['referral_clicks']}</div></div>
 	    </div>
 	    <h2>Top pages</h2>{table(data['top_pages'], ['Page', 'Events'])}
 	    <h2>Referral sources</h2>{table(data['referrers'], ['Referrer', 'Events'])}
@@ -1363,6 +1485,9 @@ def admin_analytics_page():
 	    <h2>API failures</h2>{table(data['api_failures'], ['Event', 'Page', 'Metadata', 'Time'])}
 	    <h2>Email sends</h2>{table(data['email_sends'], ['Subject', 'Status', 'Count'])}
 	    <h2>Brevo contact syncs</h2>{table(data['brevo_syncs'], ['Type', 'Email', 'Status', 'Lists', 'Time'])}
+	    <h2>Top converting pages</h2>{table(data['top_converting_pages'], ['Page', 'Signups'])}
+	    <h2>Top search intent pages</h2>{table(data['top_intent_pages'], ['Page', 'Events'])}
+	    <h2>Referral codes</h2>{table(data['referral_codes'], ['Code', 'Clicks'])}
 	    <h2>Recent activity</h2>{table(data['recent'], ['Event', 'Page', 'Device', 'Browser', 'Time'])}
     <h2>New leads</h2>{table(data['new_leads'], ['Name', 'Email', 'Phone', 'Country', 'Email opt-in', 'SMS opt-in', 'Created'])}
     </div></body></html>
@@ -1425,7 +1550,27 @@ def robots_txt():
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
 def sitemap_xml():
-    return send_from_directory(webhook_app.static_folder, "sitemap.xml", mimetype="application/xml")
+    today = datetime.now().strftime("%Y-%m-%d")
+    priority = {
+        "/": "1.0",
+        "/ai-market-analysis": "0.92",
+        "/telegram-crypto-bot": "0.92",
+        "/crypto-scams": "0.9",
+        "/wallet-security": "0.88",
+        "/sports-edge": "0.86",
+        "/portfolio-intelligence": "0.86",
+    }
+    body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for path in all_public_paths():
+        loc = "https://coinpilotx.app" + path
+        body.append("  <url>")
+        body.append(f"    <loc>{loc}</loc>")
+        body.append(f"    <lastmod>{today}</lastmod>")
+        body.append("    <changefreq>weekly</changefreq>")
+        body.append(f"    <priority>{priority.get(path, '0.72')}</priority>")
+        body.append("  </url>")
+    body.append("</urlset>")
+    return Response("\n".join(body), mimetype="application/xml")
 
 
 @webhook_app.route("/manifest.json", methods=["GET"])
@@ -1461,10 +1606,7 @@ def indexnow_metadata_api():
         "key": "4d4dc0c2c0f94b7bb8184fd91b7f0b1e",
         "keyLocation": "https://coinpilotx.app/indexnow-key.txt",
         "urlList": [
-            "https://coinpilotx.app/",
-            "https://coinpilotx.app/support",
-            "https://coinpilotx.app/privacy",
-            "https://coinpilotx.app/terms",
+            *["https://coinpilotx.app" + path for path in all_public_paths()],
         ],
         "submitEndpoint": "https://api.indexnow.org/indexnow",
     })
@@ -4414,6 +4556,7 @@ def init_db():
         "ALTER TABLE users ADD COLUMN updated_at TEXT",
         "ALTER TABLE users ADD COLUMN last_login_at TEXT",
         "ALTER TABLE users ADD COLUMN last_seen_at TEXT",
+        "ALTER TABLE users ADD COLUMN referral_code TEXT",
     ]:
         try:
             cur.execute(statement)
@@ -4776,6 +4919,18 @@ def init_db():
         enabled INTEGER DEFAULT 1,
         created_at TEXT,
         updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS referral_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referral_code TEXT,
+        referrer_user_id INTEGER,
+        session_id TEXT,
+        landing_page TEXT,
+        referrer TEXT,
+        ip_hash TEXT,
+        created_at TEXT
     )
     """)
 

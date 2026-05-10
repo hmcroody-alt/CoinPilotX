@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ page.title }}</title>
+  <meta name="description" content="{{ page.description }}" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  <link rel="canonical" href="{{ page.canonical }}" />
+  <meta property="og:title" content="{{ page.title }}" />
+  <meta property="og:description" content="{{ page.description }}" />
+  <meta property="og:image" content="{{ page.image }}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="{{ page.canonical }}" />
+  <meta property="og:site_name" content="CoinPilotXAI Inc." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ page.title }}" />
+  <meta name="twitter:description" content="{{ page.description }}" />
+  <meta name="twitter:image" content="{{ page.image }}" />
+  <meta name="theme-color" content="#00e5ff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="CoinPilotXAI" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <script type="application/ld+json">{{ schema_json|safe }}</script>
+  <style>
+    :root{--bg:#060b14;--panel:#0d1627;--panel2:#111d32;--text:#f5f8ff;--muted:#9daac0;--line:rgba(255,255,255,.12);--green:#36e58f;--cyan:#6edff6;--gold:#ffd166;--danger:#ff6b7a}
+    *{box-sizing:border-box} html{scroll-behavior:smooth} body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 20% 0,rgba(110,223,246,.16),transparent 32%),radial-gradient(circle at 90% 10%,rgba(54,229,143,.12),transparent 28%),var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+    a{color:inherit} .container{width:min(100% - 32px,1120px);margin:0 auto} header{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--line);background:rgba(6,11,20,.86);backdrop-filter:blur(16px)}
+    nav{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:18px} .brand{display:inline-flex;align-items:center;gap:12px;text-decoration:none;font-weight:900}.brand img{width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 0 20px rgba(110,223,246,.36))}
+    .nav-links{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.nav-links a{color:var(--muted);text-decoration:none;font-weight:800;font-size:14px}.nav-links a:hover{color:var(--cyan)}
+    .button{min-height:46px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border:1px solid rgba(110,223,246,.3);border-radius:8px;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;font-weight:900;transition:transform .2s ease,border-color .2s ease,background .2s ease}.button:hover{transform:translateY(-2px);border-color:rgba(110,223,246,.55);background:rgba(110,223,246,.1)}.button.primary{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}.button.gold{color:#161004;background:linear-gradient(135deg,var(--gold),#ff9f1c);border-color:transparent}
+    main{padding:48px 0 24px}.hero{padding:72px 0 44px}.hero-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:32px;align-items:center}.kicker{color:var(--green);font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:13px}h1{margin:12px 0 16px;font-size:clamp(38px,6.6vw,72px);line-height:1;letter-spacing:0}h2{margin:0 0 12px;font-size:clamp(25px,4vw,38px);letter-spacing:0}h3{margin:0 0 8px;font-size:20px}p{color:var(--muted);margin:0 0 14px}.lead{font-size:19px;max-width:760px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+    .trust-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:24px}.trust-row span,.chip{border:1px solid rgba(54,229,143,.18);background:rgba(54,229,143,.08);color:#d9fff0;border-radius:999px;padding:10px 12px;font-size:13px;font-weight:800;text-align:center}
+    .panel,.card,.answer-block,.lead-card{border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.86));box-shadow:0 24px 80px rgba(0,0,0,.32)}.panel{padding:24px}.live-card{display:grid;gap:12px}.live-row{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:10px}.live-row:last-child{border-bottom:0;padding-bottom:0}.live-row strong{color:var(--cyan)}
+    section{padding:54px 0}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card{padding:22px}.card p{font-size:15px}.answer-block{padding:26px;border-color:rgba(110,223,246,.18)}.answer-block strong{color:var(--cyan)}.list{padding-left:18px;color:var(--muted)}.list li{margin:8px 0}
+    .faq-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.faq-item{padding:20px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.045)}
+    .share-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}.share-card{padding:22px;border:1px solid rgba(255,209,102,.2);border-radius:12px;background:radial-gradient(circle at top right,rgba(255,209,102,.14),transparent 38%),rgba(13,22,39,.86)}.share-links{display:flex;gap:10px;flex-wrap:wrap}.lead-form{display:grid;gap:12px;margin-top:14px}.lead-form input{width:100%;min-height:48px;padding:13px 14px;border:1px solid rgba(110,223,246,.18);border-radius:8px;background:rgba(255,255,255,.055);color:var(--text);font:inherit}.consent-row{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;color:var(--muted);font-size:13px}.consent-row input{width:18px;height:18px;accent-color:var(--green)}.form-message{min-height:20px;color:var(--muted);font-size:13px}.form-message.success{color:#c8ffe2}.form-message.error{color:#ffb7bf}
+    footer{border-top:1px solid var(--line);padding:30px 0;color:var(--muted)}.footer-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:22px}.footer-links{display:flex;gap:12px;flex-wrap:wrap}.footer-links a{color:var(--muted);text-decoration:none}
+    @media(max-width:860px){.hero-grid,.share-grid,.footer-grid{grid-template-columns:1fr}.grid,.faq-grid,.trust-row{grid-template-columns:1fr}.nav-links{display:none}.actions .button{width:100%}.hero{padding-top:38px}.panel{padding:18px}}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <nav aria-label="Growth page navigation">
+        <a class="brand" href="/" aria-label="CoinPilotXAI Inc. home">
+          <img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="44" height="44" decoding="async" />
+          <span>CoinPilotXAI Inc.</span>
+        </a>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/ai-market-analysis">AI Analysis</a>
+          <a href="/crypto-scams">Scam Shield</a>
+          <a href="/wallet-security">Wallet Security</a>
+          <a href="/sports-edge">Sports Edge</a>
+          <a href="/support">Support</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="kicker">{{ page.eyebrow }}</div>
+          <h1>{{ page.h1 }}</h1>
+          <p class="lead">{{ page.intro }}</p>
+          <div class="actions">
+            <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
+            <a class="button" href="/#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
+            <a class="button gold" href="/signup" data-analytics="signup_click">Create Account</a>
+          </div>
+          <div class="trust-row" aria-label="Trust signals">
+            <span>Never holds funds</span>
+            <span>No seed phrases</span>
+            <span>Public data only</span>
+            <span>Educational only</span>
+          </div>
+        </div>
+        <aside class="panel live-card" aria-label="Live intelligence context">
+          <div class="kicker">CoinPilotX Intelligence</div>
+          <h2>Clear context before action.</h2>
+          <div class="live-row"><span>AI Assistant</span><strong>Crypto-aware</strong></div>
+          <div class="live-row"><span>Scam Shield</span><strong>Safety-first</strong></div>
+          <div class="live-row"><span>Wallet Intel</span><strong>Public data only</strong></div>
+          <div class="live-row"><span>Telegram</span><strong>24/7 access</strong></div>
+          {% if page.market_symbol %}
+          <div class="live-row" data-market-symbol="{{ page.market_symbol }}"><span>{{ page.market_symbol }} live context</span><strong data-market-price>Loading...</strong></div>
+          {% endif %}
+        </aside>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="answer-block">
+          <h2>Quick Answer</h2>
+          <p><strong>{{ page.answer }}</strong></p>
+          <p>CoinPilotX is built for education, risk awareness, and practical context. It avoids guaranteed-profit language, fake urgency, fake testimonials, and dark-pattern conversion tactics.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="kicker">What This Page Covers</div>
+        <h2>Useful intelligence, not hype.</h2>
+        <div class="grid">
+          {% for item in page.points %}
+          <article class="card">
+            <h3>{{ item }}</h3>
+            <p>CoinPilotX explains this topic in plain language so users can review risk, context, and safer next steps before acting.</p>
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container share-grid">
+        <div class="share-card">
+          <div class="kicker">Shareable Intelligence</div>
+          <h2>Help someone avoid a rushed decision.</h2>
+          <p>Share this page with a friend who needs clearer crypto, scam, wallet, or sports intelligence. No private wallet data is tracked in share links.</p>
+          <div class="share-links">
+            <a class="button" href="https://t.me/share/url?url={{ share_url }}&text={{ share_text }}" data-analytics="share_telegram" rel="noopener">Telegram</a>
+            <a class="button" href="https://twitter.com/intent/tweet?url={{ share_url }}&text={{ share_text }}" data-analytics="share_x" rel="noopener">X/Twitter</a>
+            <a class="button" href="https://www.reddit.com/submit?url={{ share_url }}&title={{ share_text }}" data-analytics="share_reddit" rel="noopener">Reddit</a>
+            <a class="button" href="https://wa.me/?text={{ share_text }}%20{{ share_url }}" data-analytics="share_whatsapp" rel="noopener">WhatsApp</a>
+          </div>
+        </div>
+        <div class="lead-card panel">
+          <div class="kicker">Ethical Updates</div>
+          <h2>Get safety and product updates.</h2>
+          <p>Opt in only if you want updates. Email and SMS consent are separate.</p>
+          <form class="lead-form" data-lead-form data-source="seo_{{ page.slug|replace('/', '_') }}">
+            <input name="full_name" autocomplete="name" placeholder="Name (optional)" />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional for SMS)" />
+            <input name="country" autocomplete="country-name" placeholder="Country (optional)" />
+            <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span></label>
+            <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
+            <button class="button primary" type="submit" data-analytics="signup_form_submit">Join Updates</button>
+            <div class="form-message" data-lead-message role="status" aria-live="polite"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="kicker">FAQ</div>
+        <h2>Questions people ask.</h2>
+        <div class="faq-grid">
+          {% for faq in page.faqs %}
+          <article class="faq-item">
+            <h3>{{ faq.question }}</h3>
+            <p>{{ faq.answer }}</p>
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="kicker">Related Intelligence</div>
+        <h2>Keep exploring safely.</h2>
+        <div class="actions">
+          {% for path in page.related %}
+          <a class="button" href="{{ path }}" data-analytics="internal_link">Explore {{ path.strip('/').replace('-', ' ').title() }}</a>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-grid">
+      <div>
+        <strong>CoinPilotXAI Inc.</strong>
+        <p>AI-powered crypto intelligence focused on education, safety, and market awareness.</p>
+        <p>CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</p>
+      </div>
+      <div class="footer-links">
+        <a href="/crypto-scams">Scam Protection</a>
+        <a href="/wallet-security">Wallet Security</a>
+        <a href="/ai-market-analysis">AI Market Analysis</a>
+        <a href="/telegram-crypto-bot">Telegram Bot</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
+    </div>
+  </footer>
+  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
+  <script>
+    (function () {
+      var live = document.querySelector("[data-market-symbol]");
+      if (!live) return;
+      var symbol = live.getAttribute("data-market-symbol");
+      fetch("/api/markets", { cache: "no-store" })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (data) {
+          if (!data || !data.markets) return;
+          var match = data.markets.find(function (item) { return item.symbol === symbol; });
+          if (!match) return;
+          var node = document.querySelector("[data-market-price]");
+          if (node) node.textContent = "$" + Number(match.price || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " · 24h " + (match.change_24h == null ? "n/a" : Number(match.change_24h).toFixed(2) + "%");
+        }).catch(function () {});
+    })();
+  </script>
+</body>
+</html>

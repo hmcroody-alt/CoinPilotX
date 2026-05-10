@@ -37,7 +37,14 @@
       view_live_market: "market_click",
       view_safety: "support_click",
       support_click: "support_click",
-      signup_form_submit: "signup_form_submit"
+      signup_form_submit: "signup_form_submit",
+      share_telegram: "share_click",
+      share_x: "share_click",
+      share_reddit: "share_click",
+      share_whatsapp: "share_click",
+      internal_link: "internal_link_click",
+      signup_click: "signup_click",
+      referral_link: "referral_link_click"
     };
     return map[name] || name || "cta_click";
   }
@@ -162,6 +169,7 @@
     trackFirstParty("page_view", {
       title: document.title,
       path: window.location.pathname,
+      ref: new URLSearchParams(window.location.search || "").get("ref") || "",
       screen_width: window.innerWidth,
       screen_height: window.innerHeight
     });

@@ -4,6 +4,20 @@ Allow: /
 Sitemap: https://coinpilotx.app/sitemap.xml
 Host: https://coinpilotx.app
 
+# AI/search crawlers are allowed to index public educational pages.
+# Private/account/API/admin/debug routes are not included in the sitemap.
+User-agent: GPTBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
 # IndexNow:
 # Key location: https://coinpilotx.app/indexnow-key.txt
 # Metadata endpoint: https://coinpilotx.app/api/indexnow

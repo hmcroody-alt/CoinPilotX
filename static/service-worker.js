@@ -1,8 +1,9 @@
-const CACHE_NAME = "coinpilotx-cache-v5";
+const CACHE_NAME = "coinpilotx-cache-v6";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
   "/static/Coinpilot%20Logo/NewLogo.png",
+  "/static/assets/coinpilotxai-share-card.svg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png"
