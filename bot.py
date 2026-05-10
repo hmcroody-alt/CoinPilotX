@@ -661,6 +661,7 @@ def signup_page():
         if error:
             return render_account_page("signup", "Create Account", error=error)
         session["account_user_id"] = user["user_id"]
+        logging.info("Signup successful for user_id: %s", user["user_id"])
         send_welcome_email(user)
         verification_token = create_email_verification(user["user_id"])
         verification_link = url_for("verify_email_page", token=verification_token, _external=True)
@@ -830,6 +831,35 @@ def admin_users_page():
         "sms_opt_ins": sms_opt_ins,
         "users": users,
     })
+
+
+@webhook_app.route("/admin/test-email", methods=["POST"])
+def admin_test_email():
+    if not require_admin_password():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    init_db()
+    payload = request.get_json(silent=True) or request.form
+    email = clean_html(payload.get("email", "")).strip().lower()
+    if not is_valid_email(email):
+        return jsonify({"ok": False, "error": "valid email required"}), 400
+    logging.info("Admin test email requested for domain=%s brevo_key_loaded=%s", email.split("@")[-1], bool(os.getenv("BREVO_API_KEY")))
+    text = (
+        "This is a CoinPilotXAI Inc. Brevo transactional email test.\n\n"
+        "If you received this, server-side email delivery is connected.\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
+    )
+    html = branded_email_html("CoinPilotXAI Inc. Email Test", """
+      <p>This is a Brevo transactional email test from CoinPilotXAI Inc.</p>
+      <p>If you received this, server-side email delivery is connected.</p>
+    """)
+    sent = send_platform_email(email, "CoinPilotXAI Inc. Brevo test email", text, html, 0)
+    return jsonify({
+        "ok": bool(sent),
+        "provider": (os.getenv("EMAIL_PROVIDER") or ("brevo" if os.getenv("BREVO_API_KEY") else "unconfigured")),
+        "brevo_key_loaded": bool(os.getenv("BREVO_API_KEY")),
+        "from_email": email_sender_identity()[0],
+        "message": "Test email sent or accepted by provider." if sent else "Test email failed. Check Railway logs and Brevo Transactional logs.",
+    }), (200 if sent else 502)
 
 
 def client_ip_hash():
@@ -1476,11 +1506,19 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
     from_email, from_name = email_sender_identity()
     brevo_key = os.getenv("BREVO_API_KEY")
     sendgrid_key = os.getenv("SENDGRID_API_KEY")
+    logging.info(
+        "Email send requested: provider=%s user_id=%s to_domain=%s from=%s brevo_key_loaded=%s",
+        provider or "auto",
+        user_id or 0,
+        to_email.split("@")[-1] if "@" in to_email else "invalid",
+        from_email,
+        bool(brevo_key),
+    )
     try:
         if (provider == "brevo" or (not provider and brevo_key)) and brevo_key:
             response = requests.post(
                 "https://api.brevo.com/v3/smtp/email",
-                headers={"api-key": brevo_key, "Content-Type": "application/json"},
+                headers={"api-key": brevo_key, "Content-Type": "application/json", "Accept": "application/json"},
                 json={
                     "sender": {"email": from_email, "name": from_name},
                     "to": [{"email": to_email}],
@@ -1491,7 +1529,27 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
                 timeout=15,
             )
             ok = 200 <= response.status_code < 300
-            log_email_status(user_id or 0, to_email, subject, "sent_brevo" if ok else f"failed_brevo_{response.status_code}")
+            message_id = ""
+            safe_error = ""
+            try:
+                payload = response.json() if response.text else {}
+                message_ids = payload.get("messageIds")
+                if payload.get("messageId"):
+                    message_id = payload.get("messageId")
+                elif isinstance(message_ids, list) and message_ids:
+                    message_id = message_ids[0]
+                safe_error = payload.get("message") or payload.get("code") or response.text[:240]
+            except Exception:
+                safe_error = response.text[:240]
+            if ok:
+                logging.info("Welcome/email sent through Brevo: user_id=%s message_id=%s", user_id or 0, message_id or "unavailable")
+                if subject.lower().startswith("welcome"):
+                    logging.info("Welcome email sent: %s", message_id or "accepted_no_message_id")
+            else:
+                logging.warning("Welcome/email failed through Brevo: user_id=%s status_code=%s safe_error=%s", user_id or 0, response.status_code, safe_error)
+                if subject.lower().startswith("welcome"):
+                    logging.warning("Welcome email failed: status_code=%s safe_error=%s", response.status_code, safe_error)
+            log_email_status(user_id or 0, to_email, subject, f"sent_brevo:{message_id}" if ok and message_id else ("sent_brevo" if ok else f"failed_brevo_{response.status_code}"))
             return ok
         if provider == "sendgrid" and sendgrid_key:
             response = requests.post(
@@ -1551,6 +1609,8 @@ def branded_email_html(title, body_html):
 
 def send_welcome_email(user):
     name = account_display_name(user)
+    logging.info("Attempting welcome email for user_id: %s", user.get("user_id"))
+    logging.info("Brevo API key loaded: %s", bool(os.getenv("BREVO_API_KEY")))
     subject = "Welcome to CoinPilotX — Powered by CoinPilotXAI Inc."
     text = (
         f"Hi {name},\n\n"
@@ -1568,7 +1628,9 @@ def send_welcome_email(user):
       <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account dashboard</a></p>
       <p>Support: <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a></p>
     """)
-    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+    sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+    logging.info("Welcome email result for user_id %s: %s", user.get("user_id"), sent)
+    return sent
 
 
 def send_update_signup_email(lead):
