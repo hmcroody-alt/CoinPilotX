@@ -455,7 +455,7 @@ def upgrade_payment_menu(user_id):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(user_id))],
         [InlineKeyboardButton("Open Website Account", url="https://coinpilotx.app/account")],
-        [InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")]
+        [InlineKeyboardButton("Main Menu", callback_data="main_menu")]
     ])
 
 def main_menu():
@@ -975,6 +975,8 @@ def create_email_verification(user_id):
 @webhook_app.route("/signup", methods=["GET", "POST"])
 def signup_page():
     init_db()
+    if request.method == "GET" and require_account():
+        return redirect(url_for("dashboard_page"))
     if request.method == "POST":
         logging.info("signup endpoint started")
         if not verify_csrf():
@@ -1006,13 +1008,15 @@ def signup_page():
         verification_token = create_email_verification(user["user_id"])
         verification_link = url_for("verify_email_page", token=verification_token, _external=True)
         send_email_verification(user, verification_link)
-        return redirect(url_for("account_page"))
+        return redirect(url_for("dashboard_page"))
     return render_account_page("signup", "Create Account")
 
 
 @webhook_app.route("/login", methods=["GET", "POST"])
 def login_page():
     init_db()
+    if request.method == "GET" and require_account():
+        return redirect(url_for("dashboard_page"))
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
@@ -1027,7 +1031,7 @@ def login_page():
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
         conn.commit()
         conn.close()
-        return redirect(url_for("account_page"))
+        return redirect(url_for("dashboard_page"))
     return render_account_page("login", "Login")
 
 
@@ -1055,10 +1059,15 @@ def dashboard_page():
     if not user:
         return redirect(url_for("login_page"))
     log_product_event(user["user_id"], "dashboard_viewed", {})
+    current_user = load_account_by_id(user["user_id"])
+    link_code = ""
+    if current_user and not current_user.get("telegram_user_id"):
+        link_code = generate_telegram_link_code(user["user_id"])
     return render_template(
         "dashboard.html",
-        current_user=load_account_by_id(user["user_id"]),
-        access=account_access_context(load_account_by_id(user["user_id"])),
+        current_user=current_user,
+        access=account_access_context(current_user),
+        link_code=link_code,
     )
 
 
@@ -1081,14 +1090,38 @@ def upgrade_page():
 
 
 @webhook_app.route("/upgrade/success", methods=["GET"])
+@webhook_app.route("/checkout/success", methods=["GET"])
 def upgrade_success_page():
     init_db()
     user = require_account()
+    if not user:
+        return redirect(url_for("login_page"))
     return render_account_page(
         "upgrade_success",
         "Upgrade Confirmation",
         current_user=user,
         message="Your Pro upgrade is being confirmed. You will receive a confirmation email shortly. If you experience any issue after payment, email support@coinpilotx.app.",
+    )
+
+
+@webhook_app.errorhandler(405)
+def friendly_method_not_allowed(error):
+    init_db()
+    if request.path in {"/account", "/dashboard", "/upgrade", "/checkout/success", "/upgrade/success"}:
+        if require_account():
+            return redirect(url_for("dashboard_page"))
+        return redirect(url_for("login_page"))
+    return (
+        "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>CoinPilotXAI Inc. | Page Method</title>"
+        "<style>body{margin:0;font-family:system-ui;background:#050b14;color:#f2fbff;display:grid;min-height:100vh;place-items:center;padding:24px}"
+        ".card{max-width:620px;border:1px solid rgba(110,223,246,.22);border-radius:16px;background:#0d1627;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.32)}"
+        "a{color:#36e58f}</style></head><body><main class='card'>"
+        "<h1>Let’s get you back on track.</h1>"
+        "<p>That page was opened with the wrong request method. Your account is safe.</p>"
+        "<p><a href='/dashboard'>Open Dashboard</a> · <a href='/login'>Login</a> · <a href='/support'>Support</a></p>"
+        "</main></body></html>",
+        405,
     )
 
 
@@ -3138,7 +3171,13 @@ def send_telegram_confirmation(user_id, text):
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": "Main Menu", "callback_data": "main_menu"}]]
+                },
+            },
             timeout=10,
         )
         return response.ok
@@ -7828,12 +7867,14 @@ def account_reply_markup(telegram_user_id):
             [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(telegram_user_id))],
             [InlineKeyboardButton("Settings", url="https://coinpilotx.app/account/settings")],
             [InlineKeyboardButton("Help", callback_data="menu_help")],
+            [InlineKeyboardButton("Main Menu", callback_data="main_menu")],
         ])
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Create Account", url="https://coinpilotx.app/signup")],
         [InlineKeyboardButton("Login", url="https://coinpilotx.app/login")],
         [InlineKeyboardButton("Open Website Account", url="https://coinpilotx.app/account")],
         [InlineKeyboardButton("Help", callback_data="menu_help")],
+        [InlineKeyboardButton("Main Menu", callback_data="main_menu")],
     ])
 
 
@@ -8944,7 +8985,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
-    if data == "menu_main":
+    if data in {"menu_main", "main_menu"}:
         await query.message.reply_text("🏠 Main Menu\n\nChoose what you want to do next:", reply_markup=main_menu())
         return
 

@@ -72,6 +72,9 @@
         <div class="kicker">Personal Intelligence Dashboard</div>
         <h1 data-user-name>Welcome back</h1>
         <p>Track your manual crypto holdings, watchlist, alerts, Telegram connection, and AI risk context from the same account your bot uses.</p>
+        {% if access.is_trial %}
+          <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and Telegram connection.</p>
+        {% endif %}
         <div class="actions">
           <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
           <button class="button" type="button" data-scroll="#add-watchlist">Add Watchlist Coin</button>
@@ -84,6 +87,14 @@
         <p><strong>Subscription:</strong> <span data-subscription>Loading...</span></p>
         <p><strong>Telegram:</strong> <span data-telegram>Loading...</span></p>
         <p><strong>Pro/trial expiration:</strong> <span data-expires>Loading...</span></p>
+        {% if link_code %}
+          <div class="notice">
+            <strong>Connect Telegram:</strong>
+            <p>Send this code to the bot within 10 minutes:</p>
+            <p><code>/connect {{ link_code }}</code></p>
+            <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
+          </div>
+        {% endif %}
       </article>
     </section>
 
