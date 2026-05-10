@@ -253,18 +253,124 @@ SEO_PAGES.update({
         ] + COMMON_FAQS,
         "related": ["/crypto-safety", "/crypto-scams", "/telegram-crypto-bot"],
     },
+    "crypto-risk-intelligence": {
+        "title": "Crypto Risk Intelligence | CoinPilotXAI Inc.",
+        "description": "Understand crypto risk signals, volatility, scams, wallet exposure, whale pressure, and market context with CoinPilotXAI Inc.",
+        "h1": "Crypto Risk Intelligence",
+        "eyebrow": "Risk Intelligence",
+        "intro": "CoinPilotX turns crypto risk factors into clearer educational context so users can slow down before reacting to market pressure.",
+        "answer": "Crypto risk intelligence combines market movement, scam awareness, wallet safety, public blockchain signals, and user discipline. It should explain uncertainty instead of pretending to remove it.",
+        "points": ["Volatility context", "Scam and phishing risk", "Wallet safety reminders", "Whale pressure as one factor", "Safer decision prompts"],
+        "faqs": [
+            {"question": "What is crypto risk intelligence?", "answer": "It is structured education about crypto risks such as volatility, scams, wallet exposure, market pressure, and emotional decisions."},
+            {"question": "Does CoinPilotXAI Inc. remove crypto risk?", "answer": "No. CoinPilotXAI Inc. explains risk context but cannot remove risk or guarantee outcomes."},
+        ] + COMMON_FAQS,
+        "related": ["/crypto-safety", "/wallet-security", "/ai-market-analysis"],
+    },
+    "blockchain-wallet-intelligence": {
+        "title": "Blockchain Wallet Intelligence | CoinPilotXAI Inc.",
+        "description": "Review public blockchain wallet context, TXID safety, explorer links, and wallet-risk education with CoinPilotX.",
+        "h1": "Blockchain Wallet Intelligence",
+        "eyebrow": "Public-Chain Context",
+        "intro": "CoinPilotX helps users interpret public wallet addresses and public TXIDs without requesting private credentials.",
+        "answer": "Blockchain wallet intelligence should use public data only. CoinPilotX never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.",
+        "points": ["Public address checks", "TXID context", "Explorer handoff", "Wallet-drain education", "Credential safety warnings"],
+        "faqs": [
+            {"question": "Can CoinPilotX analyze public wallets?", "answer": "Yes. CoinPilotX can provide educational context for public wallet addresses and TXIDs where public data is available."},
+            {"question": "Does wallet intelligence require private keys?", "answer": "No. Private keys and seed phrases should never be entered."},
+        ] + COMMON_FAQS,
+        "related": ["/wallet-security", "/ai-wallet-scanner", "/crypto-scam-checker"],
+    },
+    "whale-alerts-telegram-bot": {
+        "title": "Whale Alerts Telegram Bot | CoinPilotXAI Inc.",
+        "description": "Use CoinPilotX as a Telegram-first whale alerts and crypto market pressure education bot.",
+        "h1": "Whale Alerts Telegram Bot",
+        "eyebrow": "Telegram Whale Context",
+        "intro": "CoinPilotX brings whale-style movement context into Telegram so users can review market pressure without treating it as certainty.",
+        "answer": "Whale alerts can help users ask better questions, but they are not guaranteed signals. CoinPilotX frames whale movement alongside trend, volatility, and risk.",
+        "points": ["Telegram whale context", "Market pressure education", "Risk-aware alert language", "No guaranteed direction claims"],
+        "faqs": [
+            {"question": "Can whale alerts be viewed in Telegram?", "answer": "Yes. CoinPilotX supports Telegram-first whale alert and market pressure workflows."},
+            {"question": "Are whale alerts trading advice?", "answer": "No. They are educational context only."},
+        ] + COMMON_FAQS,
+        "related": ["/whale-alerts", "/whale-tracker", "/telegram-crypto-bot"],
+    },
+    "ai-market-intelligence": {
+        "title": "AI Market Intelligence | CoinPilotXAI Inc.",
+        "description": "AI market intelligence for crypto users: market snapshot, momentum read, risk level, what to watch, and safer next steps.",
+        "h1": "AI Market Intelligence",
+        "eyebrow": "Market Context",
+        "intro": "CoinPilotX structures market explanations into clear sections so users understand what is known, what is uncertain, and what could change.",
+        "answer": "AI market intelligence should summarize context, risk, and uncertainty. CoinPilotX avoids certainty claims and keeps users focused on review before action.",
+        "points": ["Market Snapshot", "Momentum Read", "Risk Level", "What to Watch", "Safer Next Step"],
+        "faqs": [
+            {"question": "What does AI market intelligence include?", "answer": "CoinPilotX includes market snapshot, momentum read, risk level, what to watch, and safer next-step sections."},
+            {"question": "Does AI market intelligence guarantee trades?", "answer": "No. It provides educational context only."},
+        ] + COMMON_FAQS,
+        "related": ["/ai-market-analysis", "/markets/btc", "/crypto-risk-intelligence"],
+    },
+    "crypto-safety-alerts": {
+        "title": "Crypto Safety Alerts | CoinPilotXAI Inc.",
+        "description": "Prepare for safer crypto habits with scam story warnings, wallet safety reminders, phishing education, and public-risk signals.",
+        "h1": "Crypto Safety Alerts",
+        "eyebrow": "Safety Alerts",
+        "intro": "CoinPilotX is designed to support ethical safety alerts without fear addiction, spam, or fake urgency.",
+        "answer": "Good safety alerts help users pause and verify. CoinPilotX focuses on seed phrase warnings, fake support patterns, wallet drain language, and safer verification habits.",
+        "points": ["Scam story learning", "Fake support warnings", "Wallet approval reminders", "No private credential requests"],
+        "faqs": [
+            {"question": "Will CoinPilotX spam users with fear alerts?", "answer": "No. The retention strategy is daily awareness and education, not panic or over-alerting."},
+            {"question": "What is the most important safety rule?", "answer": "Never share seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials."},
+        ] + COMMON_FAQS,
+        "related": ["/crypto-scams", "/crypto-safety", "/crypto-scam-checker"],
+    },
+    "pwa-crypto-app": {
+        "title": "Crypto Intelligence PWA | CoinPilotXAI Inc.",
+        "description": "Install CoinPilotXAI Inc. as a progressive web app for faster access to CoinPilotX crypto intelligence and Telegram workflows.",
+        "h1": "Crypto Intelligence Progressive Web App",
+        "eyebrow": "Installable App",
+        "intro": "CoinPilotXAI Inc. supports a mobile-friendly PWA experience for faster access to AI crypto intelligence, Scam Shield, Day Signal, and Telegram handoff.",
+        "answer": "The CoinPilotXAI PWA is designed for convenience while live market, AI, sports, and account intelligence still require an internet connection.",
+        "points": ["Installable mobile experience", "Fast access to tools", "Telegram handoff", "Offline fallback safety"],
+        "faqs": [
+            {"question": "Can CoinPilotXAI Inc. be installed on a phone?", "answer": "Yes. Supported browsers can add the PWA to the home screen."},
+            {"question": "Does the PWA work fully offline?", "answer": "No. Live intelligence requires an internet connection."},
+        ] + COMMON_FAQS,
+        "related": ["/telegram-crypto-bot", "/ai-crypto-assistant", "/crypto-safety"],
+    },
 })
 
 MARKET_PAGES = {
     "btc": {"name": "Bitcoin", "symbol": "BTC", "title": "Bitcoin AI Market Intelligence | CoinPilotXAI Inc."},
     "eth": {"name": "Ethereum", "symbol": "ETH", "title": "Ethereum AI Market Intelligence | CoinPilotXAI Inc."},
     "sol": {"name": "Solana", "symbol": "SOL", "title": "Solana AI Market Intelligence | CoinPilotXAI Inc."},
+    "bnb": {"name": "BNB", "symbol": "BNB", "title": "BNB AI Market Intelligence | CoinPilotXAI Inc."},
+    "xrp": {"name": "XRP", "symbol": "XRP", "title": "XRP AI Market Intelligence | CoinPilotXAI Inc."},
+    "ada": {"name": "Cardano", "symbol": "ADA", "title": "Cardano AI Market Intelligence | CoinPilotXAI Inc."},
+    "doge": {"name": "Dogecoin", "symbol": "DOGE", "title": "Dogecoin AI Market Intelligence | CoinPilotXAI Inc."},
 }
 
 COUNTRY_PAGES = {
     "us": "United States",
     "uk": "United Kingdom",
     "canada": "Canada",
+    "mexico": "Mexico",
+    "brazil": "Brazil",
+    "argentina": "Argentina",
+    "france": "France",
+    "germany": "Germany",
+    "uae": "United Arab Emirates",
+    "saudi-arabia": "Saudi Arabia",
+    "nigeria": "Nigeria",
+    "south-africa": "South Africa",
+    "kenya": "Kenya",
+    "india": "India",
+    "china": "China",
+    "japan": "Japan",
+    "south-korea": "South Korea",
+    "singapore": "Singapore",
+    "australia": "Australia",
+    "haiti": "Haiti",
+    "el-salvador": "El Salvador",
 }
 
 HUBS = {
@@ -368,6 +474,48 @@ def hub_page(slug):
         "related": ["/crypto-scams", "/ai-market-analysis", "/wallet-security"],
     }
     return enrich_page(slug, page)
+
+
+def searchable_pages():
+    pages = []
+    pages.extend(seo_page(slug) for slug in SEO_PAGES)
+    pages.extend(market_page(slug) for slug in MARKET_PAGES)
+    pages.extend(country_page(slug) for slug in COUNTRY_PAGES)
+    pages.extend(hub_page(slug) for slug in HUBS)
+    return [page for page in pages if page]
+
+
+def search_pages(query, limit=12):
+    terms = [term for term in (query or "").lower().split() if len(term) > 1]
+    if not terms:
+        return []
+
+    results = []
+    for page in searchable_pages():
+        haystack_parts = [
+            page.get("title", ""),
+            page.get("h1", ""),
+            page.get("description", ""),
+            page.get("intro", ""),
+            page.get("answer", ""),
+            " ".join(page.get("points", [])),
+        ]
+        for item in page.get("faqs", []):
+            haystack_parts.extend([item.get("question", ""), item.get("answer", "")])
+        haystack = " ".join(haystack_parts).lower()
+        score = sum(haystack.count(term) for term in terms)
+        exact_title_bonus = sum(4 for term in terms if term in page.get("title", "").lower())
+        exact_h1_bonus = sum(3 for term in terms if term in page.get("h1", "").lower())
+        total_score = score + exact_title_bonus + exact_h1_bonus
+        if total_score > 0:
+            results.append({
+                "title": page["h1"],
+                "description": page["description"],
+                "url": page["path"],
+                "score": total_score,
+            })
+    results.sort(key=lambda item: (-item["score"], item["title"]))
+    return results[:limit]
 
 
 def all_public_paths():

@@ -1,22 +1,78 @@
 User-agent: *
 Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
 
 Sitemap: https://coinpilotx.app/sitemap.xml
 Host: https://coinpilotx.app
+LLM-Content: https://coinpilotx.app/llms.txt
 
 # AI/search crawlers are allowed to index public educational pages.
 # Private/account/API/admin/debug routes are not included in the sitemap.
 User-agent: GPTBot
 Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
 
 User-agent: PerplexityBot
 Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
 
 User-agent: ClaudeBot
 Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
 
 User-agent: Google-Extended
 Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
 
 # IndexNow:
 # Key location: https://coinpilotx.app/indexnow-key.txt

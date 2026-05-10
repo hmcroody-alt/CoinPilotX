@@ -47,7 +47,7 @@ from services import (
     wallet_intel as wallet_intel_service,
 )
 from seo import schema as seo_schema
-from seo.content import all_public_paths, country_page, hub_page, market_page, seo_page
+from seo.content import all_public_paths, country_page, hub_page, market_page, search_pages, seo_page
 # =========================
 # 💳 STRIPE CONFIG (RIGHT AFTER CONSTANTS)
 # =========================
@@ -494,6 +494,13 @@ def privacy_page():
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
     return render_template("terms.html")
+
+
+@webhook_app.route("/search", methods=["GET"])
+def site_search():
+    query = (request.args.get("q") or "").strip()[:120]
+    results = search_pages(query)
+    return render_template("search.html", query=query, results=results)
 
 
 def render_seo_landing(page, include_article=False):
@@ -1546,6 +1553,11 @@ def admin_brevo_resync():
 @webhook_app.route("/robots.txt", methods=["GET"])
 def robots_txt():
     return send_from_directory(webhook_app.static_folder, "robots.txt", mimetype="text/plain")
+
+
+@webhook_app.route("/llms.txt", methods=["GET"])
+def llms_txt():
+    return send_from_directory(webhook_app.static_folder, "llms.txt", mimetype="text/plain")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])

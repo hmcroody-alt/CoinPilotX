@@ -35,6 +35,11 @@ def website_schema():
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "inLanguage": "en",
         "description": "CoinPilotX is an AI crypto intelligence, scam awareness, wallet risk, sports edge, and Telegram-first market education platform powered by CoinPilotXAI Inc.",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": f"{SITE_URL}/search?q={{search_term_string}}",
+            "query-input": "required name=search_term_string",
+        },
     }
 
 
@@ -55,6 +60,20 @@ def software_schema():
             "priceCurrency": "USD",
             "availability": "https://schema.org/OnlineOnly",
         },
+    }
+
+
+def service_schema(page):
+    return {
+        "@type": "Service",
+        "@id": page["canonical"] + "#service",
+        "name": page["h1"],
+        "provider": {"@id": f"{SITE_URL}/#organization"},
+        "areaServed": "Worldwide",
+        "serviceType": page.get("eyebrow", "AI intelligence"),
+        "description": page["description"],
+        "url": page["canonical"],
+        "termsOfService": f"{SITE_URL}/terms",
     }
 
 
@@ -133,12 +152,33 @@ def article_schema(page):
     }
 
 
+def related_item_list_schema(page):
+    related = page.get("related") or []
+    if not related:
+        return None
+    return {
+        "@type": "ItemList",
+        "@id": page["canonical"] + "#related",
+        "name": f"Related CoinPilotXAI intelligence pages for {page['h1']}",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": index,
+                "url": SITE_URL + path,
+                "name": path.strip("/").replace("-", " ").replace("/", " ").title(),
+            }
+            for index, path in enumerate(related, start=1)
+        ],
+    }
+
+
 def schema_graph(page, include_product=False, include_article=False):
     graph = [
         organization_schema(),
         website_schema(),
         software_schema(),
         webpage_schema(page),
+        service_schema(page),
         breadcrumb_schema([
             ("Home", SITE_URL + "/"),
             (page.get("breadcrumb") or page["h1"], page["canonical"]),
@@ -150,5 +190,7 @@ def schema_graph(page, include_product=False, include_article=False):
         graph.append(product_schema())
     if include_article:
         graph.append(article_schema(page))
+    related = related_item_list_schema(page)
+    if related:
+        graph.append(related)
     return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
-
