@@ -448,6 +448,17 @@
       margin: 7px 0;
     }
 
+    .pwa-install-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .pwa-install-card [hidden] {
+      display: none;
+    }
+
     .button.pulse-cta,
     .mobile-bottom-nav a.pulse-cta {
       position: relative;
@@ -2636,14 +2647,17 @@
   <button class="button install-app-button" type="button" data-install-app data-analytics="install_app" hidden>Install CoinPilotX App</button>
   <div class="pwa-install-sheet" data-ios-install-sheet hidden role="dialog" aria-modal="true" aria-labelledby="ios-install-title">
     <div class="pwa-install-card">
-      <h3 id="ios-install-title">Install CoinPilotXAI on iPhone</h3>
-      <p>Safari does not show an automatic install popup. Add CoinPilotXAI to your Home Screen manually:</p>
-      <ol>
-        <li>Tap the Share button in Safari.</li>
-        <li>Choose Add to Home Screen.</li>
-        <li>Tap Add to launch CoinPilotXAI like an app.</li>
+      <h3 id="ios-install-title">Install CoinPilotXAI</h3>
+      <p>Get faster access to AI crypto intelligence, Sports Edge, Day Signal, Scam Shield, and your CoinPilotX account from your home screen.</p>
+      <ol data-install-instructions hidden>
+        <li>Tap the Share icon.</li>
+        <li>Tap “Add to Home Screen”.</li>
+        <li>Tap Add.</li>
       </ol>
-      <button class="button primary" type="button" data-close-ios-install>Got it</button>
+      <div class="pwa-install-actions">
+        <button class="button primary" type="button" data-install-confirm>Install App</button>
+        <button class="button" type="button" data-close-ios-install>Not Now</button>
+      </div>
     </div>
   </div>
 
@@ -3944,10 +3958,15 @@
       var iosButtons = Array.prototype.slice.call(document.querySelectorAll("[data-ios-install-help]"));
       var iosSheet = document.querySelector("[data-ios-install-sheet]");
       var closeIos = document.querySelector("[data-close-ios-install]");
+      var installConfirm = document.querySelector("[data-install-confirm]");
+      var installInstructions = document.querySelector("[data-install-instructions]");
       var isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
       var ua = window.navigator.userAgent || "";
       var isIOS = /iphone|ipad|ipod/i.test(ua);
       var isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+      var DISMISS_KEY = "coinpilotx_install_popup_dismissed_until";
+      var DISMISS_MS = 7 * 24 * 60 * 60 * 1000;
+      var INSTALL_DELAY_MS = 120000;
 
       function trackPwa(eventName, metadata) {
         if (window.coinPilotXTrack) {
@@ -3969,9 +3988,39 @@
 
       function openIosSheet() {
         if (iosSheet) {
+          if (installInstructions) {
+            installInstructions.hidden = !(isIOS && isSafari);
+          }
           iosSheet.hidden = false;
-          trackPwa("install_prompt_shown", { platform: "ios_safari" });
+          trackPwa("install_popup_shown", { platform: isIOS && isSafari ? "ios_safari" : "browser" });
         }
+      }
+
+      function dismissedRecently() {
+        try {
+          return Number(window.localStorage.getItem(DISMISS_KEY) || "0") > Date.now();
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function rememberDismissal() {
+        try {
+          window.localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_MS));
+        } catch (err) {
+          // Storage can fail in private browsing; simply avoid blocking the UI.
+        }
+      }
+
+      function scheduleInstallPopup() {
+        if (isStandalone || dismissedRecently()) {
+          return;
+        }
+        window.setTimeout(function () {
+          if (!isStandalone && !dismissedRecently()) {
+            openIosSheet();
+          }
+        }, INSTALL_DELAY_MS);
       }
 
       if ("serviceWorker" in navigator) {
@@ -3986,12 +4035,13 @@
         setIosButtonsVisible(true);
       }
 
+      scheduleInstallPopup();
+
       window.addEventListener("beforeinstallprompt", function (event) {
         event.preventDefault();
         installPrompt = event;
         if (!isStandalone) {
-          setInstallButtonsVisible(true);
-          trackPwa("install_prompt_shown", { platform: "browser_beforeinstallprompt" });
+          setInstallButtonsVisible(!dismissedRecently());
         }
       });
 
@@ -4008,7 +4058,7 @@
             if (isIOS && isSafari) {
               openIosSheet();
             } else {
-              setInstallButtonsVisible(false);
+              openIosSheet();
             }
             return;
           }
@@ -4024,12 +4074,33 @@
         button.addEventListener("click", openIosSheet);
       });
 
+      if (installConfirm) {
+        installConfirm.addEventListener("click", async function () {
+          trackPwa("install_popup_clicked", { platform: isIOS && isSafari ? "ios_safari" : "browser" });
+          if (installPrompt) {
+            installPrompt.prompt();
+            var choice = await installPrompt.userChoice.catch(function () { return { outcome: "error" }; });
+            trackPwa(choice && choice.outcome === "accepted" ? "install_prompt_accepted" : "install_prompt_dismissed", { platform: "browser_popup" });
+            installPrompt = null;
+            if (iosSheet) {
+              iosSheet.hidden = true;
+            }
+            setInstallButtonsVisible(false);
+            return;
+          }
+          if (installInstructions) {
+            installInstructions.hidden = false;
+          }
+        });
+      }
+
       if (closeIos) {
         closeIos.addEventListener("click", function () {
+          rememberDismissal();
           if (iosSheet) {
             iosSheet.hidden = true;
           }
-          trackPwa("install_prompt_dismissed", { platform: "ios_safari" });
+          trackPwa("install_popup_dismissed", { platform: isIOS && isSafari ? "ios_safari" : "browser" });
         });
       }
     })();
