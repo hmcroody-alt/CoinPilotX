@@ -16,6 +16,7 @@ import requests
 import threading
 import stripe
 import smtplib
+import time
 import xml.etree.ElementTree as ET
 
 from datetime import datetime, timedelta
@@ -640,6 +641,7 @@ def create_email_verification(user_id):
 def signup_page():
     init_db()
     if request.method == "POST":
+        logging.info("signup endpoint started")
         if not verify_csrf():
             return render_account_page("signup", "Create Account", error="Security check failed. Please try again.")
         full_name = clean_html(request.form.get("full_name", ""))[:160]
@@ -661,8 +663,11 @@ def signup_page():
         if error:
             return render_account_page("signup", "Create Account", error=error)
         session["account_user_id"] = user["user_id"]
+        logging.info("user created successfully: user_id=%s", user["user_id"])
         logging.info("Signup successful for user_id: %s", user["user_id"])
-        send_welcome_email(user)
+        logging.info("calling send_welcome_email")
+        send_signup_welcome_emails(user)
+        logging.info("send_welcome_email completed")
         verification_token = create_email_verification(user["user_id"])
         verification_link = url_for("verify_email_page", token=verification_token, _external=True)
         send_email_verification(user, verification_link)
@@ -1647,9 +1652,10 @@ def branded_email_html(title, body_html):
     """
 
 
-def send_welcome_email(user):
+def send_welcome_email(user, override_email=None, audit_label="user"):
     name = account_display_name(user)
-    logging.info("Attempting welcome email for user_id: %s", user.get("user_id"))
+    to_email = override_email or user.get("email")
+    logging.info("Attempting welcome email for user_id: %s recipient=%s", user.get("user_id"), audit_label)
     logging.info("Brevo API key loaded: %s", bool(os.getenv("BREVO_API_KEY")))
     subject = "Welcome to CoinPilotX — Powered by CoinPilotXAI Inc."
     text = (
@@ -1668,9 +1674,41 @@ def send_welcome_email(user):
       <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account dashboard</a></p>
       <p>Support: <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a></p>
     """)
-    sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
-    logging.info("Welcome email result for user_id %s: %s", user.get("user_id"), sent)
+    sent = send_platform_email(to_email, subject, text, html, user.get("user_id"))
+    logging.info("Welcome email result for user_id %s recipient=%s: %s", user.get("user_id"), audit_label, sent)
     return sent
+
+
+def send_welcome_email_with_retry(user, override_email=None, audit_label="user"):
+    try:
+        sent = send_welcome_email(user, override_email=override_email, audit_label=audit_label)
+        if sent:
+            return True
+        logging.warning("send_welcome_email failed; retrying once after 3 seconds for user_id=%s recipient=%s", user.get("user_id"), audit_label)
+        time.sleep(3)
+        return send_welcome_email(user, override_email=override_email, audit_label=f"{audit_label}_retry")
+    except Exception as exc:
+        logging.exception("send_welcome_email exception")
+        logging.warning("send_welcome_email exception detail: %s", exc)
+        try:
+            time.sleep(3)
+            return send_welcome_email(user, override_email=override_email, audit_label=f"{audit_label}_exception_retry")
+        except Exception:
+            logging.exception("send_welcome_email exception")
+            return False
+
+
+def send_signup_welcome_emails(user):
+    results = {}
+    recipients = [("new_user", user.get("email")), ("support_copy", "support@coinpilotx.app")]
+    seen = set()
+    for label, email in recipients:
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        results[label] = send_welcome_email_with_retry(user, override_email=email, audit_label=label)
+    logging.info("send_welcome_email completed: user_id=%s results=%s", user.get("user_id"), results)
+    return results
 
 
 def send_update_signup_email(lead):
