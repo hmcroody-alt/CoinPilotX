@@ -21,11 +21,13 @@
   <meta name="twitter:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="CoinPilotX" />
+  <meta name="apple-mobile-web-app-title" content="CoinPilotXAI" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="CoinPilotXAI" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
-  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="preload" as="image" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <script type="application/ld+json">
   {
@@ -398,6 +400,52 @@
 
     .install-app-button[hidden] {
       display: none;
+    }
+
+    .install-inline[hidden],
+    .install-ios-help[hidden],
+    .pwa-install-sheet[hidden] {
+      display: none;
+    }
+
+    .pwa-install-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 95;
+      display: grid;
+      place-items: end center;
+      padding: 18px;
+      background: rgba(2, 6, 23, 0.72);
+      backdrop-filter: blur(12px);
+    }
+
+    .pwa-install-card {
+      width: min(100%, 440px);
+      border: 1px solid rgba(110, 223, 246, 0.24);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(13, 22, 39, 0.98), rgba(5, 11, 20, 0.98));
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48), 0 0 42px rgba(0, 229, 255, 0.12);
+      padding: 20px;
+    }
+
+    .pwa-install-card h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .pwa-install-card p {
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    .pwa-install-card ol {
+      padding-left: 20px;
+      color: var(--text);
+      margin: 0 0 18px;
+    }
+
+    .pwa-install-card li {
+      margin: 7px 0;
     }
 
     .button.pulse-cta,
@@ -2548,6 +2596,7 @@
           <a class="button" href="#market-board" data-analytics="view_live_market">Live Market</a>
           <a class="button gold" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
           <a class="button" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
+          <button class="button install-inline" type="button" data-install-app-inline data-analytics="install_app" hidden>Install App</button>
           <a class="button primary pulse-cta" href="#day-signal" data-analytics="day_signal">Is Today My Day?</a>
           <a class="button" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
           <a class="button primary pulse-cta" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
@@ -2585,6 +2634,18 @@
   </nav>
 
   <button class="button install-app-button" type="button" data-install-app data-analytics="install_app" hidden>Install CoinPilotX App</button>
+  <div class="pwa-install-sheet" data-ios-install-sheet hidden role="dialog" aria-modal="true" aria-labelledby="ios-install-title">
+    <div class="pwa-install-card">
+      <h3 id="ios-install-title">Install CoinPilotXAI on iPhone</h3>
+      <p>Safari does not show an automatic install popup. Add CoinPilotXAI to your Home Screen manually:</p>
+      <ol>
+        <li>Tap the Share button in Safari.</li>
+        <li>Choose Add to Home Screen.</li>
+        <li>Tap Add to launch CoinPilotXAI like an app.</li>
+      </ol>
+      <button class="button primary" type="button" data-close-ios-install>Got it</button>
+    </div>
+  </div>
 
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
@@ -2613,6 +2674,7 @@
             <a class="button primary" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
             <a class="button primary pulse-cta" href="#day-signal" data-analytics="day_signal">Is Today My Day?</a>
             <a class="button" href="#safety" data-analytics="view_safety">See Safety Features</a>
+            <button class="button gold install-ios-help" type="button" data-ios-install-help data-analytics="install_app" hidden>Install CoinPilotXAI App</button>
           </div>
 
           <div class="trust-tags" aria-label="Trust tags">
@@ -3803,6 +3865,7 @@
             <div class="actions">
               <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
               <a class="button" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
+              <button class="button gold install-ios-help" type="button" data-ios-install-help data-analytics="install_app" hidden>Install App</button>
             </div>
             <form class="lead-form" data-lead-form data-source="telegram_cta">
               <input name="email" type="email" autocomplete="email" placeholder="Email for CoinPilotX updates" required />
@@ -3877,41 +3940,96 @@
   <script>
     (function () {
       var installPrompt = null;
-      var installButton = document.querySelector("[data-install-app]");
+      var installButtons = Array.prototype.slice.call(document.querySelectorAll("[data-install-app], [data-install-app-inline]"));
+      var iosButtons = Array.prototype.slice.call(document.querySelectorAll("[data-ios-install-help]"));
+      var iosSheet = document.querySelector("[data-ios-install-sheet]");
+      var closeIos = document.querySelector("[data-close-ios-install]");
+      var isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+      var ua = window.navigator.userAgent || "";
+      var isIOS = /iphone|ipad|ipod/i.test(ua);
+      var isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+
+      function trackPwa(eventName, metadata) {
+        if (window.coinPilotXTrack) {
+          window.coinPilotXTrack(eventName, metadata || {});
+        }
+      }
+
+      function setInstallButtonsVisible(visible) {
+        installButtons.forEach(function (button) {
+          button.hidden = !visible;
+        });
+      }
+
+      function setIosButtonsVisible(visible) {
+        iosButtons.forEach(function (button) {
+          button.hidden = !visible;
+        });
+      }
+
+      function openIosSheet() {
+        if (iosSheet) {
+          iosSheet.hidden = false;
+          trackPwa("install_prompt_shown", { platform: "ios_safari" });
+        }
+      }
 
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
-          navigator.serviceWorker.register("/static/service-worker.js", { scope: "/" }).catch(function () {
+          navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function () {
             // PWA registration should never block the website.
           });
         });
       }
 
+      if (!isStandalone && isIOS && isSafari) {
+        setIosButtonsVisible(true);
+      }
+
       window.addEventListener("beforeinstallprompt", function (event) {
         event.preventDefault();
         installPrompt = event;
-        if (installButton && !window.matchMedia("(display-mode: standalone)").matches) {
-          installButton.hidden = false;
+        if (!isStandalone) {
+          setInstallButtonsVisible(true);
+          trackPwa("install_prompt_shown", { platform: "browser_beforeinstallprompt" });
         }
       });
 
       window.addEventListener("appinstalled", function () {
         installPrompt = null;
-        if (installButton) {
-          installButton.hidden = true;
-        }
+        setInstallButtonsVisible(false);
+        setIosButtonsVisible(false);
+        trackPwa("app_install_completed", { platform: "browser" });
       });
 
-      if (installButton) {
+      installButtons.forEach(function (installButton) {
         installButton.addEventListener("click", async function () {
           if (!installPrompt) {
-            installButton.hidden = true;
+            if (isIOS && isSafari) {
+              openIosSheet();
+            } else {
+              setInstallButtonsVisible(false);
+            }
             return;
           }
           installPrompt.prompt();
-          await installPrompt.userChoice.catch(function () {});
+          var choice = await installPrompt.userChoice.catch(function () { return { outcome: "error" }; });
+          trackPwa(choice && choice.outcome === "accepted" ? "install_prompt_accepted" : "install_prompt_dismissed", { platform: "browser" });
           installPrompt = null;
-          installButton.hidden = true;
+          setInstallButtonsVisible(false);
+        });
+      });
+
+      iosButtons.forEach(function (button) {
+        button.addEventListener("click", openIosSheet);
+      });
+
+      if (closeIos) {
+        closeIos.addEventListener("click", function () {
+          if (iosSheet) {
+            iosSheet.hidden = true;
+          }
+          trackPwa("install_prompt_dismissed", { platform: "ios_safari" });
         });
       }
     })();

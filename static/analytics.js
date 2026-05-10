@@ -107,6 +107,16 @@
     trackFirstParty(normalizedEvent, payload);
   }
 
+  window.coinPilotXTrack = function (eventName, metadata) {
+    if (window.gtag) {
+      window.gtag("event", eventName, metadata || {});
+    }
+    if (window.posthog && window.posthog.capture) {
+      window.posthog.capture(eventName, metadata || {});
+    }
+    trackFirstParty(eventName, metadata || {});
+  };
+
   document.addEventListener("click", function (event) {
     var target = event.target.closest("[data-analytics]");
     if (!target) {

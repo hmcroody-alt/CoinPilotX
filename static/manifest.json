@@ -1,31 +1,57 @@
 {
-  "name": "CoinPilotXAI Inc.",
-  "short_name": "CoinPilotX",
+  "name": "CoinPilotXAI Inc",
+  "short_name": "CoinPilotXAI",
   "description": "AI crypto intelligence, scam awareness, market insights, and Telegram tools.",
-  "start_url": "/",
+  "id": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#050b14",
-  "theme_color": "#00e5ff",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#020617",
+  "theme_color": "#00f5d4",
   "orientation": "portrait",
+  "categories": ["finance", "productivity", "education"],
   "icons": [
     {
-      "src": "/static/icons/icon-192.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/icon-512.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/icon-512.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/screenshots/MainMenu.png",
+      "sizes": "930x1198",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "CoinPilotX Telegram intelligence menu"
+    },
+    {
+      "src": "/static/screenshots/analysis.png",
+      "sizes": "930x1198",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "CoinPilotX AI market analysis"
+    },
+    {
+      "src": "/static/screenshots/portfolio.png",
+      "sizes": "930x1198",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "CoinPilotX portfolio intelligence"
     }
   ]
 }

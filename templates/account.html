@@ -9,11 +9,13 @@
   <link rel="canonical" href="https://coinpilotx.app/{{ page }}" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="CoinPilotX" />
+  <meta name="apple-mobile-web-app-title" content="CoinPilotXAI" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="CoinPilotXAI" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
-  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json" />
   <style>
     :root {
       --bg: #070b14;
@@ -92,6 +94,7 @@
     }
     .button.primary { color: #06101b; border-color: transparent; background: linear-gradient(135deg, var(--green), var(--cyan)); }
     .button.gold { color: #ffe5aa; border-color: rgba(255,209,102,.34); background: rgba(255,209,102,.1); }
+    .install-app-button[hidden] { display: none; }
     .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
     .notice, .error {
       margin: 16px 0;
@@ -251,6 +254,7 @@
         {% endif %}
 
         <div class="notice">CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords. Educational AI intelligence only, not financial, betting, investment, or legal advice.</div>
+        <button class="button gold install-app-button" type="button" data-install-app hidden>Install CoinPilotXAI App</button>
       </article>
     </div>
   </main>
@@ -265,5 +269,46 @@
       </div>
     </div>
   </footer>
+  <script>
+    (function () {
+      var installPrompt = null;
+      var button = document.querySelector("[data-install-app]");
+      var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+      var ua = window.navigator.userAgent || "";
+      var iosSafari = /iphone|ipad|ipod/i.test(ua) && /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function () {});
+        });
+      }
+
+      if (button && !standalone && iosSafari) {
+        button.hidden = false;
+        button.textContent = "Add to Home Screen";
+      }
+
+      window.addEventListener("beforeinstallprompt", function (event) {
+        event.preventDefault();
+        installPrompt = event;
+        if (button && !standalone) {
+          button.hidden = false;
+        }
+      });
+
+      if (button) {
+        button.addEventListener("click", async function () {
+          if (!installPrompt) {
+            alert("On iPhone Safari, tap Share, then Add to Home Screen.");
+            return;
+          }
+          installPrompt.prompt();
+          await installPrompt.userChoice.catch(function () {});
+          installPrompt = null;
+          button.hidden = true;
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

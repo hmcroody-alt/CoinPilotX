@@ -487,7 +487,7 @@ def offline_page():
 
 @webhook_app.after_request
 def add_pwa_headers(response):
-    if request.path == "/static/service-worker.js":
+    if request.path in ("/static/service-worker.js", "/sw.js"):
         response.headers["Service-Worker-Allowed"] = "/"
     return response
 
@@ -862,6 +862,65 @@ def admin_test_email():
     }), (200 if sent else 502)
 
 
+def send_brevo_debug_email(to_email):
+    from_email, from_name = email_sender_identity()
+    brevo_key = os.getenv("BREVO_API_KEY")
+    payload = {
+        "sender": {"email": from_email, "name": from_name},
+        "to": [{"email": to_email}],
+        "subject": "CoinPilotXAI Inc. Brevo debug email",
+        "textContent": "Brevo debug email from CoinPilotXAI Inc. If this arrives, API delivery is working.",
+        "htmlContent": branded_email_html("Brevo Debug Email", "<p>If this arrives, API delivery is working.</p>"),
+    }
+    logging.info("Debug Brevo email requested: to_domain=%s sender=%s brevo_key_loaded=%s", to_email.split("@")[-1], from_email, bool(brevo_key))
+    if not brevo_key:
+        return {
+            "ok": False,
+            "status_code": None,
+            "sender": from_email,
+            "brevo_key_loaded": False,
+            "response": {"message": "BREVO_API_KEY is not loaded."},
+        }
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": brevo_key, "Content-Type": "application/json", "Accept": "application/json"},
+            json=payload,
+            timeout=15,
+        )
+        try:
+            body = response.json() if response.text else {}
+        except Exception:
+            body = {"raw": response.text}
+        logging.info("Debug Brevo response status_code=%s body=%s", response.status_code, json.dumps(body)[:1200])
+        return {
+            "ok": 200 <= response.status_code < 300,
+            "status_code": response.status_code,
+            "sender": from_email,
+            "brevo_key_loaded": True,
+            "response": body,
+        }
+    except Exception as exc:
+        logging.exception("Debug Brevo email exception")
+        return {
+            "ok": False,
+            "status_code": None,
+            "sender": from_email,
+            "brevo_key_loaded": True,
+            "response": {"message": str(exc)},
+        }
+
+
+@webhook_app.route("/debug/email-test", methods=["GET"])
+def debug_email_test():
+    expected = os.getenv("ADMIN_ANALYTICS_PASSWORD", "")
+    if expected and request.args.get("password", "") != expected:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    to_email = os.getenv("DEBUG_EMAIL_TEST_TO", "support@coinpilotx.app")
+    result = send_brevo_debug_email(to_email)
+    return jsonify(result), (200 if result.get("ok") else 502)
+
+
 def client_ip_hash():
     ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
     salt = os.getenv("ANALYTICS_SALT", "coinpilotxai-inc")
@@ -1190,6 +1249,16 @@ def site_webmanifest():
     return send_from_directory(webhook_app.static_folder, "site.webmanifest", mimetype="application/manifest+json")
 
 
+@webhook_app.route("/sw.js", methods=["GET"])
+def service_worker_root():
+    return send_from_directory(webhook_app.static_folder, "sw.js", mimetype="application/javascript")
+
+
+@webhook_app.route("/icons/<path:filename>", methods=["GET"])
+def pwa_icons(filename):
+    return send_from_directory(os.path.join(webhook_app.static_folder, "icons"), filename)
+
+
 @webhook_app.route("/indexnow-key.txt", methods=["GET"])
 @webhook_app.route("/4d4dc0c2c0f94b7bb8184fd91b7f0b1e.txt", methods=["GET"])
 def indexnow_key_txt():
@@ -1458,38 +1527,8 @@ def log_email_status(user_id, email, subject, status):
 
 
 def send_email_confirmation(user_id, to_email, subject, body):
-    if not to_email:
-        log_email_status(user_id, "", subject, "skipped_no_email")
-        return False
-
-    smtp_host = os.getenv("SMTP_HOST")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    from_email = os.getenv("FROM_EMAIL") or smtp_user
-
-    if not all([smtp_host, smtp_user, smtp_password, from_email]):
-        log_email_status(user_id, to_email, subject, "skipped_smtp_not_configured")
-        return False
-
-    try:
-        message = EmailMessage()
-        message["Subject"] = subject
-        message["From"] = from_email
-        message["To"] = to_email
-        message.set_content(body)
-
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
-            smtp.starttls()
-            smtp.login(smtp_user, smtp_password)
-            smtp.send_message(message)
-
-        log_email_status(user_id, to_email, subject, "sent")
-        return True
-    except Exception as exc:
-        logging.info("Email confirmation failed: %s", exc)
-        log_email_status(user_id, to_email, subject, "failed")
-        return False
+    logging.info("Attempting transactional confirmation email for user_id: %s", user_id)
+    return send_platform_email(to_email, subject, body, body.replace("\n", "<br>"), user_id)
 
 
 def email_sender_identity():
@@ -1529,6 +1568,7 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
                 timeout=15,
             )
             ok = 200 <= response.status_code < 300
+            logging.info("Brevo API response status_code=%s body=%s", response.status_code, response.text[:1200])
             message_id = ""
             safe_error = ""
             try:
