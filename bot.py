@@ -480,6 +480,18 @@ def terms_page():
     return render_template("terms.html")
 
 
+@webhook_app.route("/offline", methods=["GET"])
+def offline_page():
+    return render_template("offline.html")
+
+
+@webhook_app.after_request
+def add_pwa_headers(response):
+    if request.path == "/static/service-worker.js":
+        response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
+
 def get_csrf_token():
     token = session.get("csrf_token")
     if not token:

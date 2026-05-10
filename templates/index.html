@@ -19,10 +19,13 @@
   <meta name="twitter:title" content="CoinPilotXAI Inc. | CoinPilotX AI Crypto Intelligence Bot" />
   <meta name="twitter:description" content="CoinPilotX is powered by CoinPilotXAI Inc. for AI market analysis, wallet risk scanning, whale alerts, portfolio intelligence, and scam protection." />
   <meta name="twitter:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
-  <meta name="theme-color" content="#08111f" />
+  <meta name="theme-color" content="#00e5ff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="CoinPilotX" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
-  <link rel="manifest" href="/site.webmanifest" />
+  <link rel="manifest" href="/static/manifest.json" />
   <link rel="preload" as="image" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <script type="application/ld+json">
   {
@@ -138,6 +141,7 @@
     body {
       position: relative;
       min-width: 320px;
+      overflow-x: hidden;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
       background:
         radial-gradient(circle at 15% 5%, rgba(54, 229, 143, 0.18), transparent 30%),
@@ -379,6 +383,21 @@
       border-color: rgba(255, 209, 102, 0.36);
       background: rgba(255, 209, 102, 0.11);
       color: #ffe3a3;
+    }
+
+    .install-app-button {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 60;
+      border-color: rgba(0, 229, 255, 0.36);
+      background: linear-gradient(135deg, rgba(54, 229, 143, 0.96), rgba(0, 229, 255, 0.96));
+      color: #06101b;
+      box-shadow: 0 18px 48px rgba(0, 229, 255, 0.22);
+    }
+
+    .install-app-button[hidden] {
+      display: none;
     }
 
     .button.pulse-cta,
@@ -2467,6 +2486,13 @@
       body {
         padding-bottom: 78px;
       }
+
+      .install-app-button {
+        left: 14px;
+        right: 14px;
+        bottom: 92px;
+        width: auto;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -2557,6 +2583,8 @@
     <a class="pulse-cta" href="#day-signal" data-analytics="day_signal">Day Signal</a>
     <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
   </nav>
+
+  <button class="button install-app-button" type="button" data-install-app data-analytics="install_app" hidden>Install CoinPilotX App</button>
 
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
@@ -3846,5 +3874,47 @@
   </footer>
   <!-- Add Google Analytics / Plausible script here later -->
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
+  <script>
+    (function () {
+      var installPrompt = null;
+      var installButton = document.querySelector("[data-install-app]");
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("/static/service-worker.js", { scope: "/" }).catch(function () {
+            // PWA registration should never block the website.
+          });
+        });
+      }
+
+      window.addEventListener("beforeinstallprompt", function (event) {
+        event.preventDefault();
+        installPrompt = event;
+        if (installButton && !window.matchMedia("(display-mode: standalone)").matches) {
+          installButton.hidden = false;
+        }
+      });
+
+      window.addEventListener("appinstalled", function () {
+        installPrompt = null;
+        if (installButton) {
+          installButton.hidden = true;
+        }
+      });
+
+      if (installButton) {
+        installButton.addEventListener("click", async function () {
+          if (!installPrompt) {
+            installButton.hidden = true;
+            return;
+          }
+          installPrompt.prompt();
+          await installPrompt.userChoice.catch(function () {});
+          installPrompt = null;
+          installButton.hidden = true;
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
