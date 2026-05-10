@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v7";
+const CACHE_NAME = "coinpilotx-cache-v8";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
@@ -21,6 +21,8 @@ function isNeverCachePath(pathname) {
     pathname.startsWith("/logout") ||
     pathname.startsWith("/signup") ||
     pathname.startsWith("/account") ||
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/upgrade") ||
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/verify-email") ||

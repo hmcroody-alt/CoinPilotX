@@ -6,6 +6,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -28,6 +30,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -44,6 +48,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -60,6 +66,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -76,6 +84,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -92,6 +102,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -108,6 +120,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -124,6 +138,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -140,6 +156,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup
@@ -156,6 +174,8 @@ Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
 Disallow: /account
+Disallow: /dashboard
+Disallow: /upgrade
 Disallow: /login
 Disallow: /logout
 Disallow: /signup

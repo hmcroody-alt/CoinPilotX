@@ -40,6 +40,7 @@ from services import (
     day_signal as day_signal_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
+    portfolio_service,
     pro_access as pro_access_service,
     scam_shield as scam_shield_service,
     sports_data as sports_data_service,
@@ -70,7 +71,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-STRIPE_PRO_LINK = "https://buy.stripe.com/14AdR90xmgAy304afs4Vy00"
+STRIPE_PRO_LINK = os.getenv("STRIPE_PRO_LINK", "https://buy.stripe.com/14AdR90xmgAy304afs4Vy00")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -414,13 +415,20 @@ async def market_signal_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 PRO_PRICE_MONTHLY = "$14.99/month"
-STRIPE_PRO_LINK = "https://buy.stripe.com/14AdR90xmgAy304afs4Vy00"
+STRIPE_PRO_LINK = os.getenv("STRIPE_PRO_LINK", STRIPE_PRO_LINK)
+
+
+def website_upgrade_url(telegram_user_id=None):
+    if telegram_user_id:
+        return f"https://coinpilotx.app/upgrade?source=telegram&telegram_id={telegram_user_id}"
+    return "https://coinpilotx.app/upgrade?source=telegram"
+
 
 def pro_upgrade_message(user_id):
     return (
         "⭐ CoinPilotX Pro\n\n"
         f"Card price: {PRO_PRICE_MONTHLY}\n"
-        f"BTC price: {BTC_PRO_PRICE}\n\n"
+        "Payments are completed securely on the CoinPilotXAI website.\n\n"
         "Free is useful for basic awareness. Pro is built for deeper decision support.\n\n"
         "Free includes:\n"
         "• Basic BTC price\n"
@@ -437,18 +445,16 @@ def pro_upgrade_message(user_id):
         "• Market pressure signals\n"
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
         "CoinPilotX is operated by CoinPilotXAI Inc.\n"
-        "No hidden fees from CoinPilotXAI Inc. Card payment opens only through the secure button below.\n"
+        "No hidden fees from CoinPilotXAI Inc. Checkout opens only on the website.\n"
         "CoinPilotX never holds funds.\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Choose a payment method below when you are ready."
+        "Create or log in to your website account, upgrade there, then return here and send your Telegram activation code."
     )
 
 def upgrade_payment_menu(user_id):
-    stripe_link = f"{STRIPE_PRO_LINK}?client_reference_id={user_id}"
-
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Pay with Card — $14.99", url=stripe_link)],
-        [InlineKeyboardButton("₿ Pay with BTC — 0.00025 BTC", callback_data="pay_btc")],
+        [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(user_id))],
+        [InlineKeyboardButton("Open Website Account", url="https://coinpilotx.app/account")],
         [InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")]
     ])
 
@@ -1040,6 +1046,50 @@ def account_page():
     get_or_create_referral_code(user["user_id"])
     user = load_account_by_id(user["user_id"])
     return render_account_page("account", "Account", current_user=user)
+
+
+@webhook_app.route("/dashboard", methods=["GET"])
+def dashboard_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page"))
+    log_product_event(user["user_id"], "dashboard_viewed", {})
+    return render_template(
+        "dashboard.html",
+        current_user=load_account_by_id(user["user_id"]),
+        access=account_access_context(load_account_by_id(user["user_id"])),
+    )
+
+
+def stripe_checkout_url_for_user(user_id):
+    separator = "&" if "?" in STRIPE_PRO_LINK else "?"
+    return f"{STRIPE_PRO_LINK}{separator}client_reference_id={user_id}"
+
+
+@webhook_app.route("/upgrade", methods=["GET"])
+def upgrade_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page"))
+    if request.args.get("checkout") == "1":
+        log_product_event(user["user_id"], "stripe_checkout_started", {"source": request.args.get("source", "website")})
+        return redirect(stripe_checkout_url_for_user(user["user_id"]), code=302)
+    log_product_event(user["user_id"], "website_upgrade_started", {"source": request.args.get("source", "website")})
+    return render_account_page("upgrade", "Upgrade Pro", current_user=load_account_by_id(user["user_id"]))
+
+
+@webhook_app.route("/upgrade/success", methods=["GET"])
+def upgrade_success_page():
+    init_db()
+    user = require_account()
+    return render_account_page(
+        "upgrade_success",
+        "Upgrade Confirmation",
+        current_user=user,
+        message="Your Pro upgrade is being confirmed. You will receive a confirmation email shortly. If you experience any issue after payment, email support@coinpilotx.app.",
+    )
 
 
 @webhook_app.route("/account/settings", methods=["GET", "POST"])
@@ -2114,6 +2164,115 @@ def website_day_signal_api():
     return jsonify(result)
 
 
+def api_account_user():
+    user = require_account()
+    if not user:
+        return None
+    return user
+
+
+@webhook_app.route("/api/dashboard", methods=["GET"])
+def dashboard_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(portfolio_service.get_user_dashboard_data(user["user_id"]))
+
+
+@webhook_app.route("/api/portfolio", methods=["GET", "POST"])
+def portfolio_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        return jsonify({"ok": True, "portfolio": portfolio_service.calculate_user_portfolio(user["user_id"])})
+    payload = request.get_json(silent=True) or {}
+    result = portfolio_service.add_portfolio_item(
+        user["user_id"],
+        clean_html(payload.get("symbol", "")),
+        clean_html(payload.get("coin_name", "")),
+        payload.get("amount", 0),
+        payload.get("average_buy_price", 0),
+        clean_html(payload.get("notes", "")),
+    )
+    log_product_event(user["user_id"], "portfolio_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/portfolio/<int:item_id>", methods=["PUT", "DELETE"])
+def portfolio_item_api(item_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "DELETE":
+        result = portfolio_service.delete_portfolio_item(user["user_id"], item_id)
+        log_product_event(user["user_id"], "portfolio_item_deleted", {"item_id": item_id, "ok": result.get("ok")})
+        return jsonify(result), (200 if result.get("ok") else 404)
+    payload = request.get_json(silent=True) or {}
+    clean_payload = {key: clean_html(str(value)) if key in {"symbol", "coin_name", "notes"} else value for key, value in payload.items()}
+    result = portfolio_service.update_portfolio_item(user["user_id"], item_id, clean_payload)
+    log_product_event(user["user_id"], "portfolio_item_updated", {"item_id": item_id, "ok": result.get("ok")})
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/watchlist", methods=["GET", "POST"])
+def watchlist_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        return jsonify({"ok": True, "watchlist": portfolio_service.get_watchlist(user["user_id"])})
+    payload = request.get_json(silent=True) or {}
+    result = portfolio_service.add_watchlist_item(user["user_id"], clean_html(payload.get("symbol", "")), clean_html(payload.get("coin_name", "")))
+    log_product_event(user["user_id"], "watchlist_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/watchlist/<int:item_id>", methods=["DELETE"])
+def watchlist_item_api(item_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = portfolio_service.delete_watchlist_item(user["user_id"], item_id)
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/alerts", methods=["GET", "POST"])
+def alerts_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        return jsonify({"ok": True, "alerts": portfolio_service.get_alerts(user["user_id"])})
+    payload = request.get_json(silent=True) or {}
+    result = portfolio_service.create_price_alert(
+        user["user_id"],
+        clean_html(payload.get("alert_type", "price")),
+        clean_html(payload.get("symbol", "")),
+        payload.get("target_value", 0),
+        clean_html(payload.get("condition", "above")),
+        clean_html(payload.get("channel", "telegram")),
+    )
+    log_product_event(user["user_id"], "alert_created", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/alerts/<int:alert_id>", methods=["DELETE"])
+def alert_item_api(alert_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = portfolio_service.delete_alert(user["user_id"], alert_id)
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     init_db()
@@ -2131,6 +2290,7 @@ def stripe_webhook():
         return "Invalid", 400
 
     print("🔥 WEBHOOK HIT:", event["type"])
+    event_id = event.get("id", "")
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
@@ -2176,7 +2336,15 @@ def stripe_webhook():
                     "Educational only — not financial advice.\n"
                     "CoinPilotX will never ask for your seed phrase or private key."
                 )
-                send_subscription_email(user_id_int, "stripe", stripe_session_id=session.get("id"), timestamp=timestamp)
+                user = load_account_by_id(user_id_int)
+                if user:
+                    send_upgrade_confirmation_email(user, {
+                        "stripe_event_id": event_id,
+                        "stripe_session_id": session.get("id"),
+                        "amount": (session.get("amount_total") / 100 if session.get("amount_total") else None),
+                        "currency": session.get("currency", "usd"),
+                        "billing_date": datetime.now().strftime("%b %d, %Y"),
+                    })
                 print(f"✅ Activated PRO for user {user_id}")
             else:
                 save_payment_verification(
@@ -2189,11 +2357,33 @@ def stripe_webhook():
                 )
                 print(f"Stripe session not activated for user {user_id}: payment_status={payment_status}")
 
-    if event["type"] in {"customer.subscription.updated", "customer.subscription.deleted"}:
-        sync_stripe_subscription(event["data"]["object"])
+    if event["type"] in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+        synced_user_id = sync_stripe_subscription(event["data"]["object"])
+        if synced_user_id and event["type"] in {"customer.subscription.created", "customer.subscription.updated"}:
+            subscription = event["data"]["object"]
+            if (subscription.get("status") or "").lower() in {"active", "trialing"}:
+                user = load_account_by_id(synced_user_id)
+                if user:
+                    send_upgrade_confirmation_email(user, {
+                        "stripe_event_id": event_id,
+                        "stripe_session_id": subscription.get("latest_invoice") or subscription.get("id"),
+                        "next_billing_date": format_date(stripe_period_end_to_iso(subscription.get("current_period_end"))),
+                    })
 
-    if event["type"] in {"invoice.paid", "invoice.payment_failed"}:
-        sync_stripe_invoice(event["data"]["object"], event["type"])
+    if event["type"] in {"invoice.paid", "invoice.payment_succeeded", "invoice.payment_failed"}:
+        synced_user_id = sync_stripe_invoice(event["data"]["object"], event["type"])
+        if synced_user_id and event["type"] in {"invoice.paid", "invoice.payment_succeeded"}:
+            invoice = event["data"]["object"]
+            user = load_account_by_id(synced_user_id)
+            if user:
+                amount = invoice.get("amount_paid")
+                send_upgrade_confirmation_email(user, {
+                    "stripe_event_id": event_id,
+                    "stripe_session_id": invoice.get("id"),
+                    "amount": (amount / 100 if amount else None),
+                    "currency": invoice.get("currency", "usd"),
+                    "billing_date": datetime.now().strftime("%b %d, %Y"),
+                })
 
     return "OK", 200
 
@@ -2555,7 +2745,7 @@ def send_trial_lifecycle_email(user, event_type):
         ),
         "day_29": (
             "Final reminder: CoinPilotX Pro trial ending",
-            f"Your Pro trial is close to ending. Days remaining: {days_left if days_left is not None else 'soon'}. You can upgrade anytime from Telegram or your account dashboard.",
+            f"Your Pro trial is close to ending. Days remaining: {days_left if days_left is not None else 'soon'}. You can upgrade anytime from your CoinPilotXAI website account dashboard.",
         ),
         "trial_ended": (
             "Your CoinPilotX Pro trial has ended",
@@ -2581,6 +2771,133 @@ def send_trial_lifecycle_email(user, event_type):
     """)
     sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
     record_trial_email_event(user.get("user_id"), event_type, user.get("email"), "sent" if sent else "failed")
+    return sent
+
+
+def pro_upgrade_confirmation_already_sent(stripe_event_id="", stripe_session_id=""):
+    conn = db()
+    cur = conn.cursor()
+    if stripe_event_id:
+        cur.execute(
+            "SELECT id FROM email_logs WHERE email_type='pro_upgrade_confirmation' AND stripe_event_id=? AND status LIKE 'sent%' LIMIT 1",
+            (stripe_event_id,),
+        )
+        if cur.fetchone():
+            conn.close()
+            return True
+    if stripe_session_id:
+        cur.execute(
+            "SELECT id FROM email_logs WHERE email_type='pro_upgrade_confirmation' AND stripe_session_id=? AND status LIKE 'sent%' LIMIT 1",
+            (stripe_session_id,),
+        )
+        if cur.fetchone():
+            conn.close()
+            return True
+    conn.close()
+    return False
+
+
+def recent_upgrade_confirmation_sent(user_id, minutes=10):
+    if not user_id:
+        return False
+    cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id FROM email_logs
+        WHERE user_id=? AND email_type='pro_upgrade_confirmation' AND status LIKE 'sent%' AND created_at>=?
+        LIMIT 1
+        """,
+        (user_id, cutoff),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return bool(row)
+
+
+def log_upgrade_confirmation_email(user_id, email, stripe_event_id="", stripe_session_id="", status="sent", error_message=""):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO email_logs
+        (user_id, email, subject, status, created_at, email_type, recipient_email, stripe_event_id, stripe_session_id, sent_at, error_message)
+        VALUES (?, ?, ?, ?, ?, 'pro_upgrade_confirmation', ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id or 0,
+            email or "",
+            "Your CoinPilotXAI Pro Upgrade Is Active",
+            status,
+            datetime.now().isoformat(),
+            email or "",
+            stripe_event_id or "",
+            stripe_session_id or "",
+            datetime.now().isoformat() if str(status).startswith("sent") else "",
+            error_message[:500],
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def send_upgrade_confirmation_email(user, details=None):
+    details = details or {}
+    user = user or {}
+    user_id = user.get("user_id") or 0
+    to_email = user.get("email") or details.get("email")
+    stripe_event_id = details.get("stripe_event_id") or ""
+    stripe_session_id = details.get("stripe_session_id") or details.get("stripe_session") or ""
+    logging.info("upgrade confirmation email requested user_id=%s event=%s session=%s", user_id, stripe_event_id, stripe_session_id)
+    if pro_upgrade_confirmation_already_sent(stripe_event_id, stripe_session_id):
+        logging.info("upgrade confirmation email skipped duplicate user_id=%s event=%s session=%s", user_id, stripe_event_id, stripe_session_id)
+        return True
+    if recent_upgrade_confirmation_sent(user_id):
+        logging.info("upgrade confirmation email skipped recent duplicate user_id=%s event=%s session=%s", user_id, stripe_event_id, stripe_session_id)
+        return True
+    if not to_email:
+        log_upgrade_confirmation_email(user_id, "", stripe_event_id, stripe_session_id, "failed_no_email", "No recipient email on account.")
+        return False
+    amount = details.get("amount")
+    currency = (details.get("currency") or "USD").upper()
+    amount_line = f"Payment amount: {amount} {currency}\n" if amount else ""
+    billing_date = details.get("billing_date") or datetime.now().strftime("%b %d, %Y")
+    next_billing_date = details.get("next_billing_date") or details.get("pro_expires_at") or "Available in your Stripe billing details"
+    subject = "Your CoinPilotXAI Pro Upgrade Is Active"
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        "Your CoinPilotXAI Pro access is active.\n\n"
+        "Plan: CoinPilotX Pro\n"
+        f"{amount_line}"
+        f"Billing date: {billing_date}\n"
+        f"Next billing date: {next_billing_date}\n\n"
+        "Dashboard: https://coinpilotx.app/dashboard\n"
+        "Account: https://coinpilotx.app/account\n"
+        "Support: https://coinpilotx.app/support\n"
+        "Telegram bot: https://t.me/DocShieldX_bot\n\n"
+        "Telegram activation: log in at https://coinpilotx.app/account/settings, generate a Telegram code, then return to the bot and send /connect CODE.\n\n"
+        "If you experience any issue after payment, please email us immediately at support@coinpilotx.app and include the email address used for your CoinPilotXAI account.\n\n"
+        "CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
+    )
+    html = branded_email_html("Your CoinPilotXAI Pro Upgrade Is Active", f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Your <strong>CoinPilotX Pro</strong> access is active.</p>
+      <p><strong>Plan:</strong> CoinPilotX Pro<br>
+      {f"<strong>Payment amount:</strong> {clean_html(str(amount))} {clean_html(currency)}<br>" if amount else ""}
+      <strong>Billing date:</strong> {clean_html(str(billing_date))}<br>
+      <strong>Next billing date:</strong> {clean_html(str(next_billing_date))}</p>
+      <p><a href="https://coinpilotx.app/dashboard" style="color:#36e58f">Open Dashboard</a> · <a href="https://coinpilotx.app/account" style="color:#6edff6">Account</a> · <a href="https://coinpilotx.app/support" style="color:#6edff6">Support</a></p>
+      <p>Telegram activation: open Account Settings, generate a Telegram code, then return to the bot and send <strong>/connect CODE</strong>.</p>
+      <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
+    """)
+    sent = send_platform_email(to_email, subject, text, html, user_id)
+    if not sent:
+        logging.warning("upgrade confirmation email failed; retrying once after 3 seconds user_id=%s", user_id)
+        time.sleep(3)
+        sent = send_platform_email(to_email, subject, text, html, user_id)
+    log_upgrade_confirmation_email(user_id, to_email, stripe_event_id, stripe_session_id, "sent" if sent else "failed", "" if sent else "Email provider rejected or unavailable.")
+    logging.info("upgrade confirmation email %s user_id=%s", "sent" if sent else "failed", user_id)
     return sent
 
 
@@ -2804,10 +3121,24 @@ def consume_ai_usage(user_id, feature="ai_assistant", limit=FREE_AI_DAILY_LIMIT)
 def send_telegram_confirmation(user_id, text):
     if not BOT_TOKEN:
         return False
+    chat_id = user_id
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT telegram_chat_id, telegram_user_id FROM users WHERE user_id=? OR telegram_user_id=? LIMIT 1",
+            (user_id, user_id),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            chat_id = row[0] or row[1] or user_id
+    except Exception as exc:
+        logging.info("Telegram confirmation lookup failed: %s", exc)
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": user_id, "text": text},
+            json={"chat_id": chat_id, "text": text},
             timeout=10,
         )
         return response.ok
@@ -3104,7 +3435,7 @@ def pro_upgrade_message(user_id):
     return (
         "⭐ CoinPilotX Pro\n\n"
         f"Card price: {PRO_PRICE_MONTHLY}\n"
-        f"BTC price: {BTC_PRO_PRICE}\n\n"
+        "Payments are completed securely on the CoinPilotXAI website.\n\n"
         "Free is useful for basic awareness. Pro is built for deeper decision support.\n\n"
         "Free includes:\n"
         "• Basic BTC price\n"
@@ -3121,10 +3452,10 @@ def pro_upgrade_message(user_id):
         "• Market pressure signals\n"
         "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
         "CoinPilotX is operated by CoinPilotXAI Inc.\n"
-        "No hidden fees from CoinPilotXAI Inc. Card payment opens only through the secure button below.\n"
+        "No hidden fees from CoinPilotXAI Inc. Checkout opens only on the website.\n"
         "CoinPilotX never holds funds.\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Choose a payment method below when you are ready."
+        "Create or log in to your website account, upgrade there, then return here and send your Telegram activation code."
     )
 
 
@@ -4948,69 +5279,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-
-    try:
-        txid = context.args[0].strip()
-    except Exception:
-        await update.message.reply_text(
-            "Usage:\n/verify_payment YOUR_TXID\n\n"
-            "CoinPilotX will verify the transaction before activating Pro.\n"
-            "CoinPilotX will never ask for your seed phrase or private key.",
-            reply_markup=main_menu()
-        )
-        return
-
-    if not is_valid_btc_txid(txid):
-        save_payment_verification(update.effective_user.id, txid, "btc", None, "invalid_txid", "TXID format failed validation.")
-        await update.message.reply_text(
-            "⚠️ That does not look like a valid BTC TXID.\n\n"
-            "A BTC transaction ID is usually 64 hexadecimal characters.\n\n"
-            "Please check it and try:\n/verify_payment YOUR_TXID\n\n"
-            "CoinPilotX will never ask for your seed phrase or private key.",
-            reply_markup=main_menu()
-        )
-        return
-
-    existing_user = payment_txid_already_verified(txid)
-    if existing_user:
-        save_payment_verification(update.effective_user.id, txid, "btc", None, "duplicate_txid", f"Already verified for user {existing_user}.")
-        await update.message.reply_text(
-            "⚠️ This TXID has already been used for a verified CoinPilotX Pro activation.\n\n"
-            "If you believe this is a mistake, contact support with your payment details. Pro will not be activated from a reused TXID.",
-            reply_markup=main_menu()
-        )
-        return
-
-    is_paid, paid_sats, confirmations = verify_btc_tx(txid)
-    paid_btc = paid_sats / 100_000_000
-
-    if is_paid:
-        timestamp = datetime.now().isoformat()
-        activate_pro(update.effective_user.id, payment_type="btc")
-        save_payment_verification(update.effective_user.id, txid, "btc", paid_btc, "verified", f"Confirmations: {confirmations}")
-        send_subscription_email(update.effective_user.id, "btc", txid=txid, timestamp=timestamp)
-        await update.message.reply_text(
-            "✅ Payment verified successfully.\n\n"
-            "Your CoinPilotX Pro access is now active.\n\n"
-            f"TXID: {txid}\n"
-            f"Detected amount: {paid_btc:.8f} BTC\n"
-            f"Confirmations: {confirmations}\n\n"
-            "Educational only — not financial advice.\n"
-            "CoinPilotX will never ask for your seed phrase or private key.",
-            reply_markup=main_menu()
-        )
-    else:
-        status = "pending_or_wrong_amount" if paid_sats else "not_found_or_unpaid"
-        save_payment_verification(update.effective_user.id, txid, "btc", paid_btc, status, f"Confirmations: {confirmations}")
-        await update.message.reply_text(
-            "⏳ Payment not verified yet.\n\n"
-            "Pro has not been activated because the transaction could not be confirmed for the expected BTC amount yet.\n\n"
-            f"Detected: {paid_btc:.8f} BTC\n"
-            f"Confirmations: {confirmations}\n\n"
-            "Make sure you sent the correct BTC amount to the correct address, then try again later.\n\n"
-            "CoinPilotX will never ask for your seed phrase or private key.",
-            reply_markup=main_menu()
-        )
+    await update.message.reply_text(
+        "⭐ Website Checkout Required\n\n"
+        "Direct Telegram payment verification is no longer used. For your safety, Pro payments and subscription status are managed by your CoinPilotXAI website account.\n\n"
+        "1. Open your website account.\n"
+        "2. Upgrade to Pro on the website.\n"
+        "3. Return here and send your activation code with /connect CODE.\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
+        reply_markup=upgrade_payment_menu(update.effective_user.id),
+    )
 
 
 
@@ -5288,6 +5565,15 @@ def init_db():
         created_at TEXT
     )
     """)
+    for statement in [
+        "ALTER TABLE portfolio_snapshots ADD COLUMN total_cost REAL",
+        "ALTER TABLE portfolio_snapshots ADD COLUMN pnl_value REAL",
+        "ALTER TABLE portfolio_snapshots ADD COLUMN pnl_percent REAL",
+    ]:
+        try:
+            cur.execute(statement)
+        except Exception:
+            pass
     cur.execute("""
     CREATE TABLE IF NOT EXISTS whale_alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5433,6 +5719,18 @@ def init_db():
         created_at TEXT
     )
     """)
+    for statement in [
+        "ALTER TABLE email_logs ADD COLUMN email_type TEXT",
+        "ALTER TABLE email_logs ADD COLUMN recipient_email TEXT",
+        "ALTER TABLE email_logs ADD COLUMN stripe_event_id TEXT",
+        "ALTER TABLE email_logs ADD COLUMN stripe_session_id TEXT",
+        "ALTER TABLE email_logs ADD COLUMN sent_at TEXT",
+        "ALTER TABLE email_logs ADD COLUMN error_message TEXT",
+    ]:
+        try:
+            cur.execute(statement)
+        except Exception:
+            pass
     cur.execute("""
     CREATE TABLE IF NOT EXISTS brevo_contact_sync_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5577,6 +5875,62 @@ def init_db():
         updated_at TEXT
     )
     """)
+    for statement in [
+        "ALTER TABLE user_alerts ADD COLUMN symbol TEXT",
+        "ALTER TABLE user_alerts ADD COLUMN target_value REAL",
+        "ALTER TABLE user_alerts ADD COLUMN condition TEXT",
+        "ALTER TABLE user_alerts ADD COLUMN channel TEXT",
+        "ALTER TABLE user_alerts ADD COLUMN active INTEGER DEFAULT 1",
+        "ALTER TABLE user_alerts ADD COLUMN last_triggered_at TEXT",
+    ]:
+        try:
+            cur.execute(statement)
+        except Exception:
+            pass
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS portfolio_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        coin_name TEXT,
+        amount REAL,
+        average_buy_price REAL,
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS watchlist_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        coin_name TEXT,
+        created_at TEXT,
+        UNIQUE(user_id, symbol)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT,
+        event_label TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        telegram_chat_id INTEGER,
+        notification_type TEXT,
+        message TEXT,
+        sent_at TEXT,
+        status TEXT
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS referral_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5707,10 +6061,13 @@ def help_message():
         "/sportsedge — live sports edge board\n"
         "/livegames — live game list and risk labels\n"
         "/gameedge GAME_ID — deeper game intelligence\n"
-        "/subscribe — Pro subscription options\n"
+        "/subscribe — website Pro upgrade link\n"
         "/setemail you@example.com — save email for payment confirmations\n"
         "/myemail — show the email saved for confirmations\n"
-        "/verify_payment TXID — verify BTC payment and activate Pro if confirmed\n"
+        "/connect CODE — link your website account and activate Pro inside Telegram\n"
+        "/portfolio — website dashboard portfolio summary\n"
+        "/watchlist — website dashboard watchlist\n"
+        "/alerts — website dashboard alerts\n"
         "/account — account and subscription status\n"
         "/admin — admin dashboard summary\n\n"
         "Portfolio: /addholding BTC 0.02, /setbalance 1250, /portfolio_advice\n"
@@ -5783,91 +6140,42 @@ def format_free_vs_pro_response(user_id, free_text, pro_text=None):
 
 
 def openai_chat_completion(user_id, question):
+    logging.info("Telegram AI request started")
+    logging.info("Telegram user id: %s", user_id)
+    linked = get_linked_website_account(user_id)
+    logging.info("linked account found: %s", bool(linked))
+    logging.info("Pro access: %s", is_pro(user_id))
+    openai_key_loaded = bool(os.getenv("OPENAI_API_KEY"))
+    logging.info("OpenAI key loaded: %s", openai_key_loaded)
     allowed, limit_message = consume_ai_usage(user_id, "telegram_ai_assistant")
     if not allowed:
         return append_plan_footer(user_id, limit_message)
-    response = intelligence_service.assistant_response(user_id, question, pro=is_pro(user_id))
-    user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "telegram")
-    return append_plan_footer(user_id, response)
-    api_key = os.getenv("OPENAI_API_KEY")
-    pro = is_pro(user_id)
-    if not api_key:
-        fallback = (
-            "💬 AI Crypto Assistant\n\n"
-            "OpenAI chat is not connected yet. Add OPENAI_API_KEY in Railway Variables to enable full AI answers.\n\n"
-            "I can still help with built-in CoinPilotX commands like /analysis BTC, /portfolio_advice, /walletscan, and /scamstories.\n\n"
-            "Educational only — not financial advice."
-        )
-        return append_plan_footer(user_id, fallback)
-
-    system_prompt = (
-        "You are CoinPilotX, a premium crypto intelligence assistant powered by CoinPilotXAI Inc. It may use OpenAI technology for AI responses. "
-        "Act as a cautious crypto analyst, scam protection advisor, blockchain educator, portfolio coach, and market explainer. "
-        "Never guarantee profits, never claim certainty, never ask for seed phrases/private keys/recovery phrases/wallet passwords, "
-        "and do not impersonate a licensed financial advisor. If a user mentions suspicious links, seed phrases, private keys, "
-        "wallet recovery, wallet passwords, approvals, or transaction signing, prioritize safety and clearly say CoinPilotX will never "
-        "ask for your seed phrase, private key, or wallet password. Keep answers concise and safety-focused. "
-    )
-    if pro:
-        system_prompt += (
-            "The user is Pro. Use structured sections: Market Context, Risk Factors, Opportunity Factors, "
-            "Scam/Safety Watch, Suggested Next Step, What Could Change This View. Include confidence and risk language when relevant."
-        )
-        max_tokens = 850
-    else:
-        system_prompt += (
-            "The user is Free. Give a short, simple answer with limited market context. Mention Pro only briefly for deeper analysis."
-        )
-        max_tokens = 260
-
-    payload = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question},
-        ],
-        "max_tokens": max_tokens,
-        "temperature": 0.35,
-    }
-
     try:
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=25,
-        )
-        response.raise_for_status()
-        answer = response.json()["choices"][0]["message"]["content"].strip()
+        response = intelligence_service.assistant_response(user_id, question, pro=is_pro(user_id))
+        if openai_key_loaded:
+            logging.info("OpenAI response success")
     except Exception as exc:
-        logging.info("OpenAI chat failed: %s", exc)
-        answer = (
+        logging.warning("OpenAI error message: %s", exc)
+        log_product_event(user_id, "openai_error", {"error": str(exc)[:300], "surface": "telegram"})
+        response = (
             "💬 AI Crypto Assistant\n\n"
-            "The AI assistant is temporarily unavailable. Try again in a moment, or use /analysis BTC, /walletscan, or /portfolio_advice.\n\n"
-            "Educational only — not financial advice."
+            "AI intelligence is temporarily unavailable. Please try again shortly.\n\n"
+            "Educational information only. Not financial, betting, investment, or legal advice."
         )
-
-    if "Educational only" not in answer and any(word in question.lower() for word in ["buy", "sell", "market", "price", "portfolio", "btc", "eth", "crypto", "invest"]):
-        answer += "\n\nEducational only — not financial advice."
-
-    answer += "\n\nPowered by CoinPilotXAI Inc."
-
     try:
         conn = db()
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO ai_chat_history (user_id, role, message, response, is_pro, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, "user", question, answer, 1 if pro else 0, datetime.now().isoformat())
+            (user_id, "user", question, response, 1 if is_pro(user_id) else 0, datetime.now().isoformat()),
         )
         conn.commit()
         conn.close()
     except Exception as exc:
         logging.info("AI chat history save failed: %s", exc)
-
-    return append_plan_footer(user_id, answer)
+    user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "telegram")
+    log_product_event(user_id, "telegram_ai_used", {"linked_account": bool(linked), "pro": is_pro(user_id)})
+    return append_plan_footer(user_id, response)
 
 
 def safe_get_text(url, timeout=8):
@@ -7435,6 +7743,14 @@ def account_summary(user_id):
         trial_line = f"Trial ends: {access['trial_end']} ({access['days_remaining']} days remaining)\n"
     elif access["trial_expired"]:
         trial_line = "Trial: Ended — upgrade anytime when deeper intelligence becomes useful.\n"
+    portfolio = portfolio_service.calculate_user_portfolio(website_user["user_id"])
+    portfolio_line = (
+        f"\nPortfolio: ${portfolio.get('total_value', 0):,.2f} tracked"
+        f" · P/L {portfolio.get('pnl_percent', 0):+.2f}%\n"
+        if portfolio.get("holdings")
+        else "\nPortfolio: No website holdings saved yet.\n"
+    )
+    pro_line = "\n✅ Pro active — deeper CoinPilotX intelligence enabled.\n" if has_pro_access(website_user) else "\nUpgrade Pro on the website when you want deeper intelligence.\n"
     return (
         "👤 CoinPilotX Account\n\n"
         f"Name: {name}\n"
@@ -7444,7 +7760,10 @@ def account_summary(user_id):
         f"{trial_line}"
         "Telegram: Connected\n"
         f"Email Updates: {'Enabled' if website_user.get('email_opt_in') else 'Disabled'}\n"
-        f"SMS Updates: {'Enabled' if website_user.get('sms_opt_in') else 'Disabled'}"
+        f"SMS Updates: {'Enabled' if website_user.get('sms_opt_in') else 'Disabled'}\n"
+        f"{portfolio_line}"
+        "Dashboard: https://coinpilotx.app/dashboard"
+        f"{pro_line}"
     )
 
 
@@ -7505,14 +7824,15 @@ def get_linked_website_account(telegram_user_id):
 def account_reply_markup(telegram_user_id):
     if get_linked_website_account(telegram_user_id):
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("Open Dashboard", url="https://coinpilotx.app/account")],
-            [InlineKeyboardButton("Upgrade Pro", callback_data="upgrade_pro")],
+            [InlineKeyboardButton("Open Dashboard", url="https://coinpilotx.app/dashboard")],
+            [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(telegram_user_id))],
             [InlineKeyboardButton("Settings", url="https://coinpilotx.app/account/settings")],
             [InlineKeyboardButton("Help", callback_data="menu_help")],
         ])
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Create Account", url="https://coinpilotx.app/signup")],
         [InlineKeyboardButton("Login", url="https://coinpilotx.app/login")],
+        [InlineKeyboardButton("Open Website Account", url="https://coinpilotx.app/account")],
         [InlineKeyboardButton("Help", callback_data="menu_help")],
     ])
 
@@ -7949,9 +8269,19 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
     if linked_user:
         sync_brevo_contact_safe({**linked_user, "source": "telegram_link"}, entity_type="user", entity_id=row[1])
     logging.info("Telegram linking success for Telegram user %s", update.effective_user.id)
+    pro_line = (
+        "\n\nYour CoinPilotXAI Pro access is now active in Telegram.\n\n"
+        "If you had any payment issue, email support@coinpilotx.app with your account email."
+        if linked_user and has_pro_access(linked_user)
+        else "\n\nYour Telegram account is linked. Upgrade Pro on the website when you want deeper intelligence."
+    )
+    log_product_event(row[1], "telegram_account_linked", {"telegram_user_id": update.effective_user.id})
+    if linked_user and has_pro_access(linked_user):
+        log_product_event(row[1], "telegram_pro_verified", {"telegram_user_id": update.effective_user.id})
     await update.message.reply_text(
         "✅ Telegram connected successfully.\n\n"
-        "Your CoinPilotX account is now connected to this Telegram profile. You can now use the Account button anytime to view your plan, subscription, preferences, and account status.",
+        "Your CoinPilotX account is now connected to this Telegram profile. You can now use the Account button anytime to view your plan, subscription, preferences, and account status."
+        f"{pro_line}",
         reply_markup=account_reply_markup(update.effective_user.id),
     )
 
@@ -7961,7 +8291,7 @@ async def help_account_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "👤 CoinPilotX Account Help\n\n"
         "Create account: https://coinpilotx.app/signup\n"
         "Login: https://coinpilotx.app/login\n"
-        "Dashboard: https://coinpilotx.app/account\n\n"
+        "Dashboard: https://coinpilotx.app/dashboard\n\n"
         "To connect Telegram:\n"
         "1. Log in on the website.\n"
         "2. Open Account Settings.\n"
@@ -7970,6 +8300,89 @@ async def help_account_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
         reply_markup=account_reply_markup(update.effective_user.id),
     )
+
+
+def linked_account_or_message(telegram_user_id):
+    user = get_linked_website_account(telegram_user_id)
+    if user:
+        return user, None
+    return None, (
+        "👤 Account Not Connected\n\n"
+        "Your Telegram is not linked yet. Create or log in on the website, then generate a Telegram activation code from Account Settings.\n\n"
+        "Create account: https://coinpilotx.app/signup\n"
+        "Login: https://coinpilotx.app/login\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
+    )
+
+
+async def website_portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    user, message = linked_account_or_message(update.effective_user.id)
+    if not user:
+        await update.message.reply_text(message, reply_markup=account_reply_markup(update.effective_user.id))
+        return
+    data = portfolio_service.calculate_user_portfolio(user["user_id"])
+    holdings = data.get("holdings", [])
+    lines = [
+        "💼 CoinPilotX Website Portfolio",
+        "",
+        f"Total value: ${data.get('total_value', 0):,.2f}",
+        f"Total cost: ${data.get('total_cost', 0):,.2f}",
+        f"P/L: ${data.get('pnl_value', 0):+,.2f} ({data.get('pnl_percent', 0):+.2f}%)",
+    ]
+    if holdings:
+        lines.append("\nTop holdings:")
+        for item in holdings[:6]:
+            lines.append(
+                f"• {item['symbol']}: {item['amount']:.6g} ≈ ${item['current_value']:,.2f} "
+                f"({item['pnl_percent']:+.2f}% P/L)"
+            )
+    else:
+        lines.append("\nNo website holdings saved yet. Add holdings from your dashboard.")
+    lines.append("\nDashboard: https://coinpilotx.app/dashboard")
+    lines.append("Educational information only. Not financial, betting, investment, or legal advice.")
+    await update.message.reply_text("\n".join(lines), reply_markup=account_reply_markup(update.effective_user.id))
+
+
+async def website_watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    user, message = linked_account_or_message(update.effective_user.id)
+    if not user:
+        await update.message.reply_text(message, reply_markup=account_reply_markup(update.effective_user.id))
+        return
+    items = portfolio_service.get_watchlist(user["user_id"])
+    lines = ["👁️ CoinPilotX Website Watchlist", ""]
+    if items:
+        for item in items[:12]:
+            price_text = "unavailable" if item.get("price") is None else f"${item['price']:,.4g}"
+            change_text = "n/a" if item.get("change_24h") is None else f"{item['change_24h']:+.2f}% 24h"
+            lines.append(f"• {item['symbol']}: {price_text} · {change_text}")
+    else:
+        lines.append("No watchlist coins saved yet. Add coins from your dashboard.")
+    lines.append("\nDashboard: https://coinpilotx.app/dashboard")
+    await update.message.reply_text("\n".join(lines), reply_markup=account_reply_markup(update.effective_user.id))
+
+
+async def website_alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    user, message = linked_account_or_message(update.effective_user.id)
+    if not user:
+        await update.message.reply_text(message, reply_markup=account_reply_markup(update.effective_user.id))
+        return
+    alerts = portfolio_service.get_alerts(user["user_id"])
+    lines = ["🚨 CoinPilotX Alerts Center", ""]
+    if alerts:
+        for alert in alerts[:12]:
+            status = "active" if alert.get("active") else "paused"
+            lines.append(
+                f"• {alert.get('symbol') or 'Portfolio'} {alert.get('condition') or alert.get('alert_type')} "
+                f"{alert.get('target_value') or ''} · {status}"
+            )
+    else:
+        lines.append("No website alerts saved yet. Create price or portfolio alerts from your dashboard.")
+    lines.append("\nDashboard: https://coinpilotx.app/dashboard")
+    lines.append("Educational information only. Not financial, betting, investment, or legal advice.")
+    await update.message.reply_text("\n".join(lines), reply_markup=account_reply_markup(update.effective_user.id))
 
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -8072,7 +8485,7 @@ def sync_stripe_subscription(subscription):
     user_id = find_user_by_stripe(customer_id, subscription_id, metadata.get("user_id") or metadata.get("client_reference_id"))
     if not user_id:
         logging.info("Stripe subscription sync skipped: no matching user for customer=%s subscription=%s", customer_id, subscription_id)
-        return False
+        return None
     raw_status = (subscription.get("status") or "").lower()
     status = "active" if raw_status in {"active", "trialing"} else ("past_due" if raw_status in {"past_due", "unpaid"} else ("canceled" if raw_status in {"canceled", "incomplete_expired"} else raw_status or "inactive"))
     period_end = stripe_period_end_to_iso(subscription.get("current_period_end"))
@@ -8120,7 +8533,7 @@ def sync_stripe_subscription(subscription):
     user = load_account_by_id(user_id)
     if user:
         sync_brevo_contact_safe({**user, "source": "stripe_subscription"}, entity_type="user", entity_id=user_id)
-    return True
+    return user_id
 
 
 def sync_stripe_invoice(invoice, event_type):
@@ -8130,14 +8543,14 @@ def sync_stripe_invoice(invoice, event_type):
     user_id = find_user_by_stripe(customer_id, subscription_id)
     if not user_id:
         logging.info("Stripe invoice sync skipped: no matching user for customer=%s subscription=%s", customer_id, subscription_id)
-        return False
+        return None
     lines = (invoice.get("lines") or {}).get("data") or []
     period_end = None
     if lines:
         period_end = stripe_period_end_to_iso((lines[0].get("period") or {}).get("end"))
-    if event_type == "invoice.paid":
+    if event_type in {"invoice.paid", "invoice.payment_succeeded"}:
         activate_pro(user_id, payment_type="stripe", stripe_customer_id=customer_id, stripe_subscription_id=subscription_id, subscription_status="active", pro_expires_at=period_end)
-        return True
+        return user_id
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -8147,7 +8560,7 @@ def sync_stripe_invoice(invoice, event_type):
     conn.commit()
     conn.close()
     log_product_event(user_id, "pro_subscription_payment_failed", {"invoice": invoice.get("id")})
-    return True
+    return user_id
 
 
 def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, stripe_subscription_id=None, subscription_status="active", pro_expires_at=None):
@@ -8736,21 +9149,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "upgrade_pro":
+        log_product_event(user_id, "telegram_upgrade_clicked", {"source": "bot_button"})
         await query.message.reply_text(pro_upgrade_message(user_id), reply_markup=upgrade_payment_menu(user_id))
         return
 
     if data == "pay_btc":
         await query.message.reply_text(
-            f"₿ Pay with Bitcoin\n\nSend exactly: {BTC_PRO_PRICE}\n\nBTC address:\n{BTC_PAYMENT_ADDRESS}\n\n"
-            "For faster activation:\n"
-            "1. Send payment\n"
-            "2. Type:\n   /verify_payment YOUR_TXID\n"
-            "3. CoinPilotX will verify the transaction and activate Pro if confirmed.\n\n"
-            "Optional but recommended:\n"
-            "Set your email for payment confirmations:\n  /setemail you@example.com\n\n"
-            "CoinPilotX is operated by CoinPilotXAI Inc.\n"
-            "CoinPilotX will never ask for your seed phrase or private key.",
-            reply_markup=main_menu()
+            "⭐ Website Checkout Required\n\n"
+            "For security and account consistency, Pro payments now happen only on the CoinPilotXAI website.\n\n"
+            "Create or log in to your website account, upgrade there, then return here and send your activation code with /connect CODE.\n\n"
+            "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
+            reply_markup=upgrade_payment_menu(user_id)
         )
         return
 
@@ -8855,7 +9264,9 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("track", track))
-    app.add_handler(CommandHandler("watchlist", show_watchlist))
+    app.add_handler(CommandHandler("watchlist", website_watchlist_command))
+    app.add_handler(CommandHandler("portfolio", website_portfolio_command))
+    app.add_handler(CommandHandler("alerts", website_alerts_command))
     app.add_handler(CommandHandler("alerts_on", alerts_on))
     app.add_handler(CommandHandler("alerts_off", alerts_off))
     app.add_handler(CommandHandler("addholding", addholding))

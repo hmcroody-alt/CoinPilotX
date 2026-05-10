@@ -23,8 +23,13 @@ def fallback_response(question, pro=False):
 
 def assistant_response(user_id, question, pro=False):
     api_key = os.getenv("OPENAI_API_KEY")
+    import logging
+    logging.info("OpenAI key loaded: %s", bool(api_key))
     if not api_key:
-        return fallback_response(question, pro)
+        return (
+            "AI intelligence is temporarily unavailable. The OpenAI key is not configured.\n\n"
+            "Educational information only. Not financial, betting, investment, or legal advice."
+        )
     snapshot = market_data.live_market_board(limit=10)
     system = (
         "You are CoinPilotX, powered by CoinPilotXAI Inc. Give honest crypto, wallet, scam, market, sports, and portfolio education. "
@@ -50,10 +55,13 @@ def assistant_response(user_id, question, pro=False):
         )
         response.raise_for_status()
         text = response.json()["choices"][0]["message"]["content"].strip()
-        if "financial advice" not in text.lower():
-            text += f"\n\n{DISCLAIMER}"
+        required = "Educational information only. Not financial, betting, investment, or legal advice."
+        if "not financial" not in text.lower() and "financial advice" not in text.lower():
+            text += f"\n\n{required}"
+        logging.info("OpenAI response success")
         return text
-    except Exception:
+    except Exception as exc:
+        logging.warning("OpenAI error message: %s", exc)
         return fallback_response(question, pro)
 
 

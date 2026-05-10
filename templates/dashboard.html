@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | CoinPilotXAI Inc.</title>
+  <meta name="description" content="Private CoinPilotXAI Inc. account dashboard for portfolio tracking, watchlists, alerts, and Telegram account sync." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="canonical" href="https://coinpilotx.app/dashboard" />
+  <meta name="theme-color" content="#00e5ff" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <link rel="manifest" href="/manifest.json" />
+  <style>
+    :root { --bg:#050b14; --panel:#0d1627; --panel2:#111d32; --line:rgba(110,223,246,.18); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; --red:#ff6b7a; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:var(--text); background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 30rem),radial-gradient(circle at 90% 10%,rgba(54,229,143,.12),transparent 26rem),linear-gradient(135deg,#050b14,#081421 60%,#04070d); line-height:1.6; overflow-x:hidden; }
+    a { color:inherit; }
+    .container { width:min(100% - 32px,1240px); margin:0 auto; }
+    header { position:sticky; top:0; z-index:20; border-bottom:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.88); backdrop-filter:blur(18px); }
+    nav { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    .brand { display:inline-flex; align-items:center; gap:12px; text-decoration:none; font-weight:900; }
+    .brand img { width:44px; height:44px; object-fit:contain; filter:drop-shadow(0 0 18px rgba(110,223,246,.3)); }
+    .nav-links { display:flex; gap:10px; flex-wrap:wrap; }
+    .button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 15px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,.055); color:var(--text); text-decoration:none; font-weight:850; cursor:pointer; }
+    .button.primary { color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--green),var(--cyan)); }
+    .button.gold { color:#1c1303; border-color:transparent; background:linear-gradient(135deg,var(--gold),#ffaf37); }
+    main { padding:34px 0 64px; }
+    .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:18px; align-items:stretch; margin-bottom:18px; }
+    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:20px; }
+    .kicker { color:var(--green); font-weight:900; letter-spacing:.08em; text-transform:uppercase; font-size:12px; }
+    h1 { margin:8px 0 8px; font-size:clamp(34px,6vw,58px); line-height:1; letter-spacing:0; }
+    h2 { margin:0 0 12px; font-size:clamp(22px,3vw,32px); }
+    h3 { margin:0 0 8px; }
+    p,.muted { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+    .wide { grid-column:span 2; }
+    .metric { font-size:clamp(28px,5vw,48px); font-weight:950; margin:4px 0; }
+    .green { color:var(--green); } .red { color:var(--red); } .cyan { color:var(--cyan); }
+    .list { display:grid; gap:10px; }
+    .row { display:grid; grid-template-columns:1.2fr .8fr .8fr .8fr auto; gap:10px; align-items:center; padding:12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.04); }
+    .watch-row,.alert-row,.activity-row { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.04); }
+    form { display:grid; gap:10px; }
+    input,select,textarea { width:100%; min-height:44px; border:1px solid rgba(110,223,246,.18); border-radius:8px; background:rgba(255,255,255,.055); color:var(--text); padding:11px 12px; font:inherit; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .status { display:inline-flex; align-items:center; gap:8px; color:#c8ffe2; font-weight:850; }
+    .status::before { content:""; width:9px; height:9px; border-radius:999px; background:var(--green); box-shadow:0 0 16px rgba(54,229,143,.8); }
+    .chart { display:flex; align-items:end; gap:6px; height:140px; padding-top:12px; }
+    .bar { flex:1; min-height:8px; border-radius:8px 8px 0 0; background:linear-gradient(180deg,var(--cyan),var(--green)); opacity:.82; }
+    .notice { padding:13px 14px; border-radius:10px; border:1px solid rgba(255,209,102,.24); background:rgba(255,209,102,.08); color:#ffe4a8; }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column} }
+    @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <nav>
+        <a class="brand" href="/"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI Inc.</span></a>
+        <div class="nav-links">
+          <a class="button" href="/account">Account</a>
+          <a class="button" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+          <a class="button" href="https://t.me/DocShieldX_bot">Open Telegram</a>
+          <a class="button" href="/logout">Logout</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <article class="card">
+        <div class="kicker">Personal Intelligence Dashboard</div>
+        <h1 data-user-name>Welcome back</h1>
+        <p>Track your manual crypto holdings, watchlist, alerts, Telegram connection, and AI risk context from the same account your bot uses.</p>
+        <div class="actions">
+          <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
+          <button class="button" type="button" data-scroll="#add-watchlist">Add Watchlist Coin</button>
+          <button class="button gold" type="button" data-scroll="#add-alert">Create Alert</button>
+        </div>
+      </article>
+      <article class="card">
+        <div class="status">Live account sync</div>
+        <p><strong>Plan:</strong> <span data-plan>Loading...</span></p>
+        <p><strong>Subscription:</strong> <span data-subscription>Loading...</span></p>
+        <p><strong>Telegram:</strong> <span data-telegram>Loading...</span></p>
+        <p><strong>Pro/trial expiration:</strong> <span data-expires>Loading...</span></p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <div class="kicker">Portfolio Value</div>
+        <div class="metric" data-total-value>$0.00</div>
+        <p>P/L: <strong data-pnl>$0.00</strong> · <strong data-pnl-percent>0.00%</strong></p>
+        <p class="muted" data-top-movers>Top gainer/loser will appear here.</p>
+      </article>
+      <article class="card">
+        <div class="kicker">Live Market Snapshot</div>
+        <div class="list" data-market-snapshot><p class="muted">Loading market data...</p></div>
+      </article>
+      <article class="card">
+        <div class="kicker">Today's Risk Note</div>
+        <p data-ai-insight>Loading AI portfolio insight...</p>
+      </article>
+
+      <article class="card wide">
+        <h2>Portfolio Tracker</h2>
+        <div class="list" data-holdings><p class="muted">No holdings yet.</p></div>
+      </article>
+      <article class="card" id="add-holding">
+        <h2>Add Holding</h2>
+        <form data-portfolio-form>
+          <div class="form-grid">
+            <input name="symbol" placeholder="Symbol, e.g. BTC" required>
+            <input name="coin_name" placeholder="Coin name, optional">
+            <input name="amount" type="number" min="0" step="any" placeholder="Amount held" required>
+            <input name="average_buy_price" type="number" min="0" step="any" placeholder="Average buy price">
+          </div>
+          <textarea name="notes" placeholder="Notes, optional"></textarea>
+          <button class="button primary" type="submit">Save Holding</button>
+          <p class="muted" data-portfolio-message></p>
+        </form>
+      </article>
+
+      <article class="card">
+        <h2>Allocation Snapshot</h2>
+        <div class="chart" data-allocation-chart></div>
+      </article>
+      <article class="card wide">
+        <h2>Watchlist</h2>
+        <div class="list" data-watchlist><p class="muted">No watchlist coins yet.</p></div>
+      </article>
+      <article class="card" id="add-watchlist">
+        <h2>Add Watchlist Coin</h2>
+        <form data-watchlist-form>
+          <input name="symbol" placeholder="Symbol, e.g. ETH" required>
+          <input name="coin_name" placeholder="Coin name, optional">
+          <button class="button primary" type="submit">Save Watchlist Coin</button>
+          <p class="muted" data-watchlist-message></p>
+        </form>
+      </article>
+
+      <article class="card wide">
+        <h2>Alerts Center</h2>
+        <div class="list" data-alerts><p class="muted">No active alerts yet.</p></div>
+      </article>
+      <article class="card" id="add-alert">
+        <h2>Create Alert</h2>
+        <form data-alert-form>
+          <div class="form-grid">
+            <select name="alert_type"><option value="price">Price</option><option value="move_24h">24h Move %</option><option value="portfolio_value">Portfolio Value</option></select>
+            <input name="symbol" placeholder="Symbol, e.g. SOL" required>
+            <select name="condition"><option value="above">Above</option><option value="below">Below</option></select>
+            <input name="target_value" type="number" step="any" placeholder="Target value" required>
+          </div>
+          <select name="channel"><option value="telegram">Telegram</option><option value="website">Website</option></select>
+          <button class="button gold" type="submit">Create Alert</button>
+          <p class="muted" data-alert-message></p>
+        </form>
+      </article>
+
+      <article class="card wide">
+        <h2>Activity Timeline</h2>
+        <div class="list" data-activity><p class="muted">Activity will appear here.</p></div>
+      </article>
+      <article class="card">
+        <h2>Quick Actions</h2>
+        <div class="list">
+          <a class="button primary" href="/#console">Ask AI</a>
+          <a class="button" href="/#console">Run Scam Shield</a>
+          <a class="button" href="/#day-signal">Run Day Signal</a>
+          <a class="button gold" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+        </div>
+      </article>
+    </section>
+
+    <p class="notice">Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds, does not ask for seed phrases/private keys, and does not provide financial advice.</p>
+  </main>
+
+  <script>
+    const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
+    const pct = value => (Number(value || 0) >= 0 ? "+" : "") + Number(value || 0).toFixed(2) + "%";
+    const text = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
+    const postJson = (url, payload, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed"); return j; }));
+
+    function render(data) {
+      text("[data-user-name]", "Welcome back, " + (data.user.name || "CoinPilotX user"));
+      text("[data-plan]", data.user.plan);
+      text("[data-subscription]", data.user.subscription_status || "inactive");
+      text("[data-telegram]", data.user.telegram_linked ? "Connected" : "Not connected");
+      text("[data-expires]", data.user.pro_expires_at || "Not set");
+      text("[data-total-value]", money(data.portfolio.total_value));
+      text("[data-pnl]", money(data.portfolio.pnl_value));
+      text("[data-pnl-percent]", pct(data.portfolio.pnl_percent));
+      text("[data-ai-insight]", data.ai_insight || data.safety);
+      const mover = data.portfolio.top_gainer ? "Top gainer: " + data.portfolio.top_gainer.symbol + " · Top loser: " + (data.portfolio.top_loser ? data.portfolio.top_loser.symbol : "n/a") : "Add holdings to see top gainer and loser.";
+      text("[data-top-movers]", mover);
+
+      document.querySelector("[data-holdings]").innerHTML = (data.portfolio.holdings || []).map(item => `
+        <div class="row">
+          <strong>${item.symbol}</strong>
+          <span>${money(item.price)}</span>
+          <span>${money(item.value)}</span>
+          <span class="${item.pnl_value >= 0 ? "green" : "red"}">${money(item.pnl_value)} · ${pct(item.pnl_percent)}</span>
+          <button class="button" data-delete-portfolio="${item.id}">Delete</button>
+        </div>`).join("") || '<p class="muted">No holdings yet.</p>';
+
+      document.querySelector("[data-watchlist]").innerHTML = (data.watchlist || []).map(item => `
+        <div class="watch-row">
+          <strong>${item.symbol}</strong>
+          <span>${money(item.price)} · ${pct(item.change_24h)}</span>
+          <button class="button" data-delete-watchlist="${item.id}">Delete</button>
+        </div>`).join("") || '<p class="muted">No watchlist coins yet.</p>';
+
+      document.querySelector("[data-alerts]").innerHTML = (data.alerts || []).map(item => `
+        <div class="alert-row">
+          <strong>${item.symbol || item.target || "Alert"}</strong>
+          <span>${item.alert_type || "price"} ${item.condition || ""} ${item.target_value || item.threshold || ""}</span>
+          <button class="button" data-delete-alert="${item.id}">Delete</button>
+        </div>`).join("") || '<p class="muted">No active alerts yet.</p>';
+
+      document.querySelector("[data-market-snapshot]").innerHTML = (data.market.markets || []).slice(0, 4).map(item => `
+        <div class="watch-row"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></div>`).join("") || '<p class="muted">Live price feed temporarily unavailable.</p>';
+
+      document.querySelector("[data-activity]").innerHTML = (data.activity || []).map(item => `
+        <div class="activity-row"><strong>${item.event_type.replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${item.created_at || ""}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>';
+
+      const chart = document.querySelector("[data-allocation-chart]");
+      const holdings = data.portfolio.holdings || [];
+      const max = Math.max(...holdings.map(i => i.value || 0), 1);
+      chart.innerHTML = holdings.map(i => `<div class="bar" title="${i.symbol} ${money(i.value)}" style="height:${Math.max(8, (i.value || 0) / max * 100)}%"></div>`).join("") || '<p class="muted">Add holdings to see allocation.</p>';
+    }
+
+    async function loadDashboard() {
+      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || "Dashboard failed");
+      render(data);
+    }
+
+    document.addEventListener("submit", async event => {
+      if (event.target.matches("[data-portfolio-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        const payload = Object.fromEntries(new FormData(form).entries());
+        try { await postJson("/api/portfolio", payload); form.reset(); text("[data-portfolio-message]", "Holding saved."); loadDashboard(); } catch (err) { text("[data-portfolio-message]", err.message); }
+      }
+      if (event.target.matches("[data-watchlist-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        try { await postJson("/api/watchlist", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-watchlist-message]", "Watchlist coin saved."); loadDashboard(); } catch (err) { text("[data-watchlist-message]", err.message); }
+      }
+      if (event.target.matches("[data-alert-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        try { await postJson("/api/alerts", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-alert-message]", "Alert created."); loadDashboard(); } catch (err) { text("[data-alert-message]", err.message); }
+      }
+    });
+
+    document.addEventListener("click", async event => {
+      const scrollButton = event.target.closest("[data-scroll]");
+      if (scrollButton) document.querySelector(scrollButton.dataset.scroll)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const holding = event.target.closest("[data-delete-portfolio]");
+      const watch = event.target.closest("[data-delete-watchlist]");
+      const alert = event.target.closest("[data-delete-alert]");
+      if (holding) { await fetch("/api/portfolio/" + holding.dataset.deletePortfolio, { method: "DELETE" }); loadDashboard(); }
+      if (watch) { await fetch("/api/watchlist/" + watch.dataset.deleteWatchlist, { method: "DELETE" }); loadDashboard(); }
+      if (alert) { await fetch("/api/alerts/" + alert.dataset.deleteAlert, { method: "DELETE" }); loadDashboard(); }
+    });
+
+    loadDashboard().catch(err => { text("[data-ai-insight]", err.message); });
+    window.setInterval(loadDashboard, 60000);
+  </script>
+  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
+</body>
+</html>

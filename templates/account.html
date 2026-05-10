@@ -130,7 +130,9 @@
         </a>
         <div class="nav-links">
           <a href="/">Home</a>
+          <a href="/dashboard">Dashboard</a>
           <a href="/account">Account</a>
+          <a href="/upgrade">Upgrade</a>
           <a href="/account/settings">Settings</a>
           <a href="/support">Support</a>
           {% if current_user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
@@ -227,9 +229,40 @@
           {% endif %}
           <div class="actions">
             <a class="button primary" href="/account/settings">Account Settings</a>
-            <a class="button primary" href="https://t.me/DocShieldX_bot">Upgrade Pro</a>
+            <a class="button primary" href="/dashboard">Open Dashboard</a>
+            <a class="button primary" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
             <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
             <a class="button" href="/support">Support</a>
+          </div>
+
+        {% elif page == "upgrade" %}
+          <div class="grid">
+            <div class="profile-card">
+              <h3>CoinPilotX Pro</h3>
+              <p><strong>Price:</strong> $14.99/month</p>
+              <p><strong>Current plan:</strong> {{ access.label }}</p>
+              <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
+              <p>Pro unlocks deeper AI intelligence, wallet and transaction risk details, portfolio decision support, whale intelligence, Sports Edge context, advanced scam protection, and Telegram notifications.</p>
+              <a class="button primary" href="/upgrade?checkout=1&source=website" data-analytics="stripe_checkout_started">Continue to Secure Checkout</a>
+            </div>
+            <div class="profile-card">
+              <h3>Telegram Activation</h3>
+              <p>After upgrading, return to Telegram and send your activation/link code to connect Pro access inside the bot.</p>
+              <p>Generate the code from <a href="/account/settings">Account Settings</a> after login. Codes expire in 10 minutes.</p>
+              <p>If you experience any issue after payment, email <a href="mailto:support@coinpilotx.app">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
+            </div>
+          </div>
+
+        {% elif page == "upgrade_success" %}
+          <div class="profile-card">
+            <h3>Payment Confirmation In Progress</h3>
+            <p>Your Pro upgrade is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
+            <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@coinpilotx.app">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
+            <div class="actions">
+              <a class="button primary" href="/dashboard">Open Dashboard</a>
+              <a class="button" href="/account/settings">Get Telegram Activation Code</a>
+              <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
+            </div>
           </div>
 
         {% elif page == "settings" %}
