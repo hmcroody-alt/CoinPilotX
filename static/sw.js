@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v4";
+const CACHE_NAME = "coinpilotx-cache-v5";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",

@@ -509,18 +509,37 @@ def reset_pwa_page():
       <script>
         (async function () {
           try {
+            console.log("[CoinPilotXAI PWA] reset started");
             if ("serviceWorker" in navigator) {
               var regs = await navigator.serviceWorker.getRegistrations();
               await Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+              console.log("[CoinPilotXAI PWA] service workers unregistered", regs.length);
             }
             if ("caches" in window) {
               var keys = await caches.keys();
               await Promise.all(keys.map(function (key) { return caches.delete(key); }));
+              console.log("[CoinPilotXAI PWA] caches deleted", keys);
+            }
+            if ("indexedDB" in window && indexedDB.databases) {
+              var databases = await indexedDB.databases();
+              await Promise.all(databases.map(function (db) {
+                return db && db.name ? new Promise(function (resolve) {
+                  var req = indexedDB.deleteDatabase(db.name);
+                  req.onsuccess = req.onerror = req.onblocked = function () { resolve(); };
+                }) : Promise.resolve();
+              }));
+              console.log("[CoinPilotXAI PWA] indexedDB cleared");
             }
             try { localStorage.clear(); } catch (err) {}
             try { sessionStorage.clear(); } catch (err) {}
+            try {
+              localStorage.removeItem("coinpilotx_install_popup_dismissed_until");
+              localStorage.removeItem("coinpilotx_offline");
+              localStorage.removeItem("coinpilotx_offline_mode");
+              localStorage.removeItem("offline");
+            } catch (err) {}
           } finally {
-            setTimeout(function () { location.href = "/?pwa_reset=" + Date.now(); }, 1000);
+            setTimeout(function () { location.href = "/?reset_pwa=1&ts=" + Date.now(); }, 1000);
           }
         })();
       </script>

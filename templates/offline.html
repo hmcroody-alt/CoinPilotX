@@ -68,6 +68,12 @@
       cursor: pointer;
       font: inherit;
     }
+    .secondary {
+      color: #f2fbff;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(0,229,255,.22);
+      margin-left: 10px;
+    }
     .status { min-height: 24px; }
   </style>
 </head>
@@ -79,6 +85,7 @@
     <p>Reconnect to load market data, wallet checks, Sports Edge, and Telegram-powered intelligence.</p>
     <p class="status" data-health-status>Checking connection...</p>
     <button type="button" data-try-again>Try Again</button>
+    <a class="secondary" href="/reset-pwa">Reset App Cache</a>
   </main>
   <script>
     (function () {
