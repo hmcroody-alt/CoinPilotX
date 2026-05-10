@@ -448,6 +448,40 @@
       margin: 7px 0;
     }
 
+    .pwa-install-fallback {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 209, 102, 0.28);
+      border-radius: 10px;
+      color: #ffe4a8;
+      background: rgba(255, 209, 102, 0.08);
+    }
+
+    .safari-share-cue {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid rgba(0, 245, 255, 0.32);
+      border-radius: 999px;
+      color: #dffbff;
+      background: linear-gradient(90deg, rgba(0, 245, 255, 0.12), rgba(54, 229, 143, 0.12));
+      box-shadow: 0 0 0 0 rgba(0, 245, 255, 0.38);
+      animation: shareCuePulse 1.35s ease-in-out infinite;
+      text-align: center;
+      font-weight: 900;
+    }
+
+    @keyframes shareCuePulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(0, 245, 255, 0.32);
+        transform: translateY(0);
+      }
+
+      50% {
+        box-shadow: 0 0 0 10px rgba(0, 245, 255, 0);
+        transform: translateY(-2px);
+      }
+    }
+
     .pwa-install-actions {
       display: flex;
       gap: 12px;
@@ -2654,6 +2688,8 @@
         <li>Tap “Add to Home Screen”.</li>
         <li>Tap Add.</li>
       </ol>
+      <div class="safari-share-cue" data-share-cue hidden>Tap Share → Add to Home Screen</div>
+      <div class="pwa-install-fallback" data-install-fallback hidden>Use browser menu → Install App / Add to Home Screen.</div>
       <div class="pwa-install-actions">
         <button class="button primary" type="button" data-install-confirm>Install App</button>
         <button class="button" type="button" data-close-ios-install>Not Now</button>
@@ -3960,6 +3996,8 @@
       var closeIos = document.querySelector("[data-close-ios-install]");
       var installConfirm = document.querySelector("[data-install-confirm]");
       var installInstructions = document.querySelector("[data-install-instructions]");
+      var installFallback = document.querySelector("[data-install-fallback]");
+      var shareCue = document.querySelector("[data-share-cue]");
       var isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
       var ua = window.navigator.userAgent || "";
       var isIOS = /iphone|ipad|ipod/i.test(ua);
@@ -3991,8 +4029,35 @@
           if (installInstructions) {
             installInstructions.hidden = !(isIOS && isSafari);
           }
+          if (shareCue) {
+            shareCue.hidden = true;
+          }
+          if (installFallback) {
+            installFallback.hidden = true;
+          }
           iosSheet.hidden = false;
           trackPwa("install_popup_shown", { platform: isIOS && isSafari ? "ios_safari" : "browser" });
+        }
+      }
+
+      function runManualInstallFallback() {
+        if (isIOS && isSafari) {
+          console.log("[CoinPilotXAI PWA] safari manual flow triggered");
+          if (installInstructions) {
+            installInstructions.hidden = false;
+          }
+          if (shareCue) {
+            shareCue.hidden = false;
+          }
+          if (installFallback) {
+            installFallback.hidden = true;
+          }
+          trackPwa("safari_manual_install_flow", { platform: "ios_safari" });
+          return;
+        }
+        console.log("[CoinPilotXAI PWA] deferredPrompt missing; showing browser menu fallback");
+        if (installFallback) {
+          installFallback.hidden = false;
         }
       }
 
@@ -4025,7 +4090,10 @@
 
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
-          navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function () {
+          navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(function () {
+            console.log("[CoinPilotXAI PWA] service worker registered successfully");
+          }).catch(function () {
+            console.log("[CoinPilotXAI PWA] service worker registration failed");
             // PWA registration should never block the website.
           });
         });
@@ -4038,6 +4106,7 @@
       scheduleInstallPopup();
 
       window.addEventListener("beforeinstallprompt", function (event) {
+        console.log("[CoinPilotXAI PWA] beforeinstallprompt fired");
         event.preventDefault();
         installPrompt = event;
         if (!isStandalone) {
@@ -4046,6 +4115,7 @@
       });
 
       window.addEventListener("appinstalled", function () {
+        console.log("[CoinPilotXAI PWA] app installed");
         installPrompt = null;
         setInstallButtonsVisible(false);
         setIosButtonsVisible(false);
@@ -4054,16 +4124,20 @@
 
       installButtons.forEach(function (installButton) {
         installButton.addEventListener("click", async function () {
+          console.log("[CoinPilotXAI PWA] install button clicked");
           if (!installPrompt) {
-            if (isIOS && isSafari) {
-              openIosSheet();
-            } else {
-              openIosSheet();
-            }
+            openIosSheet();
+            runManualInstallFallback();
             return;
           }
           installPrompt.prompt();
           var choice = await installPrompt.userChoice.catch(function () { return { outcome: "error" }; });
+          console.log("[CoinPilotXAI PWA] install " + (choice && choice.outcome === "accepted" ? "accepted" : "dismissed"));
+          if (choice && choice.outcome === "accepted") {
+            console.log("[CoinPilotXAI PWA] install accepted");
+          } else {
+            console.log("[CoinPilotXAI PWA] install dismissed");
+          }
           trackPwa(choice && choice.outcome === "accepted" ? "install_prompt_accepted" : "install_prompt_dismissed", { platform: "browser" });
           installPrompt = null;
           setInstallButtonsVisible(false);
@@ -4076,10 +4150,17 @@
 
       if (installConfirm) {
         installConfirm.addEventListener("click", async function () {
+          console.log("[CoinPilotXAI PWA] install button clicked");
           trackPwa("install_popup_clicked", { platform: isIOS && isSafari ? "ios_safari" : "browser" });
           if (installPrompt) {
             installPrompt.prompt();
             var choice = await installPrompt.userChoice.catch(function () { return { outcome: "error" }; });
+            console.log("[CoinPilotXAI PWA] install " + (choice && choice.outcome === "accepted" ? "accepted" : "dismissed"));
+            if (choice && choice.outcome === "accepted") {
+              console.log("[CoinPilotXAI PWA] install accepted");
+            } else {
+              console.log("[CoinPilotXAI PWA] install dismissed");
+            }
             trackPwa(choice && choice.outcome === "accepted" ? "install_prompt_accepted" : "install_prompt_dismissed", { platform: "browser_popup" });
             installPrompt = null;
             if (iosSheet) {
@@ -4088,9 +4169,7 @@
             setInstallButtonsVisible(false);
             return;
           }
-          if (installInstructions) {
-            installInstructions.hidden = false;
-          }
+          runManualInstallFallback();
         });
       }
 
@@ -4100,6 +4179,7 @@
           if (iosSheet) {
             iosSheet.hidden = true;
           }
+          console.log("[CoinPilotXAI PWA] install dismissed");
           trackPwa("install_popup_dismissed", { platform: isIOS && isSafari ? "ios_safari" : "browser" });
         });
       }

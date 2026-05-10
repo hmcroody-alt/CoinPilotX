@@ -493,6 +493,17 @@ def add_pwa_headers(response):
     return response
 
 
+@webhook_app.before_request
+def enforce_https():
+    host = request.host.split(":")[0]
+    if host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+        return None
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", request.scheme)
+    if forwarded_proto == "http":
+        return redirect(request.url.replace("http://", "https://", 1), code=301)
+    return None
+
+
 def get_csrf_token():
     token = session.get("csrf_token")
     if not token:
