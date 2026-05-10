@@ -443,6 +443,21 @@ def home():
     return render_template("index.html")
 
 
+@webhook_app.route("/support", methods=["GET"])
+def support_page():
+    return render_template("support.html")
+
+
+@webhook_app.route("/privacy", methods=["GET"])
+def privacy_page():
+    return render_template("privacy.html")
+
+
+@webhook_app.route("/terms", methods=["GET"])
+def terms_page():
+    return render_template("terms.html")
+
+
 @webhook_app.route("/robots.txt", methods=["GET"])
 def robots_txt():
     return send_from_directory(webhook_app.static_folder, "robots.txt", mimetype="text/plain")

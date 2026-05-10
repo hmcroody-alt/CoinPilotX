@@ -24,4 +24,16 @@
     <loc>https://coinpilotx.app/#faq</loc>
     <priority>0.6</priority>
   </url>
+  <url>
+    <loc>https://coinpilotx.app/support</loc>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://coinpilotx.app/privacy</loc>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://coinpilotx.app/terms</loc>
+    <priority>0.6</priority>
+  </url>
 </urlset>

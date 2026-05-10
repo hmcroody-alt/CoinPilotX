@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy | CoinPilotXAI Inc.</title>
+  <meta name="description" content="Privacy Policy for CoinPilotX, operated by CoinPilotXAI Inc." />
+  <link rel="canonical" href="https://coinpilotx.app/privacy" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: rgba(13, 22, 39, 0.9);
+      --line: rgba(110, 223, 246, 0.18);
+      --text: #f2fbff;
+      --muted: #9fb5c0;
+      --cyan: #6edff6;
+      --green: #36e58f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% 8%, rgba(110, 223, 246, 0.14), transparent 28%),
+        radial-gradient(circle at 78% 4%, rgba(54, 229, 143, 0.1), transparent 26%),
+        linear-gradient(135deg, #070b14, #0b1424 58%, #07111e);
+      line-height: 1.7;
+    }
+
+    a { color: inherit; }
+
+    .container {
+      width: min(100% - 32px, 980px);
+      margin: 0 auto;
+    }
+
+    header, footer {
+      background: rgba(7, 11, 20, 0.84);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(18px);
+    }
+
+    footer {
+      margin-top: 52px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 0;
+    }
+
+    nav, .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 0;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      font-weight: 900;
+      text-decoration: none;
+    }
+
+    .brand img {
+      width: 46px;
+      height: 46px;
+      max-height: 72px;
+      object-fit: contain;
+      border-radius: 10px;
+      filter: drop-shadow(0 0 18px rgba(110, 223, 246, 0.26));
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .nav-links a {
+      min-height: 44px;
+      display: inline-grid;
+      place-items: center;
+      text-decoration: none;
+    }
+
+    main { padding: 70px 0 20px; }
+
+    .policy {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+    }
+
+    .kicker {
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 12px 0 14px;
+      font-size: clamp(38px, 7vw, 64px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 30px 0 10px;
+      font-size: clamp(22px, 4vw, 32px);
+      letter-spacing: 0;
+    }
+
+    p, li {
+      color: var(--muted);
+    }
+
+    ul { padding-left: 20px; }
+
+    li { margin: 8px 0; }
+
+    .notice {
+      margin-top: 22px;
+      padding: 16px;
+      border: 1px solid rgba(54, 229, 143, 0.22);
+      border-radius: 10px;
+      color: #d9fff0;
+      background: rgba(54, 229, 143, 0.08);
+    }
+
+    @media (max-width: 720px) {
+      nav, .footer-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      main { padding-top: 46px; }
+
+      .policy { padding: 22px; }
+
+      .brand img {
+        width: 40px;
+        height: 40px;
+        max-height: 52px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <nav aria-label="Privacy navigation">
+        <a class="brand" href="/">
+          <img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="46" height="46" />
+          <span>CoinPilotXAI Inc.</span>
+        </a>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/support">Support</a>
+          <a href="/terms">Terms</a>
+          <a href="https://t.me/DocShieldX_bot">Telegram Bot</a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <article class="policy">
+        <div class="kicker">Privacy Policy</div>
+        <h1>Privacy Policy</h1>
+        <p>Last updated: May 2026</p>
+        <p>This Privacy Policy explains how CoinPilotXAI Inc. collects, uses, and protects information when you use CoinPilotX, the CoinPilotX website, Telegram bot, and related services.</p>
+
+        <h2>Information We Collect</h2>
+        <p>Depending on how you use CoinPilotX, we may collect:</p>
+        <ul>
+          <li>Telegram user ID, username, display name, and bot interaction history needed to operate the service.</li>
+          <li>Email address if you choose to provide it for payment confirmations or account notifications.</li>
+          <li>Subscription, payment status, Stripe session references, BTC TXID references, and verification attempts.</li>
+          <li>Public wallet addresses, public transaction IDs, watchlists, portfolio entries, and manual balance settings you choose to submit.</li>
+          <li>Website usage events such as button clicks or page interactions if analytics tools are enabled.</li>
+        </ul>
+
+        <h2>Cookies, Sessions, and Analytics</h2>
+        <p>The website may use basic cookies, browser storage, server logs, or analytics tools to understand site performance, product interest, and conversion flow. Analytics are intended for product improvement and should not include private keys, seed phrases, or wallet passwords.</p>
+
+        <h2>Telegram Integration</h2>
+        <p>CoinPilotX operates through Telegram. Telegram may process information under its own privacy practices. CoinPilotXAI Inc. uses Telegram information only to operate bot commands, account status, subscriptions, alerts, and user-requested intelligence features.</p>
+
+        <h2>Public Blockchain Data</h2>
+        <p>CoinPilotX may analyze public blockchain data such as public wallet addresses and transaction IDs. Public blockchain data is not private. Never submit seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.</p>
+
+        <h2>How We Use Information</h2>
+        <ul>
+          <li>To operate CoinPilotX bot commands, AI assistant features, market intelligence, wallet checks, scam protection, and portfolio tools.</li>
+          <li>To manage subscriptions, Pro access, BTC payment verification, and payment confirmations.</li>
+          <li>To improve reliability, safety, product quality, and customer support.</li>
+          <li>To detect abuse, protect users, and maintain service security.</li>
+        </ul>
+
+        <h2>Security Practices</h2>
+        <p>CoinPilotXAI Inc. uses reasonable technical and organizational safeguards for stored data. No online system can be guaranteed perfectly secure. CoinPilotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or remote wallet access.</p>
+
+        <h2>Sharing of Information</h2>
+        <p>We may use service providers such as hosting, payment, email, analytics, Telegram, blockchain data providers, and AI infrastructure providers to operate CoinPilotX. We do not sell private user information.</p>
+
+        <h2>Data Choices</h2>
+        <p>You may contact support to request help with account information, email updates, or data questions. Some operational records may be retained for security, legal, accounting, payment, or abuse-prevention reasons.</p>
+
+        <h2>Children</h2>
+        <p>CoinPilotX is not intended for children. Users should comply with applicable age, financial, crypto, and betting laws in their location.</p>
+
+        <h2>Contact</h2>
+        <p>For privacy questions, contact <a href="mailto:support@coinpilotx.app">support@coinpilotx.app</a>.</p>
+
+        <div class="notice">CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</div>
+      </article>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>© 2026 CoinPilotXAI Inc. All rights reserved.</div>
+      <div class="nav-links">
+        <a href="/support">Support</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
