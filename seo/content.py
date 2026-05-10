@@ -347,7 +347,184 @@ MARKET_PAGES = {
     "xrp": {"name": "XRP", "symbol": "XRP", "title": "XRP AI Market Intelligence | CoinPilotXAI Inc."},
     "ada": {"name": "Cardano", "symbol": "ADA", "title": "Cardano AI Market Intelligence | CoinPilotXAI Inc."},
     "doge": {"name": "Dogecoin", "symbol": "DOGE", "title": "Dogecoin AI Market Intelligence | CoinPilotXAI Inc."},
+    "ton": {"name": "Toncoin", "symbol": "TON", "title": "Toncoin AI Market Intelligence | CoinPilotXAI Inc."},
+    "link": {"name": "Chainlink", "symbol": "LINK", "title": "Chainlink AI Market Intelligence | CoinPilotXAI Inc."},
+    "avax": {"name": "Avalanche", "symbol": "AVAX", "title": "Avalanche AI Market Intelligence | CoinPilotXAI Inc."},
+    "matic": {"name": "Polygon", "symbol": "MATIC", "title": "Polygon AI Market Intelligence | CoinPilotXAI Inc."},
+    "dot": {"name": "Polkadot", "symbol": "DOT", "title": "Polkadot AI Market Intelligence | CoinPilotXAI Inc."},
 }
+
+MARKET_PAGES.update({
+    "shib": {"name": "Shiba Inu", "symbol": "SHIB", "title": "Shiba Inu AI Market Intelligence | CoinPilotXAI Inc."},
+    "ltc": {"name": "Litecoin", "symbol": "LTC", "title": "Litecoin AI Market Intelligence | CoinPilotXAI Inc."},
+    "bch": {"name": "Bitcoin Cash", "symbol": "BCH", "title": "Bitcoin Cash AI Market Intelligence | CoinPilotXAI Inc."},
+    "near": {"name": "NEAR Protocol", "symbol": "NEAR", "title": "NEAR AI Market Intelligence | CoinPilotXAI Inc."},
+    "atom": {"name": "Cosmos", "symbol": "ATOM", "title": "Cosmos AI Market Intelligence | CoinPilotXAI Inc."},
+    "arb": {"name": "Arbitrum", "symbol": "ARB", "title": "Arbitrum AI Market Intelligence | CoinPilotXAI Inc."},
+    "op": {"name": "Optimism", "symbol": "OP", "title": "Optimism AI Market Intelligence | CoinPilotXAI Inc."},
+    "apt": {"name": "Aptos", "symbol": "APT", "title": "Aptos AI Market Intelligence | CoinPilotXAI Inc."},
+    "sui": {"name": "Sui", "symbol": "SUI", "title": "Sui AI Market Intelligence | CoinPilotXAI Inc."},
+})
+
+KEYWORD_CLUSTERS = {
+    "ai_crypto_intelligence": [
+        "ai crypto intelligence",
+        "crypto ai assistant",
+        "ai market analysis",
+        "telegram crypto bot",
+    ],
+    "crypto_safety": [
+        "crypto scam protection",
+        "crypto scam checker",
+        "wallet drainer warning",
+        "crypto safety tools",
+    ],
+    "wallet_intelligence": [
+        "crypto wallet scanner",
+        "blockchain wallet intelligence",
+        "wallet risk scanner",
+        "public txid checker",
+    ],
+    "sports_edge": [
+        "sports betting intelligence",
+        "ai sports intelligence",
+        "sports edge ai",
+        "position risk analysis",
+    ],
+    "market_pages": [
+        "bitcoin prediction",
+        "btc price prediction",
+        "live crypto market",
+        "trending crypto",
+    ],
+    "telegram_discovery": [
+        "telegram crypto bot",
+        "telegram ai crypto bot",
+        "crypto bot for telegram",
+        "coinpilotx telegram",
+    ],
+    "pwa_growth": [
+        "crypto intelligence app",
+        "installable crypto app",
+        "pwa crypto tools",
+        "mobile crypto intelligence",
+    ],
+}
+
+SEO_PAGES.update({
+    "trending-crypto": {
+        "title": "Trending Crypto Intelligence | CoinPilotXAI Inc.",
+        "description": "Track trending crypto market themes with AI context, live market links, risk reminders, and scam-aware education from CoinPilotXAI Inc.",
+        "h1": "Trending Crypto Intelligence",
+        "eyebrow": "Trending Markets",
+        "intro": "CoinPilotX organizes trending crypto search intent into safer market context, live market data links, and risk-aware AI explanations.",
+        "answer": "Trending crypto pages should help users understand why an asset or theme is moving without implying certainty or pushing rushed decisions.",
+        "points": ["Live market board handoff", "Top-volume asset context", "Gainer and loser awareness", "Scam and volatility reminders"],
+        "faqs": [
+            {"question": "Does trending mean a coin is safe?", "answer": "No. Trending only means attention or movement may be elevated. It does not guarantee quality or future performance."},
+            {"question": "How does CoinPilotX review trending crypto?", "answer": "CoinPilotX connects market movement, volatility, public data, and safety reminders so users can review context before acting."},
+        ] + COMMON_FAQS,
+        "related": ["/markets/btc/live", "/ai-market-intelligence", "/crypto-risk-intelligence"],
+    },
+    "bitcoin-prediction": {
+        "title": "Bitcoin Prediction Context | CoinPilotXAI Inc.",
+        "description": "Review Bitcoin prediction scenarios with AI risk context, volatility awareness, market pressure, and educational BTC intelligence.",
+        "h1": "Bitcoin Prediction Context",
+        "eyebrow": "BTC Scenarios",
+        "intro": "CoinPilotX frames Bitcoin prediction searches as scenario education, not certainty. The goal is to understand what could support or weaken a BTC view.",
+        "answer": "A responsible Bitcoin prediction page explains possible scenarios, risk factors, and what could change the market view. It should never claim a guaranteed BTC price target.",
+        "points": ["BTC momentum context", "Volatility and downside risk", "Whale and market-pressure awareness", "Scenario-based thinking"],
+        "faqs": [
+            {"question": "Can CoinPilotX predict Bitcoin with certainty?", "answer": "No. CoinPilotX provides educational BTC scenario context and risk reminders only."},
+            {"question": "What affects a Bitcoin prediction?", "answer": "Trend, volume, macro news, ETF flows, whale pressure, liquidity, sentiment, and volatility can all affect BTC scenarios."},
+        ] + COMMON_FAQS,
+        "related": ["/markets/btc", "/markets/btc/prediction", "/crypto-risk-intelligence"],
+    },
+    "btc-price-prediction": {
+        "title": "BTC Price Prediction Scenarios | CoinPilotXAI Inc.",
+        "description": "BTC price prediction scenarios explained with educational AI market context, risk factors, and live Bitcoin intelligence links.",
+        "h1": "BTC Price Prediction Scenarios",
+        "eyebrow": "Bitcoin Risk Scenarios",
+        "intro": "BTC prediction searches deserve clear risk language. CoinPilotX explains what could support upside, what could create downside, and why certainty is dangerous.",
+        "answer": "BTC price prediction should be treated as scenario planning. CoinPilotX avoids fixed guaranteed targets and focuses on market context, volatility, and safer next steps.",
+        "points": ["Upside scenario education", "Downside scenario education", "Risk and confidence language", "Live BTC market handoff"],
+        "faqs": [
+            {"question": "Is a BTC prediction financial advice?", "answer": "No. It is educational scenario context only."},
+            {"question": "Where can I see live BTC data?", "answer": "Use the CoinPilotX live market board or the BTC market intelligence page."},
+        ] + COMMON_FAQS,
+        "related": ["/bitcoin-prediction", "/markets/btc/live", "/ai-market-analysis"],
+    },
+    "ai-crypto-analysis-tools": {
+        "title": "AI Crypto Analysis Tools | CoinPilotXAI Inc.",
+        "description": "Explore CoinPilotX AI crypto analysis tools for market context, Scam Shield, Wallet Intel, whale alerts, portfolio scenarios, and Telegram workflows.",
+        "h1": "AI Crypto Analysis Tools",
+        "eyebrow": "Analysis Toolkit",
+        "intro": "CoinPilotX connects AI market explanations with wallet safety, scam awareness, whale pressure, and portfolio context.",
+        "answer": "AI crypto analysis tools are most useful when they explain risk, uncertainty, and context instead of telling users what to do.",
+        "points": ["AI assistant", "Market snapshot", "Scam Shield", "Wallet Intel", "Portfolio intelligence"],
+        "faqs": [
+            {"question": "What AI crypto analysis tools does CoinPilotX include?", "answer": "CoinPilotX includes AI Assistant, live market context, Scam Shield, Wallet Intel, Day Signal, Sports Edge, whale alerts, and portfolio intelligence workflows."},
+            {"question": "Can AI crypto tools guarantee results?", "answer": "No. AI tools can explain context but cannot guarantee outcomes."},
+        ] + COMMON_FAQS,
+        "related": ["/ai-crypto-assistant", "/ai-market-analysis", "/telegram-crypto-bot"],
+    },
+    "live-crypto-market": {
+        "title": "Live Crypto Market Board | CoinPilotXAI Inc.",
+        "description": "View live crypto market board context, top volume assets, gainers, losers, and AI risk interpretation from CoinPilotXAI Inc.",
+        "h1": "Live Crypto Market Board",
+        "eyebrow": "Live Market",
+        "intro": "CoinPilotX turns live crypto market data into educational context with top volume, market cap, gainers, losers, and risk reminders.",
+        "answer": "Live market data is useful only when paired with risk awareness. CoinPilotX explains movement without promising future direction.",
+        "points": ["Top-volume crypto assets", "24h price change", "Market cap context", "Gainer and loser filters", "AI risk interpretation"],
+        "faqs": [
+            {"question": "Is CoinPilotX market data live?", "answer": "CoinPilotX uses public market APIs where available and clearly shows fallback states when data providers are unavailable."},
+            {"question": "Does live market data mean I should trade?", "answer": "No. It is informational context only."},
+        ] + COMMON_FAQS,
+        "related": ["/trending-crypto", "/markets/btc/live", "/markets/eth/live"],
+    },
+    "sports-betting-intelligence": {
+        "title": "Sports Betting Intelligence | CoinPilotXAI Inc.",
+        "description": "Informational sports betting intelligence for game context, risk factors, position discipline, and Sports Edge AI without guaranteed picks.",
+        "h1": "Sports Betting Intelligence",
+        "eyebrow": "Sports Risk Context",
+        "intro": "Sports Edge helps users review game context, position risk, and why waiting can be smarter than forcing a bet.",
+        "answer": "Sports betting intelligence should never claim locks or guaranteed wins. CoinPilotX focuses on risk, probability, missing data, and discipline.",
+        "points": ["Game context", "Market and odds availability", "Momentum and risk factors", "Why to avoid forcing positions"],
+        "faqs": [
+            {"question": "Does CoinPilotX provide sports betting locks?", "answer": "No. CoinPilotXAI Inc. does not provide guaranteed sports picks, locks, or risk-free outcomes."},
+            {"question": "What does Sports Edge explain?", "answer": "Sports Edge explains game state, risk factors, market context where available, and what could change the view."},
+        ] + COMMON_FAQS,
+        "related": ["/sports-edge", "/sports-intelligence-ai", "/day-signal"],
+    },
+    "crypto-education-hub": {
+        "title": "Crypto Education Hub | CoinPilotXAI Inc.",
+        "description": "Crypto education for scam awareness, wallet security, AI market analysis, portfolio risk, whale movement, and safer Telegram workflows.",
+        "h1": "Crypto Education Hub",
+        "eyebrow": "Education",
+        "intro": "CoinPilotXAI Inc. organizes crypto education around safety, context, and practical decision support for beginners and serious learners.",
+        "answer": "Good crypto education teaches users to verify public data, protect private credentials, understand volatility, and avoid emotional decisions.",
+        "points": ["Wallet safety", "Scam awareness", "Market context", "Portfolio risk", "Telegram workflow education"],
+        "faqs": [
+            {"question": "Is CoinPilotX for beginners?", "answer": "Yes. CoinPilotX explains market and safety topics in plain language."},
+            {"question": "Does CoinPilotX teach private wallet recovery?", "answer": "No. CoinPilotX never asks for seed phrases or private keys and cannot recover wallets."},
+        ] + COMMON_FAQS,
+        "related": ["/crypto-learning", "/wallet-security", "/crypto-safety"],
+    },
+    "scam-alerts": {
+        "title": "Crypto Scam Alerts | CoinPilotXAI Inc.",
+        "description": "Crypto scam alerts and safety education for phishing, fake support, wallet drainers, fake airdrops, urgency tactics, and private-key danger.",
+        "h1": "Crypto Scam Alerts",
+        "eyebrow": "Scam Alerts",
+        "intro": "CoinPilotX Scam Shield helps users identify suspicious patterns before clicking, connecting, signing, or sending funds.",
+        "answer": "Scam alerts should be clear and practical. CoinPilotX prioritizes critical safety warnings for every user, not just Pro users.",
+        "points": ["Fake support detection", "Wallet-drainer warnings", "Airdrop risk patterns", "Urgency and pressure tactics"],
+        "faqs": [
+            {"question": "What should I do if a message asks for my seed phrase?", "answer": "Stop immediately. CoinPilotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, or wallet passwords."},
+            {"question": "Can scammers copy real brands?", "answer": "Yes. Always verify domains, official channels, and wallet permissions before acting."},
+        ] + COMMON_FAQS,
+        "related": ["/crypto-scams", "/crypto-scam-checker", "/intel/wallet-drainer-warning-signs"],
+    },
+})
 
 COUNTRY_PAGES = {
     "us": "United States",
@@ -394,6 +571,216 @@ HUBS = {
     },
 }
 
+SPORTS_SEO_PAGES = {
+    "nba": {
+        "title": "NBA Sports Edge Intelligence | CoinPilotXAI Inc.",
+        "description": "NBA Sports Edge intelligence for pace, scoring runs, live game context, market discipline, and risk-aware position review.",
+        "h1": "NBA Sports Edge Intelligence",
+        "eyebrow": "NBA Risk Context",
+        "intro": "CoinPilotX Sports Edge helps users review NBA game state, pace pressure, scoring swings, and why forcing a position can be risky.",
+        "answer": "NBA intelligence should consider game state, pace, scoring runs, market context where available, and the danger of chasing live momentum.",
+        "points": ["Pace and scoring runs", "Spread and total context when available", "Live status awareness", "Avoid forcing positions"],
+    },
+    "nfl": {
+        "title": "NFL Sports Edge Intelligence | CoinPilotXAI Inc.",
+        "description": "NFL Sports Edge intelligence for game script, scoring volatility, market context, and risk-aware position discipline.",
+        "h1": "NFL Sports Edge Intelligence",
+        "eyebrow": "NFL Risk Context",
+        "intro": "CoinPilotX helps users review NFL game state, time pressure, game script, and uncertainty without guaranteed pick language.",
+        "answer": "NFL context can change quickly through turnovers, field position, injuries if publicly available, and late-game strategy. CoinPilotX stays cautious.",
+        "points": ["Game script", "Clock and field-position context", "Scoring volatility", "Market discipline"],
+    },
+    "mlb": {
+        "title": "MLB Sports Edge Intelligence | CoinPilotXAI Inc.",
+        "description": "MLB Sports Edge intelligence for inning context, bullpen risk, low-scoring volatility, and safer position discipline.",
+        "h1": "MLB Sports Edge Intelligence",
+        "eyebrow": "MLB Risk Context",
+        "intro": "CoinPilotX reviews MLB games with inning state, low-scoring volatility, bullpen risk, and the danger of forcing late positions.",
+        "answer": "MLB intelligence should be careful when pitcher, bullpen, lineup, or odds data is unavailable. CoinPilotX says what is missing instead of pretending.",
+        "points": ["Inning context", "Bullpen risk where available", "Low-scoring volatility", "Missing-data warnings"],
+    },
+    "nhl": {
+        "title": "NHL Sports Edge Intelligence | CoinPilotXAI Inc.",
+        "description": "NHL Sports Edge intelligence for period context, goalie pressure, shot pressure if available, and risk-aware game review.",
+        "h1": "NHL Sports Edge Intelligence",
+        "eyebrow": "NHL Risk Context",
+        "intro": "CoinPilotX frames NHL games around period state, scoring volatility, goalie pressure where available, and disciplined position review.",
+        "answer": "NHL outcomes can turn on low-event volatility, penalties, goalie performance, and late empty-net scenarios. CoinPilotX keeps the language probabilistic.",
+        "points": ["Period state", "Low-event volatility", "Penalty and goalie context where available", "Avoid chase behavior"],
+    },
+    "soccer": {
+        "title": "Soccer Sports Edge Intelligence | CoinPilotXAI Inc.",
+        "description": "Soccer Sports Edge intelligence for time remaining, draw risk, low-scoring volatility, and cautious position analysis.",
+        "h1": "Soccer Sports Edge Intelligence",
+        "eyebrow": "Soccer Risk Context",
+        "intro": "CoinPilotX helps users review soccer matches with draw risk, time remaining, low-scoring volatility, and red-card context if available.",
+        "answer": "Soccer intelligence should respect draw risk and low-scoring volatility. CoinPilotX avoids claiming certainty from incomplete match data.",
+        "points": ["Draw risk", "Time remaining", "Low-scoring volatility", "Red-card context when available"],
+    },
+    "tennis": {
+        "title": "Tennis Sports Edge Intelligence | CoinPilotXAI Inc.",
+        "description": "Tennis Sports Edge intelligence for set momentum, serve advantage, break risk, and responsible position context.",
+        "h1": "Tennis Sports Edge Intelligence",
+        "eyebrow": "Tennis Risk Context",
+        "intro": "CoinPilotX reviews tennis through set state, serve pressure, break risk, and why one momentum swing should not create overconfidence.",
+        "answer": "Tennis context can shift through serve holds, break points, fatigue, and set pressure. CoinPilotX explains risk without guarantees.",
+        "points": ["Set and game state", "Serve advantage", "Break risk", "Momentum caution"],
+    },
+    "live-games": {
+        "title": "Live Sports Edge Games | CoinPilotXAI Inc.",
+        "description": "Live Sports Edge game context, risk labels, odds availability notes, and Telegram handoff for deeper AI analysis.",
+        "h1": "Live Sports Edge Games",
+        "eyebrow": "Live Sports",
+        "intro": "CoinPilotX Sports Edge organizes live and upcoming games into risk-aware cards with honest source and odds availability notes.",
+        "answer": "Live sports context is not a betting guarantee. CoinPilotX highlights what is known, what is missing, and why waiting can be the safest move.",
+        "points": ["Live/upcoming status", "Odds availability", "Risk labels", "Telegram deep-analysis handoff"],
+    },
+}
+
+ARTICLE_PAGES = {
+    "crypto-scam-alert-checklist": {
+        "title": "Crypto Scam Alert Checklist | CoinPilotXAI Inc.",
+        "description": "A practical crypto scam alert checklist covering fake support, wallet drainers, seed phrase requests, urgency tactics, and safer next steps.",
+        "h1": "Crypto Scam Alert Checklist",
+        "eyebrow": "Safety Guide",
+        "intro": "Use this checklist before clicking crypto links, connecting wallets, joining airdrops, or trusting support messages.",
+        "answer": "If a message asks for seed phrases, private keys, recovery phrases, wallet passwords, urgent deposits, or guaranteed returns, treat it as high risk.",
+        "points": ["Seed phrase request", "Fake support pressure", "Wallet-drainer approval", "Guaranteed-return claim", "Urgency or isolation tactic"],
+        "sections": [
+            {"title": "Why this matters", "body": "Scams usually work by rushing the user into trusting a fake authority or signing a dangerous wallet approval."},
+            {"title": "Safer response", "body": "Pause, verify through official channels, avoid signing unknown transactions, and never share private wallet credentials."},
+        ],
+        "faqs": [
+            {"question": "What is the biggest crypto scam red flag?", "answer": "Any request for a seed phrase, private key, recovery phrase, wallet password, or signing credential should be treated as critical risk."},
+            {"question": "Can CoinPilotX verify every scam?", "answer": "No. CoinPilotX provides risk context and safer next steps, but users must verify independently."},
+        ] + COMMON_FAQS,
+        "related": ["/crypto-scams", "/crypto-scam-checker", "/wallet-security"],
+        "keywords": KEYWORD_CLUSTERS["crypto_safety"] + ["crypto phishing", "fake crypto support"],
+    },
+    "wallet-drainer-warning-signs": {
+        "title": "Wallet Drainer Warning Signs | CoinPilotXAI Inc.",
+        "description": "Learn wallet drainer warning signs, unsafe approval patterns, fake airdrops, impersonation, and public wallet risk education.",
+        "h1": "Wallet Drainer Warning Signs",
+        "eyebrow": "Wallet Safety",
+        "intro": "Wallet drainers often hide behind fake airdrops, fake support, malicious approvals, and pressure to connect quickly.",
+        "answer": "The safest rule is simple: never sign wallet actions you do not understand, and never enter seed phrases or private keys.",
+        "points": ["Unknown approval requests", "Fake claim pages", "Urgent connect-wallet prompts", "Impersonated support accounts"],
+        "sections": [
+            {"title": "What to verify", "body": "Check the domain, official channels, contract permissions, and whether the action asks for broad token approvals."},
+            {"title": "What to avoid", "body": "Avoid connecting wallets to unfamiliar links, signing blind approvals, or trusting DMs that create urgency."},
+        ],
+        "faqs": [
+            {"question": "Can a wallet drainer steal funds without my seed phrase?", "answer": "A malicious approval or transaction signature can create serious risk even if you never share your seed phrase."},
+            {"question": "Should I paste private keys into a scanner?", "answer": "No. Never paste private keys, seed phrases, wallet passwords, or recovery phrases into any tool."},
+        ] + COMMON_FAQS,
+        "related": ["/wallet-security", "/ai-wallet-scanner", "/intel/crypto-scam-alert-checklist"],
+        "keywords": KEYWORD_CLUSTERS["wallet_intelligence"] + ["wallet drainer", "unsafe wallet approval"],
+    },
+    "bitcoin-risk-scenarios": {
+        "title": "Bitcoin Risk Scenarios | CoinPilotXAI Inc.",
+        "description": "Bitcoin risk scenarios explained with AI market context, volatility, whale pressure, liquidity, and educational BTC scenario planning.",
+        "h1": "Bitcoin Risk Scenarios",
+        "eyebrow": "BTC Education",
+        "intro": "Bitcoin risk work should focus on what could change the view, not on pretending any forecast is certain.",
+        "answer": "A useful Bitcoin scenario compares upside drivers, downside risks, volatility, whale pressure, and portfolio exposure.",
+        "points": ["Upside catalysts", "Downside risks", "Volatility", "Whale pressure", "Portfolio exposure"],
+        "sections": [
+            {"title": "Upside scenario", "body": "Upside may be supported by improving trend, stronger volume, favorable macro context, or lower sell pressure."},
+            {"title": "Downside scenario", "body": "Downside may be driven by rapid volatility, exchange inflows, negative news, or weak market breadth."},
+        ],
+        "faqs": [
+            {"question": "Does CoinPilotX publish Bitcoin price targets?", "answer": "CoinPilotX focuses on educational scenarios and avoids guaranteed price targets."},
+            {"question": "What should change a BTC view?", "answer": "Trend, liquidity, volatility, whale pressure, news, and risk appetite can all change the view."},
+        ] + COMMON_FAQS,
+        "related": ["/bitcoin-prediction", "/markets/btc/prediction", "/markets/btc/live"],
+        "keywords": KEYWORD_CLUSTERS["market_pages"] + ["bitcoin risk", "btc scenario analysis"],
+    },
+    "ai-crypto-analysis-framework": {
+        "title": "AI Crypto Analysis Framework | CoinPilotXAI Inc.",
+        "description": "A responsible AI crypto analysis framework for market snapshots, momentum, risk level, what to watch, and safer next steps.",
+        "h1": "AI Crypto Analysis Framework",
+        "eyebrow": "AI Framework",
+        "intro": "CoinPilotX uses structured sections so crypto users can separate market context from speculation.",
+        "answer": "A responsible AI analysis should explain market snapshot, momentum read, risk level, what to watch, safer next step, and the limits of the data.",
+        "points": ["Market Snapshot", "Momentum Read", "Risk Level", "What to Watch", "Safer Next Step"],
+        "sections": [
+            {"title": "Why structure matters", "body": "Structured analysis reduces emotional decision-making by making assumptions, missing data, and risk visible."},
+            {"title": "What AI should not do", "body": "AI should not claim guaranteed profit, insider knowledge, or certainty about price direction."},
+        ],
+        "faqs": [
+            {"question": "Can AI replace risk management?", "answer": "No. AI can organize context, but users remain responsible for decisions and risk limits."},
+            {"question": "Does CoinPilotX use OpenAI?", "answer": "CoinPilotX can use OpenAI-powered responses server-side where configured, without exposing API keys in the browser."},
+        ] + COMMON_FAQS,
+        "related": ["/ai-market-analysis", "/ai-crypto-assistant", "/ai-market-intelligence"],
+        "keywords": KEYWORD_CLUSTERS["ai_crypto_intelligence"] + ["crypto analysis framework"],
+    },
+    "sports-edge-position-discipline": {
+        "title": "Sports Edge Position Discipline | CoinPilotXAI Inc.",
+        "description": "Sports Edge position discipline for live games, odds uncertainty, risk factors, and avoiding forced bets or guaranteed-pick thinking.",
+        "h1": "Sports Edge Position Discipline",
+        "eyebrow": "Sports Discipline",
+        "intro": "Sports Edge is built around patience: understand game context and risk before considering any position.",
+        "answer": "Position discipline means accepting that no game is guaranteed and that missing data can be a reason to wait.",
+        "points": ["Avoid forced positions", "Review missing data", "Respect volatility", "Never chase losses"],
+        "sections": [
+            {"title": "What to watch", "body": "Game state, odds availability, scoring pace, injuries if publicly available, and market movement can all matter."},
+            {"title": "Final caution", "body": "Sports Edge is informational only and not betting advice. Never risk money you cannot afford to lose."},
+        ],
+        "faqs": [
+            {"question": "Does Sports Edge give locks?", "answer": "No. CoinPilotXAI Inc. does not provide locks, sure bets, or guaranteed outcomes."},
+            {"question": "When should a user wait?", "answer": "Waiting may be appropriate when data is incomplete, risk is elevated, or the user feels pressured."},
+        ] + COMMON_FAQS,
+        "related": ["/sports-edge", "/sports-betting-intelligence", "/sports-edge/live-games"],
+        "keywords": KEYWORD_CLUSTERS["sports_edge"] + ["sports risk management"],
+    },
+    "telegram-crypto-bot-safety-guide": {
+        "title": "Telegram Crypto Bot Safety Guide | CoinPilotXAI Inc.",
+        "description": "A Telegram crypto bot safety guide for avoiding fake support, private-key requests, wallet-drainer links, and risky bot interactions.",
+        "h1": "Telegram Crypto Bot Safety Guide",
+        "eyebrow": "Telegram Safety",
+        "intro": "Telegram is fast and convenient, but crypto users need strong safety habits before trusting links, bots, or direct messages.",
+        "answer": "CoinPilotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials in Telegram.",
+        "points": ["Avoid fake support DMs", "Verify official bot links", "Never share wallet secrets", "Use public data only"],
+        "sections": [
+            {"title": "Safer Telegram habits", "body": "Use official links, verify bot usernames carefully, and avoid clicking wallet-connect links sent through unsolicited messages."},
+            {"title": "CoinPilotX workflow", "body": "CoinPilotX is Telegram-first but account, subscription, and safety flows should remain transparent and user-controlled."},
+        ],
+        "faqs": [
+            {"question": "Can Telegram bots ask for seed phrases?", "answer": "A legitimate CoinPilotX flow never asks for seed phrases or private keys. Treat those requests as dangerous."},
+            {"question": "What is the official CoinPilotX bot?", "answer": "The official Telegram link used on the site is https://t.me/DocShieldX_bot."},
+        ] + COMMON_FAQS,
+        "related": ["/telegram-crypto-bot", "/crypto-safety", "/crypto-scam-checker"],
+        "keywords": KEYWORD_CLUSTERS["telegram_discovery"] + ["telegram crypto safety"],
+    },
+}
+
+
+def default_keywords(slug, page):
+    text = " ".join([
+        slug.replace("/", " "),
+        page.get("title", ""),
+        page.get("h1", ""),
+        page.get("description", ""),
+    ]).lower()
+    keywords = set()
+    for cluster_name, cluster_terms in KEYWORD_CLUSTERS.items():
+        cluster_tokens = cluster_name.replace("_", " ").split()
+        if any(token in text for token in cluster_tokens):
+            keywords.update(cluster_terms)
+    if "scam" in text or "safety" in text:
+        keywords.update(KEYWORD_CLUSTERS["crypto_safety"])
+    if "wallet" in text:
+        keywords.update(KEYWORD_CLUSTERS["wallet_intelligence"])
+    if "sports" in text:
+        keywords.update(KEYWORD_CLUSTERS["sports_edge"])
+    if "telegram" in text:
+        keywords.update(KEYWORD_CLUSTERS["telegram_discovery"])
+    if "market" in text or "bitcoin" in text or "btc" in text:
+        keywords.update(KEYWORD_CLUSTERS["market_pages"])
+    if not keywords:
+        keywords.update(KEYWORD_CLUSTERS["ai_crypto_intelligence"])
+    return sorted(keywords)[:10]
+
 
 def enrich_page(slug, page):
     enriched = dict(page)
@@ -403,6 +790,9 @@ def enrich_page(slug, page):
     enriched["image"] = SHARE_IMAGE_URL
     enriched.setdefault("cta", "Launch CoinPilotX Free")
     enriched.setdefault("updated", "2026-05-10")
+    enriched.setdefault("published", "2026-05-10")
+    enriched.setdefault("keywords", default_keywords(slug, enriched))
+    enriched.setdefault("og_type", "website")
     return enriched
 
 
@@ -431,6 +821,61 @@ def market_page(symbol):
         "related": ["/ai-market-analysis", "/portfolio-intelligence", "/whale-alerts"],
     }
     enriched = enrich_page(f"markets/{key}", page)
+    enriched["market_symbol"] = item["symbol"]
+    return enriched
+
+
+def market_prediction_page(symbol):
+    key = (symbol or "").lower()
+    item = MARKET_PAGES.get(key)
+    if not item:
+        return None
+    page = {
+        "title": f"{item['name']} Prediction Scenarios | CoinPilotXAI Inc.",
+        "description": f"Educational {item['symbol']} prediction scenarios with AI market context, volatility, risk factors, and live crypto intelligence links.",
+        "h1": f"{item['name']} Prediction Scenarios",
+        "eyebrow": "Scenario Analysis",
+        "intro": f"CoinPilotX frames {item['symbol']} prediction searches as scenario education: what could support upside, what could create downside, and what would change the view.",
+        "answer": f"{item['symbol']} prediction work should never be treated as certainty. CoinPilotX focuses on market context, volatility, volume, risk, and safer review before action.",
+        "points": ["Upside scenario education", "Downside scenario education", "Risk and confidence language", "Live market handoff"],
+        "sections": [
+            {"title": "Upside context", "body": "Upside may be supported by stronger trend, improving breadth, rising volume, positive news, and lower visible sell pressure."},
+            {"title": "Downside context", "body": "Downside may emerge from volatility spikes, rapid reversals, weak market breadth, negative news, or broader risk-off behavior."},
+        ],
+        "faqs": [
+            {"question": f"Is this a guaranteed {item['symbol']} prediction?", "answer": "No. It is educational scenario context only, not a guaranteed forecast."},
+            {"question": f"What can change a {item['symbol']} view?", "answer": "Trend, volume, volatility, liquidity, news, whale pressure, and overall market risk can all change the view."},
+        ] + COMMON_FAQS,
+        "related": [f"/markets/{key}", f"/markets/{key}/live", "/ai-market-analysis"],
+        "og_type": "article",
+        "breadcrumb": f"{item['name']} Prediction",
+    }
+    enriched = enrich_page(f"markets/{key}/prediction", page)
+    enriched["market_symbol"] = item["symbol"]
+    return enriched
+
+
+def market_live_page(symbol):
+    key = (symbol or "").lower()
+    item = MARKET_PAGES.get(key)
+    if not item:
+        return None
+    page = {
+        "title": f"Live {item['name']} Market Data | CoinPilotXAI Inc.",
+        "description": f"Live {item['symbol']} market context, price movement, 24h change, volume awareness, and CoinPilotX educational risk interpretation.",
+        "h1": f"Live {item['name']} Market Data",
+        "eyebrow": "Live Market",
+        "intro": f"Track {item['symbol']} live market context with CoinPilotX and connect movement to safer educational analysis.",
+        "answer": f"Live {item['symbol']} data is useful when it is reviewed with trend, volatility, volume, and risk context. CoinPilotX avoids turning live movement into certainty.",
+        "points": ["Live price context", "24h change", "Volume and market cap context", "Risk-aware interpretation"],
+        "faqs": [
+            {"question": f"Is {item['symbol']} live market data available?", "answer": "CoinPilotX uses public market APIs where available and shows fallback states when providers are unavailable."},
+            {"question": "Does live data tell me what to buy?", "answer": "No. Live data is informational and should be reviewed with risk management."},
+        ] + COMMON_FAQS,
+        "related": [f"/markets/{key}", f"/markets/{key}/prediction", "/live-crypto-market"],
+        "breadcrumb": f"Live {item['symbol']}",
+    }
+    enriched = enrich_page(f"markets/{key}/live", page)
     enriched["market_symbol"] = item["symbol"]
     return enriched
 
@@ -476,11 +921,70 @@ def hub_page(slug):
     return enrich_page(slug, page)
 
 
+def sports_page(slug):
+    key = (slug or "").lower()
+    item = SPORTS_SEO_PAGES.get(key)
+    if not item:
+        return None
+    page = {
+        **item,
+        "faqs": [
+            {"question": "Does CoinPilotX Sports Edge guarantee outcomes?", "answer": "No. Sports Edge is informational only and does not provide guaranteed picks, locks, or betting outcomes."},
+            {"question": "What happens if live odds are missing?", "answer": "CoinPilotX clearly states that odds are unavailable and avoids inventing market pricing."},
+        ] + COMMON_FAQS,
+        "related": ["/sports-edge", "/sports-betting-intelligence", "/sports-intelligence-ai"],
+        "og_type": "article",
+    }
+    return enrich_page(f"sports-edge/{key}", page)
+
+
+def article_page(slug):
+    item = ARTICLE_PAGES.get((slug or "").lower())
+    if not item:
+        return None
+    page = {
+        **item,
+        "og_type": "article",
+        "breadcrumb": item["h1"],
+    }
+    return enrich_page(f"intel/{slug}", page)
+
+
+def seo_index_payload():
+    pages = searchable_pages()
+    return {
+        "brand": "CoinPilotX",
+        "legal_name": "CoinPilotXAI Inc.",
+        "site": SITE_URL + "/",
+        "telegram_bot": "https://t.me/DocShieldX_bot",
+        "purpose": "Educational AI intelligence for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Telegram-first workflows.",
+        "safety": [
+            "Educational only, not financial, betting, investment, or legal advice.",
+            "CoinPilotX never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.",
+            "No guaranteed profit, guaranteed sports picks, or certainty claims.",
+        ],
+        "keyword_clusters": KEYWORD_CLUSTERS,
+        "public_pages": [
+            {
+                "title": page["title"],
+                "url": page["canonical"],
+                "description": page["description"],
+                "keywords": page.get("keywords", []),
+            }
+            for page in pages
+        ],
+    }
+
+
 def searchable_pages():
     pages = []
     pages.extend(seo_page(slug) for slug in SEO_PAGES)
     pages.extend(market_page(slug) for slug in MARKET_PAGES)
+    pages.extend(market_prediction_page(slug) for slug in MARKET_PAGES)
+    pages.extend(market_live_page(slug) for slug in MARKET_PAGES)
     pages.extend(country_page(slug) for slug in COUNTRY_PAGES)
+    pages.extend(sports_page(slug) for slug in SPORTS_SEO_PAGES)
+    pages.extend(article_page(slug) for slug in ARTICLE_PAGES)
     pages.extend(hub_page(slug) for slug in HUBS)
     return [page for page in pages if page]
 
@@ -522,6 +1026,10 @@ def all_public_paths():
     paths = ["/", "/support", "/privacy", "/terms"]
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
+    paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]
+    paths += ["/markets/" + slug + "/live" for slug in MARKET_PAGES]
     paths += ["/country-intelligence/" + slug for slug in COUNTRY_PAGES]
+    paths += ["/sports-edge/" + slug for slug in SPORTS_SEO_PAGES]
+    paths += ["/intel/" + slug for slug in ARTICLE_PAGES]
     paths += ["/" + slug for slug in HUBS]
     return paths

@@ -47,7 +47,19 @@ from services import (
     wallet_intel as wallet_intel_service,
 )
 from seo import schema as seo_schema
-from seo.content import all_public_paths, country_page, hub_page, market_page, search_pages, seo_page
+from seo.content import (
+    all_public_paths,
+    article_page,
+    country_page,
+    hub_page,
+    market_live_page,
+    market_page,
+    market_prediction_page,
+    search_pages,
+    seo_index_payload,
+    seo_page,
+    sports_page,
+)
 # =========================
 # 💳 STRIPE CONFIG (RIGHT AFTER CONSTANTS)
 # =========================
@@ -481,6 +493,15 @@ webhook_app.config.update(
 app = webhook_app
 
 
+@webhook_app.context_processor
+def inject_seo_runtime_config():
+    return {
+        "ga_measurement_id": os.getenv("GA_MEASUREMENT_ID", "").strip(),
+        "google_site_verification": os.getenv("GOOGLE_SITE_VERIFICATION", "").strip(),
+        "bing_site_verification": os.getenv("BING_SITE_VERIFICATION", "").strip(),
+    }
+
+
 @webhook_app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
@@ -512,11 +533,27 @@ def render_seo_landing(page, include_article=False):
     schema_json = seo_schema.schema_graph(
         page,
         include_product=page.get("slug") in {"portfolio-intelligence", "ai-market-analysis", "telegram-crypto-bot"},
-        include_article=include_article,
+        include_article=include_article or page.get("og_type") == "article",
     )
     share_url = quote(page["canonical"], safe="")
     share_text = quote(f"{page['h1']} by CoinPilotXAI Inc.", safe="")
     return render_template("seo_page.html", page=page, schema_json=schema_json, share_url=share_url, share_text=share_text)
+
+
+@webhook_app.route("/markets/<symbol>/prediction", methods=["GET"])
+def seo_market_prediction(symbol):
+    page = market_prediction_page(symbol)
+    if not page:
+        return redirect(url_for("home"), code=302)
+    return render_seo_landing(page)
+
+
+@webhook_app.route("/markets/<symbol>/live", methods=["GET"])
+def seo_market_live(symbol):
+    page = market_live_page(symbol)
+    if not page:
+        return redirect(url_for("home"), code=302)
+    return render_seo_landing(page)
 
 
 @webhook_app.route("/markets/<symbol>", methods=["GET"])
@@ -533,6 +570,22 @@ def seo_country_page(country_slug):
     if not page:
         return redirect(url_for("home"), code=302)
     return render_seo_landing(page)
+
+
+@webhook_app.route("/sports-edge/<sport_slug>", methods=["GET"])
+def seo_sports_edge_page(sport_slug):
+    page = sports_page(sport_slug)
+    if not page:
+        return redirect(url_for("home"), code=302)
+    return render_seo_landing(page)
+
+
+@webhook_app.route("/intel/<article_slug>", methods=["GET"])
+def seo_intel_article_page(article_slug):
+    page = article_page(article_slug)
+    if not page:
+        return redirect("/intel", code=302)
+    return render_seo_landing(page, include_article=True)
 
 
 @webhook_app.route("/news", methods=["GET"])
@@ -626,6 +679,11 @@ def reset_pwa_page():
 def add_pwa_headers(response):
     if request.path in ("/static/service-worker.js", "/sw.js"):
         response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    elif request.path.startswith(("/static/", "/icons/")):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif request.path in ("/sitemap.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+        response.headers["Cache-Control"] = "public, max-age=300"
     return response
 
 
@@ -1887,6 +1945,11 @@ def llms_txt():
     return send_from_directory(webhook_app.static_folder, "llms.txt", mimetype="text/plain")
 
 
+@webhook_app.route("/ai-index.json", methods=["GET"])
+def ai_index_json():
+    return jsonify(seo_index_payload())
+
+
 @webhook_app.route("/sitemap.xml", methods=["GET"])
 def sitemap_xml():
     today = datetime.now().strftime("%Y-%m-%d")
@@ -1902,11 +1965,23 @@ def sitemap_xml():
     body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for path in all_public_paths():
         loc = "https://coinpilotx.app" + path
+        if path.startswith("/markets/") and path.endswith("/live"):
+            page_priority = "0.82"
+        elif path.startswith("/markets/") and path.endswith("/prediction"):
+            page_priority = "0.8"
+        elif path.startswith("/markets/"):
+            page_priority = "0.8"
+        elif path.startswith("/sports-edge/") or path.startswith("/intel/"):
+            page_priority = "0.78"
+        elif path.startswith("/country-intelligence/"):
+            page_priority = "0.74"
+        else:
+            page_priority = priority.get(path, "0.72")
         body.append("  <url>")
         body.append(f"    <loc>{loc}</loc>")
         body.append(f"    <lastmod>{today}</lastmod>")
         body.append("    <changefreq>weekly</changefreq>")
-        body.append(f"    <priority>{priority.get(path, '0.72')}</priority>")
+        body.append(f"    <priority>{page_priority}</priority>")
         body.append("  </url>")
     body.append("</urlset>")
     return Response("\n".join(body), mimetype="application/xml")

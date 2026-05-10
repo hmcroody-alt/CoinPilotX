@@ -7,6 +7,8 @@ Support: https://coinpilotx.app/support
 Privacy: https://coinpilotx.app/privacy
 Terms: https://coinpilotx.app/terms
 Telegram bot: https://t.me/DocShieldX_bot
+Machine-readable public index: https://coinpilotx.app/ai-index.json
+Canonical sitemap: https://coinpilotx.app/sitemap.xml
 
 ## Important Safety Context
 
@@ -18,6 +20,10 @@ Sports Edge is informational only and does not provide guaranteed betting outcom
 
 ## Core Public Pages
 
+- Live crypto market board: https://coinpilotx.app/live-crypto-market
+- Trending crypto intelligence: https://coinpilotx.app/trending-crypto
+- Bitcoin prediction context: https://coinpilotx.app/bitcoin-prediction
+- BTC price prediction scenarios: https://coinpilotx.app/btc-price-prediction
 - AI market intelligence: https://coinpilotx.app/ai-market-analysis
 - AI crypto assistant: https://coinpilotx.app/ai-crypto-assistant
 - Telegram crypto bot: https://coinpilotx.app/telegram-crypto-bot
@@ -27,11 +33,32 @@ Sports Edge is informational only and does not provide guaranteed betting outcom
 - Whale alerts: https://coinpilotx.app/whale-alerts
 - Portfolio intelligence: https://coinpilotx.app/portfolio-intelligence
 - Sports Edge: https://coinpilotx.app/sports-edge
+- Sports betting intelligence: https://coinpilotx.app/sports-betting-intelligence
 - Day Signal: https://coinpilotx.app/day-signal
 - Crypto safety: https://coinpilotx.app/crypto-safety
 - News and insights hub: https://coinpilotx.app/insights
+
+## Indexable Content Collections
+
+- Market pages: https://coinpilotx.app/markets/btc, /markets/eth, /markets/sol, and additional major assets.
+- Prediction scenario pages: /markets/btc/prediction, /markets/eth/prediction, and equivalent major asset scenario pages.
+- Live market pages: /markets/btc/live, /markets/eth/live, and equivalent major asset live context pages.
+- Sports Edge pages: /sports-edge/nba, /sports-edge/nfl, /sports-edge/mlb, /sports-edge/nhl, /sports-edge/soccer, /sports-edge/tennis, /sports-edge/live-games.
+- Country intelligence pages: /country-intelligence/us, /country-intelligence/uk, /country-intelligence/canada, and supported country profiles.
+- Structured articles: /intel/crypto-scam-alert-checklist, /intel/wallet-drainer-warning-signs, /intel/bitcoin-risk-scenarios, /intel/ai-crypto-analysis-framework, /intel/sports-edge-position-discipline, /intel/telegram-crypto-bot-safety-guide.
+
+## Keyword Clusters
+
+- AI crypto intelligence, crypto AI assistant, AI market analysis, Telegram crypto bot.
+- Crypto scam protection, crypto scam checker, wallet drainer warning, crypto safety tools.
+- Crypto wallet scanner, blockchain wallet intelligence, wallet risk scanner, public TXID checker.
+- Sports betting intelligence, AI sports intelligence, Sports Edge AI, position risk analysis.
+- Bitcoin prediction, BTC price prediction, live crypto market, trending crypto.
 
 ## AI Search Summary
 
 CoinPilotX helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, and Sports Edge context inside Telegram and the web. The product emphasizes clarity, safety, public data, user control, and ethical conversion. It avoids fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
 
+## Crawler Guidance
+
+Public educational pages are indexable. Private account, admin, API, debug, payment webhook, and authentication routes should not be indexed. CoinPilotXAI Inc. does not publish fake testimonials, fake user metrics, black-hat SEO pages, or guaranteed-outcome claims.

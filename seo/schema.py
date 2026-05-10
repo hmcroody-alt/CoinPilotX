@@ -107,7 +107,7 @@ def breadcrumb_schema(items):
 
 
 def webpage_schema(page):
-    return {
+    schema = {
         "@type": "WebPage",
         "@id": page["canonical"] + "#webpage",
         "url": page["canonical"],
@@ -118,6 +118,11 @@ def webpage_schema(page):
         "image": page.get("image") or SHARE_IMAGE_URL,
         "inLanguage": "en",
     }
+    if page.get("keywords"):
+        schema["keywords"] = page["keywords"]
+    if page.get("dateModified") or page.get("updated"):
+        schema["dateModified"] = page.get("dateModified") or page.get("updated")
+    return schema
 
 
 def product_schema():
@@ -139,8 +144,9 @@ def product_schema():
 
 
 def article_schema(page):
-    return {
+    schema = {
         "@type": "Article",
+        "@id": page["canonical"] + "#article",
         "headline": page["title"],
         "description": page["description"],
         "image": page.get("image") or SHARE_IMAGE_URL,
@@ -148,8 +154,15 @@ def article_schema(page):
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "dateModified": page.get("updated", "2026-05-10"),
         "datePublished": page.get("published", "2026-05-10"),
-        "mainEntityOfPage": page["canonical"],
+        "mainEntityOfPage": {"@id": page["canonical"] + "#webpage"},
+        "articleSection": page.get("eyebrow", "AI intelligence"),
+        "inLanguage": "en",
     }
+    if page.get("keywords"):
+        schema["keywords"] = page["keywords"]
+    if page.get("answer"):
+        schema["abstract"] = page["answer"]
+    return schema
 
 
 def related_item_list_schema(page):
@@ -188,7 +201,7 @@ def schema_graph(page, include_product=False, include_article=False):
         graph.append(faq_schema(page["faqs"]))
     if include_product:
         graph.append(product_schema())
-    if include_article:
+    if include_article or page.get("og_type") == "article":
         graph.append(article_schema(page))
     related = related_item_list_schema(page)
     if related:

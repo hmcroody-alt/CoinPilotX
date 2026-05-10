@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
 Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
@@ -18,8 +20,74 @@ LLM-Content: https://coinpilotx.app/llms.txt
 
 # AI/search crawlers are allowed to index public educational pages.
 # Private/account/API/admin/debug routes are not included in the sitemap.
+User-agent: Googlebot
+Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
+
+User-agent: Bingbot
+Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
+
+User-agent: OAI-SearchBot
+Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
+
+User-agent: ChatGPT-User
+Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
+
 User-agent: GPTBot
 Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
 Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
@@ -34,6 +102,8 @@ Disallow: /stripe-webhook
 
 User-agent: PerplexityBot
 Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
 Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
@@ -48,6 +118,8 @@ Disallow: /stripe-webhook
 
 User-agent: ClaudeBot
 Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
 Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/
@@ -62,6 +134,24 @@ Disallow: /stripe-webhook
 
 User-agent: Google-Extended
 Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
+Disallow: /admin/
+Disallow: /api/
+Disallow: /debug/
+Disallow: /account
+Disallow: /login
+Disallow: /logout
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /stripe-webhook
+
+User-agent: CCBot
+Allow: /
+Allow: /ai-index.json
+Allow: /llms.txt
 Disallow: /admin/
 Disallow: /api/
 Disallow: /debug/

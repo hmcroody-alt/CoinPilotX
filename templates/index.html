@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CoinPilotXAI Inc | AI Crypto Intelligence</title>
   <meta name="description" content="CoinPilotX is powered by CoinPilotXAI Inc. and provides AI crypto intelligence, scam protection, whale alerts, portfolio intelligence, blockchain wallet risk scanning, and market analysis inside Telegram." />
+  <meta name="keywords" content="AI crypto intelligence, crypto AI assistant, Telegram crypto bot, crypto scam protection, wallet intelligence, whale alerts, crypto portfolio AI, Sports Edge AI" />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-  <!-- Add Google Search Console verification here: <meta name="google-site-verification" content="YOUR_CODE" /> -->
-  <!-- Add Bing Webmaster verification here: <meta name="msvalidate.01" content="YOUR_CODE" /> -->
+  <meta name="ai-content-declaration" content="Educational AI intelligence, public-data safety guidance, no financial or betting advice, no guaranteed outcomes." />
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable CoinPilotXAI metadata" />
+  <link rel="alternate" type="application/json" href="/ai-index.json" title="CoinPilotXAI public AI index" />
+  {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}" />{% endif %}
+  {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="https://coinpilotx.app/" />
   <meta property="og:title" content="CoinPilotXAI Inc. | CoinPilotX AI Crypto Intelligence Bot" />
   <meta property="og:description" content="CoinPilotX is powered by CoinPilotXAI Inc. for AI-powered crypto intelligence, whale alerts, scam protection, portfolio tracking, and market insights inside Telegram." />
@@ -29,6 +33,15 @@
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="preload" as="image" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  {% if ga_measurement_id %}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "{{ ga_measurement_id }}", { anonymize_ip: true });
+  </script>
+  {% endif %}
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -3061,37 +3074,37 @@
 
         <div class="visual-grid">
           <article class="card module-card">
-            <img class="module-visual" src="{{ url_for('static', filename='assets/ai-intelligence-visual.svg') }}" alt="Abstract CoinPilotX AI market intelligence dashboard" loading="lazy">
+            <img class="module-visual" src="{{ url_for('static', filename='assets/ai-intelligence-visual.svg') }}" alt="Abstract CoinPilotX AI market intelligence dashboard" loading="lazy" decoding="async" width="640" height="420">
             <h3>AI Market Analysis</h3>
             <p>Ask for BTC, ETH, trend, volatility, market pressure, and safer context before reacting.</p>
             <span class="command-chip">/analysis BTC</span>
           </article>
           <article class="card module-card">
-            <img class="module-visual" src="{{ url_for('static', filename='assets/whale-alert-visual.svg') }}" alt="Abstract CoinPilotX whale alert intelligence visual" loading="lazy">
+            <img class="module-visual" src="{{ url_for('static', filename='assets/whale-alert-visual.svg') }}" alt="Abstract CoinPilotX whale alert intelligence visual" loading="lazy" decoding="async" width="640" height="420">
             <h3>Whale Intelligence</h3>
             <p>Detect large BTC movements, possible exchange pressure, and public-chain activity shifts.</p>
             <span class="command-chip">/whales</span>
           </article>
           <article class="card module-card">
-            <img class="module-visual" src="{{ url_for('static', filename='assets/scam-shield-visual.svg') }}" alt="Abstract CoinPilotX scam shield protection visual" loading="lazy">
+            <img class="module-visual" src="{{ url_for('static', filename='assets/scam-shield-visual.svg') }}" alt="Abstract CoinPilotX scam shield protection visual" loading="lazy" decoding="async" width="640" height="420">
             <h3>Scam Shield</h3>
             <p>Review suspicious messages, scam patterns, wallet risks, and seed phrase danger signs.</p>
             <span class="command-chip">/scamstories</span>
           </article>
           <article class="card module-card">
-            <img class="module-visual" src="{{ url_for('static', filename='assets/portfolio-engine-visual.svg') }}" alt="Abstract CoinPilotX portfolio decision engine visual" loading="lazy">
+            <img class="module-visual" src="{{ url_for('static', filename='assets/portfolio-engine-visual.svg') }}" alt="Abstract CoinPilotX portfolio decision engine visual" loading="lazy" decoding="async" width="640" height="420">
             <h3>Portfolio Advice</h3>
             <p>Compare live value, manual balance, risk level, and educational BUY / SELL / WAIT / HOLD logic.</p>
             <span class="command-chip">/portfolio_advice</span>
           </article>
           <article class="card module-card">
-            <img class="module-visual" src="{{ url_for('static', filename='assets/country-intelligence-visual.svg') }}" alt="Abstract CoinPilotX country crypto intelligence visual" loading="lazy">
+            <img class="module-visual" src="{{ url_for('static', filename='assets/country-intelligence-visual.svg') }}" alt="Abstract CoinPilotX country crypto intelligence visual" loading="lazy" decoding="async" width="640" height="420">
             <h3>Country Crypto Intelligence</h3>
             <p>Understand adoption, regulation, scams, exchange access, remittance usage, and local risk.</p>
             <span class="command-chip">/countrynews</span>
           </article>
           <article class="card module-card">
-            <img class="module-visual" src="{{ url_for('static', filename='assets/blockchain-network-visual.svg') }}" alt="Abstract CoinPilotX blockchain network intelligence visual" loading="lazy">
+            <img class="module-visual" src="{{ url_for('static', filename='assets/blockchain-network-visual.svg') }}" alt="Abstract CoinPilotX blockchain network intelligence visual" loading="lazy" decoding="async" width="640" height="420">
             <h3>Blockchain Network Intelligence</h3>
             <p>Translate mempool, fees, mining, difficulty, and network health into plain language.</p>
             <span class="command-chip">/networkhealth</span>

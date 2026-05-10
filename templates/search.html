@@ -6,9 +6,31 @@
   <title>Search CoinPilotXAI Inc.</title>
   <meta name="description" content="Search CoinPilotXAI Inc. educational AI crypto intelligence, wallet safety, scam protection, Sports Edge, and Telegram bot pages." />
   <meta name="robots" content="noindex, follow" />
+  {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}" />{% endif %}
+  {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="https://coinpilotx.app/search" />
+  <meta property="og:title" content="Search CoinPilotXAI Inc." />
+  <meta property="og:description" content="Search educational CoinPilotXAI Inc. crypto safety, wallet intelligence, Sports Edge, and AI market pages." />
+  <meta property="og:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://coinpilotx.app/search" />
+  <meta property="og:site_name" content="CoinPilotXAI Inc." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Search CoinPilotXAI Inc." />
+  <meta name="twitter:description" content="Search CoinPilotXAI Inc. educational crypto intelligence and safety pages." />
+  <meta name="twitter:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
   <meta name="theme-color" content="#00e5ff" />
   <link rel="icon" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <link rel="manifest" href="/manifest.json" />
+  {% if ga_measurement_id %}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "{{ ga_measurement_id }}", { anonymize_ip: true });
+  </script>
+  {% endif %}
   <style>
     :root {
       color-scheme: dark;
@@ -191,5 +213,6 @@
       {% endif %}
     </section>
   </main>
+  <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>
 </html>

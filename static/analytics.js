@@ -44,7 +44,12 @@
       share_whatsapp: "share_click",
       internal_link: "internal_link_click",
       signup_click: "signup_click",
-      referral_link: "referral_link_click"
+      referral_link: "referral_link_click",
+      view_prediction: "seo_prediction_view",
+      view_live_market_page: "seo_live_market_view",
+      article_read: "seo_article_read",
+      view_demo: "demo_view",
+      install_app: "pwa_install_click"
     };
     return map[name] || name || "cta_click";
   }
