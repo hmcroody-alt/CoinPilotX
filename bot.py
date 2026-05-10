@@ -34,6 +34,17 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
+from services import (
+    day_signal as day_signal_service,
+    intelligence as intelligence_service,
+    market_data as market_data_service,
+    pro_access as pro_access_service,
+    scam_shield as scam_shield_service,
+    sports_data as sports_data_service,
+    user_context as user_context_service,
+    wallet_intel as wallet_intel_service,
+)
 # =========================
 # 💳 STRIPE CONFIG (RIGHT AFTER CONSTANTS)
 # =========================
@@ -265,16 +276,17 @@ def get_manual_holding(user_id, asset):
     return row[0] if row else 0.0
 def is_pro(user_id):
     conn = db()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
     try:
-        cur.execute("SELECT is_pro FROM users WHERE user_id=?", (user_id,))
+        cur.execute("SELECT * FROM users WHERE user_id=? OR telegram_user_id=? ORDER BY is_pro DESC LIMIT 1", (user_id, user_id))
         row = cur.fetchone()
     except Exception:
         row = None
 
     conn.close()
-    return bool(row and row[0] == 1)
+    return pro_access_service.is_pro_row(dict(row)) if row else False
 
 
 # =========================
@@ -1221,6 +1233,12 @@ def analytics_summary():
     page_views_today = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM leads WHERE created_at>=?", (since_day,))
     leads_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE created_at>=?", (since_day,))
+    new_users_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE telegram_user_id IS NOT NULL")
+    linked_telegram_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE is_pro=1 OR lower(COALESCE(plan,''))='pro' OR lower(COALESCE(subscription_status,''))='active'")
+    pro_users = cur.fetchone()[0]
     conversion_rate = (leads_today / visitors_today * 100) if visitors_today else 0
 
     def rows(sql, params=()):
@@ -1232,11 +1250,19 @@ def analytics_summary():
         "visitors_today": visitors_today,
         "page_views_today": page_views_today,
         "leads_today": leads_today,
+        "new_users_today": new_users_today,
+        "linked_telegram_users": linked_telegram_users,
+        "pro_users": pro_users,
         "conversion_rate": conversion_rate,
         "top_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND page_url!='' GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
         "referrers": rows("SELECT COALESCE(NULLIF(referrer,''),'Direct'), COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY COALESCE(NULLIF(referrer,''),'Direct') ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
         "devices": rows("SELECT device_type, browser, COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY device_type, browser ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
         "cta_clicks": rows("SELECT event_name, COUNT(*) FROM analytics_events WHERE created_at>=? AND event_name LIKE '%click%' GROUP BY event_name ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
+        "feature_usage": rows("SELECT feature, COUNT(*) FROM user_ai_interactions WHERE created_at>=? GROUP BY feature ORDER BY COUNT(*) DESC LIMIT 12", (since_day,)),
+        "bot_usage": rows("SELECT feature, COUNT(*) FROM user_ai_interactions WHERE created_at>=? AND metadata LIKE '%telegram%' GROUP BY feature ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
+        "website_usage": rows("SELECT feature, COUNT(*) FROM user_ai_interactions WHERE created_at>=? AND metadata LIKE '%website%' GROUP BY feature ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
+        "api_failures": rows("SELECT event_name, page_url, metadata, created_at FROM analytics_events WHERE event_name='api_failure' ORDER BY id DESC LIMIT 15"),
+        "email_sends": rows("SELECT subject, status, COUNT(*) FROM email_logs WHERE created_at>=? GROUP BY subject, status ORDER BY COUNT(*) DESC LIMIT 12", (since_day,)),
         "recent": rows("SELECT event_name, page_url, device_type, browser, created_at FROM analytics_events ORDER BY id DESC LIMIT 25"),
         "new_leads": rows("SELECT full_name, email, phone, country, email_opt_in, sms_opt_in, created_at FROM leads ORDER BY id DESC LIMIT 25"),
     }
@@ -1273,15 +1299,24 @@ def admin_analytics_page():
     <div class="actions"><a href="/admin/analytics/export/emails?password={request.args.get('password','')}">Export email opt-ins</a><a href="/admin/analytics/export/sms?password={request.args.get('password','')}">Export SMS opt-ins</a></div>
     <div class="grid">
       <div class="card"><div>Live visitors</div><div class="metric">{data['live_visitors']}</div></div>
-      <div class="card"><div>Visitors today</div><div class="metric">{data['visitors_today']}</div></div>
-      <div class="card"><div>Page views today</div><div class="metric">{data['page_views_today']}</div></div>
-      <div class="card"><div>Lead conversion</div><div class="metric">{data['conversion_rate']:.1f}%</div></div>
-    </div>
-    <h2>Top pages</h2>{table(data['top_pages'], ['Page', 'Events'])}
-    <h2>Referral sources</h2>{table(data['referrers'], ['Referrer', 'Events'])}
-    <h2>Device / browser</h2>{table(data['devices'], ['Device', 'Browser', 'Events'])}
-    <h2>CTA clicks</h2>{table(data['cta_clicks'], ['Event', 'Clicks'])}
-    <h2>Recent activity</h2>{table(data['recent'], ['Event', 'Page', 'Device', 'Browser', 'Time'])}
+	      <div class="card"><div>Visitors today</div><div class="metric">{data['visitors_today']}</div></div>
+	      <div class="card"><div>Page views today</div><div class="metric">{data['page_views_today']}</div></div>
+	      <div class="card"><div>Lead conversion</div><div class="metric">{data['conversion_rate']:.1f}%</div></div>
+	      <div class="card"><div>New users today</div><div class="metric">{data['new_users_today']}</div></div>
+	      <div class="card"><div>Linked Telegram users</div><div class="metric">{data['linked_telegram_users']}</div></div>
+	      <div class="card"><div>Pro users</div><div class="metric">{data['pro_users']}</div></div>
+	      <div class="card"><div>Leads today</div><div class="metric">{data['leads_today']}</div></div>
+	    </div>
+	    <h2>Top pages</h2>{table(data['top_pages'], ['Page', 'Events'])}
+	    <h2>Referral sources</h2>{table(data['referrers'], ['Referrer', 'Events'])}
+	    <h2>Device / browser</h2>{table(data['devices'], ['Device', 'Browser', 'Events'])}
+	    <h2>CTA clicks</h2>{table(data['cta_clicks'], ['Event', 'Clicks'])}
+	    <h2>Most-used intelligence features</h2>{table(data['feature_usage'], ['Feature', 'Uses'])}
+	    <h2>Bot usage</h2>{table(data['bot_usage'], ['Feature', 'Uses'])}
+	    <h2>Website intelligence usage</h2>{table(data['website_usage'], ['Feature', 'Uses'])}
+	    <h2>API failures</h2>{table(data['api_failures'], ['Event', 'Page', 'Metadata', 'Time'])}
+	    <h2>Email sends</h2>{table(data['email_sends'], ['Subject', 'Status', 'Count'])}
+	    <h2>Recent activity</h2>{table(data['recent'], ['Event', 'Page', 'Device', 'Browser', 'Time'])}
     <h2>New leads</h2>{table(data['new_leads'], ['Name', 'Email', 'Phone', 'Country', 'Email opt-in', 'SMS opt-in', 'Created'])}
     </div></body></html>
     """
@@ -1364,20 +1399,25 @@ def indexnow_metadata_api():
 
 @webhook_app.route("/api/intelligence-feed", methods=["GET"])
 def intelligence_feed_api():
-    return jsonify(live_intelligence_feed())
+    return jsonify(intelligence_service.intelligence_feed())
 
 
 @webhook_app.route("/api/markets", methods=["GET"])
 def markets_api():
     category = request.args.get("category", "top_volume")
-    return jsonify(live_market_board(category=category))
+    return jsonify(market_data_service.live_market_board(category=category))
 
 
 @webhook_app.route("/api/sports-edge", methods=["GET"])
 def sports_edge_api():
     game_id = request.args.get("game_id", "").strip()
     league = request.args.get("league", "all").strip().lower()
-    return jsonify(live_sports_edge(game_id=game_id, league=league))
+    payload = sports_data_service.live_sports_edge(league=league)
+    if game_id:
+        selected = next((game for game in payload.get("games", []) if game.get("id") == game_id or game.get("id") == game_id.replace("_", ":")), None)
+        payload["selected_game"] = selected
+        payload["analysis"] = sports_data_service.game_analysis(selected)
+    return jsonify(payload)
 
 
 @webhook_app.route("/api/platform-status", methods=["GET"])
@@ -1391,10 +1431,14 @@ def website_ai_assistant_api():
     question = clean_html(payload.get("question", "")).strip()
     if not question:
         return jsonify({"ok": False, "response": "Ask a crypto, wallet, scam, market, or sports question first."}), 400
+    account = load_account_by_id(account_user_id())
+    user_id = account.get("user_id") if account else 0
+    response = intelligence_service.assistant_response(user_id, question, pro=pro_access_service.is_pro_row(account or {}))
+    user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "website")
     return jsonify({
         "ok": True,
         "powered_by": "CoinPilotXAI Inc.",
-        "response": openai_chat_completion(0, question),
+        "response": response,
         "safety": "Informational only — not financial advice.",
     })
 
@@ -1405,30 +1449,36 @@ def website_scam_shield_api():
     text = clean_html(payload.get("text", "")).strip()
     if not text:
         return jsonify({"ok": False, "response": "Paste a suspicious message, link, or crypto pitch first."}), 400
-    return jsonify({"ok": True, **scam_text_intelligence(text)})
+    account = load_account_by_id(account_user_id())
+    user_id = account.get("user_id") if account else 0
+    result = scam_shield_service.analyze_text(text)
+    user_context_service.log_interaction(user_id, "scam_shield_used", text, result.get("response", ""), "website")
+    return jsonify({"ok": True, **result})
 
 
 @webhook_app.route("/api/wallet-intel", methods=["GET"])
 def website_wallet_intel_api():
     address = request.args.get("address", "").strip()
     if not address:
-        return jsonify({"ok": False, "response": "Enter a public BTC wallet address. Never enter private keys or seed phrases."}), 400
-    if not is_btc_address(address):
-        return jsonify({"ok": False, "response": "That does not look like a public BTC address. Never enter seed phrases, private keys, or wallet passwords."}), 400
-    return jsonify({
-        "ok": True,
-        "response": wallet_info_summary(0, address, save_connection=False),
-        "safety": "Only public wallet data is used. Informational only — not financial advice.",
-    })
+        return jsonify({"ok": False, "response": "Enter a public wallet address or TXID. Never enter private keys or seed phrases."}), 400
+    account = load_account_by_id(account_user_id())
+    user_id = account.get("user_id") if account else 0
+    result = wallet_intel_service.analyze_public_identifier(address)
+    user_context_service.log_interaction(user_id, "wallet_intel_used", address, result.get("response", ""), "website")
+    return jsonify(result)
 
 
 @webhook_app.route("/api/day-signal", methods=["POST"])
 def website_day_signal_api():
     payload = request.get_json(silent=True) or {}
     answers = payload.get("answers", {})
-    result = build_day_signal(answers)
+    result = day_signal_service.generate(answers)
     if not result["ok"]:
         return jsonify(result), 400
+    account = load_account_by_id(account_user_id())
+    user_id = account.get("user_id") if account else 0
+    day_signal_service.save_result(user_id, result, answers)
+    user_context_service.log_interaction(user_id, "day_signal_used", json.dumps(answers), result.get("response", ""), "website")
     return jsonify(result)
 
 
@@ -2345,6 +2395,7 @@ def sort_markets(markets, category="top_volume"):
 
 
 def live_market_board(category="top_volume", limit=50):
+    return market_data_service.live_market_board(category=category, limit=limit)
     now = datetime.now()
     cached_at = MARKETS_CACHE.get("created_at")
     cache_fresh = (
@@ -2529,6 +2580,7 @@ def market_board_summary(user_id, category="top_volume"):
 
 
 def scam_text_intelligence(text):
+    return scam_shield_service.analyze_text(text).get("response", "")
     lowered = (text or "").lower()
     checks = [
         ("Seed phrase/private key request", ["seed phrase", "private key", "recovery phrase", "12 words", "24 words"], "Critical"),
@@ -2955,6 +3007,8 @@ def fetch_sports_edge_games(league="all", limit=30):
 
 
 def get_sports_edge_games(league="all", limit=30):
+    payload = sports_data_service.live_sports_edge(league=league, limit=limit)
+    return payload.get("games", [])[:limit], payload.get("source", "public scoreboard data"), payload.get("warning")
     now = datetime.now()
     cached_at = SPORTS_EDGE_CACHE.get("created_at")
     cached_data = SPORTS_EDGE_CACHE.get("data")
@@ -2999,6 +3053,7 @@ def get_sports_edge_games(league="all", limit=30):
 
 
 def sports_risk_label(game):
+    return sports_data_service.risk_label(game)
     home_score = game.get("home_score", 0)
     away_score = game.get("away_score", 0)
     state = game.get("state")
@@ -3038,6 +3093,7 @@ def odds_text(game):
 
 
 def sports_game_intelligence(game):
+    return sports_data_service.game_intelligence(game)
     home_score = game.get("home_score", 0)
     away_score = game.get("away_score", 0)
     margin = home_score - away_score
@@ -3148,6 +3204,16 @@ def find_sports_game(game_id):
 
 
 def live_sports_edge(game_id="", league="all"):
+    payload = sports_data_service.live_sports_edge(league=league, limit=30)
+    if game_id:
+        normalized = game_id.replace("_", ":")
+        game = next((item for item in payload.get("games", []) if item.get("id") == normalized or item.get("event_id") == game_id), None)
+        if game:
+            payload["selected_game"] = game
+            payload["analysis"] = sports_data_service.game_analysis(game)
+        else:
+            payload["warning"] = "That game is no longer available in the live feed."
+    return payload
     games, source, warning = get_sports_edge_games(league=league, limit=30)
     for game in games:
         game["risk_label"] = sports_risk_label(game)
@@ -4575,6 +4641,56 @@ def init_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS day_signal_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        score INTEGER,
+        signal TEXT,
+        answers_json TEXT,
+        response TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_ai_interactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        feature TEXT,
+        prompt TEXT,
+        response TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS saved_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        address TEXT,
+        chain TEXT,
+        label TEXT,
+        created_at TEXT,
+        last_checked_at TEXT,
+        UNIQUE(user_id, address)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        alert_type TEXT,
+        target TEXT,
+        threshold TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -4698,6 +4814,9 @@ def format_free_vs_pro_response(user_id, free_text, pro_text=None):
 
 
 def openai_chat_completion(user_id, question):
+    response = intelligence_service.assistant_response(user_id, question, pro=is_pro(user_id))
+    user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "telegram")
+    return append_plan_footer(user_id, response)
     api_key = os.getenv("OPENAI_API_KEY")
     pro = is_pro(user_id)
     if not api_key:
@@ -5217,7 +5336,11 @@ def wallet_risk_analysis(address):
 
 def wallet_info_summary(user_id, address, save_connection=False):
     if not is_btc_address(address):
-        return "Please send a public BTC address only. Never send seed phrases, private keys, recovery phrases, or wallet passwords."
+        result = wallet_intel_service.analyze_public_identifier(address)
+        return result.get(
+            "response",
+            "Please send a public BTC/ETH wallet address or public BTC TXID. Never send seed phrases, private keys, recovery phrases, or wallet passwords.",
+        )
     analysis = wallet_risk_analysis(address)
     if not analysis:
         return "Wallet data is unavailable right now. Please verify the address and try again."
@@ -5257,7 +5380,10 @@ def wallet_info_summary(user_id, address, save_connection=False):
 
 def scam_wallet_summary(address):
     if not is_btc_address(address):
-        return "Send a public BTC address for /walletscan. Never send private keys, seed phrases, recovery phrases, or passwords."
+        result = wallet_intel_service.analyze_public_identifier(address)
+        if result.get("ok"):
+            return result.get("response")
+        return "Send a public BTC/ETH wallet address or public BTC TXID for /walletscan. Never send private keys, seed phrases, recovery phrases, or passwords."
     analysis = wallet_risk_analysis(address)
     if not analysis:
         return "Wallet scan is unavailable right now. Please verify the address and try again."
@@ -6987,6 +7113,7 @@ DAY_SIGNAL_QUESTIONS = [
 
 
 def build_day_signal(answers):
+    return day_signal_service.generate(answers)
     if not isinstance(answers, dict):
         return {"ok": False, "response": "Answer the Day Signal questions first."}
 
@@ -7333,6 +7460,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         result = build_day_signal(answers)
+        day_signal_service.save_result(user_id, result, answers)
         context.user_data.pop("day_signal_answers", None)
         await query.message.reply_text(result["response"], reply_markup=main_menu())
         return
