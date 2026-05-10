@@ -622,6 +622,20 @@ def create_password_reset(email):
     return user, token
 
 
+def create_email_verification(user_id):
+    token = secrets.token_urlsafe(32)
+    now = datetime.now()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO email_verification_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, token, (now + timedelta(hours=24)).isoformat(), now.isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return token
+
+
 @webhook_app.route("/signup", methods=["GET", "POST"])
 def signup_page():
     init_db()
@@ -648,6 +662,9 @@ def signup_page():
             return render_account_page("signup", "Create Account", error=error)
         session["account_user_id"] = user["user_id"]
         send_welcome_email(user)
+        verification_token = create_email_verification(user["user_id"])
+        verification_link = url_for("verify_email_page", token=verification_token, _external=True)
+        send_email_verification(user, verification_link)
         return redirect(url_for("account_page"))
     return render_account_page("signup", "Create Account")
 
@@ -733,6 +750,27 @@ def forgot_password_page():
             send_password_reset_email(user, reset_link)
         message = "If that email has an account, a password reset link will be sent."
     return render_account_page("forgot", "Forgot Password", message=message)
+
+
+@webhook_app.route("/verify-email", methods=["GET"])
+def verify_email_page():
+    init_db()
+    token = clean_html(request.args.get("token", ""))
+    if not token:
+        return render_account_page("login", "Login", error="This verification link is invalid.")
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, expires_at, used_at FROM email_verification_tokens WHERE token=? ORDER BY id DESC LIMIT 1", (token,))
+    row = cur.fetchone()
+    if not row or row[2] or row[1] < datetime.now().isoformat():
+        conn.close()
+        return render_account_page("login", "Login", error="This verification link is invalid or expired.")
+    now = datetime.now().isoformat()
+    cur.execute("UPDATE users SET email_verified=1, updated_at=? WHERE user_id=?", (now, row[0]))
+    cur.execute("UPDATE email_verification_tokens SET used_at=? WHERE token=?", (now, token))
+    conn.commit()
+    conn.close()
+    return render_account_page("login", "Login", message="Email verified. You can log in anytime.")
 
 
 @webhook_app.route("/reset-password", methods=["GET", "POST"])
@@ -1436,11 +1474,29 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
         return False
     provider = (os.getenv("EMAIL_PROVIDER") or "").strip().lower()
     from_email, from_name = email_sender_identity()
+    brevo_key = os.getenv("BREVO_API_KEY")
+    sendgrid_key = os.getenv("SENDGRID_API_KEY")
     try:
-        if provider == "sendgrid" and os.getenv("SENDGRID_API_KEY"):
+        if (provider == "brevo" or (not provider and brevo_key)) and brevo_key:
+            response = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": brevo_key, "Content-Type": "application/json"},
+                json={
+                    "sender": {"email": from_email, "name": from_name},
+                    "to": [{"email": to_email}],
+                    "subject": subject,
+                    "textContent": text_body,
+                    "htmlContent": html_body or text_body.replace("\n", "<br>"),
+                },
+                timeout=15,
+            )
+            ok = 200 <= response.status_code < 300
+            log_email_status(user_id or 0, to_email, subject, "sent_brevo" if ok else f"failed_brevo_{response.status_code}")
+            return ok
+        if provider == "sendgrid" and sendgrid_key:
             response = requests.post(
                 "https://api.sendgrid.com/v3/mail/send",
-                headers={"Authorization": f"Bearer {os.getenv('SENDGRID_API_KEY')}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"},
                 json={
                     "personalizations": [{"to": [{"email": to_email}]}],
                     "from": {"email": from_email, "name": from_name},
@@ -1454,22 +1510,6 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
             )
             ok = 200 <= response.status_code < 300
             log_email_status(user_id or 0, to_email, subject, "sent_sendgrid" if ok else f"failed_sendgrid_{response.status_code}")
-            return ok
-        if provider == "brevo" and os.getenv("BREVO_API_KEY"):
-            response = requests.post(
-                "https://api.brevo.com/v3/smtp/email",
-                headers={"api-key": os.getenv("BREVO_API_KEY"), "Content-Type": "application/json"},
-                json={
-                    "sender": {"email": from_email, "name": from_name},
-                    "to": [{"email": to_email}],
-                    "subject": subject,
-                    "textContent": text_body,
-                    "htmlContent": html_body or text_body.replace("\n", "<br>"),
-                },
-                timeout=15,
-            )
-            ok = 200 <= response.status_code < 300
-            log_email_status(user_id or 0, to_email, subject, "sent_brevo" if ok else f"failed_brevo_{response.status_code}")
             return ok
         smtp_host = os.getenv("SMTP_HOST")
         smtp_user = os.getenv("SMTP_USER")
