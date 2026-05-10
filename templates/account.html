@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }} | CoinPilotXAI Inc.</title>
+  <meta name="description" content="CoinPilotX account access, Telegram linking, settings, and subscription profile by CoinPilotXAI Inc." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="canonical" href="https://coinpilotx.app/{{ page }}" />
+  <meta name="theme-color" content="#08111f" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: rgba(13, 22, 39, 0.88);
+      --line: rgba(110, 223, 246, 0.18);
+      --text: #f2fbff;
+      --muted: #9fb5c0;
+      --cyan: #6edff6;
+      --green: #36e58f;
+      --gold: #ffd166;
+      --danger: #ff6b7a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% 8%, rgba(54, 229, 143, 0.16), transparent 28%),
+        radial-gradient(circle at 78% 4%, rgba(110, 223, 246, 0.12), transparent 26%),
+        linear-gradient(135deg, #070b14, #0b1424 58%, #07111e);
+      line-height: 1.65;
+    }
+    a { color: inherit; }
+    .container { width: min(100% - 32px, 1040px); margin: 0 auto; }
+    header, footer {
+      background: rgba(7, 11, 20, 0.84);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(18px);
+    }
+    footer { margin-top: 52px; border-top: 1px solid rgba(255,255,255,.08); border-bottom: 0; }
+    nav, .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 0; flex-wrap: wrap; }
+    .brand { display: inline-flex; align-items: center; gap: 12px; color: var(--text); font-weight: 900; text-decoration: none; }
+    .brand img { width: 46px; height: 46px; object-fit: contain; border-radius: 10px; filter: drop-shadow(0 0 18px rgba(110,223,246,.26)); }
+    .nav-links { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 14px; font-weight: 750; }
+    .nav-links a { min-height: 44px; display: inline-grid; place-items: center; text-decoration: none; }
+    main { padding: 62px 0 24px; }
+    .panel {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(0,0,0,.3);
+    }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .kicker { color: var(--green); font-size: 13px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 10px 0 12px; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
+    h2 { margin: 26px 0 10px; font-size: clamp(22px, 4vw, 32px); }
+    h3 { margin: 0 0 8px; }
+    p, li, .muted { color: var(--muted); }
+    form { display: grid; gap: 13px; margin-top: 18px; }
+    input {
+      width: 100%;
+      min-height: 48px;
+      padding: 13px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(110, 223, 246, .18);
+      background: rgba(255,255,255,.055);
+      color: var(--text);
+      font: inherit;
+    }
+    .button {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 17px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.05);
+      color: var(--text);
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .button.primary { color: #06101b; border-color: transparent; background: linear-gradient(135deg, var(--green), var(--cyan)); }
+    .button.gold { color: #ffe5aa; border-color: rgba(255,209,102,.34); background: rgba(255,209,102,.1); }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+    .notice, .error {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(54,229,143,.22);
+      color: #c8ffe2;
+      background: rgba(54,229,143,.08);
+    }
+    .error { border-color: rgba(255,107,122,.3); color: #ffd1d6; background: rgba(255,107,122,.08); }
+    .consent-row { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: 13px; }
+    .consent-row input { width: 18px; height: 18px; min-height: 18px; margin-top: 3px; accent-color: var(--green); }
+    .profile-card { padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.04); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
+    th { color: var(--cyan); }
+    code { color: #c8ffe2; font-weight: 900; word-break: break-word; }
+    @media (max-width: 760px) {
+      main { padding-top: 42px; }
+      .grid { grid-template-columns: 1fr; }
+      .panel { padding: 22px; }
+      .button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <nav>
+        <a class="brand" href="/">
+          <img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" />
+          <span>CoinPilotXAI Inc.</span>
+        </a>
+        <div class="nav-links">
+          <a href="/">Home</a>
+          <a href="/account">Account</a>
+          <a href="/account/settings">Settings</a>
+          <a href="/support">Support</a>
+          {% if current_user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <article class="panel">
+        <div class="kicker">CoinPilotX Account</div>
+        <h1>{{ title }}</h1>
+        {% if message %}<div class="notice">{{ message }}</div>{% endif %}
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+        {% if page == "signup" %}
+          <p>Create your CoinPilotX website account. You can connect Telegram after logging in.</p>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input name="full_name" autocomplete="name" placeholder="Full name" />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <input name="password" type="password" autocomplete="new-password" placeholder="Password, 8+ characters" required />
+            <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional for SMS)" />
+            <input name="country" autocomplete="country-name" placeholder="Country (optional)" />
+            <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span></label>
+            <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
+            <button class="button primary" type="submit">Create Account</button>
+          </form>
+          <p class="muted">Already have an account? <a href="/login">Log in</a>.</p>
+
+        {% elif page == "login" %}
+          <p>Log in to manage your CoinPilotX profile, Telegram connection, and preferences.</p>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
+            <button class="button primary" type="submit">Login</button>
+          </form>
+          <p class="muted"><a href="/forgot-password">Forgot password?</a> · <a href="/signup">Create account</a></p>
+
+        {% elif page == "forgot" %}
+          <p>Enter your account email. If it exists, CoinPilotX will send a reset link.</p>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <button class="button primary" type="submit">Send Reset Link</button>
+          </form>
+
+        {% elif page == "reset" %}
+          <p>Choose a new password for your CoinPilotX account.</p>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="token" value="{{ token }}" />
+            <input name="password" type="password" autocomplete="new-password" placeholder="New password, 8+ characters" required />
+            <button class="button primary" type="submit">Reset Password</button>
+          </form>
+
+        {% elif page == "account" %}
+          <div class="grid">
+            <div class="profile-card">
+              <h3>Profile</h3>
+              <p><strong>Name:</strong> {{ current_user.full_name or current_user.display_name or "Not set" }}</p>
+              <p><strong>Email:</strong> {{ current_user.email or "Not set" }}</p>
+              <p><strong>Phone:</strong> {{ current_user.phone or "Not set" }}</p>
+              <p><strong>Country:</strong> {{ current_user.country or "Not set" }}</p>
+            </div>
+            <div class="profile-card">
+              <h3>Access</h3>
+              <p><strong>Plan:</strong> {{ current_user.plan or current_user.subscription_plan or "free" }}</p>
+              <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
+              <p><strong>Telegram:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>
+              <p><strong>Email updates:</strong> {% if current_user.email_opt_in %}Enabled{% else %}Disabled{% endif %}</p>
+              <p><strong>SMS updates:</strong> {% if current_user.sms_opt_in %}Enabled{% else %}Disabled{% endif %}</p>
+            </div>
+          </div>
+          <div class="actions">
+            <a class="button primary" href="/account/settings">Account Settings</a>
+            <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
+            <a class="button" href="/support">Support</a>
+          </div>
+
+        {% elif page == "settings" %}
+          <div class="grid">
+            <form method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <input type="hidden" name="action" value="save" />
+              <input name="full_name" value="{{ current_user.full_name or current_user.display_name or '' }}" placeholder="Full name" />
+              <input name="phone" value="{{ current_user.phone or '' }}" placeholder="Phone (optional for SMS)" />
+              <input name="country" value="{{ current_user.country or '' }}" placeholder="Country" />
+              <label class="consent-row"><input type="checkbox" name="email_opt_in" {% if current_user.email_opt_in %}checked{% endif %} /><span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span></label>
+              <label class="consent-row"><input type="checkbox" name="sms_opt_in" {% if current_user.sms_opt_in %}checked{% endif %} /><span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
+              <button class="button primary" type="submit">Save Settings</button>
+            </form>
+            <div class="profile-card">
+              <h3>Connect Telegram Bot</h3>
+              <p>Generate a one-time code, then send it to the Telegram bot with <code>/connect CODE</code>. Codes expire in 10 minutes.</p>
+              {% if link_code %}<p>Your code: <code>{{ link_code }}</code></p>{% endif %}
+              <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <input type="hidden" name="action" value="connect_telegram" />
+                <button class="button gold" type="submit">Connect Telegram Bot</button>
+              </form>
+            </div>
+          </div>
+
+        {% elif page == "admin_users" %}
+          <div class="grid">
+            <div class="profile-card"><strong>Total users</strong><p>{{ stats.total_users }}</p></div>
+            <div class="profile-card"><strong>New users today</strong><p>{{ stats.new_today }}</p></div>
+            <div class="profile-card"><strong>Telegram linked</strong><p>{{ stats.linked }}</p></div>
+            <div class="profile-card"><strong>Email / SMS opt-ins</strong><p>{{ stats.email_opt_ins }} / {{ stats.sms_opt_ins }}</p></div>
+          </div>
+          <h2>Users by plan</h2>
+          <ul>{% for plan, count in stats.by_plan %}<li>{{ plan }}: {{ count }}</li>{% endfor %}</ul>
+          <h2>Recent users</h2>
+          <table>
+            <tr><th>Name</th><th>Email</th><th>Plan</th><th>Subscription</th><th>Telegram</th><th>Created</th></tr>
+            {% for row in stats.users %}<tr>{% for cell in row %}<td>{{ cell or "" }}</td>{% endfor %}</tr>{% endfor %}
+          </table>
+        {% endif %}
+
+        <div class="notice">CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords. Educational AI intelligence only, not financial, betting, investment, or legal advice.</div>
+      </article>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>© 2026 CoinPilotXAI Inc. All rights reserved.</div>
+      <div class="nav-links">
+        <a href="/support">Support</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

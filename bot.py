@@ -9,6 +9,7 @@ import math
 import csv
 import io
 import hashlib
+import secrets
 import sqlite3
 import logging
 import requests
@@ -20,7 +21,8 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import urlparse
-from flask import Flask, request, render_template, send_from_directory, jsonify, Response
+from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -76,6 +78,12 @@ ADMIN_USER_IDS = {
 # 🌐 WEBHOOK APP (RIGHT AFTER STRIPE)
 # =========================
 webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
+webhook_app.secret_key = os.getenv("FLASK_SECRET_KEY", os.getenv("SECRET_KEY", secrets.token_hex(32)))
+webhook_app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "1") == "1",
+)
 app = webhook_app
 
 # =========================
@@ -110,6 +118,11 @@ logging.basicConfig(
 DB_FILE = "coinpilotx.db"
 
 def db():
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url.startswith("sqlite:///"):
+        return sqlite3.connect(database_url.replace("sqlite:///", "", 1))
+    if database_url.startswith("file:"):
+        return sqlite3.connect(database_url, uri=True)
     return sqlite3.connect(DB_FILE)
 
 
@@ -438,6 +451,12 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 stripe.api_key = STRIPE_SECRET_KEY
 
 webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
+webhook_app.secret_key = os.getenv("FLASK_SECRET_KEY", os.getenv("SECRET_KEY", secrets.token_hex(32)))
+webhook_app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE", "1") == "1",
+)
 app = webhook_app
 
 
@@ -459,6 +478,308 @@ def privacy_page():
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
     return render_template("terms.html")
+
+
+def get_csrf_token():
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def verify_csrf():
+    return request.form.get("csrf_token") and request.form.get("csrf_token") == session.get("csrf_token")
+
+
+def account_user_id():
+    return session.get("account_user_id")
+
+
+def load_account_by_id(user_id):
+    if not user_id:
+        return None
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def load_account_by_email(email):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def account_display_name(user):
+    return (user or {}).get("full_name") or (user or {}).get("display_name") or "CoinPilotX user"
+
+
+def render_account_page(page, title, **context):
+    context.setdefault("csrf_token", get_csrf_token())
+    context.setdefault("current_user", load_account_by_id(account_user_id()))
+    context.setdefault("message", "")
+    context.setdefault("error", "")
+    return render_template("account.html", page=page, title=title, **context)
+
+
+def require_account():
+    user = load_account_by_id(account_user_id())
+    if not user:
+        return None
+    return user
+
+
+def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False):
+    now = datetime.now().isoformat()
+    password_hash = generate_password_hash(password)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
+    if cur.fetchone():
+        conn.close()
+        return None, "An account already exists for that email."
+    cur.execute(
+        """
+        INSERT INTO users (
+            username, display_name, full_name, email, password_hash, phone, country,
+            email_verified, email_opt_in, sms_opt_in, plan, subscription_status,
+            signup_time, created_at, updated_at, onboarding_complete, alerts_enabled
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'free', 'inactive', ?, ?, ?, 1, 0)
+        """,
+        ("", full_name, full_name, email, password_hash, phone, country, int(email_opt_in), int(sms_opt_in), now, now, now)
+    )
+    user_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return load_account_by_id(user_id), ""
+
+
+def update_account_settings(user_id, full_name, phone, country, email_opt_in, sms_opt_in):
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE users
+        SET full_name=?, display_name=?, phone=?, country=?, email_opt_in=?, sms_opt_in=?, updated_at=?
+        WHERE user_id=?
+        """,
+        (full_name, full_name, phone, country, int(email_opt_in), int(sms_opt_in), now, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def generate_telegram_link_code(user_id):
+    now = datetime.now()
+    code = secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:10].upper()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO telegram_link_codes (user_id, code, expires_at, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, code, (now + timedelta(minutes=10)).isoformat(), now.isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return code
+
+
+def create_password_reset(email):
+    user = load_account_by_email(email)
+    if not user:
+        return None, None
+    token = secrets.token_urlsafe(32)
+    now = datetime.now()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO password_reset_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)",
+        (user["user_id"], token, (now + timedelta(hours=1)).isoformat(), now.isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return user, token
+
+
+@webhook_app.route("/signup", methods=["GET", "POST"])
+def signup_page():
+    init_db()
+    if request.method == "POST":
+        if not verify_csrf():
+            return render_account_page("signup", "Create Account", error="Security check failed. Please try again.")
+        full_name = clean_html(request.form.get("full_name", ""))[:160]
+        email = clean_html(request.form.get("email", "")).strip().lower()
+        password = request.form.get("password", "")
+        phone = clean_html(request.form.get("phone", "")).strip()
+        country = clean_html(request.form.get("country", ""))[:80]
+        email_opt_in = request.form.get("email_opt_in") == "on"
+        sms_opt_in = request.form.get("sms_opt_in") == "on"
+        if not is_valid_email(email):
+            return render_account_page("signup", "Create Account", error="Please enter a valid email address.")
+        if len(password) < 8:
+            return render_account_page("signup", "Create Account", error="Use at least 8 characters for your password.")
+        if phone and not valid_phone(phone):
+            return render_account_page("signup", "Create Account", error="Please enter a valid phone number or leave it blank.")
+        if sms_opt_in and not phone:
+            return render_account_page("signup", "Create Account", error="SMS opt-in requires a phone number.")
+        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in)
+        if error:
+            return render_account_page("signup", "Create Account", error=error)
+        session["account_user_id"] = user["user_id"]
+        send_welcome_email(user)
+        return redirect(url_for("account_page"))
+    return render_account_page("signup", "Create Account")
+
+
+@webhook_app.route("/login", methods=["GET", "POST"])
+def login_page():
+    init_db()
+    if request.method == "POST":
+        if not verify_csrf():
+            return render_account_page("login", "Login", error="Security check failed. Please try again.")
+        email = clean_html(request.form.get("email", "")).strip().lower()
+        password = request.form.get("password", "")
+        user = load_account_by_email(email)
+        if not user or not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
+            return render_account_page("login", "Login", error="Email or password is incorrect.")
+        session["account_user_id"] = user["user_id"]
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+        conn.commit()
+        conn.close()
+        return redirect(url_for("account_page"))
+    return render_account_page("login", "Login")
+
+
+@webhook_app.route("/logout", methods=["GET"])
+def logout_page():
+    session.pop("account_user_id", None)
+    return redirect(url_for("login_page"))
+
+
+@webhook_app.route("/account", methods=["GET"])
+def account_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page"))
+    return render_account_page("account", "Account", current_user=user)
+
+
+@webhook_app.route("/account/settings", methods=["GET", "POST"])
+def account_settings_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page"))
+    message = ""
+    link_code = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            return render_account_page("settings", "Account Settings", current_user=user, error="Security check failed. Please try again.")
+        action = request.form.get("action", "save")
+        if action == "connect_telegram":
+            link_code = generate_telegram_link_code(user["user_id"])
+            message = "Telegram link code generated. Send /connect " + link_code + " to the CoinPilotX bot within 10 minutes."
+        else:
+            full_name = clean_html(request.form.get("full_name", ""))[:160]
+            phone = clean_html(request.form.get("phone", "")).strip()
+            country = clean_html(request.form.get("country", ""))[:80]
+            email_opt_in = request.form.get("email_opt_in") == "on"
+            sms_opt_in = request.form.get("sms_opt_in") == "on"
+            if phone and not valid_phone(phone):
+                return render_account_page("settings", "Account Settings", current_user=user, error="Please enter a valid phone number or leave it blank.")
+            if sms_opt_in and not phone:
+                return render_account_page("settings", "Account Settings", current_user=user, error="SMS opt-in requires a phone number.")
+            update_account_settings(user["user_id"], full_name, phone, country, email_opt_in, sms_opt_in)
+            user = load_account_by_id(user["user_id"])
+            message = "Account settings saved."
+    return render_account_page("settings", "Account Settings", current_user=user, message=message, link_code=link_code)
+
+
+@webhook_app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password_page():
+    init_db()
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            return render_account_page("forgot", "Forgot Password", error="Security check failed. Please try again.")
+        email = clean_html(request.form.get("email", "")).strip().lower()
+        user, token = create_password_reset(email)
+        if user and token:
+            reset_link = url_for("reset_password_page", token=token, _external=True)
+            send_password_reset_email(user, reset_link)
+        message = "If that email has an account, a password reset link will be sent."
+    return render_account_page("forgot", "Forgot Password", message=message)
+
+
+@webhook_app.route("/reset-password", methods=["GET", "POST"])
+def reset_password_page():
+    init_db()
+    token = clean_html(request.args.get("token") or request.form.get("token") or "")
+    if request.method == "POST":
+        if not verify_csrf():
+            return render_account_page("reset", "Reset Password", token=token, error="Security check failed. Please try again.")
+        password = request.form.get("password", "")
+        if len(password) < 8:
+            return render_account_page("reset", "Reset Password", token=token, error="Use at least 8 characters for your password.")
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id, expires_at, used_at FROM password_reset_tokens WHERE token=? ORDER BY id DESC LIMIT 1", (token,))
+        row = cur.fetchone()
+        if not row or row[2] or row[1] < datetime.now().isoformat():
+            conn.close()
+            return render_account_page("reset", "Reset Password", token=token, error="This reset link is invalid or expired.")
+        cur.execute("UPDATE users SET password_hash=?, updated_at=? WHERE user_id=?", (generate_password_hash(password), datetime.now().isoformat(), row[0]))
+        cur.execute("UPDATE password_reset_tokens SET used_at=? WHERE token=?", (datetime.now().isoformat(), token))
+        conn.commit()
+        conn.close()
+        return redirect(url_for("login_page"))
+    return render_account_page("reset", "Reset Password", token=token)
+
+
+@webhook_app.route("/admin/users", methods=["GET"])
+def admin_users_page():
+    if not require_admin_password():
+        return Response("Unauthorized. Set ADMIN_ANALYTICS_PASSWORD and pass ?password=...", status=401)
+    init_db()
+    conn = db()
+    cur = conn.cursor()
+    since_day = (datetime.now() - timedelta(days=1)).isoformat()
+    cur.execute("SELECT COUNT(*) FROM users WHERE email!=''")
+    total_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE email!='' AND created_at>=?", (since_day,))
+    new_today = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(plan, subscription_plan, 'free'), COUNT(*) FROM users WHERE email!='' GROUP BY COALESCE(plan, subscription_plan, 'free')")
+    by_plan = cur.fetchall()
+    cur.execute("SELECT COUNT(*) FROM users WHERE telegram_user_id IS NOT NULL")
+    linked = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE email_opt_in=1")
+    email_opt_ins = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE sms_opt_in=1")
+    sms_opt_ins = cur.fetchone()[0]
+    cur.execute("SELECT full_name, email, plan, subscription_status, telegram_username, created_at FROM users WHERE email!='' ORDER BY created_at DESC LIMIT 50")
+    users = cur.fetchall()
+    conn.close()
+    return render_template("account.html", page="admin_users", title="Admin Users", csrf_token=get_csrf_token(), current_user=None, message="", error="", stats={
+        "total_users": total_users,
+        "new_today": new_today,
+        "by_plan": by_plan,
+        "linked": linked,
+        "email_opt_ins": email_opt_ins,
+        "sms_opt_ins": sms_opt_ins,
+        "users": users,
+    })
 
 
 def client_ip_hash():
@@ -608,6 +929,7 @@ def leads_api():
         now,
         now,
     )
+    is_new_lead = not bool(row)
     if row:
         cur.execute(
             """
@@ -648,6 +970,12 @@ def leads_api():
         )
     conn.commit()
     conn.close()
+    if email_opt_in and is_new_lead:
+        send_update_signup_email({
+            "id": lead_id,
+            "email": email,
+            "full_name": values[0],
+        })
     return jsonify({"ok": True, "message": "Thanks — you’re on the CoinPilotXAI Inc. update list."})
 
 
@@ -1082,6 +1410,159 @@ def send_email_confirmation(user_id, to_email, subject, body):
         logging.info("Email confirmation failed: %s", exc)
         log_email_status(user_id, to_email, subject, "failed")
         return False
+
+
+def email_sender_identity():
+    from_email = os.getenv("MAIL_FROM_ADDRESS") or os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER") or "support@coinpilotx.app"
+    from_name = os.getenv("MAIL_FROM_NAME", "CoinPilotXAI Inc.")
+    return from_email, from_name
+
+
+def send_platform_email(to_email, subject, text_body, html_body="", user_id=None):
+    if not to_email:
+        log_email_status(user_id or 0, "", subject, "skipped_no_email")
+        return False
+    provider = (os.getenv("EMAIL_PROVIDER") or "").strip().lower()
+    from_email, from_name = email_sender_identity()
+    try:
+        if provider == "sendgrid" and os.getenv("SENDGRID_API_KEY"):
+            response = requests.post(
+                "https://api.sendgrid.com/v3/mail/send",
+                headers={"Authorization": f"Bearer {os.getenv('SENDGRID_API_KEY')}", "Content-Type": "application/json"},
+                json={
+                    "personalizations": [{"to": [{"email": to_email}]}],
+                    "from": {"email": from_email, "name": from_name},
+                    "subject": subject,
+                    "content": [
+                        {"type": "text/plain", "value": text_body},
+                        {"type": "text/html", "value": html_body or text_body.replace("\n", "<br>")},
+                    ],
+                },
+                timeout=15,
+            )
+            ok = 200 <= response.status_code < 300
+            log_email_status(user_id or 0, to_email, subject, "sent_sendgrid" if ok else f"failed_sendgrid_{response.status_code}")
+            return ok
+        if provider == "brevo" and os.getenv("BREVO_API_KEY"):
+            response = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": os.getenv("BREVO_API_KEY"), "Content-Type": "application/json"},
+                json={
+                    "sender": {"email": from_email, "name": from_name},
+                    "to": [{"email": to_email}],
+                    "subject": subject,
+                    "textContent": text_body,
+                    "htmlContent": html_body or text_body.replace("\n", "<br>"),
+                },
+                timeout=15,
+            )
+            ok = 200 <= response.status_code < 300
+            log_email_status(user_id or 0, to_email, subject, "sent_brevo" if ok else f"failed_brevo_{response.status_code}")
+            return ok
+        smtp_host = os.getenv("SMTP_HOST")
+        smtp_user = os.getenv("SMTP_USER")
+        smtp_password = os.getenv("SMTP_PASSWORD")
+        if smtp_host and smtp_user and smtp_password:
+            message = EmailMessage()
+            message["Subject"] = subject
+            message["From"] = f"{from_name} <{from_email}>"
+            message["To"] = to_email
+            message.set_content(text_body)
+            if html_body:
+                message.add_alternative(html_body, subtype="html")
+            with smtplib.SMTP(smtp_host, int(os.getenv("SMTP_PORT", "587")), timeout=15) as smtp:
+                smtp.starttls()
+                smtp.login(smtp_user, smtp_password)
+                smtp.send_message(message)
+            log_email_status(user_id or 0, to_email, subject, "sent_smtp")
+            return True
+        log_email_status(user_id or 0, to_email, subject, "skipped_email_not_configured")
+        return False
+    except Exception as exc:
+        logging.info("Platform email failed: %s", exc)
+        log_email_status(user_id or 0, to_email, subject, "failed")
+        return False
+
+
+def branded_email_html(title, body_html):
+    return f"""
+    <div style="margin:0;padding:28px;background:#070b14;color:#f2fbff;font-family:Inter,Arial,sans-serif">
+      <div style="max-width:620px;margin:0 auto;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:#0d1627;padding:28px">
+        <h1 style="margin:0 0 14px;color:#ffffff">{title}</h1>
+        <div style="color:#c4d2e7;line-height:1.65;font-size:15px">{body_html}</div>
+        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
+        <p style="color:#ffd9a0;font-size:13px">Educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>
+      </div>
+    </div>
+    """
+
+
+def send_welcome_email(user):
+    name = account_display_name(user)
+    subject = "Welcome to CoinPilotX — Powered by CoinPilotXAI Inc."
+    text = (
+        f"Hi {name},\n\n"
+        "Welcome to CoinPilotX.\n\n"
+        "Your account is ready. CoinPilotX helps you review AI crypto intelligence, wallet risk, scam awareness, whale movement, portfolio context, and market signals inside a safety-first workflow.\n\n"
+        "You can access your dashboard at https://coinpilotx.app/account and connect Telegram from Account Settings.\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.\n"
+        "Educational AI intelligence only. Not financial, betting, investment, or legal advice.\n\n"
+        "Support: support@coinpilotx.app"
+    )
+    html = branded_email_html("Welcome to CoinPilotX", f"""
+      <p>Hi {clean_html(name)},</p>
+      <p>Your CoinPilotX account is ready. Use the dashboard to manage your profile, marketing preferences, plan status, and Telegram connection.</p>
+      <p>CoinPilotX helps explain AI crypto intelligence, wallet risk, scam awareness, whale movement, portfolio context, and market signals inside a safety-first workflow.</p>
+      <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account dashboard</a></p>
+      <p>Support: <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a></p>
+    """)
+    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+
+
+def send_update_signup_email(lead):
+    subject = "You’re on the CoinPilotXAI Inc. update list"
+    name = lead.get("full_name") or "there"
+    text = (
+        f"Hi {name},\n\n"
+        "Thanks for joining the CoinPilotXAI Inc. update list.\n\n"
+        "You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.\n\n"
+        "No account was created unless you registered separately at https://coinpilotx.app/signup.\n"
+        "You can opt out anytime. For SMS, reply STOP where supported or contact support.\n\n"
+        "Support: support@coinpilotx.app"
+    )
+    html = branded_email_html("You’re on the CoinPilotXAI Inc. update list", f"""
+      <p>Hi {clean_html(name)},</p>
+      <p>Thanks for joining updates. You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.</p>
+      <p>No account was created unless you registered separately.</p>
+      <p>You can opt out anytime. For SMS, reply STOP where supported or contact support.</p>
+      <p>Support: <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a></p>
+    """)
+    return send_platform_email(lead.get("email"), subject, text, html, lead.get("id"))
+
+
+def send_password_reset_email(user, reset_link):
+    subject = "Reset your CoinPilotX password"
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        "Use this secure link to reset your CoinPilotX password. It expires in 1 hour:\n"
+        f"{reset_link}\n\n"
+        "If you did not request this, ignore this email.\n\n"
+        "Support: support@coinpilotx.app"
+    )
+    html = branded_email_html("Reset your CoinPilotX password", f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Use this secure link to reset your password. It expires in 1 hour.</p>
+      <p><a href="{reset_link}" style="color:#36e58f">Reset password</a></p>
+      <p>If you did not request this, ignore this email.</p>
+    """)
+    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+
+
+def send_email_verification(user, verification_link):
+    subject = "Verify your CoinPilotX email"
+    text = f"Verify your CoinPilotX email here: {verification_link}\n\nSupport: support@coinpilotx.app"
+    html = branded_email_html("Verify your CoinPilotX email", f'<p><a href="{verification_link}" style="color:#36e58f">Verify email</a></p>')
+    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
 
 
 def subscription_email_body(plan_name, timestamp, txid=None):
@@ -2847,6 +3328,16 @@ async def conversational_reply(update: Update, context: ContextTypes.DEFAULT_TYP
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
     user_id = update.effective_user.id
+    linked = get_linked_website_account(user_id)
+    if linked:
+        await update.message.reply_text(
+            f"🚀 Welcome back, {account_display_name(linked)}.\n\n"
+            f"Plan: {linked.get('plan') or linked.get('subscription_plan') or 'free'}\n"
+            f"Subscription: {linked.get('subscription_status') or 'inactive'}\n\n"
+            "Your CoinPilotX website account is connected to this Telegram profile.",
+            reply_markup=main_menu()
+        )
+        return
 
     if not onboarding_complete(user_id):
         onboarding_state[user_id] = "name"
@@ -3498,6 +3989,21 @@ def init_db():
         "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
         "ALTER TABLE users ADD COLUMN stripe_session_id TEXT",
         "ALTER TABLE users ADD COLUMN last_payment_type TEXT",
+        "ALTER TABLE users ADD COLUMN full_name TEXT",
+        "ALTER TABLE users ADD COLUMN password_hash TEXT",
+        "ALTER TABLE users ADD COLUMN phone TEXT",
+        "ALTER TABLE users ADD COLUMN country TEXT",
+        "ALTER TABLE users ADD COLUMN telegram_user_id INTEGER",
+        "ALTER TABLE users ADD COLUMN telegram_username TEXT",
+        "ALTER TABLE users ADD COLUMN telegram_chat_id INTEGER",
+        "ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN email_opt_in INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN sms_opt_in INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'",
+        "ALTER TABLE users ADD COLUMN created_at TEXT",
+        "ALTER TABLE users ADD COLUMN updated_at TEXT",
+        "ALTER TABLE users ADD COLUMN last_login_at TEXT",
+        "ALTER TABLE users ADD COLUMN last_seen_at TEXT",
     ]:
         try:
             cur.execute(statement)
@@ -3765,6 +4271,39 @@ def init_db():
         utm_source TEXT,
         utm_medium TEXT,
         utm_campaign TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_link_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        code TEXT UNIQUE,
+        expires_at TEXT,
+        used_at TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        token TEXT UNIQUE,
+        expires_at TEXT,
+        used_at TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        token TEXT UNIQUE,
+        expires_at TEXT,
+        used_at TEXT,
+        created_at TEXT
     )
     """)
 
@@ -5507,6 +6046,37 @@ def portfolio_advice_summary(user_id):
 
 
 def account_summary(user_id):
+    website_user = get_linked_website_account(user_id)
+    if not website_user:
+        logging.info("Unlinked account requested from Telegram user %s", user_id)
+        return (
+            "👤 Account Not Connected\n\n"
+            "To view your CoinPilotX account inside Telegram, please create or log in to your account on our website first.\n\n"
+            "Create account:\n"
+            "https://coinpilotx.app/signup\n\n"
+            "Already have an account?\n"
+            "https://coinpilotx.app/login\n\n"
+            "After logging in, go to Account Settings and tap ‘Connect Telegram Bot.’\n\n"
+            "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
+        )
+
+    logging.info("Linked account found for Telegram user %s", user_id)
+    name = website_user.get("full_name") or website_user.get("display_name") or "Not set"
+    plan = website_user.get("plan") or website_user.get("subscription_plan") or "free"
+    status = website_user.get("subscription_status") or "inactive"
+    return (
+        "👤 CoinPilotX Account\n\n"
+        f"Name: {name}\n"
+        f"Email: {mask_email(website_user.get('email'))}\n"
+        f"Plan: {plan}\n"
+        f"Subscription: {status}\n"
+        "Telegram: Connected\n"
+        f"Email Updates: {'Enabled' if website_user.get('email_opt_in') else 'Disabled'}\n"
+        f"SMS Updates: {'Enabled' if website_user.get('sms_opt_in') else 'Disabled'}"
+    )
+
+
+def legacy_account_summary(user_id):
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -5529,6 +6099,50 @@ def account_summary(user_id):
         f"Risk profile: {risk or 'balanced'}\n"
         f"Exchange preference: {exchange_goal or 'beginner'}"
     )
+
+
+def mask_email(email):
+    email = email or ""
+    if "@" not in email:
+        return "Not set"
+    name, domain = email.split("@", 1)
+    visible = name[:2] if len(name) > 2 else name[:1]
+    return f"{visible}***@{domain}"
+
+
+def mask_phone(phone):
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) < 4:
+        return "Not set"
+    return f"***-***-{digits[-4:]}"
+
+
+def get_linked_website_account(telegram_user_id):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM users WHERE telegram_user_id=? AND email!='' LIMIT 1",
+        (telegram_user_id,)
+    )
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def account_reply_markup(telegram_user_id):
+    if get_linked_website_account(telegram_user_id):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("Open Dashboard", url="https://coinpilotx.app/account")],
+            [InlineKeyboardButton("Upgrade Pro", callback_data="upgrade_pro")],
+            [InlineKeyboardButton("Settings", url="https://coinpilotx.app/account/settings")],
+            [InlineKeyboardButton("Help", callback_data="menu_help")],
+        ])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Create Account", url="https://coinpilotx.app/signup")],
+        [InlineKeyboardButton("Login", url="https://coinpilotx.app/login")],
+        [InlineKeyboardButton("Help", callback_data="menu_help")],
+    ])
 
 
 def admin_summary():
@@ -5910,7 +6524,75 @@ async def myemail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    await update.message.reply_text(account_summary(update.effective_user.id), reply_markup=main_menu())
+    logging.info("Account command clicked by Telegram user %s", update.effective_user.id)
+    await update.message.reply_text(account_summary(update.effective_user.id), reply_markup=account_reply_markup(update.effective_user.id))
+
+
+async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    if not context.args:
+        await update.message.reply_text(
+            "Connect your website account by logging in at https://coinpilotx.app/account/settings, generating a code, then sending:\n\n/connect CODE",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
+        return
+    code = clean_html(context.args[0]).upper()
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, user_id, expires_at, used_at FROM telegram_link_codes WHERE code=? ORDER BY id DESC LIMIT 1",
+        (code,)
+    )
+    row = cur.fetchone()
+    if not row or row[3] or row[2] < now:
+        conn.close()
+        logging.info("Telegram linking failed for user %s", update.effective_user.id)
+        await update.message.reply_text(
+            "That connection code is invalid or expired. Please generate a new code from Account Settings.",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
+        return
+    cur.execute(
+        """
+        UPDATE users
+        SET telegram_user_id=?, telegram_username=?, telegram_chat_id=?, updated_at=?, last_seen_at=?
+        WHERE user_id=?
+        """,
+        (
+            update.effective_user.id,
+            update.effective_user.username or "",
+            update.effective_chat.id if update.effective_chat else update.effective_user.id,
+            now,
+            now,
+            row[1],
+        )
+    )
+    cur.execute("UPDATE telegram_link_codes SET used_at=? WHERE id=?", (now, row[0]))
+    conn.commit()
+    conn.close()
+    logging.info("Telegram linking success for Telegram user %s", update.effective_user.id)
+    await update.message.reply_text(
+        "✅ Telegram connected successfully.\n\n"
+        "Your CoinPilotX account is now connected to this Telegram profile. You can now use the Account button anytime to view your plan, subscription, preferences, and account status.",
+        reply_markup=account_reply_markup(update.effective_user.id),
+    )
+
+
+async def help_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👤 CoinPilotX Account Help\n\n"
+        "Create account: https://coinpilotx.app/signup\n"
+        "Login: https://coinpilotx.app/login\n"
+        "Dashboard: https://coinpilotx.app/account\n\n"
+        "To connect Telegram:\n"
+        "1. Log in on the website.\n"
+        "2. Open Account Settings.\n"
+        "3. Tap Connect Telegram Bot.\n"
+        "4. Send the generated code here with /connect CODE.\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
+        reply_markup=account_reply_markup(update.effective_user.id),
+    )
 
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5976,14 +6658,16 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
         UPDATE users
         SET is_pro=1,
             subscription_plan='pro',
+            plan='pro',
             subscription_status=?,
             subscription_started_at=?,
+            updated_at=?,
             last_payment_type=COALESCE(?, last_payment_type),
             stripe_customer_id=COALESCE(?, stripe_customer_id),
             stripe_session_id=COALESCE(?, stripe_session_id)
-        WHERE user_id=?
+        WHERE user_id=? OR telegram_user_id=?
         """,
-        (subscription_status, datetime.now().isoformat(), payment_type, stripe_customer_id, stripe_session_id, user_id)
+        (subscription_status, datetime.now().isoformat(), datetime.now().isoformat(), payment_type, stripe_customer_id, stripe_session_id, user_id, user_id)
     )
     conn.commit()
     conn.close()
@@ -6486,7 +7170,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "menu_account":
-        await query.message.reply_text(account_summary(user_id), reply_markup=main_menu())
+        logging.info("Account button clicked by Telegram user %s", user_id)
+        await query.message.reply_text(account_summary(user_id), reply_markup=account_reply_markup(user_id))
         return
 
     if data == "menu_alerts_on":
@@ -6674,6 +7359,8 @@ def main():
     app.add_handler(CommandHandler("setemail", setemail_command))
     app.add_handler(CommandHandler("myemail", myemail_command))
     app.add_handler(CommandHandler("account", account_command))
+    app.add_handler(CommandHandler("connect", connect_account_command))
+    app.add_handler(CommandHandler("help_account", help_account_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("cryptonews", cryptonews_command))
     app.add_handler(CommandHandler("marketevents", marketevents_command))
