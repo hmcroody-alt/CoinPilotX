@@ -486,6 +486,52 @@ def offline_page():
     return render_template("offline.html")
 
 
+@webhook_app.route("/reset-pwa", methods=["GET"])
+def reset_pwa_page():
+    html = """
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Reset CoinPilotXAI App Cache</title>
+      <style>
+        body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,Arial,sans-serif}
+        main{width:min(100%,560px);padding:28px;border:1px solid rgba(0,229,255,.22);border-radius:14px;background:#0d1627;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+        p{color:#9fb5c0;line-height:1.6}
+      </style>
+    </head>
+    <body>
+      <main>
+        <h1>Resetting CoinPilotXAI app cache</h1>
+        <p>Clearing old offline cache, service workers, and local app flags. You will be returned to the homepage automatically.</p>
+      </main>
+      <script>
+        (async function () {
+          try {
+            if ("serviceWorker" in navigator) {
+              var regs = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+            }
+            if ("caches" in window) {
+              var keys = await caches.keys();
+              await Promise.all(keys.map(function (key) { return caches.delete(key); }));
+            }
+            try { localStorage.clear(); } catch (err) {}
+            try { sessionStorage.clear(); } catch (err) {}
+          } finally {
+            setTimeout(function () { location.href = "/?pwa_reset=" + Date.now(); }, 1000);
+          }
+        })();
+      </script>
+    </body>
+    </html>
+    """
+    response = Response(html, mimetype="text/html")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.after_request
 def add_pwa_headers(response):
     if request.path in ("/static/service-worker.js", "/sw.js"):
@@ -6386,7 +6432,7 @@ def admin_summary():
 
 @webhook_app.route("/health", methods=["GET"])
 def health_check():
-    response = jsonify({"ok": True})
+    response = jsonify({"ok": True, "status": "online"})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, 200
 

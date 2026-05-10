@@ -1,6 +1,5 @@
-const CACHE_NAME = "coinpilotxai-static-v3";
+const CACHE_NAME = "coinpilotx-cache-v4";
 const STATIC_ASSETS = [
-  "/offline",
   "/manifest.json",
   "/static/analytics.js",
   "/static/Coinpilot%20Logo/NewLogo.png",
@@ -11,6 +10,8 @@ const STATIC_ASSETS = [
 
 function isNeverCachePath(pathname) {
   return (
+    pathname === "/" ||
+    pathname === "/offline" ||
     pathname === "/health" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/admin/") ||
@@ -36,7 +37,15 @@ function isStaticAsset(request, pathname) {
   );
 }
 
+function offlineResponse() {
+  return fetch("/offline?ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
+    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>CoinPilotXAI Inc. needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
+    { headers: { "Content-Type": "text/html; charset=utf-8" } }
+  ));
+}
+
 self.addEventListener("install", (event) => {
+  console.log("[CoinPilotXAI SW] service worker installed", CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(STATIC_ASSETS))
@@ -45,9 +54,15 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  console.log("[CoinPilotXAI SW] service worker activated", CACHE_NAME);
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.map((key) => {
+        if (key !== CACHE_NAME) {
+          console.log("[CoinPilotXAI SW] old cache deleted", key);
+        }
+        return key === CACHE_NAME ? Promise.resolve() : caches.delete(key);
+      }))
     ).then(() => self.clients.claim())
   );
 });
@@ -60,22 +75,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (request.mode === "navigate") {
+    console.log("[CoinPilotXAI SW] navigation fetch attempted", url.pathname);
+    event.respondWith(
+      fetch(request, { cache: "no-store" })
+        .then((response) => {
+          console.log("[CoinPilotXAI SW] navigation fetch succeeded", url.pathname, response.status);
+          return response;
+        })
+        .catch((error) => {
+          console.log("[CoinPilotXAI SW] navigation fallback to offline used", url.pathname, error && error.message ? error.message : error);
+          return offlineResponse();
+        })
+    );
+    return;
+  }
+
   if (isNeverCachePath(url.pathname)) {
     event.respondWith(fetch(request, { cache: "no-store" }).catch((error) => {
       console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
       throw error;
     }));
-    return;
-  }
-
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request, { cache: "no-store" })
-        .catch((error) => {
-          console.log("[CoinPilotXAI SW] navigation fetch failure", url.pathname, error && error.message ? error.message : error);
-          return caches.match("/offline");
-        })
-    );
     return;
   }
 

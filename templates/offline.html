@@ -95,7 +95,7 @@
           return false;
         }
         try {
-          var response = await fetch("/health", { cache: "no-store" });
+          var response = await fetch("/health?ts=" + Date.now(), { cache: "no-store" });
           console.log("[CoinPilotXAI PWA] /health response status", response.status);
           if (response.ok) {
             failures = 0;
