@@ -148,7 +148,7 @@
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
         {% if page == "signup" %}
-          <p>Create your CoinPilotX website account. You can connect Telegram after logging in.</p>
+          <p>Create your CoinPilotX website account. First-time account users receive 30 days of free Pro access, then automatically return to Free unless they subscribe.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input name="full_name" autocomplete="name" placeholder="Full name" />
@@ -200,15 +200,34 @@
             </div>
             <div class="profile-card">
               <h3>Access</h3>
-              <p><strong>Plan:</strong> {{ current_user.plan or current_user.subscription_plan or "free" }}</p>
+              <p><strong>Plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
+              {% if access.is_trial %}
+                <p><strong>Trial ends:</strong> {{ access.trial_end }}</p>
+                <p><strong>Days remaining:</strong> {{ access.days_remaining }}</p>
+              {% elif access.trial_expired %}
+                <p><strong>Trial:</strong> Ended. Upgrade anytime when deeper intelligence becomes useful.</p>
+              {% endif %}
               <p><strong>Telegram:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>
               <p><strong>Email updates:</strong> {% if current_user.email_opt_in %}Enabled{% else %}Disabled{% endif %}</p>
               <p><strong>SMS updates:</strong> {% if current_user.sms_opt_in %}Enabled{% else %}Disabled{% endif %}</p>
             </div>
           </div>
+          <div class="profile-card" style="margin-top:18px">
+            <h3>Pro Trial Benefits</h3>
+            <p>Deeper AI intelligence, Sports Edge context, wallet risk details, portfolio decision support, whale intelligence, advanced scam protection, and saved intelligence workflows.</p>
+            <p class="muted">CoinPilotXAI Inc. provides educational AI intelligence only. Pro does not guarantee profit, betting outcomes, or investment results.</p>
+          </div>
+          {% if access.referral_code %}
+            <div class="profile-card" style="margin-top:18px">
+              <h3>Referral Link</h3>
+              <p>Invite 3 verified users and receive +30 days of Pro access.</p>
+              <p><code>https://coinpilotx.app/r/{{ access.referral_code }}</code></p>
+            </div>
+          {% endif %}
           <div class="actions">
             <a class="button primary" href="/account/settings">Account Settings</a>
+            <a class="button primary" href="https://t.me/DocShieldX_bot">Upgrade Pro</a>
             <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
             <a class="button" href="/support">Support</a>
           </div>
@@ -243,7 +262,13 @@
             <div class="profile-card"><strong>New users today</strong><p>{{ stats.new_today }}</p></div>
             <div class="profile-card"><strong>Telegram linked</strong><p>{{ stats.linked }}</p></div>
             <div class="profile-card"><strong>Email / SMS opt-ins</strong><p>{{ stats.email_opt_ins }} / {{ stats.sms_opt_ins }}</p></div>
+            <div class="profile-card"><strong>Pro trial users</strong><p>{{ stats.pro_trial_users }}</p></div>
+            <div class="profile-card"><strong>Paid Pro users</strong><p>{{ stats.paid_pro_users }}</p></div>
+            <div class="profile-card"><strong>Expired trials</strong><p>{{ stats.expired_trials }}</p></div>
+            <div class="profile-card"><strong>Trials expiring 7 days</strong><p>{{ stats.expiring_soon }}</p></div>
           </div>
+          <h2>Trial conversion</h2>
+          <p>{{ stats.trial_conversion_rate }}% paid conversion from started trials.</p>
           <h2>Users by plan</h2>
           <ul>{% for plan, count in stats.by_plan %}<li>{{ plan }}: {{ count }}</li>{% endfor %}</ul>
           <h2>Recent users</h2>

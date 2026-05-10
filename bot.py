@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import quote, urlparse
-from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for
+from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for, has_request_context
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -67,6 +67,10 @@ BTC_PRO_PRICE = "0.00025 BTC"
 BTC_PRO_SATS = 25000
 BTC_REQUIRED_CONFIRMATIONS = 1
 BLOCKSTREAM_TX_API = "https://blockstream.info/api/tx/"
+PRO_TRIAL_DAYS = 30
+FREE_AI_DAILY_LIMIT = 5
+TRIAL_MAINTENANCE_INTERVAL_SECONDS = 3600
+TRIAL_MAINTENANCE_LAST_RUN = 0
 
 ADMIN_USER_IDS = set()
 
@@ -278,6 +282,7 @@ def get_manual_holding(user_id, asset):
     conn.close()
     return row[0] if row else 0.0
 def is_pro(user_id):
+    run_trial_maintenance()
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -635,6 +640,17 @@ def enforce_https():
     return None
 
 
+@webhook_app.before_request
+def capture_referral_and_run_trial_maintenance():
+    ref = (request.args.get("ref") or "").strip()[:80]
+    if ref:
+        session["referred_by"] = ref
+    if request.path.startswith(("/static/", "/api/track", "/health")):
+        return None
+    run_trial_maintenance()
+    return None
+
+
 def get_csrf_token():
     token = session.get("csrf_token")
     if not token:
@@ -677,9 +693,69 @@ def account_display_name(user):
     return (user or {}).get("full_name") or (user or {}).get("display_name") or "CoinPilotX user"
 
 
+def parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def format_date(value):
+    parsed = parse_iso_datetime(value)
+    if not parsed:
+        return "Not set"
+    return parsed.strftime("%b %d, %Y")
+
+
+def days_until(value):
+    parsed = parse_iso_datetime(value)
+    if not parsed:
+        return None
+    now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+    return max(0, math.ceil((parsed - now).total_seconds() / 86400))
+
+
+def generate_referral_code():
+    return "cpx" + secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:10].lower()
+
+
+def plan_status_label(user):
+    user = user or {}
+    plan = (user.get("plan") or user.get("subscription_plan") or "free").lower()
+    status = (user.get("subscription_status") or "inactive").lower()
+    if pro_access_service.has_pro_access(user) and status == "trialing":
+        return "Pro Trial"
+    if pro_access_service.has_pro_access(user):
+        return "Pro Active"
+    if status == "expired":
+        return "Free — trial ended"
+    return "Free"
+
+
+def account_access_context(user):
+    user = user or {}
+    trial_end = user.get("trial_end_date") or user.get("pro_expires_at")
+    return {
+        "label": plan_status_label(user),
+        "has_pro": pro_access_service.has_pro_access(user),
+        "is_trial": (user.get("subscription_status") or "").lower() == "trialing",
+        "trial_end": format_date(trial_end),
+        "days_remaining": days_until(trial_end),
+        "trial_expired": (user.get("subscription_status") or "").lower() == "expired",
+        "referral_code": user.get("referral_code") or "",
+    }
+
+
+def has_pro_access(user):
+    return pro_access_service.has_pro_access(user or {})
+
+
 def render_account_page(page, title, **context):
     context.setdefault("csrf_token", get_csrf_token())
     context.setdefault("current_user", load_account_by_id(account_user_id()))
+    context.setdefault("access", account_access_context(context.get("current_user")))
     context.setdefault("message", "")
     context.setdefault("error", "")
     return render_template("account.html", page=page, title=title, **context)
@@ -693,29 +769,78 @@ def require_account():
 
 
 def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False):
-    now = datetime.now().isoformat()
+    now_dt = datetime.now()
+    now = now_dt.isoformat()
+    trial_end = (now_dt + timedelta(days=PRO_TRIAL_DAYS)).isoformat()
     password_hash = generate_password_hash(password)
+    referred_by = ""
+    try:
+        referred_by = (session.get("referred_by") or request.args.get("ref") or "").strip()[:80]
+    except Exception:
+        referred_by = ""
     conn = db()
     cur = conn.cursor()
     cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
     if cur.fetchone():
         conn.close()
         return None, "An account already exists for that email."
+    referral_code = generate_referral_code()
+    for _ in range(5):
+        cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (referral_code,))
+        if not cur.fetchone():
+            break
+        referral_code = generate_referral_code()
     cur.execute(
         """
         INSERT INTO users (
             username, display_name, full_name, email, password_hash, phone, country,
             email_verified, email_opt_in, sms_opt_in, plan, subscription_status,
-            signup_time, created_at, updated_at, onboarding_complete, alerts_enabled
+            trial_start_date, trial_end_date, trial_used, pro_expires_at,
+            referral_code, referred_by, usage_ai_count, usage_reset_at,
+            signup_time, created_at, updated_at, onboarding_complete, alerts_enabled, is_pro,
+            subscription_plan, subscription_started_at, subscription_expires_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'free', 'inactive', ?, ?, ?, 1, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pro', 'trialing',
+                ?, ?, 1, ?, ?, ?, 0, ?,
+                ?, ?, ?, 1, 0, 1, 'pro', ?, ?)
         """,
-        ("", full_name, full_name, email, password_hash, phone, country, int(email_opt_in), int(sms_opt_in), now, now, now)
+        (
+            "",
+            full_name,
+            full_name,
+            email,
+            password_hash,
+            phone,
+            country,
+            int(email_opt_in),
+            int(sms_opt_in),
+            now,
+            trial_end,
+            trial_end,
+            referral_code,
+            referred_by,
+            now[:10],
+            now,
+            now,
+            now,
+            now,
+            trial_end,
+        )
     )
     user_id = cur.lastrowid
+    cur.execute(
+        """
+        INSERT INTO subscriptions
+        (user_id, plan, status, payment_type, trial_start_date, trial_end_date, pro_expires_at, created_at, updated_at)
+        VALUES (?, 'pro', 'trialing', 'trial', ?, ?, ?, ?, ?)
+        """,
+        (user_id, now, trial_end, trial_end, now, now)
+    )
     conn.commit()
     conn.close()
     user = load_account_by_id(user_id)
+    log_product_event(user_id, "pro_trial_started", {"trial_end_date": trial_end, "source": "website_signup"})
+    record_referral_signup(user_id, referred_by)
     sync_brevo_contact_safe({**(user or {}), "source": "website_account"}, entity_type="user", entity_id=user_id)
     return user, ""
 
@@ -854,6 +979,8 @@ def account_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page"))
+    get_or_create_referral_code(user["user_id"])
+    user = load_account_by_id(user["user_id"])
     return render_account_page("account", "Account", current_user=user)
 
 
@@ -922,6 +1049,15 @@ def verify_email_page():
     cur.execute("UPDATE email_verification_tokens SET used_at=? WHERE token=?", (now, token))
     conn.commit()
     conn.close()
+    verified_user = load_account_by_id(row[0])
+    if verified_user and verified_user.get("referred_by"):
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (verified_user.get("referred_by"),))
+        referrer = cur.fetchone()
+        conn.close()
+        if referrer:
+            evaluate_referral_reward(referrer[0])
     return render_account_page("login", "Login", message="Email verified. You can log in anytime.")
 
 
@@ -970,6 +1106,20 @@ def admin_users_page():
     email_opt_ins = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM users WHERE sms_opt_in=1")
     sms_opt_ins = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='trialing'")
+    pro_trial_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='active'")
+    paid_pro_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='expired' AND COALESCE(trial_used,0)=1")
+    expired_trials = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='free'")
+    free_users = cur.fetchone()[0]
+    soon = (datetime.now() + timedelta(days=7)).isoformat()
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='trialing' AND trial_end_date<=?", (soon,))
+    expiring_soon = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM referral_rewards WHERE status='granted'")
+    referrals_granted = cur.fetchone()[0]
+    trial_conversion_rate = (paid_pro_users / (paid_pro_users + expired_trials + pro_trial_users) * 100) if (paid_pro_users + expired_trials + pro_trial_users) else 0
     cur.execute("SELECT full_name, email, plan, subscription_status, telegram_username, created_at FROM users WHERE email!='' ORDER BY created_at DESC LIMIT 50")
     users = cur.fetchall()
     conn.close()
@@ -980,6 +1130,13 @@ def admin_users_page():
         "linked": linked,
         "email_opt_ins": email_opt_ins,
         "sms_opt_ins": sms_opt_ins,
+        "pro_trial_users": pro_trial_users,
+        "paid_pro_users": paid_pro_users,
+        "expired_trials": expired_trials,
+        "free_users": free_users,
+        "expiring_soon": expiring_soon,
+        "referrals_granted": referrals_granted,
+        "trial_conversion_rate": f"{trial_conversion_rate:.1f}",
         "users": users,
     })
 
@@ -1186,6 +1343,153 @@ def sync_brevo_contact_safe(record, entity_type="user", entity_id=None):
     except Exception as exc:
         logging.warning("brevo contact sync failed safely: entity_type=%s entity_id=%s error=%s", entity_type, entity_id, exc)
         return {"ok": False, "status": "failed", "error": str(exc)}
+
+
+def log_product_event(user_id, event_name, metadata=None):
+    try:
+        in_request = has_request_context()
+        user_agent = request.headers.get("User-Agent", "") if in_request else ""
+        device_type, browser = parse_device(user_agent)
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO analytics_events
+            (session_id, user_id, event_name, page_url, referrer, device_type, browser, ip_hash, country, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                request.cookies.get("coinpilotxai_session_id", "") if in_request else "",
+                user_id,
+                event_name,
+                request.path if in_request else "",
+                request.headers.get("Referer", "") if in_request else "",
+                device_type,
+                browser,
+                client_ip_hash() if in_request else "",
+                "",
+                json.dumps(metadata or {})[:4000],
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("Product event log failed: %s", exc)
+
+
+def trial_email_sent(user_id, event_type):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM trial_email_events WHERE user_id=? AND event_type=? LIMIT 1", (user_id, event_type))
+    row = cur.fetchone()
+    conn.close()
+    return bool(row)
+
+
+def record_trial_email_event(user_id, event_type, email, status):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO trial_email_events (user_id, event_type, email, status, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, event_type, email or "", status, datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        log_product_event(user_id, "pro_trial_email_sent", {"event_type": event_type, "status": status})
+    except Exception as exc:
+        logging.info("Trial email event log failed: %s", exc)
+
+
+def record_referral_signup(new_user_id, referral_code):
+    if not referral_code:
+        return
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (referral_code,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return
+        referrer_user_id = row[0]
+        if referrer_user_id == new_user_id:
+            conn.close()
+            return
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO referral_rewards
+            (referrer_user_id, referred_user_id, referral_code, reward_type, reward_days, status, created_at)
+            VALUES (?, ?, ?, 'invite_3_verified', 30, 'pending', ?)
+            """,
+            (referrer_user_id, new_user_id, referral_code, datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        log_product_event(new_user_id, "referral_signup", {"referral_code": referral_code, "referrer_user_id": referrer_user_id})
+    except Exception as exc:
+        logging.info("Referral signup tracking failed: %s", exc)
+
+
+def evaluate_referral_reward(referrer_user_id):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT referral_code FROM users WHERE user_id=?", (referrer_user_id,))
+        row = cur.fetchone()
+        referral_code = row[0] if row else ""
+        if not referral_code:
+            conn.close()
+            return
+        cur.execute("SELECT COUNT(*) FROM users WHERE referred_by=? AND email_verified=1", (referral_code,))
+        verified_count = cur.fetchone()[0]
+        cur.execute(
+            "SELECT id FROM referral_rewards WHERE referrer_user_id=? AND reward_type='invite_3_verified' AND status='granted' LIMIT 1",
+            (referrer_user_id,),
+        )
+        already_granted = cur.fetchone()
+        conn.close()
+        if verified_count >= 3 and not already_granted:
+            grant_referral_reward(referrer_user_id, referral_code)
+    except Exception as exc:
+        logging.info("Referral reward evaluation failed: %s", exc)
+
+
+def grant_referral_reward(user_id, referral_code, reward_days=30):
+    now_dt = datetime.now()
+    user = load_account_by_id(user_id)
+    existing_end = parse_iso_datetime((user or {}).get("pro_expires_at"))
+    start_dt = existing_end if existing_end and existing_end > now_dt else now_dt
+    new_end = start_dt + timedelta(days=reward_days)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE users
+        SET plan='pro', subscription_plan='pro', subscription_status='active', is_pro=1,
+            pro_expires_at=?, subscription_expires_at=?, updated_at=?
+        WHERE user_id=?
+        """,
+        (new_end.isoformat(), new_end.isoformat(), now_dt.isoformat(), user_id),
+    )
+    cur.execute(
+        """
+        UPDATE referral_rewards
+        SET status='granted', granted_at=?
+        WHERE referrer_user_id=? AND referral_code=? AND reward_type='invite_3_verified'
+        """,
+        (now_dt.isoformat(), user_id, referral_code),
+    )
+    conn.commit()
+    conn.close()
+    log_product_event(user_id, "referral_reward_granted", {"reward_days": reward_days, "pro_expires_at": new_end.isoformat()})
+    refreshed = load_account_by_id(user_id)
+    if refreshed:
+        sync_brevo_contact_safe({**refreshed, "source": "referral_reward"}, entity_type="user", entity_id=user_id)
 
 
 def get_or_create_referral_code(user_id):
@@ -1399,6 +1703,17 @@ def analytics_summary():
     cur.execute("SELECT COUNT(*) FROM referral_events WHERE created_at>=?", (since_day,))
     referral_clicks = cur.fetchone()[0]
     conversion_rate = (leads_today / visitors_today * 100) if visitors_today else 0
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='trialing'")
+    pro_trial_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='active'")
+    paid_pro_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='expired' AND COALESCE(trial_used,0)=1")
+    expired_trials = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='free'")
+    free_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='trialing' AND trial_end_date<=?", ((datetime.now() + timedelta(days=7)).isoformat(),))
+    trials_expiring_soon = cur.fetchone()[0]
+    trial_conversion_rate = (paid_pro_users / (paid_pro_users + expired_trials + pro_trial_users) * 100) if (paid_pro_users + expired_trials + pro_trial_users) else 0
 
     def rows(sql, params=()):
         cur.execute(sql, params)
@@ -1419,6 +1734,12 @@ def analytics_summary():
         "organic_visits": organic_visits,
         "referral_clicks": referral_clicks,
         "conversion_rate": conversion_rate,
+        "pro_trial_users": pro_trial_users,
+        "paid_pro_users": paid_pro_users,
+        "expired_trials": expired_trials,
+        "free_users": free_users,
+        "trials_expiring_soon": trials_expiring_soon,
+        "trial_conversion_rate": trial_conversion_rate,
         "top_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND page_url!='' GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
         "referrers": rows("SELECT COALESCE(NULLIF(referrer,''),'Direct'), COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY COALESCE(NULLIF(referrer,''),'Direct') ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
         "devices": rows("SELECT device_type, browser, COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY device_type, browser ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
@@ -1481,6 +1802,12 @@ def admin_analytics_page():
 	      <div class="card"><div>SMS subscribers</div><div class="metric">{data['sms_subscribers']}</div></div>
 	      <div class="card"><div>Organic search visits</div><div class="metric">{data['organic_visits']}</div></div>
 	      <div class="card"><div>Referral clicks</div><div class="metric">{data['referral_clicks']}</div></div>
+	      <div class="card"><div>Pro trial users</div><div class="metric">{data['pro_trial_users']}</div></div>
+	      <div class="card"><div>Paid Pro users</div><div class="metric">{data['paid_pro_users']}</div></div>
+	      <div class="card"><div>Expired trials</div><div class="metric">{data['expired_trials']}</div></div>
+	      <div class="card"><div>Trials expiring 7 days</div><div class="metric">{data['trials_expiring_soon']}</div></div>
+	      <div class="card"><div>Free users</div><div class="metric">{data['free_users']}</div></div>
+	      <div class="card"><div>Trial conversion</div><div class="metric">{data['trial_conversion_rate']:.1f}%</div></div>
 	    </div>
 	    <h2>Top pages</h2>{table(data['top_pages'], ['Page', 'Events'])}
 	    <h2>Referral sources</h2>{table(data['referrers'], ['Referrer', 'Events'])}
@@ -1660,7 +1987,10 @@ def website_ai_assistant_api():
         return jsonify({"ok": False, "response": "Ask a crypto, wallet, scam, market, or sports question first."}), 400
     account = load_account_by_id(account_user_id())
     user_id = account.get("user_id") if account else 0
-    response = intelligence_service.assistant_response(user_id, question, pro=pro_access_service.is_pro_row(account or {}))
+    allowed, limit_message = consume_ai_usage(user_id, "website_ai_assistant") if user_id else (True, "")
+    if not allowed:
+        return jsonify({"ok": False, "response": limit_message}), 429
+    response = intelligence_service.assistant_response(user_id, question, pro=pro_access_service.has_pro_access(account or {}))
     user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "website")
     return jsonify({
         "ok": True,
@@ -1753,6 +2083,7 @@ def stripe_webhook():
                     payment_type="stripe",
                     stripe_customer_id=session.get("customer"),
                     stripe_session_id=session.get("id"),
+                    stripe_subscription_id=session.get("subscription"),
                     subscription_status="active",
                 )
                 save_payment_verification(
@@ -1782,6 +2113,12 @@ def stripe_webhook():
                     details="Stripe checkout completed but payment_status was not paid.",
                 )
                 print(f"Stripe session not activated for user {user_id}: payment_status={payment_status}")
+
+    if event["type"] in {"customer.subscription.updated", "customer.subscription.deleted"}:
+        sync_stripe_subscription(event["data"]["object"])
+
+    if event["type"] in {"invoice.paid", "invoice.payment_failed"}:
+        sync_stripe_invoice(event["data"]["object"], event["type"])
 
     return "OK", 200
 
@@ -2011,26 +2348,40 @@ def branded_email_html(title, body_html):
 def send_welcome_email(user, override_email=None, audit_label="user"):
     name = account_display_name(user)
     to_email = override_email or user.get("email")
+    trial_end = user.get("trial_end_date") or user.get("pro_expires_at")
+    trial_end_label = format_date(trial_end)
     logging.info("Attempting welcome email for user_id: %s recipient=%s", user.get("user_id"), audit_label)
     logging.info("Brevo API key loaded: %s", bool(os.getenv("BREVO_API_KEY")))
-    subject = "Welcome to CoinPilotX — Powered by CoinPilotXAI Inc."
+    subject = "Welcome to CoinPilotX Pro Trial — Powered by CoinPilotXAI Inc."
     text = (
         f"Hi {name},\n\n"
-        "Welcome to CoinPilotX.\n\n"
-        "Your account is ready. CoinPilotX helps you review AI crypto intelligence, wallet risk, scam awareness, whale movement, portfolio context, and market signals inside a safety-first workflow.\n\n"
+        "Welcome to CoinPilotX. Your account includes 30 days of free Pro access.\n\n"
+        f"Trial end date: {trial_end_label}\n\n"
+        "Pro features unlocked during your trial:\n"
+        "- Deeper AI crypto intelligence\n"
+        "- Premium Sports Edge context\n"
+        "- Wallet and transaction risk details\n"
+        "- Portfolio decision support\n"
+        "- Whale intelligence and deeper market analysis\n"
+        "- Advanced scam protection and saved intelligence workflows\n\n"
+        "You can upgrade before the trial ends to keep Pro active. If you do not subscribe, your account automatically returns to Free access after the trial.\n\n"
         "You can access your dashboard at https://coinpilotx.app/account and connect Telegram from Account Settings.\n\n"
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.\n"
         "Educational AI intelligence only. Not financial, betting, investment, or legal advice.\n\n"
         "Support: support@coinpilotx.app"
     )
-    html = branded_email_html("Welcome to CoinPilotX", f"""
+    html = branded_email_html("Welcome to CoinPilotX Pro Trial", f"""
       <p>Hi {clean_html(name)},</p>
-      <p>Your CoinPilotX account is ready. Use the dashboard to manage your profile, marketing preferences, plan status, and Telegram connection.</p>
-      <p>CoinPilotX helps explain AI crypto intelligence, wallet risk, scam awareness, whale movement, portfolio context, and market signals inside a safety-first workflow.</p>
+      <p>Your CoinPilotX account includes <strong>30 days of free Pro access</strong>.</p>
+      <p><strong>Trial end date:</strong> {clean_html(trial_end_label)}</p>
+      <p>During your trial, Pro unlocks deeper AI crypto intelligence, premium Sports Edge context, wallet and transaction risk details, portfolio decision support, whale intelligence, deeper market analysis, advanced scam protection, and saved intelligence workflows.</p>
+      <p>You can upgrade before the trial ends to keep Pro active. If you do not subscribe, your account automatically returns to Free access after the trial.</p>
       <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account dashboard</a></p>
       <p>Support: <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a></p>
     """)
     sent = send_platform_email(to_email, subject, text, html, user.get("user_id"))
+    if audit_label.startswith("new_user"):
+        record_trial_email_event(user.get("user_id"), "day_1_welcome", to_email, "sent" if sent else "failed")
     logging.info("Welcome email result for user_id %s recipient=%s: %s", user.get("user_id"), audit_label, sent)
     return sent
 
@@ -2113,6 +2464,51 @@ def send_email_verification(user, verification_link):
     return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
 
 
+def send_trial_lifecycle_email(user, event_type):
+    if not user or not user.get("email") or trial_email_sent(user.get("user_id"), event_type):
+        return False
+    trial_end_label = format_date(user.get("trial_end_date") or user.get("pro_expires_at"))
+    days_left = days_until(user.get("trial_end_date") or user.get("pro_expires_at"))
+    copy = {
+        "day_7": (
+            "Make the most of your CoinPilotX Pro trial",
+            "You still have Pro access. Try deeper AI analysis, Wallet Intel, Scam Shield, Portfolio Advice, whale intelligence, and Sports Edge context while your trial is active.",
+        ),
+        "day_21": (
+            "Your CoinPilotX Pro trial expires soon",
+            f"Your Pro trial is scheduled to end on {trial_end_label}. Upgrade before then if you want to keep deeper intelligence active.",
+        ),
+        "day_29": (
+            "Final reminder: CoinPilotX Pro trial ending",
+            f"Your Pro trial is close to ending. Days remaining: {days_left if days_left is not None else 'soon'}. You can upgrade anytime from Telegram or your account dashboard.",
+        ),
+        "trial_ended": (
+            "Your CoinPilotX Pro trial has ended",
+            "Your account has returned to Free access. You can keep using CoinPilotX, and you can upgrade anytime when deeper intelligence becomes useful.",
+        ),
+    }
+    subject, message = copy.get(event_type, copy["day_7"])
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        f"{message}\n\n"
+        f"Trial end date: {trial_end_label}\n\n"
+        "Upgrade or review your account:\n"
+        "https://coinpilotx.app/account\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.\n"
+        "Educational AI intelligence only. Not financial, betting, investment, or legal advice.\n\n"
+        "Support: support@coinpilotx.app"
+    )
+    html = branded_email_html(subject, f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>{clean_html(message)}</p>
+      <p><strong>Trial end date:</strong> {clean_html(trial_end_label)}</p>
+      <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account</a></p>
+    """)
+    sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+    record_trial_email_event(user.get("user_id"), event_type, user.get("email"), "sent" if sent else "failed")
+    return sent
+
+
 def subscription_email_body(plan_name, timestamp, txid=None):
     txid_line = f"\nTXID reference: {txid}\n" if txid else ""
     return (
@@ -2163,6 +2559,171 @@ def payment_txid_already_verified(txid):
     row = cur.fetchone()
     conn.close()
     return row[0] if row else None
+
+
+def expire_trials(send_email=True):
+    init_db()
+    now = datetime.now()
+    now_iso = now.isoformat()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM users
+        WHERE lower(COALESCE(plan,''))='pro'
+          AND lower(COALESCE(subscription_status,''))='trialing'
+          AND COALESCE(trial_end_date, pro_expires_at, '')!=''
+          AND COALESCE(trial_end_date, pro_expires_at) < ?
+        """,
+        (now_iso,),
+    )
+    expired_trials = [dict(row) for row in cur.fetchall()]
+    for user in expired_trials:
+        cur.execute(
+            """
+            UPDATE users
+            SET plan='free', subscription_plan='free', subscription_status='expired',
+                is_pro=0, updated_at=?
+            WHERE user_id=?
+            """,
+            (now_iso, user["user_id"]),
+        )
+        cur.execute(
+            """
+            INSERT INTO subscriptions
+            (user_id, plan, status, payment_type, trial_start_date, trial_end_date, pro_expires_at, created_at, updated_at)
+            VALUES (?, 'free', 'expired', 'trial', ?, ?, ?, ?, ?)
+            """,
+            (
+                user["user_id"],
+                user.get("trial_start_date"),
+                user.get("trial_end_date"),
+                user.get("pro_expires_at"),
+                now_iso,
+                now_iso,
+            ),
+        )
+    cur.execute(
+        """
+        SELECT * FROM users
+        WHERE lower(COALESCE(plan,''))='pro'
+          AND lower(COALESCE(subscription_status,'')) IN ('canceled', 'past_due')
+          AND COALESCE(pro_expires_at, subscription_expires_at, '')!=''
+          AND COALESCE(pro_expires_at, subscription_expires_at) < ?
+        """,
+        (now_iso,),
+    )
+    expired_paid = [dict(row) for row in cur.fetchall()]
+    for user in expired_paid:
+        cur.execute(
+            """
+            UPDATE users
+            SET plan='free', subscription_plan='free', subscription_status='expired',
+                is_pro=0, updated_at=?
+            WHERE user_id=?
+            """,
+            (now_iso, user["user_id"]),
+        )
+    conn.commit()
+    conn.close()
+
+    for user in expired_trials:
+        log_product_event(user["user_id"], "pro_trial_expired", {"trial_end_date": user.get("trial_end_date")})
+        if send_email:
+            send_trial_lifecycle_email(user, "trial_ended")
+        refreshed = load_account_by_id(user["user_id"])
+        if refreshed:
+            sync_brevo_contact_safe({**refreshed, "source": "trial_expired"}, entity_type="user", entity_id=user["user_id"])
+    for user in expired_paid:
+        log_product_event(user["user_id"], "pro_access_expired", {"pro_expires_at": user.get("pro_expires_at")})
+
+    return {"expired_trials": len(expired_trials), "expired_paid": len(expired_paid)}
+
+
+def send_due_trial_emails():
+    init_db()
+    now = datetime.now()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM users
+        WHERE lower(COALESCE(plan,''))='pro'
+          AND lower(COALESCE(subscription_status,''))='trialing'
+          AND email!=''
+          AND COALESCE(trial_start_date, '')!=''
+          AND COALESCE(trial_end_date, '')!=''
+        """
+    )
+    users = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    sent = 0
+    for user in users:
+        start = parse_iso_datetime(user.get("trial_start_date"))
+        end = parse_iso_datetime(user.get("trial_end_date"))
+        if not start or not end:
+            continue
+        elapsed_days = (now - start).days
+        days_left = math.ceil((end - now).total_seconds() / 86400)
+        event_type = None
+        if elapsed_days >= 7 and days_left > 9:
+            event_type = "day_7"
+        if days_left <= 9 and days_left > 1:
+            event_type = "day_21"
+        if days_left <= 1 and days_left >= 0:
+            event_type = "day_29"
+        if event_type and not trial_email_sent(user["user_id"], event_type):
+            if send_trial_lifecycle_email(user, event_type):
+                sent += 1
+    return sent
+
+
+def run_trial_maintenance(force=False):
+    global TRIAL_MAINTENANCE_LAST_RUN
+    now = time.time()
+    if not force and (now - TRIAL_MAINTENANCE_LAST_RUN) < TRIAL_MAINTENANCE_INTERVAL_SECONDS:
+        return
+    TRIAL_MAINTENANCE_LAST_RUN = now
+    try:
+        expire_trials(send_email=True)
+        send_due_trial_emails()
+    except Exception as exc:
+        logging.info("Trial maintenance failed: %s", exc)
+
+
+def consume_ai_usage(user_id, feature="ai_assistant", limit=FREE_AI_DAILY_LIMIT):
+    if not user_id or is_pro(user_id):
+        return True, ""
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT usage_ai_count, usage_reset_at FROM users WHERE user_id=? OR telegram_user_id=? LIMIT 1", (user_id, user_id))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return True, ""
+    count = int(row[0] or 0)
+    reset_at = row[1] or ""
+    if reset_at != today:
+        count = 0
+    if count >= limit:
+        conn.close()
+        return False, (
+            f"Free AI limit reached for today ({limit} requests). "
+            "Upgrade to CoinPilotX Pro to continue with deeper AI intelligence, or try again tomorrow."
+        )
+    count += 1
+    cur.execute("UPDATE users SET usage_ai_count=?, usage_reset_at=?, updated_at=? WHERE user_id=? OR telegram_user_id=?", (count, today, now.isoformat(), user_id, user_id))
+    cur.execute(
+        "INSERT INTO usage_events (user_id, feature, count, plan, metadata, created_at) VALUES (?, ?, 1, 'free', ?, ?)",
+        (user_id, feature, json.dumps({"daily_count": count, "limit": limit}), now.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return True, ""
 
 
 def send_telegram_confirmation(user_id, text):
@@ -4569,6 +5130,14 @@ def init_db():
         "ALTER TABLE users ADD COLUMN last_login_at TEXT",
         "ALTER TABLE users ADD COLUMN last_seen_at TEXT",
         "ALTER TABLE users ADD COLUMN referral_code TEXT",
+        "ALTER TABLE users ADD COLUMN referred_by TEXT",
+        "ALTER TABLE users ADD COLUMN trial_start_date TEXT",
+        "ALTER TABLE users ADD COLUMN trial_end_date TEXT",
+        "ALTER TABLE users ADD COLUMN trial_used INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT",
+        "ALTER TABLE users ADD COLUMN pro_expires_at TEXT",
+        "ALTER TABLE users ADD COLUMN usage_ai_count INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN usage_reset_at TEXT",
     ]:
         try:
             cur.execute(statement)
@@ -4946,6 +5515,76 @@ def init_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        plan TEXT,
+        status TEXT,
+        payment_type TEXT,
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        trial_start_date TEXT,
+        trial_end_date TEXT,
+        current_period_end TEXT,
+        pro_expires_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS usage_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        feature TEXT,
+        count INTEGER DEFAULT 1,
+        plan TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS referral_rewards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referrer_user_id INTEGER,
+        referred_user_id INTEGER,
+        referral_code TEXT,
+        reward_type TEXT,
+        reward_days INTEGER DEFAULT 30,
+        status TEXT,
+        granted_at TEXT,
+        created_at TEXT,
+        UNIQUE(referrer_user_id, referred_user_id, reward_type)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS promo_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE,
+        reward_days INTEGER DEFAULT 30,
+        max_redemptions INTEGER,
+        redemption_count INTEGER DEFAULT 0,
+        active INTEGER DEFAULT 1,
+        expires_at TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trial_email_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT,
+        email TEXT,
+        status TEXT,
+        created_at TEXT,
+        UNIQUE(user_id, event_type)
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -5069,6 +5708,9 @@ def format_free_vs_pro_response(user_id, free_text, pro_text=None):
 
 
 def openai_chat_completion(user_id, question):
+    allowed, limit_message = consume_ai_usage(user_id, "telegram_ai_assistant")
+    if not allowed:
+        return append_plan_footer(user_id, limit_message)
     response = intelligence_service.assistant_response(user_id, question, pro=is_pro(user_id))
     user_context_service.log_interaction(user_id, "ai_assistant_used", question, response, "telegram")
     return append_plan_footer(user_id, response)
@@ -6711,14 +7353,20 @@ def account_summary(user_id):
 
     logging.info("Linked account found for Telegram user %s", user_id)
     name = website_user.get("full_name") or website_user.get("display_name") or "Not set"
-    plan = website_user.get("plan") or website_user.get("subscription_plan") or "free"
     status = website_user.get("subscription_status") or "inactive"
+    access = account_access_context(website_user)
+    trial_line = ""
+    if access["is_trial"]:
+        trial_line = f"Trial ends: {access['trial_end']} ({access['days_remaining']} days remaining)\n"
+    elif access["trial_expired"]:
+        trial_line = "Trial: Ended — upgrade anytime when deeper intelligence becomes useful.\n"
     return (
         "👤 CoinPilotX Account\n\n"
         f"Name: {name}\n"
         f"Email: {mask_email(website_user.get('email'))}\n"
-        f"Plan: {plan}\n"
+        f"Plan: {access['label']}\n"
         f"Subscription: {status}\n"
+        f"{trial_line}"
         "Telegram: Connected\n"
         f"Email Updates: {'Enabled' if website_user.get('email_opt_in') else 'Disabled'}\n"
         f"SMS Updates: {'Enabled' if website_user.get('sms_opt_in') else 'Disabled'}"
@@ -7304,7 +7952,132 @@ async def portfolio_tracking_job(context: ContextTypes.DEFAULT_TYPE):
             continue
 
 
-def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, subscription_status="active"):
+async def trial_maintenance_job(context: ContextTypes.DEFAULT_TYPE):
+    run_trial_maintenance(force=True)
+
+
+def stripe_period_end_to_iso(value):
+    try:
+        if value:
+            return datetime.fromtimestamp(int(value)).isoformat()
+    except Exception:
+        return None
+    return None
+
+
+def find_user_by_stripe(customer_id=None, subscription_id=None, metadata_user_id=None):
+    if metadata_user_id:
+        try:
+            return int(metadata_user_id)
+        except Exception:
+            pass
+    conn = db()
+    cur = conn.cursor()
+    if subscription_id:
+        cur.execute("SELECT user_id FROM users WHERE stripe_subscription_id=? LIMIT 1", (subscription_id,))
+        row = cur.fetchone()
+        if row:
+            conn.close()
+            return row[0]
+    if customer_id:
+        cur.execute("SELECT user_id FROM users WHERE stripe_customer_id=? LIMIT 1", (customer_id,))
+        row = cur.fetchone()
+        if row:
+            conn.close()
+            return row[0]
+    conn.close()
+    return None
+
+
+def sync_stripe_subscription(subscription):
+    subscription = subscription or {}
+    customer_id = subscription.get("customer")
+    subscription_id = subscription.get("id")
+    metadata = subscription.get("metadata") or {}
+    user_id = find_user_by_stripe(customer_id, subscription_id, metadata.get("user_id") or metadata.get("client_reference_id"))
+    if not user_id:
+        logging.info("Stripe subscription sync skipped: no matching user for customer=%s subscription=%s", customer_id, subscription_id)
+        return False
+    raw_status = (subscription.get("status") or "").lower()
+    status = "active" if raw_status in {"active", "trialing"} else ("past_due" if raw_status in {"past_due", "unpaid"} else ("canceled" if raw_status in {"canceled", "incomplete_expired"} else raw_status or "inactive"))
+    period_end = stripe_period_end_to_iso(subscription.get("current_period_end"))
+    conn = db()
+    cur = conn.cursor()
+    if status in {"active", "trialing"}:
+        cur.execute(
+            """
+            UPDATE users
+            SET plan='pro', subscription_plan='pro', subscription_status=?, is_pro=1,
+                stripe_customer_id=COALESCE(?, stripe_customer_id),
+                stripe_subscription_id=COALESCE(?, stripe_subscription_id),
+                pro_expires_at=COALESCE(?, pro_expires_at),
+                subscription_expires_at=COALESCE(?, subscription_expires_at),
+                updated_at=?
+            WHERE user_id=?
+            """,
+            (status, customer_id, subscription_id, period_end, period_end, datetime.now().isoformat(), user_id),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE users
+            SET subscription_status=?, stripe_customer_id=COALESCE(?, stripe_customer_id),
+                stripe_subscription_id=COALESCE(?, stripe_subscription_id),
+                pro_expires_at=COALESCE(?, pro_expires_at),
+                subscription_expires_at=COALESCE(?, subscription_expires_at),
+                updated_at=?
+            WHERE user_id=?
+            """,
+            (status, customer_id, subscription_id, period_end, period_end, datetime.now().isoformat(), user_id),
+        )
+    cur.execute(
+        """
+        INSERT INTO subscriptions
+        (user_id, plan, status, payment_type, stripe_customer_id, stripe_subscription_id, current_period_end, pro_expires_at, created_at, updated_at)
+        VALUES (?, 'pro', ?, 'stripe', ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, status, customer_id, subscription_id, period_end, period_end, datetime.now().isoformat(), datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    log_product_event(user_id, "pro_subscription_active" if status == "active" else "pro_subscription_updated", {"stripe_status": raw_status or status})
+    expire_trials(send_email=False)
+    user = load_account_by_id(user_id)
+    if user:
+        sync_brevo_contact_safe({**user, "source": "stripe_subscription"}, entity_type="user", entity_id=user_id)
+    return True
+
+
+def sync_stripe_invoice(invoice, event_type):
+    invoice = invoice or {}
+    customer_id = invoice.get("customer")
+    subscription_id = invoice.get("subscription")
+    user_id = find_user_by_stripe(customer_id, subscription_id)
+    if not user_id:
+        logging.info("Stripe invoice sync skipped: no matching user for customer=%s subscription=%s", customer_id, subscription_id)
+        return False
+    lines = (invoice.get("lines") or {}).get("data") or []
+    period_end = None
+    if lines:
+        period_end = stripe_period_end_to_iso((lines[0].get("period") or {}).get("end"))
+    if event_type == "invoice.paid":
+        activate_pro(user_id, payment_type="stripe", stripe_customer_id=customer_id, stripe_subscription_id=subscription_id, subscription_status="active", pro_expires_at=period_end)
+        return True
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET subscription_status='past_due', updated_at=? WHERE user_id=?",
+        (datetime.now().isoformat(), user_id),
+    )
+    conn.commit()
+    conn.close()
+    log_product_event(user_id, "pro_subscription_payment_failed", {"invoice": invoice.get("id")})
+    return True
+
+
+def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, stripe_subscription_id=None, subscription_status="active", pro_expires_at=None):
+    target_user = load_account_by_id(user_id) or get_linked_website_account(user_id)
+    target_user_id = (target_user or {}).get("user_id") or user_id
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -7318,16 +8091,50 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
             updated_at=?,
             last_payment_type=COALESCE(?, last_payment_type),
             stripe_customer_id=COALESCE(?, stripe_customer_id),
-            stripe_session_id=COALESCE(?, stripe_session_id)
+            stripe_session_id=COALESCE(?, stripe_session_id),
+            stripe_subscription_id=COALESCE(?, stripe_subscription_id),
+            pro_expires_at=COALESCE(?, pro_expires_at),
+            subscription_expires_at=COALESCE(?, subscription_expires_at)
         WHERE user_id=? OR telegram_user_id=?
         """,
-        (subscription_status, datetime.now().isoformat(), datetime.now().isoformat(), payment_type, stripe_customer_id, stripe_session_id, user_id, user_id)
+        (
+            subscription_status,
+            datetime.now().isoformat(),
+            datetime.now().isoformat(),
+            payment_type,
+            stripe_customer_id,
+            stripe_session_id,
+            stripe_subscription_id,
+            pro_expires_at,
+            pro_expires_at,
+            user_id,
+            user_id,
+        )
+    )
+    cur.execute(
+        """
+        INSERT INTO subscriptions
+        (user_id, plan, status, payment_type, stripe_customer_id, stripe_subscription_id, current_period_end, pro_expires_at, created_at, updated_at)
+        VALUES (?, 'pro', ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            target_user_id,
+            subscription_status,
+            payment_type,
+            stripe_customer_id,
+            stripe_subscription_id,
+            pro_expires_at,
+            pro_expires_at,
+            datetime.now().isoformat(),
+            datetime.now().isoformat(),
+        ),
     )
     conn.commit()
     conn.close()
-    user = load_account_by_id(user_id) or get_linked_website_account(user_id)
+    log_product_event(target_user_id, "pro_subscription_active" if subscription_status == "active" else "pro_subscription_updated", {"payment_type": payment_type, "status": subscription_status})
+    user = load_account_by_id(target_user_id)
     if user:
-        sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or user_id)
+        sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or target_user_id)
 
 
 DAY_SIGNAL_QUESTIONS = [
@@ -7954,6 +8761,7 @@ def run_webhook():
 
 def main():
     init_db()
+    run_trial_maintenance(force=True)
     print(f"{BOT_NAME} starting...")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -8038,6 +8846,7 @@ def main():
     job_queue.run_repeating(hourly_market_update, interval=HOURLY_UPDATE_SECONDS, first=30)
     job_queue.run_repeating(whale_alert_job, interval=WHALE_CHECK_SECONDS, first=45)
     job_queue.run_repeating(portfolio_tracking_job, interval=PORTFOLIO_TRACK_SECONDS, first=60)
+    job_queue.run_repeating(trial_maintenance_job, interval=3600, first=120)
 
     app.run_polling()
 

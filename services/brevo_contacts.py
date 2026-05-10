@@ -55,7 +55,8 @@ def _truthy(value):
 
 
 def _is_pro(record):
-    return _truthy(record.get("is_pro")) or str(record.get("plan") or "").lower() == "pro" or str(record.get("subscription_status") or "").lower() == "active"
+    status = str(record.get("subscription_status") or "").lower()
+    return _truthy(record.get("is_pro")) or str(record.get("plan") or "").lower() == "pro" or status in {"active", "trialing"}
 
 
 def _telegram_linked(record):
