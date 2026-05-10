@@ -1,6 +1,91 @@
 (function () {
+  var SESSION_KEY = "coinpilotxai_session_id";
+  var scrollDepthSent = {};
+  var pageStart = Date.now();
+
+  function getSessionId() {
+    try {
+      var existing = window.localStorage.getItem(SESSION_KEY);
+      if (existing) {
+        return existing;
+      }
+      var created = "cpx_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
+      window.localStorage.setItem(SESSION_KEY, created);
+      return created;
+    } catch (err) {
+      return "cpx_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
+    }
+  }
+
+  function analyticsEventName(rawName, element) {
+    var name = rawName || "cta_click";
+    var href = element && element.href ? element.href : "";
+    if (href.indexOf("t.me/DocShieldX_bot") !== -1) {
+      return "telegram_click";
+    }
+    var map = {
+      launch_free: "telegram_click",
+      continue_telegram: "telegram_click",
+      upgrade_pro: "pro_upgrade_click",
+      pay_btc: "pro_upgrade_click",
+      pay_card: "pro_upgrade_click",
+      view_pricing: "pricing_click",
+      compare_pro: "pricing_click",
+      day_signal: "day_signal_click",
+      try_ai_assistant: "ai_assistant_click",
+      view_sports_edge: "sports_edge_click",
+      view_live_market: "market_click",
+      view_safety: "support_click",
+      support_click: "support_click",
+      signup_form_submit: "signup_form_submit"
+    };
+    return map[name] || name || "cta_click";
+  }
+
+  function utmParams() {
+    var params = new URLSearchParams(window.location.search || "");
+    return {
+      utm_source: params.get("utm_source") || "",
+      utm_medium: params.get("utm_medium") || "",
+      utm_campaign: params.get("utm_campaign") || ""
+    };
+  }
+
+  function trackFirstParty(eventName, metadata, options) {
+    var utm = utmParams();
+    var payload = {
+      session_id: getSessionId(),
+      event_name: eventName,
+      page_url: window.location.href,
+      referrer: document.referrer || "",
+      utm_source: utm.utm_source,
+      utm_medium: utm.utm_medium,
+      utm_campaign: utm.utm_campaign,
+      metadata: metadata || {}
+    };
+    var body = JSON.stringify(payload);
+    if (options && options.beacon && navigator.sendBeacon) {
+      try {
+        var blob = new Blob([body], { type: "application/json" });
+        navigator.sendBeacon("/api/track", blob);
+        return;
+      } catch (err) {
+        // Fall through to fetch.
+      }
+    }
+    fetch("/api/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body,
+      keepalive: Boolean(options && options.keepalive)
+    }).catch(function () {
+      // Analytics must never break the site.
+    });
+  }
+
   function sendAnalytics(eventName, element) {
     // Ethical funnel analytics: CTA intent only. Do not track wallet data, seed phrases, private keys, or user secrets.
+    var normalizedEvent = analyticsEventName(eventName, element);
     var payload = {
       event_category: "coinpilotx_website",
       event_label: element && (element.textContent || "").trim(),
@@ -8,16 +93,18 @@
     };
 
     if (window.gtag) {
-      window.gtag("event", eventName, payload);
+      window.gtag("event", normalizedEvent, payload);
     }
 
     if (window.posthog && window.posthog.capture) {
-      window.posthog.capture(eventName, payload);
+      window.posthog.capture(normalizedEvent, payload);
     }
 
     if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-      console.log("[CoinPilotX analytics]", eventName, payload);
+      console.log("[CoinPilotX analytics]", normalizedEvent, payload);
     }
+
+    trackFirstParty(normalizedEvent, payload);
   }
 
   document.addEventListener("click", function (event) {
@@ -58,6 +145,112 @@
 
     revealTargets.forEach(function (element) {
       observer.observe(element);
+    });
+  }
+
+  function setupScrollAndTimeTracking() {
+    trackFirstParty("page_view", {
+      title: document.title,
+      path: window.location.pathname,
+      screen_width: window.innerWidth,
+      screen_height: window.innerHeight
+    });
+
+    window.addEventListener("scroll", function () {
+      var doc = document.documentElement;
+      var scrollable = Math.max(doc.scrollHeight - window.innerHeight, 1);
+      var depth = Math.round((window.scrollY / scrollable) * 100);
+      [25, 50, 75, 100].forEach(function (mark) {
+        if (depth >= mark && !scrollDepthSent[mark]) {
+          scrollDepthSent[mark] = true;
+          trackFirstParty("scroll_depth", { depth: mark });
+        }
+      });
+    }, { passive: true });
+
+    function sendTimeOnPage() {
+      var seconds = Math.max(1, Math.round((Date.now() - pageStart) / 1000));
+      trackFirstParty("time_on_page", { seconds: seconds }, { beacon: true, keepalive: true });
+    }
+
+    window.addEventListener("pagehide", sendTimeOnPage);
+    window.addEventListener("beforeunload", sendTimeOnPage);
+  }
+
+  function setupLeadForms() {
+    document.querySelectorAll("[data-lead-form]").forEach(function (form) {
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        var message = form.querySelector("[data-lead-message]");
+        var data = new FormData(form);
+        var email = (data.get("email") || "").toString().trim();
+        var phone = (data.get("phone") || "").toString().trim();
+        var emailOptIn = Boolean(data.get("email_opt_in"));
+        var smsOptIn = Boolean(data.get("sms_opt_in"));
+
+        function setMessage(text, type) {
+          if (!message) {
+            return;
+          }
+          message.textContent = text;
+          message.classList.remove("success", "error");
+          if (type) {
+            message.classList.add(type);
+          }
+        }
+
+        if (!email) {
+          setMessage("Please enter your email address.", "error");
+          return;
+        }
+        if (smsOptIn && !phone) {
+          setMessage("SMS opt-in requires a phone number.", "error");
+          return;
+        }
+        if (!emailOptIn && !smsOptIn) {
+          setMessage("Please choose email updates, SMS updates, or both.", "error");
+          return;
+        }
+
+        var utm = utmParams();
+        var payload = {
+          session_id: getSessionId(),
+          full_name: (data.get("full_name") || "").toString(),
+          email: email,
+          phone: phone,
+          country: (data.get("country") || "").toString(),
+          source: form.getAttribute("data-source") || "website",
+          email_opt_in: emailOptIn,
+          sms_opt_in: smsOptIn,
+          page_url: window.location.href,
+          referrer: document.referrer || "",
+          utm_source: utm.utm_source,
+          utm_medium: utm.utm_medium,
+          utm_campaign: utm.utm_campaign
+        };
+
+        setMessage("Saving your preferences...", "");
+        try {
+          var response = await fetch("/api/leads", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          var result = await response.json();
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message || "Please check the form and try again.");
+          }
+          setMessage(result.message || "Thanks — you’re on the CoinPilotXAI Inc. update list.", "success");
+          form.reset();
+          trackFirstParty("signup_form_submit", {
+            source: payload.source,
+            email_opt_in: emailOptIn,
+            sms_opt_in: smsOptIn
+          });
+        } catch (err) {
+          setMessage(err.message || "Could not save your preferences right now.", "error");
+        }
+      });
     });
   }
 
@@ -821,6 +1014,8 @@
       setupIntelligenceFeed();
       setupMarketBoard();
       setupSportsEdge();
+      setupLeadForms();
+      setupScrollAndTimeTracking();
     });
   } else {
     setupReveal();
@@ -830,5 +1025,7 @@
     setupIntelligenceFeed();
     setupMarketBoard();
     setupSportsEdge();
+    setupLeadForms();
+    setupScrollAndTimeTracking();
   }
 })();

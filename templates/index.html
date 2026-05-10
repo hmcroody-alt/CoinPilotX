@@ -2062,6 +2062,83 @@
       font-size: 14px;
     }
 
+    .lead-card {
+      padding: 24px;
+      border: 1px solid rgba(110, 223, 246, 0.2);
+      border-radius: 10px;
+      background:
+        radial-gradient(circle at top right, rgba(54, 229, 143, 0.12), transparent 34%),
+        rgba(13, 22, 39, 0.84);
+      box-shadow: 0 22px 64px rgba(0, 0, 0, 0.22);
+    }
+
+    .lead-card.compact {
+      padding: 18px;
+    }
+
+    .lead-form {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .lead-form input {
+      width: 100%;
+      min-height: 48px;
+      padding: 13px 14px;
+      border: 1px solid rgba(110, 223, 246, 0.18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.055);
+      color: var(--text);
+      font: inherit;
+    }
+
+    .lead-form input::placeholder {
+      color: rgba(197, 209, 229, 0.68);
+    }
+
+    .consent-row {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .consent-row input {
+      width: 18px;
+      height: 18px;
+      min-height: 18px;
+      margin-top: 2px;
+      accent-color: var(--green);
+    }
+
+    .form-note,
+    .form-message {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .form-message {
+      min-height: 20px;
+    }
+
+    .form-message.success {
+      color: #c8ffe2;
+    }
+
+    .form-message.error {
+      color: #ffb7bf;
+    }
+
     @media (max-width: 980px) {
       .nav-toggle {
         display: grid;
@@ -2126,6 +2203,7 @@
 
       .grid,
       .grid.two,
+      .form-grid,
       .screenshot-grid,
       .visual-grid,
       .metric-grid,
@@ -2573,6 +2651,35 @@
             </div>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section id="updates" class="band">
+      <div class="container">
+        <div class="lead-card">
+          <div class="section-kicker">Updates and Early Access</div>
+          <h2>Get CoinPilotXAI Inc. product updates.</h2>
+          <p class="muted">Join the update list for launch notes, safety improvements, Pro intelligence releases, and Telegram workflow updates. Marketing consent is optional, separate, and user-controlled.</p>
+          <form class="lead-form" data-lead-form data-source="homepage_updates">
+            <div class="form-grid">
+              <input name="full_name" autocomplete="name" placeholder="Name (optional)" />
+              <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+              <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional for SMS)" />
+              <input name="country" autocomplete="country-name" placeholder="Country (optional)" />
+            </div>
+            <label class="consent-row">
+              <input type="checkbox" name="email_opt_in" />
+              <span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span>
+            </label>
+            <label class="consent-row">
+              <input type="checkbox" name="sms_opt_in" />
+              <span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span>
+            </label>
+            <div class="form-note">CoinPilotXAI Inc. never asks for seed phrases, private keys, wallet passwords, or sensitive financial credentials.</div>
+            <button class="button primary" type="submit" data-analytics="signup_form_submit">Join Updates</button>
+            <div class="form-message" data-lead-message role="status" aria-live="polite"></div>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -3347,6 +3454,26 @@
               <a class="button primary pulse-cta" href="https://t.me/DocShieldX_bot" data-analytics="upgrade_pro">Upgrade in Telegram</a>
               <a class="button gold" href="https://t.me/DocShieldX_bot" data-analytics="pay_btc">Pay with BTC</a>
             </div>
+
+            <form class="lead-form" data-lead-form data-source="pricing_pro">
+              <h3>Get Pro launch and safety updates</h3>
+              <div class="form-grid">
+                <input name="full_name" autocomplete="name" placeholder="Name (optional)" />
+                <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+                <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional for SMS)" />
+                <input name="country" autocomplete="country-name" placeholder="Country (optional)" />
+              </div>
+              <label class="consent-row">
+                <input type="checkbox" name="email_opt_in" />
+                <span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span>
+              </label>
+              <label class="consent-row">
+                <input type="checkbox" name="sms_opt_in" />
+                <span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span>
+              </label>
+              <button class="button" type="submit" data-analytics="signup_form_submit">Notify Me</button>
+              <div class="form-message" data-lead-message role="status" aria-live="polite"></div>
+            </form>
           </article>
         </div>
       </div>
@@ -3642,9 +3769,25 @@
             <h2>Bring premium crypto intelligence into Telegram.</h2>
             <p class="muted">Launch the bot, ask a question, scan a wallet, or compare Free vs Pro.</p>
           </div>
-          <div class="actions">
-            <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
-            <a class="button" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
+          <div>
+            <div class="actions">
+              <a class="button primary" href="https://t.me/DocShieldX_bot" data-analytics="launch_free">Launch CoinPilotX Free</a>
+              <a class="button" href="#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
+            </div>
+            <form class="lead-form" data-lead-form data-source="telegram_cta">
+              <input name="email" type="email" autocomplete="email" placeholder="Email for CoinPilotX updates" required />
+              <input name="phone" type="tel" autocomplete="tel" placeholder="Phone for SMS updates (optional)" />
+              <label class="consent-row">
+                <input type="checkbox" name="email_opt_in" />
+                <span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span>
+              </label>
+              <label class="consent-row">
+                <input type="checkbox" name="sms_opt_in" />
+                <span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span>
+              </label>
+              <button class="button gold" type="submit" data-analytics="signup_form_submit">Get Updates</button>
+              <div class="form-message" data-lead-message role="status" aria-live="polite"></div>
+            </form>
           </div>
         </div>
       </div>
@@ -3667,6 +3810,20 @@
               <div>CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</div>
             </div>
           </div>
+          <form class="lead-form" data-lead-form data-source="footer">
+            <input name="email" type="email" autocomplete="email" placeholder="Email for updates" required />
+            <input name="phone" type="tel" autocomplete="tel" placeholder="Phone for SMS updates (optional)" />
+            <label class="consent-row">
+              <input type="checkbox" name="email_opt_in" />
+              <span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span>
+            </label>
+            <label class="consent-row">
+              <input type="checkbox" name="sms_opt_in" />
+              <span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span>
+            </label>
+            <button class="button" type="submit" data-analytics="signup_form_submit">Join Update List</button>
+            <div class="form-message" data-lead-message role="status" aria-live="polite"></div>
+          </form>
         </div>
         <div class="footer-links">
           <a href="https://t.me/DocShieldX_bot">Telegram</a>

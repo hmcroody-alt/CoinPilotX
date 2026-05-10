@@ -6,6 +6,9 @@ import os
 import re
 import json
 import math
+import csv
+import io
+import hashlib
 import sqlite3
 import logging
 import requests
@@ -17,7 +20,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import urlparse
-from flask import Flask, request, render_template, send_from_directory, jsonify
+from flask import Flask, request, render_template, send_from_directory, jsonify, Response
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -456,6 +459,307 @@ def privacy_page():
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
     return render_template("terms.html")
+
+
+def client_ip_hash():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    salt = os.getenv("ANALYTICS_SALT", "coinpilotxai-inc")
+    return hashlib.sha256(f"{salt}:{ip}".encode("utf-8")).hexdigest() if ip else ""
+
+
+def parse_device(user_agent):
+    ua = (user_agent or "").lower()
+    if "ipad" in ua or "tablet" in ua:
+        device = "tablet"
+    elif "mobile" in ua or "iphone" in ua or "android" in ua:
+        device = "mobile"
+    else:
+        device = "desktop"
+    if "edg/" in ua:
+        browser = "Edge"
+    elif "chrome" in ua and "safari" in ua:
+        browser = "Chrome"
+    elif "safari" in ua and "chrome" not in ua:
+        browser = "Safari"
+    elif "firefox" in ua:
+        browser = "Firefox"
+    else:
+        browser = "Other"
+    return device, browser
+
+
+def get_utm_payload(payload):
+    return (
+        clean_html(payload.get("utm_source", ""))[:120],
+        clean_html(payload.get("utm_medium", ""))[:120],
+        clean_html(payload.get("utm_campaign", ""))[:160],
+    )
+
+
+@webhook_app.route("/api/track", methods=["POST"])
+def track_event_api():
+    try:
+        init_db()
+        payload = request.get_json(silent=True) or {}
+        session_id = clean_html(payload.get("session_id", ""))[:100] or hashlib.sha256(os.urandom(16)).hexdigest()
+        event_name = clean_html(payload.get("event_name", "page_view"))[:80]
+        page_url = clean_html(payload.get("page_url", ""))[:600]
+        referrer = clean_html(payload.get("referrer", ""))[:600]
+        user_agent = request.headers.get("User-Agent", "")[:600]
+        device_type, browser = parse_device(user_agent)
+        utm_source, utm_medium, utm_campaign = get_utm_payload(payload)
+        metadata = payload.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        now = datetime.now().isoformat()
+
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM sessions WHERE session_id=?", (session_id,))
+        if cur.fetchone():
+            cur.execute(
+                """
+                UPDATE sessions
+                SET last_seen_at=?, user_agent=COALESCE(NULLIF(?, ''), user_agent),
+                    referrer=COALESCE(NULLIF(?, ''), referrer),
+                    utm_source=COALESCE(NULLIF(?, ''), utm_source),
+                    utm_medium=COALESCE(NULLIF(?, ''), utm_medium),
+                    utm_campaign=COALESCE(NULLIF(?, ''), utm_campaign)
+                WHERE session_id=?
+                """,
+                (now, user_agent, referrer, utm_source, utm_medium, utm_campaign, session_id)
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO sessions (session_id, first_seen_at, last_seen_at, user_agent, referrer, landing_page, utm_source, utm_medium, utm_campaign)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (session_id, now, now, user_agent, referrer, page_url, utm_source, utm_medium, utm_campaign)
+            )
+        cur.execute(
+            """
+            INSERT INTO analytics_events (session_id, user_id, event_name, page_url, referrer, device_type, browser, ip_hash, country, metadata, created_at)
+            VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                event_name,
+                page_url,
+                referrer,
+                device_type,
+                browser,
+                client_ip_hash(),
+                clean_html(payload.get("country", ""))[:80],
+                json.dumps(metadata)[:4000],
+                now,
+            )
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "session_id": session_id})
+    except Exception as exc:
+        logging.info("Analytics track failed: %s", exc)
+        return jsonify({"ok": False}), 200
+
+
+def valid_phone(phone):
+    if not phone:
+        return True
+    return bool(re.match(r"^\+?[0-9 .()\-]{7,24}$", phone))
+
+
+@webhook_app.route("/api/leads", methods=["POST"])
+def leads_api():
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    email = clean_html(payload.get("email", "")).strip().lower()
+    phone = clean_html(payload.get("phone", "")).strip()
+    email_opt_in = 1 if payload.get("email_opt_in") is True else 0
+    sms_opt_in = 1 if payload.get("sms_opt_in") is True else 0
+    if not is_valid_email(email):
+        return jsonify({"ok": False, "message": "Please enter a valid email address."}), 400
+    if phone and not valid_phone(phone):
+        return jsonify({"ok": False, "message": "Please enter a valid phone number or leave it blank."}), 400
+    if sms_opt_in and not phone:
+        return jsonify({"ok": False, "message": "SMS opt-in requires a phone number."}), 400
+    if not email_opt_in and not sms_opt_in:
+        return jsonify({"ok": False, "message": "Please choose at least one opt-in option."}), 400
+
+    now = datetime.now().isoformat()
+    utm_source, utm_medium, utm_campaign = get_utm_payload(payload)
+    session_id = clean_html(payload.get("session_id", ""))[:100]
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM leads WHERE email=?", (email,))
+    row = cur.fetchone()
+    values = (
+        clean_html(payload.get("full_name", ""))[:160],
+        email,
+        phone[:40],
+        clean_html(payload.get("country", ""))[:80],
+        clean_html(payload.get("source", "website"))[:120],
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        email_opt_in,
+        sms_opt_in,
+        clean_html(payload.get("telegram_username", ""))[:120],
+        now,
+        now,
+    )
+    if row:
+        cur.execute(
+            """
+            UPDATE leads
+            SET full_name=?, email=?, phone=?, country=?, source=?, utm_source=?, utm_medium=?, utm_campaign=?,
+                email_opt_in=?, sms_opt_in=?, telegram_username=?, updated_at=?, last_seen_at=?
+            WHERE email=?
+            """,
+            values + (email,)
+        )
+        lead_id = row[0]
+    else:
+        cur.execute(
+            """
+            INSERT INTO leads (full_name, email, phone, country, source, utm_source, utm_medium, utm_campaign,
+                               email_opt_in, sms_opt_in, telegram_username, created_at, updated_at, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            values[:11] + (now, now, now)
+        )
+        lead_id = cur.lastrowid
+    if session_id:
+        cur.execute(
+            "INSERT INTO analytics_events (session_id, user_id, event_name, page_url, referrer, device_type, browser, ip_hash, country, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                lead_id,
+                "signup_form_submit",
+                clean_html(payload.get("page_url", ""))[:600],
+                clean_html(payload.get("referrer", ""))[:600],
+                parse_device(request.headers.get("User-Agent", ""))[0],
+                parse_device(request.headers.get("User-Agent", ""))[1],
+                client_ip_hash(),
+                clean_html(payload.get("country", ""))[:80],
+                json.dumps({"email_opt_in": bool(email_opt_in), "sms_opt_in": bool(sms_opt_in), "source": payload.get("source", "website")})[:4000],
+                now,
+            )
+        )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Thanks — you’re on the CoinPilotXAI Inc. update list."})
+
+
+def require_admin_password():
+    expected = os.getenv("ADMIN_ANALYTICS_PASSWORD", "")
+    if not expected:
+        return False
+    supplied = request.args.get("password") or request.headers.get("X-Admin-Password", "")
+    return supplied == expected
+
+
+def analytics_summary():
+    init_db()
+    conn = db()
+    cur = conn.cursor()
+    since_day = (datetime.now() - timedelta(days=1)).isoformat()
+    since_live = (datetime.now() - timedelta(minutes=5)).isoformat()
+    cur.execute("SELECT COUNT(*) FROM sessions WHERE last_seen_at>=?", (since_live,))
+    live_visitors = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM analytics_events WHERE created_at>=?", (since_day,))
+    visitors_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM analytics_events WHERE event_name='page_view' AND created_at>=?", (since_day,))
+    page_views_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM leads WHERE created_at>=?", (since_day,))
+    leads_today = cur.fetchone()[0]
+    conversion_rate = (leads_today / visitors_today * 100) if visitors_today else 0
+
+    def rows(sql, params=()):
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+    data = {
+        "live_visitors": live_visitors,
+        "visitors_today": visitors_today,
+        "page_views_today": page_views_today,
+        "leads_today": leads_today,
+        "conversion_rate": conversion_rate,
+        "top_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND page_url!='' GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
+        "referrers": rows("SELECT COALESCE(NULLIF(referrer,''),'Direct'), COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY COALESCE(NULLIF(referrer,''),'Direct') ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
+        "devices": rows("SELECT device_type, browser, COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY device_type, browser ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
+        "cta_clicks": rows("SELECT event_name, COUNT(*) FROM analytics_events WHERE created_at>=? AND event_name LIKE '%click%' GROUP BY event_name ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
+        "recent": rows("SELECT event_name, page_url, device_type, browser, created_at FROM analytics_events ORDER BY id DESC LIMIT 25"),
+        "new_leads": rows("SELECT full_name, email, phone, country, email_opt_in, sms_opt_in, created_at FROM leads ORDER BY id DESC LIMIT 25"),
+    }
+    conn.close()
+    return data
+
+
+@webhook_app.route("/admin/analytics", methods=["GET"])
+def admin_analytics_page():
+    if not require_admin_password():
+        return Response("Unauthorized. Set ADMIN_ANALYTICS_PASSWORD and pass ?password=...", status=401)
+    data = analytics_summary()
+
+    def table(rows, headers):
+        body = "".join("<tr>" + "".join(f"<td>{str(cell)[:180]}</td>" for cell in row) + "</tr>" for row in rows)
+        head = "<tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr>"
+        empty = f'<tr><td colspan="{len(headers)}">No data yet.</td></tr>'
+        return f"<table>{head}{body or empty}</table>"
+
+    html = f"""
+    <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CoinPilotXAI Inc. Analytics</title>
+    <style>
+    body{{margin:0;font-family:Inter,system-ui,Arial;background:#070b14;color:#f2fbff;line-height:1.5}}
+    .wrap{{width:min(100% - 28px,1180px);margin:0 auto;padding:30px 0}}
+    .grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}}
+    .card,table{{border:1px solid rgba(110,223,246,.18);background:rgba(13,22,39,.88);border-radius:10px;box-shadow:0 20px 58px rgba(0,0,0,.28)}}
+    .card{{padding:18px}} .metric{{font-size:32px;font-weight:900}} h1,h2{{letter-spacing:0}} table{{width:100%;border-collapse:collapse;margin:12px 0 28px;overflow:hidden}}
+    th,td{{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top}} th{{color:#6edff6}}
+    a{{color:#36e58f}} .actions{{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0 24px}}
+    @media(max-width:800px){{.grid{{grid-template-columns:1fr 1fr}}}} @media(max-width:520px){{.grid{{grid-template-columns:1fr}} table{{font-size:12px}}}}
+    </style></head><body><div class="wrap">
+    <h1>CoinPilotXAI Inc. Analytics</h1>
+    <div class="actions"><a href="/admin/analytics/export/emails?password={request.args.get('password','')}">Export email opt-ins</a><a href="/admin/analytics/export/sms?password={request.args.get('password','')}">Export SMS opt-ins</a></div>
+    <div class="grid">
+      <div class="card"><div>Live visitors</div><div class="metric">{data['live_visitors']}</div></div>
+      <div class="card"><div>Visitors today</div><div class="metric">{data['visitors_today']}</div></div>
+      <div class="card"><div>Page views today</div><div class="metric">{data['page_views_today']}</div></div>
+      <div class="card"><div>Lead conversion</div><div class="metric">{data['conversion_rate']:.1f}%</div></div>
+    </div>
+    <h2>Top pages</h2>{table(data['top_pages'], ['Page', 'Events'])}
+    <h2>Referral sources</h2>{table(data['referrers'], ['Referrer', 'Events'])}
+    <h2>Device / browser</h2>{table(data['devices'], ['Device', 'Browser', 'Events'])}
+    <h2>CTA clicks</h2>{table(data['cta_clicks'], ['Event', 'Clicks'])}
+    <h2>Recent activity</h2>{table(data['recent'], ['Event', 'Page', 'Device', 'Browser', 'Time'])}
+    <h2>New leads</h2>{table(data['new_leads'], ['Name', 'Email', 'Phone', 'Country', 'Email opt-in', 'SMS opt-in', 'Created'])}
+    </div></body></html>
+    """
+    return html
+
+
+@webhook_app.route("/admin/analytics/export/<kind>", methods=["GET"])
+def admin_analytics_export(kind):
+    if not require_admin_password():
+        return Response("Unauthorized", status=401)
+    if kind not in {"emails", "sms"}:
+        return Response("Unknown export", status=404)
+    conn = db()
+    cur = conn.cursor()
+    if kind == "emails":
+        cur.execute("SELECT full_name, email, country, source, created_at FROM leads WHERE email_opt_in=1 AND email!='' ORDER BY created_at DESC")
+        headers = ["full_name", "email", "country", "source", "created_at"]
+    else:
+        cur.execute("SELECT full_name, phone, country, source, created_at FROM leads WHERE sms_opt_in=1 AND phone!='' ORDER BY created_at DESC")
+        headers = ["full_name", "phone", "country", "source", "created_at"]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    writer.writerows(cur.fetchall())
+    conn.close()
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=coinpilotxai-{kind}.csv"})
 
 
 @webhook_app.route("/robots.txt", methods=["GET"])
@@ -3412,6 +3716,55 @@ def init_db():
         subject TEXT,
         status TEXT,
         created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT,
+        email TEXT UNIQUE,
+        phone TEXT,
+        country TEXT,
+        source TEXT,
+        utm_source TEXT,
+        utm_medium TEXT,
+        utm_campaign TEXT,
+        email_opt_in INTEGER DEFAULT 0,
+        sms_opt_in INTEGER DEFAULT 0,
+        telegram_username TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        last_seen_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS analytics_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        user_id INTEGER,
+        event_name TEXT,
+        page_url TEXT,
+        referrer TEXT,
+        device_type TEXT,
+        browser TEXT,
+        ip_hash TEXT,
+        country TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,
+        first_seen_at TEXT,
+        last_seen_at TEXT,
+        user_agent TEXT,
+        referrer TEXT,
+        landing_page TEXT,
+        utm_source TEXT,
+        utm_medium TEXT,
+        utm_campaign TEXT
     )
     """)
 
