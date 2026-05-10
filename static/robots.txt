@@ -2,8 +2,18 @@ User-agent: *
 Allow: /
 
 Sitemap: https://coinpilotx.app/sitemap.xml
+Host: https://coinpilotx.app
+
+# IndexNow:
+# Key location: https://coinpilotx.app/indexnow-key.txt
+# Metadata endpoint: https://coinpilotx.app/api/indexnow
 
 # Google Search Console:
 # 1. Add https://coinpilotx.app/ as a property.
 # 2. Verify domain or URL-prefix ownership.
 # 3. Submit https://coinpilotx.app/sitemap.xml under Sitemaps.
+
+# Bing Webmaster Tools:
+# 1. Add https://coinpilotx.app/ as a site.
+# 2. Verify ownership.
+# 3. Submit https://coinpilotx.app/sitemap.xml and use IndexNow for faster discovery.

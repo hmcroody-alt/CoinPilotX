@@ -468,6 +468,38 @@ def sitemap_xml():
     return send_from_directory(webhook_app.static_folder, "sitemap.xml", mimetype="application/xml")
 
 
+@webhook_app.route("/manifest.json", methods=["GET"])
+def manifest_json():
+    return send_from_directory(webhook_app.static_folder, "manifest.json", mimetype="application/manifest+json")
+
+
+@webhook_app.route("/site.webmanifest", methods=["GET"])
+def site_webmanifest():
+    return send_from_directory(webhook_app.static_folder, "site.webmanifest", mimetype="application/manifest+json")
+
+
+@webhook_app.route("/indexnow-key.txt", methods=["GET"])
+@webhook_app.route("/4d4dc0c2c0f94b7bb8184fd91b7f0b1e.txt", methods=["GET"])
+def indexnow_key_txt():
+    return send_from_directory(webhook_app.static_folder, "indexnow-key.txt", mimetype="text/plain")
+
+
+@webhook_app.route("/api/indexnow", methods=["GET"])
+def indexnow_metadata_api():
+    return jsonify({
+        "host": "coinpilotx.app",
+        "key": "4d4dc0c2c0f94b7bb8184fd91b7f0b1e",
+        "keyLocation": "https://coinpilotx.app/indexnow-key.txt",
+        "urlList": [
+            "https://coinpilotx.app/",
+            "https://coinpilotx.app/support",
+            "https://coinpilotx.app/privacy",
+            "https://coinpilotx.app/terms",
+        ],
+        "submitEndpoint": "https://api.indexnow.org/indexnow",
+    })
+
+
 @webhook_app.route("/api/intelligence-feed", methods=["GET"])
 def intelligence_feed_api():
     return jsonify(live_intelligence_feed())

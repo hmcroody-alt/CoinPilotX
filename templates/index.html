@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CoinPilotXAI Inc.</title>
+  <title>CoinPilotXAI Inc | AI Crypto Intelligence</title>
   <meta name="description" content="CoinPilotX is powered by CoinPilotXAI Inc. and provides AI crypto intelligence, scam protection, whale alerts, portfolio intelligence, blockchain wallet risk scanning, and market analysis inside Telegram." />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+  <!-- Add Google Search Console verification here: <meta name="google-site-verification" content="YOUR_CODE" /> -->
+  <!-- Add Bing Webmaster verification here: <meta name="msvalidate.01" content="YOUR_CODE" /> -->
   <link rel="canonical" href="https://coinpilotx.app/" />
   <meta property="og:title" content="CoinPilotXAI Inc. | CoinPilotX AI Crypto Intelligence Bot" />
   <meta property="og:description" content="CoinPilotX is powered by CoinPilotXAI Inc. for AI-powered crypto intelligence, whale alerts, scam protection, portfolio tracking, and market insights inside Telegram." />
@@ -18,6 +21,9 @@
   <meta name="twitter:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png" />
   <meta name="theme-color" content="#08111f" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <link rel="preload" as="image" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -25,9 +31,13 @@
       {
         "@type": "SoftwareApplication",
         "name": "CoinPilotX",
+        "alternateName": ["CoinPilotXAI", "CoinPilotX AI Crypto Intelligence Bot"],
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Telegram",
         "description": "CoinPilotX is powered by CoinPilotXAI Inc. as an AI crypto intelligence bot for Telegram with crypto scam protection, whale alerts, portfolio intelligence, and blockchain wallet risk scanning.",
+        "url": "https://coinpilotx.app/",
+        "image": "https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png",
+        "publisher": {"@id": "https://coinpilotx.app/#organization"},
         "offers": {
           "@type": "Offer",
           "price": "14.99",
@@ -36,15 +46,26 @@
       },
       {
         "@type": "Organization",
+        "@id": "https://coinpilotx.app/#organization",
         "name": "CoinPilotXAI Inc.",
         "legalName": "CoinPilotXAI Inc.",
         "url": "https://coinpilotx.app/",
+        "logo": "https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png",
+        "email": "support@coinpilotx.app",
+        "contactPoint": [{
+          "@type": "ContactPoint",
+          "contactType": "customer support",
+          "email": "support@coinpilotx.app",
+          "url": "https://coinpilotx.app/support",
+          "availableLanguage": "en"
+        }],
         "sameAs": ["https://t.me/DocShieldX_bot"]
       },
       {
         "@type": "WebSite",
         "name": "CoinPilotX",
         "url": "https://coinpilotx.app/",
+        "publisher": {"@id": "https://coinpilotx.app/#organization"},
         "description": "CoinPilotX is powered by CoinPilotXAI Inc. for AI crypto intelligence, crypto scam protection, whale alerts Telegram bot, crypto portfolio intelligence, and blockchain wallet risk scanning."
       },
       {
@@ -64,7 +85,25 @@
             "@type": "Question",
             "name": "Does CoinPilotX hold my crypto?",
             "acceptedAnswer": {"@type": "Answer", "text": "No. CoinPilotX never holds user funds and never asks for seed phrases, private keys, recovery phrases, or wallet passwords."}
+          },
+          {
+            "@type": "Question",
+            "name": "How does the AI crypto assistant work?",
+            "acceptedAnswer": {"@type": "Answer", "text": "CoinPilotX uses AI-assisted explanations and CoinPilotXAI Inc. workflows to help users understand crypto market context, scam risks, wallet intelligence, portfolio scenarios, and public blockchain data."}
+          },
+          {
+            "@type": "Question",
+            "name": "What is Sports Edge AI?",
+            "acceptedAnswer": {"@type": "Answer", "text": "Sports Edge is informational sports intelligence for reviewing live games, market context, risk factors, and position discipline. It is not betting advice and does not guarantee outcomes."}
           }
+        ]
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://coinpilotx.app/"},
+          {"@type": "ListItem", "position": 2, "name": "Pricing", "item": "https://coinpilotx.app/#pricing"},
+          {"@type": "ListItem", "position": 3, "name": "FAQ", "item": "https://coinpilotx.app/#faq"}
         ]
       }
     ]
@@ -2096,6 +2135,23 @@
     }
 
     @media (max-width: 768px) {
+      .card,
+      .terminal-card,
+      .pricing-card,
+      .tool-panel,
+      .status-panel,
+      .day-signal-copy,
+      .day-signal-card {
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+      }
+
+      .logo-wrap::before,
+      .button.pulse-cta::before,
+      .mobile-bottom-nav a.pulse-cta::before {
+        filter: blur(8px);
+        opacity: 0.34;
+      }
+
       .day-signal-panel {
         grid-template-columns: 1fr;
       }
@@ -2359,7 +2415,7 @@
       <nav aria-label="Main navigation">
         <a class="brand" href="#top" aria-label="CoinPilotXAI Inc. home">
           <span class="logo-wrap">
-            <img class="brand-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="44" height="44" decoding="async" />
+            <img class="brand-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="44" height="44" decoding="async" fetchpriority="high" />
           </span>
           <span class="brand-text">
             <span>CoinPilotXAI Inc.</span>
@@ -2428,7 +2484,7 @@
         <div>
           <div class="hero-brand" aria-label="CoinPilotXAI Inc. brand">
             <span class="logo-wrap">
-              <img class="hero-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="112" height="112" decoding="async" />
+              <img class="hero-logo" src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="112" height="112" decoding="async" loading="eager" fetchpriority="high" />
             </span>
             <div class="hero-brand-copy">
               <strong>CoinPilotXAI Inc.</strong>
@@ -2943,7 +2999,7 @@
         <div class="screenshot-grid">
           <article class="card">
             <div class="screenshot-frame">
-              <img src="{{ url_for('static', filename='screenshots/analysis.png') }}" alt="CoinPilotX AI market analysis screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/analysis.png') }}" alt="CoinPilotX AI market analysis screenshot showing BTC and ETH intelligence" width="912" height="838" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>AI Market Analysis</h3>
@@ -2951,7 +3007,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="{{ url_for('static', filename='screenshots/portfolio.png') }}" alt="CoinPilotX portfolio advice screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/portfolio.png') }}" alt="CoinPilotX portfolio advice screenshot with live value and scenario analysis" width="908" height="1426" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Portfolio Advice</h3>
@@ -2959,7 +3015,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="{{ url_for('static', filename='screenshots/whales.png') }}" alt="CoinPilotX whale intelligence screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/whales.png') }}" alt="CoinPilotX whale intelligence screenshot with BTC movement alerts" width="916" height="960" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Whale Intelligence</h3>
@@ -2967,7 +3023,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="{{ url_for('static', filename='screenshots/scamshield.png') }}" alt="CoinPilotX scam shield screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/scamshield.png') }}" alt="CoinPilotX scam shield screenshot with crypto safety warnings" width="926" height="618" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Scam Shield</h3>
@@ -2984,7 +3040,7 @@
         <div class="grid two">
           <article class="card">
             <div class="screenshot-frame">
-              <img src="{{ url_for('static', filename='screenshots/MainMenu.png') }}" alt="CoinPilotX Telegram main menu screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/MainMenu.png') }}" alt="CoinPilotX Telegram main menu screenshot with AI, market, wallet, and sports tools" width="934" height="1198" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Main Menu</h3>
@@ -2992,7 +3048,7 @@
           </article>
           <article class="card">
             <div class="screenshot-frame">
-              <img src="{{ url_for('static', filename='screenshots/CoinPilotxHelp.png') }}" alt="CoinPilotX help command screenshot" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <img src="{{ url_for('static', filename='screenshots/CoinPilotxHelp.png') }}" alt="CoinPilotX help command screenshot listing crypto AI bot commands" width="930" height="1708" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
               <div class="screenshot-fallback">CoinPilotX preview</div>
             </div>
             <h3>Command Help</h3>
@@ -3485,6 +3541,43 @@
       </div>
     </section>
 
+    <section id="seo-intelligence" class="band">
+      <div class="container">
+        <div class="section-head center">
+          <div class="section-kicker">Searchable Intelligence Guide</div>
+          <h2>AI crypto intelligence, wallet safety, and Telegram-first market tools.</h2>
+          <p>CoinPilotX is designed for users searching for practical crypto AI tools that explain risk before action.</p>
+        </div>
+
+        <div class="grid">
+          <article class="card">
+            <h3>AI Crypto Intelligence</h3>
+            <p>CoinPilotX helps users understand BTC, ETH, volatility, market pressure, crypto news, fear and greed, and educational market analysis inside Telegram.</p>
+          </article>
+          <article class="card">
+            <h3>Telegram Crypto AI Bot</h3>
+            <p>The Telegram workflow makes crypto AI assistance, portfolio awareness, wallet checks, and scam education easy to access from a phone.</p>
+          </article>
+          <article class="card">
+            <h3>Crypto Scam Checker</h3>
+            <p>Scam Shield focuses on suspicious messages, fake support patterns, wallet-drain warnings, seed phrase danger signs, and crypto safety habits.</p>
+          </article>
+          <article class="card">
+            <h3>Wallet Intelligence</h3>
+            <p>CoinPilotX can review public wallet addresses and transaction IDs for educational context using public blockchain data only.</p>
+          </article>
+          <article class="card">
+            <h3>AI Sports Edge</h3>
+            <p>Sports Edge provides informational game context, risk factors, market discipline, and position-awareness without guaranteed outcomes.</p>
+          </article>
+          <article class="card">
+            <h3>Crypto Safety Tools</h3>
+            <p>CoinPilotXAI Inc. never holds funds and never asks for seed phrases, private keys, recovery phrases, or wallet passwords.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section id="faq">
       <div class="container">
         <div class="section-head center">
@@ -3496,6 +3589,10 @@
           <article class="faq-card">
             <h3>What is CoinPilotX?</h3>
             <p>CoinPilotX is an AI crypto intelligence bot for Telegram with market analysis, whale tracking, scam protection, portfolio tools, and global crypto context. It is operated by CoinPilotXAI Inc.</p>
+          </article>
+          <article class="faq-card">
+            <h3>What is CoinPilotXAI Inc?</h3>
+            <p>CoinPilotXAI Inc. powers CoinPilotX, an educational AI intelligence platform for crypto market context, scam awareness, wallet intelligence, portfolio scenarios, and Telegram-first tools.</p>
           </article>
           <article class="faq-card">
             <h3>Is CoinPilotX financial advice?</h3>
@@ -3520,6 +3617,18 @@
           <article class="faq-card">
             <h3>How does CoinPilotX use AI?</h3>
             <p>CoinPilotX is powered by CoinPilotXAI Inc. and may use OpenAI technology for AI responses. This does not mean an official OpenAI partnership.</p>
+          </article>
+          <article class="faq-card">
+            <h3>How does the AI crypto assistant work?</h3>
+            <p>The AI crypto assistant explains market context, scam warnings, portfolio questions, public blockchain information, and safer decision habits in plain language.</p>
+          </article>
+          <article class="faq-card">
+            <h3>Is CoinPilotX safe?</h3>
+            <p>CoinPilotX is built around safety boundaries: no custody, no private keys, no seed phrases, no wallet passwords, and public blockchain data only.</p>
+          </article>
+          <article class="faq-card">
+            <h3>What is Sports Edge AI?</h3>
+            <p>Sports Edge AI is informational sports intelligence for reviewing live games, position risk, market context, and discipline. It is not betting advice.</p>
           </article>
         </div>
       </div>

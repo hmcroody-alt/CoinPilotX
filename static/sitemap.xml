@@ -2,38 +2,72 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://coinpilotx.app/</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/#features</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://coinpilotx.app/#intelligence-console</loc>
+    <lastmod>2026-05-09</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://coinpilotx.app/#market-board</loc>
+    <lastmod>2026-05-09</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://coinpilotx.app/#sports-edge</loc>
+    <lastmod>2026-05-09</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://coinpilotx.app/#day-signal</loc>
+    <lastmod>2026-05-09</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://coinpilotx.app/#about</loc>
+    <lastmod>2026-05-09</lastmod>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://coinpilotx.app/#pro</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/#pricing</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/#safety</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/#faq</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/support</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/privacy</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://coinpilotx.app/terms</loc>
+    <lastmod>2026-05-09</lastmod>
     <priority>0.6</priority>
   </url>
 </urlset>
