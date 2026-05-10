@@ -36,6 +36,7 @@ from telegram.ext import (
 )
 
 from services import (
+    brevo_contacts as brevo_contacts_service,
     day_signal as day_signal_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
@@ -661,7 +662,9 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
     user_id = cur.lastrowid
     conn.commit()
     conn.close()
-    return load_account_by_id(user_id), ""
+    user = load_account_by_id(user_id)
+    sync_brevo_contact_safe({**(user or {}), "source": "website_account"}, entity_type="user", entity_id=user_id)
+    return user, ""
 
 
 def update_account_settings(user_id, full_name, phone, country, email_opt_in, sms_opt_in):
@@ -678,6 +681,8 @@ def update_account_settings(user_id, full_name, phone, country, email_opt_in, sm
     )
     conn.commit()
     conn.close()
+    user = load_account_by_id(user_id)
+    sync_brevo_contact_safe({**(user or {}), "source": "account_settings"}, entity_type="user", entity_id=user_id)
 
 
 def generate_telegram_link_code(user_id):
@@ -1122,6 +1127,14 @@ def valid_phone(phone):
     return bool(re.match(r"^\+?[0-9 .()\-]{7,24}$", phone))
 
 
+def sync_brevo_contact_safe(record, entity_type="user", entity_id=None):
+    try:
+        return brevo_contacts_service.sync_user_to_brevo(record, entity_type=entity_type, entity_id=entity_id)
+    except Exception as exc:
+        logging.warning("brevo contact sync failed safely: entity_type=%s entity_id=%s error=%s", entity_type, entity_id, exc)
+        return {"ok": False, "status": "failed", "error": str(exc)}
+
+
 @webhook_app.route("/api/leads", methods=["POST"])
 def leads_api():
     init_db()
@@ -1202,6 +1215,22 @@ def leads_api():
         )
     conn.commit()
     conn.close()
+    lead_record = {
+        "email": email,
+        "full_name": values[0],
+        "phone": values[2],
+        "country": values[3],
+        "source": values[4],
+        "utm_source": utm_source,
+        "utm_medium": utm_medium,
+        "utm_campaign": utm_campaign,
+        "email_opt_in": email_opt_in,
+        "sms_opt_in": sms_opt_in,
+        "telegram_username": values[10],
+        "created_at": now,
+        "plan": "free",
+    }
+    sync_brevo_contact_safe(lead_record, entity_type="lead", entity_id=lead_id)
     if email_opt_in and is_new_lead:
         send_update_signup_email({
             "id": lead_id,
@@ -1239,6 +1268,14 @@ def analytics_summary():
     linked_telegram_users = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM users WHERE is_pro=1 OR lower(COALESCE(plan,''))='pro' OR lower(COALESCE(subscription_status,''))='active'")
     pro_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(DISTINCT email) FROM brevo_contact_sync_logs WHERE status='success' AND email!=''")
+    brevo_synced_contacts = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM brevo_contact_sync_logs WHERE status!='success'")
+    brevo_failed_syncs = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(DISTINCT email) FROM (SELECT email FROM leads WHERE email_opt_in=1 AND email!='' UNION SELECT email FROM users WHERE email_opt_in=1 AND email!='')")
+    email_subscribers = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(DISTINCT phone) FROM (SELECT phone FROM leads WHERE sms_opt_in=1 AND phone!='' UNION SELECT phone FROM users WHERE sms_opt_in=1 AND phone!='')")
+    sms_subscribers = cur.fetchone()[0]
     conversion_rate = (leads_today / visitors_today * 100) if visitors_today else 0
 
     def rows(sql, params=()):
@@ -1253,6 +1290,10 @@ def analytics_summary():
         "new_users_today": new_users_today,
         "linked_telegram_users": linked_telegram_users,
         "pro_users": pro_users,
+        "brevo_synced_contacts": brevo_synced_contacts,
+        "brevo_failed_syncs": brevo_failed_syncs,
+        "email_subscribers": email_subscribers,
+        "sms_subscribers": sms_subscribers,
         "conversion_rate": conversion_rate,
         "top_pages": rows("SELECT page_url, COUNT(*) FROM analytics_events WHERE created_at>=? AND page_url!='' GROUP BY page_url ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
         "referrers": rows("SELECT COALESCE(NULLIF(referrer,''),'Direct'), COUNT(*) FROM analytics_events WHERE created_at>=? GROUP BY COALESCE(NULLIF(referrer,''),'Direct') ORDER BY COUNT(*) DESC LIMIT 8", (since_day,)),
@@ -1263,6 +1304,7 @@ def analytics_summary():
         "website_usage": rows("SELECT feature, COUNT(*) FROM user_ai_interactions WHERE created_at>=? AND metadata LIKE '%website%' GROUP BY feature ORDER BY COUNT(*) DESC LIMIT 10", (since_day,)),
         "api_failures": rows("SELECT event_name, page_url, metadata, created_at FROM analytics_events WHERE event_name='api_failure' ORDER BY id DESC LIMIT 15"),
         "email_sends": rows("SELECT subject, status, COUNT(*) FROM email_logs WHERE created_at>=? GROUP BY subject, status ORDER BY COUNT(*) DESC LIMIT 12", (since_day,)),
+        "brevo_syncs": rows("SELECT entity_type, email, status, list_names, created_at FROM brevo_contact_sync_logs ORDER BY id DESC LIMIT 25"),
         "recent": rows("SELECT event_name, page_url, device_type, browser, created_at FROM analytics_events ORDER BY id DESC LIMIT 25"),
         "new_leads": rows("SELECT full_name, email, phone, country, email_opt_in, sms_opt_in, created_at FROM leads ORDER BY id DESC LIMIT 25"),
     }
@@ -1306,6 +1348,10 @@ def admin_analytics_page():
 	      <div class="card"><div>Linked Telegram users</div><div class="metric">{data['linked_telegram_users']}</div></div>
 	      <div class="card"><div>Pro users</div><div class="metric">{data['pro_users']}</div></div>
 	      <div class="card"><div>Leads today</div><div class="metric">{data['leads_today']}</div></div>
+	      <div class="card"><div>Brevo synced contacts</div><div class="metric">{data['brevo_synced_contacts']}</div></div>
+	      <div class="card"><div>Brevo sync failures</div><div class="metric">{data['brevo_failed_syncs']}</div></div>
+	      <div class="card"><div>Email subscribers</div><div class="metric">{data['email_subscribers']}</div></div>
+	      <div class="card"><div>SMS subscribers</div><div class="metric">{data['sms_subscribers']}</div></div>
 	    </div>
 	    <h2>Top pages</h2>{table(data['top_pages'], ['Page', 'Events'])}
 	    <h2>Referral sources</h2>{table(data['referrers'], ['Referrer', 'Events'])}
@@ -1316,6 +1362,7 @@ def admin_analytics_page():
 	    <h2>Website intelligence usage</h2>{table(data['website_usage'], ['Feature', 'Uses'])}
 	    <h2>API failures</h2>{table(data['api_failures'], ['Event', 'Page', 'Metadata', 'Time'])}
 	    <h2>Email sends</h2>{table(data['email_sends'], ['Subject', 'Status', 'Count'])}
+	    <h2>Brevo contact syncs</h2>{table(data['brevo_syncs'], ['Type', 'Email', 'Status', 'Lists', 'Time'])}
 	    <h2>Recent activity</h2>{table(data['recent'], ['Event', 'Page', 'Device', 'Browser', 'Time'])}
     <h2>New leads</h2>{table(data['new_leads'], ['Name', 'Email', 'Phone', 'Country', 'Email opt-in', 'SMS opt-in', 'Created'])}
     </div></body></html>
@@ -1343,6 +1390,32 @@ def admin_analytics_export(kind):
     writer.writerows(cur.fetchall())
     conn.close()
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename=coinpilotxai-{kind}.csv"})
+
+
+@webhook_app.route("/admin/brevo/resync", methods=["POST"])
+def admin_brevo_resync():
+    if not require_admin_password():
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM leads WHERE email!=''")
+    leads = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM users WHERE email!=''")
+    users = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    synced = 0
+    failed = 0
+    for lead in leads:
+        result = sync_brevo_contact_safe({**lead, "source": lead.get("source") or "website_lead", "plan": "free"}, entity_type="lead", entity_id=lead.get("id"))
+        synced += 1 if result.get("ok") else 0
+        failed += 0 if result.get("ok") else 1
+    for user in users:
+        result = sync_brevo_contact_safe({**user, "source": "website_account"}, entity_type="user", entity_id=user.get("user_id"))
+        synced += 1 if result.get("ok") else 0
+        failed += 0 if result.get("ok") else 1
+    return jsonify({"ok": True, "synced": synced, "failed": failed, "leads_checked": len(leads), "users_checked": len(users)})
 
 
 @webhook_app.route("/robots.txt", methods=["GET"])
@@ -1631,6 +1704,9 @@ def save_user_email(user_id, email):
     cur.execute("UPDATE users SET email=?, onboarding_complete=1 WHERE user_id=?", (email, user_id))
     conn.commit()
     conn.close()
+    user = load_account_by_id(user_id)
+    if user:
+        sync_brevo_contact_safe({**user, "source": "telegram_email"}, entity_type="user", entity_id=user_id)
 
 
 def is_valid_email(email):
@@ -4559,6 +4635,18 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS brevo_contact_sync_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT,
+        entity_id INTEGER,
+        email TEXT,
+        status TEXT,
+        details TEXT,
+        list_names TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS leads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT,
@@ -6967,6 +7055,9 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
     cur.execute("UPDATE telegram_link_codes SET used_at=? WHERE id=?", (now, row[0]))
     conn.commit()
     conn.close()
+    linked_user = load_account_by_id(row[1])
+    if linked_user:
+        sync_brevo_contact_safe({**linked_user, "source": "telegram_link"}, entity_type="user", entity_id=row[1])
     logging.info("Telegram linking success for Telegram user %s", update.effective_user.id)
     await update.message.reply_text(
         "✅ Telegram connected successfully.\n\n"
@@ -7067,6 +7158,9 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
     )
     conn.commit()
     conn.close()
+    user = load_account_by_id(user_id) or get_linked_website_account(user_id)
+    if user:
+        sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or user_id)
 
 
 DAY_SIGNAL_QUESTIONS = [
