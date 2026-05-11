@@ -37,6 +37,7 @@ from telegram.ext import (
 
 from services import (
     brevo_contacts as brevo_contacts_service,
+    db as db_service,
     day_signal as day_signal_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
@@ -162,12 +163,14 @@ logging.basicConfig(
 DB_FILE = "coinpilotx.db"
 
 def db():
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    if database_url.startswith("sqlite:///"):
-        return sqlite3.connect(database_url.replace("sqlite:///", "", 1))
-    if database_url.startswith("file:"):
-        return sqlite3.connect(database_url, uri=True)
-    return sqlite3.connect(DB_FILE)
+    return db_service.connect()
+
+
+def normalize_email(email):
+    return (email or "").strip().lower()
+
+
+DB_STARTUP_DIAGNOSTICS = db_service.log_startup_diagnostics()
 
 
 def generate_owner_temp_password():
@@ -679,8 +682,30 @@ def home():
     return render_template("index.html")
 
 
-@webhook_app.route("/support", methods=["GET"])
+@webhook_app.route("/support", methods=["GET", "POST"])
 def support_page():
+    if request.method == "POST":
+        init_db()
+        name = clean_html(request.form.get("name", ""))[:160]
+        email = normalize_email(clean_html(request.form.get("email", "")))
+        issue_type = clean_html(request.form.get("issue_type", "general support"))[:80]
+        subject = clean_html(request.form.get("subject", issue_type or "Support request"))[:180]
+        message = clean_html(request.form.get("message", ""))[:4000]
+        if is_valid_email(email) and message:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO support_tickets
+                (user_id, email, name, issue_type, subject, message, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?)
+                """,
+                (account_user_id() or 0, email, name, issue_type, subject, message, datetime.now().isoformat(), datetime.now().isoformat()),
+            )
+            conn.commit()
+            conn.close()
+            log_product_event(account_user_id() or 0, "support_ticket_created", {"issue_type": issue_type})
+        return render_template("support.html", message="Thanks. CoinPilotXAI Inc. support received your request.")
     return render_template("support.html")
 
 
@@ -956,6 +981,7 @@ def load_account_by_id(user_id):
 
 
 def load_account_by_email(email):
+    email = normalize_email(email)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -1051,7 +1077,49 @@ def safe_redirect_target(default_endpoint="dashboard_page"):
     return url_for(default_endpoint)
 
 
+def log_auth_event(event_type, email="", user_id=0, status="info", details=None):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT,
+                email TEXT,
+                user_id INTEGER,
+                status TEXT,
+                details TEXT,
+                db_engine TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO auth_events (event_type, email, user_id, status, details, db_engine, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_type,
+                mask_email(normalize_email(email)) if email else "",
+                int(user_id or 0),
+                status,
+                json.dumps(details or {})[:4000],
+                db_service.ENGINE_NAME,
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("Auth event logging failed: %s", exc)
+
+
 def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False):
+    email = normalize_email(email)
+    logging.info("signup normalized email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
+    log_auth_event("signup_started", email, status="started", details={"db_engine": db_service.ENGINE_NAME})
     now_dt = datetime.now()
     now = now_dt.isoformat()
     trial_end = (now_dt + timedelta(days=PRO_TRIAL_DAYS)).isoformat()
@@ -1062,65 +1130,85 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
     except Exception:
         referred_by = ""
     conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
-    if cur.fetchone():
-        conn.close()
-        return None, "An account already exists for that email."
-    referral_code = generate_referral_code()
-    for _ in range(5):
-        cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (referral_code,))
-        if not cur.fetchone():
-            break
+    try:
+        cur = conn.cursor()
+        logging.info("database insert precheck for signup email=%s engine=%s", mask_email(email), db_service.ENGINE_NAME)
+        cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
+        if cur.fetchone():
+            conn.close()
+            logging.info("duplicate email detection during signup email=%s", mask_email(email))
+            log_auth_event("signup_duplicate", email, status="duplicate", details={"db_engine": db_service.ENGINE_NAME})
+            return None, "An account already exists for that email."
         referral_code = generate_referral_code()
-    cur.execute(
-        """
-        INSERT INTO users (
-            username, display_name, full_name, email, password_hash, phone, country,
-            email_verified, email_opt_in, sms_opt_in, plan, subscription_status,
-            trial_start_date, trial_end_date, trial_used, pro_expires_at,
-            referral_code, referred_by, usage_ai_count, usage_reset_at,
-            signup_time, created_at, updated_at, onboarding_complete, alerts_enabled, is_pro,
-            subscription_plan, subscription_started_at, subscription_expires_at
+        for _ in range(5):
+            cur.execute("SELECT user_id FROM users WHERE referral_code=? LIMIT 1", (referral_code,))
+            if not cur.fetchone():
+                break
+            referral_code = generate_referral_code()
+        logging.info("database insert attempt for signup email=%s engine=%s", mask_email(email), db_service.ENGINE_NAME)
+        cur.execute(
+            """
+            INSERT INTO users (
+                username, display_name, full_name, email, password_hash, phone, country,
+                email_verified, email_opt_in, sms_opt_in, plan, subscription_status,
+                trial_start_date, trial_end_date, trial_used, pro_expires_at,
+                referral_code, referred_by, usage_ai_count, usage_reset_at,
+                signup_time, created_at, updated_at, onboarding_complete, alerts_enabled, is_pro,
+                subscription_plan, subscription_started_at, subscription_expires_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pro', 'trialing',
+                    ?, ?, 1, ?, ?, ?, 0, ?,
+                    ?, ?, ?, 1, 0, 1, 'pro', ?, ?)
+            """,
+            (
+                "",
+                full_name,
+                full_name,
+                email,
+                password_hash,
+                phone,
+                country,
+                int(email_opt_in),
+                int(sms_opt_in),
+                now,
+                trial_end,
+                trial_end,
+                referral_code,
+                referred_by,
+                now[:10],
+                now,
+                now,
+                now,
+                now,
+                trial_end,
+            )
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pro', 'trialing',
-                ?, ?, 1, ?, ?, ?, 0, ?,
-                ?, ?, ?, 1, 0, 1, 'pro', ?, ?)
-        """,
-        (
-            "",
-            full_name,
-            full_name,
-            email,
-            password_hash,
-            phone,
-            country,
-            int(email_opt_in),
-            int(sms_opt_in),
-            now,
-            trial_end,
-            trial_end,
-            referral_code,
-            referred_by,
-            now[:10],
-            now,
-            now,
-            now,
-            now,
-            trial_end,
+        user_id = cur.lastrowid
+        logging.info("database insert generated user_id=%s email=%s", user_id, mask_email(email))
+        cur.execute(
+            """
+            INSERT INTO subscriptions
+            (user_id, plan, status, payment_type, trial_start_date, trial_end_date, pro_expires_at, created_at, updated_at)
+            VALUES (?, 'pro', 'trialing', 'trial', ?, ?, ?, ?, ?)
+            """,
+            (user_id, now, trial_end, trial_end, now, now)
         )
-    )
-    user_id = cur.lastrowid
-    cur.execute(
-        """
-        INSERT INTO subscriptions
-        (user_id, plan, status, payment_type, trial_start_date, trial_end_date, pro_expires_at, created_at, updated_at)
-        VALUES (?, 'pro', 'trialing', 'trial', ?, ?, ?, ?, ?)
-        """,
-        (user_id, now, trial_end, trial_end, now, now)
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
+        logging.info("database commit success for signup user_id=%s engine=%s", user_id, db_service.ENGINE_NAME)
+        log_auth_event("signup_completed", email, user_id, status="success", details={"db_engine": db_service.ENGINE_NAME})
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.exception("database transaction rollback during signup email=%s engine=%s error=%s", mask_email(email), db_service.ENGINE_NAME, exc)
+        log_auth_event("signup_failed", email, status="failed", details={"error": str(exc)[:500], "db_engine": db_service.ENGINE_NAME})
+        return None, "Account creation is temporarily unavailable. Please try again shortly."
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
     user = load_account_by_id(user_id)
     log_product_event(user_id, "pro_trial_started", {"trial_end_date": trial_end, "source": "website_signup"})
     record_referral_signup(user_id, referred_by)
@@ -1161,6 +1249,7 @@ def generate_telegram_link_code(user_id):
 
 
 def create_password_reset(email):
+    email = normalize_email(email)
     user = load_account_by_email(email)
     if not user:
         return None, None
@@ -1201,7 +1290,7 @@ def signup_page():
         if not verify_csrf():
             return render_account_page("signup", "Create Account", error="Security check failed. Please try again.")
         full_name = clean_html(request.form.get("full_name", ""))[:160]
-        email = clean_html(request.form.get("email", "")).strip().lower()
+        email = normalize_email(clean_html(request.form.get("email", "")))
         password = request.form.get("password", "")
         phone = clean_html(request.form.get("phone", "")).strip()
         country = clean_html(request.form.get("country", ""))[:80]
@@ -1239,14 +1328,17 @@ def login_page():
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
-        email = clean_html(request.form.get("email", "")).strip().lower()
+        email = normalize_email(clean_html(request.form.get("email", "")))
         password = request.form.get("password", "")
+        logging.info("login attempt email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
         user = load_account_by_email(email)
         if not user or not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
+            log_auth_event("login_failed", email, user.get("user_id") if user else 0, status="failed", details={"found": bool(user), "db_engine": db_service.ENGINE_NAME})
             return render_account_page("login", "Login", error="Email or password is incorrect.")
         if (user.get("account_status") or "active").lower() != "active":
             return render_account_page("login", "Login", error="This account is not active. Please contact support@coinpilotx.app.")
         session["account_user_id"] = user["user_id"]
+        log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
         conn = db()
         cur = conn.cursor()
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
@@ -1578,12 +1670,16 @@ def forgot_password_page():
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("forgot", "Forgot Password", error="Security check failed. Please try again.")
-        email = clean_html(request.form.get("email", "")).strip().lower()
+        email = normalize_email(clean_html(request.form.get("email", "")))
+        logging.info("forgot password requested email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
         user, token = create_password_reset(email)
         if user and token:
             reset_link = url_for("reset_password_page", token=token, _external=True)
             send_password_reset_email(user, reset_link)
             log_product_event(user.get("user_id"), "forgot_password_requested", {})
+            log_auth_event("forgot_password_token_created", email, user.get("user_id"), status="success", details={"db_engine": db_service.ENGINE_NAME})
+        else:
+            log_auth_event("forgot_password_no_match", email, status="not_found", details={"db_engine": db_service.ENGINE_NAME})
         message = "If that email has an account, a password reset link will be sent."
     return render_account_page("forgot", "Forgot Password", message=message)
 
@@ -1595,7 +1691,7 @@ def forgot_username_page():
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("forgot_username", "Recover Account", error="Security check failed. Please try again.")
-        email = clean_html(request.form.get("email", "")).strip().lower()
+        email = normalize_email(clean_html(request.form.get("email", "")))
         user = load_account_by_email(email) if is_valid_email(email) else None
         if user:
             send_username_recovery_email(user)
@@ -1727,7 +1823,7 @@ def admin_test_email():
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     init_db()
     payload = request.get_json(silent=True) or request.form
-    email = clean_html(payload.get("email", "")).strip().lower()
+    email = normalize_email(clean_html(payload.get("email", "")))
     if not is_valid_email(email):
         return jsonify({"ok": False, "error": "valid email required"}), 400
     logging.info("Admin test email requested for domain=%s brevo_key_loaded=%s", email.split("@")[-1], bool(os.getenv("BREVO_API_KEY")))
@@ -2141,7 +2237,7 @@ def referral_redirect(referral_code):
 def leads_api():
     init_db()
     payload = request.get_json(silent=True) or {}
-    email = clean_html(payload.get("email", "")).strip().lower()
+    email = normalize_email(clean_html(payload.get("email", "")))
     phone = clean_html(payload.get("phone", "")).strip()
     email_opt_in = 1 if payload.get("email_opt_in") is True else 0
     sms_opt_in = 1 if payload.get("sms_opt_in") is True else 0
@@ -2266,6 +2362,7 @@ def admin_current_user():
 
 
 def load_admin_by_email(email):
+    email = normalize_email(email)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -2431,9 +2528,16 @@ def admin_page_html(title, body, admin=None):
     nav = (
         "<a href='/admin/dashboard'>Dashboard</a>"
         "<a href='/admin/users'>Users</a>"
+        "<a href='/admin/admins'>Admins</a>"
+        "<a href='/admin/employees'>Employees</a>"
+        "<a href='/admin/departments'>Departments</a>"
         "<a href='/admin/transactions'>Transactions</a>"
         "<a href='/admin/emails'>Emails</a>"
+        "<a href='/admin/telegram'>Telegram</a>"
+        "<a href='/admin/ai-usage'>AI Usage</a>"
+        "<a href='/admin/support'>Support</a>"
         "<a href='/admin/unmatched-payments'>Unmatched</a>"
+        "<a href='/admin/security'>Security</a>"
         "<a href='/admin/system'>System</a>"
         "<a href='/admin/audit-logs'>Audit</a>"
         "<a href='/admin/logout'>Logout</a>"
@@ -2482,7 +2586,7 @@ def admin_login_page():
         if not verify_csrf():
             message = "Security check failed. Please try again."
         else:
-            email = clean_html(request.form.get("email", "")).strip().lower()
+            email = normalize_email(clean_html(request.form.get("email", "")))
             password = request.form.get("password", "")
             admin = load_admin_by_email(email)
             fallback_ok = admin and admin.get("role") == "owner" and not admin.get("password_hash") and os.getenv("ADMIN_ANALYTICS_PASSWORD") and password == os.getenv("ADMIN_ANALYTICS_PASSWORD")
@@ -2659,10 +2763,11 @@ def admin_system_page():
     if not admin:
         return redirect(url_for("admin_login_page"))
     diag = latest_checkout_diagnostics()
+    db_diag = db_service.health_check()
     last_success = diag.get("last_success") or {}
     last_error = diag.get("last_error") or {}
     checks = {
-        "Database": True,
+        "Database": bool(db_diag.get("connected")),
         "Stripe configured": bool(STRIPE_SECRET_KEY and STRIPE_PRICE_ID),
         "Stripe secret": bool(STRIPE_SECRET_KEY),
         "Stripe publishable key": bool(STRIPE_PUBLISHABLE_KEY),
@@ -2676,6 +2781,11 @@ def admin_system_page():
     body = "<h1>System Health</h1><div class='grid'>" + "".join(
         f"<div class='card'><strong>{clean_html(name)}</strong><p class='metric'>{'OK' if ok else 'Missing'}</p></div>" for name, ok in checks.items()
     ) + (
+        "</div><h2>Database Diagnostics</h2><div class='grid'>"
+        f"<div class='card'><strong>Active DB engine</strong><p class='metric'>{clean_html(db_diag.get('db_engine') or '')}</p></div>"
+        f"<div class='card'><strong>DATABASE_URL loaded</strong><p class='metric'>{'Yes' if db_diag.get('database_url_loaded') else 'No'}</p></div>"
+        f"<div class='card'><strong>Database name</strong><p>{clean_html(str(db_diag.get('database_name') or ''))}</p></div>"
+        f"<div class='card'><strong>Latency</strong><p>{clean_html(str(db_diag.get('latency_ms') or ''))} ms</p></div>"
         "</div><h2>Stripe Checkout Diagnostics</h2><div class='grid'>"
         f"<div class='card'><strong>App base URL</strong><p>{clean_html(APP_BASE_URL)}</p></div>"
         f"<div class='card'><strong>Last successful checkout session</strong><p>{clean_html(last_success.get('stripe_session_id') or 'None recorded')}</p><p class='muted'>{clean_html(last_success.get('created_at') or '')}</p></div>"
@@ -2832,11 +2942,672 @@ def admin_profile_page():
     return admin_page_html("Admin Profile", body, admin)
 
 
+ROLE_FALLBACK_PERMISSIONS = {
+    "owner": {"*"},
+    "super_admin": {"*"},
+    "admin": {"users.view", "users.edit", "billing.view", "emails.view", "telegram.view", "analytics.view", "support.manage", "system.view", "audit.view"},
+    "billing_manager": {"users.view", "billing.view", "billing.repair", "subscriptions.edit", "emails.view"},
+    "support_manager": {"users.view", "users.edit", "emails.view", "emails.resend", "telegram.view", "support.manage"},
+    "support_agent": {"users.view", "emails.view", "telegram.view", "support.manage"},
+    "analyst": {"analytics.view", "ai.view", "system.view"},
+    "content_manager": {"analytics.view", "settings.edit"},
+    "developer": {"system.view", "settings.edit", "audit.view", "ai.view"},
+    "read_only": {"users.view", "billing.view", "emails.view", "telegram.view", "analytics.view", "system.view", "audit.view"},
+}
+
+
+def admin_has_permission(admin, permission):
+    if not admin:
+        return False
+    role = (admin.get("role") or "").strip().lower()
+    if role == "owner":
+        return True
+    permissions = ROLE_FALLBACK_PERMISSIONS.get(role, set())
+    if "*" in permissions or permission in permissions:
+        return True
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM role_permissions WHERE role_name=? AND permission_key=? LIMIT 1",
+            (role, permission),
+        )
+        ok = bool(cur.fetchone())
+        conn.close()
+        return ok
+    except Exception:
+        return False
+
+
+def require_admin_page(permission):
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return None, redirect(url_for("admin_login_page"))
+    if not admin_has_permission(admin, permission):
+        log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", permission, {"role": admin.get("role")})
+        return None, Response("Forbidden", status=403)
+    return admin, None
+
+
+def admin_rows_table(rows, columns):
+    header = "".join(f"<th>{clean_html(label)}</th>" for _, label in columns)
+    if not rows:
+        return f"<table><tr>{header}</tr><tr><td colspan='{len(columns)}'>No records yet.</td></tr></table>"
+    body = ""
+    for row in rows:
+        body += "<tr>" + "".join(f"<td>{clean_html(str(row.get(key) or ''))}</td>" for key, _ in columns) + "</tr>"
+    return f"<table><tr>{header}</tr>{body}</table>"
+
+
+def admin_input(name, label, value="", input_type="text"):
+    return f"<label>{clean_html(label)}<input name='{name}' type='{input_type}' value='{clean_html(str(value or ''))}' /></label>"
+
+
+@webhook_app.route("/admin/users/new", methods=["GET", "POST"])
+def admin_user_new_page():
+    admin, denied = require_admin_page("users.create")
+    if denied:
+        return denied
+    error = ""
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            error = "Security check failed."
+        else:
+            email = normalize_email(clean_html(request.form.get("email", "")))
+            full_name = clean_html(request.form.get("full_name", ""))[:160]
+            password = request.form.get("password") or secrets.token_urlsafe(14) + "Aa1!"
+            if not is_valid_email(email):
+                error = "Enter a valid email."
+            else:
+                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False)
+                if user:
+                    log_admin_audit(admin["id"], "admin_created_user", "user", str(user["user_id"]), {"email": mask_email(email)})
+                    message = f"User created. Temporary password was generated only for this admin session: {clean_html(password)}"
+    body = f"""
+    <h1>Add User</h1>
+    {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+    {f"<p class='muted'>{message}</p>" if message else ""}
+    <form method="post" class="card">
+      <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {admin_input("full_name", "Full name")}
+        {admin_input("email", "Email", input_type="email")}
+        {admin_input("phone", "Phone")}
+        {admin_input("country", "Country")}
+        {admin_input("password", "Temporary password")}
+      </div>
+      <button type="submit">Create User</button>
+    </form>
+    """
+    return admin_page_html("Add User", body, admin)
+
+
+@webhook_app.route("/admin/users/<int:user_id>", methods=["GET"])
+def admin_user_detail_page(user_id):
+    admin, denied = require_admin_page("users.view")
+    if denied:
+        return denied
+    user = load_account_by_id(user_id)
+    if not user:
+        return admin_page_html("User Not Found", "<h1>User not found</h1>", admin), 404
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT event_type, event_label, created_at FROM user_activity WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
+    activity = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT email_type, subject, status, created_at FROM email_logs WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
+    emails = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    summary = "".join(
+        f"<div class='card'><strong>{clean_html(label)}</strong><p>{clean_html(str(value or ''))}</p></div>"
+        for label, value in {
+            "Name": user.get("full_name") or user.get("display_name"),
+            "Email": mask_email(user.get("email")),
+            "Plan": user.get("plan"),
+            "Subscription": user.get("subscription_status"),
+            "Stripe Customer": user.get("stripe_customer_id"),
+            "Telegram": user.get("telegram_username") or user.get("telegram_user_id"),
+            "Created": user.get("created_at") or user.get("signup_time"),
+            "Last login": user.get("last_login_at"),
+        }.items()
+    )
+    body = (
+        f"<h1>User #{user_id}</h1><p><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></p>"
+        f"<div class='grid'>{summary}</div>"
+        f"<h2>Activity</h2><div class='card'>{admin_rows_table(activity, [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div>"
+        f"<h2>Email Logs</h2><div class='card'>{admin_rows_table(emails, [('email_type','Type'),('subject','Subject'),('status','Status'),('created_at','Date')])}</div>"
+    )
+    return admin_page_html("User Detail", body, admin)
+
+
+@webhook_app.route("/admin/users/<int:user_id>/edit", methods=["GET", "POST"])
+def admin_user_edit_page(user_id):
+    admin, denied = require_admin_page("users.edit")
+    if denied:
+        return denied
+    user = load_account_by_id(user_id)
+    if not user:
+        return admin_page_html("User Not Found", "<h1>User not found</h1>", admin), 404
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            message = "Security check failed."
+        else:
+            plan = clean_html(request.form.get("plan", user.get("plan") or "free"))[:20]
+            status = clean_html(request.form.get("subscription_status", user.get("subscription_status") or "inactive"))[:40]
+            account_status = clean_html(request.form.get("account_status", user.get("account_status") or "active"))[:40]
+            now = datetime.now().isoformat()
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE users
+                SET full_name=?, display_name=?, phone=?, country=?, account_status=?, plan=?,
+                    subscription_status=?, pro_expires_at=?, updated_at=?
+                WHERE user_id=?
+                """,
+                (
+                    clean_html(request.form.get("full_name", user.get("full_name") or ""))[:160],
+                    clean_html(request.form.get("full_name", user.get("full_name") or ""))[:160],
+                    clean_html(request.form.get("phone", user.get("phone") or ""))[:40],
+                    clean_html(request.form.get("country", user.get("country") or ""))[:80],
+                    account_status,
+                    plan,
+                    status,
+                    clean_html(request.form.get("pro_expires_at", user.get("pro_expires_at") or ""))[:60],
+                    now,
+                    user_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            log_admin_audit(admin["id"], "admin_edited_user", "user", str(user_id), {"plan": plan, "status": status})
+            user = load_account_by_id(user_id)
+            message = "User saved."
+    body = f"""
+    <h1>Edit User</h1>
+    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    <form method="post" class="card">
+      <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {admin_input("full_name", "Full name", user.get("full_name"))}
+        {admin_input("phone", "Phone", user.get("phone"))}
+        {admin_input("country", "Country", user.get("country"))}
+        {admin_input("account_status", "Account status", user.get("account_status") or "active")}
+        {admin_input("plan", "Plan", user.get("plan") or "free")}
+        {admin_input("subscription_status", "Subscription status", user.get("subscription_status") or "inactive")}
+        {admin_input("pro_expires_at", "Pro expires at", user.get("pro_expires_at"))}
+      </div>
+      <button type="submit">Save User</button>
+    </form>
+    """
+    return admin_page_html("Edit User", body, admin)
+
+
 @webhook_app.route("/admin/admins", methods=["GET"])
+def admin_admins_page():
+    admin, denied = require_admin_page("admins.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, full_name, email, role, status, last_login_at, created_at FROM admin_users ORDER BY id ASC")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Admins</h1><p><a class='button' href='/admin/admins/new'>Create Admin</a></p><div class='card'>{admin_rows_table(rows, [('id','ID'),('full_name','Name'),('email','Email'),('role','Role'),('status','Status'),('last_login_at','Last Login')])}</div>"
+    return admin_page_html("Admins", body, admin)
+
+
+@webhook_app.route("/admin/admins/new", methods=["GET", "POST"])
+def admin_admin_new_page():
+    admin, denied = require_admin_page("admins.create")
+    if denied:
+        return denied
+    message = ""
+    error = ""
+    temp_password = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            error = "Security check failed."
+        else:
+            email = normalize_email(clean_html(request.form.get("email", "")))
+            role = clean_html(request.form.get("role", "admin"))[:60]
+            if not is_valid_email(email):
+                error = "Enter a valid email."
+            else:
+                temp_password = generate_owner_temp_password()
+                now = datetime.now().isoformat()
+                conn = db()
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    INSERT INTO admin_users
+                    (full_name, email, phone, password_hash, role, status, must_change_password, temp_password_created_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'active', 1, ?, ?, ?)
+                    """,
+                    (
+                        clean_html(request.form.get("full_name", ""))[:160],
+                        email,
+                        clean_html(request.form.get("phone", ""))[:40],
+                        generate_password_hash(temp_password),
+                        role,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+                conn.commit()
+                conn.close()
+                log_admin_audit(admin["id"], "admin_created_admin", "admin_user", mask_email(email), {"role": role})
+                message = "Admin created. Temporary password is shown once below."
+    body = f"""
+    <h1>Create Admin</h1>
+    {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    {f"<div class='card'><strong>Temporary password</strong><p><code>{clean_html(temp_password)}</code></p></div>" if temp_password else ""}
+    <form method="post" class="card">
+      <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {admin_input("full_name", "Full name")}
+        {admin_input("email", "Email", input_type="email")}
+        {admin_input("phone", "Phone")}
+        {admin_input("role", "Role", "admin")}
+      </div>
+      <button type="submit">Create Admin</button>
+    </form>
+    """
+    return admin_page_html("Create Admin", body, admin)
+
+
+@webhook_app.route("/admin/admins/<int:admin_id>/edit", methods=["GET", "POST"])
+def admin_admin_edit_page(admin_id):
+    admin, denied = require_admin_page("admins.edit")
+    if denied:
+        return denied
+    target = None
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_users WHERE id=? LIMIT 1", (admin_id,))
+    row = cur.fetchone()
+    target = dict(row) if row else None
+    conn.close()
+    if not target:
+        return admin_page_html("Admin Not Found", "<h1>Admin not found</h1>", admin), 404
+    owner_locked = normalize_email(target.get("email")) == OWNER_ADMIN_EMAIL
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            message = "Security check failed."
+        elif owner_locked:
+            message = "Owner role, status, and access cannot be changed here."
+        else:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE admin_users SET full_name=?, phone=?, role=?, status=?, updated_at=? WHERE id=?",
+                (
+                    clean_html(request.form.get("full_name", target.get("full_name") or ""))[:160],
+                    clean_html(request.form.get("phone", target.get("phone") or ""))[:40],
+                    clean_html(request.form.get("role", target.get("role") or "admin"))[:60],
+                    clean_html(request.form.get("status", target.get("status") or "active"))[:40],
+                    datetime.now().isoformat(),
+                    admin_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            log_admin_audit(admin["id"], "admin_edited_admin", "admin_user", str(admin_id), {})
+            message = "Admin saved."
+    body = f"""
+    <h1>Edit Admin</h1>
+    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    <form method="post" class="card">
+      <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {admin_input("full_name", "Full name", target.get("full_name"))}
+        {admin_input("phone", "Phone", target.get("phone"))}
+        {admin_input("role", "Role", target.get("role"))}
+        {admin_input("status", "Status", target.get("status"))}
+      </div>
+      <button type="submit" {'disabled' if owner_locked else ''}>Save Admin</button>
+    </form>
+    """
+    return admin_page_html("Edit Admin", body, admin)
+
+
 @webhook_app.route("/admin/employees", methods=["GET"])
-@webhook_app.route("/admin/settings", methods=["GET"])
-@webhook_app.route("/admin/security", methods=["GET"])
+def admin_employees_page():
+    admin, denied = require_admin_page("employees.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT employee_id, full_name, email, job_title, role, status, created_at FROM employees ORDER BY id DESC LIMIT 200")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Employees</h1><p><a class='button' href='/admin/employees/new'>Add Employee</a></p><div class='card'>{admin_rows_table(rows, [('employee_id','Employee ID'),('full_name','Name'),('email','Email'),('job_title','Job'),('role','Role'),('status','Status')])}</div>"
+    return admin_page_html("Employees", body, admin)
+
+
+@webhook_app.route("/admin/employees/new", methods=["GET", "POST"])
+def admin_employee_new_page():
+    admin, denied = require_admin_page("employees.create")
+    if denied:
+        return denied
+    message = ""
+    if request.method == "POST" and verify_csrf():
+        now = datetime.now().isoformat()
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO employees
+            (employee_id, full_name, email, phone, job_title, role, status, start_date, address, date_of_birth, emergency_contact, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                clean_html(request.form.get("employee_id", ""))[:80] or f"EMP-{int(time.time())}",
+                clean_html(request.form.get("full_name", ""))[:160],
+                normalize_email(clean_html(request.form.get("email", ""))),
+                clean_html(request.form.get("phone", ""))[:40],
+                clean_html(request.form.get("job_title", ""))[:120],
+                clean_html(request.form.get("role", "employee"))[:60],
+                clean_html(request.form.get("start_date", ""))[:40],
+                clean_html(request.form.get("address", ""))[:240],
+                clean_html(request.form.get("date_of_birth", ""))[:40],
+                clean_html(request.form.get("emergency_contact", ""))[:200],
+                clean_html(request.form.get("notes", ""))[:1000],
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        log_admin_audit(admin["id"], "admin_created_employee", "employee", "", {})
+        message = "Employee created."
+    body = f"""
+    <h1>Add Employee</h1>{f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    <form method="post" class="card"><input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {admin_input("employee_id", "Employee ID")}
+        {admin_input("full_name", "Full name")}
+        {admin_input("email", "Email", input_type="email")}
+        {admin_input("phone", "Phone")}
+        {admin_input("job_title", "Job title")}
+        {admin_input("role", "Role")}
+        {admin_input("start_date", "Start date", input_type="date")}
+        {admin_input("address", "Address")}
+        {admin_input("date_of_birth", "Date of birth", input_type="date")}
+        {admin_input("emergency_contact", "Emergency contact")}
+      </div><button type="submit">Add Employee</button></form>
+    """
+    return admin_page_html("Add Employee", body, admin)
+
+
+@webhook_app.route("/admin/employees/<int:employee_id>/edit", methods=["GET", "POST"])
+def admin_employee_edit_page(employee_id):
+    admin, denied = require_admin_page("employees.edit")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM employees WHERE id=? LIMIT 1", (employee_id,))
+    row = cur.fetchone()
+    employee = dict(row) if row else None
+    conn.close()
+    if not employee:
+        return admin_page_html("Employee Not Found", "<h1>Employee not found</h1>", admin), 404
+    message = ""
+    if request.method == "POST" and verify_csrf():
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE employees SET full_name=?, phone=?, job_title=?, role=?, status=?, notes=?, updated_at=? WHERE id=?",
+            (
+                clean_html(request.form.get("full_name", employee.get("full_name") or ""))[:160],
+                clean_html(request.form.get("phone", employee.get("phone") or ""))[:40],
+                clean_html(request.form.get("job_title", employee.get("job_title") or ""))[:120],
+                clean_html(request.form.get("role", employee.get("role") or ""))[:60],
+                clean_html(request.form.get("status", employee.get("status") or "active"))[:40],
+                clean_html(request.form.get("notes", employee.get("notes") or ""))[:1000],
+                datetime.now().isoformat(),
+                employee_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        log_admin_audit(admin["id"], "admin_edited_employee", "employee", str(employee_id), {})
+        message = "Employee saved."
+        employee = {**employee, "full_name": request.form.get("full_name", employee.get("full_name"))}
+    body = f"""
+    <h1>Edit Employee</h1>{f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    <form method="post" class="card"><input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {admin_input("full_name", "Full name", employee.get("full_name"))}
+        {admin_input("phone", "Phone", employee.get("phone"))}
+        {admin_input("job_title", "Job title", employee.get("job_title"))}
+        {admin_input("role", "Role", employee.get("role"))}
+        {admin_input("status", "Status", employee.get("status"))}
+      </div>
+      <p><label>Notes<textarea name="notes">{clean_html(employee.get("notes") or "")}</textarea></label></p>
+      <button type="submit">Save Employee</button>
+    </form>
+    """
+    return admin_page_html("Edit Employee", body, admin)
+
+
+@webhook_app.route("/admin/departments", methods=["GET"])
+def admin_departments_page():
+    admin, denied = require_admin_page("departments.manage")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, status, created_at FROM departments ORDER BY name")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Departments</h1><p><a class='button' href='/admin/departments/new'>Add Department</a></p><div class='card'>{admin_rows_table(rows, [('id','ID'),('name','Name'),('status','Status'),('created_at','Created')])}</div>"
+    return admin_page_html("Departments", body, admin)
+
+
+@webhook_app.route("/admin/departments/new", methods=["GET", "POST"])
+def admin_department_new_page():
+    admin, denied = require_admin_page("departments.manage")
+    if denied:
+        return denied
+    message = ""
+    if request.method == "POST" and verify_csrf():
+        now = datetime.now().isoformat()
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO departments (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
+            (clean_html(request.form.get("name", ""))[:120], clean_html(request.form.get("description", ""))[:500], now, now),
+        )
+        conn.commit()
+        conn.close()
+        log_admin_audit(admin["id"], "admin_created_department", "department", request.form.get("name", ""), {})
+        message = "Department created."
+    message_html = f"<p class='muted'>{clean_html(message)}</p>" if message else ""
+    body = f"<h1>Add Department</h1>{message_html}<form method='post' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' />{admin_input('name','Name')}{admin_input('description','Description')}<button type='submit'>Create Department</button></form>"
+    return admin_page_html("Add Department", body, admin)
+
+
+@webhook_app.route("/admin/departments/<int:department_id>/edit", methods=["GET", "POST"])
+def admin_department_edit_page(department_id):
+    admin, denied = require_admin_page("departments.manage")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM departments WHERE id=? LIMIT 1", (department_id,))
+    row = cur.fetchone()
+    department = dict(row) if row else None
+    conn.close()
+    if not department:
+        return admin_page_html("Department Not Found", "<h1>Department not found</h1>", admin), 404
+    message = ""
+    if request.method == "POST" and verify_csrf():
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE departments SET name=?, description=?, status=?, updated_at=? WHERE id=?",
+            (
+                clean_html(request.form.get("name", department.get("name") or ""))[:120],
+                clean_html(request.form.get("description", department.get("description") or ""))[:500],
+                clean_html(request.form.get("status", department.get("status") or "active"))[:40],
+                datetime.now().isoformat(),
+                department_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        log_admin_audit(admin["id"], "admin_edited_department", "department", str(department_id), {})
+        message = "Department saved."
+    message_html = f"<p class='muted'>{clean_html(message)}</p>" if message else ""
+    body = f"<h1>Edit Department</h1>{message_html}<form method='post' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' />{admin_input('name','Name',department.get('name'))}{admin_input('description','Description',department.get('description'))}{admin_input('status','Status',department.get('status'))}<button type='submit'>Save Department</button></form>"
+    return admin_page_html("Edit Department", body, admin)
+
+
+@webhook_app.route("/admin/roles", methods=["GET"])
+def admin_roles_page():
+    admin, denied = require_admin_page("settings.edit")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT name, description, status, created_at FROM roles ORDER BY name")
+    roles = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return admin_page_html("Roles", f"<h1>Roles</h1><div class='card'>{admin_rows_table(roles, [('name','Role'),('description','Description'),('status','Status'),('created_at','Created')])}</div>", admin)
+
+
+@webhook_app.route("/admin/permissions", methods=["GET"])
+def admin_permissions_page():
+    admin, denied = require_admin_page("settings.edit")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT key, description, created_at FROM permissions ORDER BY key")
+    permissions = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return admin_page_html("Permissions", f"<h1>Permissions</h1><div class='card'>{admin_rows_table(permissions, [('key','Permission'),('description','Description'),('created_at','Created')])}</div>", admin)
+
+
 @webhook_app.route("/admin/telegram", methods=["GET"])
+def admin_telegram_page():
+    admin, denied = require_admin_page("telegram.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, full_name, email, telegram_user_id, telegram_username, telegram_chat_id, plan, subscription_status, last_seen_at FROM users WHERE telegram_user_id IS NOT NULL ORDER BY last_seen_at DESC LIMIT 200")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    for row in rows:
+        row["email"] = mask_email(row.get("email"))
+    body = f"<h1>Telegram Center</h1><div class='card'>{admin_rows_table(rows, [('user_id','User'),('full_name','Name'),('email','Email'),('telegram_user_id','Telegram ID'),('telegram_username','Username'),('plan','Plan'),('subscription_status','Subscription')])}</div>"
+    return admin_page_html("Telegram", body, admin)
+
+
+@webhook_app.route("/admin/ai-usage", methods=["GET"])
+def admin_ai_usage_page():
+    admin, denied = require_admin_page("ai.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT feature, COUNT(*) AS total FROM user_ai_interactions GROUP BY feature ORDER BY total DESC LIMIT 50")
+    by_feature = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT user_id, feature, created_at FROM user_ai_interactions ORDER BY id DESC LIMIT 100")
+    recent = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>AI Usage</h1><h2>By Feature</h2><div class='card'>{admin_rows_table(by_feature, [('feature','Feature'),('total','Requests')])}</div><h2>Recent</h2><div class='card'>{admin_rows_table(recent, [('user_id','User'),('feature','Feature'),('created_at','Date')])}</div>"
+    return admin_page_html("AI Usage", body, admin)
+
+
+@webhook_app.route("/admin/security", methods=["GET"])
+def admin_security_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT event_type, email, user_id, status, db_engine, created_at FROM auth_events ORDER BY id DESC LIMIT 120")
+    auth_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT admin_email, action, target_type, target_id, created_at FROM admin_audit_logs ORDER BY id DESC LIMIT 120")
+    audit_rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Security Center</h1><h2>Authentication Events</h2><div class='card'>{admin_rows_table(auth_rows, [('event_type','Event'),('email','Email'),('user_id','User'),('status','Status'),('db_engine','DB'),('created_at','Date')])}</div><h2>Admin Audit</h2><div class='card'>{admin_rows_table(audit_rows, [('admin_email','Admin'),('action','Action'),('target_type','Target'),('target_id','ID'),('created_at','Date')])}</div>"
+    return admin_page_html("Security", body, admin)
+
+
+@webhook_app.route("/admin/settings", methods=["GET"])
+def admin_settings_page():
+    admin, denied = require_admin_page("settings.edit")
+    if denied:
+        return denied
+    checks = {
+        "DATABASE_URL": db_service.DATABASE_URL_LOADED,
+        "Stripe secret": bool(STRIPE_SECRET_KEY),
+        "Stripe price": bool(STRIPE_PRICE_ID),
+        "Stripe webhook": bool(STRIPE_WEBHOOK_SECRET),
+        "Brevo": bool(os.getenv("BREVO_API_KEY")),
+        "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
+        "Telegram": bool(BOT_TOKEN),
+    }
+    body = "<h1>Settings</h1><div class='grid'>" + "".join(f"<div class='card'><strong>{clean_html(k)}</strong><p class='metric'>{'OK' if v else 'Missing'}</p></div>" for k, v in checks.items()) + "</div>"
+    return admin_page_html("Settings", body, admin)
+
+
+@webhook_app.route("/admin/support", methods=["GET", "POST"])
+def admin_support_page():
+    admin, denied = require_admin_page("support.manage")
+    if denied:
+        return denied
+    if request.method == "POST" and verify_csrf():
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE support_tickets SET status=?, assigned_to=?, updated_at=? WHERE id=?",
+            (
+                clean_html(request.form.get("status", "open"))[:40],
+                admin["id"],
+                datetime.now().isoformat(),
+                int(request.form.get("ticket_id") or 0),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, name, issue_type, subject, status, priority, created_at FROM support_tickets ORDER BY id DESC LIMIT 150")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Support Center</h1><div class='card'>{admin_rows_table(rows, [('id','ID'),('email','Email'),('name','Name'),('issue_type','Type'),('subject','Subject'),('status','Status'),('priority','Priority'),('created_at','Created')])}</div>"
+    return admin_page_html("Support", body, admin)
+
+
+@webhook_app.route("/admin/audit", methods=["GET"])
+def admin_audit_alias_page():
+    return admin_audit_logs_page()
+
+
 @webhook_app.route("/admin/support-notes", methods=["GET"])
 def admin_placeholder_page():
     init_db()
@@ -3054,12 +3825,49 @@ def admin_brevo_resync():
     return jsonify({"ok": True, "synced": synced, "failed": failed, "leads_checked": len(leads), "users_checked": len(users)})
 
 
+@webhook_app.route("/admin/debug/auth-test", methods=["GET"])
+def admin_debug_auth_test():
+    if not require_admin_password():
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    init_db()
+    diagnostics = db_service.health_check()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users = cur.fetchone()[0]
+    cur.execute("SELECT user_id, full_name, email, plan, subscription_status, created_at, last_login_at FROM users ORDER BY user_id DESC LIMIT 10")
+    latest_users = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT event_type, email, user_id, status, db_engine, created_at FROM auth_events ORDER BY id DESC LIMIT 25")
+    auth_events = [dict(row) for row in cur.fetchall()]
+    required_tables = ["users", "password_reset_tokens", "email_logs", "subscriptions", "admin_users", "sessions"]
+    tables = set(diagnostics.get("tables_detected") or [])
+    table_status = {name: name in tables for name in required_tables}
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "active_db_engine": db_service.ENGINE_NAME,
+        "database_url_loaded": db_service.DATABASE_URL_LOADED,
+        "database_name": diagnostics.get("database_name"),
+        "engine_url_masked": diagnostics.get("engine_url_masked"),
+        "postgresql_connection_state": "connected" if diagnostics.get("connected") and db_service.IS_POSTGRES else "not_postgresql_or_disconnected",
+        "database_latency_ms": diagnostics.get("latency_ms"),
+        "users_count": total_users,
+        "latest_users": [
+            {**row, "email": mask_email(row.get("email"))}
+            for row in latest_users
+        ],
+        "latest_signup_attempts": auth_events,
+        "auth_table_status": table_status,
+    })
+
+
 @webhook_app.route("/debug/stripe-user", methods=["GET"])
 @webhook_app.route("/debug/user-email-status", methods=["GET"])
 def debug_stripe_user():
     if not require_admin_password():
         return jsonify({"ok": False, "message": "Unauthorized"}), 401
-    email = clean_html(request.args.get("email", "")).strip().lower()
+    email = normalize_email(clean_html(request.args.get("email", "")))
     if not is_valid_email(email):
         return jsonify({"ok": False, "message": "Provide a valid email."}), 400
     user = load_account_by_email(email)
@@ -3113,7 +3921,7 @@ def debug_stripe_user():
 def debug_password_reset_email_test():
     if not require_admin_password():
         return jsonify({"ok": False, "message": "Unauthorized"}), 401
-    email = clean_html(request.args.get("email", "")).strip().lower()
+    email = normalize_email(clean_html(request.args.get("email", "")))
     user = load_account_by_email(email)
     if not user:
         return jsonify({"ok": False, "message": "User not found."}), 404
@@ -3125,7 +3933,7 @@ def debug_password_reset_email_test():
 def debug_upgrade_email_test():
     if not require_admin_password():
         return jsonify({"ok": False, "message": "Unauthorized"}), 401
-    email = clean_html(request.args.get("email", "")).strip().lower()
+    email = normalize_email(clean_html(request.args.get("email", "")))
     user = load_account_by_email(email)
     if not user:
         return jsonify({"ok": False, "message": "User not found."}), 404
@@ -3143,7 +3951,7 @@ def admin_repair_user_pro():
     if not require_admin_password():
         return jsonify({"ok": False, "message": "Unauthorized"}), 401
     payload = request.get_json(silent=True) or request.form
-    email = clean_html(payload.get("email", "")).strip().lower()
+    email = normalize_email(clean_html(payload.get("email", "")))
     if not is_valid_email(email):
         return jsonify({"ok": False, "message": "Provide a valid email."}), 400
     user = load_account_by_email(email)
@@ -5350,12 +6158,15 @@ def scam_text_intelligence(text):
 def platform_status():
     market_data = live_market_board(limit=12)
     sports_data = live_sports_edge()
+    db_status = db_service.health_check()
     market_ok = bool(market_data.get("markets"))
     sports_ok = sports_data.get("warning") is None and bool(sports_data.get("games"))
     openai_ok = bool(os.getenv("OPENAI_API_KEY"))
     status = {
         "updated_at": datetime.now().isoformat(),
         "website": "online",
+        "database": "connected" if db_status.get("connected") else "database issue",
+        "database_engine": db_status.get("db_engine"),
         "telegram_bot": "configured" if BOT_TOKEN else "bot token missing",
         "stripe_checkout": "configured" if STRIPE_SECRET_KEY and STRIPE_PRICE_ID else "missing Stripe secret or price id",
         "stripe_webhook": "configured" if STRIPE_WEBHOOK_SECRET else "webhook secret missing",
@@ -7684,10 +8495,134 @@ def init_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS auth_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        email TEXT,
+        user_id INTEGER,
+        status TEXT,
+        details TEXT,
+        db_engine TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS departments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        description TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS employees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id TEXT UNIQUE,
+        full_name TEXT,
+        email TEXT UNIQUE,
+        phone TEXT,
+        job_title TEXT,
+        department_id INTEGER,
+        manager_id INTEGER,
+        role TEXT,
+        status TEXT DEFAULT 'active',
+        start_date TEXT,
+        address TEXT,
+        date_of_birth TEXT,
+        emergency_contact TEXT,
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        description TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE,
+        description TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS role_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role_name TEXT,
+        permission_key TEXT,
+        created_at TEXT,
+        UNIQUE(role_name, permission_key)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS support_tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        name TEXT,
+        issue_type TEXT,
+        subject TEXT,
+        message TEXT,
+        status TEXT DEFAULT 'open',
+        priority TEXT DEFAULT 'normal',
+        assigned_to INTEGER,
+        internal_notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    now_seed = datetime.now().isoformat()
+    for department in ["Executive", "Engineering", "Support", "Billing", "Marketing", "Content", "Analytics", "Security", "Operations"]:
+        cur.execute(
+            "INSERT OR IGNORE INTO departments (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
+            (department, f"{department} department", now_seed, now_seed),
+        )
+    for role_name in ["owner", "super_admin", "admin", "billing_manager", "support_manager", "support_agent", "analyst", "content_manager", "developer", "read_only"]:
+        cur.execute(
+            "INSERT OR IGNORE INTO roles (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
+            (role_name, f"{role_name.replace('_', ' ').title()} role", now_seed, now_seed),
+        )
+    default_permissions = [
+        "users.view", "users.create", "users.edit", "users.delete", "users.suspend",
+        "admins.view", "admins.create", "admins.edit", "admins.delete",
+        "employees.view", "employees.create", "employees.edit", "employees.delete",
+        "departments.manage", "billing.view", "billing.repair", "subscriptions.edit",
+        "emails.view", "emails.resend", "telegram.view", "telegram.unlink", "ai.view",
+        "analytics.view", "system.view", "settings.edit", "audit.view", "support.manage",
+    ]
+    for permission in default_permissions:
+        cur.execute(
+            "INSERT OR IGNORE INTO permissions (key, description, created_at) VALUES (?, ?, ?)",
+            (permission, permission.replace(".", " ").title(), now_seed),
+        )
+        cur.execute(
+            "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES ('owner', ?, ?)",
+            (permission, now_seed),
+        )
+
     ensure_owner_admin_with_cursor(cur, allow_reset=False)
 
     conn.commit()
     conn.close()
+    logging.info("Database migration status: complete engine=%s tables_checked=production_saas", db_service.ENGINE_NAME)
 
 
 def help_message():
@@ -9554,6 +10489,24 @@ def health_check():
     return response, 200
 
 
+@webhook_app.route("/health/database", methods=["GET"])
+def database_health_check():
+    diagnostics = db_service.health_check()
+    payload = {
+        "connected": diagnostics.get("connected"),
+        "db_engine": diagnostics.get("db_engine"),
+        "database_url_loaded": diagnostics.get("database_url_loaded"),
+        "database_name": diagnostics.get("database_name"),
+        "latency_ms": diagnostics.get("latency_ms"),
+        "tables_detected": diagnostics.get("tables_detected"),
+    }
+    if not diagnostics.get("connected"):
+        payload["error"] = "Database connection failed. Check server logs for details."
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, 200 if diagnostics.get("connected") else 503
+
+
 @webhook_app.route("/admin-dashboard", methods=["GET"])
 def admin_dashboard_route():
     dashboard_token = os.getenv("ADMIN_DASHBOARD_TOKEN")
@@ -9858,7 +10811,7 @@ async def setemail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu()
         )
         return
-    email = context.args[0].strip().lower()
+    email = normalize_email(context.args[0])
     if not is_valid_email(email):
         await update.message.reply_text(
             "⚠️ That email format does not look valid.\n\n"
@@ -10195,9 +11148,9 @@ def find_user_by_stripe(customer_id=None, subscription_id=None, metadata_user_id
             logging.info("Stripe user resolved by customer_id user_id=%s", row[0])
             return row[0]
     conn.close()
-    email = (customer_email or "").strip().lower()
+    email = normalize_email(customer_email)
     if not email:
-        email = fetch_stripe_customer_email(customer_id).strip().lower()
+        email = normalize_email(fetch_stripe_customer_email(customer_id))
     if email and is_valid_email(email):
         user = load_account_by_email(email)
         if user:

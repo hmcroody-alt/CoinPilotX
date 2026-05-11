@@ -1,21 +1,8 @@
-import os
-import sqlite3
-
-
-def db_path():
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    if database_url.startswith("sqlite:///"):
-        return database_url.replace("sqlite:///", "", 1), False
-    if database_url:
-        return database_url, True
-    return "coinpilotx.db", False
+from . import db as db_service
 
 
 def connect():
-    path, uri = db_path()
-    conn = sqlite3.connect(path, uri=uri)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return db_service.connect()
 
 
 def row_to_dict(row):
