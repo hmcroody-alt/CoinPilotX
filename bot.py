@@ -125,6 +125,16 @@ app = webhook_app
 onboarding_state = {}
 pending_trades = {}
 RATE_LIMIT_BUCKETS = {}
+OWNER_ADMIN_EMAIL = "cherieroody@gmail.com"
+OWNER_ADMIN_FULL_NAME = "Roody Cherie"
+OWNER_ADMIN_PHONE = "5164618652"
+OWNER_BOOTSTRAP_TEMP = {
+    "password": "",
+    "email": "",
+    "created_at": "",
+    "display_available": False,
+    "reason": "",
+}
 
 # =========================
 # LOGGING
@@ -158,6 +168,140 @@ def db():
     if database_url.startswith("file:"):
         return sqlite3.connect(database_url, uri=True)
     return sqlite3.connect(DB_FILE)
+
+
+def generate_owner_temp_password():
+    token = secrets.token_urlsafe(18).replace("-", "A").replace("_", "z")
+    return f"CPX-{token[:18]}!9aZ"
+
+
+def remember_owner_temp_password(password, reason):
+    OWNER_BOOTSTRAP_TEMP.update({
+        "password": password,
+        "email": OWNER_ADMIN_EMAIL,
+        "created_at": datetime.now().isoformat(),
+        "display_available": True,
+        "reason": reason,
+    })
+    logging.warning(
+        "OWNER ADMIN TEMPORARY CREDENTIALS GENERATED ONCE email=%s temporary_password=%s reason=%s",
+        OWNER_ADMIN_EMAIL,
+        password,
+        reason,
+    )
+
+
+def insert_admin_audit_with_cursor(cur, admin_user_id, admin_email, action, target_type="", target_id="", metadata=None):
+    cur.execute(
+        """
+        INSERT INTO admin_audit_logs
+        (admin_user_id, admin_email, action, target_type, target_id, metadata, ip_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            admin_user_id or 0,
+            admin_email or "",
+            action,
+            target_type or "",
+            target_id or "",
+            json.dumps(metadata or {})[:4000],
+            "",
+            datetime.now().isoformat(),
+        ),
+    )
+
+
+def ensure_owner_admin_with_cursor(cur, allow_reset=False):
+    now_iso = datetime.now().isoformat()
+    reset_requested = allow_reset and os.getenv("ADMIN_RESET_OWNER_PASSWORD", "false").strip().lower() == "true"
+    cur.execute(
+        """
+        SELECT id, password_hash, must_change_password
+        FROM admin_users
+        WHERE lower(email)=lower(?)
+        LIMIT 1
+        """,
+        (OWNER_ADMIN_EMAIL,),
+    )
+    owner_row = cur.fetchone()
+    temp_password = ""
+    action = ""
+    if owner_row:
+        owner_id, password_hash, must_change_password = owner_row[0], owner_row[1], owner_row[2] if len(owner_row) > 2 else 1
+        needs_temp_password = not password_hash or reset_requested
+        if needs_temp_password:
+            temp_password = generate_owner_temp_password()
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET full_name=?, phone=?, role='owner', status='active', company_role='Owner',
+                    password_hash=?, must_change_password=1, temp_password_created_at=?,
+                    failed_login_count=0, locked_until=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (
+                    OWNER_ADMIN_FULL_NAME,
+                    OWNER_ADMIN_PHONE,
+                    generate_password_hash(temp_password),
+                    now_iso,
+                    now_iso,
+                    owner_id,
+                ),
+            )
+            action = "owner_password_reset" if reset_requested else "owner_temp_password_generated"
+            remember_owner_temp_password(temp_password, action)
+            insert_admin_audit_with_cursor(cur, owner_id, OWNER_ADMIN_EMAIL, action, "admin_user", str(owner_id), {"forced_change": True})
+        else:
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET full_name=?, phone=?, role='owner', status='active', company_role='Owner',
+                    must_change_password=COALESCE(must_change_password, ?), updated_at=?
+                WHERE id=?
+                """,
+                (
+                    OWNER_ADMIN_FULL_NAME,
+                    OWNER_ADMIN_PHONE,
+                    1 if must_change_password is None else must_change_password,
+                    now_iso,
+                    owner_id,
+                ),
+            )
+        return {"created": False, "reset": bool(reset_requested and temp_password), "temp_password": temp_password, "owner_id": owner_id, "action": action}
+
+    temp_password = generate_owner_temp_password()
+    cur.execute(
+        """
+        INSERT INTO admin_users
+        (full_name, email, phone, password_hash, role, status, company_role, must_change_password,
+         temp_password_created_at, failed_login_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'owner', 'active', 'Owner', 1, ?, 0, ?, ?)
+        """,
+        (
+            OWNER_ADMIN_FULL_NAME,
+            OWNER_ADMIN_EMAIL,
+            OWNER_ADMIN_PHONE,
+            generate_password_hash(temp_password),
+            now_iso,
+            now_iso,
+            now_iso,
+        ),
+    )
+    owner_id = cur.lastrowid
+    remember_owner_temp_password(temp_password, "owner_admin_created")
+    insert_admin_audit_with_cursor(cur, owner_id, OWNER_ADMIN_EMAIL, "owner_admin_created", "admin_user", str(owner_id), {"forced_change": True})
+    insert_admin_audit_with_cursor(cur, owner_id, OWNER_ADMIN_EMAIL, "owner_temp_password_generated", "admin_user", str(owner_id), {"forced_change": True})
+    return {"created": True, "reset": False, "temp_password": temp_password, "owner_id": owner_id, "action": "owner_admin_created"}
+
+
+def ensure_owner_admin(allow_reset=False):
+    init_db()
+    conn = db()
+    cur = conn.cursor()
+    result = ensure_owner_admin_with_cursor(cur, allow_reset=allow_reset)
+    conn.commit()
+    conn.close()
+    return result
 
 
 # =========================
@@ -762,6 +906,24 @@ def basic_abuse_guard():
         return Response("Too many attempts. Please wait a few minutes and try again.", status=429)
     bucket.append(now)
     RATE_LIMIT_BUCKETS[key] = bucket
+    return None
+
+
+@webhook_app.before_request
+def enforce_admin_first_password_change():
+    if not request.path.startswith("/admin/"):
+        return None
+    allowed = {
+        "/admin/login",
+        "/admin/logout",
+        "/admin/change-password",
+        "/admin/bootstrap-owner",
+    }
+    if request.path in allowed:
+        return None
+    admin = admin_current_user()
+    if admin and int(admin.get("must_change_password") or 0) == 1:
+        return redirect(url_for("admin_change_password_page"))
     return None
 
 
@@ -2148,6 +2310,55 @@ def admin_login_required():
     return None
 
 
+def admin_password_is_strong(password):
+    if len(password or "") < 12:
+        return False, "Use at least 12 characters."
+    checks = [
+        (r"[A-Z]", "one uppercase letter"),
+        (r"[a-z]", "one lowercase letter"),
+        (r"\d", "one number"),
+        (r"[^A-Za-z0-9]", "one symbol"),
+    ]
+    missing = [label for pattern, label in checks if not re.search(pattern, password)]
+    if missing:
+        return False, "Include " + ", ".join(missing) + "."
+    return True, ""
+
+
+def owner_profile_missing_fields(admin):
+    required = [
+        "date_of_birth",
+        "address_line1",
+        "city",
+        "state",
+        "zip_code",
+        "country",
+        "job_title",
+        "emergency_contact_name",
+        "emergency_contact_phone",
+    ]
+    return [field for field in required if not (admin or {}).get(field)]
+
+
+def update_admin_failed_login(admin):
+    if not admin:
+        log_admin_audit(0, "admin_login_failed", "admin_user", "", {"reason": "unknown_email"})
+        return
+    failed_count = int(admin.get("failed_login_count") or 0) + 1
+    locked_until = ""
+    if failed_count >= 5:
+        locked_until = (datetime.now() + timedelta(minutes=15)).isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE admin_users SET failed_login_count=?, locked_until=?, updated_at=? WHERE id=?",
+        (failed_count, locked_until, datetime.now().isoformat(), admin["id"]),
+    )
+    conn.commit()
+    conn.close()
+    log_admin_audit(admin.get("id"), "admin_login_failed", "admin_user", str(admin.get("id")), {"locked": bool(locked_until)})
+
+
 def admin_saas_summary():
     init_db()
     conn = db()
@@ -2275,15 +2486,24 @@ def admin_login_page():
             password = request.form.get("password", "")
             admin = load_admin_by_email(email)
             fallback_ok = admin and admin.get("role") == "owner" and not admin.get("password_hash") and os.getenv("ADMIN_ANALYTICS_PASSWORD") and password == os.getenv("ADMIN_ANALYTICS_PASSWORD")
-            if admin and admin.get("status") == "active" and ((admin.get("password_hash") and check_password_hash(admin["password_hash"], password)) or fallback_ok):
+            locked_until = parse_iso_datetime((admin or {}).get("locked_until"))
+            locked = bool(locked_until and locked_until > datetime.now(locked_until.tzinfo) if locked_until and locked_until.tzinfo else locked_until and locked_until > datetime.now())
+            auth_ok = admin and admin.get("status") == "active" and not locked and ((admin.get("password_hash") and check_password_hash(admin["password_hash"], password)) or fallback_ok)
+            if auth_ok:
                 session["admin_user_id"] = admin["id"]
                 conn = db()
                 cur = conn.cursor()
-                cur.execute("UPDATE admin_users SET last_login_at=?, updated_at=? WHERE id=?", (datetime.now().isoformat(), datetime.now().isoformat(), admin["id"]))
+                cur.execute(
+                    "UPDATE admin_users SET last_login_at=?, failed_login_count=0, locked_until=NULL, updated_at=? WHERE id=?",
+                    (datetime.now().isoformat(), datetime.now().isoformat(), admin["id"])
+                )
                 conn.commit()
                 conn.close()
-                log_admin_audit(admin["id"], "admin_login", "admin_user", str(admin["id"]), {})
+                log_admin_audit(admin["id"], "admin_login_success", "admin_user", str(admin["id"]), {})
+                if int(admin.get("must_change_password") or 0) == 1:
+                    return redirect(url_for("admin_change_password_page"))
                 return redirect(url_for("admin_dashboard_page"))
+            update_admin_failed_login(admin)
             message = "Admin login failed."
     body = f"""
     <section class="card" style="max-width:520px;margin:7vh auto">
@@ -2299,6 +2519,106 @@ def admin_login_page():
     </section>
     """
     return admin_page_html("Admin Login", body)
+
+
+@webhook_app.route("/admin/bootstrap-owner", methods=["GET"])
+def admin_bootstrap_owner_page():
+    token = request.args.get("token", "")
+    expected = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
+    if not expected or not token or not secrets.compare_digest(token, expected):
+        return Response("Not found", status=404)
+    init_db()
+    result = {"created": False, "reset": False, "temp_password": ""}
+    if os.getenv("ADMIN_RESET_OWNER_PASSWORD", "false").strip().lower() == "true":
+        result = ensure_owner_admin(allow_reset=True)
+    temp_password = result.get("temp_password") or ""
+    reason = result.get("action") or ""
+    if not temp_password and OWNER_BOOTSTRAP_TEMP.get("display_available"):
+        temp_password = OWNER_BOOTSTRAP_TEMP.get("password") or ""
+        reason = OWNER_BOOTSTRAP_TEMP.get("reason") or "owner_temp_password_generated"
+    if temp_password:
+        OWNER_BOOTSTRAP_TEMP["display_available"] = False
+        body = f"""
+        <section class="card" style="max-width:680px;margin:5vh auto">
+          <h1>Owner Bootstrap Created</h1>
+          <p class="muted">This temporary password is shown once. Store it securely, log in, then change it immediately.</p>
+          <p><strong>Email:</strong> {clean_html(OWNER_ADMIN_EMAIL)}</p>
+          <p><strong>Temporary password:</strong></p>
+          <p style="font-size:1.2rem"><code>{clean_html(temp_password)}</code></p>
+          <p><strong>Reason:</strong> {clean_html(reason)}</p>
+          <p>The account must change this password before accessing the admin dashboard.</p>
+          <p><a class="button" href="/admin/login">Go to Admin Login</a></p>
+        </section>
+        """
+    else:
+        body = f"""
+        <section class="card" style="max-width:680px;margin:5vh auto">
+          <h1>Owner Bootstrap Status</h1>
+          <p>Owner admin exists for {clean_html(OWNER_ADMIN_EMAIL)}.</p>
+          <p class="muted">No temporary password is available to display. Set <code>ADMIN_RESET_OWNER_PASSWORD=true</code> and reload this route with the bootstrap token if you need a one-time reset.</p>
+          <p><a class="button" href="/admin/login">Go to Admin Login</a></p>
+        </section>
+        """
+    return admin_page_html("Owner Bootstrap", body)
+
+
+@webhook_app.route("/admin/change-password", methods=["GET", "POST"])
+def admin_change_password_page():
+    init_db()
+    admin = admin_current_user()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    message = ""
+    error = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            error = "Security check failed. Please try again."
+        else:
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+            if not admin.get("password_hash") or not check_password_hash(admin["password_hash"], current_password):
+                error = "Current password is incorrect."
+            elif new_password != confirm_password:
+                error = "New passwords do not match."
+            else:
+                ok, password_error = admin_password_is_strong(new_password)
+                if not ok:
+                    error = password_error
+                else:
+                    now = datetime.now().isoformat()
+                    conn = db()
+                    cur = conn.cursor()
+                    cur.execute(
+                        """
+                        UPDATE admin_users
+                        SET password_hash=?, must_change_password=0, password_changed_at=?,
+                            failed_login_count=0, locked_until=NULL, updated_at=?
+                        WHERE id=?
+                        """,
+                        (generate_password_hash(new_password), now, now, admin["id"]),
+                    )
+                    conn.commit()
+                    conn.close()
+                    log_admin_audit(admin["id"], "admin_password_changed", "admin_user", str(admin["id"]), {"forced_change_completed": True})
+                    return redirect(url_for("admin_dashboard_page"))
+    body = f"""
+    <section class="card" style="max-width:620px;margin:5vh auto">
+      <h1>Change Temporary Password</h1>
+      <p class="muted">Before accessing the admin dashboard, create a permanent password for your CoinPilotXAI Inc. owner account.</p>
+      {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+      {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+        <p><input name="current_password" type="password" autocomplete="current-password" placeholder="Current temporary password" required /></p>
+        <p><input name="new_password" type="password" autocomplete="new-password" placeholder="New password, 12+ characters" required /></p>
+        <p><input name="confirm_password" type="password" autocomplete="new-password" placeholder="Confirm new password" required /></p>
+        <button type="submit">Save New Password</button>
+      </form>
+      <p class="muted">Use at least 12 characters with uppercase, lowercase, number, and symbol.</p>
+    </section>
+    """
+    return admin_page_html("Change Password", body, admin)
 
 
 @webhook_app.route("/admin/logout", methods=["GET"])
@@ -2318,7 +2638,17 @@ def admin_dashboard_page():
         return redirect(url_for("admin_login_page"))
     stats = admin_saas_summary()
     cards = "".join(f"<div class='card'><div class='muted'>{label.replace('_',' ').title()}</div><div class='metric'>{value}</div></div>" for label, value in stats.items())
-    body = f"<h1>Owner Dashboard</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p><div class='grid'>{cards}</div>"
+    missing = owner_profile_missing_fields(admin) if admin.get("role") == "owner" else []
+    profile_prompt = ""
+    if missing:
+        profile_prompt = (
+            "<div class='card' style='border-color:rgba(255,209,102,.45)'>"
+            "<strong>Complete owner profile</strong>"
+            f"<p class='muted'>Missing: {clean_html(', '.join(missing).replace('_', ' '))}</p>"
+            "<p><a class='button' href='/admin/profile'>Complete Profile</a></p>"
+            "</div>"
+        )
+    body = f"<h1>Owner Dashboard</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>{profile_prompt}<div class='grid'>{cards}</div>"
     return admin_page_html("Owner Dashboard", body, admin)
 
 
@@ -2427,7 +2757,81 @@ def admin_audit_logs_page():
     return admin_page_html("Audit Logs", body, admin)
 
 
-@webhook_app.route("/admin/profile", methods=["GET"])
+@webhook_app.route("/admin/profile", methods=["GET", "POST"])
+def admin_profile_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    message = ""
+    error = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            error = "Security check failed. Please try again."
+        else:
+            fields = {
+                "date_of_birth": clean_html(request.form.get("date_of_birth", ""))[:40],
+                "address_line1": clean_html(request.form.get("address_line1", ""))[:180],
+                "address_line2": clean_html(request.form.get("address_line2", ""))[:180],
+                "city": clean_html(request.form.get("city", ""))[:100],
+                "state": clean_html(request.form.get("state", ""))[:80],
+                "zip_code": clean_html(request.form.get("zip_code", ""))[:30],
+                "country": clean_html(request.form.get("country", ""))[:80],
+                "job_title": clean_html(request.form.get("job_title", ""))[:120],
+                "emergency_contact_name": clean_html(request.form.get("emergency_contact_name", ""))[:160],
+                "emergency_contact_phone": clean_html(request.form.get("emergency_contact_phone", ""))[:40],
+                "notes": clean_html(request.form.get("notes", ""))[:1000],
+            }
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET date_of_birth=?, address_line1=?, address_line2=?, city=?, state=?, zip_code=?,
+                    country=?, job_title=?, emergency_contact_name=?, emergency_contact_phone=?, notes=?, updated_at=?
+                WHERE id=?
+                """,
+                (
+                    fields["date_of_birth"], fields["address_line1"], fields["address_line2"],
+                    fields["city"], fields["state"], fields["zip_code"], fields["country"],
+                    fields["job_title"], fields["emergency_contact_name"], fields["emergency_contact_phone"],
+                    fields["notes"], datetime.now().isoformat(), admin["id"],
+                ),
+            )
+            conn.commit()
+            conn.close()
+            log_admin_audit(admin["id"], "admin_profile_updated", "admin_user", str(admin["id"]), {"fields": list(fields.keys())})
+            admin = admin_current_user()
+            message = "Profile saved."
+    def input_field(name, label, input_type="text"):
+        value = clean_html((admin or {}).get(name) or "")
+        return f"<label>{clean_html(label)}<input name='{name}' type='{input_type}' value='{value}' /></label>"
+    body = f"""
+    <h1>Admin Profile</h1>
+    <p class="muted">Owner profile information is private and only available inside protected admin routes.</p>
+    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+    <form method="post" class="card">
+      <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+      <div class="grid">
+        {input_field("date_of_birth", "Date of birth", "date")}
+        {input_field("job_title", "Job title")}
+        {input_field("address_line1", "Address line 1")}
+        {input_field("address_line2", "Address line 2")}
+        {input_field("city", "City")}
+        {input_field("state", "State")}
+        {input_field("zip_code", "ZIP code")}
+        {input_field("country", "Country")}
+        {input_field("emergency_contact_name", "Emergency contact name")}
+        {input_field("emergency_contact_phone", "Emergency contact phone")}
+      </div>
+      <p><label>Notes<textarea name="notes">{clean_html((admin or {}).get("notes") or "")}</textarea></label></p>
+      <button type="submit">Save Profile</button>
+    </form>
+    """
+    return admin_page_html("Admin Profile", body, admin)
+
+
 @webhook_app.route("/admin/admins", methods=["GET"])
 @webhook_app.route("/admin/employees", methods=["GET"])
 @webhook_app.route("/admin/settings", methods=["GET"])
@@ -7172,6 +7576,17 @@ def init_db():
         last_login_at TEXT
     )
     """)
+    for statement in [
+        "ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER DEFAULT 1",
+        "ALTER TABLE admin_users ADD COLUMN password_changed_at TEXT",
+        "ALTER TABLE admin_users ADD COLUMN temp_password_created_at TEXT",
+        "ALTER TABLE admin_users ADD COLUMN failed_login_count INTEGER DEFAULT 0",
+        "ALTER TABLE admin_users ADD COLUMN locked_until TEXT",
+    ]:
+        try:
+            cur.execute(statement)
+        except Exception:
+            pass
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS admin_audit_logs (
@@ -7269,32 +7684,7 @@ def init_db():
     )
     """)
 
-    owner_email = "cherieroody@gmail.com"
-    now_iso = datetime.now().isoformat()
-    cur.execute("SELECT id, password_hash FROM admin_users WHERE lower(email)=lower(?) LIMIT 1", (owner_email,))
-    owner_row = cur.fetchone()
-    owner_password = os.getenv("OWNER_ADMIN_PASSWORD") or os.getenv("ADMIN_OWNER_PASSWORD") or ""
-    owner_hash = generate_password_hash(owner_password) if owner_password else ""
-    if owner_row:
-        cur.execute(
-            """
-            UPDATE admin_users
-            SET full_name='Roody Cherie', phone='5164618652', role='owner', status='active',
-                company_role='Owner', updated_at=?,
-                password_hash=CASE WHEN COALESCE(password_hash, '')='' AND ?!='' THEN ? ELSE password_hash END
-            WHERE id=?
-            """,
-            (now_iso, owner_hash, owner_hash, owner_row[0]),
-        )
-    else:
-        cur.execute(
-            """
-            INSERT INTO admin_users
-            (full_name, email, phone, password_hash, role, status, company_role, created_at, updated_at)
-            VALUES ('Roody Cherie', ?, '5164618652', ?, 'owner', 'active', 'Owner', ?, ?)
-            """,
-            (owner_email, owner_hash, now_iso, now_iso),
-        )
+    ensure_owner_admin_with_cursor(cur, allow_reset=False)
 
     conn.commit()
     conn.close()
