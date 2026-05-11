@@ -168,11 +168,12 @@
           <p>Log in to manage your CoinPilotX profile, Telegram connection, and preferences.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
             <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
             <button class="button primary" type="submit">Login</button>
           </form>
-          <p class="muted"><a href="/forgot-password">Forgot password?</a> · <a href="/signup">Create account</a></p>
+          <p class="muted"><a href="/forgot-password">Forgot password?</a> · <a href="/forgot-username">Forgot account email?</a> · <a href="/signup">Create account</a></p>
 
         {% elif page == "forgot" %}
           <p>Enter your account email. If it exists, CoinPilotX will send a reset link.</p>
@@ -181,6 +182,16 @@
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
             <button class="button primary" type="submit">Send Reset Link</button>
           </form>
+          <p class="muted"><a href="/forgot-username">Forgot account email?</a> · <a href="/login">Back to login</a></p>
+
+        {% elif page == "forgot_username" %}
+          <p>Enter your email and CoinPilotX will send your account login details if an account exists.</p>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <button class="button primary" type="submit">Send Recovery Email</button>
+          </form>
+          <p class="muted"><a href="/forgot-password">Reset password</a> · <a href="/login">Back to login</a></p>
 
         {% elif page == "reset" %}
           <p>Choose a new password for your CoinPilotX account.</p>
@@ -256,7 +267,8 @@
         {% elif page == "upgrade_success" %}
           <div class="profile-card">
             <h3>Payment Confirmation In Progress</h3>
-            <p>Your Pro upgrade is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
+            <p data-upgrade-status>Your Pro upgrade is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
+            <p class="muted" data-upgrade-detail>Checking your account status now...</p>
             <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@coinpilotx.app">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
             <div class="actions">
               <a class="button primary" href="/dashboard">Open Dashboard</a>
@@ -365,6 +377,39 @@
           installPrompt = null;
           button.hidden = true;
         });
+      }
+
+      var upgradeStatus = document.querySelector("[data-upgrade-status]");
+      var upgradeDetail = document.querySelector("[data-upgrade-detail]");
+      if (upgradeStatus && upgradeDetail) {
+        var attempts = 0;
+        var pollStatus = function () {
+          attempts += 1;
+          fetch("/api/account/status", { cache: "no-store" })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (data && data.ok && data.has_pro) {
+                upgradeStatus.textContent = "Your CoinPilotXAI Pro access is active.";
+                upgradeDetail.textContent = "Your dashboard and Telegram-linked account can now use Pro intelligence.";
+                return;
+              }
+              if (attempts < 10) {
+                setTimeout(pollStatus, 3000);
+              } else {
+                upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
+                upgradeDetail.textContent = "If it does not activate in a few minutes, email support@coinpilotx.app with your account email.";
+              }
+            })
+            .catch(function () {
+              if (attempts < 10) {
+                setTimeout(pollStatus, 3000);
+              } else {
+                upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
+                upgradeDetail.textContent = "If it does not activate in a few minutes, email support@coinpilotx.app with your account email.";
+              }
+            });
+        };
+        pollStatus();
       }
     })();
   </script>

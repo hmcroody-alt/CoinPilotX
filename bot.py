@@ -71,7 +71,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-STRIPE_PRO_LINK = os.getenv("STRIPE_PRO_LINK", "https://buy.stripe.com/14AdR90xmgAy304afs4Vy00")
+STRIPE_PRO_LINK = ""
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -123,6 +123,7 @@ app = webhook_app
 # =========================
 onboarding_state = {}
 pending_trades = {}
+RATE_LIMIT_BUCKETS = {}
 
 # =========================
 # LOGGING
@@ -415,7 +416,7 @@ async def market_signal_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 PRO_PRICE_MONTHLY = "$14.99/month"
-STRIPE_PRO_LINK = os.getenv("STRIPE_PRO_LINK", STRIPE_PRO_LINK)
+STRIPE_PRO_LINK = ""
 
 
 def website_upgrade_url(telegram_user_id=None):
@@ -486,8 +487,14 @@ def main_menu():
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
+BASE_URL = os.getenv("BASE_URL", os.getenv("DOMAIN", "https://coinpilotx.app")).rstrip("/")
 
 stripe.api_key = STRIPE_SECRET_KEY
+if not STRIPE_WEBHOOK_SECRET:
+    logging.warning("Railway Stripe warning: STRIPE_WEBHOOK_SECRET is missing. Webhook signature verification is not fully configured.")
+if not STRIPE_PRICE_ID:
+    logging.warning("Railway Stripe warning: STRIPE_PRICE_ID is missing. Website checkout will be disabled until the Railway variable is configured.")
 
 webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
 webhook_app.secret_key = os.getenv("FLASK_SECRET_KEY", os.getenv("SECRET_KEY", secrets.token_hex(32)))
@@ -715,6 +722,34 @@ def capture_referral_and_run_trial_maintenance():
     return None
 
 
+@webhook_app.before_request
+def basic_abuse_guard():
+    protected = {
+        "/login": (12, 300),
+        "/signup": (8, 300),
+        "/forgot-password": (6, 300),
+        "/forgot-username": (6, 300),
+        "/admin/login": (8, 300),
+        "/create-checkout-session": (8, 300),
+        "/api/create-checkout-session": (8, 300),
+        "/api/ai-assistant": (30, 300),
+    }
+    if request.method not in {"POST", "PUT"} or request.path not in protected:
+        return None
+    limit, window_seconds = protected[request.path]
+    key = f"{client_ip_hash()}:{request.path}"
+    now = time.time()
+    bucket = [stamp for stamp in RATE_LIMIT_BUCKETS.get(key, []) if now - stamp < window_seconds]
+    if len(bucket) >= limit:
+        logging.warning("Rate limit triggered path=%s ip_hash=%s", request.path, client_ip_hash())
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "message": "Too many attempts. Please wait a few minutes and try again."}), 429
+        return Response("Too many attempts. Please wait a few minutes and try again.", status=429)
+    bucket.append(now)
+    RATE_LIMIT_BUCKETS[key] = bucket
+    return None
+
+
 def get_csrf_token():
     token = session.get("csrf_token")
     if not token:
@@ -830,6 +865,13 @@ def require_account():
     if not user:
         return None
     return user
+
+
+def safe_redirect_target(default_endpoint="dashboard_page"):
+    target = request.args.get("next") or request.form.get("next") or ""
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for(default_endpoint)
 
 
 def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False):
@@ -1025,13 +1067,15 @@ def login_page():
         user = load_account_by_email(email)
         if not user or not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
             return render_account_page("login", "Login", error="Email or password is incorrect.")
+        if (user.get("account_status") or "active").lower() != "active":
+            return render_account_page("login", "Login", error="This account is not active. Please contact support@coinpilotx.app.")
         session["account_user_id"] = user["user_id"]
         conn = db()
         cur = conn.cursor()
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
         conn.commit()
         conn.close()
-        return redirect(url_for("dashboard_page"))
+        return redirect(safe_redirect_target("dashboard_page"))
     return render_account_page("login", "Login")
 
 
@@ -1072,8 +1116,38 @@ def dashboard_page():
 
 
 def stripe_checkout_url_for_user(user_id):
-    separator = "&" if "?" in STRIPE_PRO_LINK else "?"
-    return f"{STRIPE_PRO_LINK}{separator}client_reference_id={user_id}"
+    # Website-only checkout: direct/public Stripe links are intentionally disabled.
+    return ""
+
+
+def create_stripe_checkout_session(user):
+    if not STRIPE_SECRET_KEY:
+        logging.warning("Stripe checkout cannot be created: STRIPE_SECRET_KEY missing.")
+        return None, "Stripe is not configured."
+    if not STRIPE_PRICE_ID:
+        logging.warning("Stripe checkout cannot be created: STRIPE_PRICE_ID missing. Configure STRIPE_PRICE_ID in Railway.")
+        return None, "Stripe price is not configured."
+    user_id = str(user["user_id"])
+    email = (user.get("email") or "").strip().lower()
+    metadata = {"user_id": user_id, "email": email, "plan": "pro"}
+    params = {
+        "mode": "subscription",
+        "client_reference_id": user_id,
+        "line_items": [{"price": STRIPE_PRICE_ID, "quantity": 1}],
+        "metadata": metadata,
+        "subscription_data": {"metadata": metadata},
+        "success_url": f"{BASE_URL}/upgrade/success?session_id={{CHECKOUT_SESSION_ID}}",
+        "cancel_url": f"{BASE_URL}/upgrade?canceled=1",
+        "allow_promotion_codes": True,
+    }
+    if user.get("stripe_customer_id"):
+        params["customer"] = user.get("stripe_customer_id")
+    elif email:
+        params["customer_email"] = email
+    logging.info("Creating Stripe checkout session user_id=%s email=%s price_configured=%s", user_id, bool(email), bool(STRIPE_PRICE_ID))
+    session_obj = stripe.checkout.Session.create(**params)
+    logging.info("Stripe checkout session created user_id=%s session_id=%s", user_id, getattr(session_obj, "id", ""))
+    return session_obj, ""
 
 
 @webhook_app.route("/upgrade", methods=["GET"])
@@ -1081,12 +1155,51 @@ def upgrade_page():
     init_db()
     user = require_account()
     if not user:
-        return redirect(url_for("login_page"))
+        return redirect(url_for("login_page", next="/upgrade"))
+    if (user.get("account_status") or "active").lower() != "active":
+        return render_account_page("account", "Account", current_user=user, error="Please contact support before upgrading. This account is not active.")
+    if not user.get("email"):
+        return render_account_page("account", "Account", current_user=user, error="Add an email address to your account before upgrading to Pro.")
     if request.args.get("checkout") == "1":
         log_product_event(user["user_id"], "stripe_checkout_started", {"source": request.args.get("source", "website")})
-        return redirect(stripe_checkout_url_for_user(user["user_id"]), code=302)
+        try:
+            checkout_session, checkout_error = create_stripe_checkout_session(user)
+        except Exception as exc:
+            logging.exception("Stripe checkout session creation failed user_id=%s error=%s", user["user_id"], exc)
+            checkout_session, checkout_error = None, str(exc)
+        if checkout_session and getattr(checkout_session, "url", None):
+            return redirect(checkout_session.url, code=303)
+        logging.warning("Stripe checkout session unavailable for user_id=%s reason=%s", user["user_id"], checkout_error)
+        return render_account_page(
+            "upgrade",
+            "Upgrade Pro",
+            current_user=load_account_by_id(user["user_id"]),
+            error="Secure checkout is temporarily unavailable. Please contact support@coinpilotx.app if you need help upgrading.",
+        )
     log_product_event(user["user_id"], "website_upgrade_started", {"source": request.args.get("source", "website")})
     return render_account_page("upgrade", "Upgrade Pro", current_user=load_account_by_id(user["user_id"]))
+
+
+@webhook_app.route("/create-checkout-session", methods=["POST"])
+@webhook_app.route("/api/create-checkout-session", methods=["POST"])
+def create_checkout_session_route():
+    init_db()
+    user = require_account()
+    if not user:
+        return jsonify({"ok": False, "message": "Please log in before upgrading to Pro.", "login_url": url_for("login_page", next="/upgrade")}), 401
+    if (user.get("account_status") or "active").lower() != "active":
+        return jsonify({"ok": False, "message": "This account is not active. Contact support before upgrading."}), 403
+    if not user.get("email"):
+        return jsonify({"ok": False, "message": "Add an email address to your account before upgrading."}), 400
+    try:
+        checkout_session, checkout_error = create_stripe_checkout_session(user)
+    except Exception as exc:
+        logging.exception("Stripe checkout API route failed user_id=%s error=%s", user.get("user_id"), exc)
+        checkout_session, checkout_error = None, str(exc)
+    if checkout_session and getattr(checkout_session, "url", None):
+        log_product_event(user["user_id"], "checkout_started", {"source": "api"})
+        return jsonify({"ok": True, "checkout_url": checkout_session.url, "session_id": getattr(checkout_session, "id", "")})
+    return jsonify({"ok": False, "message": checkout_error or "Secure checkout is temporarily unavailable."}), 503
 
 
 @webhook_app.route("/upgrade/success", methods=["GET"])
@@ -1168,14 +1281,32 @@ def forgot_password_page():
         if user and token:
             reset_link = url_for("reset_password_page", token=token, _external=True)
             send_password_reset_email(user, reset_link)
+            log_product_event(user.get("user_id"), "forgot_password_requested", {})
         message = "If that email has an account, a password reset link will be sent."
     return render_account_page("forgot", "Forgot Password", message=message)
 
 
-@webhook_app.route("/verify-email", methods=["GET"])
-def verify_email_page():
+@webhook_app.route("/forgot-username", methods=["GET", "POST"])
+def forgot_username_page():
     init_db()
-    token = clean_html(request.args.get("token", ""))
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            return render_account_page("forgot_username", "Recover Account", error="Security check failed. Please try again.")
+        email = clean_html(request.form.get("email", "")).strip().lower()
+        user = load_account_by_email(email) if is_valid_email(email) else None
+        if user:
+            send_username_recovery_email(user)
+            log_product_event(user.get("user_id"), "username_recovery_requested", {})
+        message = "If that email has an account, CoinPilotX will send login recovery details."
+    return render_account_page("forgot_username", "Recover Account", message=message)
+
+
+@webhook_app.route("/verify-email/<token>", methods=["GET"])
+@webhook_app.route("/verify-email", methods=["GET"])
+def verify_email_page(token=""):
+    init_db()
+    token = clean_html(token or request.args.get("token", ""))
     if not token:
         return render_account_page("login", "Login", error="This verification link is invalid.")
     conn = db()
@@ -1202,10 +1333,11 @@ def verify_email_page():
     return render_account_page("login", "Login", message="Email verified. You can log in anytime.")
 
 
+@webhook_app.route("/reset-password/<token>", methods=["GET", "POST"])
 @webhook_app.route("/reset-password", methods=["GET", "POST"])
-def reset_password_page():
+def reset_password_page(token=""):
     init_db()
-    token = clean_html(request.args.get("token") or request.form.get("token") or "")
+    token = clean_html(token or request.args.get("token") or request.form.get("token") or "")
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("reset", "Reset Password", token=token, error="Security check failed. Please try again.")
@@ -1219,10 +1351,15 @@ def reset_password_page():
         if not row or row[2] or row[1] < datetime.now().isoformat():
             conn.close()
             return render_account_page("reset", "Reset Password", token=token, error="This reset link is invalid or expired.")
-        cur.execute("UPDATE users SET password_hash=?, updated_at=? WHERE user_id=?", (generate_password_hash(password), datetime.now().isoformat(), row[0]))
+        user_id = row[0]
+        cur.execute("UPDATE users SET password_hash=?, updated_at=? WHERE user_id=?", (generate_password_hash(password), datetime.now().isoformat(), user_id))
         cur.execute("UPDATE password_reset_tokens SET used_at=? WHERE token=?", (datetime.now().isoformat(), token))
         conn.commit()
         conn.close()
+        changed_user = load_account_by_id(user_id)
+        if changed_user:
+            send_password_changed_email(changed_user)
+            log_product_event(user_id, "password_reset_completed", {})
         return redirect(url_for("login_page"))
     return render_account_page("reset", "Reset Password", token=token)
 
@@ -1804,11 +1941,338 @@ def leads_api():
 
 
 def require_admin_password():
+    if session.get("admin_user_id"):
+        return True
     expected = os.getenv("ADMIN_ANALYTICS_PASSWORD", "")
     if not expected:
         return False
     supplied = request.args.get("password") or request.headers.get("X-Admin-Password", "")
     return supplied == expected
+
+
+def admin_current_user():
+    admin_id = session.get("admin_user_id")
+    if not admin_id:
+        return None
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_users WHERE id=? AND status='active' LIMIT 1", (admin_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def load_admin_by_email(email):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_users WHERE lower(email)=lower(?) LIMIT 1", (email,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadata=None):
+    try:
+        admin = admin_current_user() if has_request_context() else None
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO admin_audit_logs
+            (admin_user_id, admin_email, action, target_type, target_id, metadata, ip_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                admin_user_id or (admin or {}).get("id") or 0,
+                (admin or {}).get("email") or "",
+                action,
+                target_type,
+                target_id,
+                json.dumps(metadata or {})[:4000],
+                client_ip_hash() if has_request_context() else "",
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("Admin audit log failed: %s", exc)
+
+
+def admin_login_required():
+    admin = admin_current_user()
+    if admin:
+        return admin
+    return None
+
+
+def admin_saas_summary():
+    init_db()
+    conn = db()
+    cur = conn.cursor()
+    since_day = (datetime.now() - timedelta(days=1)).isoformat()
+    since_week = (datetime.now() - timedelta(days=7)).isoformat()
+    cur.execute("SELECT COUNT(*) FROM users WHERE email!=''")
+    total_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE email!='' AND created_at>=?", (since_day,))
+    new_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE email!='' AND created_at>=?", (since_week,))
+    new_week = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE telegram_user_id IS NOT NULL")
+    telegram_linked = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='trialing'")
+    trial_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='active'")
+    paid_pro = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='free'")
+    free_users = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,'')) IN ('past_due','unpaid')")
+    failed_payments = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM unmatched_payments WHERE resolved_at IS NULL")
+    unmatched = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM email_logs WHERE created_at>=?", (since_day,))
+    emails_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM analytics_events WHERE created_at>=?", (since_day,))
+    events_today = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM payment_records WHERE status='succeeded'")
+    total_revenue = cur.fetchone()[0] or 0
+    cur.execute("SELECT COUNT(*) FROM admin_audit_logs")
+    audit_count = cur.fetchone()[0]
+    conn.close()
+    mrr_estimate = paid_pro * 14.99
+    return {
+        "total_users": total_users,
+        "new_today": new_today,
+        "new_week": new_week,
+        "telegram_linked": telegram_linked,
+        "trial_users": trial_users,
+        "paid_pro": paid_pro,
+        "free_users": free_users,
+        "failed_payments": failed_payments,
+        "unmatched": unmatched,
+        "emails_today": emails_today,
+        "events_today": events_today,
+        "total_revenue": round(float(total_revenue), 2),
+        "mrr_estimate": round(mrr_estimate, 2),
+        "audit_count": audit_count,
+    }
+
+
+def admin_page_html(title, body, admin=None):
+    nav = (
+        "<a href='/admin/dashboard'>Dashboard</a>"
+        "<a href='/admin/users'>Users</a>"
+        "<a href='/admin/transactions'>Transactions</a>"
+        "<a href='/admin/emails'>Emails</a>"
+        "<a href='/admin/unmatched-payments'>Unmatched</a>"
+        "<a href='/admin/system'>System</a>"
+        "<a href='/admin/audit-logs'>Audit</a>"
+        "<a href='/admin/logout'>Logout</a>"
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>{clean_html(title)} | CoinPilotXAI Admin</title>
+  <style>
+    :root {{ color-scheme: dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --accent:#36e58f; --cyan:#6edff6; }}
+    body {{ margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif; background:radial-gradient(circle at top left,rgba(54,229,143,.12),transparent 34%),var(--bg); color:var(--text); }}
+    header {{ position:sticky; top:0; z-index:2; backdrop-filter:blur(14px); background:rgba(5,11,20,.88); border-bottom:1px solid var(--line); }}
+    .wrap {{ max-width:1180px; margin:auto; padding:22px; }}
+    nav {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }}
+    a {{ color:var(--cyan); text-decoration:none; }}
+    nav a,.button {{ min-height:44px; display:inline-flex; align-items:center; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.04); }}
+    h1 {{ margin:.2rem 0; }}
+    .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }}
+    .card {{ background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.025)); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 24px 80px rgba(0,0,0,.25); overflow-wrap:break-word; }}
+    .metric {{ font-size:2rem; font-weight:800; color:var(--accent); }}
+    table {{ width:100%; border-collapse:collapse; overflow-wrap:break-word; }}
+    th,td {{ text-align:left; padding:10px; border-bottom:1px solid rgba(255,255,255,.08); }}
+    .muted {{ color:var(--muted); }}
+    input,button,select {{ width:100%; min-height:44px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
+    button {{ background:linear-gradient(135deg,#00e5ff,#36e58f); color:#031016; font-weight:800; cursor:pointer; }}
+    @media(max-width:720px) {{ .wrap {{ padding:16px; }} table {{ display:block; overflow-x:auto; }} }}
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><strong>CoinPilotXAI Inc. Admin</strong><div class="muted">{clean_html((admin or {}).get('email') or '')}</div><nav>{nav}</nav></div></header>
+  <main class="wrap">{body}</main>
+</body>
+</html>"""
+
+
+@webhook_app.route("/admin/login", methods=["GET", "POST"])
+def admin_login_page():
+    init_db()
+    if admin_current_user():
+        return redirect(url_for("admin_dashboard_page"))
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            message = "Security check failed. Please try again."
+        else:
+            email = clean_html(request.form.get("email", "")).strip().lower()
+            password = request.form.get("password", "")
+            admin = load_admin_by_email(email)
+            fallback_ok = admin and admin.get("role") == "owner" and not admin.get("password_hash") and os.getenv("ADMIN_ANALYTICS_PASSWORD") and password == os.getenv("ADMIN_ANALYTICS_PASSWORD")
+            if admin and admin.get("status") == "active" and ((admin.get("password_hash") and check_password_hash(admin["password_hash"], password)) or fallback_ok):
+                session["admin_user_id"] = admin["id"]
+                conn = db()
+                cur = conn.cursor()
+                cur.execute("UPDATE admin_users SET last_login_at=?, updated_at=? WHERE id=?", (datetime.now().isoformat(), datetime.now().isoformat(), admin["id"]))
+                conn.commit()
+                conn.close()
+                log_admin_audit(admin["id"], "admin_login", "admin_user", str(admin["id"]), {})
+                return redirect(url_for("admin_dashboard_page"))
+            message = "Admin login failed."
+    body = f"""
+    <section class="card" style="max-width:520px;margin:7vh auto">
+      <h1>Admin Login</h1>
+      <p class="muted">Private owner and team access for CoinPilotXAI Inc.</p>
+      {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+        <p><input name="email" type="email" autocomplete="email" placeholder="Admin email" required /></p>
+        <p><input name="password" type="password" autocomplete="current-password" placeholder="Password" required /></p>
+        <button type="submit">Log In</button>
+      </form>
+    </section>
+    """
+    return admin_page_html("Admin Login", body)
+
+
+@webhook_app.route("/admin/logout", methods=["GET"])
+def admin_logout_page():
+    admin = admin_current_user()
+    if admin:
+        log_admin_audit(admin["id"], "admin_logout", "admin_user", str(admin["id"]), {})
+    session.pop("admin_user_id", None)
+    return redirect(url_for("admin_login_page"))
+
+
+@webhook_app.route("/admin/dashboard", methods=["GET"])
+def admin_dashboard_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    stats = admin_saas_summary()
+    cards = "".join(f"<div class='card'><div class='muted'>{label.replace('_',' ').title()}</div><div class='metric'>{value}</div></div>" for label, value in stats.items())
+    body = f"<h1>Owner Dashboard</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p><div class='grid'>{cards}</div>"
+    return admin_page_html("Owner Dashboard", body, admin)
+
+
+@webhook_app.route("/admin/system", methods=["GET"])
+def admin_system_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    checks = {
+        "Database": True,
+        "Stripe secret": bool(STRIPE_SECRET_KEY),
+        "Stripe webhook secret": bool(STRIPE_WEBHOOK_SECRET),
+        "Brevo": bool(os.getenv("BREVO_API_KEY")),
+        "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
+        "Telegram bot token": bool(BOT_TOKEN),
+        "CoinGecko key optional": bool(os.getenv("COINGECKO_API_KEY")),
+    }
+    body = "<h1>System Health</h1><div class='grid'>" + "".join(
+        f"<div class='card'><strong>{clean_html(name)}</strong><p class='metric'>{'OK' if ok else 'Missing'}</p></div>" for name, ok in checks.items()
+    ) + "</div><p class='muted'>Missing optional keys produce honest fallbacks instead of fake data.</p>"
+    return admin_page_html("System Health", body, admin)
+
+
+@webhook_app.route("/admin/transactions", methods=["GET"])
+@webhook_app.route("/admin/subscriptions", methods=["GET"])
+def admin_transactions_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM payment_records ORDER BY created_at DESC LIMIT 100")
+    records = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 100")
+    subs = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('currency') or ''))}</td><td>{clean_html(str(r.get('status') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in records)
+    sub_rows = "".join(f"<tr><td>{s.get('user_id')}</td><td>{clean_html(s.get('plan') or '')}</td><td>{clean_html(s.get('status') or '')}</td><td>{clean_html(s.get('stripe_subscription_id') or '')}</td><td>{clean_html(s.get('created_at') or '')}</td></tr>" for s in subs)
+    body = f"<h1>Transactions</h1><div class='card'><table><tr><th>User</th><th>Amount</th><th>Currency</th><th>Status</th><th>Date</th></tr>{rows}</table></div><h2>Subscriptions</h2><div class='card'><table><tr><th>User</th><th>Plan</th><th>Status</th><th>Stripe Subscription</th><th>Date</th></tr>{sub_rows}</table></div>"
+    return admin_page_html("Transactions", body, admin)
+
+
+@webhook_app.route("/admin/emails", methods=["GET"])
+def admin_emails_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, recipient_email, email, email_type, subject, status, created_at FROM email_logs ORDER BY created_at DESC LIMIT 150")
+    logs = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(mask_email(r.get('recipient_email') or r.get('email') or ''))}</td><td>{clean_html(r.get('email_type') or '')}</td><td>{clean_html(r.get('subject') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in logs)
+    body = f"<h1>Email Logs</h1><div class='card'><table><tr><th>User</th><th>Email</th><th>Type</th><th>Subject</th><th>Status</th><th>Date</th></tr>{rows}</table></div>"
+    return admin_page_html("Emails", body, admin)
+
+
+@webhook_app.route("/admin/unmatched-payments", methods=["GET"])
+def admin_unmatched_payments_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM unmatched_payments ORDER BY created_at DESC LIMIT 100")
+    rows_data = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{clean_html(str(r.get('stripe_event_id') or ''))}</td><td>{clean_html(str(r.get('customer_email') or ''))}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('reason') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in rows_data)
+    body = f"<h1>Unmatched Payments</h1><p class='muted'>Payments Stripe confirmed but CoinPilotXAI could not safely match to a website account.</p><div class='card'><table><tr><th>Event</th><th>Email</th><th>Amount</th><th>Reason</th><th>Date</th></tr>{rows}</table></div>"
+    return admin_page_html("Unmatched Payments", body, admin)
+
+
+@webhook_app.route("/admin/audit-logs", methods=["GET"])
+def admin_audit_logs_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 150")
+    logs = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{clean_html(r.get('admin_email') or '')}</td><td>{clean_html(r.get('action') or '')}</td><td>{clean_html(r.get('target_type') or '')}</td><td>{clean_html(r.get('target_id') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in logs)
+    body = f"<h1>Audit Logs</h1><div class='card'><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div>"
+    return admin_page_html("Audit Logs", body, admin)
+
+
+@webhook_app.route("/admin/profile", methods=["GET"])
+@webhook_app.route("/admin/admins", methods=["GET"])
+@webhook_app.route("/admin/employees", methods=["GET"])
+@webhook_app.route("/admin/settings", methods=["GET"])
+@webhook_app.route("/admin/security", methods=["GET"])
+@webhook_app.route("/admin/telegram", methods=["GET"])
+@webhook_app.route("/admin/support-notes", methods=["GET"])
+def admin_placeholder_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    body = "<h1>Admin Workspace</h1><div class='card'><p>This protected workspace is ready for deeper role-specific controls. Core owner visibility, users, transactions, email logs, audit logs, and unmatched payment repair are active.</p></div>"
+    return admin_page_html("Admin Workspace", body, admin)
 
 
 def analytics_summary():
@@ -2018,6 +2482,130 @@ def admin_brevo_resync():
     return jsonify({"ok": True, "synced": synced, "failed": failed, "leads_checked": len(leads), "users_checked": len(users)})
 
 
+@webhook_app.route("/debug/stripe-user", methods=["GET"])
+@webhook_app.route("/debug/user-email-status", methods=["GET"])
+def debug_stripe_user():
+    if not require_admin_password():
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    email = clean_html(request.args.get("email", "")).strip().lower()
+    if not is_valid_email(email):
+        return jsonify({"ok": False, "message": "Provide a valid email."}), 400
+    user = load_account_by_email(email)
+    if not user:
+        return jsonify({"ok": False, "message": "User not found."}), 404
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, payment_type, txid, amount, status, details, created_at FROM payment_verifications WHERE user_id=? ORDER BY id DESC LIMIT 10",
+        (user["user_id"],),
+    )
+    payments = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        "SELECT id, plan, status, payment_type, stripe_customer_id, stripe_subscription_id, current_period_end, pro_expires_at, created_at FROM subscriptions WHERE user_id=? ORDER BY id DESC LIMIT 10",
+        (user["user_id"],),
+    )
+    subscriptions = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        "SELECT id, stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, amount, currency, status, created_at FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 10",
+        (user["user_id"],),
+    )
+    payment_records = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        "SELECT id, email_type, recipient_email, subject, status, stripe_event_id, stripe_session_id, sent_at, created_at FROM email_logs WHERE user_id=? ORDER BY id DESC LIMIT 10",
+        (user["user_id"],),
+    )
+    email_logs = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "user": {
+            "user_id": user.get("user_id"),
+            "email": mask_email(user.get("email")),
+            "plan": user.get("plan") or user.get("subscription_plan"),
+            "subscription_status": user.get("subscription_status"),
+            "stripe_customer_id": user.get("stripe_customer_id"),
+            "stripe_subscription_id": user.get("stripe_subscription_id"),
+            "pro_expires_at": user.get("pro_expires_at") or user.get("subscription_expires_at"),
+            "telegram_linked": bool(user.get("telegram_user_id")),
+            "has_pro": has_pro_access(user),
+        },
+        "payments": payments,
+        "payment_records": payment_records,
+        "subscriptions": subscriptions,
+        "email_logs": email_logs,
+    })
+
+
+@webhook_app.route("/debug/password-reset-email-test", methods=["GET"])
+def debug_password_reset_email_test():
+    if not require_admin_password():
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    email = clean_html(request.args.get("email", "")).strip().lower()
+    user = load_account_by_email(email)
+    if not user:
+        return jsonify({"ok": False, "message": "User not found."}), 404
+    sent = send_password_reset_email(user, "https://coinpilotx.app/reset-password/TEST-LINK-NOT-A-REAL-TOKEN")
+    return jsonify({"ok": bool(sent), "email": mask_email(email), "sent": bool(sent)})
+
+
+@webhook_app.route("/debug/upgrade-email-test", methods=["GET"])
+def debug_upgrade_email_test():
+    if not require_admin_password():
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    email = clean_html(request.args.get("email", "")).strip().lower()
+    user = load_account_by_email(email)
+    if not user:
+        return jsonify({"ok": False, "message": "User not found."}), 404
+    sent = send_upgrade_confirmation_email(user, {
+        "stripe_event_id": f"debug_upgrade_email_{user['user_id']}_{int(time.time())}",
+        "stripe_session_id": "debug_upgrade_email",
+        "billing_date": datetime.now().strftime("%b %d, %Y"),
+        "next_billing_date": "Debug test",
+    })
+    return jsonify({"ok": bool(sent), "email": mask_email(email), "sent": bool(sent)})
+
+
+@webhook_app.route("/admin/stripe/repair-user-pro", methods=["POST"])
+def admin_repair_user_pro():
+    if not require_admin_password():
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+    payload = request.get_json(silent=True) or request.form
+    email = clean_html(payload.get("email", "")).strip().lower()
+    if not is_valid_email(email):
+        return jsonify({"ok": False, "message": "Provide a valid email."}), 400
+    user = load_account_by_email(email)
+    if not user:
+        return jsonify({"ok": False, "message": "User not found."}), 404
+    pro_expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    activated_user_id = activate_pro(
+        user["user_id"],
+        payment_type="stripe_manual_repair",
+        stripe_customer_id=clean_html(payload.get("stripe_customer_id", "")).strip() or None,
+        stripe_subscription_id=clean_html(payload.get("stripe_subscription_id", "")).strip() or None,
+        subscription_status="active",
+        pro_expires_at=pro_expires_at,
+    )
+    if activated_user_id:
+        repaired_user = load_account_by_id(activated_user_id)
+        if repaired_user:
+            send_upgrade_confirmation_email(repaired_user, {
+                "stripe_event_id": f"manual_repair_{activated_user_id}_{int(time.time())}",
+                "stripe_session_id": clean_html(payload.get("stripe_subscription_id", "")).strip() or "manual_repair",
+                "next_billing_date": format_date(pro_expires_at),
+            })
+        log_admin_audit(0, "manual_pro_repair", "user", str(activated_user_id), {"email": mask_email(email)})
+    logging.warning("Admin Stripe repair executed email=%s user_id=%s activated_user_id=%s", email, user["user_id"], activated_user_id)
+    return jsonify({
+        "ok": bool(activated_user_id),
+        "user_id": activated_user_id,
+        "email": mask_email(email),
+        "plan": "pro",
+        "subscription_status": "active",
+        "pro_expires_at": pro_expires_at,
+    })
+
+
 @webhook_app.route("/robots.txt", methods=["GET"])
 def robots_txt():
     return send_from_directory(webhook_app.static_folder, "robots.txt", mimetype="text/plain")
@@ -2213,6 +2801,28 @@ def dashboard_api():
     return jsonify(portfolio_service.get_user_dashboard_data(user["user_id"]))
 
 
+@webhook_app.route("/api/account/status", methods=["GET"])
+def account_status_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    fresh_user = load_account_by_id(user["user_id"]) or user
+    access = account_access_context(fresh_user)
+    return jsonify({
+        "ok": True,
+        "user_id": fresh_user.get("user_id"),
+        "email": mask_email(fresh_user.get("email")),
+        "plan": fresh_user.get("plan") or fresh_user.get("subscription_plan") or "free",
+        "subscription_status": fresh_user.get("subscription_status") or "inactive",
+        "has_pro": has_pro_access(fresh_user),
+        "access_label": access.get("label"),
+        "pro_expires_at": fresh_user.get("pro_expires_at") or fresh_user.get("subscription_expires_at") or "",
+        "trial_end_date": fresh_user.get("trial_end_date") or "",
+        "telegram_linked": bool(fresh_user.get("telegram_user_id")),
+    })
+
+
 @webhook_app.route("/api/portfolio", methods=["GET", "POST"])
 def portfolio_api():
     init_db()
@@ -2306,6 +2916,125 @@ def alert_item_api(alert_id):
     return jsonify(result), (200 if result.get("ok") else 404)
 
 
+def stripe_event_processed(event_id):
+    if not event_id:
+        return False
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM stripe_events WHERE stripe_event_id=? AND status='processed' LIMIT 1", (event_id,))
+    row = cur.fetchone()
+    conn.close()
+    return bool(row)
+
+
+def record_stripe_event(event, status="processed", user_id=None, error_message=""):
+    event = event or {}
+    event_id = event.get("id") or ""
+    if not event_id:
+        return
+    event_type = event.get("type") or ""
+    stripe_object = ((event.get("data") or {}).get("object") or {})
+    payload_summary = json.dumps({
+        "object_id": stripe_object.get("id"),
+        "customer": stripe_object.get("customer"),
+        "subscription": stripe_object.get("subscription") or stripe_object.get("id") if event_type.startswith("customer.subscription") else stripe_object.get("subscription"),
+        "payment_status": stripe_object.get("payment_status"),
+        "amount": stripe_object.get("amount_total") or stripe_object.get("amount_paid"),
+    })[:2000]
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO stripe_events (stripe_event_id, event_type, user_id, status, error_message, payload_summary, created_at, processed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(stripe_event_id) DO UPDATE SET
+            user_id=COALESCE(excluded.user_id, stripe_events.user_id),
+            status=excluded.status,
+            error_message=excluded.error_message,
+            payload_summary=excluded.payload_summary,
+            processed_at=excluded.processed_at
+        """,
+        (event_id, event_type, user_id, status, error_message[:500], payload_summary, now, now if status == "processed" else ""),
+    )
+    conn.commit()
+    conn.close()
+
+
+def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", stripe_customer_id="", stripe_subscription_id="", invoice_id="", payment_intent_id="", amount=None, currency="usd", status="succeeded", payment_type="stripe"):
+    if not user_id:
+        return
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO payment_records
+        (user_id, stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, payment_intent_id, amount, currency, status, payment_type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            stripe_event_id or "",
+            stripe_session_id or "",
+            stripe_customer_id or "",
+            stripe_subscription_id or "",
+            invoice_id or "",
+            payment_intent_id or "",
+            amount,
+            (currency or "usd").upper(),
+            status,
+            payment_type,
+            datetime.now().isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def record_unmatched_payment(event, stripe_object, reason):
+    event = event or {}
+    stripe_object = stripe_object or {}
+    customer_details = stripe_object.get("customer_details") or {}
+    customer_email = (
+        customer_details.get("email")
+        or stripe_object.get("customer_email")
+        or stripe_object.get("customer_email_address")
+        or stripe_object.get("email")
+        or ""
+    )
+    amount = stripe_object.get("amount_total") or stripe_object.get("amount_paid")
+    amount = amount / 100 if amount else None
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO unmatched_payments
+        (stripe_event_id, event_type, stripe_object_id, customer_id, customer_email, amount, currency, reason, payload_summary, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event.get("id") or "",
+            event.get("type") or "",
+            stripe_object.get("id") or "",
+            stripe_object.get("customer") or "",
+            customer_email,
+            amount,
+            (stripe_object.get("currency") or "usd").upper(),
+            reason[:500],
+            json.dumps({
+                "client_reference_id": stripe_object.get("client_reference_id"),
+                "metadata": stripe_object.get("metadata") or {},
+                "subscription": stripe_object.get("subscription"),
+                "payment_status": stripe_object.get("payment_status"),
+            })[:2000],
+            datetime.now().isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    logging.warning("Stripe payment received but no matching CoinPilotXAI account found. event_id=%s object_id=%s reason=%s", event.get("id"), stripe_object.get("id"), reason)
+
+
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     init_db()
@@ -2313,85 +3042,122 @@ def stripe_webhook():
     sig_header = request.headers.get("Stripe-Signature")
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload,
-            sig_header,
-            STRIPE_WEBHOOK_SECRET
-        )
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(
+                payload,
+                sig_header,
+                STRIPE_WEBHOOK_SECRET
+            )
+        else:
+            logging.warning("STRIPE_WEBHOOK_SECRET missing. Stripe webhook is parsing unsigned payload; configure the Railway variable immediately.")
+            event = json.loads(payload.decode("utf-8"))
     except Exception as e:
-        print("❌ Stripe webhook error:", e)
+        logging.exception("Stripe webhook error details: %s", e)
         return "Invalid", 400
 
-    print("🔥 WEBHOOK HIT:", event["type"])
+    logging.info("stripe webhook received event_type=%s event_id=%s", event.get("type"), event.get("id"))
     event_id = event.get("id", "")
+    if stripe_event_processed(event_id):
+        logging.info("Stripe webhook duplicate skipped event_id=%s event_type=%s", event_id, event.get("type"))
+        return "OK", 200
+    resolved_event_user_id = None
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-        user_id = session.get("client_reference_id")
+        session_id = session.get("id")
+        user_id, resolved_email = resolve_checkout_session_user(session)
         payment_status = session.get("payment_status")
-
-        print("client_reference_id:", user_id)
-
+        subscription_id = session.get("subscription")
+        customer_id = session.get("customer")
+        metadata = session.get("metadata") or {}
+        logging.info(
+            "checkout.session.completed received event_id=%s session_id=%s customer_id=%s customer_email=%s client_reference_id=%s metadata_user_id=%s payment_status=%s subscription_id=%s resolved_user_id=%s",
+            event_id,
+            session_id,
+            customer_id,
+            bool(resolved_email),
+            session.get("client_reference_id"),
+            metadata.get("user_id"),
+            payment_status,
+            subscription_id,
+            user_id,
+        )
         if user_id:
-            try:
-                user_id_int = int(user_id)
-            except Exception:
-                print("Invalid client_reference_id:", user_id)
-                return "OK", 200
-
+            resolved_event_user_id = user_id
             customer_details = session.get("customer_details") or {}
-            customer_email = customer_details.get("email") or session.get("customer_email")
+            customer_email = customer_details.get("email") or session.get("customer_email") or resolved_email
             if customer_email and is_valid_email(customer_email):
-                save_user_email(user_id_int, customer_email)
-
-            if payment_status == "paid":
+                save_user_email(user_id, customer_email)
+            subscription = fetch_stripe_subscription(subscription_id) if subscription_id else None
+            period_end = stripe_period_end_to_iso((subscription or {}).get("current_period_end")) if subscription else None
+            if payment_status == "paid" or subscription_id:
                 timestamp = datetime.now().isoformat()
-                activate_pro(
-                    user_id_int,
+                activated_user_id = activate_pro(
+                    user_id,
                     payment_type="stripe",
-                    stripe_customer_id=session.get("customer"),
-                    stripe_session_id=session.get("id"),
-                    stripe_subscription_id=session.get("subscription"),
-                    subscription_status="active",
+                    stripe_customer_id=customer_id,
+                    stripe_session_id=session_id,
+                    stripe_subscription_id=subscription_id,
+                    subscription_status="active" if payment_status == "paid" else ((subscription or {}).get("status") or "active"),
+                    pro_expires_at=period_end,
                 )
                 save_payment_verification(
-                    user_id_int,
-                    txid=session.get("id"),
+                    user_id,
+                    txid=session_id,
                     payment_type="stripe",
                     amount=(session.get("amount_total") / 100 if session.get("amount_total") else None),
                     status="verified",
                     details=f"Stripe checkout.session.completed at {timestamp}",
                 )
-                send_telegram_confirmation(
-                    user_id_int,
-                    "✅ CoinPilotX Pro activated successfully.\n\n"
-                    "Your card payment was confirmed by Stripe, and your Pro access is now active.\n\n"
-                    "Educational only — not financial advice.\n"
-                    "CoinPilotX will never ask for your seed phrase or private key."
+                record_payment_record(
+                    activated_user_id or user_id,
+                    stripe_event_id=event_id,
+                    stripe_session_id=session_id,
+                    stripe_customer_id=customer_id,
+                    stripe_subscription_id=subscription_id,
+                    payment_intent_id=session.get("payment_intent") or "",
+                    amount=(session.get("amount_total") / 100 if session.get("amount_total") else None),
+                    currency=session.get("currency", "usd"),
+                    status="succeeded",
                 )
-                user = load_account_by_id(user_id_int)
-                if user:
+                if activated_user_id:
+                    send_telegram_confirmation(
+                        activated_user_id,
+                        "✅ CoinPilotX Pro activated successfully.\n\n"
+                        "Your card payment was confirmed by Stripe, and your Pro access is now active.\n\n"
+                        "Educational only — not financial advice.\n"
+                        "CoinPilotX will never ask for your seed phrase or private key."
+                    )
+                user = load_account_by_id(activated_user_id or user_id)
+                if user and has_pro_access(user):
                     send_upgrade_confirmation_email(user, {
                         "stripe_event_id": event_id,
-                        "stripe_session_id": session.get("id"),
+                        "stripe_session_id": session_id,
                         "amount": (session.get("amount_total") / 100 if session.get("amount_total") else None),
                         "currency": session.get("currency", "usd"),
                         "billing_date": datetime.now().strftime("%b %d, %Y"),
+                        "next_billing_date": format_date(period_end) if period_end else "",
                     })
-                print(f"✅ Activated PRO for user {user_id}")
+                    logging.info("upgrade confirmation email sent/skipped after successful DB Pro update user_id=%s event_id=%s", user["user_id"], event_id)
+                logging.info("Checkout session activated Pro user_id=%s session_id=%s database_commit_success=%s", user_id, session_id, bool(activated_user_id))
             else:
                 save_payment_verification(
-                    user_id_int,
-                    txid=session.get("id"),
+                    user_id,
+                    txid=session_id,
                     payment_type="stripe",
                     amount=None,
                     status=f"not_activated_{payment_status or 'unknown'}",
                     details="Stripe checkout completed but payment_status was not paid.",
                 )
-                print(f"Stripe session not activated for user {user_id}: payment_status={payment_status}")
+                logging.warning("Stripe session not activated user_id=%s session_id=%s payment_status=%s", user_id, session_id, payment_status)
+        else:
+            logging.error("checkout.session.completed could not resolve local user session_id=%s customer_id=%s email=%s", session_id, customer_id, bool(resolved_email))
+            record_unmatched_payment(event, session, "checkout.session.completed could not resolve local user")
 
     if event["type"] in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
         synced_user_id = sync_stripe_subscription(event["data"]["object"])
+        if synced_user_id:
+            resolved_event_user_id = synced_user_id
         if synced_user_id and event["type"] in {"customer.subscription.created", "customer.subscription.updated"}:
             subscription = event["data"]["object"]
             if (subscription.get("status") or "").lower() in {"active", "trialing"}:
@@ -2402,14 +3168,37 @@ def stripe_webhook():
                         "stripe_session_id": subscription.get("latest_invoice") or subscription.get("id"),
                         "next_billing_date": format_date(stripe_period_end_to_iso(subscription.get("current_period_end"))),
                     })
+                    logging.info("upgrade confirmation email sent/skipped for subscription event user_id=%s event_id=%s", synced_user_id, event_id)
+        if synced_user_id and event["type"] == "customer.subscription.deleted":
+            subscription = event["data"]["object"]
+            user = load_account_by_id(synced_user_id)
+            if user:
+                send_subscription_canceled_email(user, {
+                    "access_until": format_date(stripe_period_end_to_iso(subscription.get("current_period_end")))
+                })
+        if not synced_user_id:
+            record_unmatched_payment(event, event["data"]["object"], "subscription event could not resolve local user")
 
     if event["type"] in {"invoice.paid", "invoice.payment_succeeded", "invoice.payment_failed"}:
         synced_user_id = sync_stripe_invoice(event["data"]["object"], event["type"])
+        if synced_user_id:
+            resolved_event_user_id = synced_user_id
         if synced_user_id and event["type"] in {"invoice.paid", "invoice.payment_succeeded"}:
             invoice = event["data"]["object"]
             user = load_account_by_id(synced_user_id)
             if user:
                 amount = invoice.get("amount_paid")
+                record_payment_record(
+                    synced_user_id,
+                    stripe_event_id=event_id,
+                    stripe_customer_id=invoice.get("customer") or "",
+                    stripe_subscription_id=invoice.get("subscription") or "",
+                    invoice_id=invoice.get("id") or "",
+                    payment_intent_id=invoice.get("payment_intent") or "",
+                    amount=(amount / 100 if amount else None),
+                    currency=invoice.get("currency", "usd"),
+                    status="succeeded",
+                )
                 send_upgrade_confirmation_email(user, {
                     "stripe_event_id": event_id,
                     "stripe_session_id": invoice.get("id"),
@@ -2417,7 +3206,16 @@ def stripe_webhook():
                     "currency": invoice.get("currency", "usd"),
                     "billing_date": datetime.now().strftime("%b %d, %Y"),
                 })
+                logging.info("upgrade confirmation email sent/skipped for invoice event user_id=%s event_id=%s", synced_user_id, event_id)
+        if synced_user_id and event["type"] == "invoice.payment_failed":
+            invoice = event["data"]["object"]
+            user = load_account_by_id(synced_user_id)
+            if user:
+                send_payment_issue_email(user, {"invoice_id": invoice.get("id"), "stripe_event_id": event_id})
+        if not synced_user_id:
+            record_unmatched_payment(event, event["data"]["object"], "invoice event could not resolve local user")
 
+    record_stripe_event(event, "processed", resolved_event_user_id)
     return "OK", 200
 
 def scan_confirm_menu():
@@ -2512,11 +3310,26 @@ def get_user_email(user_id):
 
 
 def log_email_status(user_id, email, subject, status):
+    subject_lower = (subject or "").lower()
+    email_type = "transactional"
+    if "welcome" in subject_lower:
+        email_type = "welcome"
+    elif "reset" in subject_lower:
+        email_type = "password_reset"
+    elif "password was changed" in subject_lower:
+        email_type = "password_changed"
+    elif "upgrade" in subject_lower or "subscription" in subject_lower:
+        email_type = "subscription"
+    elif "verify" in subject_lower:
+        email_type = "email_verification"
     conn = db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO email_logs (user_id, email, subject, status, created_at) VALUES (?, ?, ?, ?, ?)",
-        (user_id, email, subject, status, datetime.now().isoformat())
+        """
+        INSERT INTO email_logs (user_id, email, recipient_email, email_type, subject, status, provider, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, email, email, email_type, subject, status, (os.getenv("EMAIL_PROVIDER") or ("brevo" if os.getenv("BREVO_API_KEY") else "auto")), datetime.now().isoformat())
     )
     conn.commit()
     conn.close()
@@ -2755,6 +3568,42 @@ def send_password_reset_email(user, reset_link):
     return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
 
 
+def send_password_changed_email(user):
+    subject = "Your CoinPilotX password was changed"
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        "Your CoinPilotX account password was changed successfully.\n\n"
+        "If you did not make this change, contact support immediately at support@coinpilotx.app.\n\n"
+        "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
+    )
+    html = branded_email_html("Your CoinPilotX password was changed", f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Your account password was changed successfully.</p>
+      <p>If you did not make this change, contact <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a> immediately.</p>
+    """)
+    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+
+
+def send_username_recovery_email(user):
+    subject = "Your CoinPilotX account login"
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        "You requested help finding your CoinPilotX account login.\n\n"
+        f"Login email: {user.get('email')}\n"
+        f"Display name: {account_display_name(user)}\n\n"
+        "Login: https://coinpilotx.app/login\n\n"
+        "If you did not request this, you can ignore this email."
+    )
+    html = branded_email_html("Your CoinPilotX account login", f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>You requested help finding your account login.</p>
+      <p><strong>Login email:</strong> {clean_html(user.get('email') or '')}<br>
+      <strong>Display name:</strong> {clean_html(account_display_name(user))}</p>
+      <p><a href="https://coinpilotx.app/login" style="color:#36e58f">Log in</a></p>
+    """)
+    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+
+
 def send_email_verification(user, verification_link):
     subject = "Verify your CoinPilotX email"
     text = f"Verify your CoinPilotX email here: {verification_link}\n\nSupport: support@coinpilotx.app"
@@ -2932,6 +3781,64 @@ def send_upgrade_confirmation_email(user, details=None):
     log_upgrade_confirmation_email(user_id, to_email, stripe_event_id, stripe_session_id, "sent" if sent else "failed", "" if sent else "Email provider rejected or unavailable.")
     logging.info("upgrade confirmation email %s user_id=%s", "sent" if sent else "failed", user_id)
     return sent
+
+
+def send_payment_issue_email(user, details=None):
+    details = details or {}
+    user = user or {}
+    if not user.get("email"):
+        return False
+    subject = "Action needed: CoinPilotXAI Pro payment issue"
+    invoice_id = details.get("invoice_id") or "Not available"
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        "Stripe reported a payment issue for your CoinPilotX Pro subscription.\n\n"
+        f"Invoice reference: {invoice_id}\n"
+        "Your account is not deleted. Pro access may remain available until the current access period ends, depending on your billing status.\n\n"
+        "Please open your account to review billing:\n"
+        "https://coinpilotx.app/account\n\n"
+        "If you experience any issue after payment, please email support@coinpilotx.app and include the email address used for your CoinPilotXAI account.\n\n"
+        "CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
+    )
+    html = branded_email_html("Action needed: payment issue", f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Stripe reported a payment issue for your CoinPilotX Pro subscription.</p>
+      <p><strong>Invoice reference:</strong> {clean_html(str(invoice_id))}</p>
+      <p>Your account is not deleted. Pro access may remain available until the current access period ends, depending on your billing status.</p>
+      <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account</a></p>
+      <p>If you experience any issue after payment, email <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
+    """)
+    sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+    if not sent:
+        time.sleep(3)
+        sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
+    return sent
+
+
+def send_subscription_canceled_email(user, details=None):
+    details = details or {}
+    user = user or {}
+    if not user.get("email"):
+        return False
+    subject = "CoinPilotX Pro subscription update"
+    access_until = details.get("access_until") or "your current paid access period"
+    text = (
+        f"Hi {account_display_name(user)},\n\n"
+        "Your CoinPilotX Pro subscription status changed to canceled.\n\n"
+        f"Access remains available until: {access_until}\n\n"
+        "You can continue using CoinPilotX Free, and you can upgrade again anytime from your website account.\n\n"
+        "Account: https://coinpilotx.app/account\n"
+        "Support: support@coinpilotx.app\n\n"
+        "CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
+    )
+    html = branded_email_html("CoinPilotX Pro subscription update", f"""
+      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Your CoinPilotX Pro subscription status changed to canceled.</p>
+      <p><strong>Access remains available until:</strong> {clean_html(str(access_until))}</p>
+      <p>You can continue using CoinPilotX Free, and you can upgrade again anytime from your website account.</p>
+      <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open account</a></p>
+    """)
+    return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
 
 
 def subscription_email_body(plan_name, timestamp, txid=None):
@@ -5512,6 +6419,7 @@ def init_db():
         "ALTER TABLE users ADD COLUMN telegram_user_id INTEGER",
         "ALTER TABLE users ADD COLUMN telegram_username TEXT",
         "ALTER TABLE users ADD COLUMN telegram_chat_id INTEGER",
+        "ALTER TABLE users ADD COLUMN account_status TEXT DEFAULT 'active'",
         "ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN email_opt_in INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN sms_opt_in INTEGER DEFAULT 0",
@@ -5765,6 +6673,9 @@ def init_db():
         "ALTER TABLE email_logs ADD COLUMN stripe_session_id TEXT",
         "ALTER TABLE email_logs ADD COLUMN sent_at TEXT",
         "ALTER TABLE email_logs ADD COLUMN error_message TEXT",
+        "ALTER TABLE email_logs ADD COLUMN provider TEXT",
+        "ALTER TABLE email_logs ADD COLUMN provider_message_id TEXT",
+        "ALTER TABLE email_logs ADD COLUMN metadata TEXT",
     ]:
         try:
             cur.execute(statement)
@@ -5859,6 +6770,18 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         token TEXT UNIQUE,
+        expires_at TEXT,
+        used_at TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS account_recovery_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        token TEXT UNIQUE,
+        recovery_type TEXT,
         expires_at TEXT,
         used_at TEXT,
         created_at TEXT
@@ -6052,6 +6975,136 @@ def init_db():
         UNIQUE(user_id, event_type)
     )
     """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT,
+        email TEXT UNIQUE,
+        phone TEXT,
+        password_hash TEXT,
+        role TEXT DEFAULT 'admin',
+        status TEXT DEFAULT 'active',
+        job_title TEXT,
+        company_role TEXT,
+        date_of_birth TEXT,
+        address_line1 TEXT,
+        address_line2 TEXT,
+        city TEXT,
+        state TEXT,
+        zip_code TEXT,
+        country TEXT,
+        emergency_contact_name TEXT,
+        emergency_contact_phone TEXT,
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        last_login_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER,
+        admin_email TEXT,
+        action TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        metadata TEXT,
+        ip_hash TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS stripe_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stripe_event_id TEXT UNIQUE,
+        event_type TEXT,
+        user_id INTEGER,
+        status TEXT,
+        error_message TEXT,
+        payload_summary TEXT,
+        created_at TEXT,
+        processed_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        stripe_event_id TEXT,
+        stripe_session_id TEXT,
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        invoice_id TEXT,
+        payment_intent_id TEXT,
+        amount REAL,
+        currency TEXT,
+        status TEXT,
+        payment_type TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS unmatched_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stripe_event_id TEXT,
+        event_type TEXT,
+        stripe_object_id TEXT,
+        customer_id TEXT,
+        customer_email TEXT,
+        amount REAL,
+        currency TEXT,
+        reason TEXT,
+        payload_summary TEXT,
+        created_at TEXT,
+        resolved_at TEXT,
+        resolved_by_admin_id INTEGER
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS support_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        admin_user_id INTEGER,
+        note TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    owner_email = "cherieroody@gmail.com"
+    now_iso = datetime.now().isoformat()
+    cur.execute("SELECT id, password_hash FROM admin_users WHERE lower(email)=lower(?) LIMIT 1", (owner_email,))
+    owner_row = cur.fetchone()
+    owner_password = os.getenv("OWNER_ADMIN_PASSWORD") or os.getenv("ADMIN_OWNER_PASSWORD") or ""
+    owner_hash = generate_password_hash(owner_password) if owner_password else ""
+    if owner_row:
+        cur.execute(
+            """
+            UPDATE admin_users
+            SET full_name='Roody Cherie', phone='5164618652', role='owner', status='active',
+                company_role='Owner', updated_at=?,
+                password_hash=CASE WHEN COALESCE(password_hash, '')='' AND ?!='' THEN ? ELSE password_hash END
+            WHERE id=?
+            """,
+            (now_iso, owner_hash, owner_hash, owner_row[0]),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO admin_users
+            (full_name, email, phone, password_hash, role, status, company_role, created_at, updated_at)
+            VALUES ('Roody Cherie', ?, '5164618652', ?, 'owner', 'active', 'Owner', ?, ?)
+            """,
+            (owner_email, owner_hash, now_iso, now_iso),
+        )
 
     conn.commit()
     conn.close()
@@ -8494,12 +9547,57 @@ def stripe_period_end_to_iso(value):
     return None
 
 
-def find_user_by_stripe(customer_id=None, subscription_id=None, metadata_user_id=None):
-    if metadata_user_id:
-        try:
-            return int(metadata_user_id)
-        except Exception:
-            pass
+def stripe_object_get(obj, key, default=None):
+    try:
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return obj.get(key, default)
+    except Exception:
+        return getattr(obj, key, default)
+
+
+def fetch_stripe_customer_email(customer_id):
+    if not customer_id or not STRIPE_SECRET_KEY:
+        return ""
+    try:
+        customer = stripe.Customer.retrieve(customer_id)
+        email = stripe_object_get(customer, "email", "") or ""
+        logging.info("Stripe customer lookup customer_id=%s email_found=%s", customer_id, bool(email))
+        return email
+    except Exception as exc:
+        logging.warning("Stripe customer lookup failed customer_id=%s error=%s", customer_id, exc)
+        return ""
+
+
+def fetch_stripe_subscription(subscription_id):
+    if not subscription_id or not STRIPE_SECRET_KEY:
+        return None
+    try:
+        subscription = stripe.Subscription.retrieve(subscription_id)
+        logging.info("Stripe subscription lookup success subscription_id=%s", subscription_id)
+        return subscription
+    except Exception as exc:
+        logging.warning("Stripe subscription lookup failed subscription_id=%s error=%s", subscription_id, exc)
+        return None
+
+
+def user_id_from_candidate(value):
+    if not value:
+        return None
+    try:
+        candidate = int(str(value))
+    except Exception:
+        return None
+    if load_account_by_id(candidate):
+        return candidate
+    return None
+
+
+def find_user_by_stripe(customer_id=None, subscription_id=None, metadata_user_id=None, customer_email=None):
+    candidate = user_id_from_candidate(metadata_user_id)
+    if candidate:
+        logging.info("Stripe user resolved by metadata/client reference user_id=%s", candidate)
+        return candidate
     conn = db()
     cur = conn.cursor()
     if subscription_id:
@@ -8507,15 +9605,63 @@ def find_user_by_stripe(customer_id=None, subscription_id=None, metadata_user_id
         row = cur.fetchone()
         if row:
             conn.close()
+            logging.info("Stripe user resolved by subscription_id user_id=%s", row[0])
             return row[0]
     if customer_id:
         cur.execute("SELECT user_id FROM users WHERE stripe_customer_id=? LIMIT 1", (customer_id,))
         row = cur.fetchone()
         if row:
             conn.close()
+            logging.info("Stripe user resolved by customer_id user_id=%s", row[0])
             return row[0]
     conn.close()
+    email = (customer_email or "").strip().lower()
+    if not email:
+        email = fetch_stripe_customer_email(customer_id).strip().lower()
+    if email and is_valid_email(email):
+        user = load_account_by_email(email)
+        if user:
+            logging.info("Stripe user resolved by email user_id=%s email=%s", user["user_id"], email)
+            return user["user_id"]
+    logging.warning(
+        "Stripe user resolution failed customer_id=%s subscription_id=%s metadata_user_id=%s email_present=%s",
+        customer_id,
+        subscription_id,
+        metadata_user_id,
+        bool(customer_email),
+    )
     return None
+
+
+def resolve_checkout_session_user(session):
+    session = session or {}
+    metadata = session.get("metadata") or {}
+    customer_details = session.get("customer_details") or {}
+    customer_email = (
+        customer_details.get("email")
+        or session.get("customer_email")
+        or metadata.get("email")
+        or ""
+    )
+    metadata_user_id = (
+        session.get("client_reference_id")
+        or metadata.get("user_id")
+        or metadata.get("client_reference_id")
+        or metadata.get("account_user_id")
+    )
+    subscription_id = session.get("subscription")
+    customer_id = session.get("customer")
+    user_id = find_user_by_stripe(customer_id, subscription_id, metadata_user_id, customer_email)
+    logging.info(
+        "Stripe checkout resolution session_id=%s customer_id=%s customer_email=%s client_reference_id=%s metadata_user_id=%s resolved_user_id=%s",
+        session.get("id"),
+        customer_id,
+        bool(customer_email),
+        session.get("client_reference_id"),
+        metadata.get("user_id"),
+        user_id,
+    )
+    return user_id, customer_email
 
 
 def sync_stripe_subscription(subscription):
@@ -8523,13 +9669,28 @@ def sync_stripe_subscription(subscription):
     customer_id = subscription.get("customer")
     subscription_id = subscription.get("id")
     metadata = subscription.get("metadata") or {}
-    user_id = find_user_by_stripe(customer_id, subscription_id, metadata.get("user_id") or metadata.get("client_reference_id"))
+    user_id = find_user_by_stripe(
+        customer_id,
+        subscription_id,
+        metadata.get("user_id") or metadata.get("client_reference_id"),
+        metadata.get("email"),
+    )
     if not user_id:
         logging.info("Stripe subscription sync skipped: no matching user for customer=%s subscription=%s", customer_id, subscription_id)
         return None
     raw_status = (subscription.get("status") or "").lower()
-    status = "active" if raw_status in {"active", "trialing"} else ("past_due" if raw_status in {"past_due", "unpaid"} else ("canceled" if raw_status in {"canceled", "incomplete_expired"} else raw_status or "inactive"))
+    status = raw_status if raw_status in {"active", "trialing"} else ("past_due" if raw_status in {"past_due", "unpaid"} else ("canceled" if raw_status in {"canceled", "incomplete_expired"} else raw_status or "inactive"))
     period_end = stripe_period_end_to_iso(subscription.get("current_period_end"))
+    before = load_account_by_id(user_id) or {}
+    logging.info(
+        "Stripe subscription sync start event_subscription=%s user_id=%s before_plan=%s before_status=%s stripe_status=%s period_end=%s",
+        subscription_id,
+        user_id,
+        before.get("plan") or before.get("subscription_plan"),
+        before.get("subscription_status"),
+        raw_status,
+        period_end,
+    )
     conn = db()
     cur = conn.cursor()
     if status in {"active", "trialing"}:
@@ -8539,8 +9700,8 @@ def sync_stripe_subscription(subscription):
             SET plan='pro', subscription_plan='pro', subscription_status=?, is_pro=1,
                 stripe_customer_id=COALESCE(?, stripe_customer_id),
                 stripe_subscription_id=COALESCE(?, stripe_subscription_id),
-                pro_expires_at=COALESCE(?, pro_expires_at),
-                subscription_expires_at=COALESCE(?, subscription_expires_at),
+                pro_expires_at=?,
+                subscription_expires_at=?,
                 updated_at=?
             WHERE user_id=?
             """,
@@ -8569,6 +9730,15 @@ def sync_stripe_subscription(subscription):
     )
     conn.commit()
     conn.close()
+    after = load_account_by_id(user_id) or {}
+    logging.info(
+        "Stripe subscription sync committed user_id=%s after_plan=%s after_status=%s customer_id=%s subscription_id=%s",
+        user_id,
+        after.get("plan") or after.get("subscription_plan"),
+        after.get("subscription_status"),
+        customer_id,
+        subscription_id,
+    )
     log_product_event(user_id, "pro_subscription_active" if status == "active" else "pro_subscription_updated", {"stripe_status": raw_status or status})
     expire_trials(send_email=False)
     user = load_account_by_id(user_id)
@@ -8581,7 +9751,16 @@ def sync_stripe_invoice(invoice, event_type):
     invoice = invoice or {}
     customer_id = invoice.get("customer")
     subscription_id = invoice.get("subscription")
-    user_id = find_user_by_stripe(customer_id, subscription_id)
+    customer_email = invoice.get("customer_email") or invoice.get("customer_email_address") or ""
+    subscription = None
+    metadata_user_id = ""
+    if subscription_id:
+        subscription = fetch_stripe_subscription(subscription_id)
+        if subscription:
+            metadata = subscription.get("metadata") or {}
+            metadata_user_id = metadata.get("user_id") or metadata.get("client_reference_id") or ""
+            customer_email = customer_email or metadata.get("email") or ""
+    user_id = find_user_by_stripe(customer_id, subscription_id, metadata_user_id, customer_email)
     if not user_id:
         logging.info("Stripe invoice sync skipped: no matching user for customer=%s subscription=%s", customer_id, subscription_id)
         return None
@@ -8590,8 +9769,10 @@ def sync_stripe_invoice(invoice, event_type):
     if lines:
         period_end = stripe_period_end_to_iso((lines[0].get("period") or {}).get("end"))
     if event_type in {"invoice.paid", "invoice.payment_succeeded"}:
+        logging.info("Stripe invoice payment succeeded user_id=%s invoice_id=%s customer_id=%s subscription_id=%s", user_id, invoice.get("id"), customer_id, subscription_id)
         activate_pro(user_id, payment_type="stripe", stripe_customer_id=customer_id, stripe_subscription_id=subscription_id, subscription_status="active", pro_expires_at=period_end)
         return user_id
+    logging.warning("Stripe invoice payment failed user_id=%s invoice_id=%s customer_id=%s subscription_id=%s", user_id, invoice.get("id"), customer_id, subscription_id)
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -8606,7 +9787,21 @@ def sync_stripe_invoice(invoice, event_type):
 
 def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, stripe_subscription_id=None, subscription_status="active", pro_expires_at=None):
     target_user = load_account_by_id(user_id) or get_linked_website_account(user_id)
+    if not target_user:
+        logging.error("Pro activation failed: local user not found user_id=%s payment_type=%s customer_id=%s subscription_id=%s", user_id, payment_type, stripe_customer_id, stripe_subscription_id)
+        return None
     target_user_id = (target_user or {}).get("user_id") or user_id
+    logging.info(
+        "Pro activation starting user_id=%s before_plan=%s before_status=%s payment_type=%s customer_id=%s session_id=%s subscription_id=%s expires=%s",
+        target_user_id,
+        target_user.get("plan") or target_user.get("subscription_plan"),
+        target_user.get("subscription_status"),
+        payment_type,
+        stripe_customer_id,
+        stripe_session_id,
+        stripe_subscription_id,
+        pro_expires_at,
+    )
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -8622,8 +9817,8 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
             stripe_customer_id=COALESCE(?, stripe_customer_id),
             stripe_session_id=COALESCE(?, stripe_session_id),
             stripe_subscription_id=COALESCE(?, stripe_subscription_id),
-            pro_expires_at=COALESCE(?, pro_expires_at),
-            subscription_expires_at=COALESCE(?, subscription_expires_at)
+            pro_expires_at=?,
+            subscription_expires_at=?
         WHERE user_id=? OR telegram_user_id=?
         """,
         (
@@ -8660,10 +9855,19 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
     )
     conn.commit()
     conn.close()
+    after_user = load_account_by_id(target_user_id) or {}
+    logging.info(
+        "Pro activation database commit success user_id=%s after_plan=%s after_status=%s has_pro=%s",
+        target_user_id,
+        after_user.get("plan") or after_user.get("subscription_plan"),
+        after_user.get("subscription_status"),
+        has_pro_access(after_user),
+    )
     log_product_event(target_user_id, "pro_subscription_active" if subscription_status == "active" else "pro_subscription_updated", {"payment_type": payment_type, "status": subscription_status})
     user = load_account_by_id(target_user_id)
     if user:
         sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or target_user_id)
+    return target_user_id
 
 
 DAY_SIGNAL_QUESTIONS = [

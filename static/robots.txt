@@ -12,6 +12,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -36,6 +39,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -54,6 +60,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -72,6 +81,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -90,6 +102,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -108,6 +123,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -126,6 +144,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -144,6 +165,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -162,6 +186,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
@@ -180,6 +207,9 @@ Disallow: /login
 Disallow: /logout
 Disallow: /signup
 Disallow: /forgot-password
+Disallow: /forgot-username
+Disallow: /create-checkout-session
+Disallow: /checkout
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
