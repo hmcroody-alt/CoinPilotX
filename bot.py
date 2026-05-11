@@ -69,6 +69,7 @@ DB_FILE = "coinpilotx.db"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 STRIPE_PRO_LINK = ""
@@ -486,11 +487,25 @@ def main_menu():
     ])
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
-BASE_URL = os.getenv("BASE_URL", os.getenv("DOMAIN", "https://coinpilotx.app")).rstrip("/")
+APP_BASE_URL = os.getenv("APP_BASE_URL", os.getenv("BASE_URL", os.getenv("DOMAIN", "https://coinpilotx.app"))).rstrip("/")
+BASE_URL = APP_BASE_URL
 
 stripe.api_key = STRIPE_SECRET_KEY
+logging.info(
+    "Stripe startup validation: secret_key_loaded=%s publishable_key_loaded=%s webhook_secret_loaded=%s price_id_loaded=%s app_base_url=%s",
+    bool(STRIPE_SECRET_KEY),
+    bool(STRIPE_PUBLISHABLE_KEY),
+    bool(STRIPE_WEBHOOK_SECRET),
+    bool(STRIPE_PRICE_ID),
+    APP_BASE_URL,
+)
+if not STRIPE_SECRET_KEY:
+    logging.warning("Railway Stripe warning: STRIPE_SECRET_KEY is missing. Checkout session creation will fail.")
+if not STRIPE_PUBLISHABLE_KEY:
+    logging.warning("Railway Stripe warning: STRIPE_PUBLISHABLE_KEY is missing. Frontend publishable-key integrations may not work.")
 if not STRIPE_WEBHOOK_SECRET:
     logging.warning("Railway Stripe warning: STRIPE_WEBHOOK_SECRET is missing. Webhook signature verification is not fully configured.")
 if not STRIPE_PRICE_ID:
@@ -1120,15 +1135,94 @@ def stripe_checkout_url_for_user(user_id):
     return ""
 
 
+def stripe_config_snapshot():
+    return {
+        "secret_loaded": bool(STRIPE_SECRET_KEY),
+        "publishable_loaded": bool(STRIPE_PUBLISHABLE_KEY),
+        "webhook_loaded": bool(STRIPE_WEBHOOK_SECRET),
+        "price_loaded": bool(STRIPE_PRICE_ID),
+        "app_base_url": APP_BASE_URL,
+    }
+
+
+def safe_stripe_error(exc):
+    try:
+        return str(getattr(exc, "user_message", "") or getattr(exc, "message", "") or exc)
+    except Exception:
+        return "Unknown Stripe error"
+
+
+def record_checkout_attempt(user=None, status="started", stripe_session_id="", redirect_url="", error_message=""):
+    try:
+        user = user or {}
+        cfg = stripe_config_snapshot()
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO checkout_attempts
+            (user_id, email, account_status, authenticated, stripe_secret_loaded, stripe_publishable_loaded,
+             stripe_webhook_loaded, stripe_price_loaded, app_base_url, status, stripe_session_id, redirect_url,
+             error_message, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user.get("user_id") or 0,
+                user.get("email") or "",
+                user.get("account_status") or "unknown",
+                1 if user.get("user_id") else 0,
+                int(cfg["secret_loaded"]),
+                int(cfg["publishable_loaded"]),
+                int(cfg["webhook_loaded"]),
+                int(cfg["price_loaded"]),
+                cfg["app_base_url"],
+                status,
+                stripe_session_id or "",
+                (redirect_url or "")[:1200],
+                (error_message or "")[:1000],
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("Checkout attempt logging failed: %s", exc)
+
+
 def create_stripe_checkout_session(user):
+    user = user or {}
+    cfg = stripe_config_snapshot()
+    logging.info(
+        "checkout session creation start user_id=%s email_present=%s authenticated=%s account_status=%s stripe_key_loaded=%s stripe_publishable_loaded=%s stripe_webhook_loaded=%s stripe_price_id_loaded=%s app_base_url=%s",
+        user.get("user_id"),
+        bool(user.get("email")),
+        bool(user.get("user_id")),
+        user.get("account_status") or "unknown",
+        cfg["secret_loaded"],
+        cfg["publishable_loaded"],
+        cfg["webhook_loaded"],
+        cfg["price_loaded"],
+        cfg["app_base_url"],
+    )
+    record_checkout_attempt(user, "started")
     if not STRIPE_SECRET_KEY:
         logging.warning("Stripe checkout cannot be created: STRIPE_SECRET_KEY missing.")
+        record_checkout_attempt(user, "failed", error_message="STRIPE_SECRET_KEY missing")
         return None, "Stripe is not configured."
     if not STRIPE_PRICE_ID:
         logging.warning("Stripe checkout cannot be created: STRIPE_PRICE_ID missing. Configure STRIPE_PRICE_ID in Railway.")
+        record_checkout_attempt(user, "failed", error_message="STRIPE_PRICE_ID missing")
         return None, "Stripe price is not configured."
     user_id = str(user["user_id"])
     email = (user.get("email") or "").strip().lower()
+    if not email or not is_valid_email(email):
+        logging.warning("Stripe checkout cannot be created: missing valid user email user_id=%s", user_id)
+        record_checkout_attempt(user, "failed", error_message="Missing valid account email")
+        return None, "Account email is required for checkout."
+    if (user.get("account_status") or "active").lower() != "active":
+        logging.warning("Stripe checkout cannot be created: inactive account user_id=%s account_status=%s", user_id, user.get("account_status"))
+        record_checkout_attempt(user, "failed", error_message="Account is not active")
+        return None, "Account is not active."
     metadata = {"user_id": user_id, "email": email, "plan": "pro"}
     params = {
         "mode": "subscription",
@@ -1144,16 +1238,42 @@ def create_stripe_checkout_session(user):
         params["customer"] = user.get("stripe_customer_id")
     elif email:
         params["customer_email"] = email
-    logging.info("Creating Stripe checkout session user_id=%s email=%s price_configured=%s", user_id, bool(email), bool(STRIPE_PRICE_ID))
-    session_obj = stripe.checkout.Session.create(**params)
-    logging.info("Stripe checkout session created user_id=%s session_id=%s", user_id, getattr(session_obj, "id", ""))
-    return session_obj, ""
+    logging.info(
+        "Creating Stripe checkout session user_id=%s email=%s price_configured=%s success_url=%s cancel_url=%s metadata=%s",
+        user_id,
+        email,
+        bool(STRIPE_PRICE_ID),
+        params["success_url"],
+        params["cancel_url"],
+        metadata,
+    )
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        session_obj = stripe.checkout.Session.create(**params)
+        redirect_url = getattr(session_obj, "url", "") or session_obj.get("url", "")
+        session_id = getattr(session_obj, "id", "") or session_obj.get("id", "")
+        logging.info("Stripe checkout session created user_id=%s session_id=%s redirect_url_generated=%s", user_id, session_id, bool(redirect_url))
+        record_checkout_attempt(user, "success", stripe_session_id=session_id, redirect_url=redirect_url)
+        return session_obj, ""
+    except Exception as exc:
+        error = safe_stripe_error(exc)
+        logging.exception("Stripe checkout session creation Stripe exception user_id=%s error=%s", user_id, error)
+        record_checkout_attempt(user, "failed", error_message=error)
+        return None, error
 
 
 @webhook_app.route("/upgrade", methods=["GET"])
 def upgrade_page():
     init_db()
     user = require_account()
+    logging.info(
+        "upgrade route accessed authenticated=%s user_id=%s email_present=%s account_status=%s checkout_requested=%s",
+        bool(user),
+        (user or {}).get("user_id"),
+        bool((user or {}).get("email")),
+        (user or {}).get("account_status"),
+        request.args.get("checkout") == "1",
+    )
     if not user:
         return redirect(url_for("login_page", next="/upgrade"))
     if (user.get("account_status") or "active").lower() != "active":
@@ -1168,13 +1288,14 @@ def upgrade_page():
             logging.exception("Stripe checkout session creation failed user_id=%s error=%s", user["user_id"], exc)
             checkout_session, checkout_error = None, str(exc)
         if checkout_session and getattr(checkout_session, "url", None):
+            logging.info("upgrade route redirecting to Stripe user_id=%s session_id=%s", user["user_id"], getattr(checkout_session, "id", ""))
             return redirect(checkout_session.url, code=303)
         logging.warning("Stripe checkout session unavailable for user_id=%s reason=%s", user["user_id"], checkout_error)
         return render_account_page(
             "upgrade",
             "Upgrade Pro",
             current_user=load_account_by_id(user["user_id"]),
-            error="Secure checkout is temporarily unavailable. Please contact support@coinpilotx.app if you need help upgrading.",
+            error="Checkout temporarily unavailable. Please try again in a few minutes or contact support@coinpilotx.app.",
         )
     log_product_event(user["user_id"], "website_upgrade_started", {"source": request.args.get("source", "website")})
     return render_account_page("upgrade", "Upgrade Pro", current_user=load_account_by_id(user["user_id"]))
@@ -1185,6 +1306,13 @@ def upgrade_page():
 def create_checkout_session_route():
     init_db()
     user = require_account()
+    logging.info(
+        "checkout session API route accessed authenticated=%s user_id=%s email_present=%s account_status=%s",
+        bool(user),
+        (user or {}).get("user_id"),
+        bool((user or {}).get("email")),
+        (user or {}).get("account_status"),
+    )
     if not user:
         return jsonify({"ok": False, "message": "Please log in before upgrading to Pro.", "login_url": url_for("login_page", next="/upgrade")}), 401
     if (user.get("account_status") or "active").lower() != "active":
@@ -1198,8 +1326,20 @@ def create_checkout_session_route():
         checkout_session, checkout_error = None, str(exc)
     if checkout_session and getattr(checkout_session, "url", None):
         log_product_event(user["user_id"], "checkout_started", {"source": "api"})
+        logging.info("checkout session API returning redirect URL user_id=%s session_id=%s", user["user_id"], getattr(checkout_session, "id", ""))
         return jsonify({"ok": True, "checkout_url": checkout_session.url, "session_id": getattr(checkout_session, "id", "")})
-    return jsonify({"ok": False, "message": checkout_error or "Secure checkout is temporarily unavailable."}), 503
+    return jsonify({"ok": False, "message": "Checkout temporarily unavailable. Please try again in a few minutes or contact support@coinpilotx.app."}), 503
+
+
+@webhook_app.route("/checkout", methods=["GET", "POST"])
+def checkout_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next="/upgrade"))
+    if request.method == "POST":
+        return create_checkout_session_route()
+    return redirect(url_for("upgrade_page", checkout="1", source=request.args.get("source", "website")))
 
 
 @webhook_app.route("/upgrade/success", methods=["GET"])
@@ -2060,6 +2200,22 @@ def admin_saas_summary():
     }
 
 
+def latest_checkout_diagnostics():
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM checkout_attempts WHERE status='success' ORDER BY created_at DESC LIMIT 1")
+    success = cur.fetchone()
+    cur.execute("SELECT * FROM checkout_attempts WHERE status='failed' ORDER BY created_at DESC LIMIT 1")
+    failed = cur.fetchone()
+    conn.close()
+    return {
+        "last_success": dict(success) if success else None,
+        "last_error": dict(failed) if failed else None,
+    }
+
+
 def admin_page_html(title, body, admin=None):
     nav = (
         "<a href='/admin/dashboard'>Dashboard</a>"
@@ -2172,10 +2328,16 @@ def admin_system_page():
     admin = admin_login_required()
     if not admin:
         return redirect(url_for("admin_login_page"))
+    diag = latest_checkout_diagnostics()
+    last_success = diag.get("last_success") or {}
+    last_error = diag.get("last_error") or {}
     checks = {
         "Database": True,
+        "Stripe configured": bool(STRIPE_SECRET_KEY and STRIPE_PRICE_ID),
         "Stripe secret": bool(STRIPE_SECRET_KEY),
-        "Stripe webhook secret": bool(STRIPE_WEBHOOK_SECRET),
+        "Stripe publishable key": bool(STRIPE_PUBLISHABLE_KEY),
+        "Stripe webhook configured": bool(STRIPE_WEBHOOK_SECRET),
+        "Stripe price id configured": bool(STRIPE_PRICE_ID),
         "Brevo": bool(os.getenv("BREVO_API_KEY")),
         "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
         "Telegram bot token": bool(BOT_TOKEN),
@@ -2183,7 +2345,13 @@ def admin_system_page():
     }
     body = "<h1>System Health</h1><div class='grid'>" + "".join(
         f"<div class='card'><strong>{clean_html(name)}</strong><p class='metric'>{'OK' if ok else 'Missing'}</p></div>" for name, ok in checks.items()
-    ) + "</div><p class='muted'>Missing optional keys produce honest fallbacks instead of fake data.</p>"
+    ) + (
+        "</div><h2>Stripe Checkout Diagnostics</h2><div class='grid'>"
+        f"<div class='card'><strong>App base URL</strong><p>{clean_html(APP_BASE_URL)}</p></div>"
+        f"<div class='card'><strong>Last successful checkout session</strong><p>{clean_html(last_success.get('stripe_session_id') or 'None recorded')}</p><p class='muted'>{clean_html(last_success.get('created_at') or '')}</p></div>"
+        f"<div class='card'><strong>Last Stripe error</strong><p>{clean_html(last_error.get('error_message') or 'None recorded')}</p><p class='muted'>{clean_html(last_error.get('created_at') or '')}</p></div>"
+        "</div><p class='muted'>Missing optional keys produce honest fallbacks instead of fake data. Missing Stripe secret or price ID blocks checkout creation.</p>"
+    )
     return admin_page_html("System Health", body, admin)
 
 
@@ -4785,6 +4953,8 @@ def platform_status():
         "updated_at": datetime.now().isoformat(),
         "website": "online",
         "telegram_bot": "configured" if BOT_TOKEN else "bot token missing",
+        "stripe_checkout": "configured" if STRIPE_SECRET_KEY and STRIPE_PRICE_ID else "missing Stripe secret or price id",
+        "stripe_webhook": "configured" if STRIPE_WEBHOOK_SECRET else "webhook secret missing",
         "market_data": "live" if market_ok else "degraded",
         "market_source": market_data.get("source", "unavailable"),
         "sports_edge": "live" if sports_ok else "standby",
@@ -7045,6 +7215,26 @@ def init_db():
         currency TEXT,
         status TEXT,
         payment_type TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS checkout_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        account_status TEXT,
+        authenticated INTEGER DEFAULT 0,
+        stripe_secret_loaded INTEGER DEFAULT 0,
+        stripe_publishable_loaded INTEGER DEFAULT 0,
+        stripe_webhook_loaded INTEGER DEFAULT 0,
+        stripe_price_loaded INTEGER DEFAULT 0,
+        app_base_url TEXT,
+        status TEXT,
+        stripe_session_id TEXT,
+        redirect_url TEXT,
+        error_message TEXT,
         created_at TEXT
     )
     """)
