@@ -1430,6 +1430,7 @@ def dashboard_page():
 @webhook_app.route("/app", methods=["GET"])
 @webhook_app.route("/command-center", methods=["GET"])
 @webhook_app.route("/intelligence", methods=["GET"])
+@webhook_app.route("/chat", methods=["GET"])
 @webhook_app.route("/dashboard/intelligence", methods=["GET"])
 def app_command_center_page():
     init_db()
@@ -4596,6 +4597,95 @@ def intelligence_feed_api():
     return jsonify(intelligence_service.intelligence_feed())
 
 
+def record_command_history(user_id, command_name, input_text, result, source="web", pro_required=False, status="success", error=""):
+    try:
+        output_summary = result.get("summary") or result.get("message") or result.get("title") or ""
+        if not output_summary and result.get("cards"):
+            output_summary = " ".join(str(card.get("title") or "") for card in result.get("cards")[:3]).strip()
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO command_history
+            (user_id, command_name, input, output_summary, source, pro_required, status, error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                (command_name or result.get("action_key") or "command")[:120],
+                (input_text or "")[:2000],
+                clean_html(str(output_summary))[:2000],
+                source,
+                1 if pro_required else 0,
+                status,
+                clean_html(str(error or ""))[:800],
+                datetime.now().isoformat(),
+            ),
+        )
+        history_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return history_id
+    except Exception as exc:
+        logging.warning("command history save failed safely: user_id=%s command=%s error=%s", user_id, command_name, exc)
+        return None
+
+
+def command_history_payload(user_id, limit=50):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, command_name, input, output_summary, source, pro_required, status, error, created_at
+        FROM command_history
+        WHERE user_id=?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (user_id, int(limit)),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def save_command_result(user_id, command_history_id, title="", summary="", source="web", metadata=None):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO saved_command_results
+        (user_id, command_history_id, title, summary, source, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            int(command_history_id or 0),
+            clean_html(title or "Saved CoinPilotXAI result")[:180],
+            clean_html(summary or "")[:3000],
+            clean_html(source or "web")[:80],
+            json.dumps(metadata or {}),
+            datetime.now().isoformat(),
+        ),
+    )
+    saved_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return saved_id
+
+
+@webhook_app.route("/api/commands", methods=["GET"])
+def api_commands():
+    init_db()
+    user = require_account()
+    payload = command_router_service.get_menu_items(load_account_by_id(user["user_id"]) if user else None)
+    payload["ok"] = True
+    payload["authenticated"] = bool(user)
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/menu", methods=["GET"])
 def api_menu():
     init_db()
@@ -4620,8 +4710,20 @@ def api_command():
     payload = request.get_json(silent=True) or {}
     command_text = clean_html(payload.get("command") or payload.get("question") or "")
     result = command_router_service.handle_command(user["user_id"], command_text, channel="web")
+    history_id = record_command_history(
+        user["user_id"],
+        result.get("action_key") or command_text.split(" ", 1)[0] or "command",
+        command_text,
+        result,
+        source=payload.get("source") or "web",
+        pro_required=bool(result.get("pro_required")),
+        status="success" if result.get("ok", True) else "failed",
+        error=result.get("error") or "",
+    )
     log_product_event(user["user_id"], "website_command_used", {"command": command_text[:120], "action": result.get("action_key")})
-    response = jsonify(command_router_service.format_response_for_web(result))
+    formatted = command_router_service.format_response_for_web(result)
+    formatted["history_id"] = history_id
+    response = jsonify(formatted)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -4637,8 +4739,141 @@ def api_menu_action():
     payload = request.get_json(silent=True) or {}
     action_key = clean_html(payload.get("action_key") or "")
     result = command_router_service.execute_menu_action(user["user_id"], action_key, channel="web", payload=payload)
+    history_id = record_command_history(
+        user["user_id"],
+        action_key,
+        json.dumps({key: value for key, value in payload.items() if key != "csrf_token"})[:2000],
+        result,
+        source=payload.get("source") or "web",
+        pro_required=bool(result.get("pro_required")),
+        status="success" if result.get("ok", True) else "failed",
+        error=result.get("error") or "",
+    )
     log_product_event(user["user_id"], "website_menu_action_used", {"action": action_key})
-    response = jsonify(command_router_service.format_response_for_web(result))
+    formatted = command_router_service.format_response_for_web(result)
+    formatted["history_id"] = history_id
+    response = jsonify(formatted)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/command/history", methods=["GET"])
+def api_command_history():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    response = jsonify({"ok": True, "history": command_history_payload(user["user_id"], request.args.get("limit", 50))})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/command/save", methods=["POST"])
+def api_command_save():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    saved_id = save_command_result(
+        user["user_id"],
+        payload.get("history_id") or 0,
+        title=payload.get("title") or payload.get("command_name") or "Saved CoinPilotXAI result",
+        summary=payload.get("summary") or payload.get("output_summary") or "",
+        source=payload.get("source") or "web",
+        metadata=payload.get("metadata") or {},
+    )
+    log_product_event(user["user_id"], "command_result_saved", {"saved_id": saved_id})
+    response = jsonify({"ok": True, "saved_id": saved_id})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/ai/chat", methods=["POST"])
+def api_ai_chat():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    message = clean_html(payload.get("message") or payload.get("question") or payload.get("command") or "")
+    result = command_router_service.handle_command(user["user_id"], message, channel="web_chat")
+    history_id = record_command_history(
+        user["user_id"],
+        result.get("action_key") or "ai_chat",
+        message,
+        result,
+        source="web_chat",
+        pro_required=bool(result.get("pro_required")),
+        status="success" if result.get("ok", True) else "failed",
+        error=result.get("error") or "",
+    )
+    log_product_event(user["user_id"], "website_ai_chat_used", {"action": result.get("action_key")})
+    formatted = command_router_service.format_response_for_web(result)
+    formatted["history_id"] = history_id
+    response = jsonify(formatted)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/ai/history", methods=["GET"])
+def api_ai_history():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, feature, prompt, response, metadata, created_at
+        FROM user_ai_interactions
+        WHERE user_id=?
+        ORDER BY id DESC
+        LIMIT 50
+        """,
+        (user["user_id"],),
+    )
+    interactions = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    response = jsonify({"ok": True, "interactions": interactions, "commands": command_history_payload(user["user_id"], 50)})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/ai/feedback", methods=["POST"])
+def api_ai_feedback():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO ai_feedback (user_id, interaction_id, rating, feedback, created_at) VALUES (?, ?, ?, ?, ?)",
+        (
+            user["user_id"],
+            int(payload.get("interaction_id") or 0),
+            clean_html(payload.get("rating") or "")[:40],
+            clean_html(payload.get("feedback") or "")[:1200],
+            datetime.now().isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "ai_feedback_submitted", {"rating": payload.get("rating")})
+    response = jsonify({"ok": True})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -5106,6 +5341,7 @@ def record_unmatched_payment(event, stripe_object, reason):
 
 
 @webhook_app.route("/stripe-webhook", methods=["GET"])
+@webhook_app.route("/stripe/webhook", methods=["GET"])
 def stripe_webhook_health():
     return jsonify({
         "ok": True,
@@ -5115,6 +5351,7 @@ def stripe_webhook_health():
 
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
+@webhook_app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     init_db()
     payload = request.data
@@ -9139,6 +9376,43 @@ def init_db():
     """)
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS password_resets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        token_hash TEXT,
+        expires_at TEXT,
+        used_at TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS email_verifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        token_hash TEXT,
+        expires_at TEXT,
+        verified_at TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_user_id INTEGER,
+        actor_type TEXT,
+        action TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS account_recovery_tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -9170,6 +9444,42 @@ def init_db():
         prompt TEXT,
         response TEXT,
         metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS command_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        command_name TEXT,
+        input TEXT,
+        output_summary TEXT,
+        source TEXT,
+        pro_required INTEGER DEFAULT 0,
+        status TEXT,
+        error TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS saved_command_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        command_history_id INTEGER,
+        title TEXT,
+        summary TEXT,
+        source TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        interaction_id INTEGER,
+        rating TEXT,
+        feedback TEXT,
         created_at TEXT
     )
     """)

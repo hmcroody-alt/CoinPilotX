@@ -170,6 +170,22 @@
       const command = new FormData(event.target).get("command");
       runCommand({ command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
     });
+    fetch("/api/command/history", { cache: "no-store", credentials: "same-origin" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data || !data.ok || !data.history || !data.history.length) return;
+        commandHistory.splice(0, commandHistory.length, ...data.history.slice(0, 6).map(item => ({
+          title: item.command_name || "CoinPilotXAI",
+          time: item.created_at ? new Date(item.created_at).toLocaleString() : ""
+        })));
+        const historyCard = document.querySelector("[data-history-card]");
+        const historyNode = document.querySelector("[data-command-history]");
+        if (historyCard && historyNode) {
+          historyCard.hidden = false;
+          historyNode.innerHTML = commandHistory.map(item => `<p><strong>${item.title}</strong> <span class="muted">${item.time}</span></p>`).join("");
+        }
+      })
+      .catch(() => {});
     window.setInterval(() => {
       fetch("/api/live/btc", { cache: "no-store", credentials: "same-origin" }).catch(() => {});
     }, 60000);
