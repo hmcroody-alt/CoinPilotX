@@ -6438,10 +6438,7 @@ def activate_pro(user_id):
     conn = db()
     cur = conn.cursor()
 
-    try:
-        cur.execute("ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    add_column_if_missing(cur, "users", "is_pro", "INTEGER DEFAULT 0", conn=conn)
 
     cur.execute("UPDATE users SET is_pro=1 WHERE user_id=?", (user_id,))
     conn.commit()
@@ -8467,9 +8464,77 @@ SCAM_STORY_LIBRARY = [
 ]
 
 
+_MIGRATION_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _migration_identifier(identifier):
+    if not _MIGRATION_IDENTIFIER_RE.match(identifier or ""):
+        raise ValueError(f"Unsafe migration identifier: {identifier}")
+    return identifier
+
+
+def _rollback_failed_migration(conn, label, exc):
+    try:
+        conn.rollback()
+    except Exception as rollback_exc:
+        logging.warning("MIGRATION_ERROR_ROLLBACK_FAILED label=%s rollback_error=%s", label, rollback_exc)
+    logging.warning("MIGRATION_ERROR_ROLLED_BACK label=%s error=%s", label, exc)
+
+
+def add_column_if_missing(cur, table, column, definition, conn=None):
+    table_name = _migration_identifier(table)
+    column_name = _migration_identifier(column)
+    label = f"{table_name}.{column_name}"
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = ?
+                  AND column_name = ?
+                """,
+                (table_name, column_name),
+            )
+            exists = bool(cur.fetchone())
+        else:
+            cur.execute(f"PRAGMA table_info({table_name})")
+            exists = any((row.get("name") if hasattr(row, "get") else row["name"]) == column_name for row in cur.fetchall())
+
+        if exists:
+            logging.info("COLUMN_EXISTS_SKIPPED table=%s column=%s", table_name, column_name)
+            return False
+
+        if db_service.IS_POSTGRES:
+            cur.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_name} {definition}")
+        else:
+            cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+        logging.info("COLUMN_ADDED table=%s column=%s definition=%s", table_name, column_name, definition)
+        return True
+    except Exception as exc:
+        if conn is not None:
+            _rollback_failed_migration(conn, label, exc)
+        else:
+            logging.warning("MIGRATION_ERROR_ROLLED_BACK label=%s error=%s", label, exc)
+        return False
+
+
+def add_columns_if_missing(cur, table, columns, conn=None):
+    for column, definition in columns:
+        add_column_if_missing(cur, table, column, definition, conn=conn)
+
+
 def init_db():
     conn = db()
+    if db_service.IS_POSTGRES and hasattr(conn, "set_autocommit"):
+        conn.set_autocommit(True)
     cur = conn.cursor()
+    logging.info(
+        "MIGRATION_START engine=%s database_url_loaded=%s",
+        db_service.ENGINE_NAME,
+        db_service.DATABASE_URL_LOADED,
+    )
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -8490,48 +8555,44 @@ def init_db():
     )
     """)
 
-    for statement in [
-        "ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN subscription_plan TEXT DEFAULT 'free'",
-        "ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive'",
-        "ALTER TABLE users ADD COLUMN subscription_started_at TEXT",
-        "ALTER TABLE users ADD COLUMN subscription_expires_at TEXT",
-        "ALTER TABLE users ADD COLUMN risk_profile TEXT DEFAULT 'balanced'",
-        "ALTER TABLE users ADD COLUMN preferred_exchange_goal TEXT DEFAULT 'beginner'",
-        "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
-        "ALTER TABLE users ADD COLUMN stripe_session_id TEXT",
-        "ALTER TABLE users ADD COLUMN last_payment_type TEXT",
-        "ALTER TABLE users ADD COLUMN full_name TEXT",
-        "ALTER TABLE users ADD COLUMN password_hash TEXT",
-        "ALTER TABLE users ADD COLUMN phone TEXT",
-        "ALTER TABLE users ADD COLUMN country TEXT",
-        "ALTER TABLE users ADD COLUMN telegram_user_id INTEGER",
-        "ALTER TABLE users ADD COLUMN telegram_username TEXT",
-        "ALTER TABLE users ADD COLUMN telegram_chat_id INTEGER",
-        "ALTER TABLE users ADD COLUMN account_status TEXT DEFAULT 'active'",
-        "ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN email_opt_in INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN sms_opt_in INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'",
-        "ALTER TABLE users ADD COLUMN created_at TEXT",
-        "ALTER TABLE users ADD COLUMN updated_at TEXT",
-        "ALTER TABLE users ADD COLUMN last_login_at TEXT",
-        "ALTER TABLE users ADD COLUMN last_seen_at TEXT",
-        "ALTER TABLE users ADD COLUMN referral_code TEXT",
-        "ALTER TABLE users ADD COLUMN referred_by TEXT",
-        "ALTER TABLE users ADD COLUMN trial_start_date TEXT",
-        "ALTER TABLE users ADD COLUMN trial_end_date TEXT",
-        "ALTER TABLE users ADD COLUMN trial_status TEXT",
-        "ALTER TABLE users ADD COLUMN trial_used INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT",
-        "ALTER TABLE users ADD COLUMN pro_expires_at TEXT",
-        "ALTER TABLE users ADD COLUMN usage_ai_count INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN usage_reset_at TEXT",
-    ]:
-        try:
-            cur.execute(statement)
-        except Exception:
-            pass
+    add_columns_if_missing(cur, "users", [
+        ("is_pro", "INTEGER DEFAULT 0"),
+        ("subscription_plan", "TEXT DEFAULT 'free'"),
+        ("subscription_status", "TEXT DEFAULT 'inactive'"),
+        ("subscription_started_at", "TEXT"),
+        ("subscription_expires_at", "TEXT"),
+        ("risk_profile", "TEXT DEFAULT 'balanced'"),
+        ("preferred_exchange_goal", "TEXT DEFAULT 'beginner'"),
+        ("stripe_customer_id", "TEXT"),
+        ("stripe_session_id", "TEXT"),
+        ("last_payment_type", "TEXT"),
+        ("full_name", "TEXT"),
+        ("password_hash", "TEXT"),
+        ("phone", "TEXT"),
+        ("country", "TEXT"),
+        ("telegram_user_id", "INTEGER"),
+        ("telegram_username", "TEXT"),
+        ("telegram_chat_id", "INTEGER"),
+        ("account_status", "TEXT DEFAULT 'active'"),
+        ("email_verified", "INTEGER DEFAULT 0"),
+        ("email_opt_in", "INTEGER DEFAULT 0"),
+        ("sms_opt_in", "INTEGER DEFAULT 0"),
+        ("plan", "TEXT DEFAULT 'free'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("last_login_at", "TEXT"),
+        ("last_seen_at", "TEXT"),
+        ("referral_code", "TEXT"),
+        ("referred_by", "TEXT"),
+        ("trial_start_date", "TEXT"),
+        ("trial_end_date", "TEXT"),
+        ("trial_status", "TEXT"),
+        ("trial_used", "INTEGER DEFAULT 0"),
+        ("stripe_subscription_id", "TEXT"),
+        ("pro_expires_at", "TEXT"),
+        ("usage_ai_count", "INTEGER DEFAULT 0"),
+        ("usage_reset_at", "TEXT"),
+    ], conn=conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS watchlists (
@@ -8602,15 +8663,11 @@ def init_db():
         created_at TEXT
     )
     """)
-    for statement in [
-        "ALTER TABLE portfolio_snapshots ADD COLUMN total_cost REAL",
-        "ALTER TABLE portfolio_snapshots ADD COLUMN pnl_value REAL",
-        "ALTER TABLE portfolio_snapshots ADD COLUMN pnl_percent REAL",
-    ]:
-        try:
-            cur.execute(statement)
-        except Exception:
-            pass
+    add_columns_if_missing(cur, "portfolio_snapshots", [
+        ("total_cost", "REAL"),
+        ("pnl_value", "REAL"),
+        ("pnl_percent", "REAL"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS whale_alerts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8756,21 +8813,17 @@ def init_db():
         created_at TEXT
     )
     """)
-    for statement in [
-        "ALTER TABLE email_logs ADD COLUMN email_type TEXT",
-        "ALTER TABLE email_logs ADD COLUMN recipient_email TEXT",
-        "ALTER TABLE email_logs ADD COLUMN stripe_event_id TEXT",
-        "ALTER TABLE email_logs ADD COLUMN stripe_session_id TEXT",
-        "ALTER TABLE email_logs ADD COLUMN sent_at TEXT",
-        "ALTER TABLE email_logs ADD COLUMN error_message TEXT",
-        "ALTER TABLE email_logs ADD COLUMN provider TEXT",
-        "ALTER TABLE email_logs ADD COLUMN provider_message_id TEXT",
-        "ALTER TABLE email_logs ADD COLUMN metadata TEXT",
-    ]:
-        try:
-            cur.execute(statement)
-        except Exception:
-            pass
+    add_columns_if_missing(cur, "email_logs", [
+        ("email_type", "TEXT"),
+        ("recipient_email", "TEXT"),
+        ("stripe_event_id", "TEXT"),
+        ("stripe_session_id", "TEXT"),
+        ("sent_at", "TEXT"),
+        ("error_message", "TEXT"),
+        ("provider", "TEXT"),
+        ("provider_message_id", "TEXT"),
+        ("metadata", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS payment_email_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8787,15 +8840,11 @@ def init_db():
         sent_at TEXT
     )
     """)
-    for statement in [
-        "ALTER TABLE payment_email_logs ADD COLUMN retry_count INTEGER DEFAULT 0",
-        "ALTER TABLE payment_email_logs ADD COLUMN provider_response TEXT",
-        "ALTER TABLE payment_email_logs ADD COLUMN error_message TEXT",
-    ]:
-        try:
-            cur.execute(statement)
-        except Exception:
-            pass
+    add_columns_if_missing(cur, "payment_email_logs", [
+        ("retry_count", "INTEGER DEFAULT 0"),
+        ("provider_response", "TEXT"),
+        ("error_message", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS brevo_contact_sync_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8952,18 +9001,14 @@ def init_db():
         updated_at TEXT
     )
     """)
-    for statement in [
-        "ALTER TABLE user_alerts ADD COLUMN symbol TEXT",
-        "ALTER TABLE user_alerts ADD COLUMN target_value REAL",
-        "ALTER TABLE user_alerts ADD COLUMN condition TEXT",
-        "ALTER TABLE user_alerts ADD COLUMN channel TEXT",
-        "ALTER TABLE user_alerts ADD COLUMN active INTEGER DEFAULT 1",
-        "ALTER TABLE user_alerts ADD COLUMN last_triggered_at TEXT",
-    ]:
-        try:
-            cur.execute(statement)
-        except Exception:
-            pass
+    add_columns_if_missing(cur, "user_alerts", [
+        ("symbol", "TEXT"),
+        ("target_value", "REAL"),
+        ("condition", "TEXT"),
+        ("channel", "TEXT"),
+        ("active", "INTEGER DEFAULT 1"),
+        ("last_triggered_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS portfolio_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9183,17 +9228,13 @@ def init_db():
         last_login_at TEXT
     )
     """)
-    for statement in [
-        "ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER DEFAULT 1",
-        "ALTER TABLE admin_users ADD COLUMN password_changed_at TEXT",
-        "ALTER TABLE admin_users ADD COLUMN temp_password_created_at TEXT",
-        "ALTER TABLE admin_users ADD COLUMN failed_login_count INTEGER DEFAULT 0",
-        "ALTER TABLE admin_users ADD COLUMN locked_until TEXT",
-    ]:
-        try:
-            cur.execute(statement)
-        except Exception:
-            pass
+    add_columns_if_missing(cur, "admin_users", [
+        ("must_change_password", "INTEGER DEFAULT 1"),
+        ("password_changed_at", "TEXT"),
+        ("temp_password_created_at", "TEXT"),
+        ("failed_login_count", "INTEGER DEFAULT 0"),
+        ("locked_until", "TEXT"),
+    ], conn=conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS admin_audit_logs (
@@ -9418,7 +9459,7 @@ def init_db():
 
     conn.commit()
     conn.close()
-    logging.info("Database migration status: complete engine=%s tables_checked=production_saas", db_service.ENGINE_NAME)
+    logging.info("MIGRATION_COMPLETE engine=%s tables_checked=production_saas", db_service.ENGINE_NAME)
 
 
 def help_message():

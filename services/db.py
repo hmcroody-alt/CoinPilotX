@@ -208,9 +208,21 @@ def _translate_create_table(sql):
     return sql
 
 
+def _translate_alter_table(sql):
+    if not IS_POSTGRES:
+        return sql
+    return re.sub(
+        r"(\bALTER\s+TABLE\s+[\w\".]+\s+ADD\s+COLUMN\s+)(?!IF\s+NOT\s+EXISTS\b)",
+        r"\1IF NOT EXISTS ",
+        sql,
+        flags=re.I,
+    )
+
+
 def _translate_sql(sql):
     translated = str(sql)
     translated = _translate_create_table(translated)
+    translated = _translate_alter_table(translated)
     translated = translated.replace("datetime('now')", "CURRENT_TIMESTAMP")
     translated = translated.replace('datetime("now")', "CURRENT_TIMESTAMP")
     translated = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", translated, flags=re.I)
@@ -298,6 +310,14 @@ class CompatConnection:
 
     def rollback(self):
         return self._conn.rollback()
+
+    def set_autocommit(self, enabled):
+        try:
+            self._conn.autocommit = bool(enabled)
+            return True
+        except Exception as exc:
+            logging.warning("Unable to set database autocommit=%s: %s", enabled, exc)
+            return False
 
     def close(self):
         return self._conn.close()
