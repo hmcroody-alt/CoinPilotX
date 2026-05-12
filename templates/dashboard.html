@@ -72,7 +72,9 @@
         <div class="kicker">Personal Intelligence Dashboard</div>
         <h1 data-user-name>Welcome back</h1>
         <p>Track your manual crypto holdings, watchlist, alerts, Telegram connection, and AI risk context from the same account your bot uses.</p>
-        {% if access.is_trial %}
+        {% if access.is_paid_pro %}
+          <p class="notice"><strong>Paid Pro active.</strong> Your subscription is active. The dashboard, alerts, and optional Telegram companion will use paid Pro access.</p>
+        {% elif access.is_trial %}
           <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and Telegram connection.</p>
         {% endif %}
         <div class="actions">
@@ -87,6 +89,7 @@
         <p><strong>Subscription:</strong> <span data-subscription>Loading...</span></p>
         <p><strong>Telegram:</strong> <span data-telegram>Loading...</span></p>
         <p><strong>Pro/trial expiration:</strong> <span data-expires>Loading...</span></p>
+        <p class="muted" data-account-sync-message>Syncing live account status...</p>
         {% if link_code %}
           <div class="notice">
             <strong>Connect Telegram:</strong>
@@ -180,7 +183,11 @@
           <a class="button primary" href="/#console">Ask AI</a>
           <a class="button" href="/#console">Run Scam Shield</a>
           <a class="button" href="/#day-signal">Run Day Signal</a>
-          <a class="button gold" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+          {% if access.is_paid_pro %}
+            <a class="button gold" href="/account">Manage Pro</a>
+          {% else %}
+            <a class="button gold" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+          {% endif %}
         </div>
       </article>
     </section>
@@ -192,11 +199,12 @@
     const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const pct = value => (Number(value || 0) >= 0 ? "+" : "") + Number(value || 0).toFixed(2) + "%";
     const text = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
+    const accountSyncText = message => text("[data-account-sync-message]", message);
     const postJson = (url, payload, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed"); return j; }));
 
     function render(data) {
       text("[data-user-name]", "Welcome back, " + (data.user.name || "CoinPilotX user"));
-      text("[data-plan]", data.user.plan);
+      text("[data-plan]", data.user.plan || "Free");
       text("[data-subscription]", data.user.subscription_status || "inactive");
       text("[data-telegram]", data.user.telegram_linked ? "Connected" : "Not connected");
       text("[data-expires]", data.user.pro_expires_at || "Not set");
@@ -243,10 +251,51 @@
     }
 
     async function loadDashboard() {
-      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      const response = await fetch("/api/dashboard", { cache: "no-store", credentials: "same-origin" });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.message || "Dashboard failed");
       render(data);
+    }
+
+    async function loadAccountStatus() {
+      console.log("account status fetch started");
+      accountSyncText("Syncing live account status...");
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch("/api/account/status?ts=" + Date.now(), {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal
+        });
+        console.log("account status response status", response.status);
+        const payload = await response.json();
+        console.log("account status parsed payload", payload);
+        if (!response.ok || !payload.ok) throw new Error(payload.message || "Account status unavailable");
+        const planLabel = payload.is_paid_pro ? "Paid Pro" : payload.is_trialing ? "Pro Trial" : payload.has_pro_access ? "Pro" : "Free";
+        const subLabel = payload.is_paid_pro ? "active" : payload.subscription_status || "inactive";
+        const telegramLabel = payload.telegram_linked ? ("Connected" + (payload.telegram_username ? " @" + payload.telegram_username : "")) : "Not connected";
+        const expiresLabel = payload.is_paid_pro
+          ? (payload.pro_expires_at || "Active")
+          : payload.is_trialing
+            ? (payload.trial_end_date || payload.pro_expires_at || "Not set")
+            : (payload.pro_expires_at || "Not set");
+        text("[data-plan]", planLabel);
+        text("[data-subscription]", subLabel);
+        text("[data-telegram]", telegramLabel);
+        text("[data-expires]", expiresLabel);
+        accountSyncText(payload.is_paid_pro ? "Paid Pro account sync complete." : "Account sync complete.");
+        console.log("account status render success");
+      } catch (error) {
+        console.log("account status render error", error && error.message ? error.message : error);
+        text("[data-plan]", "Account sync unavailable");
+        text("[data-subscription]", "Refresh or contact support");
+        text("[data-telegram]", "Unable to load");
+        text("[data-expires]", "Unable to load");
+        accountSyncText("Account sync unavailable. Refresh or contact support.");
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
 
     document.addEventListener("submit", async event => {
@@ -279,8 +328,8 @@
       if (alert) { await fetch("/api/alerts/" + alert.dataset.deleteAlert, { method: "DELETE" }); loadDashboard(); }
     });
 
-    loadDashboard().catch(err => { text("[data-ai-insight]", err.message); });
-    window.setInterval(loadDashboard, 60000);
+    loadDashboard().then(loadAccountStatus).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); });
+    window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); }, 60000);
   </script>
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>

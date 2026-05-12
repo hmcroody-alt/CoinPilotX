@@ -47,7 +47,7 @@ SEO_PAGES = {
         "eyebrow": "Whale Intelligence",
         "intro": "CoinPilotX translates whale-style movement, exchange pressure, and market context into plain-language intelligence for crypto users.",
         "answer": "Whale activity can matter, but it should never be treated as certainty. CoinPilotX frames whale pressure as one context factor among trend, volatility, price movement, and risk.",
-        "points": ["Whale movement summaries", "Market pressure context", "Risk-aware interpretations", "Telegram-first alerts"],
+        "points": ["Whale movement summaries", "Market pressure context", "Risk-aware interpretations", "optional Telegram alerts"],
         "faqs": [
             {"question": "What are whale alerts?", "answer": "Whale alerts are large public-chain or market movement summaries that may indicate unusual market activity or pressure."},
             {"question": "Do whale alerts predict price?", "answer": "No. Whale alerts are context, not predictions or guaranteed signals."},
@@ -84,7 +84,7 @@ SEO_PAGES = {
     },
     "ai-market-analysis": {
         "title": "AI Market Analysis Assistant | CoinPilotXAI Inc.",
-        "description": "CoinPilotX provides AI-assisted crypto market explanations, momentum reads, risk context, and safer next steps inside Telegram and the web.",
+        "description": "CoinPilotX provides AI-assisted crypto market explanations, momentum reads, risk context, and safer next steps across web, mobile, and optional Telegram alerts.",
         "h1": "AI Crypto Market Analysis Assistant",
         "eyebrow": "AI Market Intelligence",
         "intro": "CoinPilotX helps users understand market signals, momentum, volatility, wallet risk, scams, and safer decision context without claiming certainty.",
@@ -98,11 +98,11 @@ SEO_PAGES = {
     },
     "telegram-crypto-bot": {
         "title": "Telegram Crypto AI Bot | CoinPilotXAI Inc.",
-        "description": "CoinPilotX is a Telegram-first AI crypto bot for market intelligence, scam protection, wallet checks, portfolio context, and Sports Edge.",
+        "description": "CoinPilotX is an AI crypto intelligence platform for market intelligence, scam protection, wallet checks, portfolio context, and Sports Edge.",
         "h1": "Telegram Crypto AI Bot",
-        "eyebrow": "Telegram-First",
-        "intro": "CoinPilotX brings AI crypto intelligence into a Telegram workflow so users can ask questions, scan risks, review markets, and continue from the website into the bot.",
-        "answer": "Telegram-first design keeps CoinPilotX fast and easy to access while still connecting to website accounts, Pro access, and shared intelligence systems.",
+        "eyebrow": "Optional Telegram Companion",
+        "intro": "CoinPilotX brings AI crypto intelligence into a platform workflow so users can ask questions, scan risks, review markets, and continue from the website into the bot.",
+        "answer": "The platform-first design keeps CoinPilotX fast and easy to access while still connecting to website accounts, Pro access, and shared intelligence systems.",
         "points": ["Telegram bot commands", "Website account linking", "AI assistant handoff", "Pro upgrade flow"],
         "faqs": [
             {"question": "What can the Telegram bot do?", "answer": "The bot can answer AI questions, show live market context, review scam messages, check public wallet data, run Day Signal, and open Sports Edge context."},
@@ -162,7 +162,7 @@ SEO_PAGES.update({
         "eyebrow": "Ask CoinPilotX",
         "intro": "CoinPilotX works as a cautious AI crypto assistant for users who want clearer market, scam, wallet, and portfolio context.",
         "answer": "The AI assistant is designed to explain context, risk factors, and safer next steps, not to give guaranteed buy or sell instructions.",
-        "points": ["Market context answers", "Scam and wallet education", "Portfolio scenario prompts", "Telegram-first workflow"],
+        "points": ["Market context answers", "Scam and wallet education", "Portfolio scenario prompts", "web-first platform workflow"],
         "faqs": [
             {"question": "Can CoinPilotX answer general crypto questions?", "answer": "Yes. It can explain crypto topics, wallet safety, market context, scams, and portfolio awareness in plain language."},
             {"question": "Does CoinPilotX replace professional advice?", "answer": "No. It is educational AI intelligence only."},
@@ -171,15 +171,15 @@ SEO_PAGES.update({
     },
     "telegram-trading-assistant": {
         "title": "Telegram Trading Assistant | CoinPilotXAI Inc.",
-        "description": "CoinPilotX is a Telegram-first trading education assistant for crypto market context, risk awareness, alerts, and safer decision support.",
+        "description": "CoinPilotX is an AI crypto trading education platform for crypto market context, risk awareness, alerts, and safer decision support.",
         "h1": "Telegram Trading Assistant for Risk Awareness",
-        "eyebrow": "Telegram Workflow",
-        "intro": "CoinPilotX supports trading-related education inside Telegram while avoiding guaranteed signals, sure wins, or pressure tactics.",
+        "eyebrow": "Optional Telegram Companion",
+        "intro": "CoinPilotX supports trading-related education across the CoinPilotXAI web app and optional Telegram companion while avoiding guaranteed signals, sure wins, or pressure tactics.",
         "answer": "A responsible Telegram trading assistant should help users understand risk, context, and scenarios before acting. CoinPilotX is built around that standard.",
         "points": ["Telegram AI questions", "Live market board handoff", "Scam safety reminders", "Portfolio context"],
         "faqs": [
             {"question": "Does CoinPilotX provide guaranteed trading signals?", "answer": "No. CoinPilotX provides educational signal context, not guaranteed outcomes."},
-            {"question": "Can I use CoinPilotX from Telegram?", "answer": "Yes. The primary workflow is Telegram-first."},
+            {"question": "Can I use CoinPilotX from Telegram?", "answer": "Yes. CoinPilotXAI is platform-first, with Telegram available as an optional companion."},
         ] + COMMON_FAQS,
         "related": ["/telegram-crypto-bot", "/ai-market-analysis", "/portfolio-intelligence"],
     },
@@ -283,14 +283,14 @@ SEO_PAGES.update({
     },
     "whale-alerts-telegram-bot": {
         "title": "Whale Alerts Telegram Bot | CoinPilotXAI Inc.",
-        "description": "Use CoinPilotX as a Telegram-first whale alerts and crypto market pressure education bot.",
+        "description": "Use CoinPilotX as an AI whale alerts and crypto market pressure education platform.",
         "h1": "Whale Alerts Telegram Bot",
         "eyebrow": "Telegram Whale Context",
         "intro": "CoinPilotX brings whale-style movement context into Telegram so users can review market pressure without treating it as certainty.",
         "answer": "Whale alerts can help users ask better questions, but they are not guaranteed signals. CoinPilotX frames whale movement alongside trend, volatility, and risk.",
         "points": ["Telegram whale context", "Market pressure education", "Risk-aware alert language", "No guaranteed direction claims"],
         "faqs": [
-            {"question": "Can whale alerts be viewed in Telegram?", "answer": "Yes. CoinPilotX supports Telegram-first whale alert and market pressure workflows."},
+            {"question": "Can whale alerts be viewed in Telegram?", "answer": "Yes. CoinPilotX supports website-first whale alert and market pressure workflows with optional Telegram alerts."},
             {"question": "Are whale alerts trading advice?", "answer": "No. They are educational context only."},
         ] + COMMON_FAQS,
         "related": ["/whale-alerts", "/whale-tracker", "/telegram-crypto-bot"],
@@ -325,7 +325,7 @@ SEO_PAGES.update({
     },
     "pwa-crypto-app": {
         "title": "Crypto Intelligence PWA | CoinPilotXAI Inc.",
-        "description": "Install CoinPilotXAI Inc. as a progressive web app for faster access to CoinPilotX crypto intelligence and Telegram workflows.",
+        "description": "Install CoinPilotXAI Inc. as a progressive web app for faster access to CoinPilotX crypto intelligence and platform workflows.",
         "h1": "Crypto Intelligence Progressive Web App",
         "eyebrow": "Installable App",
         "intro": "CoinPilotXAI Inc. supports a mobile-friendly PWA experience for faster access to AI crypto intelligence, Scam Shield, Day Signal, and Telegram handoff.",
@@ -342,7 +342,7 @@ SEO_PAGES.update({
 MARKET_PAGES = {
     "btc": {"name": "Bitcoin", "symbol": "BTC", "title": "Bitcoin AI Market Intelligence | CoinPilotXAI Inc."},
     "eth": {"name": "Ethereum", "symbol": "ETH", "title": "Ethereum AI Market Intelligence | CoinPilotXAI Inc."},
-    "sol": {"name": "Solana", "symbol": "SOL", "title": "Solana AI Market Intelligence | CoinPilotXAI Inc."},
+    "sol": {"name": "Solana", "symbol": "SOL", "title": "Solanan AI Market Intelligence | CoinPilotXAI Inc."},
     "bnb": {"name": "BNB", "symbol": "BNB", "title": "BNB AI Market Intelligence | CoinPilotXAI Inc."},
     "xrp": {"name": "XRP", "symbol": "XRP", "title": "XRP AI Market Intelligence | CoinPilotXAI Inc."},
     "ada": {"name": "Cardano", "symbol": "ADA", "title": "Cardano AI Market Intelligence | CoinPilotXAI Inc."},
@@ -456,7 +456,7 @@ SEO_PAGES.update({
     },
     "ai-crypto-analysis-tools": {
         "title": "AI Crypto Analysis Tools | CoinPilotXAI Inc.",
-        "description": "Explore CoinPilotX AI crypto analysis tools for market context, Scam Shield, Wallet Intel, whale alerts, portfolio scenarios, and Telegram workflows.",
+        "description": "Explore CoinPilotX AI crypto analysis tools for market context, Scam Shield, Wallet Intel, whale alerts, portfolio scenarios, and platform workflows.",
         "h1": "AI Crypto Analysis Tools",
         "eyebrow": "Analysis Toolkit",
         "intro": "CoinPilotX connects AI market explanations with wallet safety, scam awareness, whale pressure, and portfolio context.",
@@ -498,12 +498,12 @@ SEO_PAGES.update({
     },
     "crypto-education-hub": {
         "title": "Crypto Education Hub | CoinPilotXAI Inc.",
-        "description": "Crypto education for scam awareness, wallet security, AI market analysis, portfolio risk, whale movement, and safer Telegram workflows.",
+        "description": "Crypto education for scam awareness, wallet security, AI market analysis, portfolio risk, whale movement, and safer platform workflows.",
         "h1": "Crypto Education Hub",
         "eyebrow": "Education",
         "intro": "CoinPilotXAI Inc. organizes crypto education around safety, context, and practical decision support for beginners and serious learners.",
         "answer": "Good crypto education teaches users to verify public data, protect private credentials, understand volatility, and avoid emotional decisions.",
-        "points": ["Wallet safety", "Scam awareness", "Market context", "Portfolio risk", "Telegram workflow education"],
+        "points": ["Wallet safety", "Scam awareness", "Market context", "Portfolio risk", "platform workflow education"],
         "faqs": [
             {"question": "Is CoinPilotX for beginners?", "answer": "Yes. CoinPilotX explains market and safety topics in plain language."},
             {"question": "Does CoinPilotX teach private wallet recovery?", "answer": "No. CoinPilotX never asks for seed phrases or private keys and cannot recover wallets."},
@@ -743,7 +743,7 @@ ARTICLE_PAGES = {
         "points": ["Avoid fake support DMs", "Verify official bot links", "Never share wallet secrets", "Use public data only"],
         "sections": [
             {"title": "Safer Telegram habits", "body": "Use official links, verify bot usernames carefully, and avoid clicking wallet-connect links sent through unsolicited messages."},
-            {"title": "CoinPilotX workflow", "body": "CoinPilotX is Telegram-first but account, subscription, and safety flows should remain transparent and user-controlled."},
+            {"title": "CoinPilotX workflow", "body": "CoinPilotXAI is platform-first, and account, subscription, and safety flows should remain transparent and user-controlled."},
         ],
         "faqs": [
             {"question": "Can Telegram bots ask for seed phrases?", "answer": "A legitimate CoinPilotX flow never asks for seed phrases or private keys. Treat those requests as dangerous."},
@@ -808,7 +808,7 @@ def market_page(symbol):
         return None
     page = {
         "title": item["title"],
-        "description": f"Review {item['name']} ({item['symbol']}) with CoinPilotX AI market context, live price links, risk reminders, wallet safety, and Telegram-first crypto intelligence.",
+        "description": f"Review {item['name']} ({item['symbol']}) with CoinPilotX AI market context, live price links, risk reminders, wallet safety, and AI crypto intelligence with optional Telegram alerts.",
         "h1": f"{item['name']} AI Market Intelligence",
         "eyebrow": "Live Market Intent",
         "intro": f"CoinPilotX helps users review {item['symbol']} market context, momentum, volatility, scam risk, whale pressure, and portfolio exposure without promising outcomes.",
@@ -957,7 +957,7 @@ def seo_index_payload():
         "legal_name": "CoinPilotXAI Inc.",
         "site": SITE_URL + "/",
         "telegram_bot": "https://t.me/DocShieldX_bot",
-        "purpose": "Educational AI intelligence for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Telegram-first workflows.",
+        "purpose": "Educational AI intelligence for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and web-first platform workflows.",
         "safety": [
             "Educational only, not financial, betting, investment, or legal advice.",
             "CoinPilotX never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.",

@@ -34,7 +34,7 @@ def website_schema():
         "url": SITE_URL + "/",
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "inLanguage": "en",
-        "description": "CoinPilotX is an AI crypto intelligence, scam awareness, wallet risk, sports edge, and Telegram-first market education platform powered by CoinPilotXAI Inc.",
+        "description": "CoinPilotX is an AI crypto intelligence, scam awareness, wallet risk, sports edge, and AI-powered crypto intelligence platform powered by CoinPilotXAI Inc.",
         "potentialAction": {
             "@type": "SearchAction",
             "target": f"{SITE_URL}/search?q={{search_term_string}}",
@@ -53,7 +53,7 @@ def software_schema():
         "url": SITE_URL + "/",
         "image": SHARE_IMAGE_URL,
         "publisher": {"@id": f"{SITE_URL}/#organization"},
-        "description": "AI crypto intelligence, wallet scanning education, scam protection, whale alerts, Sports Edge, portfolio context, and Telegram-first market analysis.",
+        "description": "AI crypto intelligence, wallet scanning education, scam protection, whale alerts, Sports Edge, portfolio context, and real-time market analysis with optional Telegram alerts.",
         "offers": {
             "@type": "Offer",
             "price": "14.99",

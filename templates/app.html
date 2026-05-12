@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CoinPilotXAI App | AI Crypto Intelligence Platform</title>
+  <meta name="description" content="Use the CoinPilotXAI command center for AI crypto intelligence, live markets, Scam Shield, Wallet Intel, portfolio tools, alerts, and optional Telegram companion access." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#00e5ff" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
+  <style>
+    :root { --bg:#050b14; --panel:#0d1627; --panel2:#101c31; --line:rgba(110,223,246,.2); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; --danger:#ff6b7a; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 95% 10%,rgba(54,229,143,.13),transparent 24rem),linear-gradient(145deg,#050b14,#081523 60%,#03070d); line-height:1.55; padding-bottom:78px; }
+    a { color:inherit; }
+    .shell { width:min(100% - 28px,1180px); margin:0 auto; }
+    header { position:sticky; top:0; z-index:20; background:rgba(5,11,20,.88); border-bottom:1px solid rgba(255,255,255,.08); backdrop-filter:blur(18px); }
+    nav { min-height:70px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .brand { display:inline-flex; align-items:center; gap:10px; font-weight:950; text-decoration:none; }
+    .brand img { width:42px; height:42px; object-fit:contain; filter:drop-shadow(0 0 16px rgba(110,223,246,.3)); }
+    .button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:11px 14px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.05); color:var(--text); text-decoration:none; font-weight:850; cursor:pointer; }
+    .button.primary { color:#041018; border-color:transparent; background:linear-gradient(135deg,var(--green),var(--cyan)); }
+    main { padding:22px 0 32px; }
+    .hero { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr); gap:16px; align-items:stretch; }
+    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(16,28,49,.92),rgba(13,22,39,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:18px; overflow-wrap:break-word; }
+    .kicker { color:var(--green); font-size:12px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
+    h1 { margin:8px 0 10px; font-size:clamp(34px,7vw,64px); line-height:.98; letter-spacing:0; }
+    h2 { margin:0 0 12px; font-size:clamp(20px,3vw,30px); }
+    p,.muted { color:var(--muted); }
+    .command-bar { position:sticky; top:82px; z-index:10; display:grid; grid-template-columns:1fr auto; gap:8px; margin:16px 0; }
+    input { width:100%; min-height:50px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.06); color:var(--text); padding:12px 13px; font:inherit; }
+    .sections { display:grid; gap:16px; margin-top:16px; }
+    .command-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+    .command-tile { min-height:72px; align-items:flex-start; justify-content:flex-start; text-align:left; }
+    .response-card { white-space:pre-wrap; }
+    .meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; color:var(--muted); font-size:13px; }
+    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:30; background:rgba(5,11,20,.93); border-top:1px solid rgba(255,255,255,.08); backdrop-filter:blur(18px); }
+    .bottom-nav .shell { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:8px 12px; }
+    .bottom-nav a { min-height:48px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:12px; font-weight:850; }
+    @media (max-width:860px){ .hero{grid-template-columns:1fr}.command-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.command-bar{top:72px}.button{width:100%} nav .button{width:auto} }
+    @media (max-width:420px){ .command-grid{grid-template-columns:1fr}.command-bar{grid-template-columns:1fr}.bottom-nav .shell{padding:6px}.bottom-nav a{font-size:11px} }
+    @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <nav>
+        <a class="brand" href="/app"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI</span></a>
+        <a class="button" href="/dashboard">Dashboard</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <article class="card">
+        <div class="kicker">Standalone Web/PWA Command Center</div>
+        <h1>AI Crypto Intelligence Platform</h1>
+        <p>Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app. Telegram is optional.</p>
+      </article>
+      <article class="card">
+        <div class="kicker">Live Account</div>
+        <p><strong>{{ access.label }}</strong></p>
+        {% if access.is_paid_pro %}
+          <p>Paid Pro active. Full command access is enabled.</p>
+        {% elif access.is_trial %}
+          <p>Pro trial active until {{ access.trial_end }}.</p>
+        {% else %}
+          <p>Free access. Upgrade when you want deeper intelligence and more alerts.</p>
+        {% endif %}
+      </article>
+    </section>
+
+    <form class="command-bar" data-command-form>
+      <input name="command" placeholder="Ask CoinPilotXAI anything... try /price BTC, /market, /scam, /wallet, /portfolio" autocomplete="off" />
+      <button class="button primary" type="submit">Run</button>
+    </form>
+
+    <section class="card response-card" data-response>
+      <h2>Choose a command</h2>
+      <p>Tap a tool below or type a slash command. Results include source status, last updated time, and safety notes.</p>
+    </section>
+
+    <section class="sections" data-menu>
+      {% for section in menu.sections %}
+        <article class="card">
+          <h2>{{ section.title }}</h2>
+          <div class="command-grid">
+            {% for item in section.items %}
+              <button class="button command-tile" type="button" data-action="{{ item.action_key }}">{{ item.label }}{% if item.pro and not menu.pro %} · Pro{% endif %}</button>
+            {% endfor %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <div class="shell">
+      <a href="/dashboard">Home</a>
+      <a href="/app">Intel</a>
+      <a href="/api/live/market">Live</a>
+      <a href="/dashboard#add-alert">Alerts</a>
+      <a href="/account">Account</a>
+    </div>
+  </nav>
+
+  <script>
+    const responseCard = document.querySelector("[data-response]");
+    function renderResult(data) {
+      if (!data || !data.ok) throw new Error((data && data.message) || "Command failed");
+      responseCard.innerHTML = `
+        <h2>${data.title || "CoinPilotXAI"}</h2>
+        <p>${(data.summary || "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>
+        <div class="meta">
+          <span>Source: ${data.source || "CoinPilotXAI platform"}</span>
+          <span>Updated: ${data.last_updated || "now"}</span>
+          <span>Confidence: ${data.confidence || "Medium"}</span>
+        </div>
+        <p class="muted">${data.disclaimer || ""}</p>`;
+    }
+    async function runCommand(payload) {
+      responseCard.innerHTML = "<h2>Working...</h2><p>CoinPilotXAI is checking the latest available data.</p>";
+      const res = await fetch(payload.action_key ? "/api/menu-action" : "/api/command", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      renderResult(data);
+    }
+    document.addEventListener("click", event => {
+      const button = event.target.closest("[data-action]");
+      if (button) runCommand({ action_key: button.dataset.action }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
+    });
+    document.querySelector("[data-command-form]").addEventListener("submit", event => {
+      event.preventDefault();
+      const command = new FormData(event.target).get("command");
+      runCommand({ command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
+    });
+    window.setInterval(() => {
+      fetch("/api/live/btc", { cache: "no-store", credentials: "same-origin" }).catch(() => {});
+    }, 60000);
+  </script>
+</body>
+</html>

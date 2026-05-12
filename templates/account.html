@@ -215,7 +215,10 @@
               <h3>Access</h3>
               <p><strong>Plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
-              {% if access.is_trial %}
+              {% if access.is_paid_pro %}
+                <p><strong>Pro:</strong> Paid Pro active.</p>
+                <p><strong>Billing/access date:</strong> {{ access.pro_expires_at }}</p>
+              {% elif access.is_trial %}
                 <p><strong>Trial ends:</strong> {{ access.trial_end }}</p>
                 <p><strong>Days remaining:</strong> {{ access.days_remaining }}</p>
               {% elif access.trial_expired %}
@@ -241,7 +244,9 @@
           <div class="actions">
             <a class="button primary" href="/account/settings">Account Settings</a>
             <a class="button primary" href="/dashboard">Open Dashboard</a>
-            <a class="button primary" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+            {% if not access.is_paid_pro %}
+              <a class="button primary" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+            {% endif %}
             <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
             <a class="button" href="/support">Support</a>
           </div>
@@ -253,12 +258,21 @@
               <p><strong>Price:</strong> $14.99/month</p>
               <p><strong>Current plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
-              <p>Pro unlocks deeper AI intelligence, wallet and transaction risk details, portfolio decision support, whale intelligence, Sports Edge context, advanced scam protection, and Telegram notifications.</p>
-              <a class="button primary" href="/upgrade?checkout=1&source=website" data-analytics="stripe_checkout_started">Continue to Secure Checkout</a>
+              {% if access.is_paid_pro %}
+                <p><strong>You already have CoinPilotXAI Pro active.</strong></p>
+                <p>Your paid subscription is active. No upgrade is needed.</p>
+                <div class="actions">
+                  <a class="button primary" href="/dashboard">Open Dashboard</a>
+                  <a class="button" href="/account">Account</a>
+                </div>
+              {% else %}
+                <p>Pro unlocks deeper AI intelligence, wallet and transaction risk details, portfolio decision support, whale intelligence, Sports Edge context, advanced scam protection, and optional Telegram notifications.</p>
+                <a class="button primary" href="/upgrade?checkout=1&source=website" data-analytics="stripe_checkout_started">Continue to Secure Checkout</a>
+              {% endif %}
             </div>
             <div class="profile-card">
-              <h3>Telegram Activation</h3>
-              <p>After upgrading, return to Telegram and send your activation/link code to connect Pro access inside the bot.</p>
+              <h3>Optional Telegram Companion</h3>
+              <p>After upgrading, you can connect Telegram as an optional command and alert channel. The website dashboard remains the source of truth.</p>
               <p>Generate the code from <a href="/account/settings">Account Settings</a> after login. Codes expire in 10 minutes.</p>
               <p>If you experience any issue after payment, email <a href="mailto:support@coinpilotx.app">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
             </div>
@@ -321,6 +335,8 @@
             <tr><th>Name</th><th>Email</th><th>Plan</th><th>Subscription</th><th>Telegram</th><th>Created</th></tr>
             {% for row in stats.users %}<tr>{% for cell in row %}<td>{{ cell or "" }}</td>{% endfor %}</tr>{% endfor %}
           </table>
+        {% elif page == "custom" %}
+          {{ custom_body|safe }}
         {% endif %}
 
         <div class="notice">CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords. Educational AI intelligence only, not financial, betting, investment, or legal advice.</div>
@@ -385,12 +401,17 @@
         var attempts = 0;
         var pollStatus = function () {
           attempts += 1;
-          fetch("/api/account/status", { cache: "no-store" })
+          fetch("/api/account/status?ts=" + Date.now(), { cache: "no-store", credentials: "same-origin" })
             .then(function (response) { return response.json(); })
             .then(function (data) {
-              if (data && data.ok && data.has_pro) {
+              if (data && data.ok && data.is_paid_pro) {
+                upgradeStatus.textContent = "Your CoinPilotXAI paid Pro subscription is active.";
+                upgradeDetail.textContent = "Your dashboard, command center, and optional Telegram companion can now use Pro intelligence.";
+                return;
+              }
+              if (data && data.ok && data.has_pro_access) {
                 upgradeStatus.textContent = "Your CoinPilotXAI Pro access is active.";
-                upgradeDetail.textContent = "Your dashboard and Telegram-linked account can now use Pro intelligence.";
+                upgradeDetail.textContent = "Your dashboard and optional Telegram companion can now use Pro intelligence.";
                 return;
               }
               if (attempts < 10) {

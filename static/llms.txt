@@ -1,6 +1,6 @@
 # CoinPilotXAI Inc.
 
-CoinPilotXAI Inc. operates CoinPilotX, an educational AI intelligence platform for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Telegram-first workflows.
+CoinPilotXAI Inc. operates CoinPilotX, an educational AI intelligence platform for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and web-first platform workflows.
 
 Primary site: https://coinpilotx.app/
 Support: https://coinpilotx.app/support
@@ -57,7 +57,7 @@ Sports Edge is informational only and does not provide guaranteed betting outcom
 
 ## AI Search Summary
 
-CoinPilotX helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, and Sports Edge context inside Telegram and the web. The product emphasizes clarity, safety, public data, user control, and ethical conversion. It avoids fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
+CoinPilotX helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, and Sports Edge context across web, mobile, and optional Telegram alerts. The product emphasizes clarity, safety, public data, user control, and ethical conversion. It avoids fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
 
 ## Crawler Guidance
 

@@ -1,7 +1,7 @@
 {
   "name": "CoinPilotXAI Inc",
   "short_name": "CoinPilotXAI",
-  "description": "AI crypto intelligence, scam awareness, market insights, and Telegram tools.",
+  "description": "AI crypto intelligence platform for market alerts, scam awareness, wallet analysis, portfolio monitoring, and optional Telegram companion alerts.",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",
@@ -37,7 +37,7 @@
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "CoinPilotX Telegram intelligence menu"
+      "label": "CoinPilotXAI command center"
     },
     {
       "src": "/static/screenshots/analysis.png",

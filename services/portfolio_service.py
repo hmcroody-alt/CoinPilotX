@@ -300,6 +300,13 @@ def portfolio_insight(portfolio, watchlist, pro=False):
 def get_user_dashboard_data(user_id):
     user = user_context.get_user_by_id(user_id) or {}
     pro = pro_access.has_pro_access(user)
+    status = (user.get("subscription_status") or "inactive").lower()
+    paid_pro = (
+        pro
+        and status == "active"
+        and bool(user.get("stripe_subscription_id") or user.get("stripe_customer_id"))
+    )
+    trialing = pro and status == "trialing" and not paid_pro
     portfolio = calculate_user_portfolio(user_id)
     watchlist = get_watchlist(user_id)
     alerts = get_alerts(user_id)
@@ -309,10 +316,16 @@ def get_user_dashboard_data(user_id):
         "user": {
             "name": user.get("full_name") or user.get("display_name") or "CoinPilotX user",
             "email": user_context.mask_email(user.get("email")),
-            "plan": "Pro" if pro else "Free",
+            "plan": "Paid Pro" if paid_pro else "Pro Trial" if trialing else "Pro" if pro else "Free",
             "subscription_status": user.get("subscription_status") or "inactive",
-            "pro_expires_at": user.get("pro_expires_at") or user.get("trial_end_date") or "",
+            "has_pro_access": pro,
+            "is_paid_pro": paid_pro,
+            "is_trialing": trialing,
+            "pro_expires_at": user.get("pro_expires_at") or (user.get("trial_end_date") if trialing else "") or "",
+            "trial_end_date": user.get("trial_end_date") or "",
+            "stripe_subscription_id": user.get("stripe_subscription_id") or "",
             "telegram_linked": bool(user.get("telegram_user_id")),
+            "telegram_username": user.get("telegram_username") or "",
         },
         "limits": {"pro": pro, **({} if pro else FREE_LIMITS)},
         "portfolio": portfolio,
@@ -358,4 +371,3 @@ def check_alerts():
 
 def send_telegram_alert(*_args, **_kwargs):
     return {"ok": False, "message": "Telegram alert sending is handled by the bot runtime."}
-
