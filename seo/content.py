@@ -61,7 +61,7 @@ SEO_PAGES = {
         "eyebrow": "Sports Edge",
         "intro": "Sports Edge gives users a calmer way to review games, live score context, odds availability, risk factors, and why forcing a position can be dangerous.",
         "answer": "Sports Edge is informational only. It does not provide guaranteed bets, locks, or sure outcomes. It helps users think in probabilities, risk, and discipline.",
-        "points": ["Live public scoreboard context", "Sport-specific risk notes", "Position intelligence prompts", "Telegram handoff for deeper analysis"],
+        "points": ["Live public scoreboard context", "Sport-specific risk notes", "Position intelligence prompts", "optional Telegram companion for deeper analysis"],
         "faqs": [
             {"question": "What is Sports Edge?", "answer": "Sports Edge is CoinPilotX's informational sports intelligence feature for reviewing game state, risk factors, market context, and position discipline."},
             {"question": "Does Sports Edge give guaranteed picks?", "answer": "No. CoinPilotXAI Inc. does not guarantee sports outcomes or betting results."},
@@ -103,10 +103,10 @@ SEO_PAGES = {
         "eyebrow": "Optional Telegram Companion",
         "intro": "CoinPilotX brings AI crypto intelligence into a platform workflow so users can ask questions, scan risks, review markets, and continue from the website into the bot.",
         "answer": "The platform-first design keeps CoinPilotX fast and easy to access while still connecting to website accounts, Pro access, and shared intelligence systems.",
-        "points": ["Telegram bot commands", "Website account linking", "AI assistant handoff", "Pro upgrade flow"],
+        "points": ["Optional Telegram companion commands", "Website account linking", "AI assistant handoff", "Pro upgrade flow"],
         "faqs": [
             {"question": "What can the Telegram bot do?", "answer": "The bot can answer AI questions, show live market context, review scam messages, check public wallet data, run Day Signal, and open Sports Edge context."},
-            {"question": "Do I need to create an account?", "answer": "You can start with Telegram, and a website account helps connect plan, subscription, preferences, and future retention features."},
+            {"question": "Do I need to create an account?", "answer": "Start with the web platform, then connect Telegram only if you want companion alerts and quick commands."},
         ] + COMMON_FAQS,
         "related": ["/ai-market-analysis", "/crypto-safety", "/sports-edge"],
     },
@@ -141,6 +141,28 @@ SEO_PAGES = {
 }
 
 SEO_PAGES.update({
+    "features": {
+        "title": "CoinPilotXAI Features | AI Crypto Intelligence Platform",
+        "description": "Explore CoinPilotXAI platform features: AI crypto assistant, live market intelligence, Scam Shield, Wallet Intel, portfolio tracking, alerts, Sports Edge, and optional Telegram companion access.",
+        "h1": "CoinPilotXAI Platform Features",
+        "eyebrow": "Platform Features",
+        "intro": "CoinPilotXAI is a standalone web and mobile-first crypto intelligence platform with optional Telegram companion access.",
+        "answer": "The platform combines AI analysis, live market context, public wallet intelligence, scam detection, portfolio monitoring, alerts, and educational decision support in one account-based SaaS workflow.",
+        "points": ["AI Crypto Assistant", "Live Market Intelligence", "Scam Shield", "Wallet Intel", "Portfolio and Watchlist", "Optional Telegram Alerts"],
+        "faqs": COMMON_FAQS,
+        "related": ["/app", "/ai-market-analysis", "/crypto-safety", "/portfolio-intelligence"],
+    },
+    "pricing": {
+        "title": "CoinPilotXAI Pricing | Free and Pro Crypto Intelligence",
+        "description": "Compare CoinPilotXAI Free and Pro access for AI crypto intelligence, live alerts, portfolio tools, wallet intelligence, Scam Shield, and advanced market context.",
+        "h1": "CoinPilotXAI Pricing",
+        "eyebrow": "Free and Pro",
+        "intro": "Start free with basic CoinPilotXAI intelligence, then upgrade to Pro when deeper AI reasoning, alerts, portfolio context, and wallet risk tools become useful.",
+        "answer": "CoinPilotXAI Pro expands the platform with deeper educational intelligence. It does not guarantee profits, trading outcomes, betting results, or financial success.",
+        "points": ["Free account access", "30-day Pro trial for first-time users", "Website-only Stripe checkout", "Paid Pro account sync", "Optional Telegram companion alerts"],
+        "faqs": COMMON_FAQS,
+        "related": ["/signup", "/features", "/app", "/support"],
+    },
     "crypto-scam-checker": {
         "title": "Crypto Scam Checker | CoinPilotXAI Inc.",
         "description": "Check suspicious crypto messages, fake airdrops, fake support scripts, wallet-drainer language, and phishing risk with CoinPilotX Scam Shield.",
@@ -157,7 +179,7 @@ SEO_PAGES.update({
     },
     "ai-crypto-assistant": {
         "title": "AI Crypto Assistant | CoinPilotXAI Inc.",
-        "description": "Ask CoinPilotX AI crypto questions about markets, scams, wallets, portfolio risk, whale activity, and Telegram crypto workflows.",
+        "description": "Ask CoinPilotX AI crypto questions about markets, scams, wallets, portfolio risk, whale activity, and optional Telegram companion workflows.",
         "h1": "AI Crypto Assistant",
         "eyebrow": "Ask CoinPilotX",
         "intro": "CoinPilotX works as a cautious AI crypto assistant for users who want clearer market, scam, wallet, and portfolio context.",
@@ -176,7 +198,7 @@ SEO_PAGES.update({
         "eyebrow": "Optional Telegram Companion",
         "intro": "CoinPilotX supports trading-related education across the CoinPilotXAI web app and optional Telegram companion while avoiding guaranteed signals, sure wins, or pressure tactics.",
         "answer": "A responsible Telegram trading assistant should help users understand risk, context, and scenarios before acting. CoinPilotX is built around that standard.",
-        "points": ["Telegram AI questions", "Live market board handoff", "Scam safety reminders", "Portfolio context"],
+        "points": ["Optional Telegram AI questions", "Live market board", "Scam safety reminders", "Portfolio context"],
         "faqs": [
             {"question": "Does CoinPilotX provide guaranteed trading signals?", "answer": "No. CoinPilotX provides educational signal context, not guaranteed outcomes."},
             {"question": "Can I use CoinPilotX from Telegram?", "answer": "Yes. CoinPilotXAI is platform-first, with Telegram available as an optional companion."},
@@ -204,7 +226,7 @@ SEO_PAGES.update({
         "eyebrow": "Sports Edge",
         "intro": "Sports Edge helps users review live games and risk context more carefully, especially when emotions or live action pressure are high.",
         "answer": "Sports intelligence should explain why a position may be risky, why waiting can be valid, and what missing data could change the view.",
-        "points": ["Live game context", "Risk labels", "Sport-specific reasoning", "Telegram analysis handoff"],
+        "points": ["Live game context", "Risk labels", "Sport-specific reasoning", "optional Telegram companion analysis"],
         "faqs": [
             {"question": "Does Sports Edge guarantee bets?", "answer": "No. Sports Edge is informational only and never guarantees betting outcomes."},
             {"question": "What if odds are unavailable?", "answer": "CoinPilotX says odds are unavailable and avoids pretending to know market pricing."},
@@ -221,7 +243,7 @@ SEO_PAGES.update({
         "points": ["Large movement context", "Market pressure education", "Risk-aware whale summaries", "Telegram alerts"],
         "faqs": [
             {"question": "Can whale tracking predict price?", "answer": "No. It provides context that may be useful but cannot guarantee direction."},
-            {"question": "Where can I review whale alerts?", "answer": "Use CoinPilotX in Telegram or the website intelligence sections."},
+            {"question": "Where can I review whale alerts?", "answer": "Use the CoinPilotXAI web app, dashboard, or optional Telegram alerts."},
         ] + COMMON_FAQS,
         "related": ["/whale-alerts", "/markets/btc", "/portfolio-intelligence"],
     },
@@ -286,9 +308,9 @@ SEO_PAGES.update({
         "description": "Use CoinPilotX as an AI whale alerts and crypto market pressure education platform.",
         "h1": "Whale Alerts Telegram Bot",
         "eyebrow": "Telegram Whale Context",
-        "intro": "CoinPilotX brings whale-style movement context into Telegram so users can review market pressure without treating it as certainty.",
+        "intro": "CoinPilotX brings whale-style movement context into the web platform and optional Telegram alerts so users can review market pressure without treating it as certainty.",
         "answer": "Whale alerts can help users ask better questions, but they are not guaranteed signals. CoinPilotX frames whale movement alongside trend, volatility, and risk.",
-        "points": ["Telegram whale context", "Market pressure education", "Risk-aware alert language", "No guaranteed direction claims"],
+        "points": ["Optional Telegram whale alerts", "Market pressure education", "Risk-aware alert language", "No guaranteed direction claims"],
         "faqs": [
             {"question": "Can whale alerts be viewed in Telegram?", "answer": "Yes. CoinPilotX supports website-first whale alert and market pressure workflows with optional Telegram alerts."},
             {"question": "Are whale alerts trading advice?", "answer": "No. They are educational context only."},
@@ -328,9 +350,9 @@ SEO_PAGES.update({
         "description": "Install CoinPilotXAI Inc. as a progressive web app for faster access to CoinPilotX crypto intelligence and platform workflows.",
         "h1": "Crypto Intelligence Progressive Web App",
         "eyebrow": "Installable App",
-        "intro": "CoinPilotXAI Inc. supports a mobile-friendly PWA experience for faster access to AI crypto intelligence, Scam Shield, Day Signal, and Telegram handoff.",
+        "intro": "CoinPilotXAI Inc. supports a mobile-friendly PWA experience for faster access to AI crypto intelligence, Scam Shield, Day Signal, and optional Telegram companion.",
         "answer": "The CoinPilotXAI PWA is designed for convenience while live market, AI, sports, and account intelligence still require an internet connection.",
-        "points": ["Installable mobile experience", "Fast access to tools", "Telegram handoff", "Offline fallback safety"],
+        "points": ["Installable mobile experience", "Fast access to tools", "optional Telegram companion", "Offline fallback safety"],
         "faqs": [
             {"question": "Can CoinPilotXAI Inc. be installed on a phone?", "answer": "Yes. Supported browsers can add the PWA to the home screen."},
             {"question": "Does the PWA work fully offline?", "answer": "No. Live intelligence requires an internet connection."},
@@ -419,7 +441,7 @@ SEO_PAGES.update({
         "eyebrow": "Trending Markets",
         "intro": "CoinPilotX organizes trending crypto search intent into safer market context, live market data links, and risk-aware AI explanations.",
         "answer": "Trending crypto pages should help users understand why an asset or theme is moving without implying certainty or pushing rushed decisions.",
-        "points": ["Live market board handoff", "Top-volume asset context", "Gainer and loser awareness", "Scam and volatility reminders"],
+        "points": ["Live market board", "Top-volume asset context", "Gainer and loser awareness", "Scam and volatility reminders"],
         "faqs": [
             {"question": "Does trending mean a coin is safe?", "answer": "No. Trending only means attention or movement may be elevated. It does not guarantee quality or future performance."},
             {"question": "How does CoinPilotX review trending crypto?", "answer": "CoinPilotX connects market movement, volatility, public data, and safety reminders so users can review context before acting."},
@@ -628,7 +650,7 @@ SPORTS_SEO_PAGES = {
     },
     "live-games": {
         "title": "Live Sports Edge Games | CoinPilotXAI Inc.",
-        "description": "Live Sports Edge game context, risk labels, odds availability notes, and Telegram handoff for deeper AI analysis.",
+        "description": "Live Sports Edge game context, risk labels, odds availability notes, and optional Telegram companion for deeper AI analysis.",
         "h1": "Live Sports Edge Games",
         "eyebrow": "Live Sports",
         "intro": "CoinPilotX Sports Edge organizes live and upcoming games into risk-aware cards with honest source and odds availability notes.",
@@ -747,7 +769,7 @@ ARTICLE_PAGES = {
         ],
         "faqs": [
             {"question": "Can Telegram bots ask for seed phrases?", "answer": "A legitimate CoinPilotX flow never asks for seed phrases or private keys. Treat those requests as dangerous."},
-            {"question": "What is the official CoinPilotX bot?", "answer": "The official Telegram link used on the site is https://t.me/DocShieldX_bot."},
+            {"question": "What is the official CoinPilotX bot?", "answer": "Telegram is an optional CoinPilotXAI companion. The official link used on the site is https://t.me/DocShieldX_bot."},
         ] + COMMON_FAQS,
         "related": ["/telegram-crypto-bot", "/crypto-safety", "/crypto-scam-checker"],
         "keywords": KEYWORD_CLUSTERS["telegram_discovery"] + ["telegram crypto safety"],
@@ -788,7 +810,7 @@ def enrich_page(slug, page):
     enriched["path"] = "/" + slug
     enriched["canonical"] = SITE_URL + enriched["path"]
     enriched["image"] = SHARE_IMAGE_URL
-    enriched.setdefault("cta", "Launch CoinPilotX Free")
+    enriched.setdefault("cta", "Launch CoinPilotXAI Free")
     enriched.setdefault("updated", "2026-05-10")
     enriched.setdefault("published", "2026-05-10")
     enriched.setdefault("keywords", default_keywords(slug, enriched))
@@ -813,7 +835,7 @@ def market_page(symbol):
         "eyebrow": "Live Market Intent",
         "intro": f"CoinPilotX helps users review {item['symbol']} market context, momentum, volatility, scam risk, whale pressure, and portfolio exposure without promising outcomes.",
         "answer": f"{item['symbol']} analysis should combine live price movement, volume, volatility, market sentiment, and personal risk limits. CoinPilotX keeps the output educational.",
-        "points": ["Live market board context", "AI assistant explanations", "Risk and momentum sections", "Telegram command handoff"],
+        "points": ["Live market board context", "AI assistant explanations", "Risk and momentum sections", "platform command center"],
         "faqs": [
             {"question": f"Can CoinPilotX analyze {item['symbol']}?", "answer": f"Yes. CoinPilotX can explain {item['symbol']} market context, risk factors, momentum, and safer next steps using available live market data."},
             {"question": f"Is {item['symbol']} analysis financial advice?", "answer": "No. CoinPilotXAI Inc. provides educational AI intelligence only."},
@@ -1023,7 +1045,7 @@ def search_pages(query, limit=12):
 
 
 def all_public_paths():
-    paths = ["/", "/support", "/privacy", "/terms"]
+    paths = ["/", "/app", "/command-center", "/signup", "/support", "/privacy", "/terms"]
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
     paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]

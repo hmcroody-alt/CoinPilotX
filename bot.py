@@ -618,7 +618,7 @@ def upgrade_payment_menu(user_id):
         ])
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(user_id))],
-        [InlineKeyboardButton("Open Website Account", url="https://coinpilotx.app/account")],
+        [InlineKeyboardButton("Open Platform Account", url="https://coinpilotx.app/account")],
         [InlineKeyboardButton("Main Menu", callback_data="main_menu")]
     ])
 
@@ -1327,7 +1327,7 @@ def create_email_verification(user_id):
 def signup_page():
     init_db()
     if request.method == "GET" and require_account():
-        return redirect(url_for("dashboard_page"))
+        return redirect(safe_redirect_target("dashboard_page"))
     if request.method == "POST":
         logging.info("signup endpoint started")
         if not verify_csrf():
@@ -1428,20 +1428,23 @@ def dashboard_page():
 
 
 @webhook_app.route("/app", methods=["GET"])
+@webhook_app.route("/command-center", methods=["GET"])
 @webhook_app.route("/intelligence", methods=["GET"])
 @webhook_app.route("/dashboard/intelligence", methods=["GET"])
 def app_command_center_page():
     init_db()
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
-    fresh_user = load_account_by_id(user["user_id"]) or user
-    log_product_event(fresh_user["user_id"], "command_center_viewed", {"path": request.path})
+    fresh_user = load_account_by_id(user["user_id"]) if user else None
+    if fresh_user:
+        log_product_event(fresh_user["user_id"], "command_center_viewed", {"path": request.path})
+    else:
+        log_product_event(0, "command_center_guest_viewed", {"path": request.path})
     response = render_template(
         "app.html",
-        current_user=fresh_user,
+        current_user=fresh_user or {},
         access=account_access_context(fresh_user),
         menu=command_router_service.get_menu_items(fresh_user),
+        is_guest=not bool(fresh_user),
     )
     return response
 
@@ -2513,6 +2516,14 @@ def admin_login_required():
     return None
 
 
+@webhook_app.route("/admin", methods=["GET"])
+def admin_root_page():
+    admin = admin_current_user()
+    if admin:
+        return redirect(url_for("admin_dashboard_page"))
+    return redirect(url_for("admin_login_page"))
+
+
 def admin_password_is_strong(password):
     if len(password or "") < 12:
         return False, "Use at least 12 characters."
@@ -2595,6 +2606,57 @@ def repair_trialing_users_with_successful_payments():
         return converted
     except Exception as exc:
         logging.warning("Trial-to-paid auto repair failed: %s", exc)
+        return 0
+
+
+def repair_paid_users_from_payment_records():
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT u.user_id, MAX(p.stripe_customer_id) AS stripe_customer_id,
+                   MAX(p.stripe_subscription_id) AS stripe_subscription_id,
+                   MAX(p.created_at) AS latest_payment_at
+            FROM users u
+            JOIN payment_records p ON p.user_id=u.user_id AND p.status='succeeded'
+            WHERE lower(COALESCE(u.subscription_status,''))!='active'
+               OR lower(COALESCE(u.plan,''))!='pro'
+            GROUP BY u.user_id
+            """
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        repaired = 0
+        for row in rows:
+            cur.execute(
+                """
+                UPDATE users
+                SET plan='pro',
+                    subscription_plan='pro',
+                    subscription_status='active',
+                    trial_status='converted',
+                    is_pro=1,
+                    stripe_customer_id=COALESCE(?, stripe_customer_id),
+                    stripe_subscription_id=COALESCE(?, stripe_subscription_id),
+                    updated_at=?
+                WHERE user_id=?
+                """,
+                (
+                    row.get("stripe_customer_id"),
+                    row.get("stripe_subscription_id"),
+                    datetime.now().isoformat(),
+                    row["user_id"],
+                ),
+            )
+            repaired += cur.rowcount
+        conn.commit()
+        conn.close()
+        if repaired:
+            logging.warning("DATA_RECOVERY paid_user_repair repaired=%s", repaired)
+        return repaired
+    except Exception as exc:
+        logging.warning("DATA_RECOVERY paid_user_repair_failed error=%s", exc)
         return 0
 
 
@@ -2706,6 +2768,7 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/telegram'>Telegram</a>"
         "<a href='/admin/ai-usage'>AI Usage</a>"
         "<a href='/admin/support'>Support</a>"
+        "<a href='/admin/data-recovery'>Data Recovery</a>"
         "<a href='/admin/unmatched-payments'>Unmatched</a>"
         "<a href='/admin/security'>Security</a>"
         "<a href='/admin/system'>System</a>"
@@ -3005,6 +3068,127 @@ def admin_emails_page():
     rows = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(mask_email(r.get('recipient_email') or r.get('email') or ''))}</td><td>{clean_html(r.get('email_type') or '')}</td><td>{clean_html(r.get('subject') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in logs)
     body = f"<h1>Email Logs</h1><div class='card'><table><tr><th>User</th><th>Email</th><th>Type</th><th>Subject</th><th>Status</th><th>Date</th></tr>{rows}</table></div>"
     return admin_page_html("Emails", body, admin)
+
+
+def _count_table_safe(cur, table):
+    table_name = _migration_identifier(table)
+    try:
+        cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+        return cur.fetchone()[0]
+    except Exception:
+        return None
+
+
+def sqlite_recovery_snapshot():
+    path = os.path.join(os.getcwd(), DB_FILE)
+    if not os.path.exists(path):
+        return {"available": False, "path": path, "counts": {}, "error": "Local SQLite file not found."}
+    try:
+        conn = sqlite3.connect(path)
+        cur = conn.cursor()
+        counts = {}
+        for table in ["users", "admin_users", "payment_records", "stripe_events", "unmatched_payments"]:
+            counts[table] = _count_table_safe(cur, table)
+        conn.close()
+        return {"available": True, "path": path, "counts": counts, "error": ""}
+    except Exception as exc:
+        return {"available": False, "path": path, "counts": {}, "error": str(exc)[:300]}
+
+
+@webhook_app.route("/admin/data-recovery", methods=["GET", "POST"])
+def admin_data_recovery_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            message = "Security check failed."
+        else:
+            action = request.form.get("action", "")
+            if action == "ensure_owner":
+                ensure_owner_admin(allow_reset=False)
+                log_admin_audit(admin["id"], "data_recovery_ensure_owner", "admin_user", "owner", {})
+                message = "Owner admin check completed. Existing owner password was not overwritten."
+            elif action == "repair_paid":
+                repaired = repair_paid_users_from_payment_records()
+                converted = repair_trialing_users_with_successful_payments()
+                log_admin_audit(admin["id"], "data_recovery_repair_paid_users", "billing", "", {"repaired": repaired, "converted": converted})
+                message = f"Paid user repair completed. Repaired {repaired}; converted trialing users {converted}."
+    diagnostics = db_service.health_check()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    current_counts = {
+        table: _count_table_safe(cur, table)
+        for table in ["users", "admin_users", "payment_records", "stripe_events", "unmatched_payments", "subscriptions"]
+    }
+    owner = load_admin_by_email("cherieroody@gmail.com")
+    cur.execute(
+        "SELECT user_id, email, plan, subscription_status, stripe_customer_id, stripe_subscription_id, updated_at FROM users ORDER BY user_id DESC LIMIT 12"
+    )
+    latest_users = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        "SELECT id, user_id, amount, currency, status, stripe_event_id, stripe_customer_id, stripe_subscription_id, created_at FROM payment_records ORDER BY id DESC LIMIT 12"
+    )
+    latest_payments = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        "SELECT id, stripe_event_id, event_type, status, user_id, created_at, processed_at FROM stripe_events ORDER BY id DESC LIMIT 12"
+    )
+    latest_events = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        "SELECT id, event_type, customer_email, customer_id, amount, currency, reason, created_at FROM unmatched_payments ORDER BY id DESC LIMIT 12"
+    )
+    unmatched = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    sqlite_snapshot = sqlite_recovery_snapshot()
+    count_cards = "".join(
+        f"<div class='card'><strong>{clean_html(table)}</strong><p class='metric'>{value if value is not None else 'missing'}</p></div>"
+        for table, value in current_counts.items()
+    )
+    sqlite_cards = "".join(
+        f"<div class='card'><strong>{clean_html(table)}</strong><p class='metric'>{value if value is not None else 'missing'}</p></div>"
+        for table, value in (sqlite_snapshot.get("counts") or {}).items()
+    ) or "<p class='muted'>No local SQLite comparison counts available.</p>"
+    body = f"""
+    <h1>Data Recovery</h1>
+    <p class="muted">Non-destructive recovery tools for PostgreSQL migration checks, owner restoration, payment repair, and old SQLite comparison. This page never wipes production data.</p>
+    {f"<p class='card'>{clean_html(message)}</p>" if message else ""}
+    <div class="grid">
+      <div class="card"><strong>Active DB Engine</strong><p class="metric">{clean_html(db_service.ENGINE_NAME)}</p></div>
+      <div class="card"><strong>DATABASE_URL Loaded</strong><p class="metric">{'yes' if db_service.DATABASE_URL_LOADED else 'no'}</p></div>
+      <div class="card"><strong>DB Connected</strong><p class="metric">{'yes' if diagnostics.get('connected') else 'no'}</p></div>
+      <div class="card"><strong>Database</strong><p>{clean_html(diagnostics.get('database_name') or '')}</p></div>
+      <div class="card"><strong>Owner Admin</strong><p>{'present' if owner else 'missing'} · role {clean_html((owner or {}).get('role') or '')} · status {clean_html((owner or {}).get('status') or '')}</p></div>
+    </div>
+    <h2>Current Database Counts</h2>
+    <div class="grid">{count_cards}</div>
+    <h2>Old Local SQLite Snapshot</h2>
+    <p class="muted">Path checked: {clean_html(sqlite_snapshot.get('path') or '')}. {clean_html(sqlite_snapshot.get('error') or '')}</p>
+    <div class="grid">{sqlite_cards}</div>
+    <div class="grid">
+      <form method="post" class="card">
+        <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+        <input type="hidden" name="action" value="ensure_owner" />
+        <h3>Restore Owner Admin</h3>
+        <p>Ensures Roody Cherie / cherieroody@gmail.com exists as active owner. Existing passwords are not overwritten.</p>
+        <button type="submit">Ensure Owner Admin</button>
+      </form>
+      <form method="post" class="card">
+        <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
+        <input type="hidden" name="action" value="repair_paid" />
+        <h3>Restore Paid Pro From Payments</h3>
+        <p>Scans successful payment records and converts matched users to paid Pro active. Unmatched payments remain visible for manual repair.</p>
+        <button type="submit">Repair Paid Users</button>
+      </form>
+    </div>
+    <h2>Latest Users</h2><div class="card">{admin_rows_table([{**row, 'email': mask_email(row.get('email'))} for row in latest_users], [('user_id','ID'),('email','Email'),('plan','Plan'),('subscription_status','Status'),('stripe_customer_id','Stripe Customer'),('stripe_subscription_id','Stripe Sub'),('updated_at','Updated')])}</div>
+    <h2>Latest Payments</h2><div class="card">{admin_rows_table(latest_payments, [('user_id','User'),('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('stripe_customer_id','Customer'),('stripe_subscription_id','Subscription'),('created_at','Created')])}</div>
+    <h2>Latest Stripe Events</h2><div class="card">{admin_rows_table(latest_events, [('stripe_event_id','Event'),('event_type','Type'),('status','Status'),('user_id','User'),('created_at','Created'),('processed_at','Processed')])}</div>
+    <h2>Unmatched Payments</h2><div class="card">{admin_rows_table(unmatched, [('event_type','Type'),('customer_email','Email'),('customer_id','Customer'),('amount','Amount'),('currency','Currency'),('reason','Reason'),('created_at','Created')])}</div>
+    """
+    return admin_page_html("Data Recovery", body, admin)
 
 
 @webhook_app.route("/admin/emails/payment", methods=["GET", "POST"])
@@ -4921,6 +5105,15 @@ def record_unmatched_payment(event, stripe_object, reason):
     logging.warning("Stripe payment received but no matching CoinPilotXAI account found. event_id=%s object_id=%s reason=%s", event.get("id"), stripe_object.get("id"), reason)
 
 
+@webhook_app.route("/stripe-webhook", methods=["GET"])
+def stripe_webhook_health():
+    return jsonify({
+        "ok": True,
+        "route": "stripe-webhook",
+        "webhook_secret_configured": bool(STRIPE_WEBHOOK_SECRET),
+    })
+
+
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     init_db()
@@ -4941,7 +5134,12 @@ def stripe_webhook():
         logging.exception("Stripe webhook error details: %s", e)
         return "Invalid", 400
 
-    logging.info("stripe webhook received event_type=%s event_id=%s", event.get("type"), event.get("id"))
+    event_type = event.get("type")
+    if not event_type or not isinstance(event.get("data"), dict):
+        logging.warning("Stripe webhook invalid event payload event_id=%s event_type=%s", event.get("id"), event_type)
+        return "Invalid", 400
+
+    logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
     event_id = event.get("id", "")
     if stripe_event_processed(event_id):
         logging.info("Stripe webhook duplicate skipped event_id=%s event_type=%s", event_id, event.get("type"))
@@ -4949,7 +5147,7 @@ def stripe_webhook():
         return "OK", 200
     resolved_event_user_id = None
 
-    if event["type"] == "checkout.session.completed":
+    if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         session_id = session.get("id")
         user_id, resolved_email = resolve_checkout_session_user(session)
@@ -5043,11 +5241,11 @@ def stripe_webhook():
             logging.error("checkout.session.completed could not resolve local user session_id=%s customer_id=%s email=%s", session_id, customer_id, bool(resolved_email))
             record_unmatched_payment(event, session, "checkout.session.completed could not resolve local user")
 
-    if event["type"] in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+    if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
         synced_user_id = sync_stripe_subscription(event["data"]["object"])
         if synced_user_id:
             resolved_event_user_id = synced_user_id
-        if synced_user_id and event["type"] in {"customer.subscription.created", "customer.subscription.updated"}:
+        if synced_user_id and event_type in {"customer.subscription.created", "customer.subscription.updated"}:
             subscription = event["data"]["object"]
             if (subscription.get("status") or "").lower() == "active":
                 user = load_account_by_id(synced_user_id)
@@ -5060,7 +5258,7 @@ def stripe_webhook():
                         "next_billing_date": format_date(stripe_period_end_to_iso(subscription.get("current_period_end"))),
                     })
                     logging.info("upgrade confirmation email sent/skipped for subscription event user_id=%s event_id=%s", synced_user_id, event_id)
-        if synced_user_id and event["type"] == "customer.subscription.deleted":
+        if synced_user_id and event_type == "customer.subscription.deleted":
             subscription = event["data"]["object"]
             user = load_account_by_id(synced_user_id)
             if user:
@@ -5072,11 +5270,11 @@ def stripe_webhook():
         if not synced_user_id:
             record_unmatched_payment(event, event["data"]["object"], "subscription event could not resolve local user")
 
-    if event["type"] in {"invoice.paid", "invoice.payment_succeeded", "invoice.payment_failed"}:
-        synced_user_id = sync_stripe_invoice(event["data"]["object"], event["type"])
+    if event_type in {"invoice.paid", "invoice.payment_succeeded", "invoice.payment_failed"}:
+        synced_user_id = sync_stripe_invoice(event["data"]["object"], event_type)
         if synced_user_id:
             resolved_event_user_id = synced_user_id
-        if synced_user_id and event["type"] in {"invoice.paid", "invoice.payment_succeeded"}:
+        if synced_user_id and event_type in {"invoice.paid", "invoice.payment_succeeded"}:
             invoice = event["data"]["object"]
             user = load_account_by_id(synced_user_id)
             if user:
@@ -5103,7 +5301,7 @@ def stripe_webhook():
                     "billing_date": datetime.now().strftime("%b %d, %Y"),
                 })
                 logging.info("upgrade confirmation email sent/skipped for invoice event user_id=%s event_id=%s", synced_user_id, event_id)
-        if synced_user_id and event["type"] == "invoice.payment_failed":
+        if synced_user_id and event_type == "invoice.payment_failed":
             invoice = event["data"]["object"]
             user = load_account_by_id(synced_user_id)
             if user:
@@ -5856,7 +6054,7 @@ def send_upgrade_confirmation_email(user, details=None):
         "Dashboard: https://coinpilotx.app/dashboard\n"
         "Account: https://coinpilotx.app/account\n"
         "Support: https://coinpilotx.app/support\n"
-        "Telegram bot: https://t.me/DocShieldX_bot\n\n"
+        "Optional Telegram companion: https://t.me/DocShieldX_bot\n\n"
         "Telegram activation: log in at https://coinpilotx.app/account/settings, generate a Telegram code, then return to the bot and send /connect CODE.\n\n"
         "If you experience any issue after payment, please email us immediately at support@coinpilotx.app and include the email address used for your CoinPilotXAI account.\n\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
@@ -11280,7 +11478,7 @@ def account_reply_markup(telegram_user_id):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Create Account", url="https://coinpilotx.app/signup")],
         [InlineKeyboardButton("Login", url="https://coinpilotx.app/login")],
-        [InlineKeyboardButton("Open Website Account", url="https://coinpilotx.app/account")],
+        [InlineKeyboardButton("Open Platform Account", url="https://coinpilotx.app/account")],
         [InlineKeyboardButton("Help", callback_data="menu_help")],
         [InlineKeyboardButton("Main Menu", callback_data="main_menu")],
     ])

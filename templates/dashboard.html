@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard | CoinPilotXAI Inc.</title>
-  <meta name="description" content="Private CoinPilotXAI Inc. account dashboard for portfolio tracking, watchlists, alerts, and Telegram account sync." />
+  <meta name="description" content="Private CoinPilotXAI Inc. account dashboard for portfolio tracking, watchlists, alerts, and optional Telegram account sync." />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="canonical" href="https://coinpilotx.app/dashboard" />
   <meta name="theme-color" content="#00e5ff" />
@@ -59,7 +59,7 @@
         <div class="nav-links">
           <a class="button" href="/account">Account</a>
           <a class="button" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
-          <a class="button" href="https://t.me/DocShieldX_bot">Open Telegram</a>
+          <a class="button" href="https://t.me/DocShieldX_bot">Connect Telegram</a>
           <a class="button" href="/logout">Logout</a>
         </div>
       </nav>
@@ -71,11 +71,11 @@
       <article class="card">
         <div class="kicker">Personal Intelligence Dashboard</div>
         <h1 data-user-name>Welcome back</h1>
-        <p>Track your manual crypto holdings, watchlist, alerts, Telegram connection, and AI risk context from the same account your bot uses.</p>
+        <p>Track your manual crypto holdings, watchlist, alerts, optional Telegram connection, and AI risk context from the same source-of-truth website account.</p>
         {% if access.is_paid_pro %}
           <p class="notice"><strong>Paid Pro active.</strong> Your subscription is active. The dashboard, alerts, and optional Telegram companion will use paid Pro access.</p>
         {% elif access.is_trial %}
-          <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and Telegram connection.</p>
+          <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and optional Telegram connection.</p>
         {% endif %}
         <div class="actions">
           <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
@@ -95,7 +95,7 @@
             <strong>Connect Telegram:</strong>
             <p>Send this code to the bot within 10 minutes:</p>
             <p><code>/connect {{ link_code }}</code></p>
-            <a class="button gold" href="https://t.me/DocShieldX_bot">Open Telegram Bot</a>
+            <a class="button gold" href="https://t.me/DocShieldX_bot">Connect Telegram Companion</a>
           </div>
         {% endif %}
       </article>

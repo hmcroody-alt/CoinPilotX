@@ -27,6 +27,7 @@ MENU_SECTIONS = [
     ]),
     ("AI Intelligence", [
         ("ai_analysis", "AI Analysis"),
+        ("auto_signals", "Auto Signals"),
         ("ai_crypto_assistant", "AI Crypto Assistant"),
         ("chat_assistant", "Chat Assistant"),
         ("crypto_wisdom", "Crypto Wisdom"),
@@ -142,6 +143,45 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         return _market_summary("live_btc", symbol)
     if action_key == "live_market":
         return _market_summary("live_market")
+    if action_key == "btc_eth_charts":
+        btc = _market_summary("live_btc", "BTC")
+        eth = _market_summary("live_btc", "ETH")
+        return _card(
+            action_key,
+            "BTC/ETH Charts",
+            f"{btc.get('summary', '')}\n{eth.get('summary', '')}\nOpen full charts from the dashboard when chart providers are connected.",
+            "Public market feed",
+            "Medium",
+            ["Open dashboard", "Create alert", "Ask AI follow-up"],
+        )
+    if action_key == "auto_signals":
+        board = market_data.live_market_board(limit=12)
+        summary = board.get("summary") or {}
+        trend = summary.get("market_trend") or "mixed"
+        risk = summary.get("risk_level") or "Unknown"
+        avg = summary.get("average_change_24h")
+        signal = "WAIT"
+        if avg is not None and avg > 1.5 and risk == "Normal":
+            signal = "WATCH"
+        elif avg is not None and avg < -2:
+            signal = "CAUTION"
+        return _card(action_key, "Auto Signals", f"Educational signal: {signal}\nTrend: {trend}\nRisk: {risk}\nThis is context, not a buy/sell instruction.", board.get("source", "public market feed"), "Medium")
+    if action_key in {"crypto_news", "market_events"}:
+        return _card(action_key, "Crypto News and Market Events", "Live news source temporarily unavailable. Connect NEWS_API_KEY or CryptoPanic/NewsAPI to enable fresh market event summaries.", "news source unavailable", "Low", ["Ask AI for general context", "Open market board"])
+    if action_key == "fear_greed":
+        return _card(action_key, "Fear & Greed", "Fear & Greed source temporarily unavailable. The platform will show this live once the sentiment feed is connected.", "sentiment source unavailable", "Low")
+    if action_key == "crypto_wisdom":
+        return _card(action_key, "Crypto Wisdom", "Patience is a position. Slow decisions, smaller size, and clear invalidation rules usually beat emotional reaction.", "CoinPilotXAI education library", "High")
+    if action_key in {"scam_stories", "chain_intel", "btc_network", "whale_alerts"}:
+        title_map = {
+            "scam_stories": "Scam Stories",
+            "chain_intel": "Chain Intel",
+            "btc_network": "BTC Network",
+            "whale_alerts": "Whale Alerts",
+        }
+        source = "public-data service unavailable" if action_key != "scam_stories" else "CoinPilotXAI scam education library"
+        summary = "Live data source temporarily unavailable." if action_key != "scam_stories" else "Common crypto scam patterns include fake support, wallet-drainer approvals, fake airdrops, guaranteed-return dashboards, and urgency pressure."
+        return _card(action_key, title_map[action_key], summary, source, "Low" if action_key != "scam_stories" else "High")
     if action_key in {"ai_analysis", "ai_crypto_assistant", "chat_assistant"}:
         question = payload.get("question") or "Analyze BTC and the current crypto market."
         response = intelligence.assistant_response(user_id, question, pro=pro)
@@ -182,6 +222,14 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         data = portfolio_service.get_user_dashboard_data(user_id)
         p = data.get("portfolio", {})
         return _card(action_key, "Live Portfolio", f"Tracked value: ${float(p.get('total_value') or 0):,.2f}\nP/L: ${float(p.get('pnl_value') or 0):,.2f} · {float(p.get('pnl_percent') or 0):+.2f}%", "Website account database + public market feed", "Medium", ["Add holding", "Open dashboard"])
+    if action_key in {"portfolio_advice", "add_holding", "watchlist", "alerts"}:
+        if not user_id:
+            return _card(action_key, "Portfolio Tools", "Create a free account to save holdings, watchlist coins, alerts, and portfolio history.", "Website account database", "High", ["Create account"])
+        data = portfolio_service.get_user_dashboard_data(user_id)
+        p = data.get("portfolio", {})
+        return _card(action_key, "Portfolio Tools", f"Open your dashboard to manage holdings, watchlist, and alerts.\nCurrent tracked value: ${float(p.get('total_value') or 0):,.2f}", "Website account database + public market feed", "Medium", ["Open dashboard", "Create alert"])
+    if action_key in {"open_dashboard", "billing"}:
+        return _card(action_key, "Dashboard", "Open the website dashboard to manage account, billing, portfolio, alerts, and optional Telegram connection.", "Website account database", "High", ["Open dashboard"])
     if action_key == "account":
         if not user_id:
             return _card(action_key, "Account", "Log in to view your CoinPilotXAI account.", "Website account database", "High", ["Login", "Create account"])

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CoinPilotXAI App | AI Crypto Intelligence Platform</title>
   <meta name="description" content="Use the CoinPilotXAI command center for AI crypto intelligence, live markets, Scam Shield, Wallet Intel, portfolio tools, alerts, and optional Telegram companion access." />
-  <meta name="robots" content="noindex, nofollow" />
+  <meta name="robots" content="{% if is_guest %}index, follow{% else %}noindex, nofollow{% endif %}" />
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#00e5ff" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
@@ -48,7 +48,11 @@
     <div class="shell">
       <nav>
         <a class="brand" href="/app"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI</span></a>
-        <a class="button" href="/dashboard">Dashboard</a>
+        {% if is_guest %}
+          <a class="button primary" href="/signup?next=/app">Start Free</a>
+        {% else %}
+          <a class="button" href="/dashboard">Dashboard</a>
+        {% endif %}
       </nav>
     </div>
   </header>
@@ -58,10 +62,15 @@
       <article class="card">
         <div class="kicker">Standalone Web/PWA Command Center</div>
         <h1>AI Crypto Intelligence Platform</h1>
-        <p>Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app. Telegram is optional.</p>
+        <p>Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app. Telegram is an optional companion, not the core platform.</p>
       </article>
       <article class="card">
         <div class="kicker">Live Account</div>
+        {% if is_guest %}
+          <p><strong>Create a free account to run commands.</strong></p>
+          <p>Logged-out users can preview the platform menu. Running a command opens signup so your dashboard, alerts, and history stay connected.</p>
+          <p><a class="button primary" href="/signup?next=/app">Launch CoinPilotXAI Free</a></p>
+        {% else %}
         <p><strong>{{ access.label }}</strong></p>
         {% if access.is_paid_pro %}
           <p>Paid Pro active. Full command access is enabled.</p>
@@ -69,6 +78,7 @@
           <p>Pro trial active until {{ access.trial_end }}.</p>
         {% else %}
           <p>Free access. Upgrade when you want deeper intelligence and more alerts.</p>
+        {% endif %}
         {% endif %}
       </article>
     </section>
@@ -83,12 +93,17 @@
       <p>Tap a tool below or type a slash command. Results include source status, last updated time, and safety notes.</p>
     </section>
 
+    <section class="card" data-history-card hidden>
+      <h2>Command History</h2>
+      <div data-command-history></div>
+    </section>
+
     <section class="sections" data-menu>
-      {% for section in menu.sections %}
+      {% for section in menu["sections"] %}
         <article class="card">
           <h2>{{ section.title }}</h2>
           <div class="command-grid">
-            {% for item in section.items %}
+            {% for item in section["items"] %}
               <button class="button command-tile" type="button" data-action="{{ item.action_key }}">{{ item.label }}{% if item.pro and not menu.pro %} · Pro{% endif %}</button>
             {% endfor %}
           </div>
@@ -109,6 +124,7 @@
 
   <script>
     const responseCard = document.querySelector("[data-response]");
+    const commandHistory = [];
     function renderResult(data) {
       if (!data || !data.ok) throw new Error((data && data.message) || "Command failed");
       responseCard.innerHTML = `
@@ -120,6 +136,14 @@
           <span>Confidence: ${data.confidence || "Medium"}</span>
         </div>
         <p class="muted">${data.disclaimer || ""}</p>`;
+      commandHistory.unshift({ title: data.title || "CoinPilotXAI", time: new Date().toLocaleTimeString() });
+      commandHistory.splice(6);
+      const historyCard = document.querySelector("[data-history-card]");
+      const historyNode = document.querySelector("[data-command-history]");
+      if (historyCard && historyNode) {
+        historyCard.hidden = false;
+        historyNode.innerHTML = commandHistory.map(item => `<p><strong>${item.title}</strong> <span class="muted">${item.time}</span></p>`).join("");
+      }
     }
     async function runCommand(payload) {
       responseCard.innerHTML = "<h2>Working...</h2><p>CoinPilotXAI is checking the latest available data.</p>";
@@ -131,6 +155,10 @@
         body: JSON.stringify(payload)
       });
       const data = await res.json();
+      if (res.status === 401) {
+        window.location.href = "/signup?next=/app";
+        return;
+      }
       renderResult(data);
     }
     document.addEventListener("click", event => {

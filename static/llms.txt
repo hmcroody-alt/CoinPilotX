@@ -6,7 +6,7 @@ Primary site: https://coinpilotx.app/
 Support: https://coinpilotx.app/support
 Privacy: https://coinpilotx.app/privacy
 Terms: https://coinpilotx.app/terms
-Telegram bot: https://t.me/DocShieldX_bot
+Optional Telegram companion: https://t.me/DocShieldX_bot
 Machine-readable public index: https://coinpilotx.app/ai-index.json
 Canonical sitemap: https://coinpilotx.app/sitemap.xml
 
