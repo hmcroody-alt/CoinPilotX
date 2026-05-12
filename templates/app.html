@@ -61,8 +61,8 @@
     <section class="hero">
       <article class="card">
         <div class="kicker">Standalone Web/PWA Command Center</div>
-        <h1>AI Crypto Intelligence Platform</h1>
-        <p>Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app. Telegram is an optional companion, not the core platform.</p>
+        <h1>{% if chat_mode %}CoinPilotXAI Native Chat{% else %}AI Crypto Intelligence Platform{% endif %}</h1>
+        <p>{% if chat_mode %}Chat with CoinPilotXAI from the web app, run slash commands, and keep your AI history connected to your account. If AI is unavailable, the app will show a clear fallback instead of depending on Telegram.{% else %}Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app. Telegram is an optional companion, not the core platform.{% endif %}</p>
       </article>
       <article class="card">
         <div class="kicker">Live Account</div>

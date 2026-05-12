@@ -1430,7 +1430,6 @@ def dashboard_page():
 @webhook_app.route("/app", methods=["GET"])
 @webhook_app.route("/command-center", methods=["GET"])
 @webhook_app.route("/intelligence", methods=["GET"])
-@webhook_app.route("/chat", methods=["GET"])
 @webhook_app.route("/dashboard/intelligence", methods=["GET"])
 def app_command_center_page():
     init_db()
@@ -1446,6 +1445,25 @@ def app_command_center_page():
         access=account_access_context(fresh_user),
         menu=command_router_service.get_menu_items(fresh_user),
         is_guest=not bool(fresh_user),
+    )
+    return response
+
+
+@webhook_app.route("/chat", methods=["GET"])
+def native_chat_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/chat"))
+    fresh_user = load_account_by_id(user["user_id"]) or user
+    log_product_event(fresh_user["user_id"], "native_chat_viewed", {"path": request.path})
+    response = render_template(
+        "app.html",
+        current_user=fresh_user,
+        access=account_access_context(fresh_user),
+        menu=command_router_service.get_menu_items(fresh_user),
+        is_guest=False,
+        chat_mode=True,
     )
     return response
 
