@@ -36,12 +36,22 @@
     .command-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
     .command-tile { min-height:72px; align-items:flex-start; justify-content:flex-start; text-align:left; }
     .response-card { white-space:pre-wrap; }
+    .chat-window { min-height:360px; max-height:62vh; overflow:auto; display:flex; flex-direction:column; gap:12px; padding:8px; scroll-behavior:smooth; }
+    .chat-message { display:flex; gap:10px; align-items:flex-end; max-width:82%; }
+    .chat-message.user { margin-left:auto; flex-direction:row-reverse; }
+    .chat-avatar { width:34px; height:34px; border-radius:999px; display:grid; place-items:center; background:rgba(255,255,255,.08); color:var(--cyan); font-size:12px; font-weight:950; flex:0 0 auto; }
+    .chat-bubble { padding:12px 14px; border-radius:14px; white-space:pre-wrap; box-shadow:0 12px 28px rgba(0,0,0,.18); }
+    .chat-message.user .chat-bubble { background:linear-gradient(135deg,#0b7cff,#23b7ff); color:white; border-bottom-right-radius:4px; }
+    .chat-message.ai .chat-bubble { background:rgba(255,255,255,.08); color:var(--text); border:1px solid rgba(255,255,255,.08); border-bottom-left-radius:4px; }
+    .chat-label { display:flex; gap:8px; align-items:center; margin-bottom:4px; font-size:12px; color:var(--muted); font-weight:850; }
+    .chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .chip-button { min-height:32px; border:1px solid rgba(110,223,246,.25); border-radius:999px; background:rgba(110,223,246,.08); color:var(--text); padding:6px 10px; font-size:12px; font-weight:850; cursor:pointer; }
     .meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; color:var(--muted); font-size:13px; }
     .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:30; background:rgba(5,11,20,.93); border-top:1px solid rgba(255,255,255,.08); backdrop-filter:blur(18px); }
     .bottom-nav .shell { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:8px 12px; }
     .bottom-nav a { min-height:48px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:12px; font-weight:850; }
-    @media (max-width:860px){ .hero{grid-template-columns:1fr}.command-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.command-bar{top:72px}.button{width:100%} nav .button{width:auto} }
-    @media (max-width:420px){ .command-grid{grid-template-columns:1fr}.command-bar{grid-template-columns:1fr}.bottom-nav .shell{padding:6px}.bottom-nav a{font-size:11px} }
+    @media (max-width:860px){ .hero{grid-template-columns:1fr}.command-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.command-bar{top:72px}.button{width:100%} nav .button{width:auto}.chat-message{max-width:94%} }
+    @media (max-width:420px){ .command-grid{grid-template-columns:1fr}.command-bar{grid-template-columns:1fr}.bottom-nav .shell{padding:6px}.bottom-nav a{font-size:11px}.chat-avatar{display:none}.chat-window{max-height:58vh} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -91,9 +101,16 @@
       <button class="button primary" type="submit">Run</button>
     </form>
 
-    <section class="card response-card" data-response>
-      <h2>Choose a command</h2>
-      <p>Tap a tool below or type a slash command. Results include source status, last updated time, and safety notes.</p>
+    <section class="card response-card">
+      <div class="chat-window" data-chat-window aria-live="polite">
+        <div class="chat-message ai">
+          <div class="chat-avatar">AI</div>
+          <div>
+            <div class="chat-label"><span>CoinPilotXAI</span><span data-initial-time></span></div>
+            <div class="chat-bubble">Choose a command or ask CoinPilotXAI anything. Results include source status, last updated time, safety notes, and helpful next actions.</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="card" data-history-card hidden>
@@ -126,20 +143,35 @@
   </nav>
 
   <script>
-    const responseCard = document.querySelector("[data-response]");
+    const chatWindow = document.querySelector("[data-chat-window]");
+    const CHAT_MODE = {{ "true" if chat_mode else "false" }};
     const commandHistory = [];
+    document.querySelector("[data-initial-time]").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const escapeHtml = value => String(value || "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+    function scrollChat() { chatWindow.scrollTop = chatWindow.scrollHeight; }
+    function addMessage(role, text, options = {}) {
+      const isUser = role === "user";
+      const node = document.createElement("div");
+      node.className = "chat-message " + (isUser ? "user" : "ai");
+      const chips = !isUser && options.chips ? `<div class="chat-actions">${options.chips.map(chip => `<button class="chip-button" type="button" data-chip="${escapeHtml(chip)}">${escapeHtml(chip)}</button>`).join("")}</div>` : "";
+      node.innerHTML = `
+        <div class="chat-avatar">${isUser ? "You" : "AI"}</div>
+        <div>
+          <div class="chat-label"><span>${isUser ? "You" : "CoinPilotXAI"}</span><span>${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+          <div class="chat-bubble">${escapeHtml(text)}</div>
+          ${chips}
+        </div>`;
+      chatWindow.appendChild(node);
+      scrollChat();
+      return node;
+    }
+    function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
     function renderResult(data) {
       if (!data || !data.ok) throw new Error((data && (data.error || data.message)) || "Command failed");
       const summary = data.response || data.summary || "";
-      responseCard.innerHTML = `
-        <h2>${data.title || "CoinPilotXAI"}</h2>
-        <p>${summary.replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>
-        <div class="meta">
-          <span>Source: ${data.source || "CoinPilotXAI platform"}</span>
-          <span>Updated: ${data.last_updated || "now"}</span>
-          <span>Confidence: ${data.confidence || "Medium"}</span>
-        </div>
-        <p class="muted">${data.disclaimer || ""}</p>`;
+      addMessage("ai", `${data.title ? data.title + "\n\n" : ""}${summary}\n\nSource: ${data.source || "CoinPilotXAI platform"} · Updated: ${data.last_updated || "now"} · Confidence: ${data.confidence || "Medium"}${data.disclaimer ? "\n\n" + data.disclaimer : ""}`, {
+        chips: ["Create Alert", "Scan Wallet", "Check Market", "Save Insight", "Ask Follow-up"]
+      });
       commandHistory.unshift({ title: data.title || "CoinPilotXAI", time: new Date().toLocaleTimeString() });
       commandHistory.splice(6);
       const historyCard = document.querySelector("[data-history-card]");
@@ -150,21 +182,25 @@
       }
     }
     async function runCommand(payload) {
-      responseCard.innerHTML = "<h2>Working...</h2><p>CoinPilotXAI is checking the latest available data.</p>";
-      const res = await fetch(payload.action_key ? "/api/menu-action" : "/api/command", {
+      if (payload.command || payload.message) addMessage("user", payload.command || payload.message);
+      const thinking = addMessage("ai", "CoinPilotXAI is thinking...");
+      const endpoint = CHAT_MODE && !payload.action_key ? "/api/ai/chat" : (payload.action_key ? "/api/menu-action" : "/api/command");
+      const requestPayload = endpoint === "/api/ai/chat" ? { message: payload.command || payload.message || "" } : payload;
+      const res = await fetch(endpoint, {
         method: "POST",
         cache: "no-store",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(requestPayload)
       });
       const data = await res.json();
+      removeNode(thinking);
       if (res.status === 401) {
         window.location.href = "/signup?next=" + encodeURIComponent(location.pathname);
         return;
       }
       if (res.status === 403) {
-        responseCard.innerHTML = `<h2>Pro Intelligence Required</h2><p>${data.message || "You need CoinPilotXAI Pro to access this command."}</p><div class="meta"><a class="button primary" href="/upgrade">Upgrade to Pro</a><a class="button" href="/account">Account</a></div>`;
+        addMessage("ai", `${data.message || "You need CoinPilotXAI Pro to access this command."}\n\nNext step: open Upgrade or Account to review your access.`);
         return;
       }
       renderResult(data);
@@ -172,15 +208,30 @@
     document.addEventListener("click", event => {
       const button = event.target.closest("[data-action]");
       if (button) runCommand({ action_key: button.dataset.action }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
+      const chip = event.target.closest("[data-chip]");
+      if (chip) {
+        const label = chip.dataset.chip || "";
+        if (label === "Create Alert") location.href = "/dashboard#add-alert";
+        else if (label === "Scan Wallet") runCommand({ command: "/wallet " });
+        else if (label === "Check Market") runCommand({ command: "/market" });
+        else if (label === "Save Insight") runCommand({ command: "/help save insight" });
+        else runCommand({ command: "" });
+      }
     });
     document.querySelector("[data-command-form]").addEventListener("submit", event => {
       event.preventDefault();
       const command = new FormData(event.target).get("command");
+      event.target.reset();
       runCommand({ command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
     });
-    fetch("/api/command/history", { cache: "no-store", credentials: "same-origin" })
+    fetch(CHAT_MODE ? "/api/ai/history" : "/api/command/history", { cache: "no-store", credentials: "same-origin" })
       .then(res => res.ok ? res.json() : null)
       .then(data => {
+        if (CHAT_MODE && data && data.ok && data.messages && data.messages.length) {
+          chatWindow.innerHTML = "";
+          data.messages.slice(-80).forEach(item => addMessage(item.role === "user" ? "user" : "ai", item.content || ""));
+          return;
+        }
         if (!data || !data.ok || !data.history || !data.history.length) return;
         commandHistory.splice(0, commandHistory.length, ...data.history.slice(0, 6).map(item => ({
           title: item.command_name || "CoinPilotXAI",

@@ -13,7 +13,7 @@
   <style>
     :root { --bg:#050b14; --panel:#0d1627; --panel2:#111d32; --line:rgba(110,223,246,.18); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; --red:#ff6b7a; }
     * { box-sizing:border-box; }
-    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:var(--text); background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 30rem),radial-gradient(circle at 90% 10%,rgba(54,229,143,.12),transparent 26rem),linear-gradient(135deg,#050b14,#081421 60%,#04070d); line-height:1.6; overflow-x:hidden; }
+    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:var(--text); background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 30rem),radial-gradient(circle at 90% 10%,rgba(54,229,143,.12),transparent 26rem),linear-gradient(135deg,#050b14,#081421 60%,#04070d); line-height:1.6; overflow-x:hidden; padding-bottom:76px; }
     a { color:inherit; }
     .container { width:min(100% - 32px,1240px); margin:0 auto; }
     header { position:sticky; top:0; z-index:20; border-bottom:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.88); backdrop-filter:blur(18px); }
@@ -47,6 +47,15 @@
     .chart { display:flex; align-items:end; gap:6px; height:140px; padding-top:12px; }
     .bar { flex:1; min-height:8px; border-radius:8px 8px 0 0; background:linear-gradient(180deg,var(--cyan),var(--green)); opacity:.82; }
     .notice { padding:13px 14px; border-radius:10px; border:1px solid rgba(255,209,102,.24); background:rgba(255,209,102,.08); color:#ffe4a8; }
+    .locked { opacity:.56; filter:saturate(.72); }
+    .lock-badge { display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; background:rgba(255,209,102,.14); color:#ffe4a8; font-size:12px; font-weight:900; }
+    .score-ring { width:118px; height:118px; border-radius:999px; display:grid; place-items:center; border:10px solid rgba(54,229,143,.24); box-shadow:inset 0 0 24px rgba(54,229,143,.15),0 0 28px rgba(110,223,246,.12); font-size:34px; font-weight:950; }
+    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:40; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); backdrop-filter:blur(18px); }
+    .bottom-nav .container { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:8px 12px; }
+    .bottom-nav a { min-height:48px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:12px; font-weight:900; border-radius:8px; }
+    .bottom-nav a:hover,.bottom-nav a.active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
+    .channel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .channel-grid label { display:flex; gap:8px; align-items:center; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:8px; color:var(--muted); }
     @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
@@ -102,6 +111,43 @@
     </section>
 
     <section class="grid">
+      <article class="card">
+        <div class="kicker">Daily Intelligence Brief</div>
+        <h2>Today’s Market Pulse</h2>
+        <p data-daily-brief>Loading daily brief...</p>
+        <p class="muted" data-what-changed>Checking what changed since yesterday...</p>
+      </article>
+      <article class="card">
+        <div class="kicker">Risk Shield Score</div>
+        <div class="score-ring" data-risk-score>--</div>
+        <p class="muted" data-risk-detail>Loading safety coverage...</p>
+      </article>
+      <article class="card">
+        <div class="kicker">Daily Progress</div>
+        <div class="metric" data-streak>0</div>
+        <p>daily check-in streak</p>
+        <p class="muted" data-progress-note>Build safer habits one clear review at a time.</p>
+      </article>
+
+      <article class="card wide">
+        <h2>Personal Watch Command Center</h2>
+        <p class="muted">Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets.</p>
+        <div class="list" data-watch-items><p class="muted">No watched intelligence items yet.</p></div>
+        <form data-watch-item-form>
+          <div class="form-grid">
+            <select name="watch_type"><option value="coin">Coin</option><option value="wallet">Wallet</option><option value="exchange">Exchange</option><option value="scam_keyword">Scam keyword</option><option value="news_topic">News topic</option><option value="sports_edge">Sports edge</option></select>
+            <input name="value" placeholder="BTC, wallet, exchange, topic, or keyword" required>
+          </div>
+          <button class="button primary" type="submit">Watch This</button>
+          <p class="muted" data-watch-item-message></p>
+        </form>
+      </article>
+      <article class="card">
+        <h2>AI Memory Card</h2>
+        <p>CoinPilotXAI remembers your watchlist, alerts, portfolio, and recent questions for your private account context.</p>
+        <p class="muted" data-memory-card>Recent saved insights and suggested next actions will appear here.</p>
+      </article>
+
       <article class="card">
         <div class="kicker">Portfolio Value</div>
         <div class="metric" data-total-value>$0.00</div>
@@ -168,9 +214,32 @@
             <input name="target_value" type="number" step="any" placeholder="Target value" required>
           </div>
           <select name="channel"><option value="website">Website</option><option value="telegram">Companion</option></select>
+          <div class="channel-grid" aria-label="Alert delivery channels">
+            <label><input type="checkbox" name="channels" value="in_app" checked> In-app</label>
+            <label><input type="checkbox" name="channels" value="email"> Email</label>
+            <label><input type="checkbox" name="channels" value="push"> PWA push</label>
+            <label><input type="checkbox" name="channels" value="sms"> SMS/Text</label>
+            <label><input type="checkbox" name="channels" value="telegram"> Optional companion</label>
+          </div>
           <button class="button gold" type="submit">Create Alert</button>
           <p class="muted" data-alert-message></p>
         </form>
+      </article>
+
+      <article class="card wide">
+        <h2>Crypto Education Journey</h2>
+        <p class="muted">Daily lessons for crypto basics, investor safety, scam defense, wallet intelligence, market psychology, and on-chain analysis.</p>
+        <div class="list">
+          <a class="button" href="/education">Open Education Hub</a>
+          <a class="button" href="/education/optimism">Live Optimism Market Data</a>
+          <a class="button" href="/education/toncoin-scenarios">Toncoin Scenario Education</a>
+          <a class="button" href="/dashboard/scam-alerts">Crypto Scam Alerts</a>
+        </div>
+        <p class="muted" data-education-progress>Education progress will appear here.</p>
+      </article>
+      <article class="card">
+        <h2>Saved Insights Library</h2>
+        <div class="list" data-saved-insights><p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p></div>
       </article>
 
       <article class="card wide">
@@ -179,10 +248,12 @@
       </article>
       <article class="card">
         <h2>Quick Actions</h2>
-        <div class="list">
-          <a class="button primary" href="/#console">Ask AI</a>
-          <a class="button" href="/#console">Run Scam Shield</a>
-          <a class="button" href="/#day-signal">Run Day Signal</a>
+        <div class="list{% if not access.has_pro %} locked{% endif %}">
+          <a class="button primary" href="/chat">Ask AI</a>
+          <a class="button" href="/dashboard/scam-alerts">Run Scam Shield</a>
+          <a class="button" href="/app">Run Day Signal</a>
+          <a class="button" href="/command-center">Open Command Center</a>
+          {% if not access.has_pro %}<span class="lock-badge">Pro tools locked</span>{% endif %}
           {% if access.is_paid_pro %}
             <a class="button gold" href="/account">Manage Pro</a>
           {% else %}
@@ -194,6 +265,15 @@
 
     <p class="notice">Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds, does not ask for seed phrases/private keys, and does not provide financial advice.</p>
   </main>
+  <nav class="bottom-nav">
+    <div class="container">
+      <a class="active" href="/dashboard">Home</a>
+      <a href="/command-center">Intel</a>
+      <a href="/live-market">Live</a>
+      <a href="#add-alert">Alerts</a>
+      <a href="/account">Account</a>
+    </div>
+  </nav>
 
   <script>
     const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -248,6 +328,39 @@
       const holdings = data.portfolio.holdings || [];
       const max = Math.max(...holdings.map(i => i.value || 0), 1);
       chart.innerHTML = holdings.map(i => `<div class="bar" title="${i.symbol} ${money(i.value)}" style="height:${Math.max(8, (i.value || 0) / max * 100)}%"></div>`).join("") || '<p class="muted">Add holdings to see allocation.</p>';
+    }
+
+    async function loadRetentionPanels() {
+      const [brief, risk, streak, insights, watch, progress] = await Promise.all([
+        fetch("/api/dashboard/brief", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/dashboard/risk-score", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/dashboard/streak", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/insights", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/watch", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/education/progress", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null)
+      ]);
+      if (brief && brief.ok) {
+        text("[data-daily-brief]", brief.market_pulse + " · " + brief.ai_insight);
+        text("[data-what-changed]", "Watch today: " + (brief.top_watch || []).join(", ") + ". " + brief.scam_warning);
+      }
+      if (risk && risk.ok) {
+        text("[data-risk-score]", risk.score);
+        text("[data-risk-detail]", "Security " + risk.account_security + " · Wallet " + risk.wallet_safety + " · Alerts " + risk.alert_coverage);
+      }
+      if (streak && streak.ok) {
+        text("[data-streak]", streak.daily_checkin_streak || 0);
+        text("[data-progress-note]", "Scam safety " + (streak.scam_safety_score || 70) + " · Portfolio discipline " + (streak.portfolio_discipline_score || 70));
+      }
+      if (insights && insights.ok) {
+        document.querySelector("[data-saved-insights]").innerHTML = (insights.insights || []).slice(0, 5).map(item => `<div class="activity-row"><strong>${item.title}</strong><span>${item.insight_type}</span></div>`).join("") || '<p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p>';
+        text("[data-memory-card]", (insights.insights || [])[0]?.title || "Ask AI or save an insight to build your memory card.");
+      }
+      if (watch && watch.ok) {
+        document.querySelector("[data-watch-items]").innerHTML = (watch.items || []).slice(0, 8).map(item => `<div class="watch-row"><strong>${item.label || item.value}</strong><span>${item.watch_type}</span></div>`).join("") || '<p class="muted">No watched intelligence items yet.</p>';
+      }
+      if (progress && progress.ok) {
+        text("[data-education-progress]", progress.paths.join(" · "));
+      }
     }
 
     async function loadDashboard() {
@@ -313,7 +426,15 @@
       if (event.target.matches("[data-alert-form]")) {
         event.preventDefault();
         const form = event.target;
-        try { await postJson("/api/alerts", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-alert-message]", "Alert created."); loadDashboard(); } catch (err) { text("[data-alert-message]", err.message); }
+        const formData = new FormData(form);
+        const payload = Object.fromEntries(formData.entries());
+        payload.channels = formData.getAll("channels");
+        try { await postJson("/api/alerts", payload); form.reset(); text("[data-alert-message]", "Alert created."); loadDashboard(); loadRetentionPanels(); } catch (err) { text("[data-alert-message]", err.message); }
+      }
+      if (event.target.matches("[data-watch-item-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        try { await postJson("/api/watch", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-watch-item-message]", "Watch item saved."); loadRetentionPanels(); } catch (err) { text("[data-watch-item-message]", err.message); }
       }
     });
 
@@ -328,8 +449,8 @@
       if (alert) { await fetch("/api/alerts/" + alert.dataset.deleteAlert, { method: "DELETE" }); loadDashboard(); }
     });
 
-    loadDashboard().then(loadAccountStatus).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); });
-    window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); }, 60000);
+    loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); });
+    window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); }, 60000);
   </script>
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>

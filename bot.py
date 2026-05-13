@@ -40,6 +40,7 @@ from services import (
     command_router as command_router_service,
     db as db_service,
     day_signal as day_signal_service,
+    email_service as email_service_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
     notification_service,
@@ -173,6 +174,14 @@ def normalize_email(email):
 
 
 DB_STARTUP_DIAGNOSTICS = db_service.log_startup_diagnostics()
+MAIL_STARTUP_STATUS = email_service_service.provider_status()
+logging.info(
+    "MAIL_PROVIDER_READY provider=%s ready=%s sender_address=%s sender_name=%s",
+    MAIL_STARTUP_STATUS.get("provider"),
+    MAIL_STARTUP_STATUS.get("ready"),
+    MAIL_STARTUP_STATUS.get("sender_email"),
+    MAIL_STARTUP_STATUS.get("sender_name"),
+)
 
 
 def generate_owner_temp_password():
@@ -731,11 +740,128 @@ def support_page():
                 """,
                 (account_user_id() or 0, email, name, issue_type, subject, message, datetime.now().isoformat(), datetime.now().isoformat()),
             )
+            ticket_id = cur.lastrowid
+            cur.execute(
+                "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_user_id, message, created_at) VALUES (?, 'user', ?, ?, ?)",
+                (ticket_id, account_user_id() or 0, message, datetime.now().isoformat()),
+            )
             conn.commit()
             conn.close()
+            send_channel_email(
+                "support@coinpilotx.app",
+                f"CoinPilotXAI Support Ticket: {subject}",
+                f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
+                f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
+                user_id=account_user_id() or 0,
+                email_type="support_ticket",
+                channel="support",
+            )
             log_product_event(account_user_id() or 0, "support_ticket_created", {"issue_type": issue_type})
         return render_template("support.html", message="Thanks. CoinPilotXAI Inc. support received your request.")
     return render_template("support.html")
+
+
+@webhook_app.route("/api/support/ticket", methods=["GET", "POST"])
+def api_support_ticket():
+    init_db()
+    user = require_account()
+    if request.method == "GET":
+        if not user:
+            return jsonify({"ok": False, "message": "Login required."}), 401
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, issue_type, subject, status, priority, created_at, updated_at FROM support_tickets WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],))
+        tickets = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return jsonify({"ok": True, "tickets": tickets})
+    payload = request.get_json(silent=True) or {}
+    name = clean_html(payload.get("name") or (user or {}).get("full_name") or "")[:160]
+    email = normalize_email(clean_html(payload.get("email") or (user or {}).get("email") or ""))
+    issue_type = clean_html(payload.get("issue_type") or "general support")[:80]
+    subject = clean_html(payload.get("subject") or issue_type or "Support request")[:180]
+    message = clean_html(payload.get("message") or "")[:4000]
+    if not is_valid_email(email) or not message:
+        return jsonify({"ok": False, "message": "Valid email and message required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute(
+        """
+        INSERT INTO support_tickets
+        (user_id, email, name, issue_type, subject, message, status, priority, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'open', 'normal', ?, ?)
+        """,
+        ((user or {}).get("user_id") or 0, email, name, issue_type, subject, message, now, now),
+    )
+    ticket_id = cur.lastrowid
+    cur.execute(
+        "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_user_id, message, created_at) VALUES (?, 'user', ?, ?, ?)",
+        (ticket_id, (user or {}).get("user_id") or 0, message, now),
+    )
+    conn.commit()
+    conn.close()
+    send_channel_email(
+        "support@coinpilotx.app",
+        f"CoinPilotXAI Support Ticket: {subject}",
+        f"<p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
+        f"From: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
+        user_id=(user or {}).get("user_id") or 0,
+        email_type="support_ticket",
+        channel="support",
+    )
+    log_product_event((user or {}).get("user_id") or 0, "support_ticket_created", {"issue_type": issue_type, "ticket_id": ticket_id})
+    return jsonify({"ok": True, "ticket_id": ticket_id, "message": "Support ticket opened."})
+
+
+@webhook_app.route("/security", methods=["GET"])
+def security_page():
+    return simple_public_page(
+        "security",
+        "Security Reporting | CoinPilotXAI Inc.",
+        "CoinPilotXAI Security Reporting",
+        "Report scams, suspicious wallets, phishing, abusive users, or account compromise to CoinPilotXAI Inc.",
+        "Security reports are routed to security@coinpilotx.app. CoinPilotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
+        ["Scam reporting", "Suspicious wallet reporting", "Phishing reporting", "Account compromise help"],
+        [{"title": "Report a security concern", "body": "Use the security reporting API or support form to report suspicious behavior. Include public wallet addresses or URLs only, never private credentials."}],
+        ["/safety", "/scam-guide", "/wallet-security", "/support"],
+    )
+
+
+@webhook_app.route("/api/security/report", methods=["POST"])
+def api_security_report():
+    init_db()
+    user = require_account()
+    payload = request.get_json(silent=True) or {}
+    email = normalize_email(clean_html(payload.get("email") or (user or {}).get("email") or ""))
+    report_type = clean_html(payload.get("report_type") or "security")[:80]
+    target = clean_html(payload.get("target") or "")[:500]
+    description = clean_html(payload.get("description") or payload.get("message") or "")[:5000]
+    if not description:
+        return jsonify({"ok": False, "message": "Security report description required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute(
+        """
+        INSERT INTO security_reports (user_id, email, report_type, target, description, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+        """,
+        ((user or {}).get("user_id") or 0, email, report_type, target, description, now, now),
+    )
+    report_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    send_channel_email(
+        "security@coinpilotx.app",
+        f"CoinPilotXAI Security Report: {report_type}",
+        f"<p><strong>Email:</strong> {clean_html(email)}</p><p><strong>Target:</strong> {clean_html(target)}</p><p>{clean_html(description)}</p>",
+        f"Email: {email}\nTarget: {target}\n\n{description}",
+        user_id=(user or {}).get("user_id") or 0,
+        email_type="security_report",
+        channel="security",
+    )
+    log_product_event((user or {}).get("user_id") or 0, "security_report_created", {"report_type": report_type, "report_id": report_id})
+    return jsonify({"ok": True, "report_id": report_id, "message": "Security report received."})
 
 
 @webhook_app.route("/privacy", methods=["GET"])
@@ -764,6 +890,123 @@ def render_seo_landing(page, include_article=False):
     share_url = quote(page["canonical"], safe="")
     share_text = quote(f"{page['h1']} by CoinPilotXAI Inc.", safe="")
     return render_template("seo_page.html", page=page, schema_json=schema_json, share_url=share_url, share_text=share_text)
+
+
+def simple_public_page(slug, title, h1, intro, answer, points, sections=None, related=None):
+    canonical = f"https://coinpilotx.app/{slug.strip('/')}"
+    page = {
+        "slug": slug.strip("/").replace("/", "-"),
+        "title": title,
+        "description": intro[:155],
+        "canonical": canonical,
+        "image": "https://coinpilotx.app/static/og/coinpilotxai-og.png",
+        "og_type": "website",
+        "eyebrow": "CoinPilotXAI Intelligence",
+        "h1": h1,
+        "intro": intro,
+        "answer": answer,
+        "points": points,
+        "sections": sections or [],
+        "faqs": [
+            {"question": "Is this financial advice?", "answer": "No. CoinPilotXAI Inc. provides educational AI intelligence only, not financial, betting, investment, or legal advice."},
+            {"question": "Does CoinPilotXAI need my seed phrase?", "answer": "No. CoinPilotXAI never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords."},
+        ],
+        "related": related or ["/platform", "/scam-guide", "/live-market", "/pricing"],
+        "keywords": ["AI crypto intelligence platform", "crypto alerts", "wallet intelligence", "scam detection"],
+    }
+    return render_seo_landing(page)
+
+
+@webhook_app.route("/education", methods=["GET"])
+@webhook_app.route("/dashboard/education", methods=["GET"])
+def education_hub_page():
+    if request.path.startswith("/dashboard"):
+        user = require_account()
+        if not user:
+            return redirect(url_for("signup_page", next=request.path))
+    return simple_public_page(
+        "education",
+        "Crypto Education Hub | CoinPilotXAI Inc.",
+        "Crypto Education Hub",
+        "Learn crypto basics, wallet safety, scam prevention, risk management, market psychology, DeFi, and on-chain analysis with CoinPilotXAI.",
+        "The education hub helps users build safer crypto habits before they use advanced AI intelligence tools.",
+        ["Crypto Basics", "Bitcoin and Ethereum", "Wallet Safety", "Scam Prevention", "Risk Management", "On-chain Analysis"],
+        [
+            {"title": "Beginner path", "body": "Start with wallets, exchanges, stablecoins, risk sizing, and common scam patterns."},
+            {"title": "Safety path", "body": "Learn how phishing, fake support, wallet drain approvals, and seed phrase scams work."},
+            {"title": "Market path", "body": "Study volatility, trend context, market psychology, and source quality without guaranteed-outcome claims."},
+        ],
+        ["/education/optimism", "/education/toncoin-scenarios", "/dashboard/scam-alerts", "/safety"],
+    )
+
+
+@webhook_app.route("/education/optimism", methods=["GET"])
+@webhook_app.route("/dashboard/optimism", methods=["GET"])
+def optimism_education_page():
+    if request.path.startswith("/dashboard"):
+        user = require_account()
+        if not user:
+            return redirect(url_for("signup_page", next=request.path))
+    op = market_data_service.get_symbol("OP")
+    price = op.get("price") if isinstance(op, dict) else None
+    price_text = f"Current OP price from available feed: ${price}" if price else "Live Optimism market data is temporarily unavailable."
+    return simple_public_page(
+        "education/optimism",
+        "Live Optimism Market Data & Education | CoinPilotXAI",
+        "Live Optimism Market Data",
+        "Track Optimism ecosystem context with source labels, fallback handling, and educational risk notes.",
+        price_text,
+        ["OP price context", "Layer 2 ecosystem basics", "Risk factors", "Source transparency"],
+        [
+            {"title": "What Optimism is", "body": "Optimism is an Ethereum layer 2 ecosystem designed to reduce cost and improve transaction throughput."},
+            {"title": "What to watch", "body": "Watch Ethereum activity, L2 adoption, fee conditions, token unlocks, governance, and broader market liquidity."},
+        ],
+        ["/education", "/live-market", "/portfolio-intelligence", "/safety"],
+    )
+
+
+@webhook_app.route("/education/toncoin-scenarios", methods=["GET"])
+def toncoin_scenarios_page():
+    return simple_public_page(
+        "education/toncoin-scenarios",
+        "Toncoin Scenario Education | CoinPilotXAI",
+        "Toncoin Prediction Scenarios",
+        "Educational bull, base, and bear Toncoin scenarios with risk factors and no guaranteed prediction claims.",
+        "Scenario analysis is a planning framework, not a promise. CoinPilotXAI shows bull, base, and bear cases so users can think in probabilities.",
+        ["Bull case", "Base case", "Bear case", "Risk factors"],
+        [
+            {"title": "Bull case", "body": "A stronger case may involve ecosystem adoption, liquidity improvement, and constructive broader crypto conditions."},
+            {"title": "Base case", "body": "A neutral case may involve range-bound price action while users watch adoption, unlocks, sentiment, and liquidity."},
+            {"title": "Bear case", "body": "A weaker case may involve broad market stress, regulatory pressure, lower liquidity, or negative ecosystem news."},
+        ],
+        ["/education", "/live-market", "/scam-guide", "/safety"],
+    )
+
+
+@webhook_app.route("/dashboard/scam-alerts", methods=["GET"])
+def dashboard_scam_alerts_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    body = """
+    <h1>Crypto Scam Alerts</h1>
+    <p>Scan suspicious messages, wallet addresses, URLs, or project names. Never enter seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.</p>
+    <form id="scam-alert-form">
+      <textarea name="text" placeholder="Paste suspicious text, URL, wallet, or project name" style="width:100%;min-height:140px"></textarea>
+      <button type="submit">Scan With Scam Shield</button>
+    </form>
+    <pre id="scam-alert-result">Result will appear here.</pre>
+    <script>
+      document.getElementById('scam-alert-form').addEventListener('submit', async function(event){
+        event.preventDefault();
+        const text = new FormData(event.target).get('text');
+        const res = await fetch('/api/scam-shield', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', cache:'no-store', body:JSON.stringify({text})});
+        const data = await res.json();
+        document.getElementById('scam-alert-result').textContent = data.response || data.summary || JSON.stringify(data, null, 2);
+      });
+    </script>
+    """
+    return render_account_page("custom", "Crypto Scam Alerts", current_user=user, custom_body=body)
 
 
 @webhook_app.route("/markets/<symbol>/prediction", methods=["GET"])
@@ -3524,6 +3767,47 @@ def admin_payment_emails_page():
     return admin_page_html("Payment Emails", body, admin)
 
 
+@webhook_app.route("/admin/emails/payment/resend/<payment_id>", methods=["POST"])
+def admin_payment_email_resend_by_payment_id(payment_id):
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    if not verify_csrf():
+        return redirect(url_for("admin_payment_emails_page", status="failed"))
+    token = clean_html(payment_id)[:180]
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    if token.isdigit():
+        cur.execute("SELECT * FROM payment_records WHERE id=? LIMIT 1", (int(token),))
+    else:
+        cur.execute(
+            """
+            SELECT * FROM payment_records
+            WHERE stripe_session_id=? OR invoice_id=? OR payment_intent_id=? OR stripe_event_id=?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (token, token, token, token),
+        )
+    payment = cur.fetchone()
+    conn.close()
+    if payment:
+        payment_row = dict(payment)
+        user = load_account_by_id(payment_row.get("user_id"))
+        if user:
+            send_successful_payment_email_bundle(user, {
+                "stripe_event_id": payment_row.get("stripe_event_id") or "",
+                "payment_id": payment_row.get("stripe_session_id") or payment_row.get("invoice_id") or payment_row.get("payment_intent_id") or str(payment_row.get("id")),
+                "stripe_session_id": payment_row.get("stripe_session_id") or "",
+                "invoice_id": payment_row.get("invoice_id") or "",
+                "amount": payment_row.get("amount"),
+                "currency": payment_row.get("currency") or "USD",
+            }, force=True)
+            log_admin_audit(admin["id"], "payment_email_resend", "payment_record", token, {"user_id": user.get("user_id")})
+    return redirect(url_for("admin_payment_emails_page", payment_id=token))
+
+
 @webhook_app.route("/admin/unmatched-payments", methods=["GET"])
 def admin_unmatched_payments_page():
     init_db()
@@ -4370,24 +4654,54 @@ def admin_support_page():
     if request.method == "POST" and verify_csrf():
         conn = db()
         cur = conn.cursor()
+        ticket_id = int(request.form.get("ticket_id") or 0)
+        reply_message = clean_html(request.form.get("reply_message") or "")[:4000]
         cur.execute(
             "UPDATE support_tickets SET status=?, assigned_to=?, updated_at=? WHERE id=?",
             (
                 clean_html(request.form.get("status", "open"))[:40],
                 admin["id"],
                 datetime.now().isoformat(),
-                int(request.form.get("ticket_id") or 0),
+                ticket_id,
             ),
         )
+        if reply_message:
+            cur.execute(
+                "INSERT INTO support_ticket_messages (ticket_id, sender_type, sender_admin_id, message, created_at) VALUES (?, 'admin', ?, ?, ?)",
+                (ticket_id, admin["id"], reply_message, datetime.now().isoformat()),
+            )
         conn.commit()
         conn.close()
+        if reply_message:
+            send_channel_email(
+                request.form.get("ticket_email") or "support@coinpilotx.app",
+                "CoinPilotXAI Support Reply",
+                f"<p>{clean_html(reply_message)}</p>",
+                reply_message,
+                user_id=0,
+                email_type="support_reply",
+                channel="support",
+            )
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("SELECT id, email, name, issue_type, subject, status, priority, created_at FROM support_tickets ORDER BY id DESC LIMIT 150")
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    body = f"<h1>Support Center</h1><div class='card'>{admin_rows_table(rows, [('id','ID'),('email','Email'),('name','Name'),('issue_type','Type'),('subject','Subject'),('status','Status'),('priority','Priority'),('created_at','Created')])}</div>"
+    quick_reply = f"""
+    <div class='card'>
+      <h2>Reply / Close Ticket</h2>
+      <form method='post'>
+        <input type='hidden' name='csrf_token' value='{get_csrf_token()}' />
+        <input name='ticket_id' placeholder='Ticket ID' />
+        <input name='ticket_email' placeholder='Recipient email' />
+        <select name='status'><option value='open'>Open</option><option value='escalated'>Escalated</option><option value='closed'>Closed</option></select>
+        <textarea name='reply_message' placeholder='Optional reply message'></textarea>
+        <button type='submit'>Update Ticket</button>
+      </form>
+    </div>
+    """
+    body = f"<h1>Support Center</h1>{quick_reply}<div class='card'>{admin_rows_table(rows, [('id','ID'),('email','Email'),('name','Name'),('issue_type','Type'),('subject','Subject'),('status','Status'),('priority','Priority'),('created_at','Created')])}</div>"
     return admin_page_html("Support", body, admin)
 
 
@@ -5382,6 +5696,203 @@ def dashboard_api():
     return response
 
 
+def dashboard_brief_payload(user_id):
+    market = market_data_service.live_market_board(limit=8)
+    markets = market.get("markets") or []
+    btc = next((item for item in markets if (item.get("symbol") or "").upper() == "BTC"), None) or (markets[0] if markets else {})
+    eth = next((item for item in markets if (item.get("symbol") or "").upper() == "ETH"), None) or {}
+    return {
+        "ok": True,
+        "title": "Today's Market Pulse",
+        "market_pulse": f"BTC {btc.get('price', 'unavailable')} · ETH {eth.get('price', 'unavailable')}",
+        "risk_alerts": "Review position size, avoid urgency, and verify links before signing wallet approvals.",
+        "top_watch": [item.get("symbol") for item in markets[:5] if item.get("symbol")],
+        "scam_warning": "Never enter a seed phrase, private key, wallet password, exchange password, or recovery phrase into any CoinPilotXAI tool.",
+        "ai_insight": "Based on available public market data, start with risk control and alerts before making any high-conviction move.",
+        "source": market.get("source") or "CoinPilotXAI market service",
+        "updated_at": datetime.now().isoformat(),
+    }
+
+
+@webhook_app.route("/api/dashboard/brief", methods=["GET"])
+def api_dashboard_brief():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = dashboard_brief_payload(user["user_id"])
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/dashboard/risk-score", methods=["GET"])
+def api_dashboard_risk_score():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    portfolio = portfolio_service.calculate_user_portfolio(user["user_id"])
+    alert_count = len(portfolio_service.get_alerts(user["user_id"]) or [])
+    watch_count = len(portfolio_service.get_watchlist(user["user_id"]) or [])
+    holding_count = len(portfolio.get("holdings") or [])
+    score = min(95, 45 + alert_count * 8 + watch_count * 4 + holding_count * 5)
+    payload = {
+        "ok": True,
+        "score": score,
+        "account_security": 80 if user.get("email_verified") else 60,
+        "wallet_safety": 75,
+        "scam_exposure": 70,
+        "portfolio_risk": max(45, 85 - holding_count * 5),
+        "alert_coverage": min(95, 45 + alert_count * 15),
+        "updated_at": datetime.now().isoformat(),
+    }
+    return jsonify(payload)
+
+
+@webhook_app.route("/api/dashboard/streak", methods=["GET"])
+def api_dashboard_streak():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("SELECT daily_checkin_streak, last_checkin_at FROM user_streaks WHERE user_id=? LIMIT 1", (user["user_id"],))
+    existing = cur.fetchone()
+    if existing:
+        last_seen = existing["last_checkin_at"] if hasattr(existing, "keys") else existing[1]
+        streak = int((existing["daily_checkin_streak"] if hasattr(existing, "keys") else existing[0]) or 0)
+        if not last_seen or str(last_seen)[:10] < datetime.now().date().isoformat():
+            streak += 1
+        cur.execute("UPDATE user_streaks SET daily_checkin_streak=?, last_checkin_at=?, updated_at=? WHERE user_id=?", (streak, now, now, user["user_id"]))
+    else:
+        cur.execute(
+            """
+            INSERT INTO user_streaks (user_id, daily_checkin_streak, learning_streak, scam_safety_score, portfolio_discipline_score, alert_readiness_score, last_checkin_at, updated_at)
+            VALUES (?, 1, 0, 70, 70, 70, ?, ?)
+            """,
+            (user["user_id"], now, now),
+        )
+    cur.execute("SELECT * FROM user_streaks WHERE user_id=?", (user["user_id"],))
+    row = dict(cur.fetchone())
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, **row})
+
+
+@webhook_app.route("/api/insights/save", methods=["POST"])
+def api_insights_save():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO saved_insights (user_id, insight_type, title, content, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            user["user_id"],
+            clean_html(payload.get("insight_type") or "ai")[:80],
+            clean_html(payload.get("title") or "Saved insight")[:180],
+            clean_html(payload.get("content") or payload.get("summary") or "")[:5000],
+            json.dumps(payload.get("metadata") or {}),
+            datetime.now().isoformat(),
+        ),
+    )
+    saved_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "insight_saved", {"saved_id": saved_id})
+    return jsonify({"ok": True, "saved_id": saved_id})
+
+
+@webhook_app.route("/api/insights", methods=["GET"])
+def api_insights():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, insight_type, title, content, created_at FROM saved_insights WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],))
+    insights = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "insights": insights})
+
+
+@webhook_app.route("/api/watch", methods=["GET", "POST"])
+def api_watch_items():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO user_watch_items (user_id, watch_type, label, value, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["user_id"],
+                clean_html(payload.get("watch_type") or "coin")[:80],
+                clean_html(payload.get("label") or payload.get("value") or "")[:180],
+                clean_html(payload.get("value") or payload.get("symbol") or "")[:250],
+                clean_html(payload.get("notes") or "")[:1200],
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+    cur.execute("SELECT id, watch_type, label, value, notes, created_at FROM user_watch_items WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],))
+    items = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "items": items})
+
+
+@webhook_app.route("/api/dashboard/widgets", methods=["GET", "POST"])
+def api_dashboard_widgets():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        widgets = payload.get("widgets") or []
+        for idx, widget in enumerate(widgets):
+            cur.execute(
+                "INSERT OR REPLACE INTO dashboard_widgets (user_id, widget_key, position, pinned, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (user["user_id"], clean_html(str(widget.get("widget_key") or widget))[:80], idx, 1, datetime.now().isoformat()),
+            )
+        conn.commit()
+    cur.execute("SELECT widget_key, position, pinned, updated_at FROM dashboard_widgets WHERE user_id=? ORDER BY position ASC, id ASC", (user["user_id"],))
+    widgets = [dict(row) for row in cur.fetchall()]
+    if not widgets:
+        widgets = [{"widget_key": key, "position": idx, "pinned": 1} for idx, key in enumerate(["live_market", "portfolio", "alerts", "ai_chat", "education"])]
+    conn.close()
+    return jsonify({"ok": True, "widgets": widgets})
+
+
+@webhook_app.route("/api/education/progress", methods=["GET"])
+def api_education_progress():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT path, lesson_slug, status, score, updated_at FROM education_progress WHERE user_id=? ORDER BY updated_at DESC LIMIT 100", (user["user_id"],))
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "progress": rows, "paths": ["Crypto Basics", "Investor Safety", "Scam Defense", "Wallet Intelligence", "Market Psychology", "On-chain Analysis"]})
+
+
 @webhook_app.route("/api/account/status", methods=["GET"])
 def account_status_api():
     init_db()
@@ -5435,6 +5946,9 @@ def portfolio_api():
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "portfolio": portfolio_service.calculate_user_portfolio(user["user_id"])})
+    gated = api_pro_required(user, "Portfolio Tracker")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_portfolio_item(
         user["user_id"],
@@ -5454,6 +5968,9 @@ def portfolio_item_api(item_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    gated = api_pro_required(user, "Portfolio Tracker")
+    if gated:
+        return gated
     if request.method == "DELETE":
         result = portfolio_service.delete_portfolio_item(user["user_id"], item_id)
         log_product_event(user["user_id"], "portfolio_item_deleted", {"item_id": item_id, "ok": result.get("ok")})
@@ -5473,6 +5990,9 @@ def watchlist_api():
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "watchlist": portfolio_service.get_watchlist(user["user_id"])})
+    gated = api_pro_required(user, "Watchlist")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
     result = portfolio_service.add_watchlist_item(user["user_id"], clean_html(payload.get("symbol", "")), clean_html(payload.get("coin_name", "")))
     log_product_event(user["user_id"], "watchlist_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
@@ -5485,6 +6005,9 @@ def watchlist_item_api(item_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    gated = api_pro_required(user, "Watchlist")
+    if gated:
+        return gated
     result = portfolio_service.delete_watchlist_item(user["user_id"], item_id)
     return jsonify(result), (200 if result.get("ok") else 404)
 
@@ -5497,14 +6020,21 @@ def alerts_api():
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
         return jsonify({"ok": True, "alerts": portfolio_service.get_alerts(user["user_id"])})
+    gated = api_pro_required(user, "Alerts")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
+    channels = payload.get("channels") or [payload.get("channel") or "in_app"]
+    if not isinstance(channels, list):
+        channels = [str(channels)]
+    channel_value = ",".join(clean_html(str(channel)) for channel in channels if channel)
     result = portfolio_service.create_price_alert(
         user["user_id"],
         clean_html(payload.get("alert_type", "price")),
         clean_html(payload.get("symbol", "")),
         payload.get("target_value", 0),
         clean_html(payload.get("condition", "above")),
-        clean_html(payload.get("channel", "telegram")),
+        channel_value or "in_app",
     )
     log_product_event(user["user_id"], "alert_created", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
     return jsonify(result), (200 if result.get("ok") else 400)
@@ -5999,6 +6529,7 @@ def stripe_webhook():
         logging.warning("Stripe webhook invalid event payload event_id=%s event_type=%s", event.get("id"), event_type)
         return "Invalid", 400
 
+    logging.info("STRIPE_EVENT_RECEIVED event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
     event_id = event.get("id", "")
     if stripe_event_processed(event_id):
@@ -6028,6 +6559,7 @@ def stripe_webhook():
             user_id,
         )
         if user_id:
+            logging.info("STRIPE_USER_MATCHED event_id=%s user_id=%s session_id=%s", event_id, user_id, session_id)
             resolved_event_user_id = user_id
             customer_details = session.get("customer_details") or {}
             customer_email = customer_details.get("email") or session.get("customer_email") or resolved_email
@@ -6046,6 +6578,7 @@ def stripe_webhook():
                     subscription_status="active" if payment_status == "paid" else ((subscription or {}).get("status") or "active"),
                     pro_expires_at=period_end,
                 )
+                logging.info("STRIPE_USER_UPGRADED event_id=%s user_id=%s activated_user_id=%s", event_id, user_id, activated_user_id)
                 save_payment_verification(
                     user_id,
                     txid=session_id,
@@ -6065,6 +6598,7 @@ def stripe_webhook():
                     currency=session.get("currency", "usd"),
                     status="succeeded",
                 )
+                logging.info("TRANSACTION_CREATED event_id=%s user_id=%s session_id=%s amount=%s", event_id, activated_user_id or user_id, session_id, session.get("amount_total"))
                 if activated_user_id:
                     send_telegram_confirmation(
                         activated_user_id,
@@ -6289,15 +6823,45 @@ def log_email_status(user_id, email, subject, status):
     conn.close()
 
 
+def queue_failed_email(user_id, recipient_email, email_type, subject, html_body="", text_body="", error_message="", metadata=None):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        now = datetime.now().isoformat()
+        cur.execute(
+            """
+            INSERT INTO failed_email_queue
+            (user_id, recipient_email, email_type, subject, html_body, text_body, metadata, status, retry_count, last_error, next_retry_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
+            """,
+            (
+                user_id or 0,
+                recipient_email or "",
+                email_type or "transactional",
+                subject or "",
+                html_body or "",
+                text_body or "",
+                json.dumps(metadata or {}),
+                str(error_message or "")[:1000],
+                (datetime.now() + timedelta(minutes=5)).isoformat(),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.warning("failed email queue write failed safely: %s", exc)
+
+
 def send_email_confirmation(user_id, to_email, subject, body):
     logging.info("Attempting transactional confirmation email for user_id: %s", user_id)
     return send_platform_email(to_email, subject, body, body.replace("\n", "<br>"), user_id)
 
 
 def email_sender_identity():
-    from_email = os.getenv("MAIL_FROM_ADDRESS") or os.getenv("FROM_EMAIL") or os.getenv("SMTP_USER") or "support@coinpilotx.app"
-    from_name = os.getenv("MAIL_FROM_NAME", "CoinPilotXAI Inc.")
-    return from_email, from_name
+    config = email_service_service.sender_config()
+    return config["email"], config["name"]
 
 
 def send_platform_email(to_email, subject, text_body, html_body="", user_id=None):
@@ -6307,102 +6871,58 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
         log_email_status(user_id or 0, "", subject, "skipped_no_email")
         send_platform_email.last_error = "skipped_no_email"
         return False
-    provider = (os.getenv("EMAIL_PROVIDER") or "").strip().lower()
     from_email, from_name = email_sender_identity()
     brevo_key = os.getenv("BREVO_API_KEY")
-    sendgrid_key = os.getenv("SENDGRID_API_KEY")
     logging.info(
-        "Email send requested: provider=%s user_id=%s to_domain=%s from=%s brevo_key_loaded=%s",
-        provider or "auto",
+        "Email send requested: provider=brevo user_id=%s to_domain=%s from=%s brevo_key_loaded=%s",
         user_id or 0,
         to_email.split("@")[-1] if "@" in to_email else "invalid",
         from_email,
         bool(brevo_key),
     )
     try:
-        if (provider == "brevo" or (not provider and brevo_key)) and brevo_key:
-            response = requests.post(
-                "https://api.brevo.com/v3/smtp/email",
-                headers={"api-key": brevo_key, "Content-Type": "application/json", "Accept": "application/json"},
-                json={
-                    "sender": {"email": from_email, "name": from_name},
-                    "to": [{"email": to_email}],
-                    "subject": subject,
-                    "textContent": text_body,
-                    "htmlContent": html_body or text_body.replace("\n", "<br>"),
-                },
-                timeout=15,
-            )
-            ok = 200 <= response.status_code < 300
-            logging.info("Brevo API response status_code=%s body=%s", response.status_code, response.text[:1200])
-            send_platform_email.last_response = f"brevo_status={response.status_code} body={response.text[:1200]}"
-            message_id = ""
-            safe_error = ""
-            try:
-                payload = response.json() if response.text else {}
-                message_ids = payload.get("messageIds")
-                if payload.get("messageId"):
-                    message_id = payload.get("messageId")
-                elif isinstance(message_ids, list) and message_ids:
-                    message_id = message_ids[0]
-                safe_error = payload.get("message") or payload.get("code") or response.text[:240]
-            except Exception:
-                safe_error = response.text[:240]
-            if ok:
-                logging.info("Welcome/email sent through Brevo: user_id=%s message_id=%s", user_id or 0, message_id or "unavailable")
-                if subject.lower().startswith("welcome"):
-                    logging.info("Welcome email sent: %s", message_id or "accepted_no_message_id")
-            else:
-                logging.warning("Welcome/email failed through Brevo: user_id=%s status_code=%s safe_error=%s", user_id or 0, response.status_code, safe_error)
-                if subject.lower().startswith("welcome"):
-                    logging.warning("Welcome email failed: status_code=%s safe_error=%s", response.status_code, safe_error)
-            log_email_status(user_id or 0, to_email, subject, f"sent_brevo:{message_id}" if ok and message_id else ("sent_brevo" if ok else f"failed_brevo_{response.status_code}"))
-            return ok
-        if provider == "sendgrid" and sendgrid_key:
-            response = requests.post(
-                "https://api.sendgrid.com/v3/mail/send",
-                headers={"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"},
-                json={
-                    "personalizations": [{"to": [{"email": to_email}]}],
-                    "from": {"email": from_email, "name": from_name},
-                    "subject": subject,
-                    "content": [
-                        {"type": "text/plain", "value": text_body},
-                        {"type": "text/html", "value": html_body or text_body.replace("\n", "<br>")},
-                    ],
-                },
-                timeout=15,
-            )
-            ok = 200 <= response.status_code < 300
-            send_platform_email.last_response = f"sendgrid_status={response.status_code} body={response.text[:1200]}"
-            log_email_status(user_id or 0, to_email, subject, "sent_sendgrid" if ok else f"failed_sendgrid_{response.status_code}")
-            return ok
-        smtp_host = os.getenv("SMTP_HOST")
-        smtp_user = os.getenv("SMTP_USER")
-        smtp_password = os.getenv("SMTP_PASSWORD")
-        if smtp_host and smtp_user and smtp_password:
-            message = EmailMessage()
-            message["Subject"] = subject
-            message["From"] = f"{from_name} <{from_email}>"
-            message["To"] = to_email
-            message.set_content(text_body)
-            if html_body:
-                message.add_alternative(html_body, subtype="html")
-            with smtplib.SMTP(smtp_host, int(os.getenv("SMTP_PORT", "587")), timeout=15) as smtp:
-                smtp.starttls()
-                smtp.login(smtp_user, smtp_password)
-                smtp.send_message(message)
-            log_email_status(user_id or 0, to_email, subject, "sent_smtp")
-            send_platform_email.last_response = "smtp_sent"
-            return True
-        log_email_status(user_id or 0, to_email, subject, "skipped_email_not_configured")
-        send_platform_email.last_error = "skipped_email_not_configured"
-        return False
+        result = email_service_service.send_email(
+            to_email,
+            subject,
+            html_body or text_body.replace("\n", "<br>"),
+            text_body=text_body,
+            user_id=user_id,
+        )
+        ok = bool(result.get("ok"))
+        send_platform_email.last_response = f"brevo_status={result.get('status_code')} body={json.dumps(result.get('response') or {})[:1200]}"
+        send_platform_email.last_error = str(result.get("error") or "")[:1000]
+        logging.info("Brevo API response status_code=%s body=%s", result.get("status_code"), json.dumps(result.get("response") or {})[:1200])
+        message_id = result.get("message_id") or ""
+        log_email_status(user_id or 0, to_email, subject, f"sent_brevo:{message_id}" if ok and message_id else ("sent_brevo" if ok else f"failed_brevo_{result.get('status_code') or 'not_configured'}"))
+        if not ok:
+            queue_failed_email(user_id or 0, to_email, "transactional", subject, html_body, text_body, send_platform_email.last_error)
+        return ok
     except Exception as exc:
         logging.info("Platform email failed: %s", exc)
         log_email_status(user_id or 0, to_email, subject, "failed")
         send_platform_email.last_error = str(exc)[:1000]
+        queue_failed_email(user_id or 0, to_email, "transactional", subject, html_body, text_body, send_platform_email.last_error)
         return False
+
+
+def send_channel_email(to_email, subject, html_body, text_body="", user_id=0, email_type="transactional", channel="transactional"):
+    result = email_service_service.send_email(
+        to_email,
+        subject,
+        html_body,
+        text_body=text_body or clean_html(html_body),
+        email_type=email_type,
+        user_id=user_id,
+        channel=channel,
+    )
+    status = "sent_brevo"
+    if result.get("message_id"):
+        status += f":{result.get('message_id')}"
+    if not result.get("ok"):
+        status = f"failed_brevo_{result.get('status_code') or 'not_configured'}"
+        queue_failed_email(user_id or 0, to_email, email_type, subject, html_body, text_body, result.get("error") or "", {"channel": channel})
+    log_email_status(user_id or 0, to_email, subject, status)
+    return bool(result.get("ok"))
 
 
 def branded_email_html(title, body_html):
@@ -6657,14 +7177,15 @@ def record_payment_email_attempt(user_id, email, stripe_event_id="", payment_id=
     cur.execute(
         """
         INSERT INTO payment_email_logs
-        (user_id, email, stripe_event_id, payment_id, email_type, status, provider_response, error_message, retry_count, created_at, sent_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, email, stripe_event_id, payment_id, email_type, template, status, provider_response, error_message, retry_count, created_at, sent_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id or 0,
             email or "",
             stripe_event_id or "",
             payment_id or "",
+            email_type or "",
             email_type or "",
             status,
             str(provider_response or "")[:4000],
@@ -6741,6 +7262,7 @@ def send_payment_email_with_retry(user, details=None, email_type="pro_activated"
     to_email = normalize_email(user.get("email") or details.get("email") or "")
     stripe_event_id = details.get("stripe_event_id") or ""
     payment_id = details.get("payment_id") or details.get("stripe_session_id") or details.get("invoice_id") or details.get("payment_intent_id") or ""
+    logging.info("PAYMENT_EMAIL_START user_id=%s type=%s event=%s payment_id=%s", user_id, email_type, stripe_event_id, payment_id)
     logging.info("PAYMENT_EMAIL_QUEUED user_id=%s type=%s event=%s payment_id=%s", user_id, email_type, stripe_event_id, payment_id)
     if not force and payment_email_already_sent(stripe_event_id, payment_id, email_type):
         logging.info("PAYMENT_EMAIL_DUPLICATE_SKIPPED user_id=%s type=%s event=%s payment_id=%s", user_id, email_type, stripe_event_id, payment_id)
@@ -9343,6 +9865,7 @@ async def hourly_market_update(context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=text_message telegram_user_id=%s", update.effective_user.id)
 
     original_text = update.message.text.strip()
     text = original_text.lower()
@@ -9650,6 +10173,10 @@ def init_db():
         ("pro_expires_at", "TEXT"),
         ("usage_ai_count", "INTEGER DEFAULT 0"),
         ("usage_reset_at", "TEXT"),
+        ("marketing_email_opt_in", "INTEGER DEFAULT 0"),
+        ("notification_email_opt_in", "INTEGER DEFAULT 1"),
+        ("security_email_opt_in", "INTEGER DEFAULT 1"),
+        ("payment_receipt_opt_in", "INTEGER DEFAULT 1"),
     ], conn=conn)
 
     cur.execute("""
@@ -9897,6 +10424,24 @@ def init_db():
         ("metadata", "TEXT"),
     ], conn=conn)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS failed_email_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        recipient_email TEXT,
+        email_type TEXT,
+        subject TEXT,
+        html_body TEXT,
+        text_body TEXT,
+        metadata TEXT,
+        status TEXT DEFAULT 'pending',
+        retry_count INTEGER DEFAULT 0,
+        last_error TEXT,
+        next_retry_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS payment_email_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -9916,6 +10461,7 @@ def init_db():
         ("retry_count", "INTEGER DEFAULT 0"),
         ("provider_response", "TEXT"),
         ("error_message", "TEXT"),
+        ("template", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS brevo_contact_sync_logs (
@@ -10382,6 +10928,145 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS daily_briefs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        brief_date TEXT,
+        market_pulse TEXT,
+        risk_alerts TEXT,
+        watchlist_notes TEXT,
+        scam_warning TEXT,
+        ai_insight TEXT,
+        created_at TEXT,
+        UNIQUE(user_id, brief_date)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_streaks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        daily_checkin_streak INTEGER DEFAULT 0,
+        learning_streak INTEGER DEFAULT 0,
+        scam_safety_score INTEGER DEFAULT 0,
+        portfolio_discipline_score INTEGER DEFAULT 0,
+        alert_readiness_score INTEGER DEFAULT 0,
+        last_checkin_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS saved_insights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        insight_type TEXT,
+        title TEXT,
+        content TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_watch_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        watch_type TEXT,
+        label TEXT,
+        value TEXT,
+        notes TEXT,
+        created_at TEXT,
+        UNIQUE(user_id, watch_type, value)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS risk_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        account_security INTEGER DEFAULT 70,
+        wallet_safety INTEGER DEFAULT 70,
+        scam_exposure INTEGER DEFAULT 70,
+        portfolio_risk INTEGER DEFAULT 70,
+        alert_coverage INTEGER DEFAULT 70,
+        score INTEGER DEFAULT 70,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        path TEXT,
+        lesson_slug TEXT,
+        status TEXT DEFAULT 'not_started',
+        score INTEGER DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(user_id, path, lesson_slug)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS dashboard_widgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        widget_key TEXT,
+        position INTEGER DEFAULT 0,
+        pinned INTEGER DEFAULT 1,
+        updated_at TEXT,
+        UNIQUE(user_id, widget_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS notification_schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        schedule_type TEXT,
+        channels TEXT,
+        enabled INTEGER DEFAULT 1,
+        updated_at TEXT,
+        UNIQUE(user_id, schedule_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_memory_cards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        title TEXT,
+        summary TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scam_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        report_type TEXT,
+        target TEXT,
+        description TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scam_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        description TEXT,
+        severity TEXT,
+        source TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS wallet_risk_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        wallet_or_txid TEXT,
+        chain TEXT,
+        risk_level TEXT,
+        result_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS referral_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         referral_code TEXT,
@@ -10683,6 +11368,30 @@ def init_db():
         priority TEXT DEFAULT 'normal',
         assigned_to INTEGER,
         internal_notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS support_ticket_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER,
+        sender_type TEXT,
+        sender_user_id INTEGER,
+        sender_admin_id INTEGER,
+        message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS security_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        report_type TEXT,
+        target TEXT,
+        description TEXT,
+        status TEXT DEFAULT 'open',
         created_at TEXT,
         updated_at TEXT
     )
@@ -12672,6 +13381,7 @@ async def analysis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=ask telegram_user_id=%s", update.effective_user.id)
     question = " ".join(context.args).strip()
     if not question:
         await update.message.reply_text(
@@ -12840,7 +13550,40 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def markets_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=markets telegram_user_id=%s", update.effective_user.id)
     await update.message.reply_text(market_board_summary(update.effective_user.id, "top_market_cap"), reply_markup=main_menu())
+
+
+async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=market telegram_user_id=%s", update.effective_user.id)
+    await update.message.reply_text(market_board_summary(update.effective_user.id, "top_market_cap"), reply_markup=main_menu())
+
+
+async def btc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=btc telegram_user_id=%s", update.effective_user.id)
+    context.args = ["BTC"]
+    await price(update, context)
+
+
+async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=chat telegram_user_id=%s", update.effective_user.id)
+    await update.message.reply_text(
+        "💬 CoinPilotXAI Chat\n\nSend a message here or open the full web chat at https://coinpilotx.app/chat. The website is the main platform; Telegram is optional companion access.",
+        reply_markup=main_menu(),
+    )
+
+
+async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=upgrade telegram_user_id=%s", update.effective_user.id)
+    user = get_linked_website_account(update.effective_user.id)
+    if user and platform_pro_access(user):
+        await update.message.reply_text("Your CoinPilotXAI Pro access is already active.", reply_markup=account_reply_markup(update.effective_user.id))
+        return
+    await update.message.reply_text(pro_upgrade_message(update.effective_user.id), reply_markup=upgrade_payment_menu(update.effective_user.id))
 
 
 async def topvolume_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -14036,6 +14779,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "menu_account":
+        logging.info("TELEGRAM_ACCOUNT_BUTTON_CLICKED telegram_user_id=%s", user_id)
         logging.info("Account button clicked by Telegram user %s", user_id)
         await query.message.reply_text(account_summary(user_id), reply_markup=account_reply_markup(user_id))
         return
@@ -14134,6 +14878,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text("🏠 Back to menu.", reply_markup=main_menu())
 
 
+async def telegram_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.exception("TELEGRAM_COMMAND_ERROR update=%s error=%s", update, getattr(context, "error", None))
+
+
 # =========================
 # MENU PUSH JOB
 # =========================
@@ -14191,6 +14939,8 @@ def main():
     app.add_handler(CommandHandler("verify_payment", verify_payment))
     app.add_handler(CommandHandler("analysis", analysis_command))
     app.add_handler(CommandHandler("markets", markets_command))
+    app.add_handler(CommandHandler("market", market_command))
+    app.add_handler(CommandHandler("btc", btc_command))
     app.add_handler(CommandHandler("topvolume", topvolume_command))
     app.add_handler(CommandHandler("gainers", gainers_command))
     app.add_handler(CommandHandler("losers", losers_command))
@@ -14221,6 +14971,8 @@ def main():
     app.add_handler(CommandHandler("clearbalance", clearbalance_command))
     app.add_handler(CommandHandler("portfolio_advice", portfolio_advice_command))
     app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("upgrade", upgrade_command))
+    app.add_handler(CommandHandler("chat", chat_command))
     app.add_handler(CommandHandler("setemail", setemail_command))
     app.add_handler(CommandHandler("myemail", myemail_command))
     app.add_handler(CommandHandler("account", account_command))
@@ -14239,6 +14991,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VOICE, voice_assistant))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(telegram_error_handler)
 
     job_queue.run_repeating(market_signal_job, interval=SIGNAL_CHECK_SECONDS, first=10)
     job_queue.run_repeating(hourly_market_update, interval=HOURLY_UPDATE_SECONDS, first=30)
