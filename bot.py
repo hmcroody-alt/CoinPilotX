@@ -577,7 +577,7 @@ def website_upgrade_url(telegram_user_id=None):
 
 def pro_upgrade_message(user_id):
     account = get_linked_website_account(user_id)
-    if is_paid_pro_user(account):
+    if platform_pro_access(account):
         return (
             "✅ Your CoinPilotXAI Pro access is already active.\n\n"
             "Open your dashboard anytime to use the full platform. Telegram is an optional companion for quick commands and alerts."
@@ -610,7 +610,7 @@ def pro_upgrade_message(user_id):
 
 def upgrade_payment_menu(user_id):
     account = get_linked_website_account(user_id)
-    if is_paid_pro_user(account):
+    if platform_pro_access(account):
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("Open Dashboard", url="https://coinpilotx.app/dashboard")],
             [InlineKeyboardButton("Account", url="https://coinpilotx.app/account")],
@@ -694,7 +694,21 @@ def inject_seo_runtime_config():
 
 @webhook_app.route("/", methods=["GET"])
 def home():
-    return render_template("index.html")
+    user = load_account_by_id(account_user_id())
+    greeting = "Welcome to CoinPilotXAI — your AI intelligence command center."
+    if user:
+        first_name = (user.get("full_name") or user.get("display_name") or "").strip().split(" ")[0]
+        if not first_name:
+            first_name = (user.get("email") or "there").split("@")[0]
+        if has_pro_access(user):
+            greeting = f"Welcome back, {first_name}. Your Pro Intelligence is active."
+        else:
+            greeting = f"Welcome back, {first_name}. Create signals, scan wallets, and unlock Pro intelligence anytime."
+    response = render_template("index.html", current_user=user or {}, homepage_greeting=greeting)
+    response_obj = webhook_app.make_response(response)
+    if user:
+        response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return response_obj
 
 
 @webhook_app.route("/support", methods=["GET", "POST"])
@@ -1042,7 +1056,7 @@ def plan_status_label(user):
     user = user or {}
     plan = (user.get("plan") or user.get("subscription_plan") or "free").lower()
     status = (user.get("subscription_status") or "inactive").lower()
-    if is_paid_pro_user(user):
+    if platform_pro_access(user):
         return "Paid Pro Active"
     if pro_access_service.has_pro_access(user) and status == "trialing":
         return "Pro Trial"
@@ -1095,6 +1109,63 @@ def account_access_context(user):
 
 def has_pro_access(user):
     return pro_access_service.has_pro_access(user or {})
+
+
+def platform_pro_access(user):
+    user = user or {}
+    return (
+        (user.get("account_status") or "active").lower() == "active"
+        and (user.get("plan") or user.get("subscription_plan") or "").lower() == "pro"
+        and (user.get("subscription_status") or "").lower() == "active"
+        and has_pro_access(user)
+    )
+
+
+def pro_locked_response(user, feature_name="AI Command Center"):
+    log_product_event((user or {}).get("user_id") or 0, "pro_gated_blocked_attempt", {"feature": feature_name, "path": request.path})
+    body = f"""
+      <div class='grid'>
+        <div class='profile-card'>
+          <h2>You need CoinPilotXAI Pro to access the {clean_html(feature_name)}.</h2>
+          <p>Pro unlocks the native AI command center, private AI chat, advanced Scam Shield, Wallet Intel, portfolio intelligence, Sports Edge context, and real-time alert tools.</p>
+          <div class='actions'>
+            <a class='button gold' href='/upgrade'>Upgrade to Pro</a>
+            <a class='button' href='/account'>Account</a>
+            <a class='button' href='/logout'>Logout</a>
+          </div>
+        </div>
+      </div>
+    """
+    response = render_account_page(
+        "custom",
+        feature_name,
+        current_user=user,
+        custom_body=body,
+        message="",
+        error="",
+    )
+    response_obj = webhook_app.make_response(response)
+    response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return response_obj
+
+
+def api_pro_required(user, feature_name="CoinPilotXAI Pro"):
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required.", "signup_url": url_for("signup_page", next=request.path)})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    if not platform_pro_access(user):
+        log_product_event(user["user_id"], "pro_gated_blocked_attempt", {"feature": feature_name, "path": request.path})
+        response = jsonify({
+            "ok": False,
+            "error": "CoinPilotXAI Pro required.",
+            "message": "You need CoinPilotXAI Pro to access the AI Command Center.",
+            "upgrade_url": url_for("upgrade_page"),
+            "account_url": url_for("account_page"),
+        })
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 403
+    return None
 
 
 def render_account_page(page, title, **context):
@@ -1434,19 +1505,24 @@ def dashboard_page():
 def app_command_center_page():
     init_db()
     user = require_account()
-    fresh_user = load_account_by_id(user["user_id"]) if user else None
-    if fresh_user:
-        log_product_event(fresh_user["user_id"], "command_center_viewed", {"path": request.path})
-    else:
-        log_product_event(0, "command_center_guest_viewed", {"path": request.path})
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    fresh_user = load_account_by_id(user["user_id"]) or user
+    if not platform_pro_access(fresh_user):
+        return pro_locked_response(fresh_user, "AI Command Center")
+    log_product_event(fresh_user["user_id"], "command_center_viewed", {"path": request.path})
     response = render_template(
         "app.html",
-        current_user=fresh_user or {},
+        current_user=fresh_user,
         access=account_access_context(fresh_user),
         menu=command_router_service.get_menu_items(fresh_user),
-        is_guest=not bool(fresh_user),
+        is_guest=False,
+        chat_mode=False,
+        pro_locked=False,
     )
-    return response
+    response_obj = webhook_app.make_response(response)
+    response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return response_obj
 
 
 @webhook_app.route("/chat", methods=["GET"])
@@ -1456,6 +1532,8 @@ def native_chat_page():
     if not user:
         return redirect(url_for("signup_page", next="/chat"))
     fresh_user = load_account_by_id(user["user_id"]) or user
+    if not platform_pro_access(fresh_user):
+        return pro_locked_response(fresh_user, "Native Chat")
     log_product_event(fresh_user["user_id"], "native_chat_viewed", {"path": request.path})
     response = render_template(
         "app.html",
@@ -1464,8 +1542,136 @@ def native_chat_page():
         menu=command_router_service.get_menu_items(fresh_user),
         is_guest=False,
         chat_mode=True,
+        pro_locked=False,
     )
-    return response
+    response_obj = webhook_app.make_response(response)
+    response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
+    return response_obj
+
+
+def user_is_conversation_member(user_id, conversation_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM conversation_members WHERE user_id=? AND conversation_id=? LIMIT 1", (user_id, conversation_id))
+    row = cur.fetchone()
+    conn.close()
+    return bool(row)
+
+
+def direct_conversation_between(user_id, other_user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.id
+        FROM conversations c
+        JOIN conversation_members a ON a.conversation_id=c.id AND a.user_id=?
+        JOIN conversation_members b ON b.conversation_id=c.id AND b.user_id=?
+        WHERE c.conversation_type='direct'
+        ORDER BY c.id DESC
+        LIMIT 1
+        """,
+        (user_id, other_user_id),
+    )
+    row = cur.fetchone()
+    now = datetime.now().isoformat()
+    if row:
+        conn.close()
+        return row[0]
+    cur.execute("INSERT INTO conversations (conversation_type, created_by, created_at, updated_at) VALUES ('direct', ?, ?, ?)", (user_id, now, now))
+    conversation_id = cur.lastrowid
+    cur.execute("INSERT INTO conversation_members (conversation_id, user_id, joined_at, last_read_at) VALUES (?, ?, ?, ?)", (conversation_id, user_id, now, now))
+    cur.execute("INSERT INTO conversation_members (conversation_id, user_id, joined_at, last_read_at) VALUES (?, ?, ?, ?)", (conversation_id, other_user_id, now, ""))
+    conn.commit()
+    conn.close()
+    return conversation_id
+
+
+@webhook_app.route("/messages", methods=["GET"])
+def messages_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/messages"))
+    body = """
+      <div class='grid'>
+        <section class='profile-card'>
+          <h2>Private Messages</h2>
+          <p>Start secure one-to-one conversations with another CoinPilotXAI user by email. Telegram is not required.</p>
+          <form id='message-start-form'>
+            <label>User email or username</label>
+            <input name='query' placeholder='user@example.com' required>
+            <button class='button gold' type='submit'>Start Chat</button>
+          </form>
+          <div id='message-status' class='muted'></div>
+        </section>
+        <section class='profile-card'>
+          <h2>Conversations</h2>
+          <div id='conversation-list'>Loading...</div>
+        </section>
+      </div>
+      <script>
+        async function loadConversations(){
+          const node=document.getElementById('conversation-list');
+          try{
+            const res=await fetch('/api/messages/conversations',{cache:'no-store',credentials:'same-origin'});
+            const data=await res.json();
+            if(!data.ok){node.textContent=data.message||'Unable to load conversations.';return;}
+            node.innerHTML=(data.conversations||[]).map(c=>`<p><a href="/messages/${c.id}">${c.title||'Conversation'}</a> <span class="muted">${c.last_message_at||''}</span></p>`).join('')||'<p class="muted">No conversations yet.</p>';
+          }catch(e){node.textContent='Messages unavailable. Try again shortly.';}
+        }
+        document.getElementById('message-start-form').addEventListener('submit',async(e)=>{
+          e.preventDefault();
+          const status=document.getElementById('message-status');
+          status.textContent='Starting chat...';
+          const payload={query:new FormData(e.target).get('query')};
+          const res=await fetch('/api/messages/start',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify(payload)});
+          const data=await res.json();
+          if(data.ok){location.href='/messages/'+data.conversation_id}else{status.textContent=data.message||'Could not start chat.'}
+        });
+        loadConversations();
+      </script>
+    """
+    return render_account_page("custom", "Messages", current_user=user, custom_body=body)
+
+
+@webhook_app.route("/messages/<int:conversation_id>", methods=["GET"])
+def message_thread_page(conversation_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=f"/messages/{conversation_id}"))
+    if not user_is_conversation_member(user["user_id"], conversation_id):
+        return render_account_page("custom", "Messages", current_user=user, custom_body="<p>You do not have access to this conversation.</p>")
+    body = f"""
+      <section class='profile-card'>
+        <h2>Conversation</h2>
+        <div id='message-thread' style='display:grid;gap:10px;min-height:260px'>Loading...</div>
+        <form id='message-send-form' style='display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:16px'>
+          <input name='body' placeholder='Write a message...' required>
+          <button class='button gold' type='submit'>Send</button>
+        </form>
+      </section>
+      <script>
+        const cid={conversation_id};
+        async function loadThread(){{
+          const node=document.getElementById('message-thread');
+          const res=await fetch('/api/messages/'+cid,{{cache:'no-store',credentials:'same-origin'}});
+          const data=await res.json();
+          if(!data.ok){{node.textContent=data.message||'Unable to load messages.';return;}}
+          node.innerHTML=(data.messages||[]).map(m=>`<div class="notice"><strong>${{m.sender_user_id===data.current_user_id?'You':'User '+m.sender_user_id}}</strong><p>${{m.body}}</p><span class="muted">${{m.created_at||''}}</span></div>`).join('')||'<p class="muted">No messages yet.</p>';
+        }}
+        document.getElementById('message-send-form').addEventListener('submit',async(e)=>{{
+          e.preventDefault();
+          const body=new FormData(e.target).get('body');
+          e.target.reset();
+          await fetch('/api/messages/'+cid+'/send',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',cache:'no-store',body:JSON.stringify({{body}})}});
+          loadThread();
+        }});
+        loadThread();
+      </script>
+    """
+    return render_account_page("custom", "Messages", current_user=user, custom_body=body)
 
 
 @webhook_app.route("/notifications", methods=["GET"])
@@ -1564,7 +1770,7 @@ def create_stripe_checkout_session(user):
         cfg["app_base_url"],
     )
     record_checkout_attempt(user, "started")
-    if is_paid_pro_user(user):
+    if platform_pro_access(user):
         logging.info("pro_upgrade_blocked_already_active user_id=%s source=checkout_session", user.get("user_id"))
         log_product_event(user.get("user_id") or 0, "pro_upgrade_blocked_already_active", {"source": "checkout_session"})
         record_checkout_attempt(user, "blocked", error_message="Already active paid Pro")
@@ -1644,7 +1850,7 @@ def upgrade_page():
         return render_account_page("account", "Account", current_user=user, error="Please contact support before upgrading. This account is not active.")
     if not user.get("email"):
         return render_account_page("account", "Account", current_user=user, error="Add an email address to your account before upgrading to Pro.")
-    if is_paid_pro_user(user):
+    if platform_pro_access(user):
         logging.info("pro_upgrade_blocked_already_active user_id=%s source=upgrade_page", user.get("user_id"))
         log_product_event(user["user_id"], "pro_upgrade_blocked_already_active", {"source": "upgrade_page"})
         return render_account_page(
@@ -1692,7 +1898,7 @@ def create_checkout_session_route():
         return jsonify({"ok": False, "message": "This account is not active. Contact support before upgrading."}), 403
     if not user.get("email"):
         return jsonify({"ok": False, "message": "Add an email address to your account before upgrading."}), 400
-    if is_paid_pro_user(user):
+    if platform_pro_access(user):
         logging.info("pro_upgrade_blocked_already_active user_id=%s source=checkout_api", user.get("user_id"))
         log_product_event(user["user_id"], "pro_upgrade_blocked_already_active", {"source": "checkout_api"})
         return jsonify({
@@ -2786,6 +2992,9 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/emails/payment'>Payment Emails</a>"
         "<a href='/admin/telegram'>Telegram</a>"
         "<a href='/admin/ai-usage'>AI Usage</a>"
+        "<a href='/admin/command-logs'>Command Logs</a>"
+        "<a href='/admin/notifications'>Notifications</a>"
+        "<a href='/admin/private-chat-reports'>Chat Reports</a>"
         "<a href='/admin/support'>Support</a>"
         "<a href='/admin/data-recovery'>Data Recovery</a>"
         "<a href='/admin/unmatched-payments'>Unmatched</a>"
@@ -4072,6 +4281,52 @@ def admin_ai_usage_page():
     return admin_page_html("AI Usage", body, admin)
 
 
+@webhook_app.route("/admin/command-logs", methods=["GET"])
+def admin_command_logs_page():
+    admin, denied = require_admin_page("ai.view")
+    if denied:
+        return denied
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT command_name, source, status, COUNT(*) AS total FROM command_history GROUP BY command_name, source, status ORDER BY total DESC LIMIT 80")
+    by_command = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT user_id, command_name, source, status, error, created_at FROM command_history ORDER BY id DESC LIMIT 150")
+    recent = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Command Logs</h1><h2>Most Used Commands</h2><div class='card'>{admin_rows_table(by_command, [('command_name','Command'),('source','Source'),('status','Status'),('total','Total')])}</div><h2>Recent Command Activity</h2><div class='card'>{admin_rows_table(recent, [('user_id','User'),('command_name','Command'),('source','Source'),('status','Status'),('error','Error'),('created_at','Created')])}</div>"
+    return admin_page_html("Command Logs", body, admin)
+
+
+@webhook_app.route("/admin/notifications", methods=["GET"])
+def admin_notifications_page():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT notification_type, status, COUNT(*) AS total FROM notifications GROUP BY notification_type, status ORDER BY total DESC LIMIT 80")
+    stats = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT channel, status, COUNT(*) AS total FROM notification_delivery_logs GROUP BY channel, status ORDER BY total DESC LIMIT 80")
+    delivery = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Notifications</h1><h2>Notification Stats</h2><div class='card'>{admin_rows_table(stats, [('notification_type','Type'),('status','Status'),('total','Total')])}</div><h2>Delivery Logs</h2><div class='card'>{admin_rows_table(delivery, [('channel','Channel'),('status','Status'),('total','Total')])}</div>"
+    return admin_page_html("Notifications", body, admin)
+
+
+@webhook_app.route("/admin/private-chat-reports", methods=["GET"])
+def admin_private_chat_reports_page():
+    admin, denied = require_admin_page("support.manage")
+    if denied:
+        return denied
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, reporter_user_id, reported_user_id, conversation_id, message_id, reason, status, created_at FROM chat_reports ORDER BY id DESC LIMIT 200")
+    reports = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Private Chat Reports</h1><div class='card'>{admin_rows_table(reports, [('id','ID'),('reporter_user_id','Reporter'),('reported_user_id','Reported'),('conversation_id','Conversation'),('message_id','Message'),('reason','Reason'),('status','Status'),('created_at','Created')])}</div>"
+    return admin_page_html("Private Chat Reports", body, admin)
+
+
 @webhook_app.route("/admin/security", methods=["GET"])
 def admin_security_page():
     admin, denied = require_admin_page("system.view")
@@ -4692,6 +4947,52 @@ def save_command_result(user_id, command_history_id, title="", summary="", sourc
     return saved_id
 
 
+def get_or_create_ai_conversation(user_id, conversation_id=None):
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    if conversation_id:
+        cur.execute("SELECT id FROM ai_conversations WHERE id=? AND user_id=? LIMIT 1", (int(conversation_id), user_id))
+        row = cur.fetchone()
+        if row:
+            cur.execute("UPDATE ai_conversations SET updated_at=? WHERE id=?", (now, row[0]))
+            conn.commit()
+            conn.close()
+            return row[0]
+    cur.execute(
+        "INSERT INTO ai_conversations (user_id, title, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
+        (user_id, "CoinPilotXAI Chat", now, now),
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return new_id
+
+
+def save_ai_message(user_id, conversation_id, role, content, metadata=None):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO ai_messages (conversation_id, user_id, role, content, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            conversation_id,
+            user_id,
+            role,
+            clean_html(content or "")[:8000],
+            json.dumps(metadata or {})[:4000],
+            datetime.now().isoformat(),
+        ),
+    )
+    message_id = cur.lastrowid
+    cur.execute("UPDATE ai_conversations SET updated_at=? WHERE id=? AND user_id=?", (datetime.now().isoformat(), conversation_id, user_id))
+    conn.commit()
+    conn.close()
+    return message_id
+
+
 @webhook_app.route("/api/commands", methods=["GET"])
 def api_commands():
     init_db()
@@ -4708,10 +5009,9 @@ def api_commands():
 def api_menu():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "AI Command Center")
+    if gated:
+        return gated
     response = jsonify(command_router_service.get_menu_items(load_account_by_id(user["user_id"]) or user))
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -4721,10 +5021,9 @@ def api_menu():
 def api_command():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "AI Command Center")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
     command_text = clean_html(payload.get("command") or payload.get("question") or "")
     result = command_router_service.handle_command(user["user_id"], command_text, channel="web")
@@ -4750,10 +5049,9 @@ def api_command():
 def api_menu_action():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "AI Command Center")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
     action_key = clean_html(payload.get("action_key") or "")
     result = command_router_service.execute_menu_action(user["user_id"], action_key, channel="web", payload=payload)
@@ -4779,10 +5077,9 @@ def api_menu_action():
 def api_command_history():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "AI Command Center")
+    if gated:
+        return gated
     response = jsonify({"ok": True, "history": command_history_payload(user["user_id"], request.args.get("limit", 50))})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -4792,10 +5089,9 @@ def api_command_history():
 def api_command_save():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "AI Command Center")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
     saved_id = save_command_result(
         user["user_id"],
@@ -4815,13 +5111,20 @@ def api_command_save():
 def api_ai_chat():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "Native AI Chat")
+    if gated:
+        return gated
     payload = request.get_json(silent=True) or {}
     message = clean_html(payload.get("message") or payload.get("question") or payload.get("command") or "")
+    if not message:
+        response = jsonify({"ok": False, "error": "Message required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 400
+    conversation_id = get_or_create_ai_conversation(user["user_id"], payload.get("conversation_id"))
+    save_ai_message(user["user_id"], conversation_id, "user", message)
     result = command_router_service.handle_command(user["user_id"], message, channel="web_chat")
+    ai_text = result.get("summary") or result.get("message") or result.get("title") or ""
+    save_ai_message(user["user_id"], conversation_id, "assistant", ai_text, metadata={"action_key": result.get("action_key"), "source": result.get("source")})
     history_id = record_command_history(
         user["user_id"],
         result.get("action_key") or "ai_chat",
@@ -4835,6 +5138,10 @@ def api_ai_chat():
     log_product_event(user["user_id"], "website_ai_chat_used", {"action": result.get("action_key")})
     formatted = command_router_service.format_response_for_web(result)
     formatted["history_id"] = history_id
+    formatted["conversation_id"] = conversation_id
+    formatted["response"] = ai_text
+    formatted["saved"] = bool(history_id)
+    formatted.setdefault("source", "coinpilotxai")
     response = jsonify(formatted)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -4844,10 +5151,9 @@ def api_ai_chat():
 def api_ai_history():
     init_db()
     user = api_account_user()
-    if not user:
-        response = jsonify({"ok": False, "message": "Login required."})
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 401
+    gated = api_pro_required(user, "Native AI Chat")
+    if gated:
+        return gated
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -4861,8 +5167,21 @@ def api_ai_history():
         (user["user_id"],),
     )
     interactions = [dict(row) for row in cur.fetchall()]
+    cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+    cur.execute(
+        """
+        SELECT m.id, m.conversation_id, m.role, m.content, m.metadata, m.created_at
+        FROM ai_messages m
+        JOIN ai_conversations c ON c.id=m.conversation_id
+        WHERE c.user_id=? AND m.created_at>=?
+        ORDER BY m.id ASC
+        LIMIT 200
+        """,
+        (user["user_id"], cutoff),
+    )
+    messages = [dict(row) for row in cur.fetchall()]
     conn.close()
-    response = jsonify({"ok": True, "interactions": interactions, "commands": command_history_payload(user["user_id"], 50)})
+    response = jsonify({"ok": True, "interactions": interactions, "messages": messages, "commands": command_history_payload(user["user_id"], 50)})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -4891,6 +5210,39 @@ def api_ai_feedback():
     conn.commit()
     conn.close()
     log_product_event(user["user_id"], "ai_feedback_submitted", {"rating": payload.get("rating")})
+    response = jsonify({"ok": True})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/ai/conversation/new", methods=["POST"])
+def api_ai_conversation_new():
+    init_db()
+    user = api_account_user()
+    gated = api_pro_required(user, "Native AI Chat")
+    if gated:
+        return gated
+    conversation_id = get_or_create_ai_conversation(user["user_id"])
+    response = jsonify({"ok": True, "conversation_id": conversation_id})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/ai/history/clear", methods=["POST"])
+def api_ai_history_clear():
+    init_db()
+    user = api_account_user()
+    gated = api_pro_required(user, "Native AI Chat")
+    if gated:
+        return gated
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("UPDATE ai_conversations SET status='cleared', updated_at=? WHERE user_id=? AND status='active'", (now, user["user_id"]))
+    cur.execute("UPDATE user_ai_interactions SET metadata=COALESCE(metadata, '') || ' cleared_by_user' WHERE user_id=?", (user["user_id"],))
+    conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "ai_history_cleared", {})
     response = jsonify({"ok": True})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -5048,8 +5400,8 @@ def account_status_api():
         "plan": fresh_user.get("plan") or fresh_user.get("subscription_plan") or "free",
         "subscription_status": fresh_user.get("subscription_status") or "inactive",
         "trial_status": fresh_user.get("trial_status") or "",
-        "has_pro_access": has_pro_access(fresh_user),
-        "has_pro": has_pro_access(fresh_user),
+        "has_pro_access": platform_pro_access(fresh_user),
+        "has_pro": platform_pro_access(fresh_user),
         "is_paid_pro": is_paid_pro_user(fresh_user),
         "is_trialing": is_trialing_user(fresh_user),
         "access_label": access.get("label"),
@@ -5181,6 +5533,52 @@ def api_notifications():
     return response
 
 
+@webhook_app.route("/api/notifications/read", methods=["POST"])
+def api_notifications_read():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    result = notification_service.mark_read(user["user_id"], int(payload.get("notification_id") or payload.get("id") or 0))
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/notifications/read-all", methods=["POST"])
+def api_notifications_read_all():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    response = jsonify(notification_service.mark_all_read(user["user_id"]))
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/notification-preferences", methods=["GET", "POST"])
+def api_notification_preferences():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    if request.method == "GET":
+        result = notification_service.get_preferences(user["user_id"])
+    else:
+        payload = request.get_json(silent=True) or {}
+        result = notification_service.update_preferences(user["user_id"], payload.get("preferences") or payload)
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/push/subscribe", methods=["POST"])
 def api_push_subscribe():
     init_db()
@@ -5195,6 +5593,195 @@ def api_push_subscribe():
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/push/unsubscribe", methods=["POST"])
+def api_push_unsubscribe():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    payload = request.get_json(silent=True) or {}
+    result = notification_service.unsubscribe_push(user["user_id"], payload.get("endpoint") or "")
+    log_product_event(user["user_id"], "push_subscription_removed", {"ok": result.get("ok")})
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/messages/start", methods=["POST"])
+def api_messages_start():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    query = normalize_email(clean_html(payload.get("query") or payload.get("email") or payload.get("username") or ""))
+    if not query:
+        return jsonify({"ok": False, "message": "User email or username required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT user_id FROM users
+        WHERE lower(email)=lower(?) OR lower(username)=lower(?) OR lower(display_name)=lower(?)
+        ORDER BY user_id LIMIT 1
+        """,
+        (query, query, query),
+    )
+    other = cur.fetchone()
+    conn.close()
+    if not other or other[0] == user["user_id"]:
+        return jsonify({"ok": False, "message": "User not found."}), 404
+    conversation_id = direct_conversation_between(user["user_id"], other[0])
+    log_product_event(user["user_id"], "private_chat_started", {"conversation_id": conversation_id})
+    return jsonify({"ok": True, "conversation_id": conversation_id})
+
+
+@webhook_app.route("/api/messages/conversations", methods=["GET"])
+def api_messages_conversations():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.id, c.updated_at,
+               MAX(pm.created_at) AS last_message_at,
+               COUNT(CASE WHEN pm.sender_user_id != ? AND pm.created_at > COALESCE(cm.last_read_at, '') THEN 1 END) AS unread_count
+        FROM conversations c
+        JOIN conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=?
+        LEFT JOIN private_messages pm ON pm.conversation_id=c.id AND pm.deleted_at IS NULL
+        GROUP BY c.id, c.updated_at
+        ORDER BY COALESCE(MAX(pm.created_at), c.updated_at) DESC
+        LIMIT 80
+        """,
+        (user["user_id"], user["user_id"]),
+    )
+    rows = []
+    for row in cur.fetchall():
+        rows.append({"id": row[0], "title": f"Conversation {row[0]}", "updated_at": row[1], "last_message_at": row[2], "unread_count": row[3]})
+    conn.close()
+    return jsonify({"ok": True, "conversations": rows})
+
+
+@webhook_app.route("/api/messages/<int:conversation_id>", methods=["GET"])
+def api_messages_thread(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if not user_is_conversation_member(user["user_id"], conversation_id):
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, conversation_id, sender_user_id, body, created_at FROM private_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 200",
+        (conversation_id,),
+    )
+    messages = [dict(row) for row in cur.fetchall()]
+    now = datetime.now().isoformat()
+    cur.execute("UPDATE conversation_members SET last_read_at=? WHERE user_id=? AND conversation_id=?", (now, user["user_id"], conversation_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "current_user_id": user["user_id"], "messages": messages})
+
+
+@webhook_app.route("/api/messages/<int:conversation_id>/send", methods=["POST"])
+def api_messages_send(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if not user_is_conversation_member(user["user_id"], conversation_id):
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    payload = request.get_json(silent=True) or {}
+    body = clean_html(payload.get("body") or payload.get("message") or "")[:2000]
+    if not body:
+        return jsonify({"ok": False, "message": "Message required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)", (conversation_id, user["user_id"], body, datetime.now().isoformat()))
+    message_id = cur.lastrowid
+    cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (datetime.now().isoformat(), conversation_id))
+    conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "private_message_sent", {"conversation_id": conversation_id})
+    return jsonify({"ok": True, "message_id": message_id})
+
+
+@webhook_app.route("/api/messages/<int:conversation_id>/read", methods=["POST"])
+def api_messages_read(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if not user_is_conversation_member(user["user_id"], conversation_id):
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE conversation_members SET last_read_at=? WHERE user_id=? AND conversation_id=?", (datetime.now().isoformat(), user["user_id"], conversation_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@webhook_app.route("/api/messages/block", methods=["POST"])
+def api_messages_block():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    blocked_user_id = int(payload.get("user_id") or payload.get("blocked_user_id") or 0)
+    if not blocked_user_id or blocked_user_id == user["user_id"]:
+        return jsonify({"ok": False, "message": "Valid user required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO blocked_users (blocker_user_id, blocked_user_id, reason, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(blocker_user_id, blocked_user_id) DO UPDATE SET reason=excluded.reason",
+        (user["user_id"], blocked_user_id, clean_html(payload.get("reason") or "")[:400], datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@webhook_app.route("/api/messages/report", methods=["POST"])
+def api_messages_report():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    conversation_id = int(payload.get("conversation_id") or 0)
+    if conversation_id and not user_is_conversation_member(user["user_id"], conversation_id):
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO chat_reports (reporter_user_id, reported_user_id, conversation_id, message_id, reason, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
+        """,
+        (
+            user["user_id"],
+            int(payload.get("reported_user_id") or 0),
+            conversation_id,
+            int(payload.get("message_id") or 0),
+            clean_html(payload.get("reason") or "")[:1000],
+            datetime.now().isoformat(),
+            datetime.now().isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "private_chat_reported", {"conversation_id": conversation_id})
+    return jsonify({"ok": True})
 
 
 def stripe_event_processed(event_id):
@@ -5293,6 +5880,24 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
             stripe_subscription_id or "",
             invoice_id or "",
             payment_intent_id or "",
+            amount,
+            (currency or "usd").upper(),
+            status,
+            payment_type,
+            datetime.now().isoformat(),
+        ),
+    )
+    cur.execute(
+        """
+        INSERT INTO transactions
+        (user_id, stripe_event_id, stripe_customer_id, stripe_subscription_id, amount, currency, status, transaction_type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            stripe_event_id or "",
+            stripe_customer_id or "",
+            stripe_subscription_id or "",
             amount,
             (currency or "usd").upper(),
             status,
@@ -6907,7 +7512,7 @@ BTC_PRO_PRICE = "0.00025 BTC"
 
 def pro_upgrade_message(user_id):
     account = get_linked_website_account(user_id)
-    if is_paid_pro_user(account):
+    if platform_pro_access(account):
         return (
             "✅ Your CoinPilotXAI Pro access is already active.\n\n"
             "Open your dashboard anytime to use the full platform. Telegram is an optional companion for quick commands and alerts."
@@ -9257,6 +9862,20 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        stripe_event_id TEXT,
+        stripe_customer_id TEXT,
+        stripe_subscription_id TEXT,
+        amount REAL,
+        currency TEXT,
+        status TEXT,
+        transaction_type TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS email_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -9501,6 +10120,109 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        title TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        role TEXT,
+        content TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_context_summaries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        conversation_id INTEGER,
+        summary TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_type TEXT DEFAULT 'direct',
+        created_by INTEGER,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS conversation_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        joined_at TEXT,
+        last_read_at TEXT,
+        UNIQUE(conversation_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS private_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        sender_user_id INTEGER,
+        body TEXT,
+        created_at TEXT,
+        deleted_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS message_read_receipts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        user_id INTEGER,
+        read_at TEXT,
+        UNIQUE(message_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS message_attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        attachment_type TEXT,
+        storage_key TEXT,
+        metadata TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS blocked_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        blocker_user_id INTEGER,
+        blocked_user_id INTEGER,
+        reason TEXT,
+        created_at TEXT,
+        UNIQUE(blocker_user_id, blocked_user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS chat_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_user_id INTEGER,
+        reported_user_id INTEGER,
+        conversation_id INTEGER,
+        message_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS saved_wallets (
@@ -9633,6 +10355,20 @@ def init_db():
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS user_alert_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        alert_type TEXT,
+        symbol TEXT,
+        condition TEXT,
+        target_value REAL,
+        channels TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS alert_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         alert_type TEXT,

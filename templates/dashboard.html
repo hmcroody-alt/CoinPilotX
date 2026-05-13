@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard | CoinPilotXAI Inc.</title>
-  <meta name="description" content="Private CoinPilotXAI Inc. account dashboard for portfolio tracking, watchlists, alerts, and optional Telegram account sync." />
+  <meta name="description" content="Private CoinPilotXAI Inc. account dashboard for portfolio tracking, watchlists, alerts, native notifications, and account sync." />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="canonical" href="https://coinpilotx.app/dashboard" />
   <meta name="theme-color" content="#00e5ff" />
@@ -59,7 +59,7 @@
         <div class="nav-links">
           <a class="button" href="/account">Account</a>
           <a class="button" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
-          <a class="button" href="https://t.me/DocShieldX_bot">Connect Telegram</a>
+          <a class="button" href="/app">Command Center</a>
           <a class="button" href="/logout">Logout</a>
         </div>
       </nav>
@@ -71,11 +71,11 @@
       <article class="card">
         <div class="kicker">Personal Intelligence Dashboard</div>
         <h1 data-user-name>Welcome back</h1>
-        <p>Track your manual crypto holdings, watchlist, alerts, optional Telegram connection, and AI risk context from the same source-of-truth website account.</p>
+        <p>Track your manual crypto holdings, watchlist, alerts, native notifications, and AI risk context from the same source-of-truth website account.</p>
         {% if access.is_paid_pro %}
-          <p class="notice"><strong>Paid Pro active.</strong> Your subscription is active. The dashboard, alerts, and optional Telegram companion will use paid Pro access.</p>
+          <p class="notice"><strong>Paid Pro active.</strong> Your subscription is active. The dashboard, alerts, and native command center will use paid Pro access.</p>
         {% elif access.is_trial %}
-          <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and optional Telegram connection.</p>
+          <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and account preferences.</p>
         {% endif %}
         <div class="actions">
           <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
@@ -87,15 +87,15 @@
         <div class="status">Live account sync</div>
         <p><strong>Plan:</strong> <span data-plan>Loading...</span></p>
         <p><strong>Subscription:</strong> <span data-subscription>Loading...</span></p>
-        <p><strong>Telegram:</strong> <span data-telegram>Loading...</span></p>
+        <p><strong>Companion channel:</strong> <span data-telegram>Loading...</span></p>
         <p><strong>Pro/trial expiration:</strong> <span data-expires>Loading...</span></p>
         <p class="muted" data-account-sync-message>Syncing live account status...</p>
         {% if link_code %}
           <div class="notice">
-            <strong>Connect Telegram:</strong>
+            <strong>Connect companion alerts:</strong>
             <p>Send this code to the bot within 10 minutes:</p>
             <p><code>/connect {{ link_code }}</code></p>
-            <a class="button gold" href="https://t.me/DocShieldX_bot">Connect Telegram Companion</a>
+            <a class="button gold" href="/account/settings">Companion Settings</a>
           </div>
         {% endif %}
       </article>
@@ -167,7 +167,7 @@
             <select name="condition"><option value="above">Above</option><option value="below">Below</option></select>
             <input name="target_value" type="number" step="any" placeholder="Target value" required>
           </div>
-          <select name="channel"><option value="telegram">Telegram</option><option value="website">Website</option></select>
+          <select name="channel"><option value="website">Website</option><option value="telegram">Companion</option></select>
           <button class="button gold" type="submit">Create Alert</button>
           <p class="muted" data-alert-message></p>
         </form>

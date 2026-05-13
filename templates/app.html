@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CoinPilotXAI App | AI Crypto Intelligence Platform</title>
-  <meta name="description" content="Use the CoinPilotXAI command center for AI crypto intelligence, live markets, Scam Shield, Wallet Intel, portfolio tools, alerts, and optional Telegram companion access." />
-  <meta name="robots" content="{% if is_guest %}index, follow{% else %}noindex, nofollow{% endif %}" />
+  <meta name="description" content="Use the CoinPilotXAI command center for AI crypto intelligence, live markets, Scam Shield, Wallet Intel, portfolio tools, alerts, and private AI chat." />
+  <meta name="robots" content="noindex, nofollow" />
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#00e5ff" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
@@ -29,6 +29,8 @@
     h2 { margin:0 0 12px; font-size:clamp(20px,3vw,30px); }
     p,.muted { color:var(--muted); }
     .command-bar { position:sticky; top:82px; z-index:10; display:grid; grid-template-columns:1fr auto; gap:8px; margin:16px 0; }
+    .chat-mode .command-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; top:auto; width:min(100% - 28px,900px); margin:0; padding:10px; border:1px solid var(--line); border-radius:14px; background:rgba(5,11,20,.94); backdrop-filter:blur(18px); }
+    .chat-mode main { padding-bottom:150px; }
     input { width:100%; min-height:50px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.06); color:var(--text); padding:12px 13px; font:inherit; }
     .sections { display:grid; gap:16px; margin-top:16px; }
     .command-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
@@ -43,7 +45,7 @@
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
-<body>
+<body class="{% if chat_mode %}chat-mode{% endif %}">
   <header>
     <div class="shell">
       <nav>
@@ -51,6 +53,7 @@
         {% if is_guest %}
           <a class="button primary" href="/signup?next=/app">Start Free</a>
         {% else %}
+          <a class="button" href="/notifications" aria-label="Notifications">Alerts</a>
           <a class="button" href="/dashboard">Dashboard</a>
         {% endif %}
       </nav>
@@ -62,7 +65,7 @@
       <article class="card">
         <div class="kicker">Standalone Web/PWA Command Center</div>
         <h1>{% if chat_mode %}CoinPilotXAI Native Chat{% else %}AI Crypto Intelligence Platform{% endif %}</h1>
-        <p>{% if chat_mode %}Chat with CoinPilotXAI from the web app, run slash commands, and keep your AI history connected to your account. If AI is unavailable, the app will show a clear fallback instead of depending on Telegram.{% else %}Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app. Telegram is an optional companion, not the core platform.{% endif %}</p>
+        <p>{% if chat_mode %}Chat with CoinPilotXAI from the web app, run slash commands, and keep your AI history connected to your account. If AI is unavailable, the app will show a clear fallback.{% else %}Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the CoinPilotXAI app.{% endif %}</p>
       </article>
       <article class="card">
         <div class="kicker">Live Account</div>
@@ -126,10 +129,11 @@
     const responseCard = document.querySelector("[data-response]");
     const commandHistory = [];
     function renderResult(data) {
-      if (!data || !data.ok) throw new Error((data && data.message) || "Command failed");
+      if (!data || !data.ok) throw new Error((data && (data.error || data.message)) || "Command failed");
+      const summary = data.response || data.summary || "";
       responseCard.innerHTML = `
         <h2>${data.title || "CoinPilotXAI"}</h2>
-        <p>${(data.summary || "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>
+        <p>${summary.replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>
         <div class="meta">
           <span>Source: ${data.source || "CoinPilotXAI platform"}</span>
           <span>Updated: ${data.last_updated || "now"}</span>
@@ -156,7 +160,11 @@
       });
       const data = await res.json();
       if (res.status === 401) {
-        window.location.href = "/signup?next=/app";
+        window.location.href = "/signup?next=" + encodeURIComponent(location.pathname);
+        return;
+      }
+      if (res.status === 403) {
+        responseCard.innerHTML = `<h2>Pro Intelligence Required</h2><p>${data.message || "You need CoinPilotXAI Pro to access this command."}</p><div class="meta"><a class="button primary" href="/upgrade">Upgrade to Pro</a><a class="button" href="/account">Account</a></div>`;
         return;
       }
       renderResult(data);

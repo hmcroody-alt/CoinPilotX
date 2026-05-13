@@ -39,6 +39,86 @@ def list_notifications(user_id, limit=50):
     return {"ok": True, "notifications": rows}
 
 
+def mark_read(user_id, notification_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE notifications SET status='read', read_at=? WHERE id=? AND user_id=?",
+        (_now(), notification_id, user_id),
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "updated": changed}
+
+
+def mark_all_read(user_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE notifications SET status='read', read_at=? WHERE user_id=? AND status!='read'",
+        (_now(), user_id),
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "updated": changed}
+
+
+def get_preferences(user_id):
+    categories = [
+        "payment_confirmations",
+        "account_security",
+        "pro_activation",
+        "market_alerts",
+        "whale_alerts",
+        "scam_alerts",
+        "wallet_alerts",
+        "portfolio_alerts",
+        "sports_edge_alerts",
+        "product_updates",
+    ]
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT category, in_app, push, email, telegram FROM notification_preferences WHERE user_id=?",
+        (user_id,),
+    )
+    existing = {row[0]: {"in_app": bool(row[1]), "push": bool(row[2]), "email": bool(row[3]), "telegram": bool(row[4])} for row in cur.fetchall()}
+    conn.close()
+    return {"ok": True, "preferences": {category: existing.get(category, {"in_app": True, "push": False, "email": False, "telegram": False}) for category in categories}}
+
+
+def update_preferences(user_id, preferences):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    for category, values in (preferences or {}).items():
+        cur.execute(
+            """
+            INSERT INTO notification_preferences (user_id, category, in_app, push, email, telegram, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, category) DO UPDATE SET
+                in_app=excluded.in_app,
+                push=excluded.push,
+                email=excluded.email,
+                telegram=excluded.telegram,
+                updated_at=excluded.updated_at
+            """,
+            (
+                user_id,
+                str(category)[:80],
+                1 if values.get("in_app", True) else 0,
+                1 if values.get("push") else 0,
+                1 if values.get("email") else 0,
+                1 if values.get("telegram") else 0,
+                _now(),
+            ),
+        )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 def save_push_subscription(user_id, subscription, user_agent=""):
     endpoint = (subscription or {}).get("endpoint") or ""
     if not user_id or not endpoint:
@@ -61,6 +141,19 @@ def save_push_subscription(user_id, subscription, user_agent=""):
     conn.commit()
     conn.close()
     return {"ok": True, "message": "Push notifications connected."}
+
+
+def unsubscribe_push(user_id, endpoint=""):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    if endpoint:
+        cur.execute("UPDATE push_subscriptions SET active=0, updated_at=? WHERE user_id=? AND endpoint=?", (_now(), user_id, endpoint))
+    else:
+        cur.execute("UPDATE push_subscriptions SET active=0, updated_at=? WHERE user_id=?", (_now(), user_id))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "updated": changed}
 
 
 def send_in_app_notification(user_id, title, message, notification_type="general", metadata=None):

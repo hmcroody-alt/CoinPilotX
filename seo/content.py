@@ -141,6 +141,72 @@ SEO_PAGES = {
 }
 
 SEO_PAGES.update({
+    "platform": {
+        "title": "CoinPilotXAI Platform | AI Crypto Intelligence Command Center",
+        "description": "CoinPilotXAI is a web, mobile, and PWA crypto intelligence platform for AI analysis, wallet risk checks, scam protection, portfolio intelligence, and real-time alerts.",
+        "h1": "CoinPilotXAI AI Intelligence Platform",
+        "eyebrow": "Platform",
+        "intro": "CoinPilotXAI is a standalone SaaS platform built around account-based AI intelligence, live market context, alerts, and portfolio tools.",
+        "answer": "The platform is the source of truth. Telegram is optional companion access for users who want extra notifications and quick commands.",
+        "points": ["Web and mobile command center", "Native AI chat", "Market and wallet intelligence", "Scam Shield", "Portfolio and alerts"],
+        "faqs": COMMON_FAQS,
+        "related": ["/features", "/pricing", "/ai-market-analysis", "/crypto-safety"],
+    },
+    "app-preview": {
+        "title": "CoinPilotXAI App Preview | Crypto Intelligence PWA",
+        "description": "Preview CoinPilotXAI's mobile-first command center for AI crypto intelligence, live market alerts, Scam Shield, Wallet Intel, and portfolio tools.",
+        "h1": "CoinPilotXAI App Preview",
+        "eyebrow": "App Preview",
+        "intro": "The CoinPilotXAI PWA is designed as the primary app experience for users who want fast command-style crypto intelligence.",
+        "answer": "The app preview explains the platform workflow without exposing private account data or indexing private dashboards.",
+        "points": ["Mobile-first UI", "Command grid", "Native AI chat", "Pro-gated intelligence", "Optional companion alerts"],
+        "faqs": COMMON_FAQS,
+        "related": ["/platform", "/features", "/pwa-crypto-app"],
+    },
+    "live-market": {
+        "title": "Live Crypto Market Intelligence | CoinPilotXAI Inc.",
+        "description": "Track live crypto market data, BTC and ETH movement, top movers, volatility, risk context, and AI market summaries with CoinPilotXAI.",
+        "h1": "Live Crypto Market Intelligence",
+        "eyebrow": "Live Market",
+        "intro": "CoinPilotXAI helps users understand live market movement with source transparency and educational risk context.",
+        "answer": "Live market intelligence should explain price movement, volatility, and uncertainty without pretending to predict guaranteed outcomes.",
+        "points": ["BTC and ETH context", "Top movers", "Volatility notes", "AI market summary", "Source status"],
+        "faqs": COMMON_FAQS,
+        "related": ["/markets/btc", "/ai-market-analysis", "/platform"],
+    },
+    "scam-guide": {
+        "title": "Crypto Scam Guide | CoinPilotXAI Inc.",
+        "description": "Learn common crypto scam patterns, fake support warnings, wallet-drainer language, phishing signs, and safer verification habits.",
+        "h1": "Crypto Scam Guide",
+        "eyebrow": "Safety Guide",
+        "intro": "CoinPilotXAI teaches users how to spot crypto scam pressure before clicking, connecting, or signing.",
+        "answer": "The safest crypto habit is to never share seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.",
+        "points": ["Fake support scripts", "Urgency tactics", "Wallet-drainer warnings", "Phishing red flags"],
+        "faqs": COMMON_FAQS,
+        "related": ["/crypto-scams", "/crypto-scam-checker", "/crypto-safety"],
+    },
+    "safety": {
+        "title": "CoinPilotXAI Safety Center | Crypto Risk and Account Protection",
+        "description": "CoinPilotXAI safety rules: never share seed phrases, never enter private keys, use public wallet data only, and review crypto risk carefully.",
+        "h1": "CoinPilotXAI Safety Center",
+        "eyebrow": "Trust and Safety",
+        "intro": "CoinPilotXAI is built around public data, account safety, educational AI intelligence, and clear limits.",
+        "answer": "CoinPilotXAI Inc. never holds user funds and never asks for private wallet credentials.",
+        "points": ["Never holds funds", "Public wallet data only", "Stripe website billing", "Educational AI intelligence only"],
+        "faqs": COMMON_FAQS,
+        "related": ["/support", "/privacy", "/terms", "/crypto-safety"],
+    },
+    "faq": {
+        "title": "CoinPilotXAI FAQ | AI Crypto Intelligence Platform",
+        "description": "Answers about CoinPilotXAI Pro, AI crypto intelligence, wallet safety, Scam Shield, portfolio tools, alerts, billing, and optional Telegram access.",
+        "h1": "CoinPilotXAI FAQ",
+        "eyebrow": "Frequently Asked Questions",
+        "intro": "Quick answers for users evaluating CoinPilotXAI as a web and mobile crypto intelligence platform.",
+        "answer": "CoinPilotXAI is a standalone platform for AI-powered crypto education, live market context, scam awareness, wallet intelligence, portfolio tools, and alerts.",
+        "points": ["Account and Pro access", "Billing and support", "AI safety", "Optional companion access"],
+        "faqs": COMMON_FAQS,
+        "related": ["/features", "/pricing", "/support"],
+    },
     "features": {
         "title": "CoinPilotXAI Features | AI Crypto Intelligence Platform",
         "description": "Explore CoinPilotXAI platform features: AI crypto assistant, live market intelligence, Scam Shield, Wallet Intel, portfolio tracking, alerts, Sports Edge, and optional Telegram companion access.",
@@ -1045,7 +1111,7 @@ def search_pages(query, limit=12):
 
 
 def all_public_paths():
-    paths = ["/", "/app", "/command-center", "/signup", "/support", "/privacy", "/terms"]
+    paths = ["/", "/signup", "/support", "/privacy", "/terms"]
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
     paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]
