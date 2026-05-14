@@ -1424,6 +1424,28 @@ def platform_pro_access(user):
     )
 
 
+def backend_pro_status_payload(user):
+    user = user or {}
+    has_access = has_pro_access(user)
+    paid = is_paid_pro_user(user)
+    trial = is_trialing_user(user)
+    return {
+        "user_id": user.get("user_id"),
+        "email": mask_email(user.get("email")),
+        "plan": user.get("plan") or "",
+        "subscription_plan": user.get("subscription_plan") or "",
+        "subscription_status": user.get("subscription_status") or "",
+        "is_pro": int(user.get("is_pro") or 0),
+        "has_pro_access": has_access,
+        "is_paid_pro": paid,
+        "is_trialing": trial,
+        "pro_expires_at": user.get("pro_expires_at") or user.get("subscription_expires_at") or "",
+        "stripe_customer_id": user.get("stripe_customer_id") or "",
+        "stripe_subscription_id": user.get("stripe_subscription_id") or "",
+        "source": "database",
+    }
+
+
 def pro_locked_response(user, feature_name="AI Command Center"):
     log_product_event((user or {}).get("user_id") or 0, "pro_gated_blocked_attempt", {"feature": feature_name, "path": request.path})
     body = f"""
@@ -3204,6 +3226,7 @@ def admin_saas_summary():
     init_db()
     repair_trialing_users_with_successful_payments()
     conn = db()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     since_day = (datetime.now() - timedelta(days=1)).isoformat()
     since_week = (datetime.now() - timedelta(days=7)).isoformat()
@@ -3215,18 +3238,11 @@ def admin_saas_summary():
     new_week = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM users WHERE telegram_user_id IS NOT NULL")
     telegram_linked = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='trialing'")
-    trial_users = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='active'")
-    paid_pro = cur.fetchone()[0]
-    cur.execute(
-        """
-        SELECT COUNT(*) FROM users
-        WHERE lower(COALESCE(plan,''))='free'
-           OR lower(COALESCE(subscription_status,'')) IN ('inactive','expired','canceled')
-        """
-    )
-    free_users = cur.fetchone()[0]
+    cur.execute("SELECT * FROM users WHERE email!=''")
+    user_rows = [dict(row) for row in cur.fetchall()]
+    paid_pro = sum(1 for row in user_rows if platform_pro_access(row))
+    trial_users = sum(1 for row in user_rows if is_trialing_user(row))
+    free_users = sum(1 for row in user_rows if not has_pro_access(row))
     cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,'')) IN ('past_due','unpaid')")
     failed_payments = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM unmatched_payments WHERE resolved_at IS NULL")
@@ -3255,7 +3271,7 @@ def admin_saas_summary():
     conn.close()
     mrr_estimate = float(mrr_from_payments or 0) if mrr_from_payments else paid_pro * 14.99
     logging.info(
-        "ADMIN_METRICS_QUERY_RESULT total_users=%s paid_pro=%s trial_users=%s free_users=%s total_revenue=%s mrr=%s",
+        "ADMIN_METRICS_QUERY_RESULT total_users=%s paid_pro=%s trial_users=%s free_users=%s total_revenue=%s mrr=%s source=backend_helpers",
         total_users,
         paid_pro,
         trial_users,
@@ -4290,8 +4306,27 @@ def admin_user_detail_page(user_id):
     emails = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT stripe_event_id, stripe_session_id, invoice_id, amount, currency, status, created_at FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
     payments = [dict(row) for row in cur.fetchall()]
+    latest_payment = payments[0] if payments else {}
+    cur.execute("SELECT stripe_event_id, event_type, status, created_at, processed_at FROM stripe_events WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
+    latest_stripe_event = dict(cur.fetchone() or {})
+    cur.execute("SELECT email_type, template, status, stripe_event_id, payment_id, created_at, sent_at, error_message FROM payment_email_logs WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
+    latest_payment_email = dict(cur.fetchone() or {})
     conn.close()
     paid_class = "Paid Pro" if is_paid_pro_user(user) else "Trial" if is_trialing_user(user) else "Free/Inactive"
+    backend_status = backend_pro_status_payload(user)
+    diagnostic_rows = {
+        "User ID": backend_status.get("user_id"),
+        "Email": backend_status.get("email"),
+        "Plan": backend_status.get("plan"),
+        "Subscription plan": backend_status.get("subscription_plan"),
+        "Subscription status": backend_status.get("subscription_status"),
+        "is_pro": backend_status.get("is_pro"),
+        "has_pro_access": backend_status.get("has_pro_access"),
+        "Latest payment": f"{latest_payment.get('status') or 'none'} {latest_payment.get('amount') or ''} {latest_payment.get('currency') or ''} {latest_payment.get('created_at') or ''}",
+        "Latest Stripe event": f"{latest_stripe_event.get('event_type') or 'none'} {latest_stripe_event.get('status') or ''} {latest_stripe_event.get('stripe_event_id') or ''}",
+        "Latest payment email": f"{latest_payment_email.get('email_type') or latest_payment_email.get('template') or 'none'} {latest_payment_email.get('status') or ''} {latest_payment_email.get('created_at') or ''}",
+    }
+    diagnostic = "".join(f"<div class='card'><strong>{clean_html(str(label))}</strong><p>{clean_html(str(value))}</p></div>" for label, value in diagnostic_rows.items())
     summary = "".join(
         f"<div class='card'><strong>{clean_html(label)}</strong><p>{clean_html(str(value or ''))}</p></div>"
         for label, value in {
@@ -4312,6 +4347,8 @@ def admin_user_detail_page(user_id):
     body = (
         f"<h1>User #{user_id}</h1><p><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></p>"
         f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to Paid Pro</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Pro From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
+        f"<h2>Backend Pro Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
         f"<h2>Activity</h2><div class='card'>{admin_rows_table(activity, [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div>"
@@ -4410,6 +4447,90 @@ def admin_user_convert_paid_pro(user_id):
     conn.close()
     log_admin_audit(admin["id"], "admin_convert_trial_to_paid_pro", "user", str(user_id), {"email": mask_email(user.get("email"))})
     logging.info("TRIAL_TO_PAID_CONVERSION admin_repair user_id=%s", user_id)
+    return redirect(url_for("admin_user_detail_page", user_id=user_id))
+
+
+@webhook_app.route("/admin/users/<int:user_id>/force-sync-pro", methods=["POST"])
+def admin_user_force_sync_pro(user_id):
+    admin, denied = require_admin_page("billing.repair")
+    if denied:
+        return denied
+    if not verify_csrf():
+        return admin_page_html("Security Check", "<h1>Security check failed.</h1>", admin), 400
+    user = load_account_by_id(user_id)
+    if not user:
+        return admin_page_html("User Not Found", "<h1>User not found</h1>", admin), 404
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM payment_records
+        WHERE user_id=? AND lower(COALESCE(status,''))='succeeded'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    payment = dict(cur.fetchone() or {})
+    if not payment:
+        cur.execute(
+            """
+            SELECT * FROM transactions
+            WHERE user_id=? AND lower(COALESCE(status,''))='succeeded'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        payment = dict(cur.fetchone() or {})
+    if not payment:
+        conn.close()
+        log_admin_audit(admin["id"], "admin_force_sync_pro_failed", "user", str(user_id), {"reason": "no_successful_payment"})
+        return admin_page_html(
+            "No Successful Payment",
+            "<h1>No successful payment found</h1><p>This repair only runs when the backend has a successful payment record or transaction for the user.</p>",
+            admin,
+        ), 400
+    pro_expires_at = user.get("pro_expires_at") or user.get("subscription_expires_at") or (datetime.now() + timedelta(days=30)).isoformat()
+    cur.execute(
+        """
+        UPDATE users
+        SET plan='pro',
+            subscription_plan='pro',
+            subscription_status='active',
+            trial_status='converted',
+            is_pro=1,
+            stripe_customer_id=COALESCE(?, stripe_customer_id),
+            stripe_subscription_id=COALESCE(?, stripe_subscription_id),
+            pro_expires_at=?,
+            subscription_expires_at=?,
+            updated_at=?
+        WHERE user_id=?
+        """,
+        (
+            payment.get("stripe_customer_id"),
+            payment.get("stripe_subscription_id"),
+            pro_expires_at,
+            pro_expires_at,
+            datetime.now().isoformat(),
+            user_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    fresh_user = load_account_by_id(user_id) or {}
+    send_successful_payment_email_bundle(fresh_user, {
+        "stripe_event_id": payment.get("stripe_event_id") or f"force-sync-{user_id}",
+        "stripe_session_id": payment.get("stripe_session_id") or "",
+        "payment_id": payment.get("stripe_session_id") or payment.get("invoice_id") or payment.get("payment_intent_id") or f"force-sync-{user_id}",
+        "amount": payment.get("amount"),
+        "currency": payment.get("currency") or "USD",
+        "billing_date": format_date(payment.get("created_at") or datetime.now().isoformat()),
+    }, force=False)
+    log_admin_audit(admin["id"], "admin_force_sync_pro_from_payment", "user", str(user_id), {"payment_record_id": payment.get("id"), "stripe_event_id": payment.get("stripe_event_id")})
+    log_product_event(user_id, "admin_force_sync_pro_from_payment", {"admin_id": admin.get("id"), "payment_record_id": payment.get("id")})
+    logging.info("ADMIN_FORCE_SYNC_PRO_FROM_PAYMENT user_id=%s payment_record_id=%s has_pro_access=%s", user_id, payment.get("id"), has_pro_access(fresh_user))
     return redirect(url_for("admin_user_detail_page", user_id=user_id))
 
 
@@ -6226,10 +6347,13 @@ def account_status_api():
         "user_id": fresh_user.get("user_id"),
         "email": mask_email(fresh_user.get("email")),
         "plan": fresh_user.get("plan") or fresh_user.get("subscription_plan") or "free",
+        "subscription_plan": fresh_user.get("subscription_plan") or fresh_user.get("plan") or "free",
         "subscription_status": fresh_user.get("subscription_status") or "inactive",
+        "is_pro": int(fresh_user.get("is_pro") or 0),
         "trial_status": fresh_user.get("trial_status") or "",
-        "has_pro_access": platform_pro_access(fresh_user),
-        "has_pro": platform_pro_access(fresh_user),
+        "has_pro_access": has_pro_access(fresh_user),
+        "has_pro": has_pro_access(fresh_user),
+        "backend_source": "database",
         "is_paid_pro": is_paid_pro_user(fresh_user),
         "is_trialing": is_trialing_user(fresh_user),
         "access_label": access.get("label"),
