@@ -236,10 +236,11 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
     if action_key == "account":
         if not user_id:
             return _card(action_key, "Account", "Log in to view your CoinPilotXAI account.", "Website account database", "High", ["Login", "Create account"])
-        label = "Paid Pro active" if pro and (user.get("subscription_status") or "").lower() == "active" else "Pro trial active" if (user.get("subscription_status") or "").lower() == "trialing" else "Free"
+        access_type = pro_access.pro_access_type(user)
+        label = "Paid Pro active" if access_type == "paid" else "Pro trial active" if access_type == "trial" else "Free"
         return _card(action_key, "Account", f"Plan: {label}\nSubscription: {user.get('subscription_status') or 'inactive'}\nTelegram: {'Connected' if user.get('telegram_user_id') else 'Optional and not connected'}", "Website account database", "High", ["Open dashboard", "Account settings"])
     if action_key == "upgrade_pro":
-        if pro and (user.get("subscription_status") or "").lower() == "active":
+        if pro:
             return _card(action_key, "Upgrade Pro", "You already have CoinPilotXAI Pro active.", "Website account database", "High", ["Open dashboard", "Account"])
         return _card(action_key, "Upgrade Pro", "Open the website checkout while logged into your CoinPilotXAI account. No anonymous checkout is allowed.", "Stripe hosted checkout", "High", ["Upgrade on website"])
     if action_key == "help":

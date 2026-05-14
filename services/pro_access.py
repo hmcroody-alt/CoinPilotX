@@ -18,22 +18,42 @@ def _access_not_expired(row):
     return expires_at > now
 
 
-def has_pro_access(row):
-    if not row:
+def _future(value):
+    parsed = _parse_datetime(value)
+    if not parsed:
         return False
+    now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+    return parsed > now
+
+
+def _trial_not_expired(row):
+    return (
+        _future(row.get("trial_end_date"))
+        or _future(row.get("pro_expires_at"))
+        or _future(row.get("subscription_expires_at"))
+    )
+
+
+def pro_access_type(row):
+    if not row:
+        return "none"
+    account_status = (row.get("account_status") or "active").lower()
+    if account_status != "active":
+        return "none"
     plan = (row.get("plan") or row.get("subscription_plan") or "free").lower()
     status = (row.get("subscription_status") or "").lower()
-    is_pro_flag = int(row.get("is_pro") or 0) == 1
-    if (plan == "pro" or is_pro_flag) and status in {"active", "trialing"} and _access_not_expired(row):
-        return True
-    # Stripe cancellations and failed payments should not remove paid access until
-    # the paid-through date expires.
-    if (plan == "pro" or is_pro_flag) and status in {"canceled", "past_due"} and row.get("pro_expires_at") and _access_not_expired(row):
-        return True
-    # Preserve access for older paid records that predate the unified status fields.
-    if is_pro_flag and not status and _access_not_expired(row):
-        return True
-    return False
+    trial_status = (row.get("trial_status") or "").lower()
+    if plan == "pro" and status == "active":
+        return "paid"
+    if trial_status == "active" and _future(row.get("trial_end_date")):
+        return "trial"
+    if status == "trialing" and _trial_not_expired(row):
+        return "trial"
+    return "none"
+
+
+def has_pro_access(row):
+    return pro_access_type(row) != "none"
 
 
 def normalize_plan(row):

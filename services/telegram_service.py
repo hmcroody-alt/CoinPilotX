@@ -9,7 +9,5 @@ def linked_account(telegram_user_id):
 
 def telegram_access_label(user):
     if pro_access.has_pro_access(user or {}):
-        status = ((user or {}).get("subscription_status") or "").lower()
-        return "Pro Trial" if status == "trialing" else "Pro Active"
+        return "Pro Trial" if pro_access.pro_access_type(user or {}) == "trial" else "Pro Active"
     return "Free"
-

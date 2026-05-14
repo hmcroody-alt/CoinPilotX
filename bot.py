@@ -1357,38 +1357,29 @@ def generate_referral_code():
 
 def plan_status_label(user):
     user = user or {}
-    plan = (user.get("plan") or user.get("subscription_plan") or "free").lower()
     status = (user.get("subscription_status") or "inactive").lower()
-    if platform_pro_access(user):
+    access_type = pro_access_type(user)
+    if access_type == "paid":
         return "Paid Pro Active"
-    if pro_access_service.has_pro_access(user) and status == "trialing":
+    if access_type == "trial":
         return "Pro Trial"
-    if pro_access_service.has_pro_access(user):
+    if has_pro_access(user):
         return "Pro Active"
     if status == "expired":
         return "Free — trial ended"
     return "Free"
 
 
+def pro_access_type(user):
+    return pro_access_service.pro_access_type(user or {})
+
+
 def is_paid_pro_user(user):
-    user = user or {}
-    status = (user.get("subscription_status") or "").lower()
-    plan = (user.get("plan") or user.get("subscription_plan") or "").lower()
-    return (
-        plan == "pro"
-        and status == "active"
-        and bool(user.get("stripe_subscription_id") or user.get("stripe_customer_id"))
-        and pro_access_service.has_pro_access(user)
-    )
+    return pro_access_type(user) == "paid"
 
 
 def is_trialing_user(user):
-    user = user or {}
-    return (
-        (user.get("subscription_status") or "").lower() == "trialing"
-        and not is_paid_pro_user(user)
-        and pro_access_service.has_pro_access(user)
-    )
+    return pro_access_type(user) == "trial"
 
 
 def account_access_context(user):
@@ -1399,7 +1390,8 @@ def account_access_context(user):
     trial_end = user.get("trial_end_date") or pro_end
     return {
         "label": plan_status_label(user),
-        "has_pro": pro_access_service.has_pro_access(user),
+        "has_pro": has_pro_access(user),
+        "pro_access_type": pro_access_type(user),
         "is_paid_pro": paid,
         "is_trial": trial,
         "trial_end": format_date(trial_end),
@@ -1415,13 +1407,7 @@ def has_pro_access(user):
 
 
 def platform_pro_access(user):
-    user = user or {}
-    return (
-        (user.get("account_status") or "active").lower() == "active"
-        and (user.get("plan") or user.get("subscription_plan") or "").lower() == "pro"
-        and (user.get("subscription_status") or "").lower() == "active"
-        and has_pro_access(user)
-    )
+    return has_pro_access(user)
 
 
 def backend_pro_status_payload(user):
@@ -1437,6 +1423,7 @@ def backend_pro_status_payload(user):
         "subscription_status": user.get("subscription_status") or "",
         "is_pro": int(user.get("is_pro") or 0),
         "has_pro_access": has_access,
+        "pro_access_type": pro_access_type(user),
         "is_paid_pro": paid,
         "is_trialing": trial,
         "pro_expires_at": user.get("pro_expires_at") or user.get("subscription_expires_at") or "",
@@ -3240,9 +3227,10 @@ def admin_saas_summary():
     telegram_linked = cur.fetchone()[0]
     cur.execute("SELECT * FROM users WHERE email!=''")
     user_rows = [dict(row) for row in cur.fetchall()]
-    paid_pro = sum(1 for row in user_rows if platform_pro_access(row))
+    paid_pro = sum(1 for row in user_rows if is_paid_pro_user(row))
     trial_users = sum(1 for row in user_rows if is_trialing_user(row))
     free_users = sum(1 for row in user_rows if not has_pro_access(row))
+    active_pro_access = paid_pro + trial_users
     cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,'')) IN ('past_due','unpaid')")
     failed_payments = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM unmatched_payments WHERE resolved_at IS NULL")
@@ -3284,6 +3272,7 @@ def admin_saas_summary():
         "new_today": new_today,
         "new_week": new_week,
         "telegram_linked": telegram_linked,
+        "active_pro_access": active_pro_access,
         "trial_users": trial_users,
         "paid_pro": paid_pro,
         "free_users": free_users,
@@ -6353,6 +6342,7 @@ def account_status_api():
         "trial_status": fresh_user.get("trial_status") or "",
         "has_pro_access": has_pro_access(fresh_user),
         "has_pro": has_pro_access(fresh_user),
+        "pro_access_type": pro_access_type(fresh_user),
         "backend_source": "database",
         "is_paid_pro": is_paid_pro_user(fresh_user),
         "is_trialing": is_trialing_user(fresh_user),
@@ -13752,7 +13742,7 @@ def account_reply_markup(telegram_user_id):
             [InlineKeyboardButton("Help", callback_data="menu_help")],
             [InlineKeyboardButton("Main Menu", callback_data="main_menu")],
         ]
-        if not is_paid_pro_user(account):
+        if not has_pro_access(account):
             rows.insert(1, [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(telegram_user_id))])
         return InlineKeyboardMarkup(rows)
     return InlineKeyboardMarkup([
