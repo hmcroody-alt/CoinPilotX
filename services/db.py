@@ -204,6 +204,7 @@ AUTO_PK_TABLES = {
     "support_notes": "id",
     "support_ticket_messages": "id",
     "security_reports": "id",
+    "visitor_logs": "id",
     "auth_events": "id",
     "employees": "id",
     "departments": "id",

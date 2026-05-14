@@ -1224,6 +1224,49 @@ def basic_abuse_guard():
 
 
 @webhook_app.before_request
+def log_visitor_request():
+    if request.path.startswith(("/static/", "/icons/", "/manifest", "/site.webmanifest", "/sw.js")):
+        return None
+    if request.path in {"/health", "/health/database"}:
+        return None
+    try:
+        visitor_session_id = session.get("visitor_session_id")
+        if not visitor_session_id:
+            visitor_session_id = secrets.token_urlsafe(18)
+            session["visitor_session_id"] = visitor_session_id
+        now = datetime.now()
+        dedupe_after = (now - timedelta(minutes=1)).isoformat()
+        user_id = account_user_id() or 0
+        ip_hash = client_ip_hash()
+        user_agent = (request.headers.get("User-Agent") or "")[:500]
+        path = request.path[:500]
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id FROM visitor_logs
+            WHERE session_id=? AND path=? AND timestamp>=?
+            LIMIT 1
+            """,
+            (visitor_session_id, path, dedupe_after),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                """
+                INSERT INTO visitor_logs
+                (user_id, session_id, ip_address, user_agent, path, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, visitor_session_id, ip_hash, user_agent, path, now.isoformat()),
+            )
+            conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.debug("visitor log skipped safely: %s", exc)
+    return None
+
+
+@webhook_app.before_request
 def enforce_admin_first_password_change():
     if not request.path.startswith("/admin/"):
         return None
@@ -3192,6 +3235,8 @@ def admin_saas_summary():
     emails_today = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM analytics_events WHERE created_at>=?", (since_day,))
     events_today = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=?", (since_day,))
+    visitors_24h = cur.fetchone()[0] or 0
     cur.execute("SELECT COALESCE(SUM(COALESCE(amount, 14.99)), 0) FROM payment_records WHERE status='succeeded'")
     total_revenue = cur.fetchone()[0] or 0
     cur.execute(
@@ -3230,6 +3275,7 @@ def admin_saas_summary():
         "unmatched": unmatched,
         "emails_today": emails_today,
         "events_today": events_today,
+        "visitors_24h": visitors_24h,
         "total_revenue": round(float(total_revenue), 2),
         "mrr_estimate": round(mrr_estimate, 2),
         "audit_count": audit_count,
@@ -3266,6 +3312,7 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/ai-usage'>AI Usage</a>"
         "<a href='/admin/scam-shield'>Scam Shield</a>"
         "<a href='/admin/command-logs'>Command Logs</a>"
+        "<a href='/admin/visitors'>Visitors</a>"
         "<a href='/admin/notifications'>Notifications</a>"
         "<a href='/admin/private-chat-reports'>Chat Reports</a>"
         "<a href='/admin/support'>Support</a>"
@@ -3531,6 +3578,183 @@ def admin_system_page():
         "</div><p class='muted'>Missing optional keys produce honest fallbacks instead of fake data. Missing Stripe secret or price ID blocks checkout creation.</p>"
     )
     return admin_page_html("System Health", body, admin)
+
+
+@webhook_app.route("/admin/test-smtp", methods=["GET"])
+def admin_test_smtp_route():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    host = (os.getenv("SMTP_HOST") or "").strip()
+    port_raw = (os.getenv("SMTP_PORT") or "587").strip()
+    user = (os.getenv("SMTP_USER") or "").strip()
+    password = os.getenv("SMTP_PASSWORD") or ""
+    sender = (os.getenv("MAIL_FROM_ADDRESS") or user or "noreply@coinpilotx.app").strip()
+    recipient = (os.getenv("SMTP_TEST_RECIPIENT") or os.getenv("ADMIN_TEST_EMAIL") or os.getenv("SUPPORT_EMAIL") or "support@coinpilotx.app").strip()
+    logging.info("SMTP_TEST_ATTEMPT admin_id=%s host=%s port=%s user_present=%s recipient=%s", admin.get("id"), host, port_raw, bool(user), mask_email(recipient))
+    if not host or not port_raw:
+        logging.warning("SMTP_TEST_FAIL stage=connect missing_host_or_port")
+        return jsonify({"ok": False, "error_stage": "connect", "error": "Could not connect to SMTP server: SMTP_HOST or SMTP_PORT is missing."}), 500
+    try:
+        port = int(port_raw)
+    except ValueError:
+        logging.warning("SMTP_TEST_FAIL stage=connect invalid_port=%s", port_raw)
+        return jsonify({"ok": False, "error_stage": "connect", "error": f"Could not connect to SMTP server: invalid SMTP_PORT {port_raw}"}), 500
+    smtp = None
+    try:
+        if port == 465:
+            smtp = smtplib.SMTP_SSL(host, port, timeout=15)
+        else:
+            smtp = smtplib.SMTP(host, port, timeout=15)
+            smtp.ehlo()
+            if port == 587:
+                smtp.starttls()
+                smtp.ehlo()
+    except Exception as exc:
+        logging.warning("SMTP_TEST_FAIL stage=connect host=%s port=%s error=%s", host, port, exc)
+        try:
+            if smtp:
+                smtp.quit()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error_stage": "connect", "error": f"Could not connect to SMTP server: {exc}"}), 500
+    try:
+        if user or password:
+            smtp.login(user, password)
+    except Exception as exc:
+        logging.warning("SMTP_TEST_FAIL stage=login host=%s port=%s user_present=%s error=%s", host, port, bool(user), exc)
+        try:
+            smtp.quit()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error_stage": "login", "error": f"SMTP login failed: {exc}"}), 500
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = "CoinPilotXAI SMTP test"
+        msg["From"] = sender
+        msg["To"] = recipient
+        msg.set_content("CoinPilotXAI SMTP diagnostics succeeded. This confirms SMTP connection, login, and delivery path.")
+        smtp.send_message(msg)
+        smtp.quit()
+        logging.info("SMTP_TEST_SUCCESS admin_id=%s host=%s port=%s recipient=%s", admin.get("id"), host, port, mask_email(recipient))
+        log_admin_audit(admin.get("id"), "smtp_test_success", "system", "smtp", {"host": host, "port": port, "recipient": mask_email(recipient)})
+        return jsonify({"ok": True, "smtp_host": host, "smtp_port": port, "login_ok": True, "test_email_sent": True, "message": "SMTP is working"})
+    except Exception as exc:
+        logging.warning("SMTP_TEST_FAIL stage=send host=%s port=%s recipient=%s error=%s", host, port, mask_email(recipient), exc)
+        try:
+            smtp.quit()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error_stage": "send", "error": f"Test email failed: {exc}"}), 500
+
+
+@webhook_app.route("/admin/manual-upgrade", methods=["POST"])
+def admin_manual_upgrade_route():
+    admin, denied = require_admin_page("billing.repair")
+    if denied:
+        return jsonify({"ok": False, "error": "Insufficient permissions or invalid user."}), 403
+    payload = request.get_json(silent=True) or {}
+    target_user_id = str(payload.get("user_id") or "").strip()
+    if not target_user_id.isdigit():
+        return jsonify({"ok": False, "error": "Invalid user."}), 400
+    user = load_account_by_id(int(target_user_id))
+    if not user:
+        return jsonify({"ok": False, "error": "Insufficient permissions or invalid user."}), 404
+    if has_pro_access(user):
+        return jsonify({
+            "ok": True,
+            "message": "User already has Pro.",
+            "user": {
+                "user_id": user.get("user_id"),
+                "email": mask_email(user.get("email")),
+                "plan": user.get("plan") or user.get("subscription_plan"),
+                "subscription_status": user.get("subscription_status"),
+                "has_pro_access": True,
+            },
+        })
+    try:
+        days = int(payload.get("days") or os.getenv("MANUAL_PRO_DAYS") or 365)
+    except Exception:
+        days = 365
+    days = max(1, min(days, 3650))
+    pro_expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE users
+        SET plan='pro',
+            subscription_plan='pro',
+            subscription_status='active',
+            is_pro=1,
+            trial_status=CASE WHEN lower(COALESCE(trial_status,''))='trialing' THEN 'converted' ELSE COALESCE(trial_status, '') END,
+            pro_expires_at=?,
+            subscription_expires_at=?,
+            updated_at=?
+        WHERE user_id=?
+        """,
+        (pro_expires_at, pro_expires_at, now, int(target_user_id)),
+    )
+    conn.commit()
+    conn.close()
+    payment_id = record_payment_record(
+        int(target_user_id),
+        stripe_event_id=f"manual_upgrade_{int(time.time())}_{target_user_id}",
+        amount=0,
+        currency="usd",
+        status="succeeded",
+        payment_type="manual_admin_upgrade",
+        manual=True,
+        metadata={"admin_id": admin.get("id"), "admin_email": admin.get("email"), "days": days},
+    )
+    log_admin_audit(admin.get("id"), "manual_pro_upgrade", "user", target_user_id, {"plan": "pro", "subscription_status": "active", "pro_expires_at": pro_expires_at, "payment_record_id": payment_id})
+    fresh_user = load_account_by_id(int(target_user_id)) or {}
+    subject = "CoinPilotXAI Pro Activated"
+    text = "Your CoinPilotXAI Pro access has been activated by the system administrator.\n\nOpen your dashboard: https://coinpilotx.app/dashboard\n\nCoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
+    html = "<p>Your CoinPilotXAI Pro access has been activated by the system administrator.</p><p><a href='https://coinpilotx.app/dashboard'>Open your dashboard</a></p><p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
+    if fresh_user.get("email"):
+        send_platform_email(fresh_user.get("email"), subject, text, html, fresh_user.get("user_id"))
+    log_product_event(fresh_user.get("user_id") or int(target_user_id), "manual_pro_upgrade", {"admin_id": admin.get("id"), "payment_record_id": payment_id})
+    return jsonify({
+        "ok": True,
+        "message": "User upgraded to Pro successfully.",
+        "user": {
+            "user_id": fresh_user.get("user_id"),
+            "email": mask_email(fresh_user.get("email")),
+            "plan": fresh_user.get("plan") or fresh_user.get("subscription_plan"),
+            "subscription_status": fresh_user.get("subscription_status"),
+            "pro_expires_at": fresh_user.get("pro_expires_at") or "",
+            "has_pro_access": has_pro_access(fresh_user),
+        },
+    })
+
+
+@webhook_app.route("/admin/visitors", methods=["GET"])
+def admin_visitors_route():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    since = (datetime.now() - timedelta(hours=24)).isoformat()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=?", (since,))
+    total = cur.fetchone()[0] or 0
+    cur.execute(
+        """
+        SELECT user_id, session_id, ip_address, user_agent, path, timestamp
+        FROM visitor_logs
+        WHERE timestamp>=?
+        ORDER BY timestamp DESC
+        LIMIT 200
+        """,
+        (since,),
+    )
+    visitors = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    log_admin_audit(admin.get("id"), "admin_viewed_live_visitors", "analytics", "visitor_logs", {"total_last_24h": total})
+    return jsonify({"ok": True, "total_last_24h": total, "visitors": visitors})
 
 
 @webhook_app.route("/admin/transactions", methods=["GET"])
@@ -3950,7 +4174,7 @@ def admin_profile_page():
 ROLE_FALLBACK_PERMISSIONS = {
     "owner": {"*"},
     "super_admin": {"*"},
-    "admin": {"users.view", "users.edit", "billing.view", "emails.view", "telegram.view", "analytics.view", "support.manage", "system.view", "audit.view"},
+    "admin": {"users.view", "users.edit", "billing.view", "billing.repair", "emails.view", "telegram.view", "analytics.view", "support.manage", "system.view", "audit.view"},
     "billing_manager": {"users.view", "billing.view", "billing.repair", "subscriptions.edit", "emails.view"},
     "support_manager": {"users.view", "users.edit", "emails.view", "emails.resend", "telegram.view", "support.manage"},
     "support_agent": {"users.view", "emails.view", "telegram.view", "support.manage"},
@@ -6452,7 +6676,7 @@ def record_stripe_event(event, status="processed", user_id=None, error_message="
     conn.close()
 
 
-def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", stripe_customer_id="", stripe_subscription_id="", invoice_id="", payment_intent_id="", amount=None, currency="usd", status="succeeded", payment_type="stripe"):
+def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", stripe_customer_id="", stripe_subscription_id="", invoice_id="", payment_intent_id="", amount=None, currency="usd", status="succeeded", payment_type="stripe", manual=False, metadata=None):
     if not user_id:
         return
     if amount is None and status == "succeeded" and payment_type == "stripe":
@@ -6492,8 +6716,8 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
     cur.execute(
         """
         INSERT INTO payment_records
-        (user_id, stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, payment_intent_id, amount, currency, status, payment_type, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, payment_intent_id, amount, currency, status, payment_type, manual, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -6507,6 +6731,8 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
             (currency or "usd").upper(),
             status,
             payment_type,
+            1 if manual else 0,
+            json.dumps(metadata or {})[:4000],
             datetime.now().isoformat(),
         ),
     )
@@ -6514,8 +6740,8 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
     cur.execute(
         """
         INSERT INTO transactions
-        (user_id, stripe_event_id, stripe_customer_id, stripe_subscription_id, amount, currency, status, transaction_type, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, stripe_event_id, stripe_customer_id, stripe_subscription_id, amount, currency, status, transaction_type, manual, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -6526,6 +6752,8 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
             (currency or "usd").upper(),
             status,
             payment_type,
+            1 if manual else 0,
+            json.dumps(metadata or {})[:4000],
             datetime.now().isoformat(),
         ),
     )
@@ -10521,6 +10749,10 @@ def init_db():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "transactions", [
+        ("manual", "INTEGER DEFAULT 0"),
+        ("metadata", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS email_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11361,6 +11593,22 @@ def init_db():
         status TEXT,
         payment_type TEXT,
         created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "payment_records", [
+        ("manual", "INTEGER DEFAULT 0"),
+        ("metadata", "TEXT"),
+    ], conn=conn)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS visitor_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        session_id TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        path TEXT,
+        timestamp TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
