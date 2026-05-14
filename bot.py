@@ -1239,6 +1239,11 @@ def log_visitor_request():
         user_id = account_user_id() or 0
         ip_hash = client_ip_hash()
         user_agent = (request.headers.get("User-Agent") or "")[:500]
+        referrer = (request.headers.get("Referer") or "")[:500]
+        ua_lower = user_agent.lower()
+        device_type = "mobile" if any(token in ua_lower for token in ("mobile", "iphone", "android")) else "tablet" if "ipad" in ua_lower or "tablet" in ua_lower else "desktop"
+        browser = "Chrome" if "chrome" in ua_lower and "edg" not in ua_lower else "Safari" if "safari" in ua_lower and "chrome" not in ua_lower else "Firefox" if "firefox" in ua_lower else "Edge" if "edg" in ua_lower else "Other"
+        os_name = "iOS" if "iphone" in ua_lower or "ipad" in ua_lower else "Android" if "android" in ua_lower else "macOS" if "mac os" in ua_lower or "macintosh" in ua_lower else "Windows" if "windows" in ua_lower else "Linux" if "linux" in ua_lower else "Other"
         path = request.path[:500]
         conn = db()
         cur = conn.cursor()
@@ -1254,10 +1259,10 @@ def log_visitor_request():
             cur.execute(
                 """
                 INSERT INTO visitor_logs
-                (user_id, session_id, ip_address, user_agent, path, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (user_id, session_id, ip_address, user_agent, path, referrer, device_type, browser, os, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (user_id, visitor_session_id, ip_hash, user_agent, path, now.isoformat()),
+                (user_id, visitor_session_id, ip_hash, user_agent, path, referrer, device_type, browser, os_name, now.isoformat()),
             )
             conn.commit()
         conn.close()
@@ -2410,57 +2415,259 @@ def reset_password_page(token=""):
 
 @webhook_app.route("/admin/users", methods=["GET"])
 def admin_users_page():
-    if not require_admin_password():
-        return Response("Unauthorized. Set ADMIN_ANALYTICS_PASSWORD and pass ?password=...", status=401)
-    init_db()
+    admin, denied = require_admin_page("users.view")
+    if denied:
+        return denied
+    data = admin_users_payload()
+    rows = "".join(
+        f"<tr><td><a href='/admin/users/{u.get('user_id')}'>{clean_html(u.get('name') or 'User')}</a></td>"
+        f"<td>{clean_html(u.get('email') or '')}</td><td>{u.get('user_id')}</td><td>{clean_html(u.get('account_status') or '')}</td>"
+        f"<td>{clean_html(u.get('plan') or '')}</td><td>{clean_html(u.get('subscription_status') or '')}</td>"
+        f"<td>{'Yes' if u.get('has_pro_access') else 'No'}</td><td>{clean_html(u.get('pro_access_type') or '')}</td>"
+        f"<td>{clean_html(str(u.get('total_revenue') or 0))}</td><td>{clean_html(u.get('created_at') or '')}</td></tr>"
+        for u in data.get("users", [])
+    )
+    filter_links = " ".join(f"<a class='button secondary' href='/admin/users?filter={key}'>{label}</a>" for key, label in [
+        ("all", "All"), ("pro", "Pro"), ("trial", "Trials"), ("free", "Free"), ("restricted", "Restricted"), ("suspended", "Suspended"), ("deleted", "Deleted"), ("payment_issue", "Payment Issues")
+    ])
+    body = (
+        "<h1>User Management Center</h1>"
+        "<p class='muted'>Owner-grade user database, Pro status, payments, email logs, restrictions, and account controls.</p>"
+        f"<div class='card'>{filter_links}</div>"
+        "<div class='card'><table><tr><th>Name</th><th>Email</th><th>ID</th><th>Status</th><th>Plan</th><th>Subscription</th><th>Pro Access</th><th>Type</th><th>Revenue</th><th>Signup</th></tr>"
+        f"{rows}</table></div>"
+    )
+    return admin_page_html("User Management", body, admin)
+
+
+def admin_users_payload():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    search = clean_html(request.args.get("q", "")).strip().lower()
+    filter_key = clean_html(request.args.get("filter", "all")).strip().lower()
+    cur.execute(
+        """
+        SELECT u.*,
+               COALESCE(SUM(CASE WHEN lower(COALESCE(p.status,''))='succeeded' THEN COALESCE(p.amount,0) ELSE 0 END),0) AS total_revenue,
+               COUNT(p.id) AS payment_count,
+               MAX(p.created_at) AS last_payment_at
+        FROM users u
+        LEFT JOIN payment_records p ON p.user_id=u.user_id
+        WHERE COALESCE(u.email,'')!=''
+        GROUP BY u.user_id
+        ORDER BY COALESCE(u.created_at,u.signup_time,'') DESC
+        LIMIT 500
+        """
+    )
+    users = []
+    for row in [dict(r) for r in cur.fetchall()]:
+        status = (row.get("account_status") or "active").lower()
+        access_type = pro_access_type(row)
+        if search and search not in " ".join(str(row.get(k) or "").lower() for k in ("email", "full_name", "display_name", "phone", "user_id", "telegram_user_id", "stripe_customer_id")):
+            continue
+        if filter_key == "pro" and access_type != "paid":
+            continue
+        if filter_key == "trial" and access_type != "trial":
+            continue
+        if filter_key == "free" and has_pro_access(row):
+            continue
+        if filter_key in {"restricted", "suspended", "deleted"} and status != filter_key:
+            continue
+        if filter_key == "payment_issue" and (row.get("subscription_status") or "").lower() not in {"past_due", "unpaid", "canceled"}:
+            continue
+        users.append({
+            "user_id": row.get("user_id"),
+            "name": row.get("full_name") or row.get("display_name") or row.get("username") or "",
+            "email": mask_email(row.get("email")),
+            "phone": mask_phone(row.get("phone") or ""),
+            "country": row.get("country") or "",
+            "account_status": row.get("account_status") or "active",
+            "plan": row.get("plan") or row.get("subscription_plan") or "free",
+            "subscription_status": row.get("subscription_status") or "inactive",
+            "trial_status": row.get("trial_status") or "",
+            "has_pro_access": has_pro_access(row),
+            "pro_access_type": access_type,
+            "signup_date": row.get("created_at") or row.get("signup_time") or "",
+            "created_at": row.get("created_at") or row.get("signup_time") or "",
+            "last_login": row.get("last_login_at") or "",
+            "last_seen": row.get("last_seen_at") or "",
+            "telegram_linked": bool(row.get("telegram_user_id")),
+            "payment_count": row.get("payment_count") or 0,
+            "total_revenue": round(float(row.get("total_revenue") or 0), 2),
+            "email_delivery_status": "",
+            "risk_status": row.get("restricted_reason") or row.get("suspended_reason") or "",
+        })
+    conn.close()
+    return {"ok": True, "filter": filter_key, "count": len(users), "users": users}
+
+
+@webhook_app.route("/api/admin/users", methods=["GET"])
+def api_admin_users():
+    admin, denied = require_admin_api("users.view")
+    if denied:
+        return denied
+    payload = admin_users_payload()
+    log_admin_audit(admin.get("id"), "admin_api_users_viewed", "user", "", {"count": payload.get("count"), "filter": payload.get("filter")})
+    return jsonify(payload)
+
+
+@webhook_app.route("/api/admin/users/<int:user_id>", methods=["GET"])
+def api_admin_user_detail(user_id):
+    admin, denied = require_admin_api("users.view")
+    if denied:
+        return denied
+    profile = get_user_full_profile(user_id)
+    if not profile:
+        return jsonify({"ok": False, "error": "User not found."}), 404
+    log_admin_audit(admin.get("id"), "admin_api_user_profile_viewed", "user", str(user_id), {})
+    return jsonify({"ok": True, **profile})
+
+
+def owner_update_user_status(user_id, status, reason, admin):
+    status = clean_html(status or "")[:40].lower()
+    allowed = {"active", "restricted", "suspended", "deleted"}
+    if status not in allowed:
+        return {"ok": False, "error": "Invalid status."}, 400
+    field = "restricted_reason" if status == "restricted" else "suspended_reason" if status == "suspended" else None
+    now = datetime.now().isoformat()
     conn = db()
     cur = conn.cursor()
-    since_day = (datetime.now() - timedelta(days=1)).isoformat()
-    cur.execute("SELECT COUNT(*) FROM users WHERE email!=''")
-    total_users = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE email!='' AND created_at>=?", (since_day,))
-    new_today = cur.fetchone()[0]
-    cur.execute("SELECT COALESCE(plan, subscription_plan, 'free'), COUNT(*) FROM users WHERE email!='' GROUP BY COALESCE(plan, subscription_plan, 'free')")
-    by_plan = cur.fetchall()
-    cur.execute("SELECT COUNT(*) FROM users WHERE telegram_user_id IS NOT NULL")
-    linked = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE email_opt_in=1")
-    email_opt_ins = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE sms_opt_in=1")
-    sms_opt_ins = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='trialing'")
-    pro_trial_users = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='pro' AND lower(COALESCE(subscription_status,''))='active'")
-    paid_pro_users = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='expired' AND COALESCE(trial_used,0)=1")
-    expired_trials = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(plan,''))='free'")
-    free_users = cur.fetchone()[0]
-    soon = (datetime.now() + timedelta(days=7)).isoformat()
-    cur.execute("SELECT COUNT(*) FROM users WHERE lower(COALESCE(subscription_status,''))='trialing' AND trial_end_date<=?", (soon,))
-    expiring_soon = cur.fetchone()[0]
-    cur.execute("SELECT COUNT(*) FROM referral_rewards WHERE status='granted'")
-    referrals_granted = cur.fetchone()[0]
-    trial_conversion_rate = (paid_pro_users / (paid_pro_users + expired_trials + pro_trial_users) * 100) if (paid_pro_users + expired_trials + pro_trial_users) else 0
-    cur.execute("SELECT full_name, email, plan, subscription_status, telegram_username, created_at FROM users WHERE email!='' ORDER BY created_at DESC LIMIT 50")
-    users = cur.fetchall()
+    if status == "deleted":
+        cur.execute("UPDATE users SET account_status='deleted', deleted_at=?, updated_at=? WHERE user_id=?", (now, now, user_id))
+    elif field:
+        cur.execute(f"UPDATE users SET account_status=?, {field}=?, updated_at=? WHERE user_id=?", (status, reason[:500], now, user_id))
+    else:
+        cur.execute("UPDATE users SET account_status='active', restricted_reason='', suspended_reason='', updated_at=? WHERE user_id=?", (now, user_id))
+    conn.commit()
     conn.close()
-    return render_template("account.html", page="admin_users", title="Admin Users", csrf_token=get_csrf_token(), current_user=None, message="", error="", stats={
-        "total_users": total_users,
-        "new_today": new_today,
-        "by_plan": by_plan,
-        "linked": linked,
-        "email_opt_ins": email_opt_ins,
-        "sms_opt_ins": sms_opt_ins,
-        "pro_trial_users": pro_trial_users,
-        "paid_pro_users": paid_pro_users,
-        "expired_trials": expired_trials,
-        "free_users": free_users,
-        "expiring_soon": expiring_soon,
-        "referrals_granted": referrals_granted,
-        "trial_conversion_rate": f"{trial_conversion_rate:.1f}",
-        "users": users,
-    })
+    admin_user_action(admin, user_id, f"user_status_{status}", {"reason": reason})
+    return {"ok": True, "user": backend_pro_status_payload(load_account_by_id(user_id) or {})}, 200
+
+
+@webhook_app.route("/api/admin/users/<int:user_id>/pro", methods=["POST"])
+def api_admin_user_pro(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    user = load_account_by_id(user_id)
+    if not user:
+        return jsonify({"ok": False, "error": "User not found."}), 404
+    payload = request.get_json(silent=True) or {}
+    action = clean_html(payload.get("action") or "activate").lower()
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    if action in {"activate", "pro"}:
+        days = int(payload.get("days") or 365)
+        expires = (datetime.now() + timedelta(days=max(1, min(days, 3650)))).isoformat()
+        cur.execute(
+            """
+            UPDATE users SET account_status='active', plan='pro', subscription_plan='pro',
+                subscription_status='active', trial_status='converted', is_pro=1,
+                pro_expires_at=?, subscription_expires_at=?, updated_at=?
+            WHERE user_id=?
+            """,
+            (expires, expires, now, user_id),
+        )
+        conn.commit()
+        conn.close()
+        payment_id = record_payment_record(user_id, stripe_event_id=f"owner_pro_{int(time.time())}_{user_id}", amount=0, currency="USD", status="succeeded", payment_type="owner_manual_pro", manual=True, metadata={"admin_id": admin.get("id"), "action": action})
+        fresh = load_account_by_id(user_id) or {}
+        if fresh.get("email"):
+            send_platform_email(fresh.get("email"), "CoinPilotXAI Pro Activated", "Your CoinPilotXAI Pro access has been activated by the owner/admin.", "<p>Your CoinPilotXAI Pro access has been activated by the owner/admin.</p>", user_id)
+        admin_user_action(admin, user_id, "owner_activate_pro", {"payment_record_id": payment_id, "expires": expires})
+    elif action in {"downgrade", "free", "remove"}:
+        cur.execute("UPDATE users SET plan='free', subscription_plan='free', subscription_status='inactive', trial_status='', is_pro=0, pro_expires_at='', subscription_expires_at='', updated_at=? WHERE user_id=?", (now, user_id))
+        conn.commit()
+        conn.close()
+        fresh = load_account_by_id(user_id) or {}
+        admin_user_action(admin, user_id, "owner_remove_pro", {})
+    elif action in {"start_trial", "extend_trial"}:
+        days = int(payload.get("days") or 30)
+        existing = parse_iso_datetime(user.get("trial_end_date") or user.get("pro_expires_at")) if action == "extend_trial" else None
+        base = existing if existing and existing > datetime.now(existing.tzinfo) else datetime.now()
+        trial_end = (base + timedelta(days=max(1, min(days, 365)))).isoformat()
+        cur.execute(
+            """
+            UPDATE users SET account_status='active', plan='pro', subscription_plan='pro',
+                subscription_status='trialing', trial_status='active', is_pro=1,
+                trial_start_date=COALESCE(trial_start_date, ?), trial_end_date=?, pro_expires_at=?, updated_at=?
+            WHERE user_id=?
+            """,
+            (now, trial_end, trial_end, now, user_id),
+        )
+        conn.commit()
+        conn.close()
+        fresh = load_account_by_id(user_id) or {}
+        admin_user_action(admin, user_id, f"owner_{action}", {"trial_end_date": trial_end})
+    else:
+        conn.close()
+        return jsonify({"ok": False, "error": "Invalid Pro action."}), 400
+    return jsonify({"ok": True, "message": "User Pro status updated.", "user": backend_pro_status_payload(fresh)})
+
+
+@webhook_app.route("/api/admin/users/<int:user_id>/status", methods=["POST"])
+@webhook_app.route("/api/admin/users/<int:user_id>/restrict", methods=["POST"])
+@webhook_app.route("/api/admin/users/<int:user_id>/delete", methods=["POST"])
+@webhook_app.route("/api/admin/users/<int:user_id>/restore", methods=["POST"])
+def api_admin_user_status(user_id):
+    admin, denied = require_owner_api()
+    if denied:
+        return denied
+    if not load_account_by_id(user_id):
+        return jsonify({"ok": False, "error": "User not found."}), 404
+    payload = request.get_json(silent=True) or {}
+    if request.path.endswith("/restrict"):
+        status = "restricted"
+    elif request.path.endswith("/delete"):
+        status = "deleted"
+    elif request.path.endswith("/restore"):
+        status = "active"
+    else:
+        status = payload.get("account_status") or payload.get("status")
+    result, code = owner_update_user_status(user_id, status, clean_html(payload.get("reason") or ""), admin)
+    return jsonify(result), code
+
+
+@webhook_app.route("/api/admin/users/<int:user_id>/resend-email", methods=["POST"])
+def api_admin_user_resend_email(user_id):
+    admin, denied = require_admin_api("emails.resend")
+    if denied:
+        return denied
+    user = load_account_by_id(user_id)
+    if not user or not user.get("email"):
+        return jsonify({"ok": False, "error": "User email not found."}), 404
+    payload = request.get_json(silent=True) or {}
+    email_type = clean_html(payload.get("email_type") or "account_update")[:80]
+    subject = "CoinPilotXAI Account Update" if email_type == "account_update" else "CoinPilotXAI Pro Activated"
+    text = "This is a CoinPilotXAI account update from support."
+    html = "<p>This is a CoinPilotXAI account update from support.</p>"
+    sent = send_platform_email(user.get("email"), subject, text, html, user_id)
+    admin_user_action(admin, user_id, "admin_resend_user_email", {"email_type": email_type, "sent": bool(sent)})
+    return jsonify({"ok": bool(sent), "status": "sent" if sent else "queued_or_failed"})
+
+
+@webhook_app.route("/api/admin/users/<int:user_id>/notes", methods=["POST"])
+def api_admin_user_notes(user_id):
+    admin, denied = require_admin_api("users.edit")
+    if denied:
+        return denied
+    if not load_account_by_id(user_id):
+        return jsonify({"ok": False, "error": "User not found."}), 404
+    payload = request.get_json(silent=True) or {}
+    note = clean_html(payload.get("note") or "")[:2000]
+    if not note:
+        return jsonify({"ok": False, "error": "Note required."}), 400
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO admin_user_notes (user_id, admin_user_id, note, created_at) VALUES (?, ?, ?, ?)", (user_id, admin.get("id"), note, now))
+    cur.execute("INSERT INTO support_notes (user_id, admin_user_id, note, status, created_at, updated_at) VALUES (?, ?, ?, 'open', ?, ?)", (user_id, admin.get("id"), note, now, now))
+    conn.commit()
+    conn.close()
+    admin_user_action(admin, user_id, "admin_user_note_added", {"note_preview": note[:80]})
+    return jsonify({"ok": True, "message": "Note saved."})
 
 
 @webhook_app.route("/admin/test-email", methods=["POST"])
@@ -3585,6 +3792,43 @@ def admin_system_page():
     return admin_page_html("System Health", body, admin)
 
 
+@webhook_app.route("/admin/system/claims", methods=["GET"])
+def admin_claims_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    claims = [
+        ("AI Chat", "/chat", "/api/ai/chat", True),
+        ("Command Center", "/command-center", "/api/command", True),
+        ("Scam Shield", "/scam-shield", "/api/scam-shield/analyze", True),
+        ("Wallet Intel", "/app", "/api/wallet-intel", True),
+        ("Day Signal", "/app", "/api/day-signal", True),
+        ("Notifications", "/notifications", "/api/notifications", True),
+        ("Private Messages", "/messages", "/api/messages/conversations", True),
+        ("Education Journey", "/education", "/api/education/progress", False),
+        ("Live Market", "/live-market", "/api/live/market", False),
+        ("Account Status", "/account", "/api/account/status", True),
+    ]
+    rows = []
+    for name, route, api, pro_gated in claims:
+        route_exists = any(str(rule.rule) == route for rule in webhook_app.url_map.iter_rules())
+        api_exists = any(str(rule.rule) == api for rule in webhook_app.url_map.iter_rules())
+        rows.append({
+            "claim": name,
+            "route": route,
+            "api": api,
+            "route_works": route_exists,
+            "api_works": api_exists,
+            "mobile_ready": True,
+            "pro_gated": pro_gated,
+            "fallback": "Honest fallback required when live/API source is unavailable.",
+        })
+    if request.headers.get("Accept", "").startswith("application/json") or request.args.get("format") == "json":
+        return jsonify({"ok": True, "claims": rows})
+    table = admin_rows_table(rows, [("claim", "Claim"), ("route", "Route"), ("api", "API"), ("route_works", "Route"), ("api_works", "API"), ("pro_gated", "Pro Gated"), ("fallback", "Fallback")])
+    return admin_page_html("Claims Verification", f"<h1>Claims Verification</h1><div class='card'>{table}</div>", admin)
+
+
 @webhook_app.route("/admin/test-smtp", methods=["GET"])
 def admin_test_smtp_route():
     admin, denied = require_admin_page("system.view")
@@ -3740,26 +3984,98 @@ def admin_visitors_route():
     admin, denied = require_admin_page("analytics.view")
     if denied:
         return denied
-    since = (datetime.now() - timedelta(hours=24)).isoformat()
+    range_key = clean_html(request.args.get("range", "24h")).lower()
+    hours = {"1h": 1, "24h": 24, "7d": 24 * 7, "30d": 24 * 30}.get(range_key, 24)
+    since = (datetime.now() - timedelta(hours=hours)).isoformat()
+    filter_key = clean_html(request.args.get("filter", "all")).lower()
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=?", (since,))
-    total = cur.fetchone()[0] or 0
+    unique_total = cur.fetchone()[0] or 0
+    cur.execute("SELECT COUNT(*) FROM visitor_logs WHERE timestamp>=?", (since,))
+    total_visits = cur.fetchone()[0] or 0
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=? AND COALESCE(user_id,0)>0", (since,))
+    logged_in = cur.fetchone()[0] or 0
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=? AND COALESCE(user_id,0)=0", (since,))
+    anonymous = cur.fetchone()[0] or 0
+    active_since = (datetime.now() - timedelta(minutes=10)).isoformat()
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM visitor_logs WHERE timestamp>=?", (active_since,))
+    active_now = cur.fetchone()[0] or 0
+    def top(field, limit=12):
+        field_name = _migration_identifier(field)
+        cur.execute(f"SELECT COALESCE({field_name}, '') AS value, COUNT(*) AS count FROM visitor_logs WHERE timestamp>=? GROUP BY COALESCE({field_name}, '') ORDER BY count DESC LIMIT {int(limit)}", (since,))
+        return [dict(row) for row in cur.fetchall()]
+    conversions = {}
+    for name, pattern in {
+        "signup_clicks": "%signup%",
+        "upgrade_clicks": "%upgrade%",
+        "checkout_starts": "%checkout_started%",
+        "successful_checkout_returns": "%payment_success%",
+        "failed_checkout_returns": "%payment_failed%",
+        "command_center_usage": "%command%",
+        "chat_usage": "%chat%",
+        "scam_scans": "%scam_shield%",
+        "notification_opt_ins": "%push_subscription%",
+    }.items():
+        cur.execute("SELECT COUNT(*) FROM analytics_events WHERE created_at>=? AND lower(event_name) LIKE lower(?)", (since, pattern))
+        conversions[name] = cur.fetchone()[0] or 0
+    visitors_where = "WHERE timestamp>=?"
+    params = [since]
+    if filter_key == "logged_in":
+        visitors_where += " AND COALESCE(user_id,0)>0"
+    elif filter_key == "anonymous":
+        visitors_where += " AND COALESCE(user_id,0)=0"
+    elif filter_key in {"pro", "free"}:
+        visitors_where += " AND COALESCE(user_id,0)>0"
     cur.execute(
-        """
-        SELECT user_id, session_id, ip_address, user_agent, path, timestamp
+        f"""
+        SELECT user_id, session_id, ip_address, user_agent, path, referrer, device_type, browser, os, country, city, timestamp
         FROM visitor_logs
-        WHERE timestamp>=?
+        {visitors_where}
         ORDER BY timestamp DESC
         LIMIT 200
         """,
-        (since,),
+        params,
     )
-    visitors = [dict(row) for row in cur.fetchall()]
+    visitors = []
+    for row in [dict(row) for row in cur.fetchall()]:
+        include = True
+        if filter_key in {"pro", "free"}:
+            u = load_account_by_id(row.get("user_id"))
+            include = bool(u and has_pro_access(u)) if filter_key == "pro" else bool(u and not has_pro_access(u))
+        if include:
+            visitors.append(row)
+    top_pages = top("path")
+    referrers = top("referrer")
+    devices = top("device_type")
+    browsers = top("browser")
+    os_breakdown = top("os")
+    countries = top("country")
+    cities = top("city")
     conn.close()
-    log_admin_audit(admin.get("id"), "admin_viewed_live_visitors", "analytics", "visitor_logs", {"total_last_24h": total})
-    return jsonify({"ok": True, "total_last_24h": total, "visitors": visitors})
+    payload = {
+        "ok": True,
+        "range": range_key,
+        "total_visits": total_visits,
+        "total_last_24h": unique_total if range_key == "24h" else None,
+        "unique_visitors": unique_total,
+        "logged_in_visitors": logged_in,
+        "anonymous_visitors": anonymous,
+        "active_sessions_now": active_now,
+        "top_pages": top_pages,
+        "referrers": referrers,
+        "device_type": devices,
+        "browser": browsers,
+        "os": os_breakdown,
+        "country": countries,
+        "city": cities,
+        "conversion_events": conversions,
+        "recent_visit_stream": visitors,
+        "visitors": visitors,
+    }
+    log_admin_audit(admin.get("id"), "admin_viewed_live_visitors", "analytics", "visitor_logs", {"unique": unique_total, "range": range_key, "filter": filter_key})
+    return jsonify(payload)
 
 
 @webhook_app.route("/admin/transactions", methods=["GET"])
@@ -4222,6 +4538,156 @@ def require_admin_page(permission):
         log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", permission, {"role": admin.get("role")})
         return None, Response("Forbidden", status=403)
     return admin, None
+
+
+def require_owner_api():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return None, (jsonify({"ok": False, "error": "Admin login required."}), 401)
+    if (admin.get("role") or "").lower() != "owner":
+        log_admin_audit(admin.get("id"), "owner_permission_denied", "admin_user", str(admin.get("id")), {"path": request.path})
+        return None, (jsonify({"ok": False, "error": "Owner permission required."}), 403)
+    return admin, None
+
+
+def require_admin_api(permission="users.view"):
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return None, (jsonify({"ok": False, "error": "Admin login required."}), 401)
+    if not admin_has_permission(admin, permission):
+        log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", permission, {"path": request.path})
+        return None, (jsonify({"ok": False, "error": "Insufficient permissions."}), 403)
+    return admin, None
+
+
+def admin_user_action(admin, target_user_id, action, details=None):
+    details = details or {}
+    log_admin_audit((admin or {}).get("id"), action, "user", str(target_user_id), details)
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO admin_user_actions (admin_user_id, target_user_id, action, details, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ((admin or {}).get("id") or 0, target_user_id, action, json.dumps(details)[:4000], datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("admin_user_actions write failed safely: %s", exc)
+
+
+def user_email_logs(user):
+    user = user or {}
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, email_type, subject, status, recipient_email, provider, provider_message_id, error_message, created_at
+        FROM email_logs
+        WHERE user_id=? OR lower(COALESCE(recipient_email,email,''))=lower(?)
+        ORDER BY id DESC
+        LIMIT 100
+        """,
+        (user.get("user_id") or 0, user.get("email") or ""),
+    )
+    email_logs = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT id, email_type, template, status, stripe_event_id, payment_id, error_message, created_at, sent_at
+        FROM payment_email_logs
+        WHERE user_id=? OR lower(COALESCE(email,''))=lower(?)
+        ORDER BY id DESC
+        LIMIT 100
+        """,
+        (user.get("user_id") or 0, user.get("email") or ""),
+    )
+    payment_email_logs = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return {"email_logs": email_logs, "payment_email_logs": payment_email_logs}
+
+
+def user_payment_history(user):
+    user = user or {}
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 100", (user.get("user_id") or 0,))
+    payments = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 100", (user.get("user_id") or 0,))
+    transactions = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT * FROM stripe_events
+        WHERE user_id=? OR stripe_event_id IN (SELECT stripe_event_id FROM payment_records WHERE user_id=?)
+        ORDER BY id DESC
+        LIMIT 100
+        """,
+        (user.get("user_id") or 0, user.get("user_id") or 0),
+    )
+    stripe_events = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT * FROM unmatched_payments
+        WHERE lower(COALESCE(customer_email,''))=lower(?) OR customer_id=?
+        ORDER BY id DESC
+        LIMIT 50
+        """,
+        (user.get("email") or "", user.get("stripe_customer_id") or ""),
+    )
+    unmatched = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    total_revenue = sum(float(p.get("amount") or 0) for p in payments if (p.get("status") or "").lower() == "succeeded")
+    return {"payments": payments, "transactions": transactions, "stripe_events": stripe_events, "unmatched_payments": unmatched, "total_revenue": round(total_revenue, 2)}
+
+
+def get_user_full_profile(user_id):
+    user = load_account_by_id(user_id)
+    if not user:
+        return None
+    payment_data = user_payment_history(user)
+    email_data = user_email_logs(user)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM user_activity WHERE user_id=? ORDER BY id DESC LIMIT 100", (user_id,))
+    activity = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM command_history WHERE user_id=? ORDER BY id DESC LIMIT 100", (user_id,))
+    commands = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, feature, prompt, response, metadata, created_at FROM user_ai_interactions WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,))
+    ai = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, risk_level, risk_score, created_at FROM scam_scans WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,))
+    scam_scans = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, notification_type, title, status, created_at, read_at FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,))
+    notifications = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM visitor_logs WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,))
+    visits = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, note, status, created_at, updated_at FROM support_notes WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,))
+    support_notes_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, admin_user_id, note, created_at FROM admin_user_notes WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,))
+    notes = [dict(row) for row in cur.fetchall()] + support_notes_rows
+    cur.execute("SELECT id, admin_user_id, action, details, created_at FROM admin_user_actions WHERE target_user_id=? ORDER BY id DESC LIMIT 100", (user_id,))
+    admin_actions = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return {
+        "user": {**user, **backend_pro_status_payload(user)},
+        "backend_pro_status": backend_pro_status_payload(user),
+        "payments": payment_data,
+        "emails": email_data,
+        "activity": activity,
+        "commands": commands,
+        "ai_interactions": ai,
+        "scam_scans": scam_scans,
+        "notifications": notifications,
+        "visitor_sessions": visits,
+        "admin_notes": notes,
+        "admin_actions": admin_actions,
+    }
 
 
 def admin_rows_table(rows, columns):
@@ -6092,11 +6558,11 @@ def website_wallet_intel_api():
 def website_day_signal_api():
     payload = request.get_json(silent=True) or {}
     answers = payload.get("answers", {})
-    result = day_signal_service.generate(answers)
-    if not result["ok"]:
-        return jsonify(result), 400
     account = load_account_by_id(account_user_id())
     user_id = account.get("user_id") if account else 0
+    result = day_signal_service.generate(answers, pro=has_pro_access(account))
+    if not result["ok"]:
+        return jsonify(result), 400
     day_signal_service.save_result(user_id, result, answers)
     user_context_service.log_interaction(user_id, "day_signal_used", json.dumps(answers), result.get("response", ""), "website")
     return jsonify(result)
@@ -6304,6 +6770,89 @@ def api_dashboard_widgets():
         widgets = [{"widget_key": key, "position": idx, "pinned": 1} for idx, key in enumerate(["live_market", "portfolio", "alerts", "ai_chat", "education"])]
     conn.close()
     return jsonify({"ok": True, "widgets": widgets})
+
+
+def simulator_snapshot(user_id):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("SELECT * FROM paper_simulator_wallets WHERE user_id=?", (user_id,))
+    wallet = cur.fetchone()
+    if not wallet:
+        cur.execute("INSERT INTO paper_simulator_wallets (user_id, cash_balance, created_at, updated_at) VALUES (?, 10000, ?, ?)", (user_id, now, now))
+        conn.commit()
+        cur.execute("SELECT * FROM paper_simulator_wallets WHERE user_id=?", (user_id,))
+        wallet = cur.fetchone()
+    cur.execute("SELECT symbol, SUM(CASE WHEN side='buy' THEN quantity ELSE -quantity END) AS quantity FROM paper_simulator_trades WHERE user_id=? GROUP BY symbol", (user_id,))
+    positions = []
+    total_value = 0
+    for row in cur.fetchall():
+        qty = float(row["quantity"] or 0)
+        if abs(qty) <= 0.00000001:
+            continue
+        price_payload = market_data_service.get_symbol(row["symbol"])
+        price = float(price_payload.get("price") or 0)
+        value = qty * price
+        total_value += value
+        positions.append({"symbol": row["symbol"], "quantity": qty, "price": price, "value": round(value, 2), "source": price_payload.get("source") or "market service"})
+    cur.execute("SELECT * FROM paper_simulator_trades WHERE user_id=? ORDER BY id DESC LIMIT 100", (user_id,))
+    trades = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    cash = float(wallet["cash_balance"] or 0)
+    equity = cash + total_value
+    return {
+        "ok": True,
+        "cash_balance": round(cash, 2),
+        "portfolio_value": round(total_value, 2),
+        "equity": round(equity, 2),
+        "positions": positions,
+        "trades": trades,
+        "ai_coaching": "Training simulator only. Practice position sizing, volatility awareness, and exit discipline before risking real money.",
+        "risk_score": min(100, int(sum(abs(p["value"]) for p in positions) / max(equity, 1) * 100)) if equity else 0,
+        "disclaimer": "Training simulator only. No real trades. Not financial advice.",
+    }
+
+
+@webhook_app.route("/api/simulator", methods=["GET", "POST"])
+def api_market_simulator():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        return jsonify(simulator_snapshot(user["user_id"]))
+    payload = request.get_json(silent=True) or {}
+    side = clean_html(payload.get("side") or "").lower()
+    symbol = clean_html(payload.get("symbol") or "BTC").upper()[:12]
+    try:
+        quantity = float(payload.get("quantity") or 0)
+    except Exception:
+        quantity = 0
+    if side not in {"buy", "sell"} or quantity <= 0:
+        return jsonify({"ok": False, "message": "Choose buy/sell and a positive fake quantity."}), 400
+    price_payload = market_data_service.get_symbol(symbol)
+    price = float(price_payload.get("price") or 0)
+    if price <= 0:
+        return jsonify({"ok": False, "message": "Live price feed temporarily unavailable."}), 503
+    notional = price * quantity
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("SELECT cash_balance FROM paper_simulator_wallets WHERE user_id=?", (user["user_id"],))
+    row = cur.fetchone()
+    cash = float(row[0] if row else 10000)
+    if side == "buy" and notional > cash:
+        conn.close()
+        return jsonify({"ok": False, "message": "Simulator balance is too low for this fake trade."}), 400
+    cash = cash - notional if side == "buy" else cash + notional
+    cur.execute("INSERT OR IGNORE INTO paper_simulator_wallets (user_id, cash_balance, created_at, updated_at) VALUES (?, 10000, ?, ?)", (user["user_id"], now, now))
+    cur.execute("UPDATE paper_simulator_wallets SET cash_balance=?, updated_at=? WHERE user_id=?", (cash, now, user["user_id"]))
+    cur.execute("INSERT INTO paper_simulator_trades (user_id, symbol, side, quantity, price, notional, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", (user["user_id"], symbol, side, quantity, price, notional, now))
+    conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "simulator_trade_created", {"symbol": symbol, "side": side, "notional": notional})
+    return jsonify(simulator_snapshot(user["user_id"]))
 
 
 @webhook_app.route("/api/education/progress", methods=["GET"])
@@ -10638,6 +11187,9 @@ def init_db():
         ("notification_email_opt_in", "INTEGER DEFAULT 1"),
         ("security_email_opt_in", "INTEGER DEFAULT 1"),
         ("payment_receipt_opt_in", "INTEGER DEFAULT 1"),
+        ("deleted_at", "TEXT"),
+        ("restricted_reason", "TEXT"),
+        ("suspended_reason", "TEXT"),
     ], conn=conn)
 
     cur.execute("""
@@ -11725,6 +12277,14 @@ def init_db():
         timestamp TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    add_columns_if_missing(cur, "visitor_logs", [
+        ("referrer", "TEXT"),
+        ("device_type", "TEXT"),
+        ("browser", "TEXT"),
+        ("os", "TEXT"),
+        ("country", "TEXT"),
+        ("city", "TEXT"),
+    ], conn=conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS checkout_attempts (
@@ -11773,6 +12333,50 @@ def init_db():
         status TEXT DEFAULT 'open',
         created_at TEXT,
         updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_user_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        admin_user_id INTEGER,
+        note TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_user_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER,
+        target_user_id INTEGER,
+        action TEXT,
+        details TEXT,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS paper_simulator_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        cash_balance REAL DEFAULT 10000,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS paper_simulator_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        side TEXT,
+        quantity REAL,
+        price REAL,
+        notional REAL,
+        created_at TEXT
     )
     """)
 

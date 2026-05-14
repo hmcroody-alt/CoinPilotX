@@ -206,7 +206,7 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         answers = payload.get("answers") or {}
         if not answers:
             return _card(action_key, "CoinPilotX Day Signal", "Answer the four quick readiness questions to generate your Day Signal score.", "CoinPilotXAI readiness model", "Medium", ["Start Day Signal"])
-        result = day_signal.generate(answers)
+        result = day_signal.generate(answers, pro=pro)
         if result.get("ok"):
             day_signal.save_result(user_id or 0, result, answers)
         return _card(action_key, "CoinPilotX Day Signal", result.get("response", "Day Signal is unavailable right now."), "CoinPilotXAI readiness model", "Medium")

@@ -9,7 +9,21 @@ QUESTIONS = [
 ]
 
 
-def generate(answers):
+PRO_KEYS = {
+    "time_horizon": "Time horizon",
+    "risk_tolerance": "Risk tolerance",
+    "portfolio_exposure": "Portfolio exposure",
+    "btc_eth_preference": "BTC/ETH preference",
+    "market_sentiment": "Market sentiment",
+    "news_impact": "News impact",
+    "volatility_comfort": "Volatility comfort",
+    "stop_loss_discipline": "Stop-loss discipline",
+    "emotional_state": "Emotional state",
+    "learning_goal": "Learning goal",
+}
+
+
+def generate(answers, pro=False):
     if not isinstance(answers, dict):
         return {"ok": False, "response": "Answer the Day Signal questions first."}
     normalized = {}
@@ -48,12 +62,26 @@ def generate(answers):
     else:
         msg = "You look more aligned when confidence, preparation, and walk-away discipline are working together."
     disclaimer = "This is motivational and educational insight only. It is not financial, betting, or life advice."
+    pro_section = ""
+    if pro:
+        context_lines = []
+        for key, label in PRO_KEYS.items():
+            value = str(answers.get(key, "")).strip()
+            if value:
+                context_lines.append(f"• {label}: {value[:120]}")
+        pro_section = (
+            "\n\nPro Depth:\n"
+            "• Time horizon and risk tolerance should decide position size before emotion does.\n"
+            "• Volatility comfort and stop-loss discipline matter more than conviction during fast moves.\n"
+            "• News impact should be treated as context, not certainty.\n"
+            + ("\n" + "\n".join(context_lines) if context_lines else "\nAdd Pro context fields for even sharper coaching.")
+        )
     response = (
         "✨ CoinPilotX Day Signal\n\n"
         f"Today's Day Score: {score}/100\n\nSignal: {signal}\n\nAI Message:\n{msg}\n\n"
-        f"Best Move Today:\n{best}\n\nAvoid Today:\n{avoid}\n\nRisk Reminder:\nDo not risk money you cannot afford to lose. Walk away if the setup becomes unclear.\n\nDisclaimer:\n{disclaimer}"
+        f"Best Move Today:\n{best}\n\nAvoid Today:\n{avoid}{pro_section}\n\nRisk Reminder:\nDo not risk money you cannot afford to lose. Walk away if the setup becomes unclear.\n\nDisclaimer:\n{disclaimer}"
     )
-    return {"ok": True, "score": score, "signal": signal, "message": msg, "best_move": best, "avoid": avoid, "response": response, "disclaimer": disclaimer}
+    return {"ok": True, "score": score, "signal": signal, "message": msg, "best_move": best, "avoid": avoid, "pro_depth": bool(pro), "response": response, "disclaimer": disclaimer}
 
 
 def save_result(user_id, result, answers=None):
