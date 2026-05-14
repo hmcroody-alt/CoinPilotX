@@ -186,6 +186,7 @@ AUTO_PK_TABLES = {
     "ai_memory_cards": "id",
     "scam_reports": "id",
     "scam_alerts": "id",
+    "scam_scans": "id",
     "wallet_risk_checks": "id",
     "referral_events": "id",
     "subscriptions": "id",

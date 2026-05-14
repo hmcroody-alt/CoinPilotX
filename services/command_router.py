@@ -73,6 +73,9 @@ COMMAND_ALIASES = {
     "/news": "crypto_news",
     "/fear": "fear_greed",
     "/scam": "scam_shield",
+    "/scan": "scam_shield",
+    "/phishing": "scam_shield",
+    "/token": "scam_shield",
     "/wallet": "wallet_intel",
     "/portfolio": "live_portfolio",
     "/day": "today_day_signal",
@@ -254,6 +257,8 @@ def handle_command(user_id, command_text, channel="web"):
     if first.lower() == "/price":
         payload["symbol"] = rest.strip().split()[0] if rest.strip() else "BTC"
     if first.lower() == "/scam":
+        payload["text"] = rest.strip()
+    if first.lower() in {"/scan", "/phishing", "/token"}:
         payload["text"] = rest.strip()
     if first.lower() == "/wallet":
         payload["address"] = rest.strip()

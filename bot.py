@@ -864,6 +864,23 @@ def api_security_report():
     return jsonify({"ok": True, "report_id": report_id, "message": "Security report received."})
 
 
+@webhook_app.route("/scam-shield", methods=["GET"])
+def scam_shield_page():
+    return simple_public_page(
+        "scam-shield",
+        "Scam Shield Crypto Threat Scanner | CoinPilotXAI",
+        "Scam Shield Crypto Threat Scanner",
+        "Scan suspicious crypto messages, wallet prompts, token claims, URLs, and fake support messages with CoinPilotXAI Scam Shield.",
+        "Scam Shield uses layered AI and rule-based threat detection to identify many common crypto scam patterns while reminding users to verify independently.",
+        ["Seed phrase requests", "Fake airdrops", "Wallet drainer prompts", "Phishing domains", "Fake support", "Guaranteed return scams"],
+        [
+            {"title": "What Scam Shield checks", "body": "Scam Shield looks for credential theft, fake wallet-connect prompts, guaranteed profit claims, fake support, urgency pressure, shortened URLs, suspicious domains, and withdrawal unlock scams."},
+            {"title": "Safety rule", "body": "Never share seed phrases, private keys, recovery phrases, wallet passwords, exchange passwords, or signing credentials."},
+        ],
+        ["/dashboard/scam-alerts", "/crypto-scams", "/wallet-security", "/safety"],
+    )
+
+
 @webhook_app.route("/privacy", methods=["GET"])
 def privacy_page():
     return render_template("privacy.html")
@@ -3096,6 +3113,7 @@ def repair_paid_users_from_payment_records():
         )
         rows = [dict(row) for row in cur.fetchall()]
         repaired = 0
+        repaired_users = []
         for row in rows:
             cur.execute(
                 """
@@ -3118,10 +3136,21 @@ def repair_paid_users_from_payment_records():
                 ),
             )
             repaired += cur.rowcount
+            repaired_users.append(dict(row))
         conn.commit()
         conn.close()
         if repaired:
             logging.warning("DATA_RECOVERY paid_user_repair repaired=%s", repaired)
+        for row in repaired_users:
+            user = load_account_by_id(row.get("user_id"))
+            if user:
+                send_successful_payment_email_bundle(user, {
+                    "stripe_customer_id": row.get("stripe_customer_id") or "",
+                    "stripe_subscription_id": row.get("stripe_subscription_id") or "",
+                    "payment_id": f"repair-{row.get('user_id')}-{row.get('latest_payment_at') or ''}",
+                    "billing_date": format_date(row.get("latest_payment_at") or datetime.now().isoformat()),
+                }, force=False)
+                log_product_event(row.get("user_id"), "stripe_paid_user_repaired", {"source": "admin_data_recovery"})
         return repaired
     except Exception as exc:
         logging.warning("DATA_RECOVERY paid_user_repair_failed error=%s", exc)
@@ -3235,6 +3264,7 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/emails/payment'>Payment Emails</a>"
         "<a href='/admin/telegram'>Telegram</a>"
         "<a href='/admin/ai-usage'>AI Usage</a>"
+        "<a href='/admin/scam-shield'>Scam Shield</a>"
         "<a href='/admin/command-logs'>Command Logs</a>"
         "<a href='/admin/notifications'>Notifications</a>"
         "<a href='/admin/private-chat-reports'>Chat Reports</a>"
@@ -4581,6 +4611,29 @@ def admin_command_logs_page():
     return admin_page_html("Command Logs", body, admin)
 
 
+@webhook_app.route("/admin/scam-shield", methods=["GET"])
+def admin_scam_shield_page():
+    admin, denied = require_admin_page("ai.view")
+    if denied:
+        return denied
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT risk_level, COUNT(*) AS total FROM scam_scans GROUP BY risk_level ORDER BY total DESC")
+    by_risk = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT user_id, risk_level, risk_score, confidence, source_status, created_at FROM scam_scans ORDER BY id DESC LIMIT 150")
+    recent = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT report_type, status, COUNT(*) AS total FROM security_reports GROUP BY report_type, status ORDER BY total DESC LIMIT 80")
+    reports = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = (
+        "<h1>Scam Shield Threat Analytics</h1>"
+        f"<div class='grid'><div class='card'><h2>Risk Levels</h2>{admin_rows_table(by_risk, [('risk_level','Risk'),('total','Total')])}</div>"
+        f"<div class='card'><h2>Security Reports</h2>{admin_rows_table(reports, [('report_type','Type'),('status','Status'),('total','Total')])}</div></div>"
+        f"<h2>Recent Scam Scans</h2><div class='card'>{admin_rows_table(recent, [('user_id','User'),('risk_level','Risk'),('risk_score','Score'),('confidence','Confidence'),('source_status','Source'),('created_at','Created')])}</div>"
+    )
+    return admin_page_html("Scam Shield", body, admin)
+
+
 @webhook_app.route("/admin/notifications", methods=["GET"])
 def admin_notifications_page():
     admin, denied = require_admin_page("analytics.view")
@@ -5642,11 +5695,51 @@ def website_scam_shield_api():
     text = clean_html(payload.get("text", "")).strip()
     if not text:
         return jsonify({"ok": False, "response": "Paste a suspicious message, link, or crypto pitch first."}), 400
-    account = load_account_by_id(account_user_id())
-    user_id = account.get("user_id") if account else 0
+    return scam_shield_analyze_api()
+
+
+@webhook_app.route("/api/scam-shield/analyze", methods=["POST"])
+def scam_shield_analyze_api():
+    payload = request.get_json(silent=True) or {}
+    text = clean_html(payload.get("text") or payload.get("message") or payload.get("url") or payload.get("address") or payload.get("token") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "message": "Paste suspicious text, a URL, wallet address, token name, or contract address first."}), 400
+    user = load_account_by_id(account_user_id())
+    user_id = user.get("user_id") if user else 0
     result = scam_shield_service.analyze_text(text)
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO scam_scans
+            (user_id, input_text, risk_level, risk_score, threats_json, red_flags_json, safe_actions_json, confidence, source_status, result_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                text[:4000],
+                result.get("risk_level") or "",
+                int(result.get("risk_score") or 0),
+                json.dumps(result.get("threats_detected") or []),
+                json.dumps(result.get("red_flags") or []),
+                json.dumps(result.get("safe_actions") or []),
+                float(result.get("confidence") or 0),
+                result.get("source_status") or "",
+                json.dumps(result)[:8000],
+                datetime.now().isoformat(),
+            ),
+        )
+        scan_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.warning("scam scan save failed safely: %s", exc)
+        scan_id = None
     user_context_service.log_interaction(user_id, "scam_shield_used", text, result.get("response", ""), "website")
-    return jsonify({"ok": True, **result})
+    record_command_history(user_id, "scam_shield", text, {"summary": result.get("response", ""), "action_key": "scam_shield"}, source="web", pro_required=False, status="success")
+    log_product_event(user_id, "scam_shield_used", {"risk_level": result.get("risk_level"), "scan_id": scan_id})
+    return jsonify({**result, "scan_id": scan_id})
 
 
 @webhook_app.route("/api/wallet-intel", methods=["GET"])
@@ -6375,7 +6468,7 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
         if existing:
             conn.close()
             logging.info("PAYMENT_RECORD_CREATED skipped_duplicate user_id=%s stripe_event_id=%s status=%s", user_id, stripe_event_id, status)
-            return
+            return existing[0]
     if invoice_id:
         cur.execute(
             "SELECT id FROM payment_records WHERE invoice_id=? AND status=? LIMIT 1",
@@ -6385,7 +6478,7 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
         if existing:
             conn.close()
             logging.info("PAYMENT_RECORD_CREATED skipped_duplicate user_id=%s invoice_id=%s status=%s", user_id, invoice_id, status)
-            return
+            return existing[0]
     if payment_intent_id:
         cur.execute(
             "SELECT id FROM payment_records WHERE payment_intent_id=? AND status=? LIMIT 1",
@@ -6395,7 +6488,7 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
         if existing:
             conn.close()
             logging.info("PAYMENT_RECORD_CREATED skipped_duplicate user_id=%s payment_intent_id=%s status=%s", user_id, payment_intent_id, status)
-            return
+            return existing[0]
     cur.execute(
         """
         INSERT INTO payment_records
@@ -6417,6 +6510,7 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
             datetime.now().isoformat(),
         ),
     )
+    payment_record_id = cur.lastrowid
     cur.execute(
         """
         INSERT INTO transactions
@@ -6447,6 +6541,17 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
         currency,
         status,
     )
+    logging.info(
+        "STRIPE_PAYMENT_RECORD_CREATED payment_record_id=%s user_id=%s stripe_event_id=%s customer_id=%s subscription_id=%s amount=%s",
+        payment_record_id,
+        user_id,
+        stripe_event_id,
+        stripe_customer_id,
+        stripe_subscription_id,
+        amount,
+    )
+    logging.info("ADMIN_TRANSACTION_SYNCED user_id=%s payment_record_id=%s amount=%s currency=%s status=%s", user_id, payment_record_id, amount, currency, status)
+    return payment_record_id
 
 
 def record_unmatched_payment(event, stripe_object, reason):
@@ -6509,6 +6614,7 @@ def stripe_webhook():
     init_db()
     payload = request.data
     sig_header = request.headers.get("Stripe-Signature")
+    logging.info("STRIPE_WEBHOOK_RECEIVED path=%s payload_bytes=%s signature_present=%s", request.path, len(payload or b""), bool(sig_header))
 
     try:
         if STRIPE_WEBHOOK_SECRET:
@@ -6517,6 +6623,7 @@ def stripe_webhook():
                 sig_header,
                 STRIPE_WEBHOOK_SECRET
             )
+            logging.info("STRIPE_SIGNATURE_VERIFIED signature_present=%s", bool(sig_header))
         else:
             logging.warning("STRIPE_WEBHOOK_SECRET missing. Stripe webhook is parsing unsigned payload; configure the Railway variable immediately.")
             event = json.loads(payload.decode("utf-8"))
@@ -6530,17 +6637,18 @@ def stripe_webhook():
         return "Invalid", 400
 
     logging.info("STRIPE_EVENT_RECEIVED event_type=%s event_id=%s", event_type, event.get("id"))
+    logging.info("STRIPE_EVENT_TYPE event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
     event_id = event.get("id", "")
     if stripe_event_processed(event_id):
         logging.info("Stripe webhook duplicate skipped event_id=%s event_type=%s", event_id, event.get("type"))
-        retry_failed_payment_emails_for_event(event_id)
         return "OK", 200
     resolved_event_user_id = None
 
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         session_id = session.get("id")
+        logging.info("STRIPE_USER_MATCH_START event_id=%s object_id=%s customer_id=%s", event_id, session_id, session.get("customer"))
         user_id, resolved_email = resolve_checkout_session_user(session)
         payment_status = session.get("payment_status")
         subscription_id = session.get("subscription")
@@ -6569,6 +6677,7 @@ def stripe_webhook():
             period_end = stripe_period_end_to_iso((subscription or {}).get("current_period_end")) if subscription else None
             if payment_status == "paid" or subscription_id:
                 timestamp = datetime.now().isoformat()
+                logging.info("STRIPE_PRO_ACTIVATION_START event_id=%s user_id=%s session_id=%s subscription_id=%s", event_id, user_id, session_id, subscription_id)
                 activated_user_id = activate_pro(
                     user_id,
                     payment_type="stripe",
@@ -6578,6 +6687,7 @@ def stripe_webhook():
                     subscription_status="active" if payment_status == "paid" else ((subscription or {}).get("status") or "active"),
                     pro_expires_at=period_end,
                 )
+                logging.info("STRIPE_PRO_ACTIVATION_COMMITTED event_id=%s user_id=%s activated_user_id=%s", event_id, user_id, activated_user_id)
                 logging.info("STRIPE_USER_UPGRADED event_id=%s user_id=%s activated_user_id=%s", event_id, user_id, activated_user_id)
                 save_payment_verification(
                     user_id,
@@ -6632,10 +6742,13 @@ def stripe_webhook():
                 )
                 logging.warning("Stripe session not activated user_id=%s session_id=%s payment_status=%s", user_id, session_id, payment_status)
         else:
+            logging.error("STRIPE_USER_NOT_FOUND event_id=%s session_id=%s customer_id=%s email_present=%s", event_id, session_id, customer_id, bool(resolved_email))
             logging.error("checkout.session.completed could not resolve local user session_id=%s customer_id=%s email=%s", session_id, customer_id, bool(resolved_email))
             record_unmatched_payment(event, session, "checkout.session.completed could not resolve local user")
 
     if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+        subscription_object = event["data"]["object"]
+        logging.info("STRIPE_USER_MATCH_START event_id=%s object_id=%s customer_id=%s", event_id, subscription_object.get("id"), subscription_object.get("customer"))
         synced_user_id = sync_stripe_subscription(event["data"]["object"])
         if synced_user_id:
             resolved_event_user_id = synced_user_id
@@ -6662,9 +6775,12 @@ def stripe_webhook():
                     "subscription_id": subscription.get("id") or "",
                 })
         if not synced_user_id:
+            logging.error("STRIPE_USER_NOT_FOUND event_id=%s object_id=%s customer_id=%s", event_id, event["data"]["object"].get("id"), event["data"]["object"].get("customer"))
             record_unmatched_payment(event, event["data"]["object"], "subscription event could not resolve local user")
 
     if event_type in {"invoice.paid", "invoice.payment_succeeded", "invoice.payment_failed"}:
+        invoice_object = event["data"]["object"]
+        logging.info("STRIPE_USER_MATCH_START event_id=%s object_id=%s customer_id=%s", event_id, invoice_object.get("id"), invoice_object.get("customer"))
         synced_user_id = sync_stripe_invoice(event["data"]["object"], event_type)
         if synced_user_id:
             resolved_event_user_id = synced_user_id
@@ -6701,6 +6817,7 @@ def stripe_webhook():
             if user:
                 send_payment_issue_email(user, {"invoice_id": invoice.get("id"), "stripe_event_id": event_id})
         if not synced_user_id:
+            logging.error("STRIPE_USER_NOT_FOUND event_id=%s object_id=%s customer_id=%s", event_id, event["data"]["object"].get("id"), event["data"]["object"].get("customer"))
             record_unmatched_payment(event, event["data"]["object"], "invoice event could not resolve local user")
 
     record_stripe_event(event, "processed", resolved_event_user_id)
@@ -7273,7 +7390,7 @@ def send_payment_email_with_retry(user, details=None, email_type="pro_activated"
         logging.warning("PAYMENT_EMAIL_FAILED user_id=%s type=%s reason=no_email", user_id, email_type)
         return False
     subject, text, html = payment_email_copy(user, details, email_type)
-    backoffs = [0, 3, 9]
+    backoffs = [0]
     for attempt, delay in enumerate(backoffs):
         if delay:
             time.sleep(delay)
@@ -7281,9 +7398,11 @@ def send_payment_email_with_retry(user, details=None, email_type="pro_activated"
         if sent:
             record_payment_email_attempt(user_id, to_email, stripe_event_id, payment_id, email_type, "sent", provider_response=getattr(send_platform_email, "last_response", "accepted") or "accepted", retry_count=attempt)
             logging.info("PAYMENT_EMAIL_SENT user_id=%s type=%s event=%s payment_id=%s retry=%s", user_id, email_type, stripe_event_id, payment_id, attempt)
+            logging.info("PAYMENT_EMAIL_SUCCESS user_id=%s type=%s event=%s payment_id=%s", user_id, email_type, stripe_event_id, payment_id)
             return True
         status = "retried" if attempt < len(backoffs) - 1 else "failed"
         record_payment_email_attempt(user_id, to_email, stripe_event_id, payment_id, email_type, status, provider_response=getattr(send_platform_email, "last_response", ""), error_message=getattr(send_platform_email, "last_error", "") or "Email provider rejected or unavailable.", retry_count=attempt)
+        queue_failed_email(user_id, to_email, email_type, subject, html, text, getattr(send_platform_email, "last_error", "") or "Email provider rejected or unavailable.", details)
         logging.warning("PAYMENT_EMAIL_FAILED user_id=%s type=%s event=%s payment_id=%s retry=%s", user_id, email_type, stripe_event_id, payment_id, attempt)
     return False
 
@@ -11052,6 +11171,22 @@ def init_db():
         description TEXT,
         severity TEXT,
         source TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scam_scans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        input_text TEXT,
+        risk_level TEXT,
+        risk_score INTEGER,
+        threats_json TEXT,
+        red_flags_json TEXT,
+        safe_actions_json TEXT,
+        confidence REAL,
+        source_status TEXT,
+        result_json TEXT,
         created_at TEXT
     )
     """)
