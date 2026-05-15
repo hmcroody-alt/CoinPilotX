@@ -3205,6 +3205,36 @@
       </div>
     </section>
 
+    <section id="predictions">
+      <div class="container">
+        <div class="section-head center" id="predictions-intelligence">
+          <div class="section-kicker">Predictions Intelligence</div>
+          <h2>Live Predictions Intelligence</h2>
+          <p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p>
+        </div>
+        <div class="market-board" aria-live="polite">
+          <div class="market-controls">
+            <div class="market-filters" aria-label="Prediction filters">
+              <button class="filter-button is-active" type="button">Crypto</button>
+              <button class="filter-button" type="button">Sports</button>
+              <button class="filter-button" type="button">Economy</button>
+              <button class="filter-button" type="button">Market Events</button>
+            </div>
+            <div class="market-updated" data-predictions-updated>Loading prediction intelligence...</div>
+          </div>
+          <div class="market-list" data-predictions-list>
+            <div class="market-loading">Loading prediction scenarios...</div>
+          </div>
+          <div class="market-error" data-predictions-error hidden>Predictions data source reconnecting. Educational sample scenarios may be shown when live providers are unavailable.</div>
+          <div class="actions" style="margin-top: 18px;">
+            <a class="button primary" href="/signup?next=/predictions" data-analytics="predictions_signup_clicked">Track in Dashboard</a>
+            <a class="button" href="/predictions" data-analytics="predictions_opened">Open Predictions Hub</a>
+          </div>
+          <p class="muted">Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p>
+        </div>
+      </div>
+    </section>
+
     <section id="sports-edge">
       <div class="container">
         <div class="section-head center">
@@ -4015,6 +4045,31 @@
   <!-- Add Google Analytics / Plausible script here later -->
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
   <script>
+    (function () {
+      const list = document.querySelector("[data-predictions-list]");
+      const updated = document.querySelector("[data-predictions-updated]");
+      const error = document.querySelector("[data-predictions-error]");
+      if (!list) return;
+      const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+      fetch("/api/predictions?preview=1", { cache: "no-store" })
+        .then(response => response.json())
+        .then(data => {
+          updated.textContent = "Source: " + (data.source_status || data.provider || "unavailable") + " · " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          list.innerHTML = (data.markets || []).slice(0, 6).map(market => `
+            <button class="market-row" type="button" onclick="location.href='/signup?next=/predictions/${market.id}'" aria-label="Open ${market.title}">
+              <span><strong>${market.title}</strong><small>${market.category} · ${market.risk_level} risk</small></span>
+              <span>${market.probability}%</span>
+              <span>${money(market.volume)}</span>
+              <span>${market.close_time ? new Date(market.close_time).toLocaleDateString() : "Open"}</span>
+            </button>`).join("") || "<p class='muted'>Predictions data source reconnecting.</p>";
+          if (data.source_status === "sample scenario" && error) error.hidden = false;
+        })
+        .catch(() => {
+          if (updated) updated.textContent = "Predictions data source reconnecting.";
+          if (error) error.hidden = false;
+        });
+    })();
+
     (function () {
       var failedHealthChecks = 0;
       var healthTimer = null;

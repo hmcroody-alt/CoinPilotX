@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v11";
+const CACHE_NAME = "coinpilotx-cache-v12";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
@@ -133,4 +133,39 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(fetch(request));
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    payload = { title: "CoinPilotXAI Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+  }
+  const title = payload.title || "CoinPilotXAI Alert";
+  const options = {
+    body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
+    icon: "/static/icons/icon-192.png",
+    badge: "/static/icons/icon-192.png",
+    data: payload.data || { url: payload.url || "/notifications" },
+    tag: payload.tag || "coinpilotxai-alert",
+    renotify: false
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/notifications";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client && client.url.includes(self.location.origin)) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
 });

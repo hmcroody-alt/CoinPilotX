@@ -321,6 +321,98 @@ def ensure_owner_admin(allow_reset=False):
 # =========================
 # INIT DB
 # =========================
+def seed_education_knowledge_bank(cur):
+    now = datetime.now().isoformat()
+    categories = [
+        ("crypto-basics", "Crypto Basics", "Clear foundations: coins, wallets, exchanges, stablecoins, and blockchain language.", 1),
+        ("investor-safety", "Investor Safety", "Safety-first habits for accounts, wallets, links, and decision-making.", 2),
+        ("scam-defense", "Scam Defense", "Fake airdrops, wallet drainers, fake support, recovery scams, and phishing defense.", 3),
+        ("wallet-intelligence", "Wallet Intelligence", "How public wallets, approvals, explorers, gas fees, and address activity work.", 4),
+        ("market-psychology", "Market Psychology", "FOMO, panic selling, greed, overtrading, sizing, and discipline.", 5),
+        ("on-chain-analysis", "On-Chain Analysis", "Whale alerts, exchange flows, mempool basics, gas, and suspicious activity.", 6),
+        ("portfolio-intelligence", "Portfolio Intelligence", "Diversification, volatility, drawdown, paper trading, and risk exposure.", 7),
+        ("ai-signal-literacy", "AI Signal Literacy", "How to read AI signals responsibly without treating them as guarantees.", 8),
+        ("simulator-training", "Trading Simulator Training", "Paper trading practice, fake orders, stops, limits, and emotional review.", 9),
+    ]
+    for slug, title, summary, order in categories:
+        cur.execute(
+            "INSERT OR IGNORE INTO education_categories (slug, title, summary, sort_order, active, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+            (slug, title, summary, order, now),
+        )
+    lesson_seed = [
+        ("crypto-basics-101", "crypto-basics", "Crypto Basics 101", "beginner", "8 min", "Understand what crypto is, how blockchains record value, and why security habits matter before buying anything."),
+        ("bitcoin-basics", "crypto-basics", "Bitcoin Basics", "beginner", "7 min", "Bitcoin as a decentralized monetary network, its supply design, volatility, and custody risks."),
+        ("ethereum-basics", "crypto-basics", "Ethereum Basics", "beginner", "8 min", "Ethereum, smart contracts, gas fees, wallets, tokens, and common risks around approvals."),
+        ("wallet-safety-101", "investor-safety", "Wallet Safety 101", "beginner", "9 min", "Hot wallets, cold wallets, seed phrase storage, transaction review, and safer approval habits."),
+        ("seed-phrase-safety", "investor-safety", "Seed Phrase Safety", "beginner", "7 min", "Why seed phrases control funds and why no app, exchange, bot, support agent, or AI assistant should ever ask for one."),
+        ("fake-airdrop-scams", "scam-defense", "Fake Airdrop Scams", "beginner", "9 min", "How fake claim links, urgency copy, wallet connects, and approval drainers trick users."),
+        ("wallet-drainer-scams", "scam-defense", "Wallet Drainer Scams", "intermediate", "11 min", "Understand malicious approvals, blind signing, permit scams, and safe revoke habits."),
+        ("market-psychology-101", "market-psychology", "Market Psychology 101", "beginner", "8 min", "FOMO, fear, greed, revenge trading, and how a written plan reduces impulsive decisions."),
+        ("fomo-and-panic-selling", "market-psychology", "FOMO and Panic Selling", "beginner", "9 min", "Spot emotional triggers, slow down entries, and build a decision checklist."),
+        ("whale-alerts-explained", "on-chain-analysis", "Whale Alerts Explained", "intermediate", "9 min", "Large wallet movements, exchange inflows, false signals, and how to interpret them responsibly."),
+        ("transaction-explorer-basics", "wallet-intelligence", "Transaction Explorer Basics", "beginner", "10 min", "Read public transaction hashes, confirmations, gas, token transfers, and address histories safely."),
+        ("portfolio-risk-basics", "portfolio-intelligence", "Portfolio Risk Basics", "beginner", "10 min", "Allocation, concentration, drawdown, rebalancing, and paper trading as practice."),
+        ("how-to-read-ai-signals", "ai-signal-literacy", "How to Read AI Signals", "beginner", "8 min", "AI can organize context, but signals are uncertain and must be checked against risk rules and sources."),
+        ("optimism-market-data-education", "on-chain-analysis", "Optimism Market Data Education", "intermediate", "10 min", "Layer 2 basics, OP token context, rollups, gas costs, and live market data reading."),
+        ("toncoin-scenario-education", "scam-defense", "Toncoin Scenario Education", "intermediate", "10 min", "Toncoin ecosystem context, wallet safety scenarios, fake bot/payment risks, and decision trees."),
+        ("scam-alert-checklist", "scam-defense", "Scam Alert Checklist", "beginner", "8 min", "A practical checklist for suspicious links, messages, contracts, support chats, and guaranteed-profit claims."),
+    ]
+    base_sections = [
+        ("Core Idea", "Start with definitions, source quality, and the exact risk being discussed. A good crypto lesson should make the user slower, safer, and more precise."),
+        ("Real Examples", "Example 1: a link asks you to connect a wallet to claim free tokens. Example 2: a support account asks for a seed phrase. Example 3: a market move tempts a rushed trade."),
+        ("Red Flags", "Urgency, secret links, guaranteed returns, seed phrase requests, tax-to-unlock claims, fake support agents, and unexplained wallet approval prompts are major warning signs."),
+        ("Safe Action Steps", "Verify official domains manually, never share recovery phrases, use small test transactions when appropriate, revoke suspicious approvals, and document your plan before acting."),
+        ("Common Beginner Mistakes", "Trusting screenshots, clicking sponsored links without checking the domain, confusing confidence with certainty, oversizing positions, and ignoring wallet approvals."),
+    ]
+    questions = [
+        {"question": "Should you ever share a seed phrase with support?", "options": ["Yes", "No", "Only if urgent"], "answer": "No", "explanation": "A seed phrase controls funds and should never be shared."},
+        {"question": "What does an urgent wallet-connect airdrop link usually deserve?", "options": ["Immediate click", "Caution and verification", "A bigger transaction"], "answer": "Caution and verification", "explanation": "Urgency and wallet connect requests are common scam patterns."},
+        {"question": "Are AI signals guaranteed outcomes?", "options": ["Yes", "No", "Only for Pro users"], "answer": "No", "explanation": "AI can summarize context, but outcomes remain uncertain."},
+    ]
+    cur.execute("SELECT COUNT(*) FROM education_lessons")
+    if (cur.fetchone()[0] or 0) > 0:
+        return
+    for slug, category, title, difficulty, estimated, summary in lesson_seed:
+        content = (
+            f"{summary}\n\n"
+            "CoinPilotXAI teaches this topic with a safety-first lens: understand the tool, identify the risk, decide slowly, and never treat educational intelligence as a guaranteed result.\n\n"
+            "Key terms: wallet, private key, approval, volatility, liquidity, signal confidence, source status, and risk control."
+        )
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO education_lessons
+            (slug, category_slug, title, difficulty, estimated_time, summary, content, examples, red_flags, safe_steps, beginner_mistakes, access_level, active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'free', 1, ?, ?)
+            """,
+            (
+                slug,
+                category,
+                title,
+                difficulty,
+                estimated,
+                summary,
+                content,
+                "Fake airdrop link; sudden guaranteed-profit dashboard; fake support account asking for recovery words.",
+                "Seed phrase request; urgency; shortened URL; pay-to-unlock claim; celebrity/exchange impersonation.",
+                "Pause; verify official sources; never share keys; use read-only explorers; ask CoinPilotXAI Tutor for education.",
+                "Rushing; trusting screenshots; oversizing; clicking without checking the domain; ignoring approvals.",
+                now,
+                now,
+            ),
+        )
+        for order, (heading, body) in enumerate(base_sections, start=1):
+            cur.execute(
+                "INSERT INTO education_sections (lesson_slug, heading, body, sort_order) VALUES (?, ?, ?, ?)",
+                (slug, heading, body, order),
+            )
+        cur.execute("INSERT INTO education_quizzes (lesson_slug, title, created_at) VALUES (?, ?, ?)", (slug, f"{title} Quiz", now))
+        for question in questions:
+            cur.execute(
+                "INSERT INTO education_quiz_questions (lesson_slug, question, options, answer, explanation) VALUES (?, ?, ?, ?, ?)",
+                (slug, question["question"], json.dumps(question["options"]), question["answer"], question["explanation"]),
+            )
+
+
 def init_db():
     conn = db()
     cur = conn.cursor()
@@ -934,6 +1026,51 @@ def simple_public_page(slug, title, h1, intro, answer, points, sections=None, re
     return render_seo_landing(page)
 
 
+def education_shell(title, h1, intro, body):
+    return f"""<!doctype html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{clean_html(title)}</title>
+  <meta name="description" content="{clean_html(intro)[:155]}">
+  <link rel="canonical" href="https://coinpilotx.app{clean_html(request.path)}">
+  <meta property="og:title" content="{clean_html(title)}"><meta property="og:description" content="{clean_html(intro)[:155]}">
+  <style>
+    :root {{ color-scheme:dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; }}
+    *{{box-sizing:border-box}} body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);line-height:1.65;overflow-x:hidden}} a{{color:inherit;text-decoration:none}}
+    .wrap{{width:min(100% - 32px,1180px);margin:auto}} header{{position:sticky;top:0;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);z-index:5}} nav{{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}} nav a,.edu-cta{{display:inline-flex;min-height:42px;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.05);font-weight:850}}
+    main{{padding:42px 0 70px}} .hero{{padding:32px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035));box-shadow:0 28px 90px rgba(0,0,0,.28)}} h1{{font-size:clamp(38px,7vw,68px);line-height:1;margin:8px 0}} h2{{font-size:clamp(24px,4vw,34px)}} .muted,p{{color:var(--muted)}} .edu-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}} .edu-card,.edu-panel{{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.045);padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.22)}} .edu-card{{transition:transform .18s ease,box-shadow .18s ease}} .edu-card:hover{{transform:translateY(-3px);box-shadow:0 0 32px rgba(110,223,246,.18)}} .edu-card span,.edu-card strong{{display:block;font-size:18px;color:var(--cyan);font-weight:950}} small{{color:var(--gold)}} .edu-actions{{display:flex;gap:10px;flex-wrap:wrap}} .concepts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}} .concept{{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;background:rgba(0,0,0,.16)}} .radar{{height:130px;border-radius:999px;background:radial-gradient(circle,rgba(54,229,143,.28),transparent 28%,rgba(110,223,246,.18),transparent 58%);animation:pulseRadar 4s ease-in-out infinite}} @keyframes pulseRadar{{50%{{filter:brightness(1.35);transform:scale(1.02)}}}} @media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}} @media(max-width:720px){{.hero{{padding:22px}}.edu-actions a{{width:100%}}}}
+  </style>
+</head><body>
+  <header><div class="wrap"><nav><a href="/">CoinPilotXAI</a><div class="edu-actions"><a href="/dashboard">Dashboard</a><a href="/education">Education</a><a href="/scam-shield">Scam Shield</a></div></nav></div></header>
+  <main class="wrap"><section class="hero"><div class="radar" aria-hidden="true"></div><h1>{clean_html(h1)}</h1><p>{clean_html(intro)}</p></section>{body}<p class="muted">Educational market intelligence only. Not financial, investment, legal, betting, or tax advice. Never share seed phrases or private keys.</p></main>
+</body></html>"""
+
+
+def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
+    concepts = "".join(f"<article class='concept'><h3>{clean_html(title)}</h3><p>{clean_html(body)}</p></article>" for title, body in sections)
+    quiz = """
+      <div class='edu-panel'><h2>Quick Quiz</h2>
+        <p><strong>Question:</strong> Should an app or support agent ever ask for your seed phrase?</p>
+        <p><strong>Answer:</strong> No. A seed phrase controls funds and must never be shared.</p>
+      </div>
+    """
+    tutor = f"""
+      <div class='edu-panel'><h2>Ask CoinPilotXAI Tutor</h2>
+        <form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form>
+        <p class='muted' data-tutor-response>Answers use this lesson first and stay safety-focused.</p>
+      </div>
+      <script>
+        document.querySelector('[data-tutor-form]').addEventListener('submit', async event => {{
+          event.preventDefault();
+          const question = new FormData(event.target).get('question');
+          const res = await fetch('/api/education/tutor', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{lesson_slug:'{clean_html(lesson_slug)}',question}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Tutor temporarily unavailable.'}}));
+          document.querySelector('[data-tutor-response]').textContent = res.response || res.message || 'Tutor temporarily unavailable.';
+        }});
+      </script>
+    """
+    return education_shell(f"{h1} | CoinPilotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{clean_html(lesson_slug)}'>Open Full Lesson</a></section>")
+
+
 @webhook_app.route("/education", methods=["GET"])
 @webhook_app.route("/dashboard/education", methods=["GET"])
 def education_hub_page():
@@ -941,19 +1078,37 @@ def education_hub_page():
         user = require_account()
         if not user:
             return redirect(url_for("signup_page", next=request.path))
-    return simple_public_page(
-        "education",
-        "Crypto Education Hub | CoinPilotXAI Inc.",
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM education_categories WHERE active=1 ORDER BY sort_order ASC, title ASC")
+    categories = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM education_lessons WHERE active=1 ORDER BY id ASC LIMIT 9")
+    lessons = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    cards = "".join(
+        f"<a class='edu-card' href='/education/{clean_html(c['slug'])}'><span>{clean_html(c['title'])}</span><p>{clean_html(c.get('summary') or '')}</p></a>"
+        for c in categories
+    )
+    lesson_cards = "".join(
+        f"<a class='edu-card lesson' href='/education/lesson/{clean_html(l['slug'])}'><strong>{clean_html(l['title'])}</strong><small>{clean_html(l['difficulty'])} · {clean_html(l['estimated_time'])}</small><p>{clean_html(l['summary'])}</p></a>"
+        for l in lessons
+    )
+    return education_shell(
+        "Crypto Education Hub | CoinPilotXAI",
         "Crypto Education Hub",
-        "Learn crypto basics, wallet safety, scam prevention, risk management, market psychology, DeFi, and on-chain analysis with CoinPilotXAI.",
-        "The education hub helps users build safer crypto habits before they use advanced AI intelligence tools.",
-        ["Crypto Basics", "Bitcoin and Ethereum", "Wallet Safety", "Scam Prevention", "Risk Management", "On-chain Analysis"],
-        [
-            {"title": "Beginner path", "body": "Start with wallets, exchanges, stablecoins, risk sizing, and common scam patterns."},
-            {"title": "Safety path", "body": "Learn how phishing, fake support, wallet drain approvals, and seed phrase scams work."},
-            {"title": "Market path", "body": "Study volatility, trend context, market psychology, and source quality without guaranteed-outcome claims."},
-        ],
-        ["/education/optimism", "/education/toncoin-scenarios", "/dashboard/scam-alerts", "/safety"],
+        "Build safer crypto habits with structured lessons, quizzes, progress tracking, Scam Shield training, wallet safety, market psychology, and AI tutor support.",
+        f"""
+        <section class='edu-grid'>{cards}</section>
+        <section class='edu-panel'><h2>Continue Learning</h2><div class='edu-grid'>{lesson_cards}</div></section>
+        <section class='edu-panel'><h2>Featured Journeys</h2><div class='edu-actions'>
+          <a href='/education/optimism'>Live Optimism Market Data</a>
+          <a href='/education/toncoin-scenarios'>Toncoin Scenario Education</a>
+          <a href='/education/scam-alerts'>Crypto Scam Alerts</a>
+          <a href='/simulator'>Trading Simulator Training</a>
+        </div></section>
+        """,
     )
 
 
@@ -967,37 +1122,221 @@ def optimism_education_page():
     op = market_data_service.get_symbol("OP")
     price = op.get("price") if isinstance(op, dict) else None
     price_text = f"Current OP price from available feed: ${price}" if price else "Live Optimism market data is temporarily unavailable."
-    return simple_public_page(
-        "education/optimism",
-        "Live Optimism Market Data & Education | CoinPilotXAI",
+    return education_feature_page(
         "Live Optimism Market Data",
-        "Track Optimism ecosystem context with source labels, fallback handling, and educational risk notes.",
-        price_text,
-        ["OP price context", "Layer 2 ecosystem basics", "Risk factors", "Source transparency"],
+        "Learn how Optimism, rollups, gas fees, and OP token market context fit into a safer research process.",
         [
-            {"title": "What Optimism is", "body": "Optimism is an Ethereum layer 2 ecosystem designed to reduce cost and improve transaction throughput."},
-            {"title": "What to watch", "body": "Watch Ethereum activity, L2 adoption, fee conditions, token unlocks, governance, and broader market liquidity."},
+            ("What Optimism Is", "Optimism is an Ethereum Layer 2 ecosystem built to reduce transaction cost and improve throughput while still anchoring to Ethereum security assumptions."),
+            ("Layer 2 Basics", "Rollups batch activity and publish proofs/data back to Ethereum. Users should still understand bridge risk, smart contract risk, and ecosystem liquidity."),
+            ("OP Token Context", "OP can be affected by broader crypto liquidity, governance news, token unlocks, Ethereum activity, and Layer 2 competition."),
+            ("Live Market Snapshot", price_text),
+            ("Safe Reading Checklist", "Check source labels, avoid guaranteed predictions, compare time horizons, and treat market data as educational context only."),
         ],
-        ["/education", "/live-market", "/portfolio-intelligence", "/safety"],
+        "optimism-market-data-education",
     )
 
 
 @webhook_app.route("/education/toncoin-scenarios", methods=["GET"])
 def toncoin_scenarios_page():
-    return simple_public_page(
-        "education/toncoin-scenarios",
-        "Toncoin Scenario Education | CoinPilotXAI",
-        "Toncoin Prediction Scenarios",
-        "Educational bull, base, and bear Toncoin scenarios with risk factors and no guaranteed prediction claims.",
-        "Scenario analysis is a planning framework, not a promise. CoinPilotXAI shows bull, base, and bear cases so users can think in probabilities.",
-        ["Bull case", "Base case", "Bear case", "Risk factors"],
+    return education_feature_page(
+        "Toncoin Scenario Education",
+        "Study Toncoin through bull/base/bear scenarios, wallet safety, ecosystem context, and Telegram-related scam awareness without making Telegram the core platform.",
         [
-            {"title": "Bull case", "body": "A stronger case may involve ecosystem adoption, liquidity improvement, and constructive broader crypto conditions."},
-            {"title": "Base case", "body": "A neutral case may involve range-bound price action while users watch adoption, unlocks, sentiment, and liquidity."},
-            {"title": "Bear case", "body": "A weaker case may involve broad market stress, regulatory pressure, lower liquidity, or negative ecosystem news."},
+            ("What Toncoin Is", "Toncoin is connected to a broad ecosystem of wallets, mini-apps, and user flows. Treat ecosystem access as context, not a guarantee of token performance."),
+            ("Bull/Base/Bear Cases", "Bull: stronger ecosystem adoption and liquidity. Base: range-bound activity. Bear: market stress, regulatory pressure, liquidity contraction, or security concerns."),
+            ("Wallet Safety Scenarios", "Never send crypto to verify a wallet, never share recovery words, and verify bot/payment prompts against official sources."),
+            ("Fake Bot and Payment Risks", "Scammers may impersonate support, create fake payment prompts, or pressure users to validate/synchronize wallets."),
+            ("Decision Tree", "If a request involves urgency, seed words, wallet approvals, or unlock fees, stop and run Scam Shield before taking action."),
         ],
-        ["/education", "/live-market", "/scam-guide", "/safety"],
+        "toncoin-scenario-education",
     )
+
+
+@webhook_app.route("/education/scam-alerts", methods=["GET"])
+def education_scam_alerts_page():
+    return education_feature_page(
+        "Crypto Scam Alerts",
+        "Learn the most common crypto scam patterns and use a checklist before clicking links, connecting wallets, or sending funds.",
+        [
+            ("Fake Airdrops", "Airdrops that demand urgent wallet connection or approval signing can be wallet drainers."),
+            ("Fake Support", "Support agents should never ask for seed phrases, private keys, wallet passwords, or remote-control access."),
+            ("Wallet Drainers", "Malicious approvals can authorize token movement. Review transactions and revoke suspicious approvals when needed."),
+            ("Guaranteed Profit Claims", "Guaranteed returns, celebrity managers, and pressure to deposit more are major red flags."),
+            ("Safety Checklist", "Verify domains manually, avoid shortened links, refuse seed phrase requests, and run suspicious text through Scam Shield."),
+        ],
+        "scam-alert-checklist",
+        cta="<a class='edu-cta' href='/scam-shield'>Run Scam Shield</a>",
+    )
+
+
+def education_categories_rows():
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM education_categories WHERE active=1 ORDER BY sort_order ASC, title ASC")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def education_lesson_by_slug(slug):
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM education_lessons WHERE slug=? AND active=1 LIMIT 1", (slug,))
+    lesson = dict(cur.fetchone() or {})
+    if lesson:
+        cur.execute("SELECT heading, body FROM education_sections WHERE lesson_slug=? ORDER BY sort_order ASC, id ASC", (slug,))
+        lesson["sections"] = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT question, options, answer, explanation FROM education_quiz_questions WHERE lesson_slug=? LIMIT 10", (slug,))
+        lesson["quiz"] = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return lesson
+
+
+@webhook_app.route("/education/<category_slug>", methods=["GET"])
+def education_category_page(category_slug):
+    init_db()
+    category_slug = clean_html(category_slug)[:120]
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM education_categories WHERE slug=? AND active=1 LIMIT 1", (category_slug,))
+    category = dict(cur.fetchone() or {})
+    if not category:
+        return Response("Education category not found", status=404)
+    cur.execute("SELECT * FROM education_lessons WHERE category_slug=? AND active=1 ORDER BY id ASC", (category_slug,))
+    lessons = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    cards = "".join(f"<a class='edu-card' href='/education/lesson/{clean_html(l['slug'])}'><strong>{clean_html(l['title'])}</strong><small>{clean_html(l['difficulty'])} · {clean_html(l['estimated_time'])}</small><p>{clean_html(l['summary'])}</p></a>" for l in lessons)
+    return education_shell(
+        f"{category['title']} Lessons | CoinPilotXAI",
+        category["title"],
+        category.get("summary") or "Structured crypto education with safety-first lessons.",
+        f"<section class='edu-grid'>{cards}</section><section class='edu-panel'><a class='edu-cta' href='/education'>Back to Education Hub</a></section>",
+    )
+
+
+@webhook_app.route("/education/lesson/<lesson_slug>", methods=["GET"])
+def education_lesson_page(lesson_slug):
+    user = load_account_by_id(account_user_id())
+    lesson_slug = clean_html(lesson_slug)[:160]
+    lesson = education_lesson_by_slug(lesson_slug)
+    if not lesson:
+        return Response("Education lesson not found", status=404)
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO education_lesson_views (user_id, lesson_slug, path, created_at) VALUES (?, ?, ?, ?)",
+            ((user or {}).get("user_id") or 0, lesson_slug, request.path, datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    sections = "".join(f"<article class='concept'><h3>{clean_html(s['heading'])}</h3><p>{clean_html(s['body'])}</p></article>" for s in lesson.get("sections", []))
+    quiz = "".join(
+        f"<article class='concept'><h3>{clean_html(q['question'])}</h3><p>Options: {', '.join(json.loads(q.get('options') or '[]'))}</p><p><strong>Answer:</strong> {clean_html(q['answer'])}. {clean_html(q['explanation'])}</p></article>"
+        for q in lesson.get("quiz", [])
+    )
+    body = f"""
+    <section class='edu-panel'><p><strong>{clean_html(lesson.get('difficulty'))}</strong> · {clean_html(lesson.get('estimated_time'))}</p><p>{clean_html(lesson.get('content'))}</p></section>
+    <section class='edu-panel'><h2>Knowledge Map</h2><div class='concepts'>{sections}</div></section>
+    <section class='edu-panel'><h2>Quiz</h2><div class='concepts'>{quiz}</div><button class='edu-cta' data-complete-lesson>Mark Complete</button><p class='muted' data-progress-message></p></section>
+    <section class='edu-panel'><h2>Ask CoinPilotXAI Tutor</h2><form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form><p class='muted' data-tutor-response></p></section>
+    <script>
+      document.querySelector('[data-complete-lesson]').addEventListener('click', async () => {{
+        const res = await fetch('/api/education/progress', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{lesson_slug:'{lesson_slug}',path:'{clean_html(lesson.get('category_slug'))}',status:'completed',score:100}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Login required to save progress.'}}));
+        document.querySelector('[data-progress-message]').textContent = res.message || (res.ok ? 'Progress saved.' : 'Login required to save progress.');
+      }});
+      document.querySelector('[data-tutor-form]').addEventListener('submit', async event => {{
+        event.preventDefault();
+        const question = new FormData(event.target).get('question');
+        const res = await fetch('/api/education/tutor', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{lesson_slug:'{lesson_slug}',question}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Tutor temporarily unavailable.'}}));
+        document.querySelector('[data-tutor-response]').textContent = res.response || res.message || 'Tutor temporarily unavailable.';
+      }});
+    </script>
+    """
+    return education_shell(f"{lesson['title']} | CoinPilotXAI Education", lesson["title"], lesson.get("summary") or "", body)
+
+
+@webhook_app.route("/api/education/categories", methods=["GET"])
+def api_education_categories():
+    response = jsonify({"ok": True, "categories": education_categories_rows()})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/education/lessons", methods=["GET"])
+def api_education_lessons():
+    init_db()
+    category = clean_html(request.args.get("category") or "")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    if category:
+        cur.execute("SELECT slug, category_slug, title, difficulty, estimated_time, summary, access_level FROM education_lessons WHERE active=1 AND category_slug=? ORDER BY id ASC", (category,))
+    else:
+        cur.execute("SELECT slug, category_slug, title, difficulty, estimated_time, summary, access_level FROM education_lessons WHERE active=1 ORDER BY id ASC")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "lessons": rows})
+
+
+@webhook_app.route("/api/education/lesson/<lesson_slug>", methods=["GET"])
+def api_education_lesson(lesson_slug):
+    lesson = education_lesson_by_slug(clean_html(lesson_slug)[:160])
+    return jsonify({"ok": bool(lesson), "lesson": lesson}), (200 if lesson else 404)
+
+
+@webhook_app.route("/api/education/tutor", methods=["POST"])
+def api_education_tutor():
+    user = load_account_by_id(account_user_id())
+    payload = request.get_json(silent=True) or {}
+    lesson_slug = clean_html(payload.get("lesson_slug") or "")[:160]
+    question = clean_html(payload.get("question") or "")[:1000]
+    lesson = education_lesson_by_slug(lesson_slug) if lesson_slug else {}
+    if not question:
+        return jsonify({"ok": False, "message": "Ask a lesson question."}), 400
+    if re.search(r"(seed phrase|private key|wallet password|recovery phrase)", question, re.I):
+        response = "I can explain why those secrets must never be shared, but I cannot request, store, or handle seed phrases, private keys, recovery phrases, or wallet passwords."
+    else:
+        response = (
+            f"CoinPilotXAI Tutor: Based on {lesson.get('title') or 'this lesson'}, the safe way to think about it is: "
+            f"{lesson.get('summary') or 'verify sources, slow down, and keep risk controlled.'} "
+            "Use official sources, avoid urgent wallet prompts, and treat all market intelligence as educational context rather than a guarantee."
+        )
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO education_ai_tutor_logs (user_id, lesson_slug, question, response, created_at) VALUES (?, ?, ?, ?, ?)", ((user or {}).get("user_id") or 0, lesson_slug, question, response, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "response": response})
+
+
+@webhook_app.route("/api/education/quiz/submit", methods=["POST"])
+def api_education_quiz_submit():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    lesson_slug = clean_html(payload.get("lesson_slug") or "")[:160]
+    score = int(payload.get("score") or 0)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR REPLACE INTO education_user_progress (user_id, lesson_slug, status, score, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (user["user_id"], lesson_slug, "completed" if score >= 70 else "started", score, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "score": score, "message": "Quiz progress saved."})
 
 
 @webhook_app.route("/dashboard/scam-alerts", methods=["GET"])
@@ -3526,6 +3865,11 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/command-logs'>Command Logs</a>"
         "<a href='/admin/visitors'>Visitors</a>"
         "<a href='/admin/notifications'>Notifications</a>"
+        "<a href='/admin/notification-delivery'>Delivery</a>"
+        "<a href='/admin/watch-rules'>Watch Rules</a>"
+        "<a href='/admin/education'>Education</a>"
+        "<a href='/admin/predictions'>Predictions</a>"
+        "<a href='/admin/seo'>SEO</a>"
         "<a href='/admin/private-chat-reports'>Chat Reports</a>"
         "<a href='/admin/support'>Support</a>"
         "<a href='/admin/data-recovery'>Data Recovery</a>"
@@ -3979,7 +4323,7 @@ def admin_manual_upgrade_route():
     })
 
 
-@webhook_app.route("/admin/visitors", methods=["GET"])
+@webhook_app.route("/api/admin/visitors", methods=["GET"])
 def admin_visitors_route():
     admin, denied = require_admin_page("analytics.view")
     if denied:
@@ -4076,6 +4420,54 @@ def admin_visitors_route():
     }
     log_admin_audit(admin.get("id"), "admin_viewed_live_visitors", "analytics", "visitor_logs", {"unique": unique_total, "range": range_key, "filter": filter_key})
     return jsonify(payload)
+
+
+@webhook_app.route("/admin/visitors", methods=["GET"])
+def admin_visitors_dashboard_page():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    body = """
+    <style>
+      .analytics-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;align-items:stretch}
+      .live-map{min-height:320px;border:1px solid var(--line);border-radius:18px;background:radial-gradient(circle at 28% 42%,rgba(54,229,143,.26),transparent 7px),radial-gradient(circle at 55% 36%,rgba(110,223,246,.24),transparent 9px),radial-gradient(circle at 70% 58%,rgba(255,209,102,.22),transparent 8px),linear-gradient(135deg,rgba(110,223,246,.08),rgba(54,229,143,.04));position:relative;overflow:hidden}
+      .live-map:before{content:"";position:absolute;inset:12%;border:1px solid rgba(255,255,255,.08);border-radius:45% 55% 48% 52%;box-shadow:0 0 70px rgba(110,223,246,.16) inset;animation:mapPulse 5s ease-in-out infinite}
+      .analytics-card{position:relative;overflow:hidden}.analytics-card:after{content:"";position:absolute;inset:auto -20% -60% -20%;height:80%;background:radial-gradient(circle,rgba(110,223,246,.18),transparent 65%);pointer-events:none}
+      .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0}
+      .metric-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:rgba(255,255,255,.045);box-shadow:0 18px 60px rgba(0,0,0,.22)}
+      .metric-card strong{display:block;font-size:28px;color:var(--accent)}
+      .bars{display:grid;gap:8px}.bar-row{display:grid;grid-template-columns:1fr 4fr auto;gap:8px;align-items:center}.bar-fill{height:10px;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--accent));min-width:4px}
+      .stream{max-height:420px;overflow:auto}.stream-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border-bottom:1px solid rgba(255,255,255,.07)}
+      .tag{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 8px;color:var(--cyan)}
+      @keyframes mapPulse{50%{transform:scale(1.03);filter:brightness(1.25)}} @media(max-width:820px){.analytics-hero{grid-template-columns:1fr}.bar-row{grid-template-columns:1fr}.live-map{min-height:240px}}
+    </style>
+    <h1>Visitor Intelligence Center</h1>
+    <p class="muted">Executive analytics for visits, devices, conversion intent, command usage, and live behavior. IP/session data is masked and admin-only.</p>
+    <div class="analytics-hero">
+      <section class="card analytics-card"><h2>Live World Signal</h2><div class="live-map" aria-label="Approximate visitor geo map"></div><div id="geoTop" class="bars"></div></section>
+      <section class="card"><h2>Conversion Intelligence</h2><div id="funnel" class="bars"></div></section>
+    </div>
+    <section id="summaryCards" class="metric-grid"></section>
+    <section class="grid">
+      <div class="card"><h2>Top Pages</h2><div id="topPages" class="bars"></div></div>
+      <div class="card"><h2>Device Mix</h2><div id="devices" class="bars"></div></div>
+      <div class="card"><h2>Live Activity Stream</h2><div id="activityStream" class="stream"></div></div>
+    </section>
+    <script>
+      const api = "/api/admin/visitors";
+      const fmt = n => Number(n || 0).toLocaleString();
+      const rel = value => { const d = new Date(value || Date.now()); const s = Math.max(1, Math.floor((Date.now()-d.getTime())/1000)); if(s<60)return s+"s ago"; const m=Math.floor(s/60); if(m<60)return m+"m ago"; const h=Math.floor(m/60); if(h<24)return h+"h ago"; return Math.floor(h/24)+"d ago"; };
+      const mask = value => String(value || "").replace(/(\\d+\\.\\d+)\\.\\d+\\.\\d+/, "$1.x.x").slice(0, 64);
+      function bars(node, rows){ const max=Math.max(...rows.map(r=>r.count||0),1); node.innerHTML=rows.map(r=>`<div class="bar-row"><span>${r.value||"Direct/Unknown"}</span><span class="bar-fill" style="width:${Math.max(4,(r.count||0)/max*100)}%"></span><strong>${fmt(r.count)}</strong></div>`).join("") || "<p class='muted'>No data yet.</p>"; }
+      function stream(node, rows){ node.innerHTML=(rows||[]).slice(0,60).map(v=>`<div class="stream-row"><span class="tag">${v.user_id ? "User" : "Visitor"}</span><span>${mask(v.city||v.country||"Unknown")} opened <strong>${v.path||"/"}</strong><br><small class="muted">${mask(v.browser||v.device_type||"browser")} · ${mask(v.referrer||"direct")}</small></span><time>${rel(v.timestamp)}</time></div>`).join("") || "<p class='muted'>No visits yet.</p>"; }
+      async function loadVisitors(){ const data = await fetch(api,{cache:"no-store",credentials:"same-origin"}).then(r=>r.json()); const c=data.conversion_events||{}; const cards=[
+        ["Active Visitors Now",data.active_sessions_now],["Unique Visitors 24h",data.unique_visitors],["Logged-In Users",data.logged_in_visitors],["Anonymous Visitors",data.anonymous_visitors],["Mobile Users",(data.device_type||[]).find(x=>(x.value||"").toLowerCase()==="mobile")?.count||0],["Desktop Users",(data.device_type||[]).find(x=>(x.value||"").toLowerCase()==="desktop")?.count||0],["Upgrade Clicks",c.upgrade_clicks],["Pro Conversions",c.successful_checkout_returns],["AI Chat Sessions",c.chat_usage],["Command Center Sessions",c.command_center_usage],["Scam Shield Usage",c.scam_scans],["Notification Opt-ins",c.notification_opt_ins]
+      ]; document.getElementById("summaryCards").innerHTML=cards.map(([label,value])=>`<div class="metric-card"><span class="muted">${label}</span><strong>${fmt(value)}</strong></div>`).join(""); bars(document.getElementById("topPages"),data.top_pages||[]); bars(document.getElementById("devices"),data.device_type||[]); bars(document.getElementById("geoTop"),data.country||[]); bars(document.getElementById("funnel"),Object.entries(c).map(([value,count])=>({value:value.replaceAll("_"," "),count}))); stream(document.getElementById("activityStream"),data.recent_visit_stream||[]); }
+      loadVisitors().catch(()=>{}); setInterval(()=>loadVisitors().catch(()=>{}),15000);
+    </script>
+    """
+    log_admin_audit(admin.get("id"), "admin_viewed_visitor_intelligence_center", "analytics", "visitor_logs", {})
+    return admin_page_html("Visitor Intelligence Center", body, admin)
 
 
 @webhook_app.route("/admin/transactions", methods=["GET"])
@@ -4806,7 +5198,7 @@ def admin_user_detail_page(user_id):
         f"<h2>Backend Pro Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
-        f"<h2>Activity</h2><div class='card'>{admin_rows_table(activity, [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div>"
+        f"<h2>Activity Timeline</h2><div class='card'><p class='muted'>Latest activity: {clean_html((activity[0] or {}).get('event_type') if activity else 'none')} · {len(activity)} recent items.</p><button type='button' onclick=\"var p=document.getElementById('activityPanel');p.hidden=!p.hidden;this.textContent=p.hidden?'View Activity Timeline':'Hide Timeline';\">View Activity Timeline</button><div id='activityPanel' hidden style='max-height:400px;overflow:auto;margin-top:12px'>{admin_rows_table(activity[:25], [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div></div>"
         f"<h2>Email Logs</h2><div class='card'>{admin_rows_table(emails, [('email_type','Type'),('subject','Subject'),('status','Status'),('created_at','Date')])}</div>"
     )
     return admin_page_html("User Detail", body, admin)
@@ -6463,6 +6855,175 @@ def sports_edge_api():
     return jsonify(payload)
 
 
+def get_gemini_trade_url():
+    return os.getenv("GEMINI_AFFILIATE_URL") or "https://www.gemini.com/"
+
+
+@webhook_app.route("/sports-edge", methods=["GET"])
+def sports_edge_landing_page():
+    data = sports_data_service.live_sports_edge(league=request.args.get("league", "all"))
+    source_note = data.get("warning") or "Sports intelligence source connected where configured."
+    features = [
+        "Live Sports Edge Signals", "AI Game Intelligence", "Market Psychology", "Odds Movement Tracker",
+        "Risk Score", "Betting Discipline Coach", "Sports News Intelligence", "Crypto + Sports Market Connection",
+        "Alerts and Notifications", "Training/Education Mode",
+    ]
+    feature_cards = "".join(f"<article class='card mini'><h3>{clean_html(item)}</h3><p>Educational intelligence with risk context, source status, and no guaranteed-outcome claims.</p></article>" for item in features)
+    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPilotXAI</title><meta name='description' content='Use CoinPilotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://coinpilotx.app/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPilotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPilotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPilotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPilotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{clean_html(source_note)}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
+    log_product_event(account_user_id(), "sports_edge_opened", {})
+    return Response(body)
+
+
+@webhook_app.route("/sports-edge/trade", methods=["GET"])
+def sports_edge_trade_redirect():
+    log_product_event(account_user_id(), "gemini_trade_redirect_clicked", {"target": "gemini"})
+    return redirect(get_gemini_trade_url())
+
+
+def quote_payload(symbol=None, category="top_volume", limit=50):
+    board = market_data_service.live_market_board(category=category, limit=limit)
+    if symbol:
+        selected = market_data_service.get_symbol(symbol)
+        if not selected:
+            selected = {"symbol": symbol.upper(), "name": symbol.upper(), "price": None, "change_24h": None, "volume_24h": None, "market_cap": None}
+        return {"ok": True, "asset": selected, "source": board.get("source") or "unavailable", "last_updated": board.get("updated_at"), "warning": board.get("warning") or ("Live data source temporarily unavailable." if not selected.get("price") else None)}
+    return {"ok": True, **board}
+
+
+@webhook_app.route("/api/quote", methods=["GET"])
+@webhook_app.route("/api/quote/crypto", methods=["GET"])
+def api_quote_board():
+    response = jsonify(quote_payload(category=request.args.get("category", "top_volume"), limit=int(request.args.get("limit", 50))))
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/quote/crypto/<symbol>", methods=["GET"])
+def api_quote_symbol(symbol):
+    payload = quote_payload(clean_html(symbol).upper()[:12])
+    return jsonify(payload), (200 if payload.get("ok") else 404)
+
+
+@webhook_app.route("/api/quote/crypto/<symbol>/chart", methods=["GET"])
+def api_quote_chart(symbol):
+    asset = market_data_service.get_symbol(clean_html(symbol).upper()[:12]) or {}
+    price = float(asset.get("price") or 0)
+    points = [{"t": i, "price": round(price * (1 + math.sin(i / 3) * 0.015), 2)} for i in range(24)] if price else []
+    return jsonify({"ok": bool(points), "symbol": symbol.upper(), "timeframe": request.args.get("timeframe", "1D"), "points": points, "source": "market feed + educational chart fallback"})
+
+
+@webhook_app.route("/api/quote/crypto/<symbol>/news", methods=["GET"])
+def api_quote_news(symbol):
+    return jsonify({"ok": True, "symbol": symbol.upper(), "items": [], "message": "Live crypto news source temporarily unavailable.", "source": "news provider unavailable"})
+
+
+@webhook_app.route("/api/quote/crypto/<symbol>/signals", methods=["GET"])
+def api_quote_signals(symbol):
+    asset = market_data_service.get_symbol(clean_html(symbol).upper()[:12]) or {}
+    change = float(asset.get("change_24h") or 0)
+    signal = "Caution" if change < -3 else "Momentum watch" if change > 3 else "Neutral watch"
+    return jsonify({"ok": True, "symbol": symbol.upper(), "signal": signal, "explanation": "Educational market intelligence only. Not financial advice.", "source": "CoinPilotXAI rules"})
+
+
+@webhook_app.route("/quote", methods=["GET"])
+def quote_center_page():
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Quote Market Center | CoinPilotXAI</title><meta name='description' content='Live crypto quote board with AI market intelligence, source status, and educational risk notes.'><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1180px);margin:auto;padding:34px 0}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px}.row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;padding:12px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}.row:hover{background:rgba(110,223,246,.08)}.green{color:#36e58f}.red{color:#ff6b7a}@media(max-width:760px){.row{grid-template-columns:1fr 1fr}}</style></head><body><main class='wrap'><h1>Live Quote Market Center</h1><p>Live market intelligence is educational only. Not financial advice.</p><section class='card'><div id='rows'>Loading...</div></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{style:'currency',currency:'USD'});const pct=n=>(Number(n||0)>=0?'+':'')+Number(n||0).toFixed(2)+'%';async function load(){const d=await fetch('/api/quote/crypto',{cache:'no-store'}).then(r=>r.json());document.getElementById('rows').innerHTML=(d.markets||[]).map((m,i)=>`<div class='row' onclick="location.href='/quote/crypto/${m.symbol}'"><strong>${i+1}. ${m.name} (${m.symbol})</strong><span>${money(m.price)}</span><span class='${Number(m.change_24h||0)>=0?'green':'red'}'>${pct(m.change_24h)}</span><span>${Number(m.volume_24h||0).toLocaleString()}</span></div>`).join('')||'Market data temporarily reconnecting.'}load();setInterval(load,30000)</script></body></html>""")
+
+
+@webhook_app.route("/quote/crypto/<symbol>", methods=["GET"])
+def quote_symbol_page(symbol):
+    symbol = clean_html(symbol).upper()[:12]
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/quote/crypto/{symbol}'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;margin:14px 0}}.metric{{font-size:44px;font-weight:950}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid rgba(110,223,246,.22);border-radius:10px;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}</style></head><body><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/dashboard#add-alert'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();setInterval(load,30000)</script></body></html>""")
+
+
+def prediction_samples():
+    now = datetime.now()
+    return [
+        {"id": "btc-100k-scenario", "title": "Will BTC test a six-figure zone this cycle?", "category": "Crypto", "status": "active", "outcomes": ["Yes", "No"], "probability": 54, "price": 0.54, "volume": 1240000, "liquidity": 380000, "close_time": (now + timedelta(days=90)).isoformat(), "resolve_time": (now + timedelta(days=100)).isoformat(), "source": "educational_sample", "source_url": "", "risk_level": "High", "last_updated": now.isoformat()},
+        {"id": "eth-l2-activity", "title": "Will Ethereum Layer 2 activity rise next month?", "category": "Market Events", "status": "active", "outcomes": ["Rises", "Flat", "Falls"], "probability": 47, "price": 0.47, "volume": 420000, "liquidity": 155000, "close_time": (now + timedelta(days=30)).isoformat(), "resolve_time": (now + timedelta(days=35)).isoformat(), "source": "educational_sample", "source_url": "", "risk_level": "Medium", "last_updated": now.isoformat()},
+        {"id": "sports-risk-discipline", "title": "Will public sports sentiment overreact to a live-game headline?", "category": "Sports", "status": "active", "outcomes": ["Yes", "No"], "probability": 61, "price": 0.61, "volume": 210000, "liquidity": 76000, "close_time": (now + timedelta(days=7)).isoformat(), "resolve_time": (now + timedelta(days=8)).isoformat(), "source": "educational_sample", "source_url": "", "risk_level": "Medium", "last_updated": now.isoformat()},
+    ]
+
+
+@webhook_app.route("/api/predictions", methods=["GET"])
+def api_predictions():
+    provider = os.getenv("PREDICTIONS_PROVIDER") or "educational_sample"
+    markets = prediction_samples()
+    return jsonify({"ok": True, "provider": provider, "source_status": "sample scenario" if provider == "educational_sample" else "configured", "markets": markets, "disclaimer": "Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes."})
+
+
+@webhook_app.route("/api/predictions/<market_id>", methods=["GET"])
+def api_prediction_detail(market_id):
+    market = next((m for m in prediction_samples() if m["id"] == market_id), None)
+    return jsonify({"ok": bool(market), "market": market}), (200 if market else 404)
+
+
+@webhook_app.route("/predictions", methods=["GET"])
+def predictions_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/predictions"))
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Predictions Intelligence | CoinPilotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px}.button{min-height:42px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}</style></head><body><main class='wrap'><h1>Live Predictions Intelligence</h1><p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p><div id='cards' class='grid'></div></main><script>async function load(){const d=await fetch('/api/predictions',{cache:'no-store'}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(m=>`<article class='card'><small>${m.category} · ${m.source}</small><h2>${m.title}</h2><p>Probability: <strong>${m.probability}%</strong></p><p>Volume: ${Number(m.volume||0).toLocaleString()} · Risk: ${m.risk_level}</p><button class='button' data-watch='${m.id}'>Track in Dashboard</button> <a class='button' href='/predictions/${m.id}'>View Details</a></article>`).join('')}document.addEventListener('click',async e=>{if(e.target.dataset.watch){await fetch('/api/predictions/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market_id:e.target.dataset.watch})});e.target.textContent='Tracked'}});load()</script></body></html>""")
+
+
+@webhook_app.route("/predictions/<market_id>", methods=["GET"])
+def prediction_detail_page(market_id):
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=f"/predictions/{market_id}"))
+    market = next((m for m in prediction_samples() if m["id"] == market_id), None)
+    if not market:
+        return Response("Prediction market not found", status=404)
+    return simple_public_page(
+        f"predictions/{market_id}",
+        f"{market['title']} | CoinPilotXAI Predictions Intelligence",
+        market["title"],
+        "Educational prediction intelligence for scenario planning, probability awareness, and risk discipline.",
+        f"Current educational probability: {market['probability']}%. Source: {market['source']}. CoinPilotXAI does not guarantee outcomes.",
+        ["Key drivers", "Uncertainty", "Risk controls", "Alert setup"],
+        [{"title": "AI explanation", "body": "Ask AI to explain the drivers, uncertainty, and risk level before taking any external action."}],
+        ["/predictions", "/education", "/sports-edge", "/quote"],
+    )
+
+
+@webhook_app.route("/api/predictions/watch", methods=["POST"])
+def api_prediction_watch():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    market_id = clean_html(payload.get("market_id") or "")[:120]
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO prediction_watches (user_id, market_id, threshold, created_at) VALUES (?, ?, ?, ?)", (user["user_id"], market_id, payload.get("threshold") or 50, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    notification_service.send_user_alert(user["user_id"], "market_alerts", "Prediction watch saved", f"CoinPilotXAI is watching {market_id}.", {"market_id": market_id}, channels=["in_app"])
+    return jsonify({"ok": True, "market_id": market_id})
+
+
+@webhook_app.route("/api/predictions/alert", methods=["POST"])
+def api_prediction_alert():
+    return api_prediction_watch()
+
+
+@webhook_app.route("/api/predictions/simulate", methods=["POST"])
+def api_prediction_simulate():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "simulation": "Educational scenario simulation saved. No real trade was placed.", "disclaimer": "No guaranteed outcomes."})
+
+
+@webhook_app.route("/admin/predictions", methods=["GET"])
+def admin_predictions_page():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    body = f"<h1>Predictions Intelligence</h1><div class='grid'><div class='card'><div class='metric'>{len(prediction_samples())}</div><p>active/sample markets</p></div><div class='card'><div class='metric'>{'configured' if os.getenv('PREDICTIONS_PROVIDER') else 'sample'}</div><p>provider status</p></div></div><p class='muted'>No fake live data is shown. Sample scenarios are labeled educational until a legal provider is configured.</p>"
+    return admin_page_html("Predictions Intelligence", body, admin)
+
+
 @webhook_app.route("/api/platform-status", methods=["GET"])
 def platform_status_api():
     return jsonify(platform_status())
@@ -6726,6 +7287,12 @@ def api_watch_items():
     cur = conn.cursor()
     if request.method == "POST":
         payload = request.get_json(silent=True) or {}
+        watch_type = clean_html(payload.get("watch_type") or payload.get("type") or "coin")[:80]
+        target_value = clean_html(payload.get("target_value") or payload.get("value") or payload.get("symbol") or "")[:250]
+        channels = payload.get("channels") or [payload.get("channel") or "in_app"]
+        if not isinstance(channels, list):
+            channels = [str(channels)]
+        channel_text = ",".join(clean_html(str(channel)) for channel in channels if channel)
         cur.execute(
             """
             INSERT OR IGNORE INTO user_watch_items (user_id, watch_type, label, value, notes, created_at)
@@ -6733,18 +7300,103 @@ def api_watch_items():
             """,
             (
                 user["user_id"],
-                clean_html(payload.get("watch_type") or "coin")[:80],
-                clean_html(payload.get("label") or payload.get("value") or "")[:180],
-                clean_html(payload.get("value") or payload.get("symbol") or "")[:250],
+                watch_type,
+                clean_html(payload.get("label") or target_value)[:180],
+                target_value,
                 clean_html(payload.get("notes") or "")[:1200],
                 datetime.now().isoformat(),
             ),
         )
+        cur.execute(
+            """
+            INSERT INTO watch_rules (user_id, watch_type, target_value, conditions, channels, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+            """,
+            (
+                user["user_id"],
+                watch_type,
+                target_value,
+                json.dumps(payload.get("conditions") or {"mode": "watch"}),
+                channel_text or "in_app",
+                datetime.now().isoformat(),
+                datetime.now().isoformat(),
+            ),
+        )
+        watch_rule_id = cur.lastrowid
         conn.commit()
+        notification_service.send_user_alert(
+            user["user_id"],
+            "market_alerts",
+            f"Watch created for {target_value or watch_type}",
+            f"CoinPilotXAI will watch {target_value or watch_type} and deliver alerts through your enabled channels.",
+            {"watch_rule_id": watch_rule_id, "watch_type": watch_type},
+            channels=["in_app"],
+        )
     cur.execute("SELECT id, watch_type, label, value, notes, created_at FROM user_watch_items WHERE user_id=? ORDER BY id DESC LIMIT 100", (user["user_id"],))
     items = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM watch_rules WHERE user_id=? AND COALESCE(status,'active')!='deleted' ORDER BY id DESC LIMIT 100", (user["user_id"],))
+    rules = [dict(row) for row in cur.fetchall()]
     conn.close()
-    return jsonify({"ok": True, "items": items})
+    return jsonify({"ok": True, "items": items, "watch_rules": rules})
+
+
+@webhook_app.route("/watch", methods=["GET"])
+def watch_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/watch"))
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Watch Command Center | CoinPilotXAI</title><style>body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}.wrap{width:min(100% - 28px,1100px);margin:auto;padding:28px 0 90px}.card{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}.button{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}</style></head><body><main class='wrap'><h1>Live Watch Command Center</h1><p>Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets. Alerts use your in-app, email, SMS, push, and optional companion preferences.</p><section class='card'><form id='watchForm' class='grid'><select name='watch_type'><option value='coin'>Coin/token</option><option value='wallet'>Wallet</option><option value='exchange'>Exchange</option><option value='scam_keyword'>Scam keyword</option><option value='whale'>Whale movement</option><option value='news_topic'>News topic</option><option value='sports_edge'>Sports edge</option><option value='portfolio_asset'>Portfolio asset</option></select><input name='value' placeholder='BTC, wallet, topic, keyword...' required><button class='button'>Watch This</button></form><p id='msg'></p></section><section class='card'><h2>My Active Watches</h2><div id='rules'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/watch',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('rules').innerHTML=(d.watch_rules||[]).map(r=>`<div class='row'><span><strong>${r.target_value}</strong><br>${r.watch_type} · ${r.status}</span><span><button data-test='${r.id}'>Test Alert</button> <button data-pause='${r.id}'>Pause</button> <button data-delete='${r.id}'>Delete</button></span></div>`).join('')||'No watches yet.'}document.getElementById('watchForm').addEventListener('submit',async e=>{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/watch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Watch created.':'Could not save watch.';e.target.reset();load()});document.addEventListener('click',async e=>{const b=e.target;if(b.dataset.test)await fetch('/api/watch/'+b.dataset.test+'/test-alert',{method:'POST'});if(b.dataset.pause)await fetch('/api/watch/'+b.dataset.pause+'/pause',{method:'POST'});if(b.dataset.delete)await fetch('/api/watch/'+b.dataset.delete+'/delete',{method:'POST'});load()});load()</script></body></html>""")
+
+
+def update_watch_rule_status(rule_id, user_id, status):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE watch_rules SET status=?, updated_at=? WHERE id=? AND user_id=?", (status, datetime.now().isoformat(), rule_id, user_id))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": bool(changed), "status": status}
+
+
+@webhook_app.route("/api/watch/<int:rule_id>/pause", methods=["POST"])
+def api_watch_pause(rule_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(update_watch_rule_status(rule_id, user["user_id"], "paused"))
+
+
+@webhook_app.route("/api/watch/<int:rule_id>/resume", methods=["POST"])
+def api_watch_resume(rule_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(update_watch_rule_status(rule_id, user["user_id"], "active"))
+
+
+@webhook_app.route("/api/watch/<int:rule_id>/delete", methods=["POST"])
+def api_watch_delete(rule_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(update_watch_rule_status(rule_id, user["user_id"], "deleted"))
+
+
+@webhook_app.route("/api/watch/<int:rule_id>/test-alert", methods=["POST"])
+def api_watch_test_alert(rule_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM watch_rules WHERE id=? AND user_id=? LIMIT 1", (rule_id, user["user_id"]))
+    rule = dict(cur.fetchone() or {})
+    conn.close()
+    if not rule:
+        return jsonify({"ok": False, "message": "Watch rule not found."}), 404
+    result = notification_service.send_user_alert(user["user_id"], "market_alerts", f"Test alert: {rule.get('target_value')}", "This is a CoinPilotXAI watch test alert.", {"watch_rule_id": rule_id}, channels=(rule.get("channels") or "in_app").split(","))
+    return jsonify({"ok": True, "delivery": result})
 
 
 @webhook_app.route("/api/dashboard/widgets", methods=["GET", "POST"])
@@ -6855,7 +7507,74 @@ def api_market_simulator():
     return jsonify(simulator_snapshot(user["user_id"]))
 
 
-@webhook_app.route("/api/education/progress", methods=["GET"])
+@webhook_app.route("/simulator", methods=["GET"])
+def simulator_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/simulator"))
+    asset = clean_html(request.args.get("asset") or "BTC").upper()[:12]
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPilotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPilotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Fake quantity'><button class='button'>Preview and Place Fake Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No fake positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No fake trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Fake trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
+
+
+@webhook_app.route("/api/simulator/order", methods=["POST"])
+def api_simulator_order():
+    return api_market_simulator()
+
+
+@webhook_app.route("/api/simulator/portfolio", methods=["GET"])
+def api_simulator_portfolio():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(simulator_snapshot(user["user_id"]))
+
+
+@webhook_app.route("/api/simulator/history", methods=["GET"])
+def api_simulator_history():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "trades": simulator_snapshot(user["user_id"]).get("trades", [])})
+
+
+@webhook_app.route("/api/simulator/watchlist", methods=["GET", "POST"])
+def api_simulator_watchlist():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        cur.execute("INSERT OR IGNORE INTO simulator_watchlists (user_id, symbol, created_at) VALUES (?, ?, ?)", (user["user_id"], clean_html(payload.get("symbol") or "BTC").upper()[:12], datetime.now().isoformat()))
+        conn.commit()
+    cur.execute("SELECT symbol, created_at FROM simulator_watchlists WHERE user_id=? ORDER BY symbol ASC", (user["user_id"],))
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "watchlist": rows})
+
+
+@webhook_app.route("/api/simulator/lesson", methods=["GET"])
+def api_simulator_lesson():
+    return jsonify({"ok": True, "lesson": {"title": "How paper trading works", "content": "Paper trading uses fake money to practice decision quality, order types, position sizing, and emotional discipline. No real trades are placed.", "disclaimer": "Training simulator only. Not financial advice."}})
+
+
+@webhook_app.route("/api/simulator/reset", methods=["POST"])
+def api_simulator_reset():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM paper_simulator_trades WHERE user_id=?", (user["user_id"],))
+    cur.execute("INSERT OR IGNORE INTO paper_simulator_wallets (user_id, cash_balance, created_at, updated_at) VALUES (?, 10000, ?, ?)", (user["user_id"], datetime.now().isoformat(), datetime.now().isoformat()))
+    cur.execute("UPDATE paper_simulator_wallets SET cash_balance=10000, updated_at=? WHERE user_id=?", (datetime.now().isoformat(), user["user_id"]))
+    conn.commit()
+    conn.close()
+    return jsonify(simulator_snapshot(user["user_id"]))
+
+
+@webhook_app.route("/api/education/progress", methods=["GET", "POST"])
 def api_education_progress():
     init_db()
     user = api_account_user()
@@ -6863,6 +7582,23 @@ def api_education_progress():
         return jsonify({"ok": False, "message": "Login required."}), 401
     conn = db()
     cur = conn.cursor()
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        lesson_slug = clean_html(payload.get("lesson_slug") or "")[:160]
+        path = clean_html(payload.get("path") or "education")[:120]
+        status = clean_html(payload.get("status") or "started")[:40]
+        score = int(payload.get("score") or 0)
+        cur.execute(
+            "INSERT OR REPLACE INTO education_progress (user_id, path, lesson_slug, status, score, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user["user_id"], path, lesson_slug, status, score, datetime.now().isoformat()),
+        )
+        cur.execute(
+            "INSERT OR REPLACE INTO education_user_progress (user_id, lesson_slug, status, score, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (user["user_id"], lesson_slug, status, score, datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "message": "Education progress saved.", "lesson_slug": lesson_slug, "status": status, "score": score})
     cur.execute("SELECT path, lesson_slug, status, score, updated_at FROM education_progress WHERE user_id=? ORDER BY updated_at DESC LIMIT 100", (user["user_id"],))
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
@@ -7017,6 +7753,15 @@ def alerts_api():
         channel_value or "in_app",
     )
     log_product_event(user["user_id"], "alert_created", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
+    if result.get("ok"):
+        notification_service.send_user_alert(
+            user["user_id"],
+            "market_alerts",
+            f"Alert created for {clean_html(payload.get('symbol', '')).upper()}",
+            "CoinPilotXAI saved your alert rule and will notify you through enabled channels when it triggers.",
+            {"symbol": payload.get("symbol", ""), "channels": channels},
+            channels=["in_app"],
+        )
     return jsonify(result), (200 if result.get("ok") else 400)
 
 
@@ -7119,6 +7864,126 @@ def api_push_unsubscribe():
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
+
+
+@webhook_app.route("/api/push/test", methods=["POST"])
+def api_push_test():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = notification_service.send_user_alert(
+        user["user_id"],
+        "product_updates",
+        "CoinPilotXAI push test",
+        "Your CoinPilotXAI alert channels are connected where configured.",
+        {"url": "/notifications"},
+        channels=["in_app", "push"],
+    )
+    log_product_event(user["user_id"], "push_test_requested", result)
+    return jsonify({"ok": True, "delivery": result})
+
+
+@webhook_app.route("/admin/notification-delivery", methods=["GET"])
+def admin_notification_delivery_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM notification_delivery_logs ORDER BY id DESC LIMIT 250")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    table = "".join(
+        f"<tr><td>{r.get('user_id')}</td><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>"
+        for r in rows
+    )
+    body = f"<h1>Notification Delivery</h1><p class='muted'>In-app, email, SMS, push, and optional companion alert attempts.</p><div class='card'><table><tr><th>User</th><th>Channel</th><th>Status</th><th>Error</th><th>Created</th></tr>{table}</table></div>"
+    return admin_page_html("Notification Delivery", body, admin)
+
+
+@webhook_app.route("/admin/test-notification", methods=["GET", "POST"])
+def admin_test_notification_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    if request.method == "POST":
+        payload = request.get_json(silent=True) if request.is_json else request.form
+        user_id = int(payload.get("user_id") or 0)
+        result = notification_service.send_user_alert(
+            user_id,
+            "product_updates",
+            "CoinPilotXAI admin test alert",
+            "This is a test notification from the CoinPilotXAI admin center.",
+            {"admin_id": admin.get("id"), "url": "/notifications"},
+            channels=payload.getlist("channels") if hasattr(payload, "getlist") else payload.get("channels", ["in_app", "email", "sms", "push"]),
+        )
+        log_admin_audit(admin.get("id"), "admin_test_notification_sent", "user", str(user_id), result)
+        if request.is_json:
+            return jsonify({"ok": True, "delivery": result})
+        return admin_page_html("Test Notification", f"<h1>Test Notification</h1><pre>{clean_html(json.dumps(result, indent=2))}</pre><p><a class='button' href='/admin/test-notification'>Send another</a></p>", admin)
+    body = """
+    <h1>Send Test Notification</h1>
+    <div class="card"><form method="post">
+      <label>User ID</label><input name="user_id" required>
+      <label><input type="checkbox" name="channels" value="in_app" checked> In-app</label>
+      <label><input type="checkbox" name="channels" value="email"> Email</label>
+      <label><input type="checkbox" name="channels" value="sms"> SMS</label>
+      <label><input type="checkbox" name="channels" value="push"> PWA push</label>
+      <label><input type="checkbox" name="channels" value="telegram"> Optional companion</label>
+      <button>Send Test Alert</button>
+    </form></div>
+    """
+    return admin_page_html("Test Notification", body, admin)
+
+
+@webhook_app.route("/admin/watch-rules", methods=["GET"])
+def admin_watch_rules_page():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM watch_rules ORDER BY id DESC LIMIT 250")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    table = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('user_id')}</td><td>{clean_html(r.get('watch_type') or '')}</td><td>{clean_html(r.get('target_value') or '')}</td><td>{clean_html(r.get('channels') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('last_triggered_at') or '')}</td></tr>" for r in rows)
+    body = f"<h1>Watch Rules</h1><div class='card'><table><tr><th>ID</th><th>User</th><th>Type</th><th>Target</th><th>Channels</th><th>Status</th><th>Last Triggered</th></tr>{table}</table></div>"
+    return admin_page_html("Watch Rules", body, admin)
+
+
+@webhook_app.route("/admin/education", methods=["GET"])
+def admin_education_page():
+    admin, denied = require_admin_page("settings.edit")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT category_slug, COUNT(*) AS count FROM education_lessons GROUP BY category_slug ORDER BY count DESC")
+    counts = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT lesson_slug, COUNT(*) AS views FROM education_lesson_views GROUP BY lesson_slug ORDER BY views DESC LIMIT 20")
+    views = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    count_rows = "".join(f"<tr><td>{clean_html(r.get('category_slug') or '')}</td><td>{r.get('count')}</td></tr>" for r in counts)
+    view_rows = "".join(f"<tr><td>{clean_html(r.get('lesson_slug') or '')}</td><td>{r.get('views')}</td></tr>" for r in views)
+    body = f"<h1>Education Manager</h1><p class='muted'>Starter knowledge bank seeded and active. Editing UI can be expanded here without touching public lesson URLs.</p><div class='grid'><div class='card'><h2>Lessons by Category</h2><table>{count_rows}</table></div><div class='card'><h2>Popular Lessons</h2><table>{view_rows}</table></div></div>"
+    return admin_page_html("Education Manager", body, admin)
+
+
+@webhook_app.route("/admin/seo", methods=["GET"])
+def admin_seo_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    public_paths = all_public_paths()
+    noindex = ["/app", "/chat", "/command-center", "/dashboard", "/account", "/admin", "/api/*", "/stripe/*"]
+    schema_types = ["Organization", "SoftwareApplication", "Product", "FAQPage", "BreadcrumbList", "WebSite", "Course", "LearningResource"]
+    rows = "".join(f"<tr><td>{clean_html(path)}</td><td>crawlable</td><td>canonical expected</td></tr>" for path in public_paths[:80])
+    body = f"<h1>SEO Intelligence Center</h1><div class='grid'><div class='card'><div class='metric'>{len(public_paths)}</div><p>public indexable paths tracked</p></div><div class='card'><div class='metric'>{len(noindex)}</div><p>private/noindex patterns protected</p></div><div class='card'><div class='metric'>{len(schema_types)}</div><p>schema families active/planned</p></div></div><div class='card'><h2>Noindex Protection</h2><p>{', '.join(noindex)}</p></div><div class='card'><h2>Public Crawl Targets</h2><table><tr><th>Path</th><th>Status</th><th>Metadata</th></tr>{rows}</table></div>"
+    return admin_page_html("SEO Intelligence Center", body, admin)
 
 
 @webhook_app.route("/api/messages/start", methods=["POST"])
@@ -11890,6 +12755,9 @@ def init_db():
         UNIQUE(user_id, category)
     )
     """)
+    add_columns_if_missing(cur, "notification_preferences", [
+        ("sms", "INTEGER DEFAULT 0"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS notification_delivery_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11900,6 +12768,32 @@ def init_db():
         provider_response TEXT,
         error_message TEXT,
         retry_count INTEGER DEFAULT 0,
+        created_at TEXT,
+        sent_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS sms_delivery_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        phone TEXT,
+        alert_type TEXT,
+        status TEXT,
+        provider_response TEXT,
+        error_message TEXT,
+        created_at TEXT,
+        sent_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_delivery_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        telegram_chat_id INTEGER,
+        alert_type TEXT,
+        status TEXT,
+        provider_response TEXT,
+        error_message TEXT,
         created_at TEXT,
         sent_at TEXT
     )
@@ -11942,6 +12836,34 @@ def init_db():
         active INTEGER DEFAULT 1,
         created_at TEXT,
         updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS watch_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        watch_type TEXT,
+        target_value TEXT,
+        conditions TEXT,
+        channels TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT,
+        last_checked_at TEXT,
+        last_triggered_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS alert_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        watch_rule_id INTEGER,
+        alert_type TEXT,
+        title TEXT,
+        body TEXT,
+        status TEXT,
+        metadata TEXT,
+        created_at TEXT
     )
     """)
     cur.execute("""
@@ -12017,6 +12939,104 @@ def init_db():
         score INTEGER DEFAULT 0,
         updated_at TEXT,
         UNIQUE(user_id, path, lesson_slug)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE,
+        title TEXT,
+        summary TEXT,
+        sort_order INTEGER DEFAULT 0,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_lessons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE,
+        category_slug TEXT,
+        title TEXT,
+        difficulty TEXT,
+        estimated_time TEXT,
+        summary TEXT,
+        content TEXT,
+        examples TEXT,
+        red_flags TEXT,
+        safe_steps TEXT,
+        beginner_mistakes TEXT,
+        access_level TEXT DEFAULT 'free',
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lesson_slug TEXT,
+        heading TEXT,
+        body TEXT,
+        sort_order INTEGER DEFAULT 0
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_quizzes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lesson_slug TEXT,
+        title TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_quiz_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lesson_slug TEXT,
+        question TEXT,
+        options TEXT,
+        answer TEXT,
+        explanation TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_user_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        lesson_slug TEXT,
+        status TEXT,
+        score INTEGER DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(user_id, lesson_slug)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_lesson_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        lesson_slug TEXT,
+        path TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        badge_key TEXT,
+        title TEXT,
+        earned_at TEXT,
+        UNIQUE(user_id, badge_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS education_ai_tutor_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        lesson_slug TEXT,
+        question TEXT,
+        response TEXT,
+        created_at TEXT
     )
     """)
     cur.execute("""
@@ -12379,6 +13399,114 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        starting_balance REAL DEFAULT 10000,
+        cash_balance REAL DEFAULT 10000,
+        training_level INTEGER DEFAULT 1,
+        practice_streak INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        side TEXT,
+        order_type TEXT,
+        quantity REAL,
+        limit_price REAL,
+        stop_price REAL,
+        status TEXT,
+        created_at TEXT,
+        filled_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        side TEXT,
+        quantity REAL,
+        price REAL,
+        notional REAL,
+        fee REAL DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_watchlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        symbol TEXT,
+        created_at TEXT,
+        UNIQUE(user_id, symbol)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_lessons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE,
+        title TEXT,
+        content TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        lesson_slug TEXT,
+        status TEXT,
+        score INTEGER DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(user_id, lesson_slug)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS simulator_ai_coaching_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        prompt TEXT,
+        response TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS prediction_markets (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        category TEXT,
+        status TEXT,
+        outcomes TEXT,
+        probability REAL,
+        price REAL,
+        volume REAL,
+        liquidity REAL,
+        close_time TEXT,
+        resolve_time TEXT,
+        source TEXT,
+        source_url TEXT,
+        risk_level TEXT,
+        last_updated TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS prediction_watches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        market_id TEXT,
+        threshold REAL,
+        created_at TEXT,
+        UNIQUE(user_id, market_id)
+    )
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS auth_events (
@@ -12527,6 +13655,7 @@ def init_db():
             (permission, now_seed),
         )
 
+    seed_education_knowledge_bank(cur)
     ensure_owner_admin_with_cursor(cur, allow_reset=False)
 
     conn.commit()

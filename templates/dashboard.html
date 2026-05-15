@@ -24,6 +24,24 @@
     .button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 15px; border-radius:8px; border:1px solid var(--line); background:rgba(255,255,255,.055); color:var(--text); text-decoration:none; font-weight:850; cursor:pointer; }
     .button.primary { color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .button.gold { color:#1c1303; border-color:transparent; background:linear-gradient(135deg,var(--gold),#ffaf37); }
+    .command-glow { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.36); background:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.035)); box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 24px rgba(110,223,246,.10); transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; animation:commandPulse 7s ease-in-out infinite; }
+    .command-glow::before { content:""; position:absolute; inset:-1px; z-index:-1; opacity:.5; background:linear-gradient(135deg,var(--glow-a,#6edff6),var(--glow-b,#36e58f)); filter:blur(18px); }
+    .command-glow:hover { transform:translateY(-2px); box-shadow:0 14px 42px rgba(0,0,0,.28),0 0 36px color-mix(in srgb,var(--glow-a,#6edff6) 42%,transparent); border-color:color-mix(in srgb,var(--glow-a,#6edff6) 70%,white); }
+    .command-glow:active { transform:translateY(1px) scale(.985); }
+    .command-glow:focus-visible,.alerts-dance:focus-visible { outline:3px solid rgba(255,255,255,.88); outline-offset:3px; }
+    .command-glow-market { --glow-a:#00e5ff; --glow-b:#2f80ff; }
+    .command-glow-ai { --glow-a:#36e58f; --glow-b:#00c2a8; }
+    .command-glow-risk { --glow-a:#ffd166; --glow-b:#ff5a66; }
+    .command-glow-portfolio { --glow-a:#9b5cff; --glow-b:#2f80ff; }
+    .command-glow-sports { --glow-a:#b6ff4f; --glow-b:#ffd166; }
+    .command-glow-account { --glow-a:#6edff6; --glow-b:#77a7ff; }
+    .alerts-dance { transition:transform .2s ease,box-shadow .2s ease; }
+    .alerts-dance.is-dancing { animation:alertDance 1.8s ease-in-out 1; box-shadow:0 0 28px rgba(255,209,102,.55); }
+    .timeline-summary { display:grid; gap:8px; }
+    .timeline-panel[hidden] { display:none; }
+    .timeline-panel { max-height:400px; overflow:auto; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px; margin-top:12px; background:rgba(0,0,0,.16); }
+    @keyframes commandPulse { 0%,78%,100%{box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 20px rgba(110,223,246,.08)} 84%{box-shadow:0 0 0 1px rgba(255,255,255,.06),0 0 34px color-mix(in srgb,var(--glow-a,#6edff6) 28%,transparent)} }
+    @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
     main { padding:34px 0 64px; }
     .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:18px; align-items:stretch; margin-bottom:18px; }
     .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:20px; }
@@ -89,7 +107,7 @@
         <div class="actions">
           <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
           <button class="button" type="button" data-scroll="#add-watchlist">Add Watchlist Coin</button>
-          <button class="button gold" type="button" data-scroll="#add-alert">Create Alert</button>
+          <button class="button gold alerts-dance" type="button" data-scroll="#add-alert" data-alerts-button>Create Alert</button>
         </div>
       </article>
       <article class="card">
@@ -244,20 +262,28 @@
 
       <article class="card wide">
         <h2>Activity Timeline</h2>
-        <div class="list" data-activity><p class="muted">Activity will appear here.</p></div>
+        <div class="timeline-summary">
+          <p class="muted" data-activity-summary>Latest activity will appear here.</p>
+          <button class="button command-glow command-glow-account" type="button" data-toggle-timeline>View Activity Timeline</button>
+        </div>
+        <div class="timeline-panel" data-activity-panel hidden>
+          <div class="list" data-activity><p class="muted">Activity will appear here.</p></div>
+          <button class="button" type="button" data-hide-timeline>Hide Timeline</button>
+        </div>
       </article>
       <article class="card">
         <h2>Quick Actions</h2>
         <div class="list{% if not access.has_pro %} locked{% endif %}">
-          <a class="button primary" href="/chat">Ask AI</a>
-          <a class="button" href="/dashboard/scam-alerts">Run Scam Shield</a>
-          <a class="button" href="/app">Run Day Signal</a>
-          <a class="button" href="/command-center">Open Command Center</a>
+          <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
+          <a class="button command-glow command-glow-risk" href="/scam-shield">Run Scam Shield</a>
+          <a class="button command-glow command-glow-ai" href="/app#day-signal">Run Day Signal</a>
+          <a class="button command-glow command-glow-market" href="/command-center">Open Command Center</a>
+          <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
           {% if not access.has_pro %}<span class="lock-badge">Pro tools locked</span>{% endif %}
           {% if access.is_paid_pro %}
-            <a class="button gold" href="/account">Manage Pro</a>
+            <a class="button gold command-glow command-glow-account" href="/account">Manage Pro</a>
           {% else %}
-            <a class="button gold" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+            <a class="button gold command-glow command-glow-account" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
           {% endif %}
         </div>
       </article>
@@ -270,7 +296,7 @@
       <a class="active" href="/dashboard">Home</a>
       <a href="/command-center">Intel</a>
       <a href="/live-market">Live</a>
-      <a href="#add-alert">Alerts</a>
+      <a class="alerts-dance" href="#add-alert" data-alerts-button>Alerts</a>
       <a href="/account">Account</a>
     </div>
   </nav>
@@ -321,8 +347,21 @@
       document.querySelector("[data-market-snapshot]").innerHTML = (data.market.markets || []).slice(0, 4).map(item => `
         <div class="watch-row"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></div>`).join("") || '<p class="muted">Live price feed temporarily unavailable.</p>';
 
-      document.querySelector("[data-activity]").innerHTML = (data.activity || []).map(item => `
-        <div class="activity-row"><strong>${item.event_type.replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${item.created_at || ""}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>';
+      const activity = data.activity || [];
+      const relative = value => {
+        const date = new Date(value || Date.now());
+        const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+        if (seconds < 60) return seconds + "s ago";
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return minutes + "m ago";
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return hours + "h ago";
+        return Math.floor(hours / 24) + "d ago";
+      };
+      const latest = activity[0];
+      text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "CoinPilotXAI"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
+      document.querySelector("[data-activity]").innerHTML = activity.slice(0, 10).map(item => `
+        <div class="activity-row"><strong>✓ ${String(item.event_type || "activity").replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${relative(item.created_at)}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>';
 
       const chart = document.querySelector("[data-allocation-chart]");
       const holdings = data.portfolio.holdings || [];
@@ -447,10 +486,29 @@
       if (holding) { await fetch("/api/portfolio/" + holding.dataset.deletePortfolio, { method: "DELETE" }); loadDashboard(); }
       if (watch) { await fetch("/api/watchlist/" + watch.dataset.deleteWatchlist, { method: "DELETE" }); loadDashboard(); }
       if (alert) { await fetch("/api/alerts/" + alert.dataset.deleteAlert, { method: "DELETE" }); loadDashboard(); }
+      const timeline = event.target.closest("[data-toggle-timeline]");
+      if (timeline) {
+        const panel = document.querySelector("[data-activity-panel]");
+        panel.hidden = false;
+        timeline.textContent = "Activity Timeline Open";
+      }
+      if (event.target.closest("[data-hide-timeline]")) {
+        document.querySelector("[data-activity-panel]").hidden = true;
+        const btn = document.querySelector("[data-toggle-timeline]");
+        if (btn) btn.textContent = "View Activity Timeline";
+      }
     });
 
     loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); });
     window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); }, 60000);
+    function danceAlerts() {
+      document.querySelectorAll("[data-alerts-button]").forEach(button => {
+        if (button.classList.contains("is-dancing")) return;
+        button.classList.add("is-dancing");
+        window.setTimeout(() => button.classList.remove("is-dancing"), 1900);
+      });
+    }
+    window.setInterval(danceAlerts, 30000);
   </script>
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
 </body>
