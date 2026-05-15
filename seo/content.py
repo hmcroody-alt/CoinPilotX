@@ -1111,7 +1111,7 @@ def search_pages(query, limit=12):
 
 
 def all_public_paths():
-    paths = ["/", "/signup", "/support", "/privacy", "/terms"]
+    paths = ["/", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge"]
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
     paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]

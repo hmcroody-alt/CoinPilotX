@@ -21,6 +21,10 @@ Sports Edge is informational only and does not provide guaranteed betting outcom
 ## Core Public Pages
 
 - Live crypto market board: https://coinpilotx.app/live-crypto-market
+- Live Quote Market Center: https://coinpilotx.app/quote
+- Bitcoin live quote: https://coinpilotx.app/quote/crypto/BTC
+- Ethereum live quote: https://coinpilotx.app/quote/crypto/ETH
+- Crypto Predictions Intelligence: https://coinpilotx.app/predictions/crypto
 - Trending crypto intelligence: https://coinpilotx.app/trending-crypto
 - Bitcoin prediction context: https://coinpilotx.app/bitcoin-prediction
 - BTC price prediction scenarios: https://coinpilotx.app/btc-price-prediction

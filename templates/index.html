@@ -1109,6 +1109,66 @@
       font-weight: 850;
     }
 
+    .psych-market-bg,
+    .intelligence-glow-bg {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 16% 8%, rgba(110, 223, 246, 0.18), transparent 28rem),
+        radial-gradient(circle at 86% 18%, rgba(54, 229, 143, 0.12), transparent 24rem),
+        linear-gradient(180deg, rgba(5, 11, 20, 0.98), rgba(8, 15, 28, 0.94));
+    }
+
+    .psych-market-bg::before,
+    .soft-data-grid::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(110, 223, 246, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(110, 223, 246, 0.055) 1px, transparent 1px);
+      background-size: 52px 52px;
+      mask-image: radial-gradient(circle at 50% 20%, black, transparent 72%);
+      opacity: 0.72;
+      z-index: -2;
+    }
+
+    .intelligence-glow-bg::after {
+      content: "";
+      position: absolute;
+      inset: auto -15% -30% -15%;
+      height: 260px;
+      pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(110, 223, 246, 0.16), rgba(255, 209, 102, 0.1), transparent);
+      filter: blur(24px);
+      animation: intelligenceDrift 16s ease-in-out infinite alternate;
+      z-index: -1;
+    }
+
+    .trust-gradient-panel {
+      border: 1px solid rgba(110, 223, 246, 0.22);
+      background:
+        linear-gradient(135deg, rgba(110, 223, 246, 0.1), rgba(54, 229, 143, 0.045) 42%, rgba(255, 209, 102, 0.055)),
+        rgba(13, 22, 39, 0.82);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .quote-cta-glow {
+      box-shadow: 0 0 0 1px rgba(110, 223, 246, 0.22), 0 0 30px rgba(110, 223, 246, 0.18);
+    }
+
+    .quote-cta-glow:hover {
+      box-shadow: 0 0 0 1px rgba(54, 229, 143, 0.35), 0 0 42px rgba(54, 229, 143, 0.22);
+      transform: translateY(-2px);
+    }
+
+    @keyframes intelligenceDrift {
+      from { transform: translateX(-4%) scale(1); opacity: 0.55; }
+      to { transform: translateX(4%) scale(1.06); opacity: 0.85; }
+    }
+
     .market-board {
       border: 1px solid rgba(110, 223, 246, 0.18);
       border-radius: 8px;
@@ -2611,7 +2671,8 @@
         transition-duration: 0.01ms !important;
       }
 
-      .reveal {
+      .reveal,
+      .intelligence-glow-bg::after {
         opacity: 1;
         transform: none;
       }
@@ -2638,7 +2699,7 @@
         <div class="nav-links" data-nav-panel>
           <a href="#features">Features</a>
           <a href="#about">About</a>
-          <a href="#market-board" data-analytics="view_live_market">Live Market</a>
+          <a href="/quote" data-analytics="view_live_market">Live Market</a>
           <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
           <a href="#day-signal" data-analytics="day_signal">Day Signal</a>
           <a href="#pro" data-analytics="compare_pro">Pro</a>
@@ -2652,7 +2713,7 @@
         </div>
 
         <div class="nav-actions">
-          <a class="button" href="#market-board" data-analytics="view_live_market">Live Market</a>
+          <a class="button quote-cta-glow" href="/quote" data-analytics="view_live_market">Live Market</a>
           <a class="button gold" href="#sports-edge" data-analytics="view_sports_edge">Live Sports Edge</a>
           <a class="button" href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
           <button class="button install-inline" type="button" data-install-app-inline data-analytics="install_app" hidden>Install App</button>
@@ -2686,7 +2747,7 @@
   </div>
 
   <nav class="mobile-bottom-nav" aria-label="Mobile quick actions">
-    <a href="#market-board" data-analytics="view_live_market">Live Market</a>
+    <a href="/quote" data-analytics="view_live_market">Live Market</a>
     <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
     <a class="pulse-cta" href="#day-signal" data-analytics="day_signal">Day Signal</a>
     <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
@@ -3173,7 +3234,7 @@
       </div>
     </section>
 
-    <section id="market-board">
+    <section id="market-board" class="psych-market-bg intelligence-glow-bg soft-data-grid">
       <div class="container">
         <div class="section-head center">
           <div class="section-kicker">Live Markets</div>
@@ -3181,7 +3242,7 @@
           <p>Track top-volume crypto assets, price movement, and market pressure in real time.</p>
         </div>
 
-        <div class="market-board" aria-live="polite">
+        <div class="market-board trust-gradient-panel" aria-live="polite">
           <div class="market-controls">
             <div class="market-filters" aria-label="Market filters">
               <button class="filter-button is-active" type="button" data-market-filter="top_volume">Top Volume</button>
@@ -3205,14 +3266,14 @@
       </div>
     </section>
 
-    <section id="predictions">
+    <section id="predictions" class="psych-market-bg intelligence-glow-bg soft-data-grid">
       <div class="container">
         <div class="section-head center" id="predictions-intelligence">
           <div class="section-kicker">Predictions Intelligence</div>
           <h2>Live Predictions Intelligence</h2>
           <p>Track event probabilities, crypto scenarios, sports outcomes, economic events, and market sentiment from one AI intelligence dashboard.</p>
         </div>
-        <div class="market-board" aria-live="polite">
+        <div class="market-board trust-gradient-panel" aria-live="polite">
           <div class="market-controls">
             <div class="market-filters" aria-label="Prediction filters">
               <button class="filter-button is-active" type="button">Crypto</button>
@@ -3228,7 +3289,7 @@
           <div class="market-error" data-predictions-error hidden>Predictions data source reconnecting. Educational sample scenarios may be shown when live providers are unavailable.</div>
           <div class="actions" style="margin-top: 18px;">
             <a class="button primary" href="/signup?next=/predictions" data-analytics="predictions_signup_clicked">Track in Dashboard</a>
-            <a class="button" href="/predictions" data-analytics="predictions_opened">Open Predictions Hub</a>
+            <a class="button" href="/predictions/crypto" data-analytics="predictions_crypto_opened">Open Crypto Predictions</a>
           </div>
           <p class="muted">Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p>
         </div>
