@@ -7051,9 +7051,11 @@ def admin_email_health_page():
     cur.execute("SELECT created_at, recipient_email, email_type, subject, status FROM email_logs ORDER BY created_at DESC LIMIT 1")
     last_email = cur.fetchone()
     cur.execute("SELECT COUNT(*) AS count FROM email_logs WHERE lower(status) IN ('failed','error')")
-    failed_count = (cur.fetchone() or {}).get("count", 0)
+    failed_row = cur.fetchone()
+    failed_count = failed_row["count"] if failed_row else 0
     cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue")
-    queued_count = (cur.fetchone() or {}).get("count", 0)
+    queued_row = cur.fetchone()
+    queued_count = queued_row["count"] if queued_row else 0
     cur.execute("SELECT created_at, email, template, status FROM payment_email_logs ORDER BY created_at DESC LIMIT 1")
     last_payment_email = cur.fetchone()
     conn.close()
@@ -8111,21 +8113,40 @@ def api_messages_conversations():
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.id, c.updated_at,
+        SELECT c.id, c.updated_at, ou.user_id AS other_user_id,
+               COALESCE(NULLIF(ou.display_name, ''), NULLIF(ou.full_name, ''), NULLIF(ou.username, ''), ou.email, 'CoinPilotXAI user') AS other_name,
+               ou.email AS other_email, ou.last_seen_at AS other_last_seen_at,
                MAX(pm.created_at) AS last_message_at,
+               (
+                 SELECT body FROM private_messages p2
+                 WHERE p2.conversation_id=c.id AND p2.deleted_at IS NULL
+                 ORDER BY p2.id DESC LIMIT 1
+               ) AS latest_message,
                COUNT(CASE WHEN pm.sender_user_id != ? AND pm.created_at > COALESCE(cm.last_read_at, '') THEN 1 END) AS unread_count
         FROM conversations c
         JOIN conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=?
+        LEFT JOIN conversation_members other_cm ON other_cm.conversation_id=c.id AND other_cm.user_id != ?
+        LEFT JOIN users ou ON ou.user_id=other_cm.user_id
         LEFT JOIN private_messages pm ON pm.conversation_id=c.id AND pm.deleted_at IS NULL
-        GROUP BY c.id, c.updated_at
+        GROUP BY c.id, c.updated_at, ou.user_id, ou.display_name, ou.full_name, ou.username, ou.email, ou.last_seen_at
         ORDER BY COALESCE(MAX(pm.created_at), c.updated_at) DESC
         LIMIT 80
         """,
-        (user["user_id"], user["user_id"]),
+        (user["user_id"], user["user_id"], user["user_id"]),
     )
     rows = []
     for row in cur.fetchall():
-        rows.append({"id": row[0], "title": f"Conversation {row[0]}", "updated_at": row[1], "last_message_at": row[2], "unread_count": row[3]})
+        rows.append({
+            "id": row["id"],
+            "title": row["other_name"] or f"Conversation {row['id']}",
+            "other_user_id": row["other_user_id"],
+            "other_email": row["other_email"],
+            "other_last_seen_at": row["other_last_seen_at"],
+            "updated_at": row["updated_at"],
+            "last_message_at": row["last_message_at"],
+            "latest_message": row["latest_message"],
+            "unread_count": row["unread_count"] or 0,
+        })
     conn.close()
     return jsonify({"ok": True, "conversations": rows})
 
@@ -8166,12 +8187,41 @@ def api_messages_send(conversation_id):
         return jsonify({"ok": False, "message": "Message required."}), 400
     conn = db()
     cur = conn.cursor()
+    one_minute_ago = (datetime.now() - timedelta(minutes=1)).isoformat()
+    cur.execute("SELECT COUNT(*) AS count FROM private_messages WHERE sender_user_id=? AND created_at>=?", (user["user_id"], one_minute_ago))
+    recent_send_row = cur.fetchone()
+    if (recent_send_row["count"] if recent_send_row else 0) >= 12:
+        conn.close()
+        return jsonify({"ok": False, "message": "Slow down before sending more messages."}), 429
+    cur.execute(
+        """
+        SELECT blocked_user_id FROM blocked_users
+        WHERE (blocker_user_id=? AND blocked_user_id IN (SELECT user_id FROM conversation_members WHERE conversation_id=?))
+           OR (blocked_user_id=? AND blocker_user_id IN (SELECT user_id FROM conversation_members WHERE conversation_id=?))
+        LIMIT 1
+        """,
+        (user["user_id"], conversation_id, user["user_id"], conversation_id),
+    )
+    if cur.fetchone():
+        conn.close()
+        return jsonify({"ok": False, "message": "Messaging is blocked for this conversation."}), 403
     cur.execute("INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)", (conversation_id, user["user_id"], body, datetime.now().isoformat()))
     message_id = cur.lastrowid
     cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (datetime.now().isoformat(), conversation_id))
+    cur.execute("SELECT user_id FROM conversation_members WHERE conversation_id=? AND user_id != ?", (conversation_id, user["user_id"]))
+    recipients = [row["user_id"] for row in cur.fetchall()]
     conn.commit()
     conn.close()
     log_product_event(user["user_id"], "private_message_sent", {"conversation_id": conversation_id})
+    for recipient_id in recipients:
+        notification_service.send_user_alert(
+            recipient_id,
+            "private_message",
+            "New private message",
+            "You received a private message in CoinPilotXAI.",
+            {"conversation_id": conversation_id, "message_id": message_id},
+            channels=["in_app"],
+        )
     return jsonify({"ok": True, "message_id": message_id})
 
 
@@ -8186,6 +8236,14 @@ def api_messages_read(conversation_id):
     conn = db()
     cur = conn.cursor()
     cur.execute("UPDATE conversation_members SET last_read_at=? WHERE user_id=? AND conversation_id=?", (datetime.now().isoformat(), user["user_id"], conversation_id))
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO message_read_receipts (message_id, user_id, read_at)
+        SELECT id, ?, ? FROM private_messages
+        WHERE conversation_id=? AND sender_user_id != ? AND deleted_at IS NULL
+        """,
+        (user["user_id"], datetime.now().isoformat(), conversation_id, user["user_id"]),
+    )
     conn.commit()
     conn.close()
     return jsonify({"ok": True})

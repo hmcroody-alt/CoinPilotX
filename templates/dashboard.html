@@ -74,7 +74,37 @@
     .bottom-nav a:hover,.bottom-nav a.active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .channel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .channel-grid label { display:flex; gap:8px; align-items:center; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:8px; color:var(--muted); }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column} }
+    .private-chat-launcher { position:fixed; right:20px; bottom:92px; z-index:65; min-width:154px; border:1px solid rgba(110,223,246,.34); box-shadow:0 18px 58px rgba(0,0,0,.34),0 0 34px rgba(110,223,246,.2); }
+    .private-chat-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--gold),var(--green)); font-size:12px; font-weight:950; box-shadow:0 0 18px rgba(255,209,102,.5); }
+    .private-chat-shell { position:fixed; inset:0; z-index:64; pointer-events:none; }
+    .private-chat-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.42); opacity:0; transition:opacity .2s ease; }
+    .private-chat-panel { position:absolute; right:20px; bottom:92px; width:min(420px,calc(100vw - 32px)); height:min(650px,calc(100vh - 130px)); display:grid; grid-template-rows:auto auto 1fr auto; border:1px solid rgba(110,223,246,.28); border-radius:18px; background:linear-gradient(180deg,rgba(17,29,50,.98),rgba(5,11,20,.98)); box-shadow:0 28px 90px rgba(0,0,0,.48),0 0 34px rgba(110,223,246,.16); overflow:hidden; transform:translateY(18px) scale(.98); opacity:0; transition:transform .22s ease,opacity .22s ease; }
+    .private-chat-shell.is-open { pointer-events:auto; }
+    .private-chat-shell.is-open .private-chat-backdrop { opacity:1; }
+    .private-chat-shell.is-open .private-chat-panel { transform:translateY(0) scale(1); opacity:1; }
+    .private-chat-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-bottom:1px solid rgba(255,255,255,.08); }
+    .private-chat-head strong { display:block; }
+    .private-chat-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); }
+    .private-chat-tabs button { min-height:38px; border:1px solid rgba(110,223,246,.2); border-radius:10px; background:rgba(255,255,255,.05); color:var(--text); font-weight:850; }
+    .private-chat-tabs button.is-active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
+    .private-chat-main { min-height:0; overflow:hidden; display:grid; grid-template-columns:1fr; }
+    .private-chat-view { min-height:0; overflow:auto; padding:12px; }
+    .private-chat-view[hidden] { display:none; }
+    .conversation-row { width:100%; text-align:left; display:grid; gap:4px; border:1px solid rgba(255,255,255,.08); border-radius:12px; background:rgba(255,255,255,.045); color:var(--text); padding:11px; margin-bottom:8px; cursor:pointer; }
+    .conversation-row:hover { border-color:rgba(110,223,246,.32); box-shadow:0 0 22px rgba(110,223,246,.1); }
+    .conversation-meta { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:12px; }
+    .online-dot { display:inline-flex; align-items:center; gap:6px; color:#c8ffe2; font-size:12px; }
+    .online-dot::before { content:""; width:8px; height:8px; border-radius:999px; background:var(--green); box-shadow:0 0 12px rgba(54,229,143,.7); }
+    .chat-thread { display:grid; gap:9px; }
+    .chat-bubble { max-width:82%; padding:10px 12px; border-radius:14px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.08); }
+    .chat-bubble.me { justify-self:end; color:#06101b; background:linear-gradient(135deg,var(--cyan),#77a7ff); }
+    .chat-bubble.them { justify-self:start; background:rgba(255,255,255,.065); }
+    .chat-bubble small { display:block; margin-top:4px; opacity:.76; }
+    .private-chat-form { display:flex; gap:8px; padding:12px; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); }
+    .private-chat-form input { min-width:0; }
+    .private-chat-empty { min-height:180px; display:grid; place-items:center; text-align:center; color:var(--muted); padding:20px; }
+    .private-chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:88px;min-width:136px}.private-chat-panel{inset:auto 0 0 0; width:100%; height:min(92vh,760px); border-radius:20px 20px 0 0}.private-chat-form .button{width:auto;min-width:86px} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -292,6 +322,49 @@
 
     <p class="notice">Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds, does not ask for seed phrases/private keys, and does not provide financial advice.</p>
   </main>
+  <button class="button primary private-chat-launcher" type="button" data-private-chat-open aria-expanded="false">
+    💬 Private Chat <span class="private-chat-badge" data-private-chat-unread hidden>0</span>
+  </button>
+  <section class="private-chat-shell" data-private-chat-shell aria-label="Private chat room" aria-hidden="true">
+    <div class="private-chat-backdrop" data-private-chat-close></div>
+    <aside class="private-chat-panel" role="dialog" aria-modal="true" aria-labelledby="private-chat-title">
+      <header class="private-chat-head">
+        <div>
+          <strong id="private-chat-title">Private Chat</strong>
+          <small class="muted">Message another CoinPilotXAI user securely.</small>
+        </div>
+        <button class="button" type="button" data-private-chat-close aria-label="Close private chat">Close</button>
+      </header>
+      <div class="private-chat-tabs">
+        <button class="is-active" type="button" data-chat-tab="list">Conversations</button>
+        <button type="button" data-chat-tab="thread">Chat Room</button>
+      </div>
+      <div class="private-chat-main">
+        <div class="private-chat-view" data-chat-list-view>
+          <form data-chat-start-form>
+            <input name="query" type="text" placeholder="Search by email or username" maxlength="160" autocomplete="off">
+            <button class="button primary" type="submit">Start Chat</button>
+            <p class="muted" data-chat-start-message></p>
+          </form>
+          <div data-chat-conversations>
+            <div class="private-chat-empty">Start a private conversation with another CoinPilotXAI user.</div>
+          </div>
+        </div>
+        <div class="private-chat-view" data-chat-thread-view hidden>
+          <div class="private-chat-empty" data-chat-thread-empty>Choose a conversation to start messaging.</div>
+          <div class="chat-thread" data-chat-thread></div>
+          <div class="private-chat-actions" data-chat-thread-actions hidden>
+            <button class="button" type="button" data-chat-report>Report</button>
+            <button class="button" type="button" data-chat-block>Block</button>
+          </div>
+        </div>
+      </div>
+      <form class="private-chat-form" data-chat-send-form>
+        <input name="body" placeholder="Type a private message..." maxlength="2000" autocomplete="off">
+        <button class="button primary" type="submit">Send</button>
+      </form>
+    </aside>
+  </section>
   <nav class="bottom-nav">
     <div class="container">
       <a class="active" href="/dashboard">Home</a>
@@ -308,6 +381,95 @@
     const text = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
     const accountSyncText = message => text("[data-account-sync-message]", message);
     const postJson = (url, payload, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed"); return j; }));
+    const escapeHtml = value => String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    const chatState = { open: false, activeConversationId: null, activeOtherUserId: null, currentUserId: null };
+
+    function setChatTab(tab) {
+      document.querySelectorAll("[data-chat-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.chatTab === tab));
+      document.querySelector("[data-chat-list-view]").hidden = tab !== "list";
+      document.querySelector("[data-chat-thread-view]").hidden = tab !== "thread";
+    }
+
+    function openPrivateChat() {
+      const shell = document.querySelector("[data-private-chat-shell]");
+      const launcher = document.querySelector("[data-private-chat-open]");
+      shell.classList.add("is-open");
+      shell.setAttribute("aria-hidden", "false");
+      launcher.setAttribute("aria-expanded", "true");
+      chatState.open = true;
+      loadChatConversations();
+    }
+
+    function closePrivateChat() {
+      const shell = document.querySelector("[data-private-chat-shell]");
+      const launcher = document.querySelector("[data-private-chat-open]");
+      shell.classList.remove("is-open");
+      shell.setAttribute("aria-hidden", "true");
+      launcher.setAttribute("aria-expanded", "false");
+      chatState.open = false;
+    }
+
+    async function loadChatConversations() {
+      const node = document.querySelector("[data-chat-conversations]");
+      node.innerHTML = '<div class="private-chat-empty">Loading private conversations...</div>';
+      try {
+        const response = await fetch("/api/messages/conversations", { cache: "no-store", credentials: "same-origin" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load conversations.");
+        const totalUnread = (data.conversations || []).reduce((sum, item) => sum + Number(item.unread_count || 0), 0);
+        const badge = document.querySelector("[data-private-chat-unread]");
+        badge.hidden = totalUnread <= 0;
+        badge.textContent = totalUnread > 99 ? "99+" : totalUnread;
+        node.innerHTML = (data.conversations || []).map(item => `
+          <button class="conversation-row" type="button" data-open-conversation="${item.id}" data-other-user-id="${item.other_user_id || ""}">
+            <strong>${escapeHtml(item.title || "CoinPilotXAI user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
+            <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
+            <span class="conversation-meta"><span class="online-dot">${item.other_last_seen_at ? "Recently active" : "User"}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
+          </button>`).join("") || '<div class="private-chat-empty">Start a private conversation with another CoinPilotXAI user.</div>';
+      } catch (error) {
+        node.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Private chat is temporarily unavailable.")}</div>`;
+      }
+    }
+
+    function friendlyTime(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+      if (seconds < 60) return seconds + "s ago";
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes + "m ago";
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return hours + "h ago";
+      return Math.floor(hours / 24) + "d ago";
+    }
+
+    async function openConversation(conversationId, otherUserId) {
+      chatState.activeConversationId = conversationId;
+      chatState.activeOtherUserId = otherUserId || null;
+      setChatTab("thread");
+      const thread = document.querySelector("[data-chat-thread]");
+      const empty = document.querySelector("[data-chat-thread-empty]");
+      const actions = document.querySelector("[data-chat-thread-actions]");
+      empty.hidden = true;
+      actions.hidden = false;
+      thread.innerHTML = '<div class="private-chat-empty">Loading messages...</div>';
+      try {
+        const response = await fetch("/api/messages/" + conversationId, { cache: "no-store", credentials: "same-origin" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load messages.");
+        chatState.currentUserId = data.current_user_id;
+        thread.innerHTML = (data.messages || []).map(message => {
+          const mine = Number(message.sender_user_id) === Number(data.current_user_id);
+          return `<div class="chat-bubble ${mine ? "me" : "them"}"><strong>${mine ? "You" : "CoinPilotXAI user"}</strong><div>${escapeHtml(message.body)}</div><small>${friendlyTime(message.created_at)}${mine ? " · sent" : " · read"}</small></div>`;
+        }).join("") || '<div class="private-chat-empty">No messages yet. Send the first one.</div>';
+        thread.scrollTop = thread.scrollHeight;
+        await fetch("/api/messages/" + conversationId + "/read", { method: "POST", credentials: "same-origin" }).catch(() => {});
+        loadChatConversations();
+      } catch (error) {
+        thread.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
+      }
+    }
 
     function render(data) {
       text("[data-user-name]", "Welcome back, " + (data.user.name || "CoinPilotX user"));
@@ -476,9 +638,55 @@
         const form = event.target;
         try { await postJson("/api/watch", Object.fromEntries(new FormData(form).entries())); form.reset(); text("[data-watch-item-message]", "Watch item saved."); loadRetentionPanels(); } catch (err) { text("[data-watch-item-message]", err.message); }
       }
+      if (event.target.matches("[data-chat-start-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        const payload = Object.fromEntries(new FormData(form).entries());
+        try {
+          const result = await postJson("/api/messages/start", payload);
+          form.reset();
+          text("[data-chat-start-message]", "Conversation opened.");
+          await loadChatConversations();
+          await openConversation(result.conversation_id, null);
+        } catch (err) {
+          text("[data-chat-start-message]", err.message);
+        }
+      }
+      if (event.target.matches("[data-chat-send-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        if (!chatState.activeConversationId) return;
+        const body = new FormData(form).get("body");
+        if (!String(body || "").trim()) return;
+        try {
+          await postJson("/api/messages/" + chatState.activeConversationId + "/send", { body });
+          form.reset();
+          await openConversation(chatState.activeConversationId, chatState.activeOtherUserId);
+        } catch (err) {
+          const thread = document.querySelector("[data-chat-thread]");
+          thread.insertAdjacentHTML("beforeend", `<div class="private-chat-empty">${escapeHtml(err.message)}</div>`);
+        }
+      }
     });
 
     document.addEventListener("click", async event => {
+      if (event.target.closest("[data-private-chat-open]")) openPrivateChat();
+      if (event.target.closest("[data-private-chat-close]")) closePrivateChat();
+      const chatTab = event.target.closest("[data-chat-tab]");
+      if (chatTab) setChatTab(chatTab.dataset.chatTab);
+      const conversation = event.target.closest("[data-open-conversation]");
+      if (conversation) await openConversation(conversation.dataset.openConversation, conversation.dataset.otherUserId);
+      if (event.target.closest("[data-chat-report]") && chatState.activeConversationId) {
+        const reason = window.prompt("Briefly describe the concern for moderation review.");
+        if (reason) await postJson("/api/messages/report", { conversation_id: chatState.activeConversationId, reported_user_id: chatState.activeOtherUserId || 0, reason });
+      }
+      if (event.target.closest("[data-chat-block]") && chatState.activeOtherUserId) {
+        if (window.confirm("Block this user from private messaging you?")) {
+          await postJson("/api/messages/block", { blocked_user_id: chatState.activeOtherUserId, reason: "Blocked from dashboard chat widget" });
+          await loadChatConversations();
+          setChatTab("list");
+        }
+      }
       const scrollButton = event.target.closest("[data-scroll]");
       if (scrollButton) document.querySelector(scrollButton.dataset.scroll)?.scrollIntoView({ behavior: "smooth", block: "start" });
       const holding = event.target.closest("[data-delete-portfolio]");
@@ -502,6 +710,8 @@
 
     loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); });
     window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); }, 60000);
+    loadChatConversations().catch(function () {});
+    window.setInterval(function () { if (!chatState.open) loadChatConversations().catch(function () {}); }, 30000);
     function danceAlerts() {
       document.querySelectorAll("[data-alerts-button]").forEach(button => {
         if (button.classList.contains("is-dancing")) return;
