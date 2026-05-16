@@ -9217,14 +9217,19 @@ def arena_inbox_payload(user_id, limit=40):
         })
     messages = []
     for item in message_rows:
+        incoming = int(item.get("receiver_id") or 0) == int(user_id)
         sender = profile_cards.get(int(item.get("sender_id") or 0), {})
+        receiver = profile_cards.get(int(item.get("receiver_id") or 0), {})
+        other_player = sender if incoming else receiver
         thread_id = item.get("thread_id") or ""
         messages.append({
             "id": item.get("id"),
+            "request_id": item.get("id"),
             "type": "message",
             "status": item.get("status") or "pending",
-            "sender": sender,
-            "is_incoming": int(item.get("receiver_id") or 0) == int(user_id),
+            "sender": other_player,
+            "sender_public_player_id": other_player.get("public_player_id") or "",
+            "is_incoming": incoming,
             "message_preview": item.get("first_message") or "",
             "created_at": item.get("created_at"),
             "responded_at": item.get("responded_at"),
@@ -10047,7 +10052,7 @@ def arena_inbox_page():
         if kind == "message":
             thread_id = int(item.get("thread_id") or 0)
             reply_form = f"""
-          <form data-inline-reply data-request-id="{int(item.get('id') or 0)}" data-thread-id="{thread_id}" hidden>
+          <form data-inline-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{thread_id}" hidden>
             <label class="muted">Reply to {name}</label>
             <textarea name="message" rows="3" placeholder="Type a fast Arena reply..."></textarea>
             <div class="actions"><button class="primary" type="submit">Send Reply</button><a class="button" href="{clean_html(item.get('chat_url') or item.get('next_url') or '#')}">Open Chat</a></div>
@@ -10057,7 +10062,7 @@ def arena_inbox_page():
         if status == "pending":
             if kind == "message":
                 primary_actions = f"""
-            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('next_url') or '')}">Reply</button>
+            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('next_url') or '')}">Reply</button>
             <button data-arena-action="{accept_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">{accept_text}</button>
             <button data-arena-action="{reject_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">Decline</button>
                 """
@@ -10068,7 +10073,7 @@ def arena_inbox_page():
                 """
         elif kind == "message" and status == "accepted" and item.get("chat_url"):
             primary_actions = f"""
-            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('chat_url') or '')}">Reply</button>
+            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('chat_url') or '')}">Reply</button>
             <a class='button primary' href='{clean_html(item.get('chat_url'))}'>Open Chat</a>
             """
         elif kind == "challenge" and status == "accepted" and item.get("next_url"):
@@ -10076,7 +10081,7 @@ def arena_inbox_page():
         else:
             primary_actions = f"<span class='rank'>{status.title()}</span>"
         return f"""
-        <article class="player-card" data-request-card="{kind}:{int(item.get('id') or 0)}">
+        <article class="player-card" data-request-card="{kind}:{int(item.get('id') or 0)}" data-sender-public-player-id="{public_id}">
           <strong>{name}</strong>{stats}
           <p>“{preview}”</p>
           {details_html}
@@ -10103,6 +10108,13 @@ def arena_inbox_page():
     <section class="card"><h2>Requests</h2><div class="actions"><a class="button" href="#requests">Requests</a><a class="button" href="#challenges">Challenges</a><a class="button" href="#messages">Messages</a><a class="button" href="#friends">Friend Requests</a><a class="button" href="#results">Battle Results</a></div><div id="requests" class="grid">{requests_html}</div></section>
     <section class="grid"><article id="challenges" class="card wide"><h2>Challenges</h2>{challenges_html}</article><article id="messages" class="card"><h2>Messages</h2>{messages_html}</article><article class="card"><h2>Team Invites</h2><p class="muted">Team invites are ready for realtime routing.</p></article><article id="friends" class="card"><h2>Friend Requests</h2>{friend_html}</article><article id="results" class="card wide"><h2>Battle Results</h2><p class="muted">{len(inbox.get('battle_results') or [])} recent challenge results.</p></article></section>
     <script>
+    function arenaToast(message){{
+      let toast=document.querySelector('[data-arena-toast]');
+      if(!toast){{toast=document.createElement('div');toast.dataset.arenaToast='1';toast.style.cssText='position:fixed;left:50%;bottom:18px;z-index:90;transform:translateX(-50%);max-width:min(92vw,420px);border:1px solid rgba(110,223,246,.35);border-radius:14px;background:rgba(8,19,35,.96);box-shadow:0 20px 70px rgba(0,0,0,.42),0 0 24px rgba(110,223,246,.18);padding:12px 14px;color:#f2fbff;font-weight:900';document.body.appendChild(toast);}}
+      toast.textContent=message;
+      clearTimeout(toast._timer);
+      toast._timer=setTimeout(()=>toast.remove(),2600);
+    }}
     document.addEventListener('click',async e=>{{
       const action=e.target.closest('[data-arena-action]');
       const reply=e.target.closest('[data-arena-reply]');
@@ -10110,13 +10122,15 @@ def arena_inbox_page():
       const report=e.target.closest('[data-arena-report]');
       if(reply){{
         reply.disabled=true;
+        arenaToast('Opening chat...');
         const card=reply.closest('[data-request-card]');
         const form=card?.querySelector('[data-inline-reply]');
         let threadId=Number(reply.dataset.threadId||form?.dataset.threadId||0);
         if(!threadId){{
-          const r=await fetch('/api/arena/message/accept',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{request_id:Number(reply.dataset.requestId||0)}})}});
+          const public_player_id=reply.dataset.publicPlayerId||form?.dataset.publicPlayerId||card?.dataset.senderPublicPlayerId||'';
+          const r=await fetch('/api/arena/message/accept',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{request_id:Number(reply.dataset.requestId||0),public_player_id}})}});
           const d=await r.json();
-          if(!d.ok){{reply.disabled=false;alert(d.message||'Could not open chat.');return;}}
+          if(!d.ok){{reply.disabled=false;arenaToast('Could not open this chat. Please refresh.');return;}}
           threadId=Number(d.thread_id||0);
           reply.dataset.threadId=threadId;
           if(form)form.dataset.threadId=threadId;
@@ -10125,9 +10139,9 @@ def arena_inbox_page():
         reply.textContent='Reply open';
         reply.disabled=false;
       }}
-      if(action){{action.disabled=true;action.textContent='Working...';const payload={{[action.dataset.key]:Number(action.dataset.id)}};const r=await fetch(action.dataset.arenaAction,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const d=await r.json();if(d.next_url)location.href=d.next_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else if(d.chat_url)location.href=d.chat_url;else action.closest('[data-request-card]')?.remove();}}
+      if(action){{action.disabled=true;action.textContent='Working...';const card=action.closest('[data-request-card]');const payload={{[action.dataset.key]:Number(action.dataset.id),public_player_id:card?.dataset.senderPublicPlayerId||''}};const r=await fetch(action.dataset.arenaAction,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const d=await r.json();if(d.next_url)location.href=d.next_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else if(d.chat_url)location.href=d.chat_url;else if(d.ok===false){{arenaToast(d.message||'Could not complete action.');action.disabled=false;}}else action.closest('[data-request-card]')?.remove();}}
       if(block){{block.disabled=true;await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:block.dataset.arenaBlock,reason:'Blocked from Arena inbox'}})}});document.querySelectorAll(`[data-arena-block="${{block.dataset.arenaBlock}}"]`).forEach(n=>n.closest('[data-request-card]')?.remove());}}
-      if(report){{await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:report.dataset.arenaReport,report_type:'inbox',details:'Reported from Arena inbox'}})}});alert('Report sent.');}}
+      if(report){{await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:report.dataset.arenaReport,report_type:'inbox',details:'Reported from Arena inbox'}})}});arenaToast('Report sent.');}}
     }});
     document.addEventListener('submit',async e=>{{
       const form=e.target.closest('[data-inline-reply]');
@@ -12128,23 +12142,41 @@ def api_arena_message_request_accept():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    request_id = int((request.get_json(silent=True) or {}).get("request_id") or 0)
+    payload = request.get_json(silent=True) or {}
+    request_id = int(payload.get("request_id") or 0)
+    public_player_id = clean_html(payload.get("public_player_id") or "")[:80]
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    thread_id, request_item = arena_thread_for_request(cur, request_id, user["user_id"])
-    if not thread_id or not request_item or int(request_item.get("receiver_id") or 0) != int(user["user_id"]):
+    thread_id, request_item = arena_thread_for_request(cur, request_id, user["user_id"]) if request_id else (None, None)
+    if not thread_id and public_player_id:
+        other_id = arena_internal_id_from_public(public_player_id)
+        if other_id and int(other_id) != int(user["user_id"]):
+            thread_id = arena_find_or_create_thread(cur, user["user_id"], other_id)
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+    if not thread_id or not request_item:
         conn.close()
-        return jsonify({"ok": False, "status": "not_found", "message": "Request not found."}), 404
+        return jsonify({"ok": False, "status": "not_found", "message": "Could not open this chat. Please refresh."}), 404
+    if int(user["user_id"]) not in {int(request_item.get("receiver_id") or 0), int(request_item.get("sender_id") or 0)}:
+        conn.close()
+        return jsonify({"ok": False, "status": "not_allowed", "message": "You cannot open this Arena chat."}), 403
     if request_item.get("status") == "accepted":
         conn.commit()
         conn.close()
-        return jsonify({"ok": True, "status": "accepted", "message": "Chat already open.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+        return jsonify({"ok": True, "status": "thread_opened", "message": "Chat already open.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+    if int(request_item.get("sender_id") or 0) == int(user["user_id"]):
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
     cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=? AND status='pending'", (datetime.now().isoformat(), thread_id, request_id, user["user_id"]))
     changed = cur.rowcount
     conn.commit()
     conn.close()
-    return jsonify({"ok": bool(changed), "status": "accepted" if changed else "not_found", "message": "Message request accepted." if changed else "Request not found.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}" if changed else "", "next_url": f"/arena/chat/{thread_id}" if changed else ""}), (200 if changed else 404)
+    if changed:
+        return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+    return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
 
 
 @webhook_app.route("/api/arena/message-request/decline", methods=["POST"])

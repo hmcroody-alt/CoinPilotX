@@ -303,14 +303,46 @@
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 10px 14px;
+      flex: 1 1 560px;
+      flex-wrap: wrap;
+      min-width: 0;
       color: var(--muted);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 650;
     }
 
     .nav-links a {
       white-space: nowrap;
+    }
+
+    .nav-links a.alpha-arena-nav {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border: 1px solid rgba(110, 223, 246, 0.36);
+      border-radius: 999px;
+      color: #effcff;
+      background: linear-gradient(135deg, rgba(110, 223, 246, 0.10), rgba(54, 229, 143, 0.08));
+      box-shadow: 0 0 22px rgba(110, 223, 246, 0.10);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .nav-links a.alpha-arena-nav::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #36e58f;
+      box-shadow: 0 0 14px rgba(54, 229, 143, 0.72);
+    }
+
+    .nav-links a.alpha-arena-nav:hover {
+      transform: translateY(-1px);
+      border-color: rgba(54, 229, 143, 0.52);
+      box-shadow: 0 0 28px rgba(54, 229, 143, 0.16);
     }
 
     .nav-actions,
@@ -2637,7 +2669,7 @@
         bottom: 10px;
         z-index: 50;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: 8px;
         padding: 8px;
         border: 1px solid rgba(110, 223, 246, 0.18);
@@ -2654,13 +2686,13 @@
         border-radius: 8px;
         color: var(--text);
         background: rgba(255, 255, 255, 0.055);
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 850;
         text-align: center;
       }
 
       body {
-        padding-bottom: 78px;
+        padding-bottom: 86px;
       }
 
       .install-app-button {
@@ -2922,7 +2954,9 @@
         <button class="nav-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" data-nav-toggle><span></span></button>
 
         <div class="nav-links" data-nav-panel>
+          <a href="/">Home</a>
           <a href="#features">Features</a>
+          <a class="alpha-arena-nav" href="/arena-preview" title="Live AI trading battles">Alpha Arena</a>
           <a href="#about">About</a>
           <a href="/quote" data-analytics="view_live_market">Live Market</a>
           <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
@@ -2972,9 +3006,10 @@
   </div>
 
   <nav class="mobile-bottom-nav" aria-label="Mobile quick actions">
+    <a class="pulse-cta" href="/arena-preview" data-analytics="alpha_arena_nav">Alpha Arena</a>
     <a href="/quote" data-analytics="view_live_market">Live Market</a>
     <a href="#sports-edge" data-analytics="view_sports_edge">Sports Edge</a>
-    <a class="pulse-cta" href="#day-signal" data-analytics="day_signal">Day Signal</a>
+    <a href="#day-signal" data-analytics="day_signal">Day Signal</a>
     <a href="#intelligence-console" data-analytics="try_ai_assistant">AI Assistant</a>
   </nav>
 
