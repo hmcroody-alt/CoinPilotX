@@ -45,7 +45,7 @@
     p,.muted { color:var(--muted); }
     .command-bar { position:sticky; top:82px; z-index:10; display:grid; grid-template-columns:1fr auto; gap:8px; margin:16px 0; }
     .chat-mode .command-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; top:auto; width:min(100% - 28px,900px); margin:0; padding:10px; border:1px solid var(--line); border-radius:14px; background:rgba(5,11,20,.94); backdrop-filter:blur(18px); }
-    .chat-mode main { padding-bottom:150px; }
+    .chat-mode main { padding-bottom:190px; }
     input { width:100%; min-height:50px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.06); color:var(--text); padding:12px 13px; font:inherit; }
     .sections { display:grid; gap:16px; margin-top:16px; }
     .command-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
@@ -61,6 +61,9 @@
     .chat-label { display:flex; gap:8px; align-items:center; margin-bottom:4px; font-size:12px; color:var(--muted); font-weight:850; }
     .chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
     .chip-button { min-height:32px; border:1px solid rgba(110,223,246,.25); border-radius:999px; background:rgba(110,223,246,.08); color:var(--text); padding:6px 10px; font-size:12px; font-weight:850; cursor:pointer; }
+    .chat-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:16px 0 10px; flex-wrap:wrap; }
+    .chat-shortcuts { display:flex; gap:8px; overflow-x:auto; padding:4px 0 10px; scrollbar-width:thin; }
+    .chat-shortcuts .button { width:auto; white-space:nowrap; flex:0 0 auto; }
     .meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; color:var(--muted); font-size:13px; }
     .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:30; background:rgba(5,11,20,.93); border-top:1px solid rgba(255,255,255,.08); backdrop-filter:blur(18px); }
     .bottom-nav .shell { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:8px 12px; }
@@ -113,10 +116,33 @@
 
     <form class="command-bar" data-command-form>
       <input name="command" placeholder="Ask CoinPilotXAI anything... try /price BTC, /market, /scam, /wallet, /portfolio" autocomplete="off" />
-      <button class="button primary" type="submit">Run</button>
+      <button class="button primary" type="submit">{% if chat_mode %}Send{% else %}Run{% endif %}</button>
     </form>
 
     <section class="card response-card">
+      {% if chat_mode %}
+      <div class="chat-toolbar">
+        <div>
+          <h2>Native AI Chat</h2>
+          <p class="muted">Live-data command room with 24-hour memory.</p>
+        </div>
+        <div class="chat-actions">
+          <button class="chip-button" type="button" data-new-chat>New Chat</button>
+          <button class="chip-button" type="button" data-clear-history>Clear History</button>
+        </div>
+      </div>
+      <div class="chat-shortcuts" aria-label="Chat commands">
+        <button class="button command-glow command-glow-market" type="button" data-command="/market">Market</button>
+        <button class="button command-glow command-glow-market" type="button" data-command="/btc">BTC</button>
+        <button class="button command-glow command-glow-risk" type="button" data-command="/scam Connect wallet to claim free USDT airdrop">Scam Shield</button>
+        <button class="button command-glow command-glow-risk" type="button" data-command="/wallet">Wallet Intel</button>
+        <button class="button command-glow command-glow-portfolio" type="button" data-command="/portfolio">Portfolio</button>
+        <button class="button command-glow command-glow-sports" type="button" data-command="/sports">Sports Edge</button>
+        <button class="button command-glow command-glow-ai" type="button" data-command="/day">Day Signal</button>
+        <button class="button command-glow command-glow-ai" type="button" data-command="/predictions">Predictions</button>
+        <button class="button command-glow command-glow-account" type="button" data-command="/help">Help</button>
+      </div>
+      {% endif %}
       <div class="chat-window" data-chat-window aria-live="polite">
         <div class="chat-message ai">
           <div class="chat-avatar">AI</div>
@@ -133,7 +159,7 @@
       <div data-command-history></div>
     </section>
 
-    <section class="sections" data-menu>
+    <section class="sections" data-menu {% if chat_mode %}hidden{% endif %}>
       {% for section in menu["sections"] %}
         <article class="card">
           <h2>{{ section.title }}</h2>
@@ -158,11 +184,7 @@
       <a href="/dashboard">Home</a>
       <a href="/app">Intel</a>
       <a href="/live-market">Live</a>
-<<<<<<< HEAD
-      <a class="alerts-dance" href="/dashboard#add-alert" data-alerts-button>Alerts</a>
-=======
       <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
->>>>>>> c95b245 (Add dashboard customization alerts settings and prediction actions)
       <a href="/account">Account</a>
     </div>
   </nav>
@@ -231,16 +253,39 @@
       renderResult(data);
     }
     document.addEventListener("click", event => {
+      const commandButton = event.target.closest("[data-command]");
+      if (commandButton) {
+        runCommand({ command: commandButton.dataset.command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
+        return;
+      }
+      if (event.target.closest("[data-new-chat]")) {
+        fetch("/api/ai/conversation/new", { method: "POST", cache: "no-store", credentials: "same-origin" })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.ok) {
+              chatWindow.innerHTML = "";
+              addMessage("ai", "New chat started. Ask a question or choose a live-data command.");
+            }
+          }).catch(() => addMessage("ai", "Could not start a new chat right now."));
+        return;
+      }
+      if (event.target.closest("[data-clear-history]")) {
+        fetch("/api/ai/history/clear", { method: "POST", cache: "no-store", credentials: "same-origin" })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.ok) {
+              chatWindow.innerHTML = "";
+              addMessage("ai", "Chat history cleared for this account.");
+            }
+          }).catch(() => addMessage("ai", "Could not clear chat history right now."));
+        return;
+      }
       const button = event.target.closest("[data-action]");
       if (button) runCommand({ action_key: button.dataset.action }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "CoinPilotXAI platform", confidence: "Low" }));
       const chip = event.target.closest("[data-chip]");
       if (chip) {
         const label = chip.dataset.chip || "";
-<<<<<<< HEAD
-        if (label === "Create Alert") location.href = "/dashboard#add-alert";
-=======
         if (label === "Create Alert") location.href = "/alerts";
->>>>>>> c95b245 (Add dashboard customization alerts settings and prediction actions)
         else if (label === "Scan Wallet") runCommand({ command: "/wallet " });
         else if (label === "Check Market") runCommand({ command: "/market" });
         else if (label === "Save Insight") runCommand({ command: "/help save insight" });
@@ -274,6 +319,17 @@
         }
       })
       .catch(() => {});
+    const params = new URLSearchParams(window.location.search);
+    if (CHAT_MODE && (params.get("context") || params.get("asset"))) {
+      const context = params.get("context");
+      const symbol = params.get("symbol") || params.get("asset") || "";
+      const id = params.get("id") || "";
+      if (context === "prediction") {
+        runCommand({ command: `/predictions ${id}` }).catch(() => {});
+      } else if (symbol) {
+        runCommand({ command: `/price ${symbol}` }).catch(() => {});
+      }
+    }
     window.setInterval(() => {
       fetch("/api/live/btc", { cache: "no-store", credentials: "same-origin" }).catch(() => {});
     }, 60000);

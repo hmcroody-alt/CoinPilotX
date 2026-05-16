@@ -5,6 +5,7 @@ from . import (
     intelligence,
     market_data,
     portfolio_service,
+    predictions_service,
     pro_access,
     scam_shield,
     sports_data,
@@ -80,6 +81,7 @@ COMMAND_ALIASES = {
     "/portfolio": "live_portfolio",
     "/day": "today_day_signal",
     "/sports": "sports_edge",
+    "/predictions": "predictions",
     "/help": "help",
 }
 
@@ -219,6 +221,19 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         else:
             summary = "Live data source temporarily unavailable. Odds unavailable in current feed."
         return _card(action_key, "Sports Edge", summary, result.get("source", "sports feed"), "Medium" if games else "Low")
+    if action_key == "predictions":
+        market_id = (payload.get("query") or "").strip()
+        if market_id:
+            context = predictions_service.get_prediction_context_for_ai(market_id)
+            return _card(action_key, "Prediction Intelligence", context, "Predictions provider", "Medium", ["Watch prediction", "Create alert", "Open simulator"])
+        markets = predictions_service.get_active_crypto_predictions(limit=6)
+        if not markets:
+            return _card(action_key, "Prediction Intelligence", "Live source is reconnecting right now. Here is what I can safely tell you… prediction feeds are temporarily unavailable.", "predictions provider", "Low")
+        rows = [
+            f"{m.get('title')} · {m.get('yes_probability', m.get('probability'))}% · source: {m.get('source')}"
+            for m in markets[:6]
+        ]
+        return _card(action_key, "Prediction Intelligence", "\n".join(rows), "Predictions provider", "Medium", ["Open predictions", "Create alert", "Ask follow-up"])
     if action_key == "live_portfolio":
         if not user_id:
             return _card(action_key, "Portfolio", "Log in to view your portfolio tracker.", "Website account database", "High", ["Login", "Create account"])
