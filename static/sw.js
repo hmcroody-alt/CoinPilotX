@@ -1,7 +1,9 @@
-const CACHE_NAME = "coinpilotx-cache-v10";
+const CACHE_NAME = "coinpilotx-cache-v13";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
+  "/static/notifications.js",
+  "/static/sounds/notification-soft.wav",
   "/static/Coinpilot%20Logo/NewLogo.png",
   "/static/assets/coinpilotxai-share-card.svg",
   "/icons/icon-192.png",
@@ -128,4 +130,45 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(fetch(request));
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    payload = { title: "CoinPilotXAI Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+  }
+  const title = payload.title || "CoinPilotXAI Alert";
+  const options = {
+    body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
+    icon: "/static/icons/icon-192.png",
+    badge: "/static/icons/icon-192.png",
+    vibrate: payload.vibrate || [120, 60, 120],
+    data: payload.data || { url: payload.url || "/notifications" },
+    tag: payload.tag || "coinpilotxai-alert",
+    renotify: payload.renotify !== false,
+    actions: payload.actions || [
+      { action: "open", title: "Open Alerts" },
+      { action: "dismiss", title: "Dismiss" }
+    ]
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  if (event.action === "dismiss") return;
+  const url = (event.notification.data && event.notification.data.url) || "/notifications";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client && client.url.includes(self.location.origin)) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
 });

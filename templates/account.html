@@ -107,6 +107,10 @@
     .error { border-color: rgba(255,107,122,.3); color: #ffd1d6; background: rgba(255,107,122,.08); }
     .consent-row { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: 13px; }
     .consent-row input { width: 18px; height: 18px; min-height: 18px; margin-top: 3px; accent-color: var(--green); }
+    .settings-card { margin-top: 18px; padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.04); }
+    .settings-row { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; padding: 10px 0; color: var(--muted); }
+    .settings-row input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; margin-top: 3px; accent-color: var(--green); }
+    .settings-row input[type="time"], .settings-row select { min-height: 42px; border:1px solid rgba(110,223,246,.18); border-radius:8px; background:rgba(255,255,255,.055); color:var(--text); padding:8px; }
     .profile-card { padding: 18px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.04); }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     th, td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
@@ -333,6 +337,26 @@
               <p class="muted">Codes are visible only to your logged-in account. Generate a fresh code if an old one expires.</p>
             </div>
           </div>
+          <div class="settings-card" data-notification-settings>
+            <h3>Notification Experience</h3>
+            <p class="muted">Control push, soft alert sounds, mobile vibration, and quiet hours. Some phones only allow sound or vibration after app permission is granted.</p>
+            <label class="settings-row"><input type="checkbox" data-notification-pref="enable_push_notifications" /><span>Enable push notifications</span></label>
+            <label class="settings-row"><input type="checkbox" data-notification-pref="enable_notification_sound" checked /><span>Play sound for new alerts</span></label>
+            <label class="settings-row"><input type="checkbox" data-notification-pref="enable_notification_vibration" checked /><span>Vibrate phone for new alerts when supported</span></label>
+            <label class="settings-row"><span></span><span>Sound type <select data-notification-pref="notification_sound_type"><option value="soft">Soft premium tone</option></select></span></label>
+            <label class="settings-row"><input type="checkbox" data-notification-pref="quiet_hours_enabled" /><span>Enable quiet hours</span></label>
+            <label class="settings-row"><span></span><span>Quiet hours start <input type="time" data-notification-pref="quiet_hours_start" value="22:00" /></span></label>
+            <label class="settings-row"><span></span><span>Quiet hours end <input type="time" data-notification-pref="quiet_hours_end" value="07:00" /></span></label>
+            <div class="actions">
+              <button class="button primary" type="button" data-notification-action="enable-push">Enable Push Alerts</button>
+              <button class="button" type="button" data-notification-action="disable-push">Disable Push</button>
+              <button class="button" type="button" data-notification-action="test-notification">Test Notification</button>
+              <button class="button" type="button" data-notification-action="test-sound">Test Sound</button>
+              <button class="button" type="button" data-notification-action="test-vibration">Test Vibration</button>
+            </div>
+            <p class="muted" data-notification-status></p>
+            <p class="muted" data-notification-message></p>
+          </div>
 
         {% elif page == "admin_users" %}
           <div class="grid">
@@ -363,6 +387,7 @@
       </article>
     </div>
   </main>
+  {% if current_user %}<script src="/static/notifications.js" defer></script>{% endif %}
 
   <footer>
     <div class="container footer-inner">

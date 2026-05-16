@@ -98,11 +98,30 @@ def health():
         push_enabled = cur.fetchone()[0]
     except Exception:
         push_enabled = 0
+    try:
+        cur.execute("SELECT COUNT(DISTINCT user_id) FROM notification_preferences WHERE enable_notification_sound=1")
+        sound_enabled = cur.fetchone()[0]
+    except Exception:
+        sound_enabled = 0
+    try:
+        cur.execute("SELECT COUNT(DISTINCT user_id) FROM notification_preferences WHERE enable_notification_vibration=1")
+        vibration_enabled = cur.fetchone()[0]
+    except Exception:
+        vibration_enabled = 0
+    try:
+        cur.execute("SELECT created_at FROM notifications ORDER BY id DESC LIMIT 1")
+        row = cur.fetchone()
+        last_test = row[0] if row else None
+    except Exception:
+        last_test = None
     conn.close()
     return {
         "ok": True,
         "delivery_status_counts": counts,
-        "push_enabled_users": push_enabled,
+        "push_subscriptions_count": push_enabled,
+        "sound_preference_count": sound_enabled,
+        "vibration_preference_count": vibration_enabled,
+        "last_test_notification": last_test,
         "rate_window_seconds": RATE_WINDOW_SECONDS,
         "rate_max_per_user": RATE_MAX_PER_USER,
         "queue": retry_failed(limit=1),

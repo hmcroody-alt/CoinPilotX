@@ -81,6 +81,15 @@ def get_preferences(user_id):
         "sports_edge_alerts",
         "product_updates",
     ]
+    global_defaults = {
+        "enable_push_notifications": False,
+        "enable_notification_sound": True,
+        "enable_notification_vibration": True,
+        "notification_sound_type": "soft",
+        "quiet_hours_enabled": False,
+        "quiet_hours_start": "22:00",
+        "quiet_hours_end": "07:00",
+    }
     conn = user_context.connect()
     cur = conn.cursor()
     try:
@@ -105,14 +114,59 @@ def get_preferences(user_id):
         }
         for row in rows
     }
+    try:
+        cur.execute(
+            """
+            SELECT enable_push_notifications, enable_notification_sound, enable_notification_vibration,
+                   notification_sound_type, quiet_hours_enabled, quiet_hours_start, quiet_hours_end
+            FROM notification_preferences
+            WHERE user_id=?
+            ORDER BY CASE WHEN category='global' THEN 0 ELSE 1 END, id ASC
+            LIMIT 1
+            """,
+            (user_id,),
+        )
+        global_row = cur.fetchone()
+        if global_row:
+            global_defaults.update({
+                "enable_push_notifications": bool(global_row[0]),
+                "enable_notification_sound": bool(global_row[1]),
+                "enable_notification_vibration": bool(global_row[2]),
+                "notification_sound_type": global_row[3] or "soft",
+                "quiet_hours_enabled": bool(global_row[4]),
+                "quiet_hours_start": global_row[5] or "22:00",
+                "quiet_hours_end": global_row[6] or "07:00",
+            })
+    except Exception:
+        pass
     conn.close()
-    return {"ok": True, "preferences": {category: existing.get(category, {"in_app": True, "push": False, "email": False, "sms": False, "telegram": False}) for category in categories}}
+    return {
+        "ok": True,
+        "preferences": {category: existing.get(category, {"in_app": True, "push": False, "email": False, "sms": False, "telegram": False}) for category in categories},
+        "experience": global_defaults,
+    }
 
 
 def update_preferences(user_id, preferences):
     conn = user_context.connect()
     cur = conn.cursor()
-    for category, values in (preferences or {}).items():
+    preferences = preferences or {}
+    experience_keys = {
+        "enable_push_notifications",
+        "enable_notification_sound",
+        "enable_notification_vibration",
+        "notification_sound_type",
+        "quiet_hours_enabled",
+        "quiet_hours_start",
+        "quiet_hours_end",
+    }
+    experience = preferences.get("experience") if isinstance(preferences.get("experience"), dict) else {key: preferences[key] for key in experience_keys if key in preferences}
+    category_preferences = preferences.get("preferences") if isinstance(preferences.get("preferences"), dict) else {
+        key: value for key, value in preferences.items() if key not in experience_keys and key != "experience"
+    }
+    for category, values in category_preferences.items():
+        if not isinstance(values, dict):
+            continue
         cur.execute(
             """
             INSERT INTO notification_preferences (user_id, category, in_app, push, email, telegram, sms, updated_at)
@@ -136,9 +190,39 @@ def update_preferences(user_id, preferences):
                 _now(),
             ),
         )
+    if experience:
+        cur.execute(
+            """
+            INSERT INTO notification_preferences
+            (user_id, category, in_app, push, email, telegram, sms, enable_push_notifications,
+             enable_notification_sound, enable_notification_vibration, notification_sound_type,
+             quiet_hours_enabled, quiet_hours_start, quiet_hours_end, updated_at)
+            VALUES (?, 'global', 1, 0, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, category) DO UPDATE SET
+                enable_push_notifications=excluded.enable_push_notifications,
+                enable_notification_sound=excluded.enable_notification_sound,
+                enable_notification_vibration=excluded.enable_notification_vibration,
+                notification_sound_type=excluded.notification_sound_type,
+                quiet_hours_enabled=excluded.quiet_hours_enabled,
+                quiet_hours_start=excluded.quiet_hours_start,
+                quiet_hours_end=excluded.quiet_hours_end,
+                updated_at=excluded.updated_at
+            """,
+            (
+                user_id,
+                1 if experience.get("enable_push_notifications") else 0,
+                1 if experience.get("enable_notification_sound", True) else 0,
+                1 if experience.get("enable_notification_vibration", True) else 0,
+                str(experience.get("notification_sound_type") or "soft")[:40],
+                1 if experience.get("quiet_hours_enabled") else 0,
+                str(experience.get("quiet_hours_start") or "22:00")[:8],
+                str(experience.get("quiet_hours_end") or "07:00")[:8],
+                _now(),
+            ),
+        )
     conn.commit()
     conn.close()
-    return {"ok": True}
+    return get_preferences(user_id)
 
 
 def _log_delivery(user_id, notification_id, channel, status, provider_response="", error_message=""):

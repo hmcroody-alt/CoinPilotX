@@ -2201,11 +2201,13 @@ def dashboard_page():
     link_code = ""
     if current_user and not current_user.get("telegram_user_id"):
         link_code = generate_telegram_link_code(user["user_id"])
+    dashboard_prefs = get_dashboard_preferences(user["user_id"])
     return render_template(
         "dashboard.html",
         current_user=current_user,
         access=account_access_context(current_user),
         link_code=link_code,
+        dashboard_prefs=dashboard_prefs,
     )
 
 
@@ -8338,6 +8340,28 @@ def api_notifications_read_all():
     return response
 
 
+@webhook_app.route("/api/notifications/test", methods=["POST"])
+def api_notifications_test():
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    result = notification_service.send_user_alert(
+        user["user_id"],
+        "product_updates",
+        "CoinPilotXAI test notification",
+        "Your notification sound, vibration, in-app badge, and PWA push settings are ready to test.",
+        {"url": "/notifications", "test": True},
+        channels=["in_app", "push"],
+    )
+    log_product_event(user["user_id"], "test_notification_sent", {"result": result})
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/notification-preferences", methods=["GET", "POST"])
 def api_notification_preferences():
     init_db()
@@ -8366,10 +8390,19 @@ def api_push_subscribe():
         return response, 401
     payload = request.get_json(silent=True) or {}
     result = notification_service.save_push_subscription(user["user_id"], payload, request.headers.get("User-Agent", ""))
+    if result.get("ok"):
+        notification_service.update_preferences(user["user_id"], {"enable_push_notifications": True})
     log_product_event(user["user_id"], "push_subscription_saved", {"ok": result.get("ok")})
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/push/public-key", methods=["GET"])
+def api_push_public_key():
+    response = jsonify({"ok": True, "public_key": os.getenv("VAPID_PUBLIC_KEY") or ""})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @webhook_app.route("/api/push/unsubscribe", methods=["POST"])
@@ -8382,6 +8415,7 @@ def api_push_unsubscribe():
         return response, 401
     payload = request.get_json(silent=True) or {}
     result = notification_service.unsubscribe_push(user["user_id"], payload.get("endpoint") or "")
+    notification_service.update_preferences(user["user_id"], {"enable_push_notifications": False})
     log_product_event(user["user_id"], "push_subscription_removed", {"ok": result.get("ok")})
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -13341,6 +13375,13 @@ def init_db():
     """)
     add_columns_if_missing(cur, "notification_preferences", [
         ("sms", "INTEGER DEFAULT 0"),
+        ("enable_push_notifications", "INTEGER DEFAULT 0"),
+        ("enable_notification_sound", "INTEGER DEFAULT 1"),
+        ("enable_notification_vibration", "INTEGER DEFAULT 1"),
+        ("notification_sound_type", "TEXT DEFAULT 'soft'"),
+        ("quiet_hours_enabled", "INTEGER DEFAULT 0"),
+        ("quiet_hours_start", "TEXT DEFAULT '22:00'"),
+        ("quiet_hours_end", "TEXT DEFAULT '07:00'"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS notification_delivery_logs (

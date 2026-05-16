@@ -76,7 +76,7 @@
     .lock-badge { display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; background:rgba(255,209,102,.14); color:#ffe4a8; font-size:12px; font-weight:900; }
     .score-ring { width:118px; height:118px; border-radius:999px; display:grid; place-items:center; border:10px solid rgba(54,229,143,.24); box-shadow:inset 0 0 24px rgba(54,229,143,.15),0 0 28px rgba(110,223,246,.12); font-size:34px; font-weight:950; }
     .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:40; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); backdrop-filter:blur(18px); }
-    .bottom-nav .container { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:8px 12px; }
+    .bottom-nav .container { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:4px; padding:8px 12px; }
     .bottom-nav a { min-height:48px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:12px; font-weight:900; border-radius:8px; }
     .bottom-nav a:hover,.bottom-nav a.active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .channel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -126,12 +126,23 @@
     <div class="container">
       <nav>
         <a class="brand" href="/"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI Inc.</span></a>
-        <div class="nav-links">
+        {% set header_has_actions = dashboard_prefs.show_account or dashboard_prefs.show_upgrade_pro or dashboard_prefs.show_command_center or dashboard_prefs.show_logout %}
+        {% if header_has_actions %}
+        <div class="nav-links" data-home-action-group="primary_header">
+          {% if dashboard_prefs.show_account %}
           <a class="button" href="/account" data-home-action="show_account">Account</a>
+          {% endif %}
+          {% if dashboard_prefs.show_upgrade_pro %}
           <a class="button" href="/upgrade" data-home-action="show_upgrade_pro" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+          {% endif %}
+          {% if dashboard_prefs.show_command_center %}
           <a class="button" href="/app" data-home-action="show_command_center">Command Center</a>
+          {% endif %}
+          {% if dashboard_prefs.show_logout %}
           <a class="button" href="/logout" data-home-action="show_logout">Logout</a>
+          {% endif %}
         </div>
+        {% endif %}
       </nav>
     </div>
   </header>
@@ -296,14 +307,20 @@
           <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
           <a class="button command-glow command-glow-risk" href="/scam-shield">Run Scam Shield</a>
           <a class="button command-glow command-glow-ai" href="/day-signal">Run Day Signal</a>
+          {% if dashboard_prefs.show_command_center %}
           <a class="button command-glow command-glow-market" href="/command-center" data-home-action="show_command_center">Open Command Center</a>
+          {% endif %}
           <a class="button command-glow command-glow-market" href="/predictions/crypto">Crypto Predictions</a>
           <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
           {% if not access.has_pro %}<span class="lock-badge">Pro tools locked</span>{% endif %}
           {% if access.is_paid_pro %}
+            {% if dashboard_prefs.show_upgrade_pro %}
             <a class="button gold command-glow command-glow-account" href="/account" data-home-action="show_upgrade_pro">Manage Pro</a>
+            {% endif %}
           {% else %}
+            {% if dashboard_prefs.show_upgrade_pro %}
             <a class="button gold command-glow command-glow-account" href="/upgrade" data-home-action="show_upgrade_pro" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+            {% endif %}
           {% endif %}
         </div>
       </article>
@@ -357,13 +374,14 @@
   <nav class="bottom-nav">
     <div class="container">
       <a class="active" href="/dashboard">Home</a>
-      <a href="/command-center" data-home-action="show_command_center">Intel</a>
+      {% if dashboard_prefs.show_command_center %}<a href="/command-center" data-home-action="show_command_center">Intel</a>{% endif %}
       <a href="/live-market">Live</a>
       <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
-      <a href="/account" data-home-action="show_account">Account</a>
+      {% if dashboard_prefs.show_account %}<a href="/account" data-home-action="show_account">Account</a>{% endif %}
     </div>
   </nav>
 
+  <script src="/static/notifications.js" defer></script>
   <script>
     const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const pct = value => (Number(value || 0) >= 0 ? "+" : "") + Number(value || 0).toFixed(2) + "%";
@@ -592,6 +610,9 @@
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.message || "Could not save preference.");
       applyDashboardPreferences(data);
+      if (value && !document.querySelector(`[data-home-action="${key}"], [data-home-card="${key}"]`)) {
+        window.location.reload();
+      }
     }
 
     async function loadAccountStatus() {
