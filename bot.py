@@ -8474,6 +8474,219 @@ def arena_live_price(symbol):
     return fallback.get(symbol, 100.0), "cached training fallback"
 
 
+ARENA_CHALLENGE_TYPES = {
+    "quick_battle": {
+        "label": "Quick Battle",
+        "description": "A fast 3-5 minute intelligence challenge across market, scam, and discipline choices.",
+        "duration": "3-5 minutes",
+        "xp_reward": "75 XP",
+        "fake_balance": 0,
+        "difficulty": "Medium",
+        "rules": ["XP only", "Fast decision round", "No real trades"],
+        "solo_url": "/arena/quick-battle",
+    },
+    "btc_duel": {
+        "label": "BTC Duel",
+        "description": "A focused Bitcoin fake-money duel using live/cached market context.",
+        "duration": "15 minutes",
+        "xp_reward": "120 XP",
+        "fake_balance": 10000,
+        "difficulty": "Intermediate",
+        "rules": ["BTC focus", "Fake $10,000 balance", "Risk-adjusted score"],
+    },
+    "eth_duel": {
+        "label": "ETH Duel",
+        "description": "An Ethereum strategy duel with fake trades and discipline scoring.",
+        "duration": "15 minutes",
+        "xp_reward": "120 XP",
+        "fake_balance": 10000,
+        "difficulty": "Intermediate",
+        "rules": ["ETH focus", "Fake $10,000 balance", "No exchange execution"],
+    },
+    "scam_hunter_duel": {
+        "label": "Scam Hunter Duel",
+        "description": "Compete on scam detection speed, accuracy, and explanation quality.",
+        "duration": "10 minutes",
+        "xp_reward": "100 XP",
+        "fake_balance": 0,
+        "difficulty": "Medium",
+        "rules": ["Identify red flags", "Accuracy beats speed", "Educational simulation"],
+    },
+    "scam_hunter": {
+        "label": "Scam Hunter Duel",
+        "description": "Compete on scam detection speed, accuracy, and explanation quality.",
+        "duration": "10 minutes",
+        "xp_reward": "100 XP",
+        "fake_balance": 0,
+        "difficulty": "Medium",
+        "rules": ["Identify red flags", "Accuracy beats speed", "Educational simulation"],
+    },
+    "survival_mode": {
+        "label": "Survival Mode",
+        "description": "Survive volatility, fake signals, and psychological traps in a tactical simulation.",
+        "duration": "20 minutes",
+        "xp_reward": "150 XP",
+        "fake_balance": 10000,
+        "difficulty": "Hard",
+        "rules": ["Scenario chain", "Discipline scoring", "Fake-money only"],
+        "solo_url": "/arena/survival",
+    },
+    "solo_market_survival": {
+        "label": "Solo Market Survival",
+        "description": "Practice survival decisions against a simulated market storm.",
+        "duration": "Open practice",
+        "xp_reward": "Per round",
+        "fake_balance": 10000,
+        "difficulty": "Adaptive",
+        "rules": ["Solo training", "Fake-money only", "Stop anytime"],
+        "solo_url": "/arena/survival",
+    },
+    "fake_portfolio_battle": {
+        "label": "Fake Portfolio Battle",
+        "description": "Build a fake portfolio and win through return, risk control, and discipline.",
+        "duration": "24 hours",
+        "xp_reward": "200 XP",
+        "fake_balance": 10000,
+        "difficulty": "Strategic",
+        "rules": ["BTC/ETH/SOL", "Max 8 fake trades", "Risk-adjusted winner"],
+    },
+    "prediction_war": {
+        "label": "Prediction War",
+        "description": "Compare market reasoning against live prediction-market context.",
+        "duration": "30 minutes",
+        "xp_reward": "140 XP",
+        "fake_balance": 0,
+        "difficulty": "Advanced",
+        "rules": ["Probability reasoning", "No real event contracts", "Educational only"],
+    },
+    "ai_boss_race": {
+        "label": "AI Boss Race",
+        "description": "Race another player through AI boss decisions and discipline traps.",
+        "duration": "12 minutes",
+        "xp_reward": "160 XP",
+        "fake_balance": 0,
+        "difficulty": "Hard",
+        "rules": ["Boss decisions", "Emotional control", "Scam/risk awareness"],
+    },
+    "friend_battle": {
+        "label": "Friend Battle",
+        "description": "A private fake-money challenge between Arena players.",
+        "duration": "24 hours",
+        "xp_reward": "150 XP",
+        "fake_balance": 10000,
+        "difficulty": "Medium",
+        "rules": ["Private match", "Fake balance", "No real wagering"],
+    },
+}
+
+
+def arena_challenge_key(value):
+    raw = clean_html(str(value or "friend_battle")).strip().lower().replace(" ", "_").replace("-", "_")
+    aliases = {
+        "btc": "btc_duel",
+        "eth": "eth_duel",
+        "scam_duel": "scam_hunter_duel",
+        "scam_hunter": "scam_hunter_duel",
+        "portfolio_battle": "fake_portfolio_battle",
+        "portfolio_survival": "fake_portfolio_battle",
+        "quick": "quick_battle",
+    }
+    key = aliases.get(raw, raw)
+    return key if key in ARENA_CHALLENGE_TYPES else "friend_battle"
+
+
+def arena_challenge_details(challenge_type):
+    key = arena_challenge_key(challenge_type)
+    details = dict(ARENA_CHALLENGE_TYPES.get(key) or ARENA_CHALLENGE_TYPES["friend_battle"])
+    details["key"] = key
+    return details
+
+
+def arena_match_label(match_type):
+    return arena_challenge_details(match_type).get("label") or clean_html(str(match_type or "Arena Match")).replace("_", " ").title()
+
+
+def arena_match_rules_for_type(match_type):
+    details = arena_challenge_details(match_type)
+    symbols = ["BTC", "ETH", "SOL"]
+    if details["key"] == "eth_duel":
+        symbols = ["ETH"]
+    elif details["key"] == "btc_duel":
+        symbols = ["BTC"]
+    return {
+        "fake_starting_balance": int(details.get("fake_balance") or 10000),
+        "symbols": symbols,
+        "max_trades": 8,
+        "scoring": "risk_adjusted_discipline",
+        "challenge_type": details["key"],
+        "challenge_label": details["label"],
+        "duration": details["duration"],
+        "xp_reward": details["xp_reward"],
+        "rules": details["rules"],
+    }
+
+
+def ensure_arena_participant(cur, match_id, user_id, fake_balance=10000):
+    if not match_id or not user_id:
+        return False
+    now = datetime.now().isoformat()
+    cur.execute(
+        "INSERT OR IGNORE INTO arena_match_participants (match_id, user_id, fake_balance, score, result_json, joined_at) VALUES (?, ?, ?, 0, '{}', ?)",
+        (int(match_id), int(user_id), float(fake_balance or 10000), now),
+    )
+    return cur.rowcount > 0
+
+
+def arena_public_match_participants(cur, match_id):
+    cur.execute(
+        """
+        SELECT p.*, ap.public_player_id, ap.display_name, ap.rank, ap.country, ap.avatar_url, ap.faction, ap.online_status
+        FROM arena_match_participants p
+        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
+        WHERE p.match_id=? ORDER BY p.score DESC, p.joined_at ASC
+        """,
+        (match_id,),
+    )
+    participants = []
+    for row in cur.fetchall():
+        item = dict(row)
+        profile = public_arena_player({
+            "user_id": item.get("user_id"),
+            "public_player_id": item.get("public_player_id"),
+            "display_name": item.get("display_name"),
+            "rank": item.get("rank"),
+            "country": item.get("country"),
+            "avatar_url": item.get("avatar_url"),
+            "faction": item.get("faction"),
+            "online_status": item.get("online_status"),
+        })
+        item.update(profile)
+        item.pop("email", None)
+        item.pop("username", None)
+        participants.append(item)
+    return participants
+
+
+def arena_match_can_join(match, user_id, participants=None):
+    if not match:
+        return False, "Match not found."
+    status = (match.get("status") or "").lower()
+    if status not in {"active", "open", "waiting", "accepted", "matchmaking"}:
+        return False, "This match is not accepting new players."
+    if participants and any(int(p.get("user_id") or 0) == int(user_id) for p in participants):
+        return False, "Already joined."
+    match_type = arena_challenge_key(match.get("match_type"))
+    opponent_id = int(match.get("opponent_id") or 0)
+    creator_id = int(match.get("creator_id") or 0)
+    if match_type == "friend_battle" and opponent_id and int(user_id) not in {creator_id, opponent_id}:
+        return False, "Private friend battles are limited to invited players."
+    if opponent_id and int(user_id) not in {creator_id, opponent_id} and match_type not in {"btc_duel", "eth_duel", "scam_hunter_duel", "prediction_war"}:
+        return False, "This battle is private."
+    if participants and len(participants) >= 2 and match_type not in {"solo_market_survival", "survival_mode", "quick_battle"}:
+        return False, "This battle is already full."
+    return True, ""
+
+
 def arena_user_display(user_id):
     user = load_account_by_id(user_id) or {}
     return account_display_name(user) if user else f"Pilot {user_id}"
@@ -8483,7 +8696,8 @@ def create_arena_match(creator_id, opponent_id=0, match_type="btc_duel", rules=N
     now = datetime.now().isoformat()
     starts = now
     ends = (datetime.now() + timedelta(hours=1)).isoformat()
-    rules = rules or {"fake_starting_balance": 10000, "symbols": ["BTC", "ETH", "SOL"], "max_trades": 8, "scoring": "risk_adjusted_discipline"}
+    match_key = arena_challenge_key(match_type)
+    rules = rules or arena_match_rules_for_type(match_key)
     conn = db()
     cur = conn.cursor()
     cur.execute(
@@ -8491,15 +8705,12 @@ def create_arena_match(creator_id, opponent_id=0, match_type="btc_duel", rules=N
         INSERT INTO arena_matches (match_type, creator_id, opponent_id, room_id, status, starts_at, ends_at, rules_json, created_at)
         VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
         """,
-        (clean_html(match_type)[:80], creator_id, opponent_id or 0, status, starts, ends, json.dumps(rules), now),
+        (match_key, creator_id, opponent_id or 0, status, starts, ends, json.dumps(rules), now),
     )
     match_id = cur.lastrowid
     for participant_id in [creator_id, opponent_id]:
         if participant_id:
-            cur.execute(
-                "INSERT OR IGNORE INTO arena_match_participants (match_id, user_id, fake_balance, score, result_json, joined_at) VALUES (?, ?, 10000, 0, '{}', ?)",
-                (match_id, participant_id, now),
-            )
+            ensure_arena_participant(cur, match_id, participant_id, rules.get("fake_starting_balance") or rules.get("fake_balance") or 10000)
     cur.execute(
         "INSERT INTO arena_live_matches (match_id, status, phase, countdown_ends_at, live_payload_json, updated_at) VALUES (?, ?, 'live', ?, '{}', ?)",
         (match_id, status, (datetime.now() + timedelta(seconds=15)).isoformat(), now),
@@ -8513,7 +8724,7 @@ def create_arena_match(creator_id, opponent_id=0, match_type="btc_duel", rules=N
     return match_id
 
 
-def get_arena_match_payload(match_id):
+def get_arena_match_payload(match_id, current_user_id=None):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -8524,19 +8735,8 @@ def get_arena_match_payload(match_id):
         return None
     match = dict(match_row)
     match["rules"] = json.loads(match.get("rules_json") or "{}")
-    cur.execute(
-        """
-        SELECT p.*, u.full_name, u.display_name, u.email
-        FROM arena_match_participants p LEFT JOIN users u ON u.user_id=p.user_id
-        WHERE p.match_id=? ORDER BY p.score DESC, p.joined_at ASC
-        """,
-        (match_id,),
-    )
-    participants = []
-    for row in cur.fetchall():
-        item = dict(row)
-        item["display_name"] = item.get("display_name") or item.get("full_name") or f"Pilot {item.get('user_id')}"
-        participants.append(item)
+    match["display_name"] = arena_match_label(match.get("match_type"))
+    participants = arena_public_match_participants(cur, match_id)
     cur.execute("SELECT * FROM arena_trade_positions WHERE match_id=? ORDER BY updated_at DESC", (match_id,))
     positions = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM arena_trades WHERE match_id=? ORDER BY created_at DESC LIMIT 20", (match_id,))
@@ -8546,9 +8746,38 @@ def get_arena_match_payload(match_id):
     cur.execute("SELECT COUNT(*) AS c FROM arena_spectators WHERE match_id=?", (match_id,))
     spectators_row = cur.fetchone()
     spectators = int(spectators_row["c"] if spectators_row else 0)
+    cur.execute("SELECT COUNT(*) AS c FROM arena_emotes WHERE match_id=?", (match_id,))
+    cheer_row = cur.fetchone()
+    cheer_count = int(cheer_row["c"] if cheer_row else 0)
     conn.close()
     commentary = arena_commentator.match_recap(match, participants, events)
-    return arena_realtime.live_match_payload(match, participants, positions, trades, events, spectators, commentary)
+    payload = arena_realtime.live_match_payload(match, participants, positions, trades, events, spectators, commentary)
+    current_id = int(current_user_id or 0)
+    is_participant = any(int(p.get("user_id") or 0) == current_id for p in participants) if current_id else False
+    can_join, join_reason = arena_match_can_join(match, current_id, participants) if current_id else (False, "Login required.")
+    winner = participants[0] if (match.get("status") == "completed" and participants) else {}
+    payload.update({
+        "match_label": match.get("display_name"),
+        "spectator_count": spectators,
+        "cheer_count": cheer_count,
+        "winner_public_player_id": winner.get("public_player_id") or "",
+        "winner_display_name": winner.get("display_name") or "",
+        "is_participant": is_participant,
+        "is_spectator": bool(current_id and not is_participant),
+        "can_join": bool(can_join),
+        "can_trade": bool(is_participant and (match.get("status") or "").lower() in {"active", "open", "waiting", "accepted"}),
+        "can_watch": bool(current_id),
+        "can_cheer": bool(current_id),
+        "can_challenge_winner": bool(match.get("status") == "completed" and winner),
+        "join_required_reason": join_reason,
+        "market_context": {
+            "BTC": arena_live_price("BTC")[0],
+            "ETH": arena_live_price("ETH")[0],
+            "source": "live/cached market service",
+            "updated_at": datetime.now().isoformat(),
+        },
+    })
+    return payload
 
 
 def arena_current_season():
@@ -8810,24 +9039,40 @@ def arena_inbox_payload(user_id, limit=40):
     for item in challenge_rows:
         sender = profile_cards.get(int(item.get("sender_id") or 0), {})
         receiver = profile_cards.get(int(item.get("receiver_id") or 0), {})
+        details = arena_challenge_details(item.get("challenge_type") or "friend_battle")
+        note = item.get("message_note") or ""
+        expires_at = item.get("expires_at") or ((datetime.fromisoformat(item.get("created_at")) + timedelta(days=30)).isoformat() if item.get("created_at") else "")
+        created_dt = datetime.fromisoformat(item.get("created_at")) if item.get("created_at") else datetime.now()
+        expires_in_days = max(0, 30 - (datetime.now() - created_dt).days)
         challenges.append({
             "id": item.get("id"),
             "type": "challenge",
             "status": item.get("status") or "pending",
-            "challenge_type": item.get("challenge_type") or "friend_battle",
+            "challenge_type": details["key"],
+            "challenge_label": details["label"],
+            "mode_description": details["description"],
+            "duration": details["duration"],
+            "xp_reward": details["xp_reward"],
+            "fake_balance": details["fake_balance"],
+            "difficulty": details["difficulty"],
+            "rules": details["rules"],
+            "match_id": item.get("match_id"),
             "sender": sender,
             "receiver": receiver,
             "is_incoming": int(item.get("receiver_id") or 0) == int(user_id),
-            "message_preview": f"{sender.get('display_name')} wants to battle in {item.get('challenge_type') or 'Arena'} mode.",
+            "message_preview": note or f"{sender.get('display_name')} challenged you to a {details['label']}.",
             "stakes": "XP only",
-            "arena": item.get("challenge_type") or "friend_battle",
+            "arena": details["label"],
             "created_at": item.get("created_at"),
             "responded_at": item.get("responded_at"),
-            "expires_in_days": 30,
+            "expires_at": expires_at,
+            "expires_in_days": expires_in_days,
+            "next_url": f"/arena/match/{item.get('match_id')}" if item.get("match_id") else "",
         })
     messages = []
     for item in message_rows:
         sender = profile_cards.get(int(item.get("sender_id") or 0), {})
+        thread_id = item.get("thread_id") or ""
         messages.append({
             "id": item.get("id"),
             "type": "message",
@@ -8837,7 +9082,9 @@ def arena_inbox_payload(user_id, limit=40):
             "message_preview": item.get("first_message") or "",
             "created_at": item.get("created_at"),
             "responded_at": item.get("responded_at"),
-            "chat_url": f"/arena/inbox?thread={item.get('id')}",
+            "thread_id": thread_id,
+            "chat_url": f"/arena/chat/{thread_id}" if thread_id else "",
+            "next_url": f"/arena/chat/{thread_id}" if thread_id else "",
         })
     pending_challenges = [item for item in challenges if item["status"] == "pending" and item["is_incoming"]]
     pending_messages = [item for item in messages if item["status"] == "pending" and item["is_incoming"]]
@@ -9307,7 +9554,9 @@ def arena_home_page():
       const challenge = event.target.closest('[data-challenge]');
       if (challenge) {{
         const public_player_id = challenge.dataset.challenge || "";
-        const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id, challenge_type:'friend_battle'}})}});
+        const challenge_type = prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race', 'fake_portfolio_battle') || 'fake_portfolio_battle';
+        const message = prompt('Optional challenge note', 'Ready for a fake-money Arena battle?') || '';
+        const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id, challenge_type, message}})}});
         const data = await response.json();
         alert(data.message || 'Arena challenge sent.');
       }}
@@ -9390,7 +9639,9 @@ def arena_leaderboard_page():
       const follow = event.target.closest('[data-follow]');
       const message = event.target.closest('[data-message]');
       if (challenge) {{
-        const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:challenge.dataset.challenge, challenge_type:'friend_battle'}})}});
+        const challenge_type = prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race', 'btc_duel') || 'btc_duel';
+        const message = prompt('Optional challenge note', 'Challenge from the leaderboard.') || '';
+        const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:challenge.dataset.challenge, challenge_type, message}})}});
         const data = await response.json(); alert(data.message || 'Challenge sent.');
       }}
       if (follow) {{
@@ -9439,7 +9690,7 @@ def arena_player_page(public_player_id):
     <section class="hero"><article class="card wide"><div class="kicker">Arena Player Profile</div><h1>{clean_html(display)}</h1><p>{clean_html(arena_player_style_summary(profile))}</p><div class="actions">{actions}</div></article><article class="card"><span class="rank">{clean_html(profile.get('rank'))}</span><div class="metric">{int(profile.get('arena_iq') or 0)}</div><p>Arena IQ</p></article></section>
     <section class="grid"><article class="card"><h3>Discipline</h3><div class="metric">{int(profile.get('discipline_score') or 0)}</div></article><article class="card"><h3>Scam Defense</h3><div class="metric">{int(profile.get('scam_defense_score') or 0)}</div></article><article class="card"><h3>XP</h3><div class="metric">{int(profile.get('xp') or 0)}</div></article></section>
     <div class="share-modal" data-share-modal hidden><h3>Share Arena Player</h3><p class="muted">Public Arena profile only. No email, internal ID, or account data.</p><div class="actions"><button data-copy-share>Copy Link</button><a class="button" data-share-x target="_blank" rel="noopener">X</a><a class="button" data-share-facebook target="_blank" rel="noopener">Facebook</a><a class="button" data-share-whatsapp target="_blank" rel="noopener">WhatsApp</a><a class="button" data-share-telegram target="_blank" rel="noopener">Telegram</a><button data-close-share>Close</button></div><p class="muted" data-share-toast></p></div>
-    <script>async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform,title:'Arena player profile shared'}})}})}}catch(e){{}}}}async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.'}}function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href=`https://twitter.com/intent/tweet?text=${{text}}&url=${{encoded}}`;modal.querySelector('[data-share-facebook]').href=`https://www.facebook.com/sharer/sharer.php?u=${{encoded}}`;modal.querySelector('[data-share-whatsapp]').href=`https://wa.me/?text=${{text}}%20${{encoded}}`;modal.querySelector('[data-share-telegram]').href=`https://t.me/share/url?url=${{encoded}}&text=${{text}}`;modal.hidden=false;}}document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');if(c){{const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:'friend_battle'}})}});alert((await res.json()).message||'Challenge sent.')}}if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.')}}if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await res.json()).message||'Message request sent.')}}}}if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.')}}if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.')}}if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;}})</script>
+    <script>async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform,title:'Arena player profile shared'}})}})}}catch(e){{}}}}async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.'}}function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href=`https://twitter.com/intent/tweet?text=${{text}}&url=${{encoded}}`;modal.querySelector('[data-share-facebook]').href=`https://www.facebook.com/sharer/sharer.php?u=${{encoded}}`;modal.querySelector('[data-share-whatsapp]').href=`https://wa.me/?text=${{text}}%20${{encoded}}`;modal.querySelector('[data-share-telegram]').href=`https://t.me/share/url?url=${{encoded}}&text=${{text}}`;modal.hidden=false;}}document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','btc_duel')||'btc_duel';const message=prompt('Optional challenge note','Ready for an Arena challenge?')||'';const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type,message}})}});alert((await res.json()).message||'Challenge sent.')}}if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.')}}if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await res.json()).message||'Message request sent.')}}}}if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.')}}if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.')}}if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;}})</script>
     """
     return arena_page_shell(f"Arena Player {display}", body, user=user, public=True, meta_tags=meta_tags)
 
@@ -9458,7 +9709,7 @@ def arena_players_page():
     body = f"""
     <section class="hero"><article class="card wide"><div class="kicker">Arena Players</div><h1>Find pilots without exposing private identity</h1><p>Message, challenge, follow, and invite Arena players through public Arena IDs only. Emails, internal IDs, billing data, and account usernames stay private.</p></article><article class="card"><h2>Privacy Safe</h2><p>Every action maps public player IDs to accounts only on the server.</p></article></section>
     <section class="grid">{cards or '<article class="card"><h2>No pilots yet</h2><p>Complete a mission to appear in the Arena directory.</p></article>'}</section>
-    <script>document.addEventListener('click',async e=>{{const m=e.target.closest('[data-message]');const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await r.json()).message||'Message request sent.')}}}}if(c){{const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:'quick_battle'}})}});alert((await r.json()).message||'Challenge sent.')}}if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await r.json()).message||'Followed.')}}}})</script>
+    <script>document.addEventListener('click',async e=>{{const m=e.target.closest('[data-message]');const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await r.json()).message||'Message request sent.')}}}}if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','quick_battle')||'quick_battle';const message=prompt('Optional challenge note','Quick Arena challenge?')||'';const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type,message}})}});alert((await r.json()).message||'Challenge sent.')}}if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await r.json()).message||'Followed.')}}}})</script>
     """
     return arena_page_shell("Arena Players", body, user=user)
 
@@ -9514,21 +9765,42 @@ def arena_inbox_page():
         preview = clean_html(item.get("message_preview") or "Arena request")
         status = clean_html(item.get("status") or "pending")
         kind = item.get("type")
+        details_html = ""
         if kind == "challenge":
             accept_url, reject_url, key, accept_text = "/api/arena/challenge/accept", "/api/arena/challenge/reject", "challenge_id", "Accept Challenge"
+            details_html = f"""
+            <div class="arena-request-details">
+              <strong>{clean_html(item.get('challenge_label') or 'Arena Challenge')}</strong>
+              <p>{clean_html(item.get('mode_description') or '')}</p>
+              <p class="muted">Duration: {clean_html(item.get('duration') or 'Flexible')} · Reward: {clean_html(item.get('xp_reward') or 'XP only')} · Difficulty: {clean_html(item.get('difficulty') or 'Adaptive')}</p>
+              <p class="muted">Fake balance: ${int(item.get('fake_balance') or 0):,} · Expires in {int(item.get('expires_in_days') or 0)} days</p>
+              <p class="muted">Rules: {clean_html(', '.join(item.get('rules') or ['XP only', 'No real money']))}</p>
+            </div>
+            """
         elif kind == "friend_request":
             accept_url, reject_url, key, accept_text = "/api/arena/friend-request/accept", "/api/arena/friend-request/reject", "request_id", "Accept Friend"
         else:
             accept_url, reject_url, key, accept_text = "/api/arena/message/accept", "/api/arena/message/reject", "request_id", "Accept Chat"
         stats = f"<p class='muted'>{rank} · {faction} · {clean_html(item.get('stakes') or 'XP only')}</p>" if kind == "challenge" else f"<p class='muted'>{rank} · {faction}</p>"
+        if status == "pending":
+            primary_actions = f"""
+            <button data-arena-action="{accept_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">{accept_text}</button>
+            <button data-arena-action="{reject_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">Decline</button>
+            """
+        elif kind == "message" and status == "accepted" and item.get("chat_url"):
+            primary_actions = f"<a class='button primary' href='{clean_html(item.get('chat_url'))}'>Open Chat</a>"
+        elif kind == "challenge" and status == "accepted" and item.get("next_url"):
+            primary_actions = f"<a class='button primary' href='{clean_html(item.get('next_url'))}'>Open Match</a>"
+        else:
+            primary_actions = f"<span class='rank'>{status.title()}</span>"
         return f"""
         <article class="player-card" data-request-card="{kind}:{int(item.get('id') or 0)}">
           <strong>{name}</strong>{stats}
           <p>“{preview}”</p>
+          {details_html}
           <small class="muted">{clean_html(item.get('created_at') or '')} · {status}</small>
           <div class="actions">
-            <button data-arena-action="{accept_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">{accept_text}</button>
-            <button data-arena-action="{reject_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">Decline</button>
+            {primary_actions}
             <a class="button" href="/arena/player/{public_id}">View Profile</a>
             <button data-arena-block="{public_id}">Block</button>
             <button data-arena-report="{public_id}">Report</button>
@@ -9625,17 +9897,19 @@ def arena_phase_two_page(room_id=None, match_id=None):
     if not user:
         return redirect(url_for("signup_page", next=request.path))
     if match_id:
-        live = get_arena_match_payload(match_id)
+        live = get_arena_match_payload(match_id, user["user_id"])
         if not live:
             return arena_page_shell("Arena Match", "<section class='card'><h1>Match not found</h1><p>This Arena battle is not available.</p></section>", user=user), 404
+        match_label = clean_html(live.get("match_label") or (live.get("match") or {}).get("display_name") or "Arena Match")
         body = f"""
         <section class="hero">
-          <article class="card wide"><div class="kicker">Realtime Battle</div><h1>{clean_html((live.get('match') or {}).get('match_type') or 'Arena Match')}</h1><p>Fake-money match. Live updates refresh every few seconds. No real orders. No wagering.</p><div class="actions"><button data-spectate="{match_id}">Watch Live</button><button data-emote="cheer">Cheer</button><a class="button" href="/arena/leaderboard">Challenge Winner</a></div></article>
-          <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectators') or 0)}</span></p></article>
+          <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Fake-money match. Live updates refresh every few seconds. No real orders. No wagering.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{clean_html((live.get('match') or {}).get('status') or 'active')}</span></p></article>
+          <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p></article>
         </section>
         <section class="grid">
           <article class="card wide"><h2>Fake Portfolio Battle</h2><div class="grid" data-participants></div></article>
-          <article class="card"><h2>Fake Trade Ticket</h2><form data-arena-trade><input name="symbol" value="BTC" placeholder="BTC"><select name="side"><option value="buy">Buy</option><option value="sell">Sell</option><option value="stop_loss">Stop loss simulation</option><option value="take_profit">Take profit simulation</option></select><input name="quantity" type="number" step="any" min="0" placeholder="0.01"><button class="primary">Place Fake Trade</button></form><p class="muted" data-trade-result></p></article>
+          <article class="card"><h2>Fake Trade Ticket</h2><div data-trade-gate></div><form data-arena-trade><input name="symbol" value="BTC" placeholder="BTC"><select name="side"><option value="buy">Buy</option><option value="sell">Sell</option><option value="stop_loss">Stop loss simulation</option><option value="take_profit">Take profit simulation</option></select><input name="quantity" type="number" step="any" min="0" placeholder="0.01"><button class="primary">Place Fake Trade</button></form><p class="muted" data-trade-result></p></article>
+          <article class="card"><h2>Market Context</h2><div data-market-context></div></article>
           <article class="card wide"><h2>Positions</h2><div data-positions></div></article>
           <article class="card"><h2>Battle Chat</h2><form data-match-chat><input name="message" placeholder="Keep it respectful"><button>Send</button></form><div class="feed" data-match-chat-feed></div></article>
           <article class="card wide"><h2>Live Commentary Stream</h2><div class="feed" data-match-events></div></article>
@@ -9648,10 +9922,18 @@ def arena_phase_two_page(room_id=None, match_id=None):
           const d = await r.json();
           if (!d.ok) return;
           document.querySelector('[data-match-commentary]').textContent = d.ai_commentary || 'AI commentary is warming up.';
-          document.querySelector('[data-spectators]').textContent = d.spectators || 0;
-          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Fake cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
+          document.querySelector('[data-spectators]').textContent = d.spectator_count || d.spectators || 0;
+          document.querySelector('[data-cheers]').textContent = d.cheer_count || 0;
+          document.querySelector('[data-match-state]').textContent = d.match?.status || 'active';
+          const joinBtn=document.querySelector('[data-join-battle]');
+          joinBtn.hidden=!d.can_join;
+          document.querySelector('[data-arena-trade]').hidden=!d.can_trade;
+          document.querySelector('[data-trade-gate]').innerHTML=d.can_trade?'':(d.can_join?'<p class="muted">Join this battle to enable the fake trade ticket.</p>':'<p class="muted">Spectator Mode. Fake trading is only available to participants.</p>');
+          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Fake cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}} · ${{esc(p.online_status||'training')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
           document.querySelector('[data-positions]').innerHTML = (d.positions || []).map(p => `<div class="player-card"><strong>${{esc(p.symbol)}}</strong><p>Qty ${{Number(p.quantity || 0).toFixed(6)}} · Avg $${{Number(p.average_price || 0).toLocaleString()}} · Realized P/L $${{Number(p.realized_pnl || 0).toFixed(2)}}</p></div>`).join('') || '<p class="muted">No fake positions yet.</p>';
           document.querySelector('[data-match-events]').innerHTML = (d.events || []).map(e => `<div><strong>${{esc(e.title || e.event_type)}}</strong><p>${{esc(e.body || '')}}</p><small>${{esc(e.created_at || '')}}</small></div>`).join('') || '<div>Waiting for the first Arena event.</div>';
+          const m=d.market_context||{{}};
+          document.querySelector('[data-market-context]').innerHTML=`<p><strong>BTC</strong> $${{Number(m.BTC||0).toLocaleString()}}</p><p><strong>ETH</strong> $${{Number(m.ETH||0).toLocaleString()}}</p><small class="muted">${{esc(m.source||'live/cached')}} · ${{esc(m.updated_at||'')}}</small>`;
         }}
         document.querySelector('[data-arena-trade]').addEventListener('submit', async e => {{
           e.preventDefault();
@@ -9669,9 +9951,13 @@ def arena_phase_two_page(room_id=None, match_id=None):
           e.target.reset(); loadMatch();
         }});
         document.addEventListener('click', async e => {{
-          if (e.target.closest('[data-spectate]')) await fetch('/api/arena/spectate', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:matchId}})}});
-          const emote = e.target.closest('[data-emote]');
-          if (emote) await fetch('/api/arena/emote', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:matchId, emote:emote.dataset.emote}})}});
+          const watch=e.target.closest('[data-match-watch]');
+          if (watch) {{watch.disabled=true; const d=await fetch(`/api/arena/match/${{matchId}}/watch`, {{method:'POST',headers:{{'Content-Type':'application/json'}}}}).then(r=>r.json()); watch.textContent='Watching Live'; document.querySelector('[data-spectators]').textContent=d.spectators||0;}}
+          const join=e.target.closest('[data-join-battle]');
+          if (join) {{join.disabled=true; const d=await fetch(`/api/arena/match/${{matchId}}/join`, {{method:'POST',headers:{{'Content-Type':'application/json'}}}}).then(r=>r.json()); if(d.ok) loadMatch(); else alert(d.message||'Join unavailable.');}}
+          const cheer = e.target.closest('[data-match-cheer]');
+          if (cheer && !cheer.disabled) {{cheer.disabled=true; const d=await fetch(`/api/arena/match/${{matchId}}/cheer`, {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{emote:cheer.dataset.matchCheer}})}}).then(r=>r.json()); document.querySelector('[data-cheers]').textContent=d.cheers||0; cheer.textContent='Cheered ✓'; setTimeout(()=>{{cheer.disabled=false;cheer.textContent='Cheer';}},3000);}}
+          if(e.target.closest('[data-challenge-winner]')){{const d=await fetch(`/api/arena/match/${{matchId}}/winner`).then(r=>r.json());if(!d.ok){{alert(d.message||'Winner not decided yet.');return;}}const type=prompt(`Challenge ${{d.winner_display_name}} to which mode?`, 'btc_duel')||'btc_duel';const out=await fetch('/api/arena/challenge-winner',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:matchId,challenge_type:type,message:'Rematch?'}})}}).then(r=>r.json());alert(out.message||'Challenge sent.');}}
           loadMatch();
         }});
         loadMatch(); setInterval(loadMatch, 3500);
@@ -9684,8 +9970,9 @@ def arena_phase_two_page(room_id=None, match_id=None):
         <section class="grid"><article class="card wide"><h2>Room Chat</h2><form data-room-chat><input name="message" placeholder="Share a respectful training insight"><button class="primary">Send</button></form><div class="feed" data-room-messages></div></article><article class="card"><h2>Trending Battles</h2><div data-room-matches></div></article><article class="card wide"><h2>Top Players</h2><div class="grid" data-room-players></div></article></section>
         <script>
         const roomId={room_id}; const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
-        async function loadRoom(){{const r=await fetch(`/api/arena/rooms/${{roomId}}/live`,{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!d.ok)return;document.querySelector('[data-room-commentary]').textContent=d.ai_commentary||'Room active.';document.querySelector('[data-room-messages]').innerHTML=(d.messages||[]).map(m=>`<div><strong>${{esc(m.display_name||'Pilot')}}</strong><p>${{esc(m.message)}}</p></div>`).join('')||'<div>No room messages yet.</div>';document.querySelector('[data-room-matches]').innerHTML=(d.active_matches||[]).map(m=>`<a class="button" href="/arena/match/${{m.id}}">${{esc(m.match_type)}} · ${{esc(m.status)}}</a>`).join('')||'<p class="muted">No active battles yet.</p>';document.querySelector('[data-room-players]').innerHTML=(d.top_players||[]).map(p=>`<div class="player-card"><strong>${{esc(p.display_name||p.username)}}</strong><span class="rank">${{esc(p.rank)}}</span><p>Arena IQ ${{p.arena_iq||50}}</p></div>`).join('')||'<p class="muted">Complete missions to appear here.</p>'}}
+        async function loadRoom(){{const r=await fetch(`/api/arena/rooms/${{roomId}}/live`,{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!d.ok)return;document.querySelector('[data-room-commentary]').textContent=d.ai_commentary||'Room active.';document.querySelector('[data-room-messages]').innerHTML=(d.messages||[]).map(m=>`<div><strong>${{esc(m.display_name||'Pilot')}}</strong><p>${{esc(m.message)}}</p></div>`).join('')||'<div>No room messages yet.</div>';document.querySelector('[data-room-matches]').innerHTML=(d.active_matches||[]).map(m=>`<div class="player-card" data-battle-card="${{m.id||0}}"><strong>${{esc(m.match_label||m.name||'Arena Battle')}}</strong><span class="rank">${{esc(m.status||'open')}}</span><p>${{esc(m.description||'Fake-money training battle.')}}</p><p class="muted">${{esc(m.xp_reward||'XP')}} · ${{esc(m.difficulty||'Adaptive')}} · Players live now</p><div class="actions"><button data-join-battle-card data-match-id="${{m.id||0}}" data-battle-type="${{esc(m.match_type||'btc_duel')}}">Join</button>${{m.id?`<a class="button" href="/arena/match/${{m.id}}?spectate=1">Watch</a>`:''}}</div></div>`).join('')||'<p class="muted">No active battles yet.</p>';document.querySelector('[data-room-players]').innerHTML=(d.top_players||[]).map(p=>`<div class="player-card"><strong>${{esc(p.display_name||p.username)}}</strong><span class="rank">${{esc(p.rank)}}</span><p>Arena IQ ${{p.arena_iq||50}}</p></div>`).join('')||'<p class="muted">Complete missions to appear here.</p>'}}
         document.querySelector('[data-room-chat]').addEventListener('submit',async e=>{{e.preventDefault();const message=new FormData(e.target).get('message');await fetch(`/api/arena/rooms/${{roomId}}/message`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}});e.target.reset();loadRoom();}});
+        document.addEventListener('click',async e=>{{const btn=e.target.closest('[data-join-battle-card]');if(!btn)return;btn.disabled=true;btn.textContent='Joining...';const d=await fetch('/api/arena/battle/join',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:Number(btn.dataset.matchId||0),battle_type:btn.dataset.battleType}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;else{{btn.disabled=false;btn.textContent=d.message||'Join';}}}});
         loadRoom(); setInterval(loadRoom,5000);
         </script>
         """
@@ -9940,10 +10227,26 @@ def api_arena_challenge():
     conn = db()
     cur = conn.cursor()
     now = datetime.now().isoformat()
-    challenge_type = clean_html(payload.get("challenge_type") or "friend_battle")[:80]
+    challenge_type = arena_challenge_key(payload.get("challenge_type") or "friend_battle")
+    details = arena_challenge_details(challenge_type)
+    note = clean_html(payload.get("message") or payload.get("note") or "")[:500]
+    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    challenge_payload = {
+        "challenge_type": challenge_type,
+        "label": details["label"],
+        "duration": details["duration"],
+        "xp_reward": details["xp_reward"],
+        "fake_balance": details["fake_balance"],
+        "rules": details["rules"],
+        "description": details["description"],
+        "message": note,
+    }
     cur.execute(
-        "INSERT INTO arena_friend_challenges (sender_id, receiver_id, challenge_type, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
-        (user["user_id"], opponent_id, challenge_type, now),
+        """
+        INSERT INTO arena_friend_challenges (sender_id, receiver_id, challenge_type, status, created_at, expires_at, message_note, payload_json)
+        VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+        """,
+        (user["user_id"], opponent_id, challenge_type, now, expires_at, note, json.dumps(challenge_payload)),
     )
     challenge_id = cur.lastrowid
     conn.commit()
@@ -9952,13 +10255,13 @@ def api_arena_challenge():
         notification_service.send_push_alert(
             opponent_id,
             "Arena challenge received",
-            f"{account_display_name(user)} wants to battle in {challenge_type}.",
+            f"{account_display_name(user)} challenged you to a {details['label']}.",
             {"challenge_id": challenge_id, "url": "/arena/inbox", "push_type": "arena_invite"},
         )
     except Exception as exc:
         logging.info("Arena challenge notification failed safely: %s", exc)
     log_product_event(user["user_id"], "arena_challenge_sent", {"opponent_id": opponent_id})
-    return jsonify({"ok": True, "challenge_id": challenge_id, "message": "Arena challenge sent."})
+    return jsonify({"ok": True, "challenge_id": challenge_id, "challenge": challenge_payload, "message": f"{details['label']} challenge sent."})
 
 
 @webhook_app.route("/api/arena/battle/accept", methods=["POST"])
@@ -9979,17 +10282,25 @@ def api_arena_battle_accept():
     if not challenge:
         thread_id, request_item = arena_thread_for_request(cur, challenge_id, user["user_id"])
         if thread_id and request_item and int(request_item.get("receiver_id") or 0) == int(user["user_id"]):
-            cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), challenge_id, user["user_id"]))
+            cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), thread_id, challenge_id, user["user_id"]))
             conn.commit()
             conn.close()
             return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
         conn.close()
         return jsonify({"ok": False, "message": "Challenge not found."}), 404
-    cur.execute("UPDATE arena_friend_challenges SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), challenge_id, user["user_id"]))
+    now = datetime.now().isoformat()
+    cur.execute("UPDATE arena_friend_challenges SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (now, challenge_id, user["user_id"]))
     changed = cur.rowcount
     conn.commit()
     conn.close()
-    match_id = create_arena_match(int(challenge["sender_id"]), user["user_id"], challenge["challenge_type"] or "friend_battle", status="active") if changed else 0
+    match_key = arena_challenge_key(challenge["challenge_type"] or "friend_battle")
+    match_id = create_arena_match(int(challenge["sender_id"]), user["user_id"], match_key, arena_match_rules_for_type(match_key), status="active") if changed else 0
+    if match_id:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("UPDATE arena_friend_challenges SET match_id=? WHERE id=?", (match_id, challenge_id))
+        conn.commit()
+        conn.close()
     return jsonify({"ok": bool(changed), "status": "accepted" if changed else "not_found", "message": "Challenge accepted. Arena match created." if changed else "Challenge not found.", "match_id": match_id, "next_url": f"/arena/match/{match_id}" if match_id else ""})
 
 
@@ -10163,13 +10474,136 @@ def api_arena_room_live(room_id):
     messages = [dict(row) for row in cur.fetchall()]
     for message in messages:
         message["display_name"] = message.get("display_name") or message.get("full_name") or f"Pilot {message.get('user_id')}"
-    cur.execute("SELECT id, match_type, status, starts_at FROM arena_matches WHERE status='active' ORDER BY created_at DESC LIMIT 8")
-    matches = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, match_type, status, starts_at, ends_at, rules_json FROM arena_matches WHERE status='active' ORDER BY created_at DESC LIMIT 8")
+    matches = []
+    for row in cur.fetchall():
+        item = dict(row)
+        details = arena_challenge_details(item.get("match_type"))
+        item.update({
+            "match_label": details["label"],
+            "description": details["description"],
+            "duration": details["duration"],
+            "xp_reward": details["xp_reward"],
+            "difficulty": details["difficulty"],
+        })
+        matches.append(item)
     conn.close()
     leaders = arena_leaderboard_payload(limit=6).get("players", [])
     top = (leaders[0].get("display_name") if leaders else "")
     commentary = arena_commentator.room_commentary(room.get("title") or "Arena Room", len(matches), top)
     return jsonify(arena_realtime.live_room_payload(room, messages, leaders, matches, commentary))
+
+
+def arena_trending_battles_payload(limit=8):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT m.*, COUNT(p.user_id) AS players_count
+        FROM arena_matches m
+        LEFT JOIN arena_match_participants p ON p.match_id=m.id
+        WHERE m.status IN ('active','open','waiting','matchmaking')
+        GROUP BY m.id
+        ORDER BY m.created_at DESC
+        LIMIT ?
+        """,
+        (int(limit or 8),),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    if len(rows) < 4:
+        seeded = ["btc_duel", "solo_market_survival", "friend_battle", "scam_hunter_duel", "prediction_war"]
+        existing = {arena_challenge_key(row.get("match_type")) for row in rows}
+        for key in seeded:
+            if key not in existing:
+                rows.append({"id": 0, "match_type": key, "status": "open", "players_count": 0, "ends_at": ""})
+            if len(rows) >= int(limit or 8):
+                break
+    conn.close()
+    battles = []
+    for row in rows[: int(limit or 8)]:
+        details = arena_challenge_details(row.get("match_type"))
+        ends_at = row.get("ends_at") or ""
+        time_remaining = "Open now"
+        try:
+            if ends_at:
+                remaining = datetime.fromisoformat(ends_at) - datetime.now()
+                minutes = max(0, int(remaining.total_seconds() // 60))
+                time_remaining = f"{minutes} min remaining" if minutes else "Ending soon"
+        except Exception:
+            pass
+        battles.append({
+            "id": row.get("id") or 0,
+            "battle_type": details["key"],
+            "name": details["label"],
+            "status": row.get("status") or "open",
+            "players_count": int(row.get("players_count") or 0),
+            "time_remaining": time_remaining,
+            "xp_reward": details["xp_reward"],
+            "difficulty": details["difficulty"],
+            "description": details["description"],
+            "join_label": "Continue" if row.get("id") else "Join",
+            "can_watch": bool(row.get("id")),
+            "watch_url": f"/arena/match/{row.get('id')}" if row.get("id") else "",
+        })
+    return {"ok": True, "battles": battles, "players_live_now": sum(int(item.get("players_count") or 0) for item in battles), "updated_at": datetime.now().isoformat()}
+
+
+@webhook_app.route("/api/arena/trending-battles", methods=["GET"])
+def api_arena_trending_battles():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_trending_battles_payload(limit=int(request.args.get("limit") or 8)))
+
+
+@webhook_app.route("/api/arena/battle/join", methods=["POST"])
+def api_arena_battle_join():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    match_id = int(payload.get("match_id") or 0)
+    battle_type = arena_challenge_key(payload.get("battle_type") or payload.get("match_type") or "btc_duel")
+    details = arena_challenge_details(battle_type)
+    if not match_id and details.get("solo_url") and battle_type in {"quick_battle", "solo_market_survival", "survival_mode"}:
+        return jsonify({"ok": True, "status": "solo_route", "next_url": details["solo_url"]})
+    if not match_id:
+        match_id = create_arena_match(user["user_id"], 0, battle_type, arena_match_rules_for_type(battle_type), status="active")
+        return jsonify({"ok": True, "status": "created", "match_id": match_id, "next_url": f"/arena/match/{match_id}"})
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_matches WHERE id=? LIMIT 1", (match_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "message": "Match not found."}), 404
+    match = dict(row)
+    participants = arena_public_match_participants(cur, match_id)
+    can_join, reason = arena_match_can_join(match, user["user_id"], participants)
+    if any(int(p.get("user_id") or 0) == int(user["user_id"]) for p in participants):
+        can_join, reason = True, ""
+    if not can_join:
+        conn.close()
+        return jsonify({"ok": False, "message": reason, "next_url": f"/arena/match/{match_id}"}), 403
+    rules = json.loads(match.get("rules_json") or "{}")
+    ensure_arena_participant(cur, match_id, user["user_id"], rules.get("fake_starting_balance") or 10000)
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "status": "joined", "match_id": match_id, "next_url": f"/arena/match/{match_id}"})
+
+
+@webhook_app.route("/api/arena/battle/watch", methods=["POST"])
+def api_arena_battle_watch():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    match_id = int((request.get_json(silent=True) or {}).get("match_id") or 0)
+    if not match_id:
+        return jsonify({"ok": False, "message": "match_id required."}), 400
+    return jsonify({"ok": True, "status": "watching", "next_url": f"/arena/match/{match_id}?spectate=1"})
 
 
 @webhook_app.route("/api/arena/match/<int:match_id>/chat", methods=["POST"])
@@ -10209,11 +10643,13 @@ def api_arena_matchmaking():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    match_type = clean_html(payload.get("match_type") or "BTC Duel")[:80]
+    match_type = arena_challenge_key(payload.get("match_type") or "btc_duel")
     opponent_id = int(payload.get("opponent_id") or 0)
     if opponent_id and not load_account_by_id(opponent_id):
         return jsonify({"ok": False, "message": "Opponent not found."}), 404
-    match_id = create_arena_match(user["user_id"], opponent_id, match_type, {"fake_starting_balance": 10000, "symbols": ["BTC", "ETH", "SOL"], "format": "1v1" if opponent_id else "solo", "scoring": "risk_adjusted_discipline"}, status="active")
+    rules = arena_match_rules_for_type(match_type)
+    rules["format"] = "1v1" if opponent_id else "open"
+    match_id = create_arena_match(user["user_id"], opponent_id, match_type, rules, status="active")
     log_product_event(user["user_id"], "arena_match_created", {"match_id": match_id, "match_type": match_type})
     return jsonify({"ok": True, "match_id": match_id, "message": "Realtime Arena battle created."})
 
@@ -10224,10 +10660,46 @@ def api_arena_match(match_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    live = get_arena_match_payload(match_id)
+    live = get_arena_match_payload(match_id, user["user_id"])
     if not live:
         return jsonify({"ok": False, "message": "Match not found."}), 404
     return jsonify(live)
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/join", methods=["POST"])
+def api_arena_match_join(match_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_matches WHERE id=? LIMIT 1", (match_id,))
+    match_row = cur.fetchone()
+    if not match_row:
+        conn.close()
+        return jsonify({"ok": False, "message": "Match not found."}), 404
+    match = dict(match_row)
+    participants = arena_public_match_participants(cur, match_id)
+    if any(int(p.get("user_id") or 0) == int(user["user_id"]) for p in participants):
+        conn.close()
+        return jsonify({"ok": True, "participant": True, "status": "already_joined", "next_url": f"/arena/match/{match_id}"})
+    can_join, reason = arena_match_can_join(match, user["user_id"], participants)
+    if not can_join:
+        conn.close()
+        return jsonify({"ok": False, "participant": False, "message": reason, "next_url": f"/arena/match/{match_id}"}), 403
+    rules = json.loads(match.get("rules_json") or "{}")
+    ensure_arena_participant(cur, match_id, user["user_id"], rules.get("fake_starting_balance") or 10000)
+    now = datetime.now().isoformat()
+    profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
+    cur.execute(
+        "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'joined', 'Player joined battle', ?, '{}', ?)",
+        (match_id, user["user_id"], f"{profile.get('display_name') or 'Arena Pilot'} joined the fake-money battle.", now),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "participant": True, "status": "joined", "next_url": f"/arena/match/{match_id}"})
 
 
 @webhook_app.route("/api/arena/trade", methods=["POST"])
@@ -10257,9 +10729,29 @@ def api_arena_spectate():
     now = datetime.now().isoformat()
     cur.execute("INSERT OR IGNORE INTO arena_spectators (match_id, user_id, joined_at, last_seen_at) VALUES (?, ?, ?, ?)", (match_id, user["user_id"], now, now))
     cur.execute("UPDATE arena_spectators SET last_seen_at=? WHERE match_id=? AND user_id=?", (now, match_id, user["user_id"]))
+    cur.execute("SELECT COUNT(*) AS c FROM arena_spectators WHERE match_id=?", (match_id,))
+    spectators = int((cur.fetchone() or [0])[0])
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Spectator mode connected.", "match_id": match_id})
+    return jsonify({"ok": True, "message": "You are watching live.", "spectating": True, "spectators": spectators, "match_id": match_id})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/watch", methods=["POST"])
+def api_arena_match_watch(match_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("INSERT OR IGNORE INTO arena_spectators (match_id, user_id, joined_at, last_seen_at) VALUES (?, ?, ?, ?)", (match_id, user["user_id"], now, now))
+    cur.execute("UPDATE arena_spectators SET last_seen_at=? WHERE match_id=? AND user_id=?", (now, match_id, user["user_id"]))
+    cur.execute("SELECT COUNT(*) AS c FROM arena_spectators WHERE match_id=?", (match_id,))
+    spectators = int((cur.fetchone() or [0])[0])
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "spectating": True, "spectators": spectators, "message": "You are watching live."})
 
 
 @webhook_app.route("/api/arena/emote", methods=["POST"])
@@ -10280,9 +10772,110 @@ def api_arena_emote():
     cur.execute("INSERT INTO arena_emotes (match_id, room_id, user_id, emote, created_at) VALUES (?, ?, ?, ?, ?)", (match_id, room_id, user["user_id"], emote, now))
     if match_id:
         cur.execute("INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'emote', 'Spectator reaction', ?, ?, ?)", (match_id, user["user_id"], f"{account_display_name(user)} reacted: {emote}", json.dumps({"emote": emote}), now))
+    cur.execute("SELECT COUNT(*) AS c FROM arena_emotes WHERE match_id=? AND match_id!=0", (match_id,))
+    cheers = int((cur.fetchone() or [0])[0])
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Arena reaction sent."})
+    return jsonify({"ok": True, "message": "Cheer sent", "cheers": cheers})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/cheer", methods=["POST"])
+def api_arena_match_cheer(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    emote = clean_html(payload.get("emote") or "🔥")[:32]
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("INSERT INTO arena_emotes (match_id, room_id, user_id, emote, created_at) VALUES (?, 0, ?, ?, ?)", (match_id, user["user_id"], emote, now))
+    cur.execute(
+        "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'emote', 'Spectator cheer', ?, ?, ?)",
+        (match_id, user["user_id"], f"{account_display_name(user)} cheered: {emote}", json.dumps({"emote": emote}), now),
+    )
+    cur.execute("SELECT COUNT(*) AS c FROM arena_emotes WHERE match_id=?", (match_id,))
+    cheers = int((cur.fetchone() or [0])[0])
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "cheers": cheers, "message": "Cheer sent"})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/event", methods=["POST"])
+def api_arena_match_event(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    title = clean_html(payload.get("title") or "Arena event")[:120]
+    body = clean_html(payload.get("body") or "")[:500]
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (match_id, user["user_id"], clean_html(payload.get("event_type") or "custom")[:60], title, body, json.dumps(payload.get("payload") or {}), datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Arena event added."})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/leave", methods=["POST"])
+def api_arena_match_leave(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM arena_spectators WHERE match_id=? AND user_id=?", (match_id, user["user_id"]))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "status": "left", "next_url": "/arena"})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/winner", methods=["GET"])
+def api_arena_match_winner(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    live = get_arena_match_payload(match_id, user["user_id"])
+    if not live:
+        return jsonify({"ok": False, "message": "Match not found."}), 404
+    if not live.get("can_challenge_winner"):
+        return jsonify({"ok": False, "status": live.get("match", {}).get("status") or "active", "message": "Winner not decided yet. Follow this match or challenge a player directly."})
+    return jsonify({"ok": True, "winner_public_player_id": live.get("winner_public_player_id"), "winner_display_name": live.get("winner_display_name")})
+
+
+@webhook_app.route("/api/arena/challenge-winner", methods=["POST"])
+def api_arena_challenge_winner():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    match_id = int(payload.get("match_id") or 0)
+    live = get_arena_match_payload(match_id, user["user_id"])
+    if not live or not live.get("can_challenge_winner"):
+        return jsonify({"ok": False, "message": "Winner not decided yet. Follow this match or challenge a player directly."}), 409
+    winner_id = arena_internal_id_from_public(live.get("winner_public_player_id") or "")
+    if not winner_id or winner_id == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "No challengeable winner found."}), 409
+    challenge_type = arena_challenge_key(payload.get("challenge_type") or "btc_duel")
+    details = arena_challenge_details(challenge_type)
+    note = clean_html(payload.get("message") or "Rematch?")[:500]
+    now = datetime.now().isoformat()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO arena_friend_challenges (sender_id, receiver_id, challenge_type, status, created_at, expires_at, message_note, payload_json)
+        VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
+        """,
+        (user["user_id"], winner_id, challenge_type, now, (datetime.now() + timedelta(days=30)).isoformat(), note, json.dumps({"source_match_id": match_id, "label": details["label"], "message": note})),
+    )
+    challenge_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "challenge_id": challenge_id, "status": "pending", "message": f"{details['label']} challenge sent."})
 
 
 @webhook_app.route("/api/arena/live-events", methods=["GET"])
@@ -10842,8 +11435,8 @@ def api_arena_message_player():
         conn.close()
         return jsonify({"ok": False, "message": "This player is not accepting messages."}), 403
     cur.execute(
-        "INSERT INTO arena_message_requests (sender_id, receiver_id, status, first_message, created_at) VALUES (?, ?, 'pending', ?, ?)",
-        (user["user_id"], receiver_id, message, datetime.now().isoformat()),
+        "INSERT INTO arena_message_requests (sender_id, receiver_id, status, first_message, created_at, expires_at) VALUES (?, ?, 'pending', ?, ?, ?)",
+        (user["user_id"], receiver_id, message, datetime.now().isoformat(), (datetime.now() + timedelta(days=30)).isoformat()),
     )
     request_id = cur.lastrowid
     conn.commit()
@@ -10874,7 +11467,7 @@ def api_arena_message_request_accept():
     if not thread_id or not request_item or int(request_item.get("receiver_id") or 0) != int(user["user_id"]):
         conn.close()
         return jsonify({"ok": False, "status": "not_found", "message": "Request not found."}), 404
-    cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), request_id, user["user_id"]))
+    cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), thread_id, request_id, user["user_id"]))
     changed = cur.rowcount
     conn.commit()
     conn.close()
@@ -10909,12 +11502,13 @@ def api_arena_chat_thread(thread_id):
 
 
 @webhook_app.route("/api/arena/chat/send", methods=["POST"])
-def api_arena_chat_send():
+@webhook_app.route("/api/arena/chat/<int:path_thread_id>/send", methods=["POST"])
+def api_arena_chat_send(path_thread_id=None):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    thread_id = int(payload.get("thread_id") or 0)
+    thread_id = int(path_thread_id or payload.get("thread_id") or 0)
     body = clean_html(payload.get("body") or "")[:1200]
     if not body:
         return jsonify({"ok": False, "message": "Message cannot be empty."}), 400
@@ -10936,11 +11530,12 @@ def api_arena_chat_send():
 
 
 @webhook_app.route("/api/arena/chat/read", methods=["POST"])
-def api_arena_chat_read():
+@webhook_app.route("/api/arena/chat/<int:path_thread_id>/read", methods=["POST"])
+def api_arena_chat_read(path_thread_id=None):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    thread_id = int((request.get_json(silent=True) or {}).get("thread_id") or 0)
+    thread_id = int(path_thread_id or (request.get_json(silent=True) or {}).get("thread_id") or 0)
     conn = db()
     cur = conn.cursor()
     cur.execute("UPDATE arena_chat_messages SET status='read', read_at=? WHERE thread_id=? AND sender_id!=?", (datetime.now().isoformat(), thread_id, user["user_id"]))
@@ -11770,18 +12365,23 @@ def api_messages_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    query = normalize_email(clean_html(payload.get("query") or payload.get("email") or payload.get("username") or ""))
+    query = clean_html(payload.get("query") or payload.get("public_player_id") or payload.get("email") or payload.get("username") or "").strip()
     if not query:
-        return jsonify({"ok": False, "message": "User email or username required."}), 400
+        return jsonify({"ok": False, "message": "Player name or public Arena ID required."}), 400
     conn = db()
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT user_id FROM users
-        WHERE lower(email)=lower(?) OR lower(username)=lower(?) OR lower(display_name)=lower(?)
-        ORDER BY user_id LIMIT 1
+        SELECT u.user_id FROM users u
+        LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+        WHERE lower(ap.public_player_id)=lower(?)
+           OR lower(ap.display_name)=lower(?)
+           OR lower(u.display_name)=lower(?)
+           OR lower(u.full_name)=lower(?)
+           OR lower(u.username)=lower(?)
+        ORDER BY u.user_id LIMIT 1
         """,
-        (query, query, query),
+        (query, query, query, query, query),
     )
     other = cur.fetchone()
     conn.close()
@@ -11803,8 +12403,8 @@ def api_messages_conversations():
     cur.execute(
         """
         SELECT c.id, c.updated_at, ou.user_id AS other_user_id,
-               COALESCE(NULLIF(ou.display_name, ''), NULLIF(ou.full_name, ''), NULLIF(ou.username, ''), ou.email, 'CoinPilotXAI user') AS other_name,
-               ou.email AS other_email, ou.last_seen_at AS other_last_seen_at,
+               COALESCE(NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), NULLIF(ou.display_name, ''), 'Arena Pilot') AS other_name,
+               ap.public_player_id AS other_public_player_id, ou.last_seen_at AS other_last_seen_at,
                MAX(pm.created_at) AS last_message_at,
                (
                  SELECT body FROM private_messages p2
@@ -11816,8 +12416,9 @@ def api_messages_conversations():
         JOIN conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=?
         LEFT JOIN conversation_members other_cm ON other_cm.conversation_id=c.id AND other_cm.user_id != ?
         LEFT JOIN users ou ON ou.user_id=other_cm.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=ou.user_id
         LEFT JOIN private_messages pm ON pm.conversation_id=c.id AND pm.deleted_at IS NULL
-        GROUP BY c.id, c.updated_at, ou.user_id, ou.display_name, ou.full_name, ou.username, ou.email, ou.last_seen_at
+        GROUP BY c.id, c.updated_at, ou.user_id, ap.display_name, ap.public_player_id, ou.display_name, ou.last_seen_at
         ORDER BY COALESCE(MAX(pm.created_at), c.updated_at) DESC
         LIMIT 80
         """,
@@ -11829,7 +12430,7 @@ def api_messages_conversations():
             "id": row["id"],
             "title": row["other_name"] or f"Conversation {row['id']}",
             "other_user_id": row["other_user_id"],
-            "other_email": row["other_email"],
+            "other_public_player_id": row["other_public_player_id"],
             "other_last_seen_at": row["other_last_seen_at"],
             "updated_at": row["updated_at"],
             "last_message_at": row["last_message_at"],
@@ -11850,10 +12451,17 @@ def api_messages_thread(conversation_id):
         return jsonify({"ok": False, "message": "Conversation not found."}), 404
     conn = db()
     cur = conn.cursor()
-    cur.execute(
-        "SELECT id, conversation_id, sender_user_id, body, created_at FROM private_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 200",
-        (conversation_id,),
-    )
+    since_id = int(request.args.get("since_id") or 0)
+    if since_id:
+        cur.execute(
+            "SELECT id, conversation_id, sender_user_id, body, created_at FROM private_messages WHERE conversation_id=? AND id>? AND deleted_at IS NULL ORDER BY id ASC LIMIT 100",
+            (conversation_id, since_id),
+        )
+    else:
+        cur.execute(
+            "SELECT id, conversation_id, sender_user_id, body, created_at FROM private_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 200",
+            (conversation_id,),
+        )
     messages = [dict(row) for row in cur.fetchall()]
     now = datetime.now().isoformat()
     cur.execute("UPDATE conversation_members SET last_read_at=? WHERE user_id=? AND conversation_id=?", (now, user["user_id"], conversation_id))
@@ -17456,6 +18064,7 @@ def init_db():
         ("arena_iq", "INTEGER DEFAULT 50"),
         ("streak_count", "INTEGER DEFAULT 0"),
         ("country", "TEXT"),
+        ("faction", "TEXT DEFAULT 'Arena Faction'"),
         ("favorite_asset", "TEXT DEFAULT 'BTC'"),
         ("online_status", "TEXT DEFAULT 'training'"),
         ("discipline_score", "INTEGER DEFAULT 50"),
@@ -18064,6 +18673,16 @@ def init_db():
         read_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "arena_friend_challenges", [
+        ("message_note", "TEXT"),
+        ("payload_json", "TEXT"),
+        ("match_id", "INTEGER"),
+        ("expires_at", "TEXT"),
+    ], conn=conn)
+    add_columns_if_missing(cur, "arena_message_requests", [
+        ("thread_id", "INTEGER"),
+        ("expires_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS arena_blocks (
         blocker_id INTEGER,
@@ -18121,13 +18740,22 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_notifications_user_type_status ON notifications(user_id, notification_type, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_receiver_status ON arena_friend_challenges(receiver_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_sender_status ON arena_friend_challenges(sender_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_challenges_match_id ON arena_friend_challenges(match_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_message_requests_receiver_status ON arena_message_requests(receiver_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_message_requests_sender_status ON arena_message_requests(sender_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_message_requests_thread_id ON arena_message_requests(thread_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_friendships_receiver_status ON arena_friendships(receiver_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_blocks_blocker_blocked ON arena_blocks(blocker_id, blocked_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_chat_threads_users ON arena_chat_threads(user_a_id, user_b_id, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_chat_messages_thread_id ON arena_chat_messages(thread_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_profiles_public_player_id ON arena_profiles(public_player_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_match_participants_match_user ON arena_match_participants(match_id, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_match_events_match_created ON arena_match_events(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_spectators_match_user ON arena_spectators(match_id, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_emotes_match_created ON arena_emotes(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_id_id ON private_messages(conversation_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_private_messages_sender_created ON private_messages(sender_user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conversation_members_user_conversation ON conversation_members(user_id, conversation_id)",
     ]
     for statement in index_statements:
         try:
