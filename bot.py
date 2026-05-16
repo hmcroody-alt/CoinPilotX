@@ -45,6 +45,7 @@ from services import (
     live_market_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
+    news_service,
     notification_service,
     notification_orchestrator as notification_orchestrator_service,
     portfolio_service,
@@ -6895,7 +6896,7 @@ def api_live_btc():
 
 @webhook_app.route("/api/live/news", methods=["GET"])
 def api_live_news():
-    response = jsonify({"ok": True, "source": "unavailable", "message": "Live crypto news source temporarily unavailable.", "updated_at": datetime.now().isoformat()})
+    response = jsonify(news_service.get_crypto_news(limit=int(request.args.get("limit") or 12)))
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -6960,6 +6961,76 @@ def quote_payload(symbol=None, category="top_volume", limit=50):
     return {"ok": True, **board}
 
 
+def tactical_insight_payload(symbol):
+    symbol = clean_html(symbol).upper()[:12] or "BTC"
+    quote_data = quote_payload(symbol)
+    asset = quote_data.get("asset") or {}
+    price = float(asset.get("price") or 0)
+    change = float(asset.get("change_24h") or 0)
+    volume = float(asset.get("volume_24h") or 0)
+    fear = live_market_service.get_fear_greed()
+    news = news_service.get_crypto_news(limit=6)
+    relevant_news = [
+        item for item in news.get("items", [])
+        if symbol in (item.get("affected_assets") or []) or symbol.lower() in (item.get("title", "") + " " + item.get("summary", "")).lower()
+    ] or (news.get("items") or [])[:2]
+    volatility = min(100, round(abs(change) * 12 + (8 if volume else 0), 1))
+    support = round(price * (0.985 if abs(change) < 3 else 0.97), 2) if price else None
+    resistance = round(price * (1.018 if change >= 0 else 1.012), 2) if price else None
+    fear_value = int(fear.get("value") or 50) if str(fear.get("value") or "").isdigit() else 50
+    fear_label = fear.get("classification") or ("Neutral" if fear_value >= 45 else "Fear")
+    if change >= 4:
+        mood = "Bullish momentum building"
+        bias = "Momentum Watch"
+        decision = "Watch for breakout confirmation"
+    elif change <= -4:
+        mood = "Fear spike"
+        bias = "Defensive"
+        decision = "Avoid emotional entries"
+    elif volatility >= 45:
+        mood = "Volatility expansion"
+        bias = "Risk-Off"
+        decision = "Wait for lower volatility"
+    elif fear_value < 35:
+        mood = "Cautious accumulation"
+        bias = "Neutral / Watch"
+        decision = "Monitor news catalysts and liquidity"
+    else:
+        mood = "Calm accumulation"
+        bias = "Neutral"
+        decision = "Watch for confirmation before aggressive positioning"
+    top_news = relevant_news[0].get("title") if relevant_news else "No urgent catalyst is dominating cached crypto intelligence."
+    if price:
+        insight = (
+            f"{symbol} is moving {change:.2f}% over 24h with liquidity still visible through volume near {volume:,.0f}. "
+            f"Fear & Greed reads {fear_label}, so the tactical posture is {bias.lower()} rather than reactive. "
+            f"Nearest working levels are support near {support:,.0f} and resistance near {resistance:,.0f}. "
+            f"Recent catalyst watch: {top_news}"
+        )
+    else:
+        insight = (
+            f"{symbol} live pricing is reconnecting, so CoinPilotXAI is using cached market intelligence. "
+            "The safest posture is observation until price, volume, and news context refresh."
+        )
+    confidence = 84 if price and news.get("items") else 68 if price else 56
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "market_mood": mood,
+        "ai_insight": insight,
+        "tactical_bias": bias,
+        "key_levels": {"support": support, "resistance": resistance},
+        "next_decision": decision,
+        "confidence": confidence,
+        "volatility_score": volatility,
+        "fear_greed": {"value": fear.get("value"), "classification": fear_label, "source": fear.get("source")},
+        "news_source": news.get("source_badge") or news.get("source") or "Cached intelligence",
+        "whale_activity": "Watch inflows/outflows" if symbol == "BTC" else "Whale layer available when provider is configured",
+        "source": quote_data.get("source") or "cached intelligence",
+        "last_updated": quote_data.get("last_updated") or datetime.utcnow().isoformat(timespec="seconds"),
+    }
+
+
 @webhook_app.route("/api/quote", methods=["GET"])
 @webhook_app.route("/api/quote/crypto", methods=["GET"])
 def api_quote_board():
@@ -6974,6 +7045,11 @@ def api_quote_symbol(symbol):
     return jsonify(payload), (200 if payload.get("ok") else 404)
 
 
+@webhook_app.route("/api/quote/crypto/<symbol>/tactical-insight", methods=["GET"])
+def api_quote_tactical_insight(symbol):
+    return jsonify(tactical_insight_payload(symbol))
+
+
 @webhook_app.route("/api/quote/crypto/<symbol>/chart", methods=["GET"])
 def api_quote_chart(symbol):
     asset = market_data_service.get_symbol(clean_html(symbol).upper()[:12]) or {}
@@ -6984,7 +7060,23 @@ def api_quote_chart(symbol):
 
 @webhook_app.route("/api/quote/crypto/<symbol>/news", methods=["GET"])
 def api_quote_news(symbol):
-    return jsonify({"ok": True, "symbol": symbol.upper(), "items": [], "message": "Live crypto news source temporarily unavailable.", "source": "news provider unavailable"})
+    payload = news_service.get_crypto_news(limit=12)
+    sym = clean_html(symbol).upper()[:12]
+    items = [
+        item for item in payload.get("items", [])
+        if sym in (item.get("affected_assets") or []) or sym.lower() in (item.get("title", "") + " " + item.get("summary", "")).lower()
+    ]
+    if not items:
+        items = payload.get("items", [])[:5]
+    return jsonify({
+        "ok": True,
+        "symbol": sym,
+        "items": items,
+        "mode": payload.get("mode"),
+        "source": payload.get("source") or payload.get("mode", "cached intelligence"),
+        "source_badge": payload.get("source_badge") or "Cached intelligence",
+        "last_updated": payload.get("last_updated"),
+    })
 
 
 @webhook_app.route("/api/quote/crypto/<symbol>/signals", methods=["GET"])
@@ -7003,7 +7095,7 @@ def quote_center_page():
 @webhook_app.route("/quote/crypto/<symbol>", methods=["GET"])
 def quote_symbol_page(symbol):
     symbol = clean_html(symbol).upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPilotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@media(max-width:720px){{.actions .button{{width:100%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();setInterval(load,30000)</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPilotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow-x:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}.tactical-card{{position:relative;overflow:hidden;background:radial-gradient(circle at 14% 0,rgba(110,223,246,.18),transparent 22rem),linear-gradient(135deg,rgba(14,28,48,.96),rgba(7,14,26,.92))}}.tactical-card:before{{content:'';position:absolute;inset:-1px;background:linear-gradient(120deg,transparent,rgba(110,223,246,.16),rgba(54,229,143,.08),transparent);animation:tacticalGlow 7s ease-in-out infinite;pointer-events:none}}.tactical-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative}}.live-dot,.confidence{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:6px 9px;color:#c8ffe2;font-size:12px;font-weight:900;background:rgba(255,255,255,.055)}}.live-dot:before{{content:'';width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8)}}.tactical-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;position:relative}}.tactical-pill{{border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.045);padding:12px}}.tactical-pill strong{{display:block;color:#fff;margin-top:2px}}.tactical-insight{{font-size:15px;line-height:1.55;margin:12px 0;position:relative}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@keyframes tacticalGlow{{0%,100%{{opacity:.28;transform:translateX(-8%)}}50%{{opacity:.68;transform:translateX(8%)}}}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card tactical-card' aria-live='polite'><div class='tactical-head'><div><p class='live-dot'>Live intelligence</p><h2>AI Tactical Insight</h2></div><span class='confidence' id='confidence'>Confidence --</span></div><div class='tactical-grid'><div class='tactical-pill'>Market Mood<strong id='mood'>Loading tactical context...</strong></div><div class='tactical-pill'>Tactical Bias<strong id='bias'>Neutral</strong></div><div class='tactical-pill'>Key Levels<strong id='levels'>Support -- · Resistance --</strong></div><div class='tactical-pill'>AI Next Decision<strong id='decision'>Watch for confirmation</strong></div></div><p class='tactical-insight' id='tacticalInsight'>CoinPilotXAI is loading live quote context, Fear & Greed, cached news, and volatility. If live sources reconnect slowly, cached tactical intelligence will appear here.</p><p id='tacticalMeta'></p></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});const compact=n=>Number(n||0).toLocaleString(undefined,{{maximumFractionDigits:0}});async function loadTactical(){{try{{const t=await fetch('/api/quote/crypto/{symbol}/tactical-insight',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('mood').textContent=t.market_mood||'Cached tactical context';document.getElementById('bias').textContent=t.tactical_bias||'Neutral';const levels=t.key_levels||{{}};document.getElementById('levels').textContent='Support '+(levels.support?compact(levels.support):'--')+' · Resistance '+(levels.resistance?compact(levels.resistance):'--');document.getElementById('decision').textContent=t.next_decision||'Wait for confirmation before aggressive positioning';document.getElementById('tacticalInsight').textContent=t.ai_insight||'Cached tactical intelligence is active while live sources reconnect.';document.getElementById('confidence').textContent='Confidence '+(t.confidence||60)+'%';document.getElementById('tacticalMeta').textContent=`Fear & Greed: ${{(t.fear_greed||{{}}).classification||'reconnecting'}} · Volatility score: ${{t.volatility_score||0}} · News: ${{t.news_source||'cached intelligence'}}`;}}catch(e){{document.getElementById('tacticalInsight').textContent='Cached tactical intelligence is active while live sources reconnect. Avoid emotional entries and wait for confirmation.';}}}}async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();loadTactical();setInterval(()=>{{load();loadTactical()}},30000)</script></body></html>""")
 
 
 def prediction_samples():
@@ -7064,7 +7156,7 @@ async function load(){{const d=await fetch('/api/predictions?category=crypto&sta
 document.addEventListener('click',async e=>{{const filter=e.target.closest('[data-filter]');if(filter){{currentFilter=filter.dataset.filter;render();return}}const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}if(btn.dataset.action==='ai'){{location.href='/chat?context=prediction&symbol='+encodeURIComponent(btn.dataset.symbol||'CRYPTO')+'&id='+encodeURIComponent(btn.dataset.id);return}}if(btn.dataset.action==='simulate'){{location.href='/simulator?prediction='+encodeURIComponent(btn.dataset.id);return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent=btn.dataset.action==='watch'?'Watching ✓':'Prediction alert activated'}});
 load();
 </script></body></html>""")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPilotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPilotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPilotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPilotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPilotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPilotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
 
 
 @webhook_app.route("/predictions/<market_id>", methods=["GET"])
@@ -7346,22 +7438,79 @@ def day_signal_page():
         return redirect(url_for("signup_page", next="/day-signal"))
     pro = has_pro_access(user)
     questions = [
-        ("calm", "How calm do you feel right now?", "1-10"),
-        ("plan", "Do you have a clear plan for today?", "yes/no"),
-        ("risk", "What is your maximum acceptable loss today?", "short answer"),
-        ("fomo", "Are you feeling FOMO because of market movement?", "yes/no"),
-        ("focus", "Can you focus for the next 30-60 minutes without interruption?", "yes/no"),
+        {
+            "key": "feeling",
+            "label": "How do you feel today?",
+            "type": "select",
+            "options": [
+                ("", "Choose your current state"),
+                ("calm", "Calm"),
+                ("focused", "Focused"),
+                ("tired", "Tired"),
+                ("anxious", "Anxious"),
+                ("excited", "Excited"),
+                ("angry", "Angry"),
+                ("distracted", "Distracted"),
+                ("overconfident", "Overconfident"),
+            ],
+        },
+        {"key": "fomo", "label": "Are you feeling FOMO right now?", "placeholder": "yes/no"},
+        {
+            "key": "prepared",
+            "label": "Do you already have a trading plan today?",
+            "type": "select",
+            "options": [
+                ("", "Choose readiness"),
+                ("very_prepared", "Yes, clear and written"),
+                ("somewhat_prepared", "Mostly, but still refining it"),
+                ("not_prepared", "Not yet"),
+                ("guessing", "I am mostly guessing"),
+            ],
+        },
+        {"key": "focus", "label": "Can you focus for the next 30-60 minutes without interruption?", "placeholder": "yes/no"},
     ]
     if pro:
         questions.extend([
-            ("recover_loss", "Are you trying to recover from a recent loss?", "yes/no"),
-            ("sleep", "Did you sleep enough before making market decisions today?", "yes/no"),
-            ("market", "Is the market trending, ranging, volatile, or unclear?", "short answer"),
-            ("miss_trade", "Are you willing to miss a trade rather than force one?", "yes/no"),
-            ("no_trade", "What would make today a no-trade day?", "short answer"),
+            {"key": "recover_loss", "label": "Are you trying to recover from a recent loss?", "placeholder": "yes/no"},
+            {"key": "sleep", "label": "Did you sleep enough before making market decisions today?", "placeholder": "yes/no"},
+            {"key": "market", "label": "Is the market trending, ranging, volatile, or unclear?", "placeholder": "short answer"},
+            {
+                "key": "walkaway",
+                "label": "Are you willing to miss a trade rather than force one?",
+                "type": "select",
+                "options": [("", "Choose discipline"), ("yes", "Yes"), ("maybe", "Maybe"), ("no", "No")],
+            },
+            {"key": "no_trade", "label": "What would make today a no-trade day?", "placeholder": "short answer"},
         ])
-    fields = "".join(f"<label>{clean_html(label)}<input name='{clean_html(key)}' placeholder='{clean_html(placeholder)}'></label>" for key, label, placeholder in questions)
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPilotXAI</title><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:30px 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850}}input{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form'>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>document.getElementById('form').addEventListener('submit',async e=>{{e.preventDefault();const answers=Object.fromEntries(new FormData(e.target).entries());document.getElementById('result').textContent='CoinPilotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
+    else:
+        questions.extend([
+            {
+                "key": "opportunity",
+                "label": "What kind of opportunity are you thinking about?",
+                "type": "select",
+                "options": [("", "Choose one"), ("crypto", "Crypto/Trading"), ("sports", "Sports Edge"), ("business", "Business/Money"), ("personal", "Personal decision")],
+            },
+            {
+                "key": "walkaway",
+                "label": "Are you willing to walk away if the signal looks risky?",
+                "type": "select",
+                "options": [("", "Choose one"), ("yes", "Yes"), ("maybe", "Maybe"), ("no", "No")],
+            },
+        ])
+    if pro:
+        questions.insert(4, {"key": "opportunity", "type": "hidden", "value": "crypto"})
+    def render_day_signal_field(item):
+        key = clean_html(item["key"])
+        if item.get("type") == "hidden":
+            return f"<input type='hidden' name='{key}' value='{clean_html(item.get('value', ''))}'>"
+        label = clean_html(item["label"])
+        error = f"<small class='field-error' data-error-for='{key}'></small>"
+        if item.get("type") == "select":
+            options = "".join(f"<option value='{clean_html(value)}'>{clean_html(text)}</option>" for value, text in item.get("options", []))
+            return f"<label data-question='{key}'>{label}<select name='{key}' required>{options}</select>{error}</label>"
+        return f"<label data-question='{key}'>{label}<input name='{key}' placeholder='{clean_html(item.get('placeholder', 'short answer'))}' required>{error}</label>"
+    fields = "".join(render_day_signal_field(item) for item in questions)
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPilotXAI</title><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:calc(24px + env(safe-area-inset-top)) 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850;scroll-margin-top:24px}}input,select{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}label.is-missing input,label.is-missing select{{border-color:#ff6b7a;box-shadow:0 0 0 3px rgba(255,107,122,.16)}}.field-error{{display:block;min-height:18px;color:#ffb7bf;margin-top:5px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form' novalidate>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>const form=document.getElementById('form');function clearErrors(){{document.querySelectorAll('.is-missing').forEach(n=>n.classList.remove('is-missing'));document.querySelectorAll('[data-error-for]').forEach(n=>n.textContent='')}}function markMissing(name,message){{const q=document.querySelector(`[data-question="${{name}}"]`);if(!q)return false;q.classList.add('is-missing');const err=q.querySelector('[data-error-for]');if(err)err.textContent=message||'Please answer this question.';q.scrollIntoView({{behavior:'smooth',block:'center'}});return true}}form.addEventListener('submit',async e=>{{e.preventDefault();clearErrors();const answers=Object.fromEntries(new FormData(e.target).entries());for(const element of form.querySelectorAll('[required]')){{if(!String(element.value||'').trim()){{markMissing(element.name,'Please answer this question.');return;}}}}document.getElementById('result').textContent='CoinPilotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();if(!r.ok||d.ok===false){{const text=d.response||d.message||'Day Signal unavailable right now.';document.getElementById('result').textContent=text;const match=text.match(/Please answer: (.+)$/);if(match){{const label=[...document.querySelectorAll('[data-question]')].find(node=>node.firstChild&&node.firstChild.textContent.trim()===match[1]);if(label)markMissing(label.dataset.question,'Required for Day Signal.')}}return}}document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
 
 
 def api_account_user():
@@ -12603,6 +12752,12 @@ def init_db():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "crypto_news_cache", [
+        ("tags", "TEXT"),
+        ("affected_assets", "TEXT"),
+        ("ai_summary", "TEXT"),
+        ("confidence", "REAL DEFAULT 0.58"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS engagement_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14882,6 +15037,19 @@ def news_sentiment(title, summary):
 
 
 def fetch_crypto_news(limit=4, country=None):
+    if not country:
+        payload = news_service.get_crypto_news(limit=limit)
+        return [
+            {
+                "title": item.get("title"),
+                "summary": item.get("summary"),
+                "sentiment": item.get("sentiment", "neutral").title(),
+                "source": item.get("source"),
+                "url": item.get("url"),
+                "published_at": item.get("published_at"),
+            }
+            for item in payload.get("items", [])[:limit]
+        ]
     items = []
     query_country = (country or "").lower()
     for source, url in NEWS_FEEDS:

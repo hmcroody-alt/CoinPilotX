@@ -296,14 +296,14 @@
           <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
           <a class="button command-glow command-glow-risk" href="/scam-shield">Run Scam Shield</a>
           <a class="button command-glow command-glow-ai" href="/day-signal">Run Day Signal</a>
-          <a class="button command-glow command-glow-market" href="/command-center">Open Command Center</a>
+          <a class="button command-glow command-glow-market" href="/command-center" data-home-action="show_command_center">Open Command Center</a>
           <a class="button command-glow command-glow-market" href="/predictions/crypto">Crypto Predictions</a>
           <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
           {% if not access.has_pro %}<span class="lock-badge">Pro tools locked</span>{% endif %}
           {% if access.is_paid_pro %}
-            <a class="button gold command-glow command-glow-account" href="/account">Manage Pro</a>
+            <a class="button gold command-glow command-glow-account" href="/account" data-home-action="show_upgrade_pro">Manage Pro</a>
           {% else %}
-            <a class="button gold command-glow command-glow-account" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+            <a class="button gold command-glow command-glow-account" href="/upgrade" data-home-action="show_upgrade_pro" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
           {% endif %}
         </div>
       </article>
@@ -357,10 +357,10 @@
   <nav class="bottom-nav">
     <div class="container">
       <a class="active" href="/dashboard">Home</a>
-      <a href="/command-center">Intel</a>
+      <a href="/command-center" data-home-action="show_command_center">Intel</a>
       <a href="/live-market">Live</a>
       <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
-      <a href="/account">Account</a>
+      <a href="/account" data-home-action="show_account">Account</a>
     </div>
   </nav>
 

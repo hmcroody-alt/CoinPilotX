@@ -12,7 +12,7 @@ from datetime import datetime
 
 import requests
 
-from . import market_data, predictions_service
+from . import market_data, news_service, predictions_service
 
 
 CACHE = {}
@@ -115,6 +115,7 @@ def health():
     fear = get_fear_greed()
     btc_network = get_btc_network()
     predictions = get_predictions(limit=10)
+    news = news_service.health()
     return {
         "ok": True,
         "providers": {
@@ -124,6 +125,7 @@ def health():
             "predictions": predictions.get("status"),
             "coinmarketcap": {"configured": bool(os.getenv("COINMARKETCAP_API_KEY"))},
             "cryptopanic": {"configured": bool(os.getenv("CRYPTOPANIC_API_KEY"))},
+            "news": news,
             "dexscreener": {"configured": True, "note": "public endpoint ready for token-detail expansion"},
             "whale_alert": {"configured": bool(os.getenv("WHALE_ALERT_API_KEY"))},
         },

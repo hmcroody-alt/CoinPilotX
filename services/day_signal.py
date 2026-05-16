@@ -2,7 +2,7 @@ from datetime import datetime
 from .user_context import connect
 
 QUESTIONS = [
-    {"key": "feeling", "question": "How do you feel today?", "options": [("confident", "Confident"), ("calm", "Calm"), ("nervous", "Nervous"), ("tired", "Tired")]},
+    {"key": "feeling", "question": "How do you feel today?", "options": [("calm", "Calm"), ("focused", "Focused"), ("tired", "Tired"), ("anxious", "Anxious"), ("excited", "Excited"), ("angry", "Angry"), ("distracted", "Distracted"), ("overconfident", "Overconfident"), ("confident", "Confident"), ("nervous", "Nervous")]},
     {"key": "prepared", "question": "How prepared are you for what you want to do today?", "options": [("very_prepared", "Very prepared"), ("somewhat_prepared", "Somewhat prepared"), ("not_prepared", "Not prepared"), ("guessing", "I'm guessing")]},
     {"key": "opportunity", "question": "What kind of opportunity are you thinking about?", "options": [("crypto", "Crypto/Trading"), ("sports", "Sports Edge"), ("business", "Business/Money"), ("personal", "Personal decision")]},
     {"key": "walkaway", "question": "Are you willing to walk away if the signal looks risky?", "options": [("yes", "Yes"), ("maybe", "Maybe"), ("no", "No")]},
@@ -34,7 +34,7 @@ def generate(answers, pro=False):
             return {"ok": False, "response": f"Please answer: {q['question']}"}
         normalized[q["key"]] = value
     score = (
-        {"confident": 22, "calm": 25, "nervous": 12, "tired": 8}[normalized["feeling"]]
+        {"calm": 25, "focused": 24, "confident": 22, "excited": 18, "nervous": 12, "anxious": 10, "tired": 8, "distracted": 7, "angry": 5, "overconfident": 8}[normalized["feeling"]]
         + {"very_prepared": 35, "somewhat_prepared": 24, "not_prepared": 8, "guessing": 4}[normalized["prepared"]]
         + {"crypto": 14, "sports": 12, "business": 17, "personal": 18}[normalized["opportunity"]]
         + {"yes": 22, "maybe": 12, "no": 0}[normalized["walkaway"]]

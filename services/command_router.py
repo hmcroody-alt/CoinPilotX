@@ -4,6 +4,7 @@ from . import (
     day_signal,
     intelligence,
     market_data,
+    news_service,
     portfolio_service,
     predictions_service,
     pro_access,
@@ -172,7 +173,9 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
             signal = "CAUTION"
         return _card(action_key, "Auto Signals", f"Educational signal: {signal}\nTrend: {trend}\nRisk: {risk}\nThis is context, not a buy/sell instruction.", board.get("source", "public market feed"), "Medium")
     if action_key in {"crypto_news", "market_events"}:
-        return _card(action_key, "Crypto News and Market Events", "Live news source temporarily unavailable. Connect NEWS_API_KEY or CryptoPanic/NewsAPI to enable fresh market event summaries.", "news source unavailable", "Low", ["Ask AI for general context", "Open market board"])
+        news = news_service.summarize_news(limit=5)
+        summary = news.get("summary") or "Cached intelligence is warming up. Watch BTC, ETH, ETF flows, regulation, scams, hacks, and macro liquidity."
+        return _card(action_key, "Crypto News and Market Events", summary, news.get("source", "cached intelligence"), "Medium", ["Ask AI for general context", "Open market board"])
     if action_key == "fear_greed":
         return _card(action_key, "Fear & Greed", "Fear & Greed source temporarily unavailable. The platform will show this live once the sentiment feed is connected.", "sentiment source unavailable", "Low")
     if action_key == "crypto_wisdom":
