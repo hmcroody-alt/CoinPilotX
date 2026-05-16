@@ -16605,6 +16605,78 @@ def add_columns_if_missing(cur, table, columns, conn=None):
         add_column_if_missing(cur, table, column, definition, conn=conn)
 
 
+def _migration_row_value(row, key, index=0):
+    if row is None:
+        return None
+    if hasattr(row, "get"):
+        return row.get(key)
+    try:
+        return row[key]
+    except Exception:
+        return row[index]
+
+
+def migration_table_exists(cur, table):
+    table = _migration_identifier(table)
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema='public' AND table_name=?", (table,))
+        else:
+            cur.execute("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        row = cur.fetchone()
+        return bool(_migration_row_value(row, "c", 0) if row else 0)
+    except Exception as exc:
+        logging.info("MIGRATION_TABLE_EXISTS_CHECK_SKIPPED table=%s error=%s", table, exc)
+        return False
+
+
+def migration_table_columns(cur, table):
+    table = _migration_identifier(table)
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (table,))
+            return {_migration_row_value(row, "column_name", 0) for row in cur.fetchall()}
+        cur.execute(f"PRAGMA table_info({table})")
+        return {_migration_row_value(row, "name", 1) for row in cur.fetchall()}
+    except Exception as exc:
+        logging.info("MIGRATION_COLUMN_CHECK_SKIPPED table=%s error=%s", table, exc)
+        return set()
+
+
+def safe_create_index(cur, conn, statement):
+    match = re.search(r"\bON\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)", statement or "", flags=re.I)
+    table = _migration_identifier(match.group(1)) if match else ""
+    columns = []
+    if match:
+        for part in match.group(2).split(","):
+            column = _migration_identifier(part.strip().split()[0].strip('"'))
+            if column:
+                columns.append(column)
+    try:
+        if table and not migration_table_exists(cur, table):
+            logging.info("INDEX_CREATE_SKIPPED_MISSING_TABLE table=%s statement=%s", table, statement)
+            return False
+        if table and columns:
+            existing = migration_table_columns(cur, table)
+            missing = [column for column in columns if column not in existing]
+            if missing:
+                logging.info("INDEX_CREATE_SKIPPED_MISSING_COLUMNS table=%s columns=%s statement=%s", table, missing, statement)
+                return False
+        cur.execute(statement)
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        return True
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.info("INDEX_CREATE_SKIPPED statement=%s error=%s", statement, exc)
+        return False
+
+
 def init_db():
     conn = db()
     if db_service.IS_POSTGRES and hasattr(conn, "set_autocommit"):
@@ -18919,6 +18991,22 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS security_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        user_id INTEGER,
+        ip_address TEXT,
+        path TEXT,
+        status TEXT,
+        details_json TEXT,
+        created_at TEXT
+    )
+    """)
+    try:
+        conn.commit()
+    except Exception as exc:
+        _rollback_failed_migration(conn, "pre_index_schema_commit", exc)
     index_statements = [
         "CREATE INDEX IF NOT EXISTS idx_notifications_user_type_status ON notifications(user_id, notification_type, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_receiver_status ON arena_friend_challenges(receiver_id, status, created_at)",
@@ -18943,10 +19031,7 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_arena_presence_updated ON arena_presence(updated_at)",
     ]
     for statement in index_statements:
-        try:
-            cur.execute(statement)
-        except Exception as exc:
-            logging.info("INDEX_CREATE_SKIPPED statement=%s error=%s", statement, exc)
+        safe_create_index(cur, conn, statement)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS auth_events (
@@ -22599,20 +22684,48 @@ def run_webhook():
     webhook_app.run(host="0.0.0.0", port=PORT)
 
 
+def telegram_token_configured():
+    token = (BOT_TOKEN or "").strip()
+    if not token:
+        logging.warning("TELEGRAM_DISABLED reason=missing_bot_token")
+        return False
+    if ":" not in token or len(token) < 20:
+        logging.warning("TELEGRAM_DISABLED reason=invalid_bot_token_shape")
+        return False
+    return True
+
+
+def keep_web_process_alive_without_telegram():
+    logging.warning("Telegram subsystem disabled; Flask web app remains active.")
+    while True:
+        time.sleep(3600)
+
+
 def main():
     init_db()
     run_trial_maintenance(force=True)
     print(f"{BOT_NAME} starting...")
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    if not telegram_token_configured():
+        keep_web_process_alive_without_telegram()
+
+    try:
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
+    except Exception as exc:
+        logging.warning("TELEGRAM_DISABLED reason=startup_error error=%s", exc)
+        keep_web_process_alive_without_telegram()
+
     job_queue = app.job_queue
 
     # MENU PUSH EVERY 3 HOURS
-    job_queue.run_repeating(
-        send_menu_job,
-        interval=10800,
-        first=30
-    )
+    if job_queue:
+        job_queue.run_repeating(
+            send_menu_job,
+            interval=10800,
+            first=30
+        )
+    else:
+        logging.warning("TELEGRAM_JOB_QUEUE_DISABLED reason=missing_job_queue")
 
     # Handlers
     app.add_handler(CommandHandler("start", start))
@@ -22689,13 +22802,18 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(telegram_error_handler)
 
-    job_queue.run_repeating(market_signal_job, interval=SIGNAL_CHECK_SECONDS, first=10)
-    job_queue.run_repeating(hourly_market_update, interval=HOURLY_UPDATE_SECONDS, first=30)
-    job_queue.run_repeating(whale_alert_job, interval=WHALE_CHECK_SECONDS, first=45)
-    job_queue.run_repeating(portfolio_tracking_job, interval=PORTFOLIO_TRACK_SECONDS, first=60)
-    job_queue.run_repeating(trial_maintenance_job, interval=3600, first=120)
+    if job_queue:
+        job_queue.run_repeating(market_signal_job, interval=SIGNAL_CHECK_SECONDS, first=10)
+        job_queue.run_repeating(hourly_market_update, interval=HOURLY_UPDATE_SECONDS, first=30)
+        job_queue.run_repeating(whale_alert_job, interval=WHALE_CHECK_SECONDS, first=45)
+        job_queue.run_repeating(portfolio_tracking_job, interval=PORTFOLIO_TRACK_SECONDS, first=60)
+        job_queue.run_repeating(trial_maintenance_job, interval=3600, first=120)
 
-    app.run_polling()
+    try:
+        app.run_polling()
+    except Exception as exc:
+        logging.warning("TELEGRAM_DISABLED reason=polling_startup_error error=%s", exc)
+        keep_web_process_alive_without_telegram()
 
 
 if __name__ == "__main__":
