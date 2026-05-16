@@ -147,9 +147,9 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "CoinPilotXAI Alert";
   const options = {
     body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
-    icon: "/static/icons/icon-192.png",
-    badge: "/static/icons/icon-192.png",
-    vibrate: payload.vibrate || [120, 60, 120],
+    icon: payload.icon || "/icons/icon-192.png",
+    badge: payload.badge || "/icons/icon-192.png",
+    vibrate: payload.vibrate || [200, 100, 200],
     data: payload.data || { url: payload.url || "/notifications" },
     tag: payload.tag || "coinpilotxai-alert",
     renotify: payload.renotify !== false,

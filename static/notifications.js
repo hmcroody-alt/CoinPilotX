@@ -79,7 +79,7 @@
   function vibrate() {
     const prefs = STATE.prefs || {};
     if (!bool(prefs.enable_notification_vibration, true) || !canAlert(prefs)) return;
-    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
   }
 
   function alertUser() {

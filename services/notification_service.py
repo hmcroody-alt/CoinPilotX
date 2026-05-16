@@ -5,6 +5,7 @@ from datetime import datetime
 
 from . import user_context
 from . import email_service
+from . import push_service
 
 
 def _now():
@@ -311,35 +312,8 @@ def send_sms_alert(user, title, message, notification_id=None):
 
 
 def send_push_alert(user_id, title, message, metadata=None):
-    if not os.getenv("VAPID_PUBLIC_KEY") or not os.getenv("VAPID_PRIVATE_KEY"):
-        return {"ok": False, "status": "not_configured", "message": "VAPID push variables are not configured."}
-    try:
-        from pywebpush import webpush, WebPushException
-    except Exception:
-        return {"ok": False, "status": "not_configured", "message": "pywebpush is not installed."}
-    conn = user_context.connect()
-    cur = conn.cursor()
-    cur.execute("SELECT endpoint, subscription_json FROM push_subscriptions WHERE user_id=? AND active=1", (user_id,))
-    rows = cur.fetchall()
-    conn.close()
-    if not rows:
-        return {"ok": False, "status": "skipped", "message": "No active browser push subscription."}
-    sent = 0
-    failures = []
-    for endpoint, subscription_json in rows:
-        try:
-            webpush(
-                subscription_info=json.loads(subscription_json),
-                data=json.dumps({"title": title, "body": message, "data": metadata or {}, "url": (metadata or {}).get("url") or "/notifications"}),
-                vapid_private_key=os.getenv("VAPID_PRIVATE_KEY"),
-                vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:support@coinpilotx.app")},
-            )
-            sent += 1
-        except WebPushException as exc:
-            failures.append(str(exc)[:300])
-        except Exception as exc:
-            failures.append(str(exc)[:300])
-    return {"ok": sent > 0, "status": "sent" if sent else "failed", "sent": sent, "failures": failures}
+    push_type = (metadata or {}).get("push_type") or (metadata or {}).get("type") or "general"
+    return push_service.send_push(user_id, title, message, metadata or {}, push_type=push_type)
 
 
 def send_telegram_alert(user, title, message):
@@ -389,27 +363,10 @@ def send_user_alert(user_id, alert_type, title, body, data=None, channels=None):
 
 
 def save_push_subscription(user_id, subscription, user_agent=""):
-    endpoint = (subscription or {}).get("endpoint") or ""
-    if not user_id or not endpoint:
-        return {"ok": False, "message": "Push subscription endpoint required."}
-    conn = user_context.connect()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO push_subscriptions (user_id, endpoint, subscription_json, user_agent, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 1, ?, ?)
-        ON CONFLICT(endpoint) DO UPDATE SET
-            user_id=excluded.user_id,
-            subscription_json=excluded.subscription_json,
-            user_agent=excluded.user_agent,
-            active=1,
-            updated_at=excluded.updated_at
-        """,
-        (user_id, endpoint, json.dumps(subscription)[:8000], user_agent[:600], _now(), _now()),
-    )
-    conn.commit()
-    conn.close()
-    return {"ok": True, "message": "Push notifications connected."}
+    ua = (user_agent or "").lower()
+    device_type = "mobile" if any(token in ua for token in ["iphone", "android", "mobile"]) else "desktop"
+    browser = "Safari" if "safari" in ua and "chrome" not in ua else "Chrome" if "chrome" in ua else "Browser"
+    return push_service.save_subscription(user_id, subscription, user_agent, device_type=device_type, browser=browser)
 
 
 def unsubscribe_push(user_id, endpoint=""):
