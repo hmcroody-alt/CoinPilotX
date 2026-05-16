@@ -9089,6 +9089,45 @@ def arena_sender_cards(cur, user_ids):
     return cards
 
 
+def arena_thread_sort(user_a, user_b):
+    return min(int(user_a), int(user_b)), max(int(user_a), int(user_b))
+
+
+def arena_find_or_create_thread(cur, user_a, user_b, source_request_id=None):
+    left_id, right_id = arena_thread_sort(user_a, user_b)
+    now = datetime.now().isoformat()
+    cur.execute("SELECT * FROM arena_chat_threads WHERE user_a_id=? AND user_b_id=? LIMIT 1", (left_id, right_id))
+    thread = cur.fetchone()
+    if not thread:
+        cur.execute(
+            """
+            INSERT INTO arena_chat_threads
+            (user_a_id, user_b_id, source_request_id, status, created_at, updated_at, last_message_at)
+            VALUES (?, ?, ?, 'active', ?, ?, ?)
+            """,
+            (left_id, right_id, source_request_id or 0, now, now, now),
+        )
+        return cur.lastrowid
+    thread_id = int(thread["id"])
+    cur.execute("UPDATE arena_chat_threads SET status='active', updated_at=? WHERE id=?", (now, thread_id))
+    return thread_id
+
+
+def arena_public_message(cur, message, current_user_id, sender_cards=None):
+    sender_id = int(message.get("sender_id") or 0)
+    sender = (sender_cards or arena_sender_cards(cur, [sender_id])).get(sender_id, {})
+    return {
+        "message_id": int(message.get("id") or 0),
+        "thread_id": int(message.get("thread_id") or 0),
+        "sender": sender,
+        "is_mine": sender_id == int(current_user_id),
+        "body": message.get("body") or "",
+        "created_at": message.get("created_at") or "",
+        "read_at": message.get("read_at") or "",
+        "delivery_status": message.get("status") or "delivered",
+    }
+
+
 def arena_inbox_payload(user_id, limit=40):
     init_db()
     conn = db()
@@ -9234,30 +9273,19 @@ def arena_thread_for_request(cur, request_id, current_user_id):
     if not request_row:
         return None, None
     request_item = dict(request_row)
-    user_a = min(int(request_item["sender_id"]), int(request_item["receiver_id"]))
-    user_b = max(int(request_item["sender_id"]), int(request_item["receiver_id"]))
-    cur.execute("SELECT * FROM arena_chat_threads WHERE user_a_id=? AND user_b_id=? LIMIT 1", (user_a, user_b))
-    thread = cur.fetchone()
     now = datetime.now().isoformat()
-    if not thread:
-        cur.execute(
-            "INSERT INTO arena_chat_threads (user_a_id, user_b_id, source_request_id, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
-            (user_a, user_b, request_id, now, now),
-        )
-        thread_id = cur.lastrowid
-    else:
-        thread_id = int(thread["id"])
-        cur.execute("UPDATE arena_chat_threads SET updated_at=?, status='active' WHERE id=?", (now, thread_id))
+    thread_id = arena_find_or_create_thread(cur, request_item["sender_id"], request_item["receiver_id"], request_id)
     cur.execute("SELECT id FROM arena_chat_messages WHERE thread_id=? AND source_request_id=? LIMIT 1", (thread_id, request_id))
     if not cur.fetchone() and request_item.get("first_message"):
         cur.execute(
             "INSERT INTO arena_chat_messages (thread_id, sender_id, body, status, source_request_id, created_at) VALUES (?, ?, ?, 'delivered', ?, ?)",
             (thread_id, request_item["sender_id"], request_item["first_message"], request_id, request_item.get("created_at") or now),
         )
+    cur.execute("UPDATE arena_chat_threads SET last_message_at=COALESCE(last_message_at, ?), updated_at=? WHERE id=?", (now, now, thread_id))
     return thread_id, request_item
 
 
-def arena_chat_payload(thread_id, user_id, limit=80):
+def arena_chat_payload(thread_id, user_id, limit=50, after_id=None):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
@@ -9268,18 +9296,27 @@ def arena_chat_payload(thread_id, user_id, limit=80):
         return None
     other_id = int(thread["user_b_id"] if int(thread["user_a_id"]) == int(user_id) else thread["user_a_id"])
     cur.execute("UPDATE arena_chat_messages SET status='read', read_at=? WHERE thread_id=? AND sender_id!=? AND status!='read'", (datetime.now().isoformat(), thread_id, user_id))
-    cur.execute("SELECT * FROM arena_chat_messages WHERE thread_id=? ORDER BY id DESC LIMIT ?", (thread_id, int(limit or 80)))
-    messages = [dict(row) for row in reversed(cur.fetchall())]
+    if after_id is not None:
+        cur.execute("SELECT * FROM arena_chat_messages WHERE thread_id=? AND id>? ORDER BY id ASC LIMIT ?", (thread_id, int(after_id or 0), int(limit or 50)))
+        raw_messages = [dict(row) for row in cur.fetchall()]
+    else:
+        cur.execute("SELECT * FROM arena_chat_messages WHERE thread_id=? ORDER BY id DESC LIMIT ?", (thread_id, int(limit or 50)))
+        raw_messages = [dict(row) for row in reversed(cur.fetchall())]
     cur.execute("UPDATE arena_chat_threads SET last_read_at=? WHERE id=?", (datetime.now().isoformat(), thread_id))
     conn.commit()
-    profiles = arena_sender_cards(cur, [user_id, other_id])
+    sender_cards = arena_sender_cards(cur, [user_id, other_id] + [message.get("sender_id") for message in raw_messages])
+    profiles = {int(user_id): sender_cards.get(int(user_id), {}), other_id: sender_cards.get(other_id, {})}
+    messages = [arena_public_message(cur, message, user_id, sender_cards) for message in raw_messages]
     conn.close()
+    last_message_id = max([int(message.get("message_id") or 0) for message in messages] or [int(after_id or 0)])
     return {
         "ok": True,
-        "thread": {"id": int(thread["id"]), "status": thread["status"], "updated_at": thread["updated_at"]},
+        "thread": {"id": int(thread["id"]), "status": thread["status"], "updated_at": thread["updated_at"], "last_message_at": thread["last_message_at"] if "last_message_at" in thread.keys() else thread["updated_at"]},
         "me": profiles.get(int(user_id), {}),
         "other": profiles.get(other_id, {}),
+        "participants": [profiles.get(int(user_id), {}), profiles.get(other_id, {})],
         "messages": messages,
+        "last_message_id": last_message_id,
     }
 
 
@@ -9408,7 +9445,7 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
         <label class='option'>Leaderboard <input type='checkbox' data-arena-pref='show_arena_leaderboard'></label>
         <label class='option'>Scam Hunter <input type='checkbox' data-arena-pref='show_arena_scam_hunter'></label>
         <label class='option'>Open Arena <input type='checkbox' data-arena-pref='show_arena_open_arena'></label>
-        <label class='option'>League Preview <input type='checkbox' data-arena-pref='show_arena_league_preview'></label>
+        <label class='option'>Alpha Arena <input type='checkbox' data-arena-pref='show_arena_league_preview'></label>
         <label class='option'>Country Board <input type='checkbox' data-arena-pref='show_arena_country_board'></label>
         <label class='option'>Top Global Players <input type='checkbox' data-arena-pref='show_arena_top_players'></label>
       </div>
@@ -9645,7 +9682,18 @@ def arena_home_page():
       <article class="card"><h3>Solo Market Survival</h3><p>Practice fake market decisions with discipline-first scoring. Phase 2 fake trades are ready in the data model.</p><button data-start-solo>Start Solo Simulation</button></article>
       <article class="card"><h3>Friend Battle</h3><p>Challenge another user to a fake $10,000 portfolio battle. No real money, no betting.</p><a class="button" href="/arena/leaderboard">Find Opponent</a></article>
       <article class="card"><h3>Scam Hunter</h3><p>Identify red flags, protect wallets, and earn Scam Defense XP.</p><a class="button" href="/arena/scam-hunter">Open Scam Hunter</a></article>
-      <article class="card"><h3>Paper Trading League</h3><p>Weekly skill leaderboard scored by risk-adjusted performance, discipline, and research.</p><a class="button" href="/arena/league">League Preview</a></article>
+      <article class="card alpha-arena-card">
+        <div class="kicker">Alpha Arena</div>
+        <h3>Enter Alpha Arena</h3>
+        <p>Live ranked fake-money battles, Titan spectating, faction pressure, promotion climbs, and AI commentary. Fake money. Real skill. No gambling.</p>
+        <div class="crowd-meter" aria-label="Crowd energy"><span style="width:74%"></span></div>
+        <p class="muted">127 players battling now · Titan division active · Market Crisis modifier live</p>
+        <div class="actions">
+          <a class="button primary" href="/arena/live">Join Live War</a>
+          <a class="button" href="/arena/leaderboard">Watch Titans</a>
+          <a class="button gold" href="/arena/play">Enter Ranked</a>
+        </div>
+      </article>
       <article class="card"><h3>Country Arena</h3><p>Represent your optional country or region and help your team climb the global scoreboard.</p><a class="button" href="/arena/leaderboard?scope=country">Country Board</a></article>
     </section>
     <section class="card">
@@ -9762,7 +9810,7 @@ def arena_leaderboard_page():
         const text = prompt('Message this Arena player');
         if (text) {{
           const response = await fetch('/api/arena/message-player', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:message.dataset.message,message:text}})}});
-          const data = await response.json(); alert(data.message || 'Message request sent.');
+          const data = await response.json(); if (data.next_url) location.href = data.next_url; else alert(data.message || 'Message request sent.');
         }}
       }}
     }});
@@ -9800,7 +9848,21 @@ def arena_player_page(public_player_id):
     <section class="hero"><article class="card wide"><div class="kicker">Arena Player Profile</div><h1>{clean_html(display)}</h1><p>{clean_html(arena_player_style_summary(profile))}</p><div class="actions">{actions}</div></article><article class="card"><span class="rank">{clean_html(profile.get('rank'))}</span><div class="metric">{int(profile.get('arena_iq') or 0)}</div><p>Arena IQ</p></article></section>
     <section class="grid"><article class="card"><h3>Discipline</h3><div class="metric">{int(profile.get('discipline_score') or 0)}</div></article><article class="card"><h3>Scam Defense</h3><div class="metric">{int(profile.get('scam_defense_score') or 0)}</div></article><article class="card"><h3>XP</h3><div class="metric">{int(profile.get('xp') or 0)}</div></article></section>
     <div class="share-modal" data-share-modal hidden><h3>Share Arena Player</h3><p class="muted">Public Arena profile only. No email, internal ID, or account data.</p><div class="actions"><button data-copy-share>Copy Link</button><a class="button" data-share-x target="_blank" rel="noopener">X</a><a class="button" data-share-facebook target="_blank" rel="noopener">Facebook</a><a class="button" data-share-whatsapp target="_blank" rel="noopener">WhatsApp</a><a class="button" data-share-telegram target="_blank" rel="noopener">Telegram</a><button data-close-share>Close</button></div><p class="muted" data-share-toast></p></div>
-    <script>async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform,title:'Arena player profile shared'}})}})}}catch(e){{}}}}async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.'}}function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href=`https://twitter.com/intent/tweet?text=${{text}}&url=${{encoded}}`;modal.querySelector('[data-share-facebook]').href=`https://www.facebook.com/sharer/sharer.php?u=${{encoded}}`;modal.querySelector('[data-share-whatsapp]').href=`https://wa.me/?text=${{text}}%20${{encoded}}`;modal.querySelector('[data-share-telegram]').href=`https://t.me/share/url?url=${{encoded}}&text=${{text}}`;modal.hidden=false;}}document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','btc_duel')||'btc_duel';const message=prompt('Optional challenge note','Ready for an Arena challenge?')||'';const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type,message}})}});alert((await res.json()).message||'Challenge sent.')}}if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.')}}if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await res.json()).message||'Message request sent.')}}}}if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.')}}if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.')}}if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;}})</script>
+    <script>
+    async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform:platform,title:'Arena player profile shared'}})}});}}catch(e){{}}}}
+    async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.';}}
+    function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href='https://twitter.com/intent/tweet?text='+text+'&url='+encoded;modal.querySelector('[data-share-facebook]').href='https://www.facebook.com/sharer/sharer.php?u='+encoded;modal.querySelector('[data-share-whatsapp]').href='https://wa.me/?text='+text+'%20'+encoded;modal.querySelector('[data-share-telegram]').href='https://t.me/share/url?url='+encoded+'&text='+text;modal.hidden=false;}}
+    document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');
+      if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','btc_duel')||'btc_duel';const message=prompt('Optional challenge note','Ready for an Arena challenge?')||'';const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:challenge_type,message:message}})}});alert((await res.json()).message||'Challenge sent.');}}
+      if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.');}}
+      if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});const d=await res.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
+      if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.');}}
+      if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.');}}
+      if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url:url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}
+      if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}
+      if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;
+    }});
+    </script>
     """
     return arena_page_shell(f"Arena Player {display}", body, user=user, public=True, meta_tags=meta_tags)
 
@@ -9819,7 +9881,11 @@ def arena_players_page():
     body = f"""
     <section class="hero"><article class="card wide"><div class="kicker">Arena Players</div><h1>Find pilots without exposing private identity</h1><p>Message, challenge, follow, and invite Arena players through public Arena IDs only. Emails, internal IDs, billing data, and account usernames stay private.</p></article><article class="card"><h2>Privacy Safe</h2><p>Every action maps public player IDs to accounts only on the server.</p></article></section>
     <section class="grid">{cards or '<article class="card"><h2>No pilots yet</h2><p>Complete a mission to appear in the Arena directory.</p></article>'}</section>
-    <script>document.addEventListener('click',async e=>{{const m=e.target.closest('[data-message]');const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await r.json()).message||'Message request sent.')}}}}if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','quick_battle')||'quick_battle';const message=prompt('Optional challenge note','Quick Arena challenge?')||'';const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type,message}})}});alert((await r.json()).message||'Challenge sent.')}}if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await r.json()).message||'Followed.')}}}})</script>
+    <script>document.addEventListener('click',async e=>{{const m=e.target.closest('[data-message]');const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');
+      if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});const d=await r.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
+      if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','quick_battle')||'quick_battle';const message=prompt('Optional challenge note','Quick Arena challenge?')||'';const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:challenge_type,message:message}})}});alert((await r.json()).message||'Challenge sent.');}}
+      if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await r.json()).message||'Followed.');}}
+    }})</script>
     """
     return arena_page_shell("Arena Players", body, user=user)
 
@@ -9847,13 +9913,15 @@ def arena_chat_page(thread_id):
     <script>
     const threadId={int(thread_id)};
     const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
-    let chatLoading=false, soundOn=false;
-    function renderMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');box.innerHTML=(items||[]).map(m=>`<div class="chat-bubble ${{m.sender_id==={int(user['user_id'])}?'me':'them'}}"><span>${{esc(m.body)}}</span><small>${{esc(m.status||'delivered')}}</small></div>`).join('')||'<div class="private-chat-empty">Send the first Arena reply.</div>';box.scrollTop=box.scrollHeight;}}
-    async function loadChat(){{if(chatLoading)return;chatLoading=true;try{{const d=await fetch(`/api/arena/chat/${{threadId}}`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok)renderMessages(d.messages);}}finally{{chatLoading=false;}}}}
-    document.querySelector('[data-arena-chat-form]').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.elements.body;const body=input.value.trim();if(!body)return;input.value='';const box=document.querySelector('[data-arena-chat-thread]');box.insertAdjacentHTML('beforeend',`<div class="chat-bubble me"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;const d=await fetch('/api/arena/chat/send',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{thread_id:threadId,body}})}}).then(r=>r.json());if(navigator.vibrate)navigator.vibrate([30]);if(soundOn&&window.CoinPilotNotifications)window.CoinPilotNotifications.playSound();loadChat();}});
+    let chatLoading=false, soundOn=false, lastMessageId=0;
+    function messageHtml(m, optimistic=false){{return `<div class="chat-bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||0}}"><span>${{esc(m.body)}}</span><small>${{esc(optimistic?'sending...':(m.delivery_status||'delivered'))}}</small></div>`;}}
+    function appendMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');const existing=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{if(existing.has(String(m.message_id)))return;box.insertAdjacentHTML('beforeend',messageHtml(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||0));}});box.scrollTop=box.scrollHeight;}}
+    function renderMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');box.innerHTML=(items||[]).map(m=>messageHtml(m)).join('')||'<div class="private-chat-empty">Send the first Arena reply.</div>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||0)));box.scrollTop=box.scrollHeight;}}
+    async function loadChat(){{if(chatLoading||document.hidden)return;chatLoading=true;try{{const url=lastMessageId?`/api/arena/chat/${{threadId}}/new?after_id=${{lastMessageId}}`:`/api/arena/chat/${{threadId}}`;const d=await fetch(url,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{if(lastMessageId)appendMessages(d.messages);else renderMessages(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}}}finally{{chatLoading=false;}}}}
+    document.querySelector('[data-arena-chat-form]').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.elements.body;const button=e.target.querySelector('button');const body=input.value.trim();if(!body)return;input.value='';button.disabled=true;const tempId=`temp-${{Date.now()}}`;const box=document.querySelector('[data-arena-chat-thread]');box.insertAdjacentHTML('beforeend',`<div class="chat-bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/arena/chat/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:body,body}})}}).then(r=>r.json());const pending=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(pending)pending.outerHTML=messageHtml(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||0));}}else if(pending){{pending.querySelector('small').textContent='failed - retry';input.value=body;}}}}catch(err){{input.value=body;}}finally{{button.disabled=false;if(navigator.vibrate)navigator.vibrate([30]);if(soundOn&&window.CoinPilotNotifications)window.CoinPilotNotifications.playSound();}}}});
     document.querySelector('[data-arena-chat-form] input').addEventListener('input',()=>fetch('/api/arena/chat/typing',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{thread_id:threadId}})}}).catch(()=>{{}}));
     document.addEventListener('click',e=>{{if(e.target.closest('[data-sound-toggle]')){{soundOn=!soundOn;e.target.textContent=soundOn?'Sound On':'Sound';}}}});
-    loadChat(); setInterval(loadChat,5000);
+    loadChat(); setInterval(loadChat,2000); document.addEventListener('visibilitychange',()=>{{if(!document.hidden)loadChat();}});
     </script>
     """
     return arena_page_shell("Arena Chat", body, user=user)
@@ -11613,16 +11681,47 @@ def api_arena_message_player():
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM arena_blocks WHERE blocker_id=? AND blocked_id=? LIMIT 1", (receiver_id, user["user_id"]))
+    cur.execute(
+        """
+        SELECT 1 FROM arena_blocks
+        WHERE (blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?)
+        LIMIT 1
+        """,
+        (receiver_id, user["user_id"], user["user_id"], receiver_id),
+    )
     if cur.fetchone():
         conn.close()
-        return jsonify({"ok": False, "message": "This player is not accepting messages."}), 403
+        return jsonify({"ok": False, "message": "You cannot message this player."}), 403
+    now = datetime.now().isoformat()
+    expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+    thread_id = arena_find_or_create_thread(cur, user["user_id"], receiver_id)
     cur.execute(
-        "INSERT INTO arena_message_requests (sender_id, receiver_id, status, first_message, created_at, expires_at) VALUES (?, ?, 'pending', ?, ?, ?)",
-        (user["user_id"], receiver_id, message, datetime.now().isoformat(), (datetime.now() + timedelta(days=30)).isoformat()),
+        """
+        SELECT * FROM arena_message_requests
+        WHERE sender_id=? AND receiver_id=? AND status IN ('pending','accepted')
+        ORDER BY id DESC LIMIT 1
+        """,
+        (user["user_id"], receiver_id),
     )
-    request_id = cur.lastrowid
+    existing_request = cur.fetchone()
+    if existing_request:
+        request_id = int(existing_request["id"])
+        cur.execute("UPDATE arena_message_requests SET thread_id=?, expires_at=COALESCE(expires_at, ?) WHERE id=?", (thread_id, expires_at, request_id))
+    else:
+        cur.execute(
+            "INSERT INTO arena_message_requests (sender_id, receiver_id, status, first_message, created_at, expires_at, thread_id) VALUES (?, ?, 'pending', ?, ?, ?, ?)",
+            (user["user_id"], receiver_id, message, now, expires_at, thread_id),
+        )
+        request_id = cur.lastrowid
+    cur.execute(
+        "INSERT INTO arena_chat_messages (thread_id, sender_id, body, status, source_request_id, created_at) VALUES (?, ?, ?, 'delivered', ?, ?)",
+        (thread_id, user["user_id"], message, request_id, now),
+    )
+    message_id = cur.lastrowid
+    cur.execute("UPDATE arena_chat_threads SET updated_at=?, last_message_at=? WHERE id=?", (now, now, thread_id))
     conn.commit()
+    cur.execute("SELECT * FROM arena_chat_messages WHERE id=? LIMIT 1", (message_id,))
+    message_payload = arena_public_message(cur, dict(cur.fetchone()), user["user_id"])
     conn.close()
     try:
         notification_service.send_push_alert(
@@ -11633,7 +11732,15 @@ def api_arena_message_player():
         )
     except Exception as exc:
         logging.info("Arena message request notification failed safely: %s", exc)
-    return jsonify({"ok": True, "message": "Message request sent.", "request_id": request_id})
+    return jsonify({
+        "ok": True,
+        "message": "Arena direct message opened.",
+        "request_id": request_id,
+        "thread_id": thread_id,
+        "next_url": f"/arena/chat/{thread_id}",
+        "chat_url": f"/arena/chat/{thread_id}",
+        "message_item": message_payload,
+    })
 
 
 @webhook_app.route("/api/arena/message-request/accept", methods=["POST"])
@@ -11650,7 +11757,11 @@ def api_arena_message_request_accept():
     if not thread_id or not request_item or int(request_item.get("receiver_id") or 0) != int(user["user_id"]):
         conn.close()
         return jsonify({"ok": False, "status": "not_found", "message": "Request not found."}), 404
-    cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), thread_id, request_id, user["user_id"]))
+    if request_item.get("status") == "accepted":
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "status": "accepted", "message": "Chat already open.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+    cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=? AND status='pending'", (datetime.now().isoformat(), thread_id, request_id, user["user_id"]))
     changed = cur.rowcount
     conn.commit()
     conn.close()
@@ -11684,6 +11795,22 @@ def api_arena_chat_thread(thread_id):
     return jsonify(payload)
 
 
+@webhook_app.route("/api/arena/chat/<int:thread_id>/new", methods=["GET"])
+def api_arena_chat_new(thread_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = arena_chat_payload(
+        thread_id,
+        user["user_id"],
+        limit=int(request.args.get("limit") or 50),
+        after_id=int(request.args.get("after_id") or 0),
+    )
+    if not payload:
+        return jsonify({"ok": False, "message": "Thread not found."}), 404
+    return jsonify({"ok": True, "messages": payload.get("messages") or [], "last_message_id": payload.get("last_message_id") or int(request.args.get("after_id") or 0)})
+
+
 @webhook_app.route("/api/arena/chat/send", methods=["POST"])
 @webhook_app.route("/api/arena/chat/<int:path_thread_id>/send", methods=["POST"])
 def api_arena_chat_send(path_thread_id=None):
@@ -11692,7 +11819,7 @@ def api_arena_chat_send(path_thread_id=None):
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     thread_id = int(path_thread_id or payload.get("thread_id") or 0)
-    body = clean_html(payload.get("body") or "")[:1200]
+    body = clean_html(payload.get("message") or payload.get("body") or "")[:1200]
     if not body:
         return jsonify({"ok": False, "message": "Message cannot be empty."}), 400
     conn = db()
@@ -11706,10 +11833,12 @@ def api_arena_chat_send(path_thread_id=None):
     now = datetime.now().isoformat()
     cur.execute("INSERT INTO arena_chat_messages (thread_id, sender_id, body, status, created_at) VALUES (?, ?, ?, 'delivered', ?)", (thread_id, user["user_id"], body, now))
     message_id = cur.lastrowid
-    cur.execute("UPDATE arena_chat_threads SET updated_at=? WHERE id=?", (now, thread_id))
+    cur.execute("UPDATE arena_chat_threads SET updated_at=?, last_message_at=? WHERE id=?", (now, now, thread_id))
     conn.commit()
+    cur.execute("SELECT * FROM arena_chat_messages WHERE id=? LIMIT 1", (message_id,))
+    message_item = arena_public_message(cur, dict(cur.fetchone()), user["user_id"])
     conn.close()
-    return jsonify({"ok": True, "status": "delivered", "message_id": message_id, "next_url": f"/arena/chat/{thread_id}"})
+    return jsonify({"ok": True, "status": "delivered", "message": message_item, "message_id": message_id, "next_url": f"/arena/chat/{thread_id}"})
 
 
 @webhook_app.route("/api/arena/chat/read", methods=["POST"])
@@ -18938,6 +19067,9 @@ def init_db():
         ("thread_id", "INTEGER"),
         ("expires_at", "TEXT"),
     ], conn=conn)
+    add_columns_if_missing(cur, "arena_chat_threads", [
+        ("last_message_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS arena_blocks (
         blocker_id INTEGER,
@@ -19018,7 +19150,11 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_arena_friendships_receiver_status ON arena_friendships(receiver_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_blocks_blocker_blocked ON arena_blocks(blocker_id, blocked_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_chat_threads_users ON arena_chat_threads(user_a_id, user_b_id, updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_chat_threads_updated ON arena_chat_threads(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_chat_threads_last_message ON arena_chat_threads(last_message_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_chat_messages_thread_id ON arena_chat_messages(thread_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_chat_messages_thread_created ON arena_chat_messages(thread_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_message_requests_pair ON arena_message_requests(sender_id, receiver_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_profiles_public_player_id ON arena_profiles(public_player_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_match_participants_match_user ON arena_match_participants(match_id, user_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_match_events_match_created ON arena_match_events(match_id, created_at)",

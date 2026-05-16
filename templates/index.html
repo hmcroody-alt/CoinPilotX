@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CoinPilotXAI Inc | AI Crypto Intelligence Platform</title>
   <meta name="description" content="CoinPilotXAI delivers AI-powered crypto intelligence, whale tracking, scam detection, wallet analysis, live market alerts, portfolio monitoring, and real-time insights across web and mobile." />
-  <meta name="keywords" content="AI crypto intelligence, crypto AI platform, crypto AI assistant, crypto alerts, Telegram crypto alerts, crypto scam protection, wallet intelligence, whale alerts, crypto portfolio AI, Sports Edge AI" />
+  <meta name="keywords" content="AI crypto intelligence, crypto AI platform, crypto AI assistant, crypto alerts, Telegram crypto alerts, crypto scam protection, wallet intelligence, whale alerts, crypto portfolio AI, Sports Edge AI, AI crypto battle simulator, fake crypto trading league, crypto training arena, crypto risk simulator, crypto scam defense game, AI trading psychology game" />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
   <meta name="ai-content-declaration" content="Educational AI intelligence, public-data safety guidance, no financial or betting advice, no guaranteed outcomes." />
   <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable CoinPilotXAI metadata" />
@@ -85,6 +85,16 @@
         "url": "https://coinpilotx.app/",
         "publisher": {"@id": "https://coinpilotx.app/#organization"},
         "description": "CoinPilotX is powered by CoinPilotXAI Inc. for AI crypto intelligence, crypto scam protection, whale alerts, crypto portfolio intelligence, real-time market alerts, and blockchain wallet risk scanning."
+      },
+      {
+        "@type": ["SoftwareApplication", "Game", "EducationalApplication"],
+        "name": "Alpha Arena",
+        "url": "https://coinpilotx.app/arena",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web, iOS, Android, PWA",
+        "description": "Alpha Arena is CoinPilotXAI's Pro fake-money crypto battle simulator for risk discipline, scam defense, AI commentary, rank progression, and trading psychology training.",
+        "isAccessibleForFree": false,
+        "publisher": {"@id": "https://coinpilotx.app/#organization"}
       },
       {
         "@type": "FAQPage",
@@ -2677,6 +2687,146 @@
         transform: none;
       }
     }
+
+    .alpha-arena-band {
+      position: relative;
+      overflow: hidden;
+      border-block: 1px solid rgba(110, 223, 246, 0.13);
+      background: radial-gradient(circle at 14% 14%, rgba(110, 223, 246, 0.16), transparent 24rem), radial-gradient(circle at 88% 18%, rgba(255, 209, 102, 0.13), transparent 22rem), linear-gradient(135deg, rgba(8, 18, 34, 0.92), rgba(4, 9, 18, 0.96));
+    }
+
+    .alpha-arena-band::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(110, 223, 246, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(110, 223, 246, 0.08) 1px, transparent 1px);
+      background-size: 44px 44px;
+      opacity: 0.32;
+      animation: gridDrift 22s linear infinite;
+    }
+
+    .alpha-arena-panel {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.02fr) minmax(320px, 0.98fr);
+      gap: 22px;
+      align-items: center;
+    }
+
+    .alpha-arena-copy h2 {
+      font-size: clamp(38px, 6vw, 72px);
+      line-height: 0.96;
+      margin: 8px 0 14px;
+    }
+
+    .arena-direct-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 9px 12px;
+      border: 1px solid rgba(110, 223, 246, 0.22);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.045);
+      color: #dff8ff;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .alpha-arena-visual {
+      position: relative;
+      min-height: 430px;
+      border: 1px solid rgba(110, 223, 246, 0.22);
+      border-radius: 22px;
+      background: radial-gradient(circle at 50% 18%, rgba(110, 223, 246, 0.18), transparent 18rem), linear-gradient(180deg, rgba(14, 28, 50, 0.88), rgba(6, 12, 24, 0.92));
+      box-shadow: 0 30px 100px rgba(0, 0, 0, 0.38), 0 0 48px rgba(110, 223, 246, 0.13);
+      overflow: hidden;
+      padding: 16px;
+      transform: translateZ(0);
+    }
+
+    .alpha-arena-visual::before {
+      content: "";
+      position: absolute;
+      inset: -40%;
+      background: conic-gradient(from 180deg, transparent, rgba(54, 229, 143, 0.12), transparent 34%, rgba(110, 223, 246, 0.14), transparent 62%);
+      animation: alphaSweep 12s linear infinite;
+    }
+
+    .arena-holo-stack {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 12px;
+    }
+
+    .arena-holo-card {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      background: rgba(5, 13, 25, 0.74);
+      box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+      padding: 13px;
+      animation: alphaFloat 5.8s ease-in-out infinite;
+    }
+
+    .arena-holo-card:nth-child(2) { animation-delay: -1.3s; }
+    .arena-holo-card:nth-child(3) { animation-delay: -2.4s; }
+
+    .arena-battle-row,
+    .arena-leader-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .arena-meter {
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      margin-top: 10px;
+    }
+
+    .arena-meter span {
+      display: block;
+      height: 100%;
+      width: 72%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--cyan), var(--green), var(--gold));
+      box-shadow: 0 0 18px rgba(110, 223, 246, 0.42);
+      animation: arenaMeterPulse 3s ease-in-out infinite;
+    }
+
+    .arena-particle {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 16px rgba(54, 229, 143, 0.9);
+      animation: particleRise 7s linear infinite;
+    }
+
+    .arena-particle:nth-of-type(2) { left: 18%; bottom: 8%; animation-delay: -1s; }
+    .arena-particle:nth-of-type(3) { left: 74%; bottom: 14%; animation-delay: -2.6s; background: var(--cyan); }
+    .arena-particle:nth-of-type(4) { left: 48%; bottom: 3%; animation-delay: -4s; background: var(--gold); }
+
+    @keyframes alphaSweep { to { transform: rotate(360deg); } }
+    @keyframes alphaFloat { 0%, 100% { transform: translate3d(0, 0, 0); } 50% { transform: translate3d(0, -7px, 0); } }
+    @keyframes arenaMeterPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.35); } }
+    @keyframes particleRise { from { transform: translate3d(0, 80px, 0); opacity: 0; } 15%, 75% { opacity: 1; } to { transform: translate3d(18px, -420px, 0); opacity: 0; } }
+
+    @media (max-width: 860px) {
+      .alpha-arena-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .alpha-arena-visual {
+        min-height: 360px;
+      }
+    }
   </style>
 </head>
 
@@ -2869,6 +3019,63 @@
             </div>
           </div>
         </aside>
+      </div>
+    </section>
+
+    <section id="alpha-arena" class="alpha-arena-band band" aria-labelledby="alpha-arena-title">
+      <div class="container alpha-arena-panel">
+        <div class="alpha-arena-copy">
+          <div class="section-kicker">Pro Competitive Training Universe</div>
+          <h2 id="alpha-arena-title">Enter Alpha Arena</h2>
+          <p class="hero-copy">The live AI-powered battle league where Pro users train discipline, survive market storms, challenge rivals, and climb global ranks.</p>
+          <p class="hero-copy">Every match tests your discipline. Every decision shapes your rank. Every rival can become your next battle. Survive scams. Control emotions. Climb the Arena.</p>
+          <div class="actions">
+            <a class="button primary pulse-cta" href="/arena" data-analytics="enter_alpha_arena">Enter Alpha Arena</a>
+            <a class="button" href="/arena-preview" data-analytics="preview_arena">Preview Arena</a>
+            <a class="button gold" href="/upgrade?next=/arena" data-analytics="upgrade_alpha_arena">Upgrade to Pro</a>
+          </div>
+          <div class="arena-direct-link">
+            <span>Direct URL:</span>
+            <a href="https://coinpilotx.app/arena">https://coinpilotx.app/arena</a>
+            <button class="button" type="button" data-copy-alpha-link>Copy Link</button>
+          </div>
+          <div class="trust-tags" aria-label="Alpha Arena features">
+            <span class="tag">Live Fake-Money Battles</span>
+            <span class="tag">AI Commentator</span>
+            <span class="tag">Scam Survival Missions</span>
+            <span class="tag">Global Leaderboard</span>
+            <span class="tag">Factions and Rivalries</span>
+            <span class="tag">Fake Money. Real Skill. No Gambling.</span>
+          </div>
+        </div>
+
+        <div class="alpha-arena-visual" aria-label="Animated Alpha Arena preview">
+          <span class="arena-particle"></span>
+          <span class="arena-particle"></span>
+          <span class="arena-particle"></span>
+          <span class="arena-particle"></span>
+          <div class="arena-holo-stack">
+            <article class="arena-holo-card">
+              <div class="arena-battle-row"><strong>BTC Duel Live</strong><span class="tag">127 battling</span></div>
+              <p class="muted">AI detected volatility pressure. Titans are entering ranked queues.</p>
+              <div class="arena-meter"><span></span></div>
+            </article>
+            <article class="arena-holo-card">
+              <div class="arena-leader-row"><strong>Quantum Division</strong><span class="tag">Top 100 shift</span></div>
+              <p class="muted">A player just entered Top 100. Seven spectators are watching the battle room.</p>
+              <div class="arena-meter"><span style="width:86%"></span></div>
+            </article>
+            <article class="arena-holo-card">
+              <div class="arena-battle-row"><strong>Scam Hunter Survival</strong><span class="tag">Faction war</span></div>
+              <p class="muted">Shadow Faction lost territory. Crowd energy rising.</p>
+              <div class="arena-meter"><span style="width:64%"></span></div>
+            </article>
+            <article class="arena-holo-card">
+              <div class="arena-battle-row"><strong>AI Commentator</strong><span class="tag">Live</span></div>
+              <p class="muted">“Discipline held under pressure. This comeback is becoming dangerous.”</p>
+            </article>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -4121,6 +4328,18 @@
   <!-- Add Google Analytics / Plausible script here later -->
   <script src="{{ url_for('static', filename='analytics.js') }}" defer></script>
   <script>
+    document.addEventListener("click", async event => {
+      const copy = event.target.closest("[data-copy-alpha-link]");
+      if (!copy) return;
+      try {
+        await navigator.clipboard.writeText("https://coinpilotx.app/arena");
+        copy.textContent = "Copied";
+        setTimeout(() => { copy.textContent = "Copy Link"; }, 1800);
+      } catch (error) {
+        window.prompt("Copy Alpha Arena link", "https://coinpilotx.app/arena");
+      }
+    });
+
     (function () {
       const list = document.querySelector("[data-predictions-list]");
       const updated = document.querySelector("[data-predictions-updated]");
