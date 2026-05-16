@@ -161,6 +161,26 @@ def _log_delivery(user_id, notification_id, channel, status, provider_response="
             _now() if status in {"sent", "created", "skipped", "not_configured"} else None,
         ),
     )
+    try:
+        cur.execute(
+            """
+            INSERT INTO notification_logs
+            (user_id, channel, category, sent_at, delivery_status, provider_response, retries, failed_reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            """,
+            (
+                user_id,
+                channel,
+                channel,
+                _now() if status in {"sent", "created", "skipped", "not_configured", "queued"} else None,
+                status,
+                json.dumps(provider_response)[:4000] if isinstance(provider_response, (dict, list)) else str(provider_response or "")[:4000],
+                str(error_message or "")[:1200],
+                _now(),
+            ),
+        )
+    except Exception:
+        logging.info("notification_logs table not ready; delivery log kept in notification_delivery_logs")
     conn.commit()
     conn.close()
 
@@ -333,8 +353,11 @@ def send_email_alert(*_args, **_kwargs):
     return {"ok": False, "message": "Email alert delivery is handled by the centralized email service."}
 
 
-def send_telegram_alert(*_args, **_kwargs):
-    return {"ok": False, "message": "Telegram alert delivery is handled by the bot runtime."}
+def send_telegram_alert(user=None, title="", message=""):
+    user = user or {}
+    if not user.get("telegram_chat_id"):
+        return {"ok": False, "status": "skipped", "message": "Telegram companion is not linked."}
+    return {"ok": False, "status": "queued", "message": "Telegram delivery is handled by the bot runtime.", "title": title, "body": message}
 
 
 def retry_failed_notification():

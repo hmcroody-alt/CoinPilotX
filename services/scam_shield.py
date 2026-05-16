@@ -40,7 +40,7 @@ RULES = [
     {
         "label": "Fake wallet connect / approval request",
         "threat": "Wallet drainer",
-        "needles": ["connect wallet", "sync wallet", "validate wallet", "verify wallet", "wallet connect", "approve transaction", "unlimited approval", "sign message", "permit signature"],
+        "needles": ["connect wallet", "sync wallet", "synchronize wallet", "validate wallet", "verify wallet", "wallet connect", "approve transaction", "unlimited approval", "set approval for all", "sign message", "permit signature", "token approval", "revoke later"],
         "weight": 55,
         "safe": "Do not sign approvals or messages unless you understand the exact permission and verified the official domain.",
     },
@@ -68,7 +68,7 @@ RULES = [
     {
         "label": "Fake support or impersonation",
         "threat": "Impersonation",
-        "needles": ["support agent", "official support", "admin support", "metamask support", "coinbase support", "telegram admin", "dm support", "customer service wallet"],
+        "needles": ["support agent", "official support", "admin support", "metamask support", "coinbase support", "telegram admin", "discord admin", "whatsapp support", "dm support", "customer service wallet", "account specialist"],
         "weight": 55,
         "safe": "Use support only inside the official app or a manually typed official domain. Real support never asks for seed phrases.",
     },
@@ -92,6 +92,27 @@ RULES = [
         "needles": ["my analyst", "investment manager", "mentor", "special platform", "vip trading", "small withdrawal first", "trust me", "professor group"],
         "weight": 28,
         "safe": "Do not use trading platforms introduced by strangers or online relationships.",
+    },
+    {
+        "label": "Remote access or security bypass request",
+        "threat": "Account takeover",
+        "needles": ["anydesk", "teamviewer", "remote access", "screen share", "disable 2fa", "turn off security", "install this app"],
+        "weight": 52,
+        "safe": "Never grant remote access or disable security controls for someone claiming to fix a wallet or exchange account.",
+    },
+    {
+        "label": "Fake KYC / exchange verification",
+        "threat": "Credential theft",
+        "needles": ["kyc verification", "verify exchange", "exchange locked", "account verification deposit", "validate account", "upgrade your account limit"],
+        "weight": 36,
+        "safe": "Open the exchange manually from its official app or typed domain. Do not follow KYC links from DMs.",
+    },
+    {
+        "label": "Fake presale / pump group",
+        "threat": "Market manipulation",
+        "needles": ["private presale", "exclusive presale", "pump group", "signal group", "insider allocation", "only today"],
+        "weight": 30,
+        "safe": "Treat private presales and pump groups as high-risk unless independently verified through official channels and audited contracts.",
     },
 ]
 

@@ -41,9 +41,12 @@ from services import (
     db as db_service,
     day_signal as day_signal_service,
     email_service as email_service_service,
+    ai_router as ai_router_service,
+    live_market_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
     notification_service,
+    notification_orchestrator as notification_orchestrator_service,
     portfolio_service,
     predictions_service,
     pro_access as pro_access_service,
@@ -1542,6 +1545,17 @@ def reset_pwa_page():
 
 @webhook_app.after_request
 def add_pwa_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    if request.headers.get("X-Forwarded-Proto", request.scheme) == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if not request.path.startswith(("/api/", "/static/")):
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.stripe.com;",
+        )
     if request.path in ("/static/service-worker.js", "/sw.js"):
         response.headers["Service-Worker-Allowed"] = "/"
         response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -6722,7 +6736,20 @@ def api_ai_chat():
         return response, 400
     conversation_id = get_or_create_ai_conversation(user["user_id"], payload.get("conversation_id"))
     save_ai_message(user["user_id"], conversation_id, "user", message)
-    result = command_router_service.handle_command(user["user_id"], message, channel="web_chat")
+    if message.strip().startswith("/"):
+        result = command_router_service.handle_command(user["user_id"], message, channel="web_chat")
+    else:
+        routed = ai_router_service.route(user["user_id"], message, pro=platform_pro_access(user))
+        result = {
+            "ok": routed.get("ok", True),
+            "action_key": "ai_chat",
+            "title": "CoinPilotXAI",
+            "summary": routed.get("response", ""),
+            "source": routed.get("source", "coinpilotxai"),
+            "confidence": routed.get("confidence", "Medium"),
+            "latency_ms": routed.get("latency_ms"),
+            "disclaimer": "Educational information only. Not financial, betting, investment, or legal advice.",
+        }
     ai_text = result.get("summary") or result.get("message") or result.get("title") or ""
     if "temporarily unavailable" in ai_text.lower() or "source unavailable" in ai_text.lower():
         ai_text = "Live source is reconnecting right now. Here is what I can safely tell you…\n\n" + ai_text
@@ -6924,7 +6951,7 @@ def sports_edge_trade_redirect():
 
 
 def quote_payload(symbol=None, category="top_volume", limit=50):
-    board = market_data_service.live_market_board(category=category, limit=limit)
+    board = live_market_service.get_crypto_market(category=category, limit=limit)
     if symbol:
         selected = market_data_service.get_symbol(symbol)
         if not selected:
@@ -7143,6 +7170,7 @@ def admin_email_health_page():
 
 
 @webhook_app.route("/admin/system/health", methods=["GET"])
+@webhook_app.route("/admin/system-health", methods=["GET"])
 def admin_system_health_page():
     admin, denied = require_admin_page("system.view")
     if denied:
@@ -7161,8 +7189,33 @@ def admin_system_health_page():
         ("Telegram optional", bool(os.getenv("BOT_TOKEN"))),
     ]
     cards = "".join(f"<div class='card'><div class='metric'>{'OK' if ok else 'Missing'}</div><p>{clean_html(name)}</p></div>" for name, ok in checks)
-    body = f"<h1>System Health</h1><div class='grid'>{cards}</div><div class='card'><h2>Database</h2><pre>{clean_html(json.dumps(db_health, indent=2))}</pre></div>"
+    provider_health = live_market_service.health()
+    notification_health = notification_orchestrator_service.health()
+    body = f"<h1>System Health</h1><div class='grid'>{cards}</div><div class='card'><h2>Database</h2><pre>{clean_html(json.dumps(db_health, indent=2))}</pre></div><div class='card'><h2>Provider Health</h2><pre>{clean_html(json.dumps(provider_health, indent=2))}</pre></div><div class='card'><h2>Notification Health</h2><pre>{clean_html(json.dumps(notification_health, indent=2))}</pre></div>"
     return admin_page_html("System Health", body, admin)
+
+
+@webhook_app.route("/admin/provider-health", methods=["GET"])
+@webhook_app.route("/admin/live-data", methods=["GET"])
+def admin_provider_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    health = live_market_service.health()
+    cards = "".join(
+        f"<div class='card'><h2>{clean_html(name)}</h2><pre>{clean_html(json.dumps(payload, indent=2))}</pre></div>"
+        for name, payload in health.get("providers", {}).items()
+    )
+    return admin_page_html("Provider Health", f"<h1>Provider Health</h1><p class='muted'>Live data failover, stale detection, cache status, and configured provider readiness.</p><div class='grid'>{cards}</div>", admin)
+
+
+@webhook_app.route("/admin/notification-health", methods=["GET"])
+def admin_notification_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    health = notification_orchestrator_service.health()
+    return admin_page_html("Notification Health", f"<h1>Notification Health</h1><div class='card'><pre>{clean_html(json.dumps(health, indent=2))}</pre></div>", admin)
 
 
 @webhook_app.route("/admin/system/errors", methods=["GET"])
@@ -13146,6 +13199,20 @@ def init_db():
         retry_count INTEGER DEFAULT 0,
         created_at TEXT,
         sent_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS notification_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        channel TEXT,
+        category TEXT,
+        sent_at TEXT,
+        delivery_status TEXT,
+        provider_response TEXT,
+        retries INTEGER DEFAULT 0,
+        failed_reason TEXT,
+        created_at TEXT
     )
     """)
     cur.execute("""
