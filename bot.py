@@ -7819,10 +7819,10 @@ def api_dashboard_widgets():
 
 
 DASHBOARD_PREF_KEYS = {
-    "show_account": True,
-    "show_upgrade_pro": True,
-    "show_command_center": True,
-    "show_logout": True,
+    "show_account": False,
+    "show_upgrade_pro": False,
+    "show_command_center": False,
+    "show_logout": False,
     "show_saved_insights": True,
     "show_activity_timeline": True,
 }
@@ -7839,7 +7839,7 @@ def get_dashboard_preferences(user_id):
             """
             INSERT INTO user_dashboard_preferences
             (user_id, show_account, show_upgrade_pro, show_command_center, show_logout, show_saved_insights, show_activity_timeline, created_at, updated_at)
-            VALUES (?, 1, 1, 1, 1, 1, 1, ?, ?)
+            VALUES (?, 0, 0, 0, 0, 1, 1, ?, ?)
             """,
             (user_id, now, now),
         )
@@ -8726,8 +8726,10 @@ def get_arena_preferences(user_id):
 
 
 def expire_arena_challenges(cur):
-    cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
+    cutoff = (datetime.now() - timedelta(days=30)).isoformat()
     cur.execute("UPDATE arena_friend_challenges SET status='expired', responded_at=? WHERE status='pending' AND created_at<?", (datetime.now().isoformat(), cutoff))
+    cur.execute("UPDATE arena_message_requests SET status='expired', responded_at=? WHERE status='pending' AND created_at<?", (datetime.now().isoformat(), cutoff))
+    cur.execute("UPDATE arena_friendships SET status='expired', responded_at=? WHERE status='pending' AND created_at<?", (datetime.now().isoformat(), cutoff))
 
 
 def arena_sender_card(cur, sender_id):
@@ -8737,6 +8739,19 @@ def arena_sender_card(cur, sender_id):
         return public_arena_player(dict(row))
     profile = get_or_create_arena_profile(sender_id) or {}
     return public_arena_player(profile)
+
+
+def arena_sender_cards(cur, user_ids):
+    ids = sorted({int(uid) for uid in user_ids if uid})
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    cur.execute(f"SELECT * FROM arena_profiles WHERE user_id IN ({placeholders})", ids)
+    cards = {int(row["user_id"]): public_arena_player(dict(row)) for row in cur.fetchall()}
+    for uid in ids:
+        if uid not in cards:
+            cards[uid] = public_arena_player(get_or_create_arena_profile(uid) or {})
+    return cards
 
 
 def arena_inbox_payload(user_id, limit=40):
@@ -8749,17 +8764,52 @@ def arena_inbox_payload(user_id, limit=40):
     cur.execute(
         """
         SELECT * FROM arena_friend_challenges
-        WHERE receiver_id=? OR sender_id=?
+        WHERE (receiver_id=? OR sender_id=?)
+          AND sender_id NOT IN (SELECT blocked_id FROM arena_blocks WHERE blocker_id=?)
+          AND sender_id NOT IN (SELECT blocker_id FROM arena_blocks WHERE blocked_id=?)
         ORDER BY COALESCE(responded_at, created_at) DESC
         LIMIT ?
         """,
-        (user_id, user_id, int(limit or 40)),
+        (user_id, user_id, user_id, user_id, int(limit or 40)),
+    )
+    challenge_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT * FROM arena_message_requests
+        WHERE (receiver_id=? OR sender_id=?)
+          AND sender_id NOT IN (SELECT blocked_id FROM arena_blocks WHERE blocker_id=?)
+          AND sender_id NOT IN (SELECT blocker_id FROM arena_blocks WHERE blocked_id=?)
+        ORDER BY COALESCE(responded_at, created_at) DESC
+        LIMIT ?
+        """,
+        (user_id, user_id, user_id, user_id, int(limit or 40)),
+    )
+    message_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT * FROM arena_friendships
+        WHERE (receiver_id=? OR requester_id=?)
+          AND requester_id NOT IN (SELECT blocked_id FROM arena_blocks WHERE blocker_id=?)
+          AND requester_id NOT IN (SELECT blocker_id FROM arena_blocks WHERE blocked_id=?)
+        ORDER BY COALESCE(responded_at, created_at) DESC
+        LIMIT ?
+        """,
+        (user_id, user_id, user_id, user_id, int(limit or 40)),
+    )
+    friend_rows = [dict(row) for row in cur.fetchall()]
+    profile_cards = arena_sender_cards(
+        cur,
+        [item.get("sender_id") for item in challenge_rows]
+        + [item.get("receiver_id") for item in challenge_rows]
+        + [item.get("sender_id") for item in message_rows]
+        + [item.get("receiver_id") for item in message_rows]
+        + [item.get("requester_id") for item in friend_rows]
+        + [item.get("receiver_id") for item in friend_rows],
     )
     challenges = []
-    for row in cur.fetchall():
-        item = dict(row)
-        sender = arena_sender_card(cur, item.get("sender_id"))
-        receiver = arena_sender_card(cur, item.get("receiver_id"))
+    for item in challenge_rows:
+        sender = profile_cards.get(int(item.get("sender_id") or 0), {})
+        receiver = profile_cards.get(int(item.get("receiver_id") or 0), {})
         challenges.append({
             "id": item.get("id"),
             "type": "challenge",
@@ -8773,21 +8823,11 @@ def arena_inbox_payload(user_id, limit=40):
             "arena": item.get("challenge_type") or "friend_battle",
             "created_at": item.get("created_at"),
             "responded_at": item.get("responded_at"),
-            "expires_in_minutes": 15,
+            "expires_in_days": 30,
         })
-    cur.execute(
-        """
-        SELECT * FROM arena_message_requests
-        WHERE receiver_id=? OR sender_id=?
-        ORDER BY COALESCE(responded_at, created_at) DESC
-        LIMIT ?
-        """,
-        (user_id, user_id, int(limit or 40)),
-    )
     messages = []
-    for row in cur.fetchall():
-        item = dict(row)
-        sender = arena_sender_card(cur, item.get("sender_id"))
+    for item in message_rows:
+        sender = profile_cards.get(int(item.get("sender_id") or 0), {})
         messages.append({
             "id": item.get("id"),
             "type": "message",
@@ -8801,19 +8841,9 @@ def arena_inbox_payload(user_id, limit=40):
         })
     pending_challenges = [item for item in challenges if item["status"] == "pending" and item["is_incoming"]]
     pending_messages = [item for item in messages if item["status"] == "pending" and item["is_incoming"]]
-    cur.execute(
-        """
-        SELECT * FROM arena_friendships
-        WHERE receiver_id=? OR requester_id=?
-        ORDER BY COALESCE(responded_at, created_at) DESC
-        LIMIT ?
-        """,
-        (user_id, user_id, int(limit or 40)),
-    )
     friend_requests = []
-    for row in cur.fetchall():
-        item = dict(row)
-        sender = arena_sender_card(cur, item.get("requester_id"))
+    for item in friend_rows:
+        sender = profile_cards.get(int(item.get("requester_id") or 0), {})
         friend_requests.append({
             "id": item.get("id"),
             "type": "friend_request",
@@ -8842,6 +8872,61 @@ def arena_inbox_payload(user_id, limit=40):
             "friend_requests": len(pending_friends),
         },
         "updated_at": datetime.now().isoformat(),
+    }
+
+
+def arena_thread_for_request(cur, request_id, current_user_id):
+    cur.execute("SELECT * FROM arena_message_requests WHERE id=? AND (receiver_id=? OR sender_id=?) LIMIT 1", (request_id, current_user_id, current_user_id))
+    request_row = cur.fetchone()
+    if not request_row:
+        return None, None
+    request_item = dict(request_row)
+    user_a = min(int(request_item["sender_id"]), int(request_item["receiver_id"]))
+    user_b = max(int(request_item["sender_id"]), int(request_item["receiver_id"]))
+    cur.execute("SELECT * FROM arena_chat_threads WHERE user_a_id=? AND user_b_id=? LIMIT 1", (user_a, user_b))
+    thread = cur.fetchone()
+    now = datetime.now().isoformat()
+    if not thread:
+        cur.execute(
+            "INSERT INTO arena_chat_threads (user_a_id, user_b_id, source_request_id, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+            (user_a, user_b, request_id, now, now),
+        )
+        thread_id = cur.lastrowid
+    else:
+        thread_id = int(thread["id"])
+        cur.execute("UPDATE arena_chat_threads SET updated_at=?, status='active' WHERE id=?", (now, thread_id))
+    cur.execute("SELECT id FROM arena_chat_messages WHERE thread_id=? AND source_request_id=? LIMIT 1", (thread_id, request_id))
+    if not cur.fetchone() and request_item.get("first_message"):
+        cur.execute(
+            "INSERT INTO arena_chat_messages (thread_id, sender_id, body, status, source_request_id, created_at) VALUES (?, ?, ?, 'delivered', ?, ?)",
+            (thread_id, request_item["sender_id"], request_item["first_message"], request_id, request_item.get("created_at") or now),
+        )
+    return thread_id, request_item
+
+
+def arena_chat_payload(thread_id, user_id, limit=80):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_chat_threads WHERE id=? AND (user_a_id=? OR user_b_id=?) LIMIT 1", (thread_id, user_id, user_id))
+    thread = cur.fetchone()
+    if not thread:
+        conn.close()
+        return None
+    other_id = int(thread["user_b_id"] if int(thread["user_a_id"]) == int(user_id) else thread["user_a_id"])
+    cur.execute("UPDATE arena_chat_messages SET status='read', read_at=? WHERE thread_id=? AND sender_id!=? AND status!='read'", (datetime.now().isoformat(), thread_id, user_id))
+    cur.execute("SELECT * FROM arena_chat_messages WHERE thread_id=? ORDER BY id DESC LIMIT ?", (thread_id, int(limit or 80)))
+    messages = [dict(row) for row in reversed(cur.fetchall())]
+    cur.execute("UPDATE arena_chat_threads SET last_read_at=? WHERE id=?", (datetime.now().isoformat(), thread_id))
+    conn.commit()
+    profiles = arena_sender_cards(cur, [user_id, other_id])
+    conn.close()
+    return {
+        "ok": True,
+        "thread": {"id": int(thread["id"]), "status": thread["status"], "updated_at": thread["updated_at"]},
+        "me": profiles.get(int(user_id), {}),
+        "other": profiles.get(other_id, {}),
+        "messages": messages,
     }
 
 
@@ -8948,7 +9033,7 @@ def arena_apply_fake_trade(match_id, user_id, symbol, side, quantity, order_type
     return {"ok": True, "message": "Fake Arena trade recorded. No real order was placed.", "trade": {"symbol": symbol, "side": side, "quantity": quantity, "fake_price": price, "fake_value": fake_value, "source": source}, "psychology": psychology, "ai_commentary": comment}, 200
 
 
-def arena_page_shell(title, body, user=None, public=False):
+def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     prefs = get_arena_preferences(user.get("user_id") if user else None) if user else ARENA_PREF_KEYS
     nav = []
     if not public and user and prefs.get("show_arena_dashboard"):
@@ -8982,12 +9067,12 @@ def arena_page_shell(title, body, user=None, public=False):
     document.addEventListener('change',async e=>{const i=e.target.closest('[data-arena-pref]');if(!i)return;await fetch('/api/arena/preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[i.dataset.arenaPref]:i.checked})});location.reload();});
     function arenaPopup(item){if(!item)return;let box=document.querySelector('[data-arena-popup]');if(!box){box=document.createElement('div');box.dataset.arenaPopup='1';box.style.cssText='position:fixed;right:18px;bottom:18px;z-index:60;max-width:360px;border:1px solid rgba(110,223,246,.35);border-radius:16px;background:linear-gradient(180deg,rgba(10,22,38,.96),rgba(6,12,24,.96));box-shadow:0 24px 80px rgba(0,0,0,.45),0 0 32px rgba(110,223,246,.18);padding:14px;color:#f2fbff';document.body.appendChild(box);}const title=item.type==='challenge'?'Challenge Received':'New Arena Message';const action=item.type==='challenge'?`<button data-arena-accept='${item.id}' data-arena-kind='challenge'>Accept</button><button data-arena-reject='${item.id}' data-arena-kind='challenge'>Decline</button>`:`<button data-arena-accept='${item.id}' data-arena-kind='message'>Open Chat</button><button data-arena-reject='${item.id}' data-arena-kind='message'>Dismiss</button>`;box.innerHTML=`<strong>${title}</strong><p><b>${arenaEsc(item.sender?.display_name||'Arena Pilot')}</b><br>${arenaEsc(item.message_preview||'Arena request')}</p><div class='actions'>${action}<a class='button' href='/arena/inbox'>Inbox</a></div>`;}
     async function loadArenaInboxPulse(){try{const r=await fetch('/api/arena/inbox',{cache:'no-store'});if(!r.ok)return;const d=await r.json();const count=(d.counts&&d.counts.pending_requests)||0;const badge=document.querySelector('[data-arena-badge]');if(badge)badge.textContent=count?`🔴 ${count}`:'';const first=(d.requests||[])[0];if(first&&String(localStorage.getItem('arenaLastPopup')||'')!==`${first.type}:${first.id}`){localStorage.setItem('arenaLastPopup',`${first.type}:${first.id}`);arenaPopup(first);if(navigator.vibrate)navigator.vibrate([200,100,200]);}}catch(e){}}
-    document.addEventListener('click',async e=>{const a=e.target.closest('[data-arena-accept]');const r=e.target.closest('[data-arena-reject]');const target=a||r;if(!target)return;const kind=target.dataset.arenaKind;const accept=!!a;const url=kind==='challenge'?(accept?'/api/arena/challenge/accept':'/api/arena/challenge/reject'):(accept?'/api/arena/message/accept':'/api/arena/message/reject');const key=kind==='challenge'?'challenge_id':'request_id';const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[key]:Number(target.dataset.arenaAccept||target.dataset.arenaReject)})});const d=await res.json();if(d.chat_url)location.href=d.chat_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else{const box=document.querySelector('[data-arena-popup]');if(box)box.remove();loadArenaInboxPulse();}});
+    document.addEventListener('click',async e=>{const a=e.target.closest('[data-arena-accept]');const r=e.target.closest('[data-arena-reject]');const target=a||r;if(!target)return;target.disabled=true;const kind=target.dataset.arenaKind;const accept=!!a;const url=kind==='challenge'?(accept?'/api/arena/challenge/accept':'/api/arena/challenge/reject'):(accept?'/api/arena/message/accept':'/api/arena/message/reject');const key=kind==='challenge'?'challenge_id':'request_id';const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[key]:Number(target.dataset.arenaAccept||target.dataset.arenaReject)})});const d=await res.json();if(d.next_url)location.href=d.next_url;else if(d.chat_url)location.href=d.chat_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else{const box=document.querySelector('[data-arena-popup]');if(box)box.remove();loadArenaInboxPulse();}});
     loadArenaPrefs();
     loadArenaInboxPulse();
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
@@ -9340,17 +9425,23 @@ def arena_player_page(public_player_id):
     profile = dict(row)
     public_profile = public_arena_player(profile)
     display = public_profile.get("display_name")
+    share_url = f"https://coinpilotx.app/arena/player/{clean_html(public_profile.get('public_player_id'))}"
     actions = (
-        f"""<button data-challenge="{clean_html(public_profile.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(public_profile.get('public_player_id'))}">Follow Player</button><button data-message="{clean_html(public_profile.get('public_player_id'))}">Message Player</button><button data-report="{clean_html(public_profile.get('public_player_id'))}">Report</button><button data-block="{clean_html(public_profile.get('public_player_id'))}">Block</button><a class="button" href="/api/arena/share/profile/{clean_html(public_profile.get('public_player_id'))}">Share</a>"""
+        f"""<button data-challenge="{clean_html(public_profile.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(public_profile.get('public_player_id'))}">Follow Player</button><button data-message="{clean_html(public_profile.get('public_player_id'))}">Message Player</button><button data-report="{clean_html(public_profile.get('public_player_id'))}">Report</button><button data-block="{clean_html(public_profile.get('public_player_id'))}">Block</button><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{clean_html(public_profile.get('public_player_id'))}">Share</button>"""
         if user else
-        f"""<a class="button primary" href="/signup?next={clean_html(request.path)}">Create Free Account</a><a class="button" href="/api/arena/share/profile/{clean_html(public_profile.get('public_player_id'))}">Share</a>"""
+        f"""<a class="button primary" href="/signup?next={clean_html(request.path)}">Create Free Account</a><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{clean_html(public_profile.get('public_player_id'))}">Share</button>"""
     )
+    og_title = f"{clean_html(display)} | CoinPilotXAI Arena Player"
+    og_desc = clean_html(arena_player_style_summary(profile))
+    og_image = f"https://coinpilotx.app/api/arena/share/profile/{clean_html(public_profile.get('public_player_id'))}?format=svg"
+    meta_tags = f"""<link rel="canonical" href="{share_url}"><meta property="og:title" content="{og_title}"><meta property="og:description" content="{og_desc}"><meta property="og:image" content="{og_image}"><meta property="og:url" content="{share_url}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{og_title}"><meta name="twitter:description" content="{og_desc}"><meta name="twitter:image" content="{og_image}">"""
     body = f"""
     <section class="hero"><article class="card wide"><div class="kicker">Arena Player Profile</div><h1>{clean_html(display)}</h1><p>{clean_html(arena_player_style_summary(profile))}</p><div class="actions">{actions}</div></article><article class="card"><span class="rank">{clean_html(profile.get('rank'))}</span><div class="metric">{int(profile.get('arena_iq') or 0)}</div><p>Arena IQ</p></article></section>
     <section class="grid"><article class="card"><h3>Discipline</h3><div class="metric">{int(profile.get('discipline_score') or 0)}</div></article><article class="card"><h3>Scam Defense</h3><div class="metric">{int(profile.get('scam_defense_score') or 0)}</div></article><article class="card"><h3>XP</h3><div class="metric">{int(profile.get('xp') or 0)}</div></article></section>
-    <script>document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');if(c){{const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:'friend_battle'}})}});alert((await res.json()).message||'Challenge sent.')}}if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.')}}if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await res.json()).message||'Message request sent.')}}}}if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.')}}if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.')}}}})</script>
+    <div class="share-modal" data-share-modal hidden><h3>Share Arena Player</h3><p class="muted">Public Arena profile only. No email, internal ID, or account data.</p><div class="actions"><button data-copy-share>Copy Link</button><a class="button" data-share-x target="_blank" rel="noopener">X</a><a class="button" data-share-facebook target="_blank" rel="noopener">Facebook</a><a class="button" data-share-whatsapp target="_blank" rel="noopener">WhatsApp</a><a class="button" data-share-telegram target="_blank" rel="noopener">Telegram</a><button data-close-share>Close</button></div><p class="muted" data-share-toast></p></div>
+    <script>async function trackShare(playerId,platform){{try{{await fetch('/api/arena/share/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{shared_player_id:playerId,share_type:'player_profile',platform,title:'Arena player profile shared'}})}})}}catch(e){{}}}}async function copyShare(url){{await navigator.clipboard.writeText(url);const t=document.querySelector('[data-share-toast]');if(t)t.textContent='Player profile link copied.'}}function openShareModal(url){{const modal=document.querySelector('[data-share-modal]');const text=encodeURIComponent('Check out this Arena player profile on CoinPilotXAI.');const encoded=encodeURIComponent(url);modal.querySelector('[data-share-x]').href=`https://twitter.com/intent/tweet?text=${{text}}&url=${{encoded}}`;modal.querySelector('[data-share-facebook]').href=`https://www.facebook.com/sharer/sharer.php?u=${{encoded}}`;modal.querySelector('[data-share-whatsapp]').href=`https://wa.me/?text=${{text}}%20${{encoded}}`;modal.querySelector('[data-share-telegram]').href=`https://t.me/share/url?url=${{encoded}}&text=${{text}}`;modal.hidden=false;}}document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');if(c){{const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:'friend_battle'}})}});alert((await res.json()).message||'Challenge sent.')}}if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.')}}if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await res.json()).message||'Message request sent.')}}}}if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.')}}if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.')}}if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}if(e.target.closest('[data-copy-share]')){{const btn=document.querySelector('.arena-share-btn');await copyShare(btn.dataset.shareUrl);await trackShare(btn.dataset.publicPlayerId,'copy_link');}}if(e.target.closest('[data-close-share]'))document.querySelector('[data-share-modal]').hidden=true;}})</script>
     """
-    return arena_page_shell(f"Arena Player {display}", body, user=user, public=not bool(user))
+    return arena_page_shell(f"Arena Player {display}", body, user=user, public=True, meta_tags=meta_tags)
 
 
 @webhook_app.route("/arena/players", methods=["GET"])
@@ -9370,6 +9461,41 @@ def arena_players_page():
     <script>document.addEventListener('click',async e=>{{const m=e.target.closest('[data-message]');const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});alert((await r.json()).message||'Message request sent.')}}}}if(c){{const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:'quick_battle'}})}});alert((await r.json()).message||'Challenge sent.')}}if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await r.json()).message||'Followed.')}}}})</script>
     """
     return arena_page_shell("Arena Players", body, user=user)
+
+
+@webhook_app.route("/arena/chat/<int:thread_id>", methods=["GET"])
+def arena_chat_page(thread_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    payload = arena_chat_payload(thread_id, user["user_id"])
+    if not payload:
+        return arena_page_shell("Arena Chat", "<section class='card'><h1>Thread not found</h1><p>This Arena chat is unavailable or private.</p></section>", user=user), 404
+    other = payload.get("other") or {}
+    body = f"""
+    <section class="hero">
+      <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{clean_html(other.get('display_name') or 'Arena Pilot')}</h1><p><span class="rank">{clean_html(other.get('rank') or 'Rookie')}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
+      <article class="card"><h2>Presence</h2><p><span class="online-dot">Online / recently active</span></p><p class="muted" data-typing>Ready.</p></article>
+    </section>
+    <section class="card" style="min-height:58vh;display:grid;grid-template-rows:auto 1fr auto;gap:12px">
+      <div class="actions"><a class="button" href="/arena/inbox">Inbox</a><a class="button" href="/arena/player/{clean_html(other.get('public_player_id') or '')}">View Profile</a><button data-sound-toggle>Sound</button></div>
+      <div class="chat-thread" data-arena-chat-thread></div>
+      <form class="private-chat-form" data-arena-chat-form><input name="body" placeholder="Reply in Arena..." maxlength="1200" autocomplete="off"><button class="button primary">Send</button></form>
+    </section>
+    <script>
+    const threadId={int(thread_id)};
+    const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+    let chatLoading=false, soundOn=false;
+    function renderMessages(items){{const box=document.querySelector('[data-arena-chat-thread]');box.innerHTML=(items||[]).map(m=>`<div class="chat-bubble ${{m.sender_id==={int(user['user_id'])}?'me':'them'}}"><span>${{esc(m.body)}}</span><small>${{esc(m.status||'delivered')}}</small></div>`).join('')||'<div class="private-chat-empty">Send the first Arena reply.</div>';box.scrollTop=box.scrollHeight;}}
+    async function loadChat(){{if(chatLoading)return;chatLoading=true;try{{const d=await fetch(`/api/arena/chat/${{threadId}}`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok)renderMessages(d.messages);}}finally{{chatLoading=false;}}}}
+    document.querySelector('[data-arena-chat-form]').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.elements.body;const body=input.value.trim();if(!body)return;input.value='';const box=document.querySelector('[data-arena-chat-thread]');box.insertAdjacentHTML('beforeend',`<div class="chat-bubble me"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;const d=await fetch('/api/arena/chat/send',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{thread_id:threadId,body}})}}).then(r=>r.json());if(navigator.vibrate)navigator.vibrate([30]);if(soundOn&&window.CoinPilotNotifications)window.CoinPilotNotifications.playSound();loadChat();}});
+    document.querySelector('[data-arena-chat-form] input').addEventListener('input',()=>fetch('/api/arena/chat/typing',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{thread_id:threadId}})}}).catch(()=>{{}}));
+    document.addEventListener('click',e=>{{if(e.target.closest('[data-sound-toggle]')){{soundOn=!soundOn;e.target.textContent=soundOn?'Sound On':'Sound';}}}});
+    loadChat(); setInterval(loadChat,5000);
+    </script>
+    """
+    return arena_page_shell("Arena Chat", body, user=user)
 
 
 @webhook_app.route("/arena/inbox", methods=["GET"])
@@ -9426,8 +9552,8 @@ def arena_inbox_page():
       const action=e.target.closest('[data-arena-action]');
       const block=e.target.closest('[data-arena-block]');
       const report=e.target.closest('[data-arena-report]');
-      if(action){{const payload={{[action.dataset.key]:Number(action.dataset.id)}};const r=await fetch(action.dataset.arenaAction,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const d=await r.json();if(d.match_id)location.href='/arena/match/'+d.match_id;else if(d.chat_url)location.href=d.chat_url;else location.reload();}}
-      if(block){{await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:block.dataset.arenaBlock,reason:'Blocked from Arena inbox'}})}});location.reload();}}
+      if(action){{action.disabled=true;action.textContent='Working...';const payload={{[action.dataset.key]:Number(action.dataset.id)}};const r=await fetch(action.dataset.arenaAction,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const d=await r.json();if(d.next_url)location.href=d.next_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else if(d.chat_url)location.href=d.chat_url;else action.closest('[data-request-card]')?.remove();}}
+      if(block){{block.disabled=true;await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:block.dataset.arenaBlock,reason:'Blocked from Arena inbox'}})}});document.querySelectorAll(`[data-arena-block="${{block.dataset.arenaBlock}}"]`).forEach(n=>n.closest('[data-request-card]')?.remove());}}
       if(report){{await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:report.dataset.arenaReport,report_type:'inbox',details:'Reported from Arena inbox'}})}});alert('Report sent.');}}
     }});
     </script>
@@ -9851,6 +9977,12 @@ def api_arena_battle_accept():
     cur.execute("SELECT * FROM arena_friend_challenges WHERE id=? AND receiver_id=? AND status='pending' LIMIT 1", (challenge_id, user["user_id"]))
     challenge = cur.fetchone()
     if not challenge:
+        thread_id, request_item = arena_thread_for_request(cur, challenge_id, user["user_id"])
+        if thread_id and request_item and int(request_item.get("receiver_id") or 0) == int(user["user_id"]):
+            cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), challenge_id, user["user_id"]))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
         conn.close()
         return jsonify({"ok": False, "message": "Challenge not found."}), 404
     cur.execute("UPDATE arena_friend_challenges SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), challenge_id, user["user_id"]))
@@ -9858,7 +9990,7 @@ def api_arena_battle_accept():
     conn.commit()
     conn.close()
     match_id = create_arena_match(int(challenge["sender_id"]), user["user_id"], challenge["challenge_type"] or "friend_battle", status="active") if changed else 0
-    return jsonify({"ok": bool(changed), "message": "Challenge accepted. Arena match created." if changed else "Challenge not found.", "match_id": match_id})
+    return jsonify({"ok": bool(changed), "status": "accepted" if changed else "not_found", "message": "Challenge accepted. Arena match created." if changed else "Challenge not found.", "match_id": match_id, "next_url": f"/arena/match/{match_id}" if match_id else ""})
 
 
 @webhook_app.route("/api/arena/challenge/reject", methods=["POST"])
@@ -9874,9 +10006,12 @@ def api_arena_challenge_reject():
     cur = conn.cursor()
     cur.execute("UPDATE arena_friend_challenges SET status='declined', responded_at=? WHERE id=? AND receiver_id=? AND status='pending'", (datetime.now().isoformat(), challenge_id, user["user_id"]))
     changed = cur.rowcount
+    if not changed and payload.get("request_id"):
+        cur.execute("UPDATE arena_message_requests SET status='declined', responded_at=? WHERE id=? AND receiver_id=? AND status='pending'", (datetime.now().isoformat(), challenge_id, user["user_id"]))
+        changed = cur.rowcount
     conn.commit()
     conn.close()
-    return jsonify({"ok": bool(changed), "message": "Challenge declined." if changed else "Challenge not found."}), (200 if changed else 404)
+    return jsonify({"ok": bool(changed), "status": "declined" if changed else "not_found", "message": "Request declined." if changed else "Request not found.", "next_url": "/arena/inbox"}), (200 if changed else 404)
 
 
 @webhook_app.route("/api/arena/follow", methods=["POST"])
@@ -10733,12 +10868,17 @@ def api_arena_message_request_accept():
         return jsonify({"ok": False, "message": "Login required."}), 401
     request_id = int((request.get_json(silent=True) or {}).get("request_id") or 0)
     conn = db()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    thread_id, request_item = arena_thread_for_request(cur, request_id, user["user_id"])
+    if not thread_id or not request_item or int(request_item.get("receiver_id") or 0) != int(user["user_id"]):
+        conn.close()
+        return jsonify({"ok": False, "status": "not_found", "message": "Request not found."}), 404
     cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), request_id, user["user_id"]))
     changed = cur.rowcount
     conn.commit()
     conn.close()
-    return jsonify({"ok": bool(changed), "message": "Message request accepted." if changed else "Request not found.", "chat_url": f"/arena/inbox?thread={request_id}" if changed else ""}), (200 if changed else 404)
+    return jsonify({"ok": bool(changed), "status": "accepted" if changed else "not_found", "message": "Message request accepted." if changed else "Request not found.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}" if changed else "", "next_url": f"/arena/chat/{thread_id}" if changed else ""}), (200 if changed else 404)
 
 
 @webhook_app.route("/api/arena/message-request/decline", methods=["POST"])
@@ -10754,7 +10894,69 @@ def api_arena_message_request_decline():
     changed = cur.rowcount
     conn.commit()
     conn.close()
-    return jsonify({"ok": bool(changed), "message": "Message request declined." if changed else "Request not found."}), (200 if changed else 404)
+    return jsonify({"ok": bool(changed), "status": "declined" if changed else "not_found", "message": "Message request declined." if changed else "Request not found.", "next_url": "/arena/inbox"}), (200 if changed else 404)
+
+
+@webhook_app.route("/api/arena/chat/<int:thread_id>", methods=["GET"])
+def api_arena_chat_thread(thread_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = arena_chat_payload(thread_id, user["user_id"], limit=int(request.args.get("limit") or 80))
+    if not payload:
+        return jsonify({"ok": False, "message": "Thread not found."}), 404
+    return jsonify(payload)
+
+
+@webhook_app.route("/api/arena/chat/send", methods=["POST"])
+def api_arena_chat_send():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    thread_id = int(payload.get("thread_id") or 0)
+    body = clean_html(payload.get("body") or "")[:1200]
+    if not body:
+        return jsonify({"ok": False, "message": "Message cannot be empty."}), 400
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_chat_threads WHERE id=? AND (user_a_id=? OR user_b_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
+    thread = cur.fetchone()
+    if not thread:
+        conn.close()
+        return jsonify({"ok": False, "message": "Thread not found."}), 404
+    now = datetime.now().isoformat()
+    cur.execute("INSERT INTO arena_chat_messages (thread_id, sender_id, body, status, created_at) VALUES (?, ?, ?, 'delivered', ?)", (thread_id, user["user_id"], body, now))
+    message_id = cur.lastrowid
+    cur.execute("UPDATE arena_chat_threads SET updated_at=? WHERE id=?", (now, thread_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "status": "delivered", "message_id": message_id, "next_url": f"/arena/chat/{thread_id}"})
+
+
+@webhook_app.route("/api/arena/chat/read", methods=["POST"])
+def api_arena_chat_read():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    thread_id = int((request.get_json(silent=True) or {}).get("thread_id") or 0)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE arena_chat_messages SET status='read', read_at=? WHERE thread_id=? AND sender_id!=?", (datetime.now().isoformat(), thread_id, user["user_id"]))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "status": "read", "updated": changed})
+
+
+@webhook_app.route("/api/arena/chat/typing", methods=["POST"])
+def api_arena_chat_typing():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    thread_id = int((request.get_json(silent=True) or {}).get("thread_id") or 0)
+    return jsonify({"ok": True, "status": "typing", "thread_id": thread_id, "player": public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})})
 
 
 @webhook_app.route("/api/arena/block-player", methods=["POST"])
@@ -10771,7 +10973,7 @@ def api_arena_block_player():
     cur.execute("INSERT OR REPLACE INTO arena_blocks (blocker_id, blocked_id, reason, created_at) VALUES (?, ?, ?, ?)", (user["user_id"], blocked_id, clean_html(payload.get("reason") or "Blocked by player")[:300], datetime.now().isoformat()))
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Player blocked."})
+    return jsonify({"ok": True, "status": "blocked", "message": "Player blocked.", "next_url": "/arena/inbox"})
 
 
 @webhook_app.route("/api/arena/report-player", methods=["POST"])
@@ -10791,7 +10993,7 @@ def api_arena_report_player():
     )
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Report sent for review."})
+    return jsonify({"ok": True, "status": "reported", "message": "Report sent for review.", "next_url": "/arena/inbox"})
 
 
 @webhook_app.route("/api/arena/infinite-briefing", methods=["GET"])
@@ -10843,12 +11045,23 @@ def api_arena_share_generate():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
+    shared_player_id = clean_html(payload.get("shared_player_id") or "")[:100]
+    profile = None
+    if shared_player_id:
+        conn_lookup = db()
+        conn_lookup.row_factory = sqlite3.Row
+        cur_lookup = conn_lookup.cursor()
+        cur_lookup.execute("SELECT * FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (shared_player_id,))
+        row_lookup = cur_lookup.fetchone()
+        conn_lookup.close()
+        profile = public_arena_player(dict(row_lookup)) if row_lookup else None
+    if not profile:
+        profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
     achievement = {"title": clean_html(payload.get("title") or "Arena Progress")[:120], "subtitle": clean_html(payload.get("subtitle") or "Training crypto intelligence with CoinPilotXAI Arena")[:180]}
     card = arena_share_service.share_card(profile=profile, achievement=achievement)
     conn = db()
     cur = conn.cursor()
-    cur.execute("INSERT INTO arena_share_events (user_id, public_player_id, share_type, platform, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user["user_id"], profile.get("public_player_id"), clean_html(payload.get("share_type") or "achievement")[:80], clean_html(payload.get("platform") or "copy_link")[:80], json.dumps({"achievement": achievement}), datetime.now().isoformat()))
+    cur.execute("INSERT INTO arena_share_events (user_id, public_player_id, share_type, platform, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user["user_id"], profile.get("public_player_id"), clean_html(payload.get("share_type") or "achievement")[:80], clean_html(payload.get("platform") or "copy_link")[:80], json.dumps({"achievement": achievement, "shared_player_id": shared_player_id}), datetime.now().isoformat()))
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "share": card, "urls": arena_share_service.share_urls(card["url"], arena_share_service.share_text("achievement", profile=profile, achievement=achievement))})
@@ -11170,6 +11383,14 @@ def portfolio_api():
     )
     log_product_event(user["user_id"], "portfolio_item_added", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
     return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/portfolio", methods=["GET"])
+def portfolio_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/portfolio"))
+    return redirect("/dashboard#add-holding")
 
 
 @webhook_app.route("/api/portfolio/<int:item_id>", methods=["PUT", "DELETE"])
@@ -16701,10 +16922,10 @@ def init_db():
     CREATE TABLE IF NOT EXISTS user_dashboard_preferences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER UNIQUE,
-        show_account INTEGER DEFAULT 1,
-        show_upgrade_pro INTEGER DEFAULT 1,
-        show_command_center INTEGER DEFAULT 1,
-        show_logout INTEGER DEFAULT 1,
+        show_account INTEGER DEFAULT 0,
+        show_upgrade_pro INTEGER DEFAULT 0,
+        show_command_center INTEGER DEFAULT 0,
+        show_logout INTEGER DEFAULT 0,
         show_saved_insights INTEGER DEFAULT 1,
         show_activity_timeline INTEGER DEFAULT 1,
         created_at TEXT,
@@ -16712,10 +16933,10 @@ def init_db():
     )
     """)
     add_columns_if_missing(cur, "user_dashboard_preferences", [
-        ("show_account", "INTEGER DEFAULT 1"),
-        ("show_upgrade_pro", "INTEGER DEFAULT 1"),
-        ("show_command_center", "INTEGER DEFAULT 1"),
-        ("show_logout", "INTEGER DEFAULT 1"),
+        ("show_account", "INTEGER DEFAULT 0"),
+        ("show_upgrade_pro", "INTEGER DEFAULT 0"),
+        ("show_command_center", "INTEGER DEFAULT 0"),
+        ("show_logout", "INTEGER DEFAULT 0"),
         ("show_saved_insights", "INTEGER DEFAULT 1"),
         ("show_activity_timeline", "INTEGER DEFAULT 1"),
         ("created_at", "TEXT"),
@@ -17819,6 +18040,31 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_chat_threads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_a_id INTEGER,
+        user_b_id INTEGER,
+        source_request_id INTEGER,
+        status TEXT DEFAULT 'active',
+        last_read_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_a_id, user_b_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER,
+        sender_id INTEGER,
+        body TEXT,
+        status TEXT DEFAULT 'delivered',
+        source_request_id INTEGER,
+        created_at TEXT,
+        read_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS arena_blocks (
         blocker_id INTEGER,
         blocked_id INTEGER,
@@ -17871,6 +18117,23 @@ def init_db():
         created_at TEXT
     )
     """)
+    index_statements = [
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user_type_status ON notifications(user_id, notification_type, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_challenges_receiver_status ON arena_friend_challenges(receiver_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_challenges_sender_status ON arena_friend_challenges(sender_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_message_requests_receiver_status ON arena_message_requests(receiver_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_message_requests_sender_status ON arena_message_requests(sender_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_friendships_receiver_status ON arena_friendships(receiver_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_blocks_blocker_blocked ON arena_blocks(blocker_id, blocked_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_chat_threads_users ON arena_chat_threads(user_a_id, user_b_id, updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_chat_messages_thread_id ON arena_chat_messages(thread_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_profiles_public_player_id ON arena_profiles(public_player_id)",
+    ]
+    for statement in index_statements:
+        try:
+            cur.execute(statement)
+        except Exception as exc:
+            logging.info("INDEX_CREATE_SKIPPED statement=%s error=%s", statement, exc)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS auth_events (

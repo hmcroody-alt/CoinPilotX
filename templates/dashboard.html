@@ -126,23 +126,18 @@
     <div class="container">
       <nav>
         <a class="brand" href="/"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI Inc.</span></a>
-        {% set header_has_actions = dashboard_prefs.show_account or dashboard_prefs.show_upgrade_pro or dashboard_prefs.show_command_center or dashboard_prefs.show_logout %}
-        {% if header_has_actions %}
-        <div class="nav-links" data-home-action-group="primary_header">
-          {% if dashboard_prefs.show_account %}
-          <a class="button" href="/account" data-home-action="show_account">Account</a>
-          {% endif %}
-          {% if dashboard_prefs.show_upgrade_pro %}
-          <a class="button" href="/upgrade" data-home-action="show_upgrade_pro" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
-          {% endif %}
-          {% if dashboard_prefs.show_command_center %}
-          <a class="button" href="/app" data-home-action="show_command_center">Command Center</a>
-          {% endif %}
-          {% if dashboard_prefs.show_logout %}
-          <a class="button" href="/logout" data-home-action="show_logout">Logout</a>
-          {% endif %}
+        <div class="nav-links" data-home-action-group="compact_menu">
+          <a class="button" href="/account">Account</a>
+          <details>
+            <summary class="button">☰ Menu</summary>
+            <div class="customize-panel" style="right:0;top:54px">
+              <a class="button" href="/account">Account</a>
+              <a class="button" href="/account/billing">Manage Pro</a>
+              <a class="button" href="/command-center">Command Center</a>
+              <a class="button" href="/logout">Logout</a>
+            </div>
+          </details>
         </div>
-        {% endif %}
       </nav>
     </div>
   </header>
@@ -153,11 +148,6 @@
         <div class="kicker">Personal Intelligence Dashboard</div>
         <h1 data-user-name>Welcome back</h1>
         <p>Track your manual crypto holdings, watchlist, alerts, native notifications, and AI risk context from the same source-of-truth website account.</p>
-        {% if access.is_paid_pro %}
-          <p class="notice"><strong>Paid Pro active.</strong> Your subscription is active. The dashboard, alerts, and native command center will use paid Pro access.</p>
-        {% elif access.is_trial %}
-          <p class="notice"><strong>Pro trial active.</strong> Your trial ends {{ access.trial_end }}. Use this dashboard to set up your portfolio, alerts, and account preferences.</p>
-        {% endif %}
         <div class="actions">
           <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
           <button class="button" type="button" data-scroll="#add-watchlist">Add Watchlist Coin</button>
@@ -385,7 +375,7 @@
       {% if dashboard_prefs.show_command_center %}<a href="/command-center" data-home-action="show_command_center">Intel</a>{% endif %}
       <a href="/live-market">Live</a>
       <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
-      {% if dashboard_prefs.show_account %}<a href="/account" data-home-action="show_account">Account</a>{% endif %}
+      <a href="/account">Account</a>
     </div>
   </nav>
 
@@ -730,9 +720,8 @@
         panel.hidden = !panel.hidden;
       }
       if (event.target.closest("[data-pref-reset]")) {
-        for (const key of ["show_account","show_upgrade_pro","show_command_center","show_logout","show_saved_insights","show_activity_timeline"]) {
-          await saveDashboardPreference(key, true).catch(() => {});
-        }
+        const defaults = { show_account:false, show_upgrade_pro:false, show_command_center:false, show_logout:false, show_saved_insights:true, show_activity_timeline:true };
+        for (const [key, value] of Object.entries(defaults)) await saveDashboardPreference(key, value).catch(() => {});
       }
       if (event.target.closest("[data-private-chat-open]")) openPrivateChat();
       if (event.target.closest("[data-private-chat-close]")) closePrivateChat();
