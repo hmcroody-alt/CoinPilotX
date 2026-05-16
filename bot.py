@@ -50,6 +50,7 @@ from services import (
     arena_scenario_engine,
     arena_share_service,
     arena_world_engine,
+    realtime_service,
     live_market_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
@@ -9466,7 +9467,8 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     setInterval(updateArenaPresence,20000); setInterval(loadArenaPresence,20000);
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
+    logo_url = url_for("static", filename="Coinpilot Logo/NewLogo.png")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="CoinPilotXAI logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
@@ -9960,13 +9962,34 @@ def arena_inbox_page():
         else:
             accept_url, reject_url, key, accept_text = "/api/arena/message/accept", "/api/arena/message/reject", "request_id", "Accept Chat"
         stats = f"<p class='muted'>{rank} · {faction} · {clean_html(item.get('stakes') or 'XP only')}</p>" if kind == "challenge" else f"<p class='muted'>{rank} · {faction}</p>"
+        reply_form = ""
+        if kind == "message":
+            thread_id = int(item.get("thread_id") or 0)
+            reply_form = f"""
+          <form data-inline-reply data-request-id="{int(item.get('id') or 0)}" data-thread-id="{thread_id}" hidden>
+            <label class="muted">Reply to {name}</label>
+            <textarea name="message" rows="3" placeholder="Type a fast Arena reply..."></textarea>
+            <div class="actions"><button class="primary" type="submit">Send Reply</button><a class="button" href="{clean_html(item.get('chat_url') or item.get('next_url') or '#')}">Open Chat</a></div>
+            <p class="muted" data-reply-status></p>
+          </form>
+            """
         if status == "pending":
-            primary_actions = f"""
+            if kind == "message":
+                primary_actions = f"""
+            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('next_url') or '')}">Reply</button>
             <button data-arena-action="{accept_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">{accept_text}</button>
             <button data-arena-action="{reject_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">Decline</button>
-            """
+                """
+            else:
+                primary_actions = f"""
+            <button data-arena-action="{accept_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">{accept_text}</button>
+            <button data-arena-action="{reject_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">Decline</button>
+                """
         elif kind == "message" and status == "accepted" and item.get("chat_url"):
-            primary_actions = f"<a class='button primary' href='{clean_html(item.get('chat_url'))}'>Open Chat</a>"
+            primary_actions = f"""
+            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('chat_url') or '')}">Reply</button>
+            <a class='button primary' href='{clean_html(item.get('chat_url'))}'>Open Chat</a>
+            """
         elif kind == "challenge" and status == "accepted" and item.get("next_url"):
             primary_actions = f"<a class='button primary' href='{clean_html(item.get('next_url'))}'>Open Match</a>"
         else:
@@ -9983,6 +10006,7 @@ def arena_inbox_page():
             <button data-arena-block="{public_id}">Block</button>
             <button data-arena-report="{public_id}">Report</button>
           </div>
+          {reply_form}
         </article>
         """
     requests_html = "".join(card(item) for item in inbox.get("requests", [])) or "<article class='card'><h2>No pending Arena requests</h2><p class='muted'>When another player challenges or messages you, it appears here first.</p></article>"
@@ -10000,11 +10024,47 @@ def arena_inbox_page():
     <script>
     document.addEventListener('click',async e=>{{
       const action=e.target.closest('[data-arena-action]');
+      const reply=e.target.closest('[data-arena-reply]');
       const block=e.target.closest('[data-arena-block]');
       const report=e.target.closest('[data-arena-report]');
+      if(reply){{
+        reply.disabled=true;
+        const card=reply.closest('[data-request-card]');
+        const form=card?.querySelector('[data-inline-reply]');
+        let threadId=Number(reply.dataset.threadId||form?.dataset.threadId||0);
+        if(!threadId){{
+          const r=await fetch('/api/arena/message/accept',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{request_id:Number(reply.dataset.requestId||0)}})}});
+          const d=await r.json();
+          if(!d.ok){{reply.disabled=false;alert(d.message||'Could not open chat.');return;}}
+          threadId=Number(d.thread_id||0);
+          reply.dataset.threadId=threadId;
+          if(form)form.dataset.threadId=threadId;
+        }}
+        if(form){{form.hidden=false;form.querySelector('textarea')?.focus();}}
+        reply.textContent='Reply open';
+        reply.disabled=false;
+      }}
       if(action){{action.disabled=true;action.textContent='Working...';const payload={{[action.dataset.key]:Number(action.dataset.id)}};const r=await fetch(action.dataset.arenaAction,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const d=await r.json();if(d.next_url)location.href=d.next_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else if(d.chat_url)location.href=d.chat_url;else action.closest('[data-request-card]')?.remove();}}
       if(block){{block.disabled=true;await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:block.dataset.arenaBlock,reason:'Blocked from Arena inbox'}})}});document.querySelectorAll(`[data-arena-block="${{block.dataset.arenaBlock}}"]`).forEach(n=>n.closest('[data-request-card]')?.remove());}}
       if(report){{await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:report.dataset.arenaReport,report_type:'inbox',details:'Reported from Arena inbox'}})}});alert('Report sent.');}}
+    }});
+    document.addEventListener('submit',async e=>{{
+      const form=e.target.closest('[data-inline-reply]');
+      if(!form)return;
+      e.preventDefault();
+      const textarea=form.querySelector('textarea');
+      const status=form.querySelector('[data-reply-status]');
+      const button=form.querySelector('button[type="submit"]');
+      const message=(textarea?.value||'').trim();
+      if(!message)return;
+      button.disabled=true;
+      if(status)status.textContent='Sending...';
+      const threadId=Number(form.dataset.threadId||0);
+      const r=await fetch(`/api/arena/chat/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}});
+      const d=await r.json();
+      if(d.ok){{textarea.value='';if(status)status.textContent='Message sent.';form.closest('[data-request-card]')?.querySelector('[data-arena-action]')?.remove();}}
+      else if(status)status.textContent=d.message||'Could not send. Try again.';
+      button.disabled=false;
     }});
     </script>
     """
@@ -10022,14 +10082,51 @@ def arena_continuous_play_page():
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next=request.path))
+    if request.path == "/arena/live":
+        live_cards = [
+            {"title": "Global Arena Room", "body": "The main live room for challenges, chat, spectators, and realtime Arena activity.", "action": "<a class='button primary live-arena-cta' href='/arena/room/1'>Enter Global Room</a>"},
+            {"title": "BTC War Room", "body": "Watch BTC Duels, rivalries, and market-storm training moments as they happen.", "action": "<a class='button' href='/arena/room/3'>Browse BTC Room</a>"},
+            {"title": "Scam Hunter HQ", "body": "Follow scam-defense missions and challenge players protecting the Arena.", "action": "<a class='button' href='/arena/scam-rush'>Start Scam Rush</a>"},
+        ]
+        body = arena_simple_page(
+            "Live Arena",
+            "Live rooms are open",
+            "Enter the social layer of Alpha Arena. Watch rivals, join public battles, send cheers, and jump into Global Arena whenever you are ready.",
+            live_cards,
+        )
+        body += """
+        <section class="card live-arena-card">
+          <div class="kicker">Room Energy</div>
+          <h2>ENTER LIVE ARENA</h2>
+          <p>Global traders battling now. Watch live rivalries, join room chat, and jump into active challenges from the Arena floor.</p>
+          <div class="crowd-meter"><span style="width:78%"></span></div>
+          <div class="feed" style="margin-top:14px">
+            <div>124 players online</div>
+            <div>18 live battles active</div>
+            <div>BTC Duel room heating up</div>
+            <div>Titan player entered Global Arena</div>
+          </div>
+          <div class="actions" style="margin-top:14px">
+            <a class="button primary live-arena-cta" href="/arena/room/1">Enter Global Room</a>
+            <a class="button" href="/arena/play">Back to Play Hub</a>
+          </div>
+        </section>
+        """
+        return arena_page_shell("Live Arena", body, user=user)
     mode = request.path.rsplit("/", 1)[-1] if request.path != "/arena/play" else "play"
     cards = [
-        {"title": "Quick Battle", "body": "A 3-5 minute market, scam, and discipline challenge.", "action": "<a class='button primary' href='/arena/quick-battle'>Start Quick Battle</a>"},
-        {"title": "Endless Survival", "body": "Keep playing scenario rounds until you decide to stop.", "action": "<a class='button' href='/arena/survival'>Enter Survival</a>"},
-        {"title": "Scam Hunter Rush", "body": "Rapid scam detection with speed and accuracy scoring.", "action": "<a class='button' href='/arena/scam-rush'>Start Rush</a>"},
-        {"title": "Live Practice Simulator", "body": "Fake trades with live/cached prices. Educational only.", "action": "<a class='button' href='/arena/simulator'>Practice</a>"},
-        {"title": "Live Rooms", "body": "Join global rooms, room events, and friendly challenges anytime.", "action": "<a class='button' href='/arena/live'>Open Live Arena</a>"},
-        {"title": "AI Bosses", "body": "Train weaknesses against FOMO, scam, volatility, greed, and panic bosses.", "action": "<a class='button gold' href='/arena/bosses'>Fight Boss</a>"},
+        {"title": "Quick Battle", "body": "A 3-5 minute market, scam, and discipline challenge. Solo · Easy · 40 XP.", "action": "<a class='button primary' href='/arena/quick-battle' data-game-launch='quick_battle'>Play Now</a>"},
+        {"title": "Alpha Arena Ranked", "body": "Enter ranked matchmaking and start climbing divisions. Multiplayer · Adaptive · 90 XP.", "action": "<a class='button primary' href='/arena/matchmaking' data-game-launch='ranked'>Enter Ranked</a>"},
+        {"title": "BTC Duel", "body": "A focused fake-money BTC decision battle. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=btc_duel' data-game-launch='btc_duel'>Join Battle</a>"},
+        {"title": "ETH Duel", "body": "ETH strategy, discipline, and fake trade timing. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=eth_duel' data-game-launch='eth_duel'>Join Battle</a>"},
+        {"title": "Scam Hunter", "body": "Rapid scam detection with speed and accuracy scoring. Solo · Easy · 50 XP.", "action": "<a class='button' href='/arena/scam-rush' data-game-launch='scam_hunter'>Play Now</a>"},
+        {"title": "Survival Mode", "body": "Market storm scenarios that test emotional control. Solo · Hard · 80 XP.", "action": "<a class='button' href='/arena/survival' data-game-launch='survival'>Enter Survival</a>"},
+        {"title": "Market Storm", "body": "Volatility pressure, fake signals, and tactical AI coaching. Solo · Hard · 85 XP.", "action": "<a class='button' href='/arena/survival' data-game-launch='market_storm'>Play Now</a>"},
+        {"title": "AI Boss Fight", "body": "Train weaknesses against FOMO, scam, volatility, greed, and panic bosses. Solo · Boss · 100 XP.", "action": "<a class='button gold' href='/arena/bosses' data-game-launch='ai_boss'>Fight Boss</a>"},
+        {"title": "Fake Portfolio Battle", "body": "Fake $10,000 portfolio duel. No real orders. Multiplayer · Hard · 120 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=fake_portfolio' data-game-launch='fake_portfolio'>Join Battle</a>"},
+        {"title": "Prediction War", "body": "Compete on reasoning quality and risk-aware predictions. Multiplayer · Medium · 90 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=prediction_war' data-game-launch='prediction_war'>Join Battle</a>"},
+        {"title": "Live Rooms", "body": "Join global rooms, live chat, spectator cheers, and friendly challenges anytime.", "action": "<a class='button primary live-arena-cta' href='/arena/live' data-game-launch='live_rooms'>ENTER LIVE ARENA</a><p class='muted'>Global traders battling now</p><a class='button' href='/arena/room/1'>Enter Global Room</a>"},
+        {"title": "Training Missions", "body": "Daily bonus missions, academy paths, and tactical skill drills. Solo · Training · 35 XP.", "action": "<a class='button' href='/arena/daily' data-game-launch='training'>Train Now</a>"},
     ]
     script = """
     <script>
@@ -10047,6 +10144,15 @@ def arena_continuous_play_page():
       box.dataset.sessionId=d.session_id||'';
     }
     document.addEventListener('click',async e=>{
+      const launch=e.target.closest('[data-game-launch]');
+      if(launch){
+        e.preventDefault();
+        launch.textContent='Opening...';
+        launch.setAttribute('aria-busy','true');
+        const d=await fetch('/api/arena/game/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({game_type:launch.dataset.gameLaunch})}).then(r=>r.json()).catch(()=>({ok:false,message:'Could not open this Arena mode. Try again.'}));
+        if(d.ok&&d.next_url) location.href=d.next_url;
+        else { alert(d.message||'Could not open this Arena mode. Try again.'); launch.textContent='Play Now'; launch.removeAttribute('aria-busy'); }
+      }
       if(e.target.closest('[data-start-continuous]')) startRound();
       const a=e.target.closest('[data-answer]');
       if(a){
@@ -10062,6 +10168,17 @@ def arena_continuous_play_page():
     body = arena_simple_page("Arena Play", "Play Arena anytime", "Daily missions are now bonus streaks. Quick battles, survival, scam rush, live rooms, bosses, and practice stay open all day.", cards, script)
     body += "<section class='card'><div class='kicker'>Continuous Round</div><div data-continuous-round><button class='primary' data-start-continuous>Start a training round</button></div></section>"
     return arena_page_shell("Arena Continuous Play", body, user=user)
+
+
+@webhook_app.route("/arena/matchmaking", methods=["GET"])
+def arena_matchmaking_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.full_path or "/arena/play"))
+    game_type = request.args.get("mode") or "ranked"
+    match_id = create_arena_match(user["user_id"], 0, game_type, status="matchmaking")
+    return redirect(f"/arena/match/{match_id}")
 
 
 @webhook_app.route("/arena/solo", methods=["GET"])
@@ -10201,6 +10318,37 @@ def admin_arena_page():
     </div>
     """
     return admin_page_html("Arena", cards + tools + f"<div class='card'><h2>Top Arena Players</h2><table><tr><th>Player</th><th>Rank</th><th>Arena IQ</th><th>XP</th></tr>{rows}</table></div>", admin=admin)
+
+
+@webhook_app.route("/admin/arena-games", methods=["GET"])
+def admin_arena_games_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    games = [
+        ("quick_battle", "/arena/quick-battle", "Playable"),
+        ("ranked", "/arena/matchmaking?mode=ranked", "Matchmaking"),
+        ("btc_duel", "/arena/matchmaking?mode=btc_duel", "Matchmaking"),
+        ("eth_duel", "/arena/matchmaking?mode=eth_duel", "Matchmaking"),
+        ("scam_hunter", "/arena/scam-rush", "Playable"),
+        ("survival", "/arena/survival", "Playable"),
+        ("market_storm", "/arena/survival", "Playable"),
+        ("ai_boss", "/arena/bosses", "Playable"),
+        ("fake_portfolio", "/arena/matchmaking?mode=fake_portfolio", "Matchmaking"),
+        ("prediction_war", "/arena/matchmaking?mode=prediction_war", "Matchmaking"),
+        ("live_rooms", "/arena/live", "Live rooms"),
+        ("training", "/arena/daily", "Training"),
+    ]
+    rows = "".join(
+        f"<tr><td>{clean_html(key)}</td><td><a href='{clean_html(route)}'>{clean_html(route)}</a></td><td>{clean_html(status)}</td><td><code>POST /api/arena/game/launch</code></td></tr>"
+        for key, route, status in games
+    )
+    body = f"""
+    <div class='card'><h1>Alpha Arena Game Health</h1><p class='muted'>Every visible game card has a direct route fallback and the universal launcher endpoint.</p></div>
+    <div class='card'><table><tr><th>Game type</th><th>Route</th><th>Status</th><th>Launcher</th></tr>{rows}</table></div>
+    """
+    return admin_page_html("Arena Games", body, admin=admin)
 
 
 @webhook_app.route("/admin/arena/events", methods=["POST"])
@@ -10502,6 +10650,10 @@ def api_arena_challenge():
     challenge_id = cur.lastrowid
     conn.commit()
     conn.close()
+    try:
+        realtime_service.publish_arena_event("inbox", opponent_id, "arena_challenge", {"challenge_id": challenge_id, "challenge_type": challenge_type, "label": details["label"], "preview": note or f"{account_display_name(user)} challenged you to {details['label']}.", "next_url": "/arena/inbox"})
+    except Exception:
+        pass
     try:
         notification_service.send_push_alert(
             opponent_id,
@@ -11654,6 +11806,91 @@ def api_arena_continuous_xp():
     return jsonify({"ok": True, "award": award})
 
 
+@webhook_app.route("/api/arena/game/launch", methods=["POST"])
+def api_arena_game_launch():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required.", "next_url": "/login?next=/arena/play"}), 401
+    payload = request.get_json(silent=True) or {}
+    game_type = clean_html(payload.get("game_type") or "quick_battle").lower().replace("-", "_")
+    solo_routes = {
+        "quick_battle": "/arena/quick-battle",
+        "scam_hunter": "/arena/scam-rush",
+        "scam_rush": "/arena/scam-rush",
+        "survival": "/arena/survival",
+        "market_storm": "/arena/survival",
+        "ai_boss": "/arena/bosses",
+        "boss": "/arena/bosses",
+        "live_rooms": "/arena/live",
+        "training": "/arena/daily",
+        "simulator": "/arena/simulator",
+    }
+    match_types = {
+        "ranked": "btc_duel",
+        "btc_duel": "btc_duel",
+        "eth_duel": "eth_duel",
+        "fake_portfolio": "fake_portfolio_battle",
+        "prediction_war": "prediction_war",
+        "friend_battle": "friend_battle",
+    }
+    if game_type in solo_routes:
+        if game_type in {"quick_battle", "scam_hunter", "scam_rush", "survival", "market_storm"}:
+            try:
+                start_arena_play_session(user["user_id"], game_type if game_type != "scam_hunter" else "scam_rush", 1)
+            except Exception as exc:
+                logging.info("Arena launch session scaffold failed safely: %s", exc)
+        return jsonify({"ok": True, "mode": "solo" if game_type != "live_rooms" else "room", "next_url": solo_routes[game_type], "message": f"Entering {arena_match_label(game_type)}"})
+    match_key = match_types.get(game_type)
+    if match_key:
+        match_id = create_arena_match(user["user_id"], 0, match_key, status="matchmaking" if game_type == "ranked" else "active")
+        try:
+            realtime_service.publish_arena_event("match", match_id, "match_created", {"match_id": match_id, "match_type": match_key, "display_name": arena_match_label(match_key)})
+        except Exception:
+            pass
+        return jsonify({"ok": True, "mode": "multiplayer", "match_id": match_id, "next_url": f"/arena/match/{match_id}", "message": f"Entering {arena_match_label(match_key)}"})
+    return jsonify({"ok": False, "message": "This Arena mode is coming soon.", "status": "coming_soon"}), 400
+
+
+@webhook_app.route("/api/arena/realtime/<channel_kind>/<channel_id>", methods=["GET"])
+def api_arena_realtime_poll(channel_kind, channel_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    after_id = int(request.args.get("after_id") or 0)
+    limit = int(request.args.get("limit") or 50)
+    events = realtime_service.poll_arena_channel(channel_kind, channel_id, after_id=after_id, limit=limit)
+    realtime_service.realtime_manager.heartbeat(
+        f"user:{user['user_id']}",
+        [realtime_service.arena_channel(channel_kind, channel_id)],
+        {"user_id": user["user_id"], "path": request.path},
+    )
+    return jsonify({"ok": True, "events": events, "last_event_id": int(events[-1]["id"]) if events else after_id})
+
+
+@webhook_app.route("/api/arena/realtime/<channel_kind>/<channel_id>/stream", methods=["GET"])
+def api_arena_realtime_stream(channel_kind, channel_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    start_after = int(request.args.get("after_id") or 0)
+    request_path = request.path
+
+    def event_stream():
+        after_id = start_after
+        channel = realtime_service.arena_channel(channel_kind, channel_id)
+        for _ in range(10):
+            realtime_service.realtime_manager.heartbeat(f"user:{user['user_id']}", [channel], {"user_id": user["user_id"], "path": request_path})
+            events = realtime_service.poll_arena_channel(channel_kind, channel_id, after_id=after_id, limit=20)
+            for event in events:
+                after_id = max(after_id, int(event.get("id") or 0))
+                yield f"id: {event['id']}\nevent: {event['type']}\ndata: {json.dumps(event)}\n\n"
+            time.sleep(2)
+        yield "event: heartbeat\ndata: {}\n\n"
+
+    return Response(event_stream(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @webhook_app.route("/api/arena/players", methods=["GET"])
 def api_arena_players():
     init_db()
@@ -11723,6 +11960,11 @@ def api_arena_message_player():
     cur.execute("SELECT * FROM arena_chat_messages WHERE id=? LIMIT 1", (message_id,))
     message_payload = arena_public_message(cur, dict(cur.fetchone()), user["user_id"])
     conn.close()
+    try:
+        realtime_service.publish_arena_event("chat", thread_id, "message", message_payload)
+        realtime_service.publish_arena_event("inbox", receiver_id, "arena_message", {"request_id": request_id, "thread_id": thread_id, "preview": message[:140], "next_url": f"/arena/chat/{thread_id}"})
+    except Exception:
+        pass
     try:
         notification_service.send_push_alert(
             receiver_id,
@@ -11838,6 +12080,12 @@ def api_arena_chat_send(path_thread_id=None):
     cur.execute("SELECT * FROM arena_chat_messages WHERE id=? LIMIT 1", (message_id,))
     message_item = arena_public_message(cur, dict(cur.fetchone()), user["user_id"])
     conn.close()
+    try:
+        other_id = int(thread["user_a_id"] if int(thread["user_a_id"]) != int(user["user_id"]) else thread["user_b_id"])
+        realtime_service.publish_arena_event("chat", thread_id, "message", message_item)
+        realtime_service.publish_arena_event("inbox", other_id, "arena_message", {"thread_id": thread_id, "preview": body[:140], "next_url": f"/arena/chat/{thread_id}"})
+    except Exception:
+        pass
     return jsonify({"ok": True, "status": "delivered", "message": message_item, "message_id": message_id, "next_url": f"/arena/chat/{thread_id}"})
 
 
