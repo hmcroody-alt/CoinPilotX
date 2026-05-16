@@ -45,6 +45,7 @@ from services import (
     arena_commentator,
     arena_psychology,
     arena_realtime,
+    arena_world_engine,
     live_market_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
@@ -7970,6 +7971,105 @@ def seed_arena_foundation(cur):
                 """,
                 (event_type, title, description, json.dumps(payload), now, (datetime.now() + timedelta(days=30)).isoformat()),
             )
+    seasons = [
+        ("season_1_market_survival", "Season 1: Market Survival", "Survive volatility with discipline, scam defense, and risk control.", 1.1),
+        ("season_2_whale_wars", "Season 2: Whale Wars", "Track simulated whale pressure and avoid emotional trades.", 1.15),
+        ("season_3_scam_apocalypse", "Season 3: Scam Apocalypse", "Scam Hunter factions gain influence through safety mastery.", 1.2),
+        ("season_4_etf_frenzy", "Season 4: ETF Frenzy", "News literacy and macro psychology take center stage.", 1.1),
+    ]
+    for key, title, narrative, multiplier in seasons:
+        cur.execute("SELECT id FROM arena_seasons WHERE season_key=? LIMIT 1", (key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_seasons (season_key, title, narrative, starts_at, ends_at, status, xp_multiplier, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (key, title, narrative, now, (datetime.now() + timedelta(days=90)).isoformat(), "active" if key == "season_1_market_survival" else "upcoming", multiplier, now),
+            )
+    tournaments = [
+        ("market_survival_cup", "Market Survival Cup", "survival", "active"),
+        ("scam_hunter_bracket", "Scam Hunter Bracket", "elimination", "active"),
+        ("country_strategy_war", "Country Strategy War", "country", "upcoming"),
+    ]
+    for key, title, fmt, status in tournaments:
+        cur.execute("SELECT id FROM arena_tournaments WHERE tournament_key=? LIMIT 1", (key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_tournaments (tournament_key, title, format, status, payload_json, starts_at, ends_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (key, title, fmt, status, json.dumps({"fake_money_only": True, "educational": True}), now, (datetime.now() + timedelta(days=14)).isoformat(), now),
+            )
+    factions = [
+        ("btc_guardians", "BTC Guardians", "Defend disciplined Bitcoin strategy.", "BTC Territory"),
+        ("whale_watchers", "Whale Watchers", "Track simulated whale pressure and liquidity.", "Whale Watch Zone"),
+        ("scam_hunters", "Scam Hunters", "Protect the Arena from social engineering traps.", "Scam Defense Zone"),
+        ("quantum_strategists", "Quantum Strategists", "Master probability, prediction literacy, and uncertainty.", "AI Intelligence District"),
+        ("risk_guardians", "Risk Guardians", "Protect discipline and position sizing.", "Risk Control Citadel"),
+        ("momentum_syndicate", "Momentum Syndicate", "Study momentum without chasing hype.", "Momentum Sector"),
+    ]
+    for key, name, description, territory in factions:
+        cur.execute("SELECT id FROM arena_factions WHERE faction_key=? LIMIT 1", (key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_factions (faction_key, name, description, territory, influence, status, created_at) VALUES (?, ?, ?, ?, 50, 'active', ?)",
+                (key, name, description, territory, now),
+            )
+    for governor_key, governor_name, focus in arena_world_engine.GOVERNORS:
+        cur.execute("SELECT id FROM arena_ai_governors WHERE governor_key=? LIMIT 1", (governor_key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_ai_governors (governor_key, name, focus, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+                (governor_key, governor_name, focus, now),
+            )
+    academy_paths = [
+        ("scam_defense_mastery", "Scam Defense Mastery", "Learn to detect fake support, wallet drainers, seed phrase theft, and pressure tactics.", "scam_defense"),
+        ("risk_control_mastery", "Risk Control Mastery", "Practice position sizing, stop-loss thinking, and fake portfolio survival.", "risk_control"),
+        ("market_psychology_mastery", "Market Psychology Mastery", "Train FOMO resistance, patience, and emotional discipline.", "psychology"),
+        ("whale_intelligence_mastery", "Whale Intelligence Mastery", "Understand whale movement without panic reactions.", "whale_intel"),
+        ("portfolio_strategy_mastery", "Portfolio Strategy Mastery", "Build diversified fake portfolios and risk-adjusted thinking.", "portfolio"),
+        ("prediction_literacy_mastery", "Prediction Literacy Mastery", "Read probabilities, uncertainty, and event risk safely.", "predictions"),
+    ]
+    for key, title, description, focus in academy_paths:
+        cur.execute("SELECT id FROM arena_academy_paths WHERE path_key=? LIMIT 1", (key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_academy_paths (path_key, title, description, skill_focus, lessons_json, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+                (key, title, description, focus, json.dumps(["Learn", "Practice", "Reflect", "Earn badge"]), now),
+            )
+    quests = [
+        ("detect_3_scam_patterns", "Detect 3 scam patterns", "daily", "Practice spotting seed phrase, fake support, and drainer red flags.", 80),
+        ("complete_day_signal", "Complete 1 Day Signal", "daily", "Use psychological readiness before making market decisions.", 60),
+        ("send_friend_challenge", "Send 1 friend challenge", "weekly", "Invite a friend to a fake-money learning battle.", 50),
+        ("complete_risk_lesson", "Complete Risk Control lesson", "weekly", "Train a weakness before the next Arena battle.", 75),
+        ("join_team_event", "Join a team event", "seasonal", "Represent a team or faction in a simulated event.", 100),
+    ]
+    for key, title, quest_type, description, reward in quests:
+        cur.execute("SELECT id FROM arena_quests WHERE quest_key=? LIMIT 1", (key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_quests (quest_key, title, quest_type, description, reward_xp, payload_json, active, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+                (key, title, quest_type, description, reward, json.dumps({"educational": True}), now),
+            )
+    bosses = [
+        ("fomo_beast", "The FOMO Beast", "FOMO control", "Defeat impulsive entries with patience."),
+        ("whale_shadow", "The Whale Shadow", "Whale interpretation", "Learn to observe whale pressure without panic."),
+        ("scam_lord", "The Scam Lord", "Scam detection", "Survive phishing and social engineering traps."),
+        ("volatility_dragon", "The Volatility Dragon", "Volatility survival", "Practice calm in fast markets."),
+        ("greed_mirror", "The Greed Mirror", "Greed control", "Recognize overconfidence before it grows."),
+        ("panic_storm", "The Panic Storm", "Panic control", "Protect decision quality during fear spikes."),
+        ("oracle_guardian", "The Oracle Guardian", "Probability thinking", "Train uncertainty and scenario planning."),
+    ]
+    for key, name, focus, description in bosses:
+        cur.execute("SELECT id FROM arena_ai_bosses WHERE boss_key=? LIMIT 1", (key,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_ai_bosses (boss_key, name, skill_focus, description, payload_json, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+                (key, name, focus, description, json.dumps({"fake_battle": True, "no_real_money": True}), now),
+            )
+    world = arena_world_engine.current_world_state()
+    cur.execute("SELECT id FROM arena_world_state WHERE active_date=? LIMIT 1", (datetime.now().date().isoformat(),))
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO arena_world_state (state_key, title, narrative, intensity, payload_json, active_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (world["state_key"], world["title"], world["narrative"], world["intensity"], json.dumps(world), datetime.now().date().isoformat(), now, now),
+        )
     today = datetime.now().date().isoformat()
     payload = {
         "scenario": "BTC drops 5% while scam messages spike across social channels. Your job is to protect fake capital, detect the scam trap, and choose a disciplined next move.",
@@ -8339,6 +8439,152 @@ def get_arena_match_payload(match_id):
     return arena_realtime.live_match_payload(match, participants, positions, trades, events, spectators, commentary)
 
 
+def arena_current_season():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_seasons WHERE status='active' ORDER BY starts_at DESC LIMIT 1")
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else {"title": "Season 1: Market Survival", "narrative": "Survive markets with discipline.", "xp_multiplier": 1}
+
+
+def arena_world_payload(user_id=None):
+    world = arena_world_engine.current_world_state()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_factions WHERE status='active' ORDER BY influence DESC")
+    factions = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM arena_world_events WHERE status='active' ORDER BY starts_at DESC LIMIT 12")
+    world_events = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM arena_ai_governors WHERE status='active' ORDER BY id ASC")
+    governors = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return {
+        "ok": True,
+        "world": world,
+        "season": arena_current_season(),
+        "factions": factions,
+        "world_events": world_events,
+        "governors": governors,
+        "disclaimer": "Arena world systems are educational and simulated. No real-money wagering.",
+    }
+
+
+def arena_player_story_payload(user_id):
+    profile = get_or_create_arena_profile(user_id) or {}
+    badges = arena_profile_payload(user_id).get("badges", [])
+    story = arena_world_engine.player_story(profile, badges)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO arena_player_stories (user_id, archetype, story, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, story["archetype"], story["story"], json.dumps(story), datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, **story, "profile": profile}
+
+
+def arena_live_feed(limit=30):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT 'match_event' AS feed_type, title, body, user_id, created_at FROM arena_match_events
+        UNION ALL
+        SELECT 'highlight' AS feed_type, title, summary AS body, user_id, created_at FROM arena_highlights
+        UNION ALL
+        SELECT 'story' AS feed_type, archetype AS title, story AS body, user_id, created_at FROM arena_player_stories
+        ORDER BY created_at DESC LIMIT ?
+        """,
+        (int(limit or 30),),
+    )
+    feed = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    if not feed:
+        world = arena_world_engine.current_world_state()
+        feed = [
+            {"feed_type": "world", "title": world["title"], "body": world["narrative"], "user_id": 0, "created_at": world["updated_at"]},
+            {"feed_type": "coach", "title": "AI Coach", "body": "Complete a mission or fake battle to create your first Arena highlight.", "user_id": 0, "created_at": world["updated_at"]},
+        ]
+    return {"ok": True, "feed": feed, "updated_at": datetime.now().isoformat()}
+
+
+def arena_coach_recommendations(user_id):
+    profile = get_or_create_arena_profile(user_id) or {}
+    discipline = int(profile.get("discipline_score") or 50)
+    scam = int(profile.get("scam_defense_score") or 50)
+    strategy = int(profile.get("strategy_score") or 50)
+    recommendations = []
+    if discipline < 70:
+        recommendations.append({"title": "Train discipline", "path": "/arena/academy/risk-control-mastery", "reason": "You can improve by practicing smaller simulated position sizes."})
+    if scam < 70:
+        recommendations.append({"title": "Strengthen Scam Defense", "path": "/arena/academy/scam-defense-mastery", "reason": "Scam Hunter training protects your decision quality."})
+    if strategy < 70:
+        recommendations.append({"title": "Build strategy", "path": "/arena/academy/portfolio-strategy-mastery", "reason": "Portfolio training improves risk-adjusted scoring."})
+    if not recommendations:
+        recommendations.append({"title": "Enter an elite mission", "path": "/arena/quests", "reason": "Your profile is ready for harder seasonal quests."})
+    return {"ok": True, "recommendations": recommendations, "archetype": arena_world_engine.player_archetype(profile)}
+
+
+def arena_academy_payload(user_id):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_academy_paths WHERE active=1 ORDER BY id ASC")
+    paths = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM arena_academy_progress WHERE user_id=?", (user_id,))
+    progress = {row["path_key"]: dict(row) for row in cur.fetchall()}
+    conn.close()
+    for path in paths:
+        path["progress"] = int((progress.get(path["path_key"]) or {}).get("progress") or 0)
+    return {"ok": True, "paths": paths, "recommendations": arena_coach_recommendations(user_id).get("recommendations", [])}
+
+
+def arena_quests_payload(user_id):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_quests WHERE active=1 ORDER BY quest_type ASC, reward_xp DESC")
+    quests = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM arena_quest_progress WHERE user_id=?", (user_id,))
+    progress = {int(row["quest_id"]): dict(row) for row in cur.fetchall()}
+    conn.close()
+    for quest in quests:
+        item = progress.get(int(quest["id"])) or {}
+        quest["progress"] = int(item.get("progress") or 0)
+        quest["claimed"] = bool(item.get("claimed") or 0)
+    return {"ok": True, "quests": quests}
+
+
+def arena_playbooks_payload(playbook_id=None):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    if playbook_id:
+        cur.execute("SELECT * FROM arena_playbooks WHERE id=? AND status='active' LIMIT 1", (playbook_id,))
+        row = cur.fetchone()
+        conn.close()
+        return {"ok": bool(row), "playbook": dict(row) if row else None}
+    cur.execute("SELECT * FROM arena_playbooks WHERE status='active' ORDER BY created_at DESC LIMIT 30")
+    playbooks = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return {"ok": True, "playbooks": playbooks}
+
+
+def arena_bosses_payload():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_ai_bosses WHERE active=1 ORDER BY id ASC")
+    bosses = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return {"ok": True, "bosses": bosses}
+
+
 def arena_apply_fake_trade(match_id, user_id, symbol, side, quantity, order_type="market"):
     symbol = (symbol or "BTC").upper()[:12]
     side = (side or "buy").lower()
@@ -8446,6 +8692,155 @@ def arena_page_shell(title, body, user=None, public=False):
     cta = "<a class='button primary' href='/signup?next=/arena'>Create Free Account</a>" if public and not user else "<a class='button primary' href='/arena'>Open Arena</a>"
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/arena/leaderboard">Leaderboard</a><a class="button" href="/arena/scam-hunter">Scam Hunter</a>{cta}</div></nav></div></header><main class="wrap">{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main></body></html>""")
 
+
+def arena_simple_page(title, heading, intro, cards=None, script=""):
+    cards_html = "".join(
+        f"<article class='card'><h3>{clean_html(card.get('title'))}</h3><p>{clean_html(card.get('body'))}</p>{card.get('action','')}</article>"
+        for card in (cards or [])
+    )
+    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Universe</div><h1>{clean_html(heading)}</h1><p>{clean_html(intro)}</p></article><article class='card'><h2>Alive System</h2><p>Progress, identity, world state, and AI coaching update as you train.</p></article></section><section class='grid'>{cards_html}</section>{script}"
+    return body
+
+
+@webhook_app.route("/arena/os", methods=["GET"])
+def arena_os_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/os"))
+    profile = arena_profile_payload(user["user_id"]).get("profile", {})
+    world = arena_world_payload(user["user_id"])
+    feed = arena_live_feed(limit=8).get("feed", [])
+    quests = arena_quests_payload(user["user_id"]).get("quests", [])[:4]
+    recs = arena_coach_recommendations(user["user_id"]).get("recommendations", [])
+    feed_html = "".join(f"<div><strong>{clean_html(item.get('title'))}</strong><p>{clean_html(item.get('body'))}</p></div>" for item in feed)
+    quest_html = "".join(f"<div class='player-card'><strong>{clean_html(q.get('title'))}</strong><p>{clean_html(q.get('description'))}</p><span class='rank'>{int(q.get('reward_xp') or 0)} XP</span></div>" for q in quests)
+    rec_html = "".join(f"<div><strong>{clean_html(r.get('title'))}</strong><p>{clean_html(r.get('reason'))}</p></div>" for r in recs)
+    body = f"""
+    <section class="hero">
+      <article class="card wide"><div class="kicker">Arena OS</div><h1>Your living AI intelligence command center</h1><p>{clean_html((world.get('world') or {}).get('narrative'))}</p><div class="actions"><a class="button primary" href="/arena/daily">Today’s Mission</a><a class="button" href="/arena/quests">Quests</a><a class="button gold" href="/arena/bosses">Boss Training</a></div></article>
+      <article class="card"><h2>{clean_html(profile.get('rank') or 'Rookie')}</h2><div class="metric">{int(profile.get('arena_iq') or 50)}</div><p>Arena IQ · {int(profile.get('xp') or 0)} XP</p><div class="xpbar"><span style="width:{min(100, int(profile.get('arena_iq') or 50))}%"></span></div></article>
+    </section>
+    <section class="grid">
+      <article class="card"><h2>World State</h2><span class="rank">{clean_html((world.get('world') or {}).get('title'))}</span><p>Intensity {int((world.get('world') or {}).get('intensity') or 0)} · XP modifier {world.get('world',{}).get('xp_modifier')}x</p></article>
+      <article class="card"><h2>Active Quests</h2>{quest_html or '<p class="muted">Quests are warming up.</p>'}</article>
+      <article class="card"><h2>AI Coach Briefing</h2><div class="feed">{rec_html}</div></article>
+      <article class="card wide"><h2>Arena Live Feed</h2><div class="feed">{feed_html}</div></article>
+      <article class="card"><h2>Faction Status</h2><p>{clean_html((world.get('factions') or [{}])[0].get('name') or 'Factions active')} leads symbolic influence today.</p><a class="button" href="/arena/world">Open World</a></article>
+    </section>
+    """
+    return arena_page_shell("Arena OS", body, user=user)
+
+
+@webhook_app.route("/arena/world", methods=["GET"])
+def arena_world_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/world"))
+    world = arena_world_payload(user["user_id"])
+    factions = world.get("factions") or []
+    cards = [{"title": f.get("name"), "body": f"{f.get('description')} Territory: {f.get('territory')} · Influence {f.get('influence')}"} for f in factions]
+    return arena_page_shell("Arena World", arena_simple_page("Arena World", "The living Arena world is active", (world.get("world") or {}).get("narrative", ""), cards), user=user)
+
+
+@webhook_app.route("/arena/creators", methods=["GET"])
+def arena_creators_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/creators"))
+    cards = [
+        {"title": "Creator Profiles", "body": "Showcase educational Arena progress, highlights, and AI recaps."},
+        {"title": "Streamer Mode", "body": "Share public spectate links and replay-safe battle summaries."},
+        {"title": "Community Spotlight", "body": "Highlight helpful players, strong scam defense, and sportsmanship."},
+    ]
+    return arena_page_shell("Arena Creators", arena_simple_page("Arena Creators", "Create and share Arena learning moments", "AI recap cards and highlights make progress visible without real-money hype.", cards), user=user)
+
+
+@webhook_app.route("/arena/highlights", methods=["GET"])
+def arena_highlights_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/highlights"))
+    feed = arena_live_feed(limit=12).get("feed", [])
+    cards = [{"title": item.get("title"), "body": item.get("body")} for item in feed]
+    return arena_page_shell("Arena Highlights", arena_simple_page("Arena Highlights", "AI-generated match highlights", "Best decisions, worst risk moments, scam defense saves, XP earned, and rank movement appear here.", cards), user=user)
+
+
+@webhook_app.route("/arena/replay/<int:match_id>", methods=["GET"])
+def arena_replay_page(match_id):
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    live = get_arena_match_payload(match_id)
+    if not live:
+        return arena_page_shell("Arena Replay", "<section class='card'><h1>Replay not found</h1></section>", user=user), 404
+    events = live.get("events") or []
+    cards = [{"title": event.get("title"), "body": event.get("body")} for event in events[:12]]
+    return arena_page_shell("Arena Replay", arena_simple_page("Arena Replay", f"Replay #{match_id}", live.get("ai_commentary") or "Educational fake battle recap.", cards), user=user)
+
+
+@webhook_app.route("/arena/academy", methods=["GET"])
+@webhook_app.route("/arena/academy/<path_slug>", methods=["GET"])
+def arena_academy_page(path_slug=None):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    academy = arena_academy_payload(user["user_id"])
+    cards = [{"title": p.get("title"), "body": p.get("description"), "action": f"<a class='button' href='/arena/academy/{p.get('path_key').replace('_','-')}'>Train this path</a>"} for p in academy.get("paths", [])]
+    return arena_page_shell("Arena Academy", arena_simple_page("Arena Academy", "Mastery paths turn weaknesses into training", "Arena recommends lessons based on discipline, scam defense, risk control, and strategy behavior.", cards), user=user)
+
+
+@webhook_app.route("/arena/quests", methods=["GET"])
+def arena_quests_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/quests"))
+    quests = arena_quests_payload(user["user_id"]).get("quests", [])
+    cards = [{"title": q.get("title"), "body": f"{q.get('description')} Reward: {q.get('reward_xp')} XP", "action": f"<button data-quest='{int(q.get('id') or 0)}'>Claim Progress</button>"} for q in quests]
+    script = "<script>document.addEventListener('click',async e=>{const q=e.target.closest('[data-quest]');if(q){const r=await fetch('/api/arena/quests/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:Number(q.dataset.quest)})});alert((await r.json()).message||'Quest updated.')}})</script>"
+    return arena_page_shell("Arena Quests", arena_simple_page("Arena Quests", "Daily, weekly, seasonal, team, and faction quests", "Quests reward practice, education, and healthy competition.", cards, script), user=user)
+
+
+@webhook_app.route("/arena/intelligence-market", methods=["GET"])
+def arena_intelligence_market_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/intelligence-market"))
+    playbooks = arena_playbooks_payload().get("playbooks", [])
+    cards = [{"title": p.get("title"), "body": f"{p.get('category')}: {p.get('ai_review') or clean_html(p.get('body'))[:120]}", "action": f"<a class='button' href='/arena/playbook/{int(p.get('id') or 0)}'>Open</a>"} for p in playbooks]
+    if not cards:
+        cards = [{"title": "Strategy Library", "body": "Share educational playbooks about scam defense, risk control, BTC/ETH reasoning, and emotional discipline."}]
+    return arena_page_shell("Arena Intelligence Market", arena_simple_page("Arena Intelligence Market", "Exchange educational insights, not paid signals", "No guaranteed profit, no financial advice marketplace. Just AI-reviewed learning notes.", cards), user=user)
+
+
+@webhook_app.route("/arena/playbook/<int:playbook_id>", methods=["GET"])
+def arena_playbook_page(playbook_id):
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    payload = arena_playbooks_payload(playbook_id)
+    playbook = payload.get("playbook")
+    if not playbook:
+        return arena_page_shell("Arena Playbook", "<section class='card'><h1>Playbook not found</h1></section>", user=user), 404
+    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Playbook</div><h1>{clean_html(playbook.get('title'))}</h1><p>{clean_html(playbook.get('body'))}</p><p class='notice'>{clean_html(playbook.get('ai_review') or 'Educational review pending.')}</p></article><article class='card'><h2>{clean_html(playbook.get('category'))}</h2><button data-vote='1'>Helpful</button></article></section><script>document.addEventListener('click',async e=>{{if(e.target.closest('[data-vote]')){{await fetch('/api/arena/playbooks/vote',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{playbook_id:{playbook_id},vote:1}})}});alert('Vote saved.')}}}})</script>"
+    return arena_page_shell("Arena Playbook", body, user=user)
+
+
+@webhook_app.route("/arena/bosses", methods=["GET"])
+@webhook_app.route("/arena/boss/<boss_key>", methods=["GET"])
+def arena_bosses_page(boss_key=None):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    bosses = arena_bosses_payload().get("bosses", [])
+    cards = [{"title": b.get("name"), "body": f"{b.get('skill_focus')}: {b.get('description')}", "action": f"<button data-boss='{b.get('boss_key')}'>Start Boss</button>"} for b in bosses]
+    script = "<script>document.addEventListener('click',async e=>{const b=e.target.closest('[data-boss]');if(b){const r=await fetch('/api/arena/boss/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({boss_key:b.dataset.boss})});alert((await r.json()).message||'Boss started.')}})</script>"
+    return arena_page_shell("Arena Bosses", arena_simple_page("Arena Bosses", "Train against AI opponents with personalities", "Each boss teaches a skill: FOMO control, scam detection, volatility survival, patience, and risk control.", cards, script), user=user)
 
 @webhook_app.route("/arena-preview", methods=["GET"])
 def arena_preview_page():
@@ -8776,6 +9171,41 @@ def admin_arena_create_event():
         conn.close()
         log_admin_audit(admin.get("id"), "arena_event_created", "arena_event", title, {"event_type": event_type})
     return redirect(url_for("admin_arena_page"))
+
+
+@webhook_app.route("/admin/arena-world", methods=["GET"])
+def admin_arena_world_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    world = arena_world_payload()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM arena_factions")
+    factions = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_world_events WHERE status='active'")
+    events = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_player_stories")
+    stories = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_playbooks WHERE status='active'")
+    playbooks = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_boss_attempts")
+    boss_attempts = cur.fetchone()[0]
+    conn.close()
+    body = f"""
+    <div class='grid'>
+      <div class='card'><div class='metric'>{clean_html((world.get('world') or {}).get('title'))}</div><p>World state</p></div>
+      <div class='card'><div class='metric'>{int((world.get('world') or {}).get('intensity') or 0)}</div><p>World intensity</p></div>
+      <div class='card'><div class='metric'>{factions}</div><p>Factions</p></div>
+      <div class='card'><div class='metric'>{events}</div><p>World events</p></div>
+      <div class='card'><div class='metric'>{stories}</div><p>Player stories</p></div>
+      <div class='card'><div class='metric'>{playbooks}</div><p>Playbooks</p></div>
+      <div class='card'><div class='metric'>{boss_attempts}</div><p>Boss attempts</p></div>
+    </div>
+    <div class='card'><h2>AI World Narrative</h2><p>{clean_html((world.get('world') or {}).get('narrative'))}</p></div>
+    """
+    return admin_page_html("Arena World", body, admin=admin)
 
 
 @webhook_app.route("/api/arena/profile", methods=["GET"])
@@ -9242,6 +9672,328 @@ def api_arena_team_join():
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": "Joined Arena team."})
+
+
+@webhook_app.route("/api/arena/seasons", methods=["GET"])
+def api_arena_seasons():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_seasons ORDER BY starts_at ASC")
+    seasons = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "seasons": seasons, "current": arena_current_season()})
+
+
+@webhook_app.route("/api/arena/tournaments", methods=["GET"])
+def api_arena_tournaments():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_tournaments ORDER BY starts_at DESC")
+    tournaments = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "tournaments": tournaments})
+
+
+@webhook_app.route("/api/arena/tournament/join", methods=["POST"])
+def api_arena_tournament_join():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    tournament_id = int((request.get_json(silent=True) or {}).get("tournament_id") or 0)
+    if not tournament_id:
+        return jsonify({"ok": False, "message": "tournament_id required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO arena_tournament_entries (tournament_id, user_id, team_id, status, joined_at) VALUES (?, ?, 0, 'joined', ?)", (tournament_id, user["user_id"], datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Tournament joined. Fake-money educational format only."})
+
+
+@webhook_app.route("/api/arena/live-feed", methods=["GET"])
+def api_arena_live_feed():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_live_feed(limit=int(request.args.get("limit") or 30)))
+
+
+@webhook_app.route("/api/arena/rivalry", methods=["POST"])
+def api_arena_rivalry():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    rival_id = int(payload.get("rival_id") or payload.get("opponent_id") or 0)
+    if not rival_id or rival_id == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "Choose another rival."}), 400
+    user_a, user_b = sorted([int(user["user_id"]), rival_id])
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("INSERT OR IGNORE INTO arena_rivalries (user_a, user_b, matches_count, intensity, created_at, updated_at) VALUES (?, ?, 0, 50, ?, ?)", (user_a, user_b, now, now))
+    cur.execute("UPDATE arena_rivalries SET intensity=MIN(100, intensity+5), updated_at=? WHERE user_a=? AND user_b=?", (now, user_a, user_b))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Rivalry card activated."})
+
+
+@webhook_app.route("/api/arena/team/<int:team_id>", methods=["GET"])
+def api_arena_team(team_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_teams WHERE id=? LIMIT 1", (team_id,))
+    team = dict(cur.fetchone() or {})
+    cur.execute("SELECT tm.*, u.display_name, u.full_name FROM arena_team_members tm LEFT JOIN users u ON u.user_id=tm.user_id WHERE team_id=?", (team_id,))
+    members = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": bool(team), "team": team, "members": members})
+
+
+@webhook_app.route("/api/arena/coach", methods=["POST"])
+@webhook_app.route("/api/arena/coach/recommendations", methods=["GET"])
+def api_arena_coach():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_coach_recommendations(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/events/global", methods=["GET"])
+@webhook_app.route("/api/arena/world-events", methods=["GET"])
+def api_arena_world_events():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "events": arena_world_payload(user["user_id"]).get("world_events", []), "world": arena_world_engine.current_world_state()})
+
+
+@webhook_app.route("/api/arena/world", methods=["GET"])
+def api_arena_world():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_world_payload(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/factions", methods=["GET"])
+def api_arena_factions():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "factions": arena_world_payload(user["user_id"]).get("factions", [])})
+
+
+@webhook_app.route("/api/arena/faction/join", methods=["POST"])
+def api_arena_faction_join():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    faction_id = int((request.get_json(silent=True) or {}).get("faction_id") or 0)
+    if not faction_id:
+        return jsonify({"ok": False, "message": "faction_id required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO arena_faction_members (faction_id, user_id, reputation, joined_at) VALUES (?, ?, 50, ?)", (faction_id, user["user_id"], datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Faction joined."})
+
+
+@webhook_app.route("/api/arena/player-story", methods=["GET"])
+def api_arena_player_story():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_player_story_payload(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/reputation", methods=["POST"])
+def api_arena_reputation():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, sportsmanship+1), updated_at=excluded.updated_at",
+        (user["user_id"], datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Reputation updated."})
+
+
+@webhook_app.route("/api/arena/world-map", methods=["GET"])
+def api_arena_world_map():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    factions = arena_world_payload(user["user_id"]).get("factions", [])
+    zones = [{"zone": f.get("territory"), "faction": f.get("name"), "influence": f.get("influence")} for f in factions]
+    return jsonify({"ok": True, "zones": zones, "map_type": "symbolic influence heatmap"})
+
+
+@webhook_app.route("/api/arena/highlights", methods=["GET"])
+def api_arena_highlights():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_highlights ORDER BY created_at DESC LIMIT 30")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "highlights": rows})
+
+
+@webhook_app.route("/api/arena/replay/<int:match_id>", methods=["GET"])
+def api_arena_replay(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    live = get_arena_match_payload(match_id)
+    return jsonify({"ok": bool(live), "replay": live, "ai_recap": (live or {}).get("ai_commentary")})
+
+
+@webhook_app.route("/api/arena/academy", methods=["GET"])
+def api_arena_academy():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_academy_payload(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/quests", methods=["GET"])
+def api_arena_quests():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_quests_payload(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/quests/claim", methods=["POST"])
+def api_arena_quests_claim():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    quest_id = int((request.get_json(silent=True) or {}).get("quest_id") or 0)
+    if not quest_id:
+        return jsonify({"ok": False, "message": "quest_id required."}), 400
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_quests WHERE id=? LIMIT 1", (quest_id,))
+    quest = cur.fetchone()
+    if not quest:
+        conn.close()
+        return jsonify({"ok": False, "message": "Quest not found."}), 404
+    now = datetime.now().isoformat()
+    cur.execute("INSERT OR IGNORE INTO arena_quest_progress (user_id, quest_id, progress, claimed, updated_at) VALUES (?, ?, 100, 0, ?)", (user["user_id"], quest_id, now))
+    cur.execute("UPDATE arena_quest_progress SET progress=100, claimed=1, updated_at=? WHERE user_id=? AND quest_id=?", (now, user["user_id"], quest_id))
+    reward = int(quest["reward_xp"] or 0)
+    cur.execute("SELECT xp FROM arena_profiles WHERE user_id=? LIMIT 1", (user["user_id"],))
+    profile_row = cur.fetchone()
+    if not profile_row:
+        cur.execute(
+            "INSERT INTO arena_profiles (user_id, username, xp, rank, arena_iq, streak_count, online_status, created_at, updated_at) VALUES (?, ?, 0, 'Rookie', 50, 0, 'training', ?, ?)",
+            (user["user_id"], arena_username_for_user(user), now, now),
+        )
+        current_xp = 0
+    else:
+        current_xp = int(profile_row["xp"] if hasattr(profile_row, "keys") else profile_row[0] or 0)
+    xp = current_xp + reward
+    cur.execute("UPDATE arena_profiles SET xp=?, rank=?, updated_at=? WHERE user_id=?", (xp, arena_rank_for_xp(xp), now, user["user_id"]))
+    cur.execute("INSERT INTO arena_os_activity (user_id, activity_type, title, payload_json, created_at) VALUES (?, 'quest_claimed', ?, ?, ?)", (user["user_id"], quest["title"], json.dumps({"reward_xp": reward}), now))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": f"Quest claimed. {reward} XP added.", "reward_xp": reward})
+
+
+@webhook_app.route("/api/arena/playbooks", methods=["GET", "POST"])
+def api_arena_playbooks():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        return jsonify(arena_playbooks_payload())
+    payload = request.get_json(silent=True) or {}
+    title = clean_html(payload.get("title") or "")[:120]
+    body = clean_html(payload.get("body") or "")[:4000]
+    category = clean_html(payload.get("category") or "Risk Control")[:80]
+    if len(title) < 3 or len(body) < 10:
+        return jsonify({"ok": False, "message": "Title and educational body required."}), 400
+    review = "AI review: educational note saved. Avoid guarantees, real-money claims, and financial advice."
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute("INSERT INTO arena_playbooks (user_id, title, category, body, status, ai_review, created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)", (user["user_id"], title, category, body, review, now, now))
+    playbook_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "playbook_id": playbook_id, "message": "Educational playbook saved."})
+
+
+@webhook_app.route("/api/arena/playbooks/save", methods=["POST"])
+def api_arena_playbooks_save():
+    return api_arena_playbooks()
+
+
+@webhook_app.route("/api/arena/playbooks/vote", methods=["POST"])
+def api_arena_playbooks_vote():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    playbook_id = int(payload.get("playbook_id") or 0)
+    vote = 1 if int(payload.get("vote") or 1) >= 0 else -1
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT OR REPLACE INTO arena_playbook_votes (playbook_id, user_id, vote, created_at) VALUES (?, ?, ?, ?)", (playbook_id, user["user_id"], vote, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Vote saved."})
+
+
+@webhook_app.route("/api/arena/boss/start", methods=["POST"])
+def api_arena_boss_start():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    boss_key = clean_html((request.get_json(silent=True) or {}).get("boss_key") or "fomo_beast")[:80]
+    return jsonify({"ok": True, "boss_key": boss_key, "message": "AI boss scenario started. Choose disciplined actions to earn XP."})
+
+
+@webhook_app.route("/api/arena/boss/action", methods=["POST"])
+def api_arena_boss_action():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    boss_key = clean_html(payload.get("boss_key") or "fomo_beast")[:80]
+    action = clean_html(payload.get("action") or "wait_for_confirmation")[:120]
+    score = 85 if "wait" in action or "scan" in action or "small" in action else 55
+    xp = 80 if score >= 80 else 35
+    result = {"score": score, "xp": xp, "feedback": "Strong discipline." if score >= 80 else "Slow down and protect decision quality."}
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO arena_boss_attempts (user_id, boss_key, result_json, score, xp_earned, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user["user_id"], boss_key, json.dumps(result), score, xp, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "result": result})
 
 
 EDUCATION_PREF_KEYS = {
@@ -15857,6 +16609,277 @@ def init_db():
         match_id INTEGER,
         user_id INTEGER,
         message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_seasons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_key TEXT UNIQUE,
+        title TEXT,
+        narrative TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        status TEXT,
+        xp_multiplier REAL DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_tournaments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_key TEXT UNIQUE,
+        title TEXT,
+        format TEXT,
+        status TEXT,
+        payload_json TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_tournament_entries (
+        tournament_id INTEGER,
+        user_id INTEGER,
+        team_id INTEGER DEFAULT 0,
+        status TEXT,
+        joined_at TEXT,
+        UNIQUE(tournament_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_rivalries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_a INTEGER,
+        user_b INTEGER,
+        matches_count INTEGER DEFAULT 0,
+        user_a_wins INTEGER DEFAULT 0,
+        user_b_wins INTEGER DEFAULT 0,
+        intensity INTEGER DEFAULT 50,
+        last_match_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_a, user_b)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_world_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        state_key TEXT,
+        title TEXT,
+        narrative TEXT,
+        intensity INTEGER,
+        payload_json TEXT,
+        active_date TEXT UNIQUE,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_factions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        faction_key TEXT UNIQUE,
+        name TEXT,
+        description TEXT,
+        territory TEXT,
+        influence INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_faction_members (
+        faction_id INTEGER,
+        user_id INTEGER,
+        reputation INTEGER DEFAULT 0,
+        joined_at TEXT,
+        UNIQUE(faction_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_reputation (
+        user_id INTEGER UNIQUE,
+        discipline INTEGER DEFAULT 50,
+        helpfulness INTEGER DEFAULT 50,
+        leadership INTEGER DEFAULT 50,
+        scam_defense INTEGER DEFAULT 50,
+        sportsmanship INTEGER DEFAULT 50,
+        consistency INTEGER DEFAULT 50,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_world_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_key TEXT UNIQUE,
+        title TEXT,
+        description TEXT,
+        world_state_key TEXT,
+        payload_json TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        status TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_player_stories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        archetype TEXT,
+        story TEXT,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_ai_governors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        governor_key TEXT UNIQUE,
+        name TEXT,
+        focus TEXT,
+        status TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_world_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        state_key TEXT,
+        summary TEXT,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_highlights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        user_id INTEGER,
+        highlight_type TEXT,
+        title TEXT,
+        summary TEXT,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_replays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER UNIQUE,
+        recap TEXT,
+        replay_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_academy_paths (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        path_key TEXT UNIQUE,
+        title TEXT,
+        description TEXT,
+        skill_focus TEXT,
+        lessons_json TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_academy_progress (
+        user_id INTEGER,
+        path_key TEXT,
+        progress INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'started',
+        updated_at TEXT,
+        UNIQUE(user_id, path_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_quests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quest_key TEXT UNIQUE,
+        title TEXT,
+        quest_type TEXT,
+        description TEXT,
+        reward_xp INTEGER DEFAULT 0,
+        payload_json TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_quest_progress (
+        user_id INTEGER,
+        quest_id INTEGER,
+        progress INTEGER DEFAULT 0,
+        claimed INTEGER DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(user_id, quest_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_playbooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        title TEXT,
+        category TEXT,
+        body TEXT,
+        status TEXT DEFAULT 'active',
+        ai_review TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_playbook_votes (
+        playbook_id INTEGER,
+        user_id INTEGER,
+        vote INTEGER,
+        created_at TEXT,
+        UNIQUE(playbook_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_playbook_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playbook_id INTEGER,
+        user_id INTEGER,
+        comment TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_ai_bosses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        boss_key TEXT UNIQUE,
+        name TEXT,
+        skill_focus TEXT,
+        description TEXT,
+        payload_json TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_boss_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        boss_key TEXT,
+        result_json TEXT,
+        score INTEGER DEFAULT 0,
+        xp_earned INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_os_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        activity_type TEXT,
+        title TEXT,
+        payload_json TEXT,
         created_at TEXT
     )
     """)
