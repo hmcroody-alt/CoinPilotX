@@ -35,7 +35,7 @@ def list_notifications(user_id, limit=50):
     conn.row_factory = __import__("sqlite3").Row
     cur = conn.cursor()
     cur.execute(
-        "SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?",
+        "SELECT * FROM notifications WHERE user_id=? AND notification_type!='arena' ORDER BY created_at DESC LIMIT ?",
         (user_id, limit),
     )
     rows = [dict(row) for row in cur.fetchall()]
