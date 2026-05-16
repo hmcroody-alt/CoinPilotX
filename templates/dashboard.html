@@ -196,6 +196,13 @@
         <p>daily check-in streak</p>
         <p class="muted" data-progress-note>Build safer habits one clear review at a time.</p>
       </article>
+      <article class="card">
+        <div class="kicker">CoinPilotXAI Arena</div>
+        <h2>Play Arena</h2>
+        <p>Train crypto intelligence with fake-money missions, scam defense, XP, ranks, and skill leaderboards.</p>
+        <p class="muted" data-arena-summary>Arena XP and rank will appear here.</p>
+        <a class="button command-glow command-glow-sports" href="/arena">Play Arena</a>
+      </article>
 
       <article class="card wide">
         <h2>Personal Watch Command Center</h2>
@@ -312,6 +319,7 @@
           {% endif %}
           <a class="button command-glow command-glow-market" href="/predictions/crypto">Crypto Predictions</a>
           <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
+          <a class="button command-glow command-glow-sports" href="/arena">Play Arena</a>
           {% if not access.has_pro %}<span class="lock-badge">Pro tools locked</span>{% endif %}
           {% if access.is_paid_pro %}
             {% if dashboard_prefs.show_upgrade_pro %}
@@ -540,13 +548,14 @@
     }
 
     async function loadRetentionPanels() {
-      const [brief, risk, streak, insights, watch, progress] = await Promise.all([
+      const [brief, risk, streak, insights, watch, progress, arena] = await Promise.all([
         fetch("/api/dashboard/brief", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
         fetch("/api/dashboard/risk-score", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
         fetch("/api/dashboard/streak", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
         fetch("/api/insights", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
         fetch("/api/watch", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
-        fetch("/api/education/progress", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null)
+        fetch("/api/education/progress", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/arena/profile", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null)
       ]);
       if (brief && brief.ok) {
         text("[data-daily-brief]", brief.market_pulse + " · " + brief.ai_insight);
@@ -569,6 +578,9 @@
       }
       if (progress && progress.ok) {
         text("[data-education-progress]", progress.paths.join(" · "));
+      }
+      if (arena && arena.ok && arena.profile) {
+        text("[data-arena-summary]", `${arena.profile.rank || "Rookie"} · Arena IQ ${arena.profile.arena_iq || 50} · ${arena.profile.xp || 0} XP · ${arena.profile.streak_count || 0} mission streak`);
       }
     }
 

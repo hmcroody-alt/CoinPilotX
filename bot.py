@@ -7876,6 +7876,861 @@ def api_dashboard_preferences():
     return response
 
 
+ARENA_RANKS = [
+    (0, "Rookie"),
+    (150, "Scout"),
+    (400, "Analyst"),
+    (850, "Strategist"),
+    (1500, "Guardian"),
+    (2500, "Oracle"),
+    (4000, "Titan"),
+    (6500, "Galaxy Pilot"),
+]
+
+ARENA_BADGE_SEEDS = [
+    ("scam_hunter", "Scam Hunter", "Detected scam red flags during Arena training.", "shield", 50),
+    ("risk_guardian", "Risk Guardian", "Chose capital protection over impulse.", "guardian", 60),
+    ("calm_trader", "Calm Trader", "Stayed calm during a volatile market scenario.", "calm", 40),
+    ("portfolio_builder", "Portfolio Builder", "Built a balanced fake portfolio plan.", "portfolio", 45),
+    ("btc_analyst", "BTC Analyst", "Completed a Bitcoin intelligence challenge.", "btc", 45),
+    ("eth_strategist", "ETH Strategist", "Completed an Ethereum strategy challenge.", "eth", 45),
+    ("whale_watcher", "Whale Watcher", "Used whale context in a market decision.", "whale", 45),
+    ("fomo_resistant", "FOMO Resistant", "Avoided forcing an emotional entry.", "mind", 60),
+    ("paper_trading_champion", "Paper Trading Champion", "Won a fake-money paper trading challenge.", "trophy", 75),
+    ("daily_mission_streak", "Daily Mission Streak", "Built an Arena daily mission streak.", "streak", 50),
+    ("market_survivor", "Market Survivor", "Survived a market stress scenario.", "survivor", 55),
+    ("ai_apprentice", "AI Apprentice", "Used AI feedback to improve a decision.", "ai", 35),
+    ("ai_strategist", "AI Strategist", "Combined AI context with disciplined reasoning.", "strategy", 70),
+]
+
+ARENA_ROOM_SEEDS = [
+    ("global", "Global Arena", ""),
+    ("beginner", "Beginner Room", ""),
+    ("asset", "BTC Battle Room", ""),
+    ("asset", "ETH Strategy Room", ""),
+    ("safety", "Scam Hunter Room", ""),
+    ("whale", "Whale Watch Room", ""),
+    ("country", "Country Battle Room", ""),
+]
+
+
+def arena_rank_for_xp(xp):
+    rank = "Rookie"
+    for threshold, label in ARENA_RANKS:
+        if int(xp or 0) >= threshold:
+            rank = label
+    return rank
+
+
+def arena_username_for_user(user):
+    user = user or {}
+    raw = user.get("username") or user.get("display_name") or user.get("full_name") or (user.get("email") or "").split("@")[0] or f"pilot{user.get('user_id') or ''}"
+    slug = re.sub(r"[^a-zA-Z0-9_]", "", raw.replace(" ", "_")).strip("_").lower()
+    return (slug or f"pilot{user.get('user_id') or 'x'}")[:32]
+
+
+def seed_arena_foundation(cur):
+    now = datetime.now().isoformat()
+    for badge_key, name, description, icon, xp_value in ARENA_BADGE_SEEDS:
+        cur.execute(
+            "INSERT OR IGNORE INTO arena_badges (badge_key, name, description, icon, xp_value) VALUES (?, ?, ?, ?, ?)",
+            (badge_key, name, description, icon, xp_value),
+        )
+    for room_type, title, country in ARENA_ROOM_SEEDS:
+        cur.execute("SELECT id FROM arena_rooms WHERE title=? LIMIT 1", (title,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO arena_rooms (room_type, title, country, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+                (room_type, title, country, now),
+            )
+    today = datetime.now().date().isoformat()
+    payload = {
+        "scenario": "BTC drops 5% while scam messages spike across social channels. Your job is to protect fake capital, detect the scam trap, and choose a disciplined next move.",
+        "fake_balance": 10000,
+        "questions": [
+            {"key": "first_move", "label": "What is your first move?", "options": ["Pause and review market context", "Buy immediately", "Sell everything", "Follow social media hype"]},
+            {"key": "scan_link", "label": "A free-token link appears. What do you do?", "options": ["Scan it and avoid connecting wallet", "Connect wallet quickly", "Share seed phrase to verify", "Ignore safety checks"]},
+            {"key": "trade_action", "label": "Do you buy immediately or wait?", "options": ["Wait for confirmation", "Buy full size now", "Use small simulated size", "Chase the candle"]},
+            {"key": "risk_level", "label": "What risk level do you choose?", "options": ["Low", "Moderate", "High", "Maximum"]},
+            {"key": "emotion", "label": "What emotional state are you in?", "options": ["Calm", "Focused", "Anxious", "FOMO", "Overconfident"]},
+        ],
+    }
+    cur.execute("SELECT id FROM arena_missions WHERE mission_type='daily' AND active_date=? LIMIT 1", (today,))
+    if not cur.fetchone():
+        cur.execute(
+            """
+            INSERT INTO arena_missions
+            (mission_type, title, description, difficulty, payload_json, active_date, created_at)
+            VALUES ('daily', 'BTC Drop + Scam Spike Survival', 'Make disciplined choices during a fake market stress event.', 'beginner', ?, ?, ?)
+            """,
+            (json.dumps(payload), today, now),
+        )
+
+
+def get_or_create_arena_profile(user_id):
+    user = load_account_by_id(user_id)
+    if not user:
+        return None
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_profiles WHERE user_id=? LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    now = datetime.now().isoformat()
+    if not row:
+        username = arena_username_for_user(user)
+        cur.execute(
+            """
+            INSERT INTO arena_profiles
+            (user_id, username, xp, rank, arena_iq, streak_count, country, favorite_asset, online_status, discipline_score, scam_defense_score, strategy_score, prediction_accuracy_score, last_seen_at, created_at, updated_at)
+            VALUES (?, ?, 0, 'Rookie', 50, 0, ?, 'BTC', 'training', 50, 50, 50, 50, ?, ?, ?)
+            """,
+            (user_id, username, user.get("country") or "", now, now, now),
+        )
+        conn.commit()
+        cur.execute("SELECT * FROM arena_profiles WHERE user_id=? LIMIT 1", (user_id,))
+        row = cur.fetchone()
+    else:
+        cur.execute("UPDATE arena_profiles SET last_seen_at=?, updated_at=? WHERE user_id=?", (now, now, user_id))
+        conn.commit()
+        cur.execute("SELECT * FROM arena_profiles WHERE user_id=? LIMIT 1", (user_id,))
+        row = cur.fetchone()
+    profile = dict(row) if row else None
+    conn.close()
+    return profile
+
+
+def arena_profile_payload(user_id):
+    profile = get_or_create_arena_profile(user_id) or {}
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT b.badge_key, b.name, b.description, b.icon, b.xp_value, ub.earned_at
+        FROM arena_user_badges ub JOIN arena_badges b ON b.id=ub.badge_id
+        WHERE ub.user_id=? ORDER BY ub.earned_at DESC LIMIT 12
+        """,
+        (user_id,),
+    )
+    badges = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) AS c FROM arena_friend_challenges WHERE receiver_id=? AND status='pending'", (user_id,))
+    pending = cur.fetchone()
+    conn.close()
+    return {
+        "ok": True,
+        "profile": profile,
+        "badges": badges,
+        "pending_challenges": int((pending or {}).get("c") if hasattr(pending, "get") else pending["c"] if pending else 0),
+        "disclaimer": "CoinPilotXAI Arena is an educational simulation. No real money is traded. Not financial advice.",
+    }
+
+
+def award_arena_badges(cur, user_id, badge_keys):
+    now = datetime.now().isoformat()
+    earned = []
+    for badge_key in badge_keys:
+        cur.execute("SELECT id, name FROM arena_badges WHERE badge_key=? LIMIT 1", (badge_key,))
+        badge = cur.fetchone()
+        if not badge:
+            continue
+        badge_id = badge["id"] if hasattr(badge, "keys") else badge[0]
+        badge_name = badge["name"] if hasattr(badge, "keys") else badge[1]
+        cur.execute(
+            "INSERT OR IGNORE INTO arena_user_badges (user_id, badge_id, earned_at) VALUES (?, ?, ?)",
+            (user_id, badge_id, now),
+        )
+        if cur.rowcount:
+            earned.append(badge_name)
+    return earned
+
+
+def current_arena_mission():
+    init_db()
+    today = datetime.now().date().isoformat()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_missions WHERE active_date=? AND mission_type='daily' ORDER BY id DESC LIMIT 1", (today,))
+    row = cur.fetchone()
+    if not row:
+        seed_arena_foundation(cur)
+        conn.commit()
+        cur.execute("SELECT * FROM arena_missions WHERE active_date=? AND mission_type='daily' ORDER BY id DESC LIMIT 1", (today,))
+        row = cur.fetchone()
+    mission = dict(row) if row else {}
+    mission["payload"] = json.loads(mission.get("payload_json") or "{}")
+    conn.close()
+    return mission
+
+
+def score_arena_daily_attempt(answers):
+    answers = {str(k): str(v) for k, v in (answers or {}).items()}
+    score = 0
+    categories = {
+        "intelligence": 50,
+        "risk_control": 50,
+        "scam_defense": 50,
+        "discipline": 50,
+        "emotional_control": 50,
+    }
+    badge_keys = []
+    notes = []
+    if answers.get("first_move") == "Pause and review market context":
+        score += 20
+        categories["intelligence"] += 20
+        notes.append("You paused before acting, which protects decision quality.")
+    if answers.get("scan_link") == "Scan it and avoid connecting wallet":
+        score += 25
+        categories["scam_defense"] += 25
+        badge_keys.append("scam_hunter")
+        notes.append("You treated the free-token link as a wallet-risk event.")
+    if answers.get("trade_action") in ("Wait for confirmation", "Use small simulated size"):
+        score += 20
+        categories["discipline"] += 20
+        badge_keys.append("fomo_resistant")
+        notes.append("You avoided forcing a full-size emotional entry.")
+    if answers.get("risk_level") in ("Low", "Moderate"):
+        score += 15
+        categories["risk_control"] += 18
+        badge_keys.append("risk_guardian")
+    if answers.get("emotion") in ("Calm", "Focused"):
+        score += 15
+        categories["emotional_control"] += 20
+        badge_keys.append("calm_trader")
+    score = min(100, score + 5)
+    if score >= 70:
+        badge_keys.append("market_survivor")
+    xp = 35 + score
+    verdict = "Guardian-grade discipline" if score >= 80 else "Solid training result" if score >= 60 else "Practice round recommended"
+    feedback = " ".join(notes) or "This round shows room to slow down, verify risk, and use the simulator before acting."
+    return {
+        "score": score,
+        "xp": xp,
+        "verdict": verdict,
+        "categories": {key: min(100, value) for key, value in categories.items()},
+        "feedback": feedback,
+        "badges": sorted(set(badge_keys)),
+        "next_step": "Practice in simulator" if score < 70 else "Try Scam Hunter or watch the leaderboard",
+    }
+
+
+def update_arena_profile_after_attempt(user_id, result):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    get_or_create_arena_profile(user_id)
+    cur.execute("SELECT * FROM arena_profiles WHERE user_id=? LIMIT 1", (user_id,))
+    profile = dict(cur.fetchone())
+    xp = int(profile.get("xp") or 0) + int(result.get("xp") or 0)
+    rank = arena_rank_for_xp(xp)
+    categories = result.get("categories") or {}
+    arena_iq = round((int(categories.get("intelligence", 50)) + int(categories.get("risk_control", 50)) + int(categories.get("scam_defense", 50)) + int(categories.get("discipline", 50)) + int(categories.get("emotional_control", 50))) / 5)
+    now = datetime.now().isoformat()
+    cur.execute(
+        """
+        UPDATE arena_profiles
+        SET xp=?, rank=?, arena_iq=?, streak_count=streak_count+1,
+            discipline_score=?, scam_defense_score=?, strategy_score=?, prediction_accuracy_score=?,
+            online_status='training', last_seen_at=?, updated_at=?
+        WHERE user_id=?
+        """,
+        (
+            xp,
+            rank,
+            arena_iq,
+            int(categories.get("discipline", 50)),
+            int(categories.get("scam_defense", 50)),
+            int(categories.get("intelligence", 50)),
+            int(categories.get("risk_control", 50)),
+            now,
+            now,
+            user_id,
+        ),
+    )
+    earned = award_arena_badges(cur, user_id, result.get("badges") or [])
+    conn.commit()
+    conn.close()
+    if earned:
+        try:
+            notification_service.send_user_alert(
+                user_id,
+                "education",
+                "Arena badge earned",
+                f"You earned: {', '.join(earned)}.",
+                {"badges": earned, "area": "arena"},
+                channels=["in_app", "push"],
+            )
+        except Exception as exc:
+            logging.info("Arena badge notification failed safely: %s", exc)
+    return arena_profile_payload(user_id)
+
+
+def arena_leaderboard_payload(limit=20, country=None, sort_key="arena_iq"):
+    allowed = {
+        "arena_iq": "arena_iq",
+        "xp": "xp",
+        "discipline": "discipline_score",
+        "scam": "scam_defense_score",
+        "strategy": "strategy_score",
+    }
+    column = allowed.get(sort_key, "arena_iq")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    params = []
+    where = ""
+    if country:
+        where = "WHERE lower(coalesce(p.country,''))=lower(?)"
+        params.append(country)
+    cur.execute(
+        f"""
+        SELECT p.*, u.full_name, u.display_name, u.email
+        FROM arena_profiles p LEFT JOIN users u ON u.user_id=p.user_id
+        {where}
+        ORDER BY {column} DESC, p.xp DESC, p.updated_at DESC
+        LIMIT ?
+        """,
+        params + [int(limit or 20)],
+    )
+    players = []
+    for index, row in enumerate(cur.fetchall(), start=1):
+        item = dict(row)
+        item["leaderboard_rank"] = index
+        item["display_name"] = item.get("display_name") or item.get("full_name") or item.get("username") or "Arena Pilot"
+        item["ai_summary"] = arena_player_style_summary(item)
+        players.append(item)
+    conn.close()
+    return {"ok": True, "players": players, "source": "CoinPilotXAI Arena database", "updated_at": datetime.now().isoformat()}
+
+
+def arena_player_style_summary(profile):
+    if not profile:
+        return "New Arena pilot building their intelligence profile."
+    strengths = []
+    if int(profile.get("discipline_score") or 0) >= 70:
+        strengths.append("disciplined")
+    if int(profile.get("scam_defense_score") or 0) >= 70:
+        strengths.append("scam-aware")
+    if int(profile.get("strategy_score") or 0) >= 70:
+        strengths.append("strategic")
+    if int(profile.get("arena_iq") or 0) >= 75:
+        strengths.append("high-IQ")
+    if strengths:
+        return f"Calm {' and '.join(strengths[:3])} Arena player with improving market survival instincts."
+    return "Developing Arena player focused on practice, safer decisions, and skill growth."
+
+
+def arena_page_shell(title, body, user=None, public=False):
+    cta = "<a class='button primary' href='/signup?next=/arena'>Create Free Account</a>" if public and not user else "<a class='button primary' href='/arena'>Open Arena</a>"
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/arena/leaderboard">Leaderboard</a><a class="button" href="/arena/scam-hunter">Scam Hunter</a>{cta}</div></nav></div></header><main class="wrap">{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main></body></html>""")
+
+
+@webhook_app.route("/arena-preview", methods=["GET"])
+def arena_preview_page():
+    body = """
+    <section class="hero">
+      <article class="card wide">
+        <div class="kicker">AI Crypto Intelligence Game</div>
+        <h1>Train your crypto intelligence. Battle friends. Survive markets. Defeat scams.</h1>
+        <p>CoinPilotXAI Arena turns education, fake-money market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
+        <div class="actions"><a class="button primary" href="/signup?next=/arena">Create Free Account</a><a class="button" href="/education">Explore Education</a></div>
+      </article>
+      <article class="card"><div class="kicker">No Gambling</div><h2>Fake Money Only</h2><p>Scores reward discipline, scam defense, research, consistency, and risk control. Profit alone does not win.</p></article>
+    </section>
+    <section class="grid">
+      <article class="card"><h3>Daily Missions</h3><p>Complete one market, psychology, scam, and risk challenge per day.</p></article>
+      <article class="card"><h3>Scam Hunter</h3><p>Practice detecting seed phrase theft, fake support, free-token traps, and wallet drainers.</p></article>
+      <article class="card"><h3>Social Competition</h3><p>Follow rising players, challenge friends, and climb skill-based leaderboards.</p></article>
+    </section>
+    """
+    return arena_page_shell("CoinPilotXAI Arena - AI Crypto Intelligence Game", body, public=True)
+
+
+@webhook_app.route("/arena", methods=["GET"])
+def arena_home_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena"))
+    profile_data = arena_profile_payload(user["user_id"])
+    profile = profile_data["profile"]
+    mission = current_arena_mission()
+    leaderboard = arena_leaderboard_payload(limit=6).get("players", [])
+    xp_next = next((threshold for threshold, _ in ARENA_RANKS if threshold > int(profile.get("xp") or 0)), 6500)
+    xp_pct = min(100, int((int(profile.get("xp") or 0) / max(1, xp_next)) * 100))
+    top_html = "".join(
+        f"<div class='player-card elite'><strong>#{p.get('leaderboard_rank')} {clean_html(p.get('display_name'))}</strong><span class='rank'>{clean_html(p.get('rank'))}</span><span>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)}</span><p>{clean_html(p.get('ai_summary'))}</p><div class='actions'><a class='button' href='/arena/player/{clean_html(p.get('username'))}'>View</a><button data-challenge='{int(p.get('user_id') or 0)}'>Challenge</button></div></div>"
+        for p in leaderboard
+    ) or "<p class='muted'>Complete a mission to become the first ranked pilot.</p>"
+    body = f"""
+    <section class="hero">
+      <article class="card wide">
+        <div class="kicker">CoinPilotXAI Arena</div>
+        <h1>Train. Compete. Improve.</h1>
+        <p>Build crypto intelligence with fake-money missions, scam defense, discipline scoring, and friendly global competition.</p>
+        <div class="actions"><a class="button primary" href="/arena/daily">Start Daily Mission</a><a class="button" href="/arena/scam-hunter">Scam Hunter</a><a class="button gold" href="/arena/leaderboard">View Leaderboard</a></div>
+      </article>
+      <article class="card">
+        <div class="kicker">Your Rank</div>
+        <h2>{clean_html(profile.get('rank'))}</h2>
+        <div class="metric">{int(profile.get('arena_iq') or 50)}</div>
+        <p>Arena IQ · {int(profile.get('xp') or 0)} XP · {int(profile.get('streak_count') or 0)} day streak</p>
+        <div class="xpbar"><span style="width:{xp_pct}%"></span></div>
+      </article>
+    </section>
+    <section class="grid">
+      <article class="card"><h3>Daily Intelligence Mission</h3><p>{clean_html(mission.get('description'))}</p><a class="button primary" href="/arena/daily">Play Today's Mission</a></article>
+      <article class="card"><h3>Solo Market Survival</h3><p>Practice fake market decisions with discipline-first scoring. Phase 2 fake trades are ready in the data model.</p><button data-start-solo>Start Solo Simulation</button></article>
+      <article class="card"><h3>Friend Battle</h3><p>Challenge another user to a fake $10,000 portfolio battle. No real money, no betting.</p><a class="button" href="/arena/leaderboard">Find Opponent</a></article>
+      <article class="card"><h3>Scam Hunter</h3><p>Identify red flags, protect wallets, and earn Scam Defense XP.</p><a class="button" href="/arena/scam-hunter">Open Scam Hunter</a></article>
+      <article class="card"><h3>Paper Trading League</h3><p>Weekly skill leaderboard scored by risk-adjusted performance, discipline, and research.</p><a class="button" href="/arena/league">League Preview</a></article>
+      <article class="card"><h3>Country Arena</h3><p>Represent your optional country or region and help your team climb the global scoreboard.</p><a class="button" href="/arena/leaderboard?scope=country">Country Board</a></article>
+    </section>
+    <section class="grid">
+      <article class="card wide"><h2>Top Global Players</h2><div class="grid">{top_html}</div></article>
+      <article class="card"><h2>AI Commentator</h2><div class="feed"><div>Smart choices raise discipline score faster than lucky fake profits.</div><div>Scam Hunter XP is active today.</div><div>Challenge buttons create friendly Arena invites.</div></div></article>
+    </section>
+    <script>
+    document.addEventListener('click', async (event) => {{
+      const challenge = event.target.closest('[data-challenge]');
+      if (challenge) {{
+        const opponent_id = Number(challenge.dataset.challenge || 0);
+        const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{opponent_id, challenge_type:'friend_battle'}})}});
+        const data = await response.json();
+        alert(data.message || 'Arena challenge sent.');
+      }}
+      if (event.target.closest('[data-start-solo]')) {{
+        const response = await fetch('/api/arena/solo/start', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{mode:'solo_market_survival'}})}});
+        const data = await response.json();
+        alert(data.message || 'Solo survival started.');
+      }}
+    }});
+    </script>
+    """
+    return arena_page_shell("Arena", body, user=user)
+
+
+@webhook_app.route("/arena/daily", methods=["GET"])
+def arena_daily_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/daily"))
+    mission = current_arena_mission()
+    payload = mission.get("payload") or {}
+    questions = payload.get("questions") or []
+    question_html = "".join(
+        "<article class='card'><h3>{}</h3><div class='mission-options'>{}</div></article>".format(
+            clean_html(q.get("label")),
+            "".join(f"<label class='option'><input type='radio' name='{clean_html(q.get('key'))}' value='{clean_html(option)}' required> {clean_html(option)}</label>" for option in q.get("options", [])),
+        )
+        for q in questions
+    )
+    body = f"""
+    <section class="hero"><article class="card wide"><div class="kicker">Daily Intelligence Mission</div><h1>{clean_html(mission.get('title'))}</h1><p>{clean_html(payload.get('scenario'))}</p></article><article class="card"><h2>Reward</h2><p>Earn XP, discipline score, scam defense XP, and badges.</p></article></section>
+    <form id="arenaDailyForm" class="grid">{question_html}<article class="card wide"><button class="primary" type="submit">Submit Mission</button><pre id="arenaDailyResult" class="notice" style="white-space:pre-wrap"></pre></article></form>
+    <script>
+    document.getElementById('arenaDailyForm').addEventListener('submit', async (event) => {{
+      event.preventDefault();
+      const answers = Object.fromEntries(new FormData(event.target).entries());
+      const output = document.getElementById('arenaDailyResult');
+      output.textContent = 'Scoring your decisions...';
+      const response = await fetch('/api/arena/daily/submit', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{mission_id:{int(mission.get('id') or 0)}, answers}})}});
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {{ output.textContent = data.message || 'Mission scoring failed.'; return; }}
+      output.textContent = `${{data.result.verdict}}\\nScore: ${{data.result.score}}/100\\nXP earned: ${{data.result.xp}}\\n\\n${{data.result.feedback}}\\n\\nNext: ${{data.result.next_step}}`;
+    }});
+    </script>
+    """
+    return arena_page_shell("Daily Arena Mission", body, user=user)
+
+
+@webhook_app.route("/arena/scam-hunter", methods=["GET"])
+def arena_scam_hunter_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/scam-hunter"))
+    body = """
+    <section class="hero"><article class="card wide"><div class="kicker">Scam Hunter</div><h1>Defeat wallet traps before they defeat you.</h1><p>Practice recognizing fake support, seed phrase theft, free-token traps, and wallet drainer pressure.</p></article><article class="card"><h2>Scam Defense XP</h2><p>Submit safe choices in the daily mission to earn Scam Hunter badges.</p></article></section>
+    <section class="grid"><article class="card"><h3>Critical Trap</h3><p>"Send your 12 word seed phrase to verify wallet."</p><p class="notice">Correct response: never share it, stop communication, and verify only from official sources.</p></article><article class="card"><h3>Airdrop Trap</h3><p>"Connect wallet now to claim free USDT."</p><p class="notice">Correct response: scan first and never sign unknown approvals.</p></article><article class="card"><h3>Unlock Fee Trap</h3><p>"Pay tax before withdrawal."</p><p class="notice">Correct response: treat upfront withdrawal fees as high-risk.</p></article></section>
+    """
+    return arena_page_shell("Arena Scam Hunter", body, user=user)
+
+
+@webhook_app.route("/arena/leaderboard", methods=["GET"])
+def arena_leaderboard_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/arena/leaderboard"))
+    payload = arena_leaderboard_payload(limit=30, sort_key=request.args.get("sort") or "arena_iq")
+    rows = "".join(
+        f"<div class='player-card {'elite' if index <= 3 else ''}'><strong>#{index} {clean_html(p.get('display_name'))}</strong><span class='rank'>{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)} · Streak {int(p.get('streak_count') or 0)}</p><p>{clean_html(p.get('ai_summary'))}</p><div class='actions'><a class='button' href='/arena/player/{clean_html(p.get('username'))}'>Profile</a><button data-challenge='{int(p.get('user_id') or 0)}'>Challenge</button><button data-follow='{int(p.get('user_id') or 0)}'>Follow</button></div></div>"
+        for index, p in enumerate(payload.get("players", []), start=1)
+    ) or "<p class='muted'>No leaderboard entries yet.</p>"
+    body = f"""
+    <section class="hero"><article class="card wide"><div class="kicker">Live Global Leaderboard</div><h1>Top players become visible, respected, and challengeable.</h1><p>Rankings reward Arena IQ, discipline, scam defense, strategy, consistency, and XP.</p></article><article class="card"><h2>Categories</h2><div class="actions"><a class="button" href="/arena/leaderboard?sort=arena_iq">Arena IQ</a><a class="button" href="/arena/leaderboard?sort=scam">Scam Hunter</a><a class="button" href="/arena/leaderboard?sort=discipline">Discipline</a><a class="button" href="/arena/leaderboard?sort=xp">XP</a></div></article></section>
+    <section class="grid">{rows}</section>
+    <script>
+    document.addEventListener('click', async (event) => {{
+      const challenge = event.target.closest('[data-challenge]');
+      const follow = event.target.closest('[data-follow]');
+      if (challenge) {{
+        const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{opponent_id:Number(challenge.dataset.challenge), challenge_type:'friend_battle'}})}});
+        const data = await response.json(); alert(data.message || 'Challenge sent.');
+      }}
+      if (follow) {{
+        const response = await fetch('/api/arena/follow', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{player_id:Number(follow.dataset.follow)}})}});
+        const data = await response.json(); alert(data.message || 'Player followed.');
+      }}
+    }});
+    </script>
+    """
+    return arena_page_shell("Arena Leaderboard", body, user=user)
+
+
+@webhook_app.route("/arena/player/<username>", methods=["GET"])
+def arena_player_page(username):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT p.*, u.full_name, u.display_name, u.email FROM arena_profiles p LEFT JOIN users u ON u.user_id=p.user_id WHERE lower(p.username)=lower(?) LIMIT 1", (username,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return arena_page_shell("Arena Player", "<section class='card'><h1>Player not found</h1><p>This Arena profile is not available yet.</p></section>", user=user), 404
+    profile = dict(row)
+    display = profile.get("display_name") or profile.get("full_name") or profile.get("username")
+    body = f"""
+    <section class="hero"><article class="card wide"><div class="kicker">Arena Player Profile</div><h1>{clean_html(display)}</h1><p>{clean_html(arena_player_style_summary(profile))}</p><div class="actions"><button data-challenge="{int(profile.get('user_id') or 0)}">Challenge</button><button data-follow="{int(profile.get('user_id') or 0)}">Follow Player</button><a class="button" href="/messages">Message</a></div></article><article class="card"><span class="rank">{clean_html(profile.get('rank'))}</span><div class="metric">{int(profile.get('arena_iq') or 0)}</div><p>Arena IQ</p></article></section>
+    <section class="grid"><article class="card"><h3>Discipline</h3><div class="metric">{int(profile.get('discipline_score') or 0)}</div></article><article class="card"><h3>Scam Defense</h3><div class="metric">{int(profile.get('scam_defense_score') or 0)}</div></article><article class="card"><h3>XP</h3><div class="metric">{int(profile.get('xp') or 0)}</div></article></section>
+    <script>document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');if(c){{const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{opponent_id:Number(c.dataset.challenge),challenge_type:'friend_battle'}})}});alert((await r.json()).message||'Challenge sent.')}}if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{player_id:Number(f.dataset.follow)}})}});alert((await r.json()).message||'Followed.')}}}})</script>
+    """
+    return arena_page_shell(f"Arena Player {display}", body, user=user)
+
+
+@webhook_app.route("/arena/solo", methods=["GET"])
+@webhook_app.route("/arena/battle", methods=["GET"])
+@webhook_app.route("/arena/league", methods=["GET"])
+@webhook_app.route("/arena/room/<int:room_id>", methods=["GET"])
+@webhook_app.route("/arena/match/<int:match_id>", methods=["GET"])
+def arena_phase_two_page(room_id=None, match_id=None):
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    body = "<section class='card'><div class='kicker'>Arena Phase 2 Ready</div><h1>This mode is wired for the next build phase.</h1><p>The database and APIs are prepared for friend battles, rooms, fake trades, and spectator mode. Phase 1 daily missions, XP, badges, social profiles, follows, challenges, and leaderboards are active now.</p><a class='button primary' href='/arena'>Back to Arena</a></section>"
+    return arena_page_shell("Arena Mode", body, user=user)
+
+
+@webhook_app.route("/admin/arena", methods=["GET"])
+def admin_arena_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    leaderboard = arena_leaderboard_payload(limit=10).get("players", [])
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM arena_profiles")
+    profiles = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_mission_attempts")
+    attempts = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_friend_challenges WHERE status='pending'")
+    pending = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM arena_rooms WHERE status='active'")
+    rooms = cur.fetchone()[0]
+    conn.close()
+    cards = f"<div class='grid'><div class='card'><div class='metric'>{profiles}</div><p>Profiles</p></div><div class='card'><div class='metric'>{attempts}</div><p>Mission attempts</p></div><div class='card'><div class='metric'>{pending}</div><p>Pending challenges</p></div><div class='card'><div class='metric'>{rooms}</div><p>Active rooms</p></div></div>"
+    rows = "".join(f"<tr><td>{clean_html(p.get('display_name'))}</td><td>{clean_html(p.get('rank'))}</td><td>{int(p.get('arena_iq') or 0)}</td><td>{int(p.get('xp') or 0)}</td></tr>" for p in leaderboard)
+    return admin_page_html("Arena", cards + f"<div class='card'><h2>Top Arena Players</h2><table><tr><th>Player</th><th>Rank</th><th>Arena IQ</th><th>XP</th></tr>{rows}</table></div>", admin=admin)
+
+
+@webhook_app.route("/api/arena/profile", methods=["GET"])
+def api_arena_profile():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_profile_payload(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/daily", methods=["GET"])
+def api_arena_daily():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    mission = current_arena_mission()
+    return jsonify({"ok": True, "mission": {k: v for k, v in mission.items() if k != "payload_json"}})
+
+
+@webhook_app.route("/api/arena/daily/submit", methods=["POST"])
+def api_arena_daily_submit():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    answers = payload.get("answers") or {}
+    mission = current_arena_mission()
+    required = [q.get("key") for q in (mission.get("payload") or {}).get("questions", [])]
+    missing = [key for key in required if not answers.get(key)]
+    if missing:
+        return jsonify({"ok": False, "message": f"Please answer: {missing[0]}"}), 400
+    result = score_arena_daily_attempt(answers)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO arena_mission_attempts
+        (mission_id, user_id, answers_json, result_json, xp_earned, score, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (mission.get("id"), user["user_id"], json.dumps(answers), json.dumps(result), result["xp"], result["score"], datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    profile = update_arena_profile_after_attempt(user["user_id"], result)
+    log_product_event(user["user_id"], "arena_daily_completed", {"score": result["score"], "xp": result["xp"]})
+    return jsonify({"ok": True, "result": result, "profile": profile.get("profile")})
+
+
+@webhook_app.route("/api/arena/leaderboard", methods=["GET"])
+def api_arena_leaderboard():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_leaderboard_payload(limit=int(request.args.get("limit") or 20), country=request.args.get("country"), sort_key=request.args.get("sort") or "arena_iq"))
+
+
+@webhook_app.route("/api/arena/top-players", methods=["GET"])
+def api_arena_top_players():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(arena_leaderboard_payload(limit=int(request.args.get("limit") or 12), sort_key=request.args.get("category") or "arena_iq"))
+
+
+@webhook_app.route("/api/arena/player/<username>", methods=["GET"])
+def api_arena_player(username):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT p.*, u.full_name, u.display_name, u.email FROM arena_profiles p LEFT JOIN users u ON u.user_id=p.user_id WHERE lower(p.username)=lower(?) LIMIT 1", (username,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"ok": False, "message": "Player not found."}), 404
+    profile = dict(row)
+    profile["ai_summary"] = arena_player_style_summary(profile)
+    return jsonify({"ok": True, "player": profile})
+
+
+@webhook_app.route("/api/arena/badges", methods=["GET"])
+def api_arena_badges():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_badges ORDER BY xp_value DESC, name ASC")
+    badges = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "badges": badges})
+
+
+@webhook_app.route("/api/arena/challenge", methods=["POST"])
+@webhook_app.route("/api/arena/battle/invite", methods=["POST"])
+def api_arena_challenge():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    opponent_id = int(payload.get("opponent_id") or payload.get("receiver_id") or 0)
+    if not opponent_id or opponent_id == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "Choose another Arena player to challenge."}), 400
+    if not load_account_by_id(opponent_id):
+        return jsonify({"ok": False, "message": "Opponent not found."}), 404
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute(
+        "INSERT INTO arena_friend_challenges (sender_id, receiver_id, challenge_type, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
+        (user["user_id"], opponent_id, clean_html(payload.get("challenge_type") or "friend_battle")[:80], now),
+    )
+    challenge_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    try:
+        notification_service.send_user_alert(opponent_id, "arena", "Arena challenge received", f"{account_display_name(user)} challenged you in CoinPilotXAI Arena.", {"challenge_id": challenge_id}, channels=["in_app", "push"])
+    except Exception as exc:
+        logging.info("Arena challenge notification failed safely: %s", exc)
+    log_product_event(user["user_id"], "arena_challenge_sent", {"opponent_id": opponent_id})
+    return jsonify({"ok": True, "challenge_id": challenge_id, "message": "Arena challenge sent."})
+
+
+@webhook_app.route("/api/arena/battle/accept", methods=["POST"])
+def api_arena_battle_accept():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    challenge_id = int(payload.get("challenge_id") or 0)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE arena_friend_challenges SET status='accepted', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), challenge_id, user["user_id"]))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": bool(changed), "message": "Challenge accepted." if changed else "Challenge not found."})
+
+
+@webhook_app.route("/api/arena/follow", methods=["POST"])
+def api_arena_follow():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    player_id = int(payload.get("player_id") or payload.get("followed_id") or 0)
+    if not player_id or player_id == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "Choose another player to follow."}), 400
+    get_or_create_arena_profile(player_id)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO arena_follows (follower_id, followed_id, created_at) VALUES (?, ?, ?)", (user["user_id"], player_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Player followed."})
+
+
+@webhook_app.route("/api/arena/friend-request", methods=["POST"])
+def api_arena_friend_request():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    receiver_id = int(payload.get("receiver_id") or 0)
+    if not receiver_id or receiver_id == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "Choose another user."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO arena_friendships (requester_id, receiver_id, status, created_at) VALUES (?, ?, 'pending', ?)", (user["user_id"], receiver_id, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Friend request sent."})
+
+
+@webhook_app.route("/api/arena/rooms", methods=["GET"])
+def api_arena_rooms():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_rooms WHERE status='active' ORDER BY id ASC")
+    rooms = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "rooms": rooms})
+
+
+@webhook_app.route("/api/arena/rooms/join", methods=["POST"])
+def api_arena_rooms_join():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "message": "Room joined for Arena chat preview.", "room_id": int((request.get_json(silent=True) or {}).get("room_id") or 0)})
+
+
+@webhook_app.route("/api/arena/rooms/<int:room_id>/message", methods=["POST"])
+def api_arena_room_message(room_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    message = clean_html(payload.get("message") or "")[:500]
+    if not message:
+        return jsonify({"ok": False, "message": "Message required."}), 400
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO arena_room_messages (room_id, user_id, message, created_at) VALUES (?, ?, ?, ?)", (room_id, user["user_id"], message, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Arena room message sent."})
+
+
+@webhook_app.route("/api/arena/solo/start", methods=["POST"])
+def api_arena_solo_start():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    get_or_create_arena_profile(user["user_id"])
+    return jsonify({"ok": True, "message": "Solo Market Survival is ready. Start with fake $10,000 and score by discipline, risk control, and scam defense.", "fake_balance": 10000})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>", methods=["GET"])
+def api_arena_match(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "match_id": match_id, "status": "phase_2_ready", "message": "Friend battles are prepared for Phase 2. Phase 1 social challenges are active."})
+
+
+@webhook_app.route("/api/arena/trade", methods=["POST"])
+def api_arena_trade():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "message": "Arena fake trading endpoint is reserved for Phase 2 paper battles. No real trade was placed."})
+
+
+@webhook_app.route("/api/arena/spectate", methods=["POST"])
+def api_arena_spectate():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "message": "Spectator mode is queued for Phase 2 high-level matches."})
+
+
+@webhook_app.route("/api/arena/live-events", methods=["GET"])
+@webhook_app.route("/api/arena/events", methods=["GET"])
+def api_arena_events():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    events = [
+        {"event_type": "daily", "title": "BTC Drop Survival", "status": "active", "description": "Complete the daily discipline mission."},
+        {"event_type": "scam_hunter", "title": "Scam Spike Defense", "status": "active", "description": "Earn Scam Defense XP by identifying red flags."},
+    ]
+    return jsonify({"ok": True, "events": events})
+
+
+@webhook_app.route("/api/arena/ai-commentary", methods=["POST"])
+def api_arena_ai_commentary():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    profile = get_or_create_arena_profile(user["user_id"]) or {}
+    commentary = arena_player_style_summary(profile)
+    if int(profile.get("discipline_score") or 0) >= 70:
+        commentary = f"{account_display_name(user)} maintained strong discipline through the simulated market stress."
+    return jsonify({"ok": True, "commentary": commentary, "source": "CoinPilotXAI Arena AI commentator"})
+
+
 EDUCATION_PREF_KEYS = {
     "show_edu_nav_home": True,
     "show_edu_nav_dashboard": True,
@@ -14192,6 +15047,198 @@ def init_db():
     """)
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        username TEXT,
+        xp INTEGER DEFAULT 0,
+        rank TEXT DEFAULT 'Rookie',
+        arena_iq INTEGER DEFAULT 50,
+        streak_count INTEGER DEFAULT 0,
+        country TEXT,
+        favorite_asset TEXT DEFAULT 'BTC',
+        online_status TEXT DEFAULT 'training',
+        discipline_score INTEGER DEFAULT 50,
+        scam_defense_score INTEGER DEFAULT 50,
+        strategy_score INTEGER DEFAULT 50,
+        prediction_accuracy_score INTEGER DEFAULT 50,
+        last_seen_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "arena_profiles", [
+        ("username", "TEXT"),
+        ("xp", "INTEGER DEFAULT 0"),
+        ("rank", "TEXT DEFAULT 'Rookie'"),
+        ("arena_iq", "INTEGER DEFAULT 50"),
+        ("streak_count", "INTEGER DEFAULT 0"),
+        ("country", "TEXT"),
+        ("favorite_asset", "TEXT DEFAULT 'BTC'"),
+        ("online_status", "TEXT DEFAULT 'training'"),
+        ("discipline_score", "INTEGER DEFAULT 50"),
+        ("scam_defense_score", "INTEGER DEFAULT 50"),
+        ("strategy_score", "INTEGER DEFAULT 50"),
+        ("prediction_accuracy_score", "INTEGER DEFAULT 50"),
+        ("last_seen_at", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_missions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mission_type TEXT,
+        title TEXT,
+        description TEXT,
+        difficulty TEXT,
+        payload_json TEXT,
+        active_date TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_mission_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mission_id INTEGER,
+        user_id INTEGER,
+        answers_json TEXT,
+        result_json TEXT,
+        xp_earned INTEGER DEFAULT 0,
+        score INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_type TEXT,
+        creator_id INTEGER,
+        opponent_id INTEGER,
+        room_id INTEGER,
+        status TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        rules_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_match_participants (
+        match_id INTEGER,
+        user_id INTEGER,
+        fake_balance REAL DEFAULT 10000,
+        score INTEGER DEFAULT 0,
+        result_json TEXT,
+        joined_at TEXT,
+        UNIQUE(match_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        user_id INTEGER,
+        symbol TEXT,
+        side TEXT,
+        quantity REAL,
+        fake_price REAL,
+        fake_value REAL,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_type TEXT,
+        title TEXT,
+        country TEXT,
+        status TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_room_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id INTEGER,
+        user_id INTEGER,
+        message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_leaderboards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        leaderboard_type TEXT,
+        period TEXT,
+        user_id INTEGER,
+        country TEXT,
+        score INTEGER,
+        rank INTEGER,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        badge_key TEXT UNIQUE,
+        name TEXT,
+        description TEXT,
+        icon TEXT,
+        xp_value INTEGER DEFAULT 0
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_user_badges (
+        user_id INTEGER,
+        badge_id INTEGER,
+        earned_at TEXT,
+        UNIQUE(user_id, badge_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        title TEXT,
+        description TEXT,
+        payload_json TEXT,
+        starts_at TEXT,
+        ends_at TEXT,
+        status TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_friend_challenges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER,
+        receiver_id INTEGER,
+        challenge_type TEXT,
+        status TEXT,
+        created_at TEXT,
+        responded_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_follows (
+        follower_id INTEGER,
+        followed_id INTEGER,
+        created_at TEXT,
+        UNIQUE(follower_id, followed_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_friendships (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requester_id INTEGER,
+        receiver_id INTEGER,
+        status TEXT,
+        created_at TEXT,
+        responded_at TEXT,
+        UNIQUE(requester_id, receiver_id)
+    )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS auth_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT,
@@ -14339,6 +15386,7 @@ def init_db():
         )
 
     seed_education_knowledge_bank(cur)
+    seed_arena_foundation(cur)
     ensure_owner_admin_with_cursor(cur, allow_reset=False)
 
     conn.commit()
