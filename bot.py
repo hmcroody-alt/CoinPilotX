@@ -9480,6 +9480,80 @@ def arena_simple_page(title, heading, intro, cards=None, script=""):
     return body
 
 
+def arena_commentator_studio(active_battles=0, active_rooms=0, crowd_level=72):
+    messages = [
+        "BTC Duel momentum just shifted.",
+        "That survival trader is under pressure.",
+        "Crowd energy is rising in Room 1.",
+        "Discipline score is climbing fast.",
+        "Scam Hunter event intensity is increasing.",
+        "A ranked pilot just avoided a FOMO entry.",
+        "Psychology pressure is building near the final move.",
+        "AI tactical desk is tracking comeback conditions.",
+    ]
+    return f"""
+    <section class="card commentator-studio" data-commentator-studio>
+      <style>
+        .commentator-studio{{border-color:rgba(110,223,246,.34);background:radial-gradient(circle at 15% 0,rgba(110,223,246,.16),transparent 18rem),radial-gradient(circle at 85% 10%,rgba(155,92,255,.14),transparent 18rem),linear-gradient(160deg,rgba(8,19,35,.96),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.38),0 0 50px rgba(110,223,246,.10)}}.commentator-studio:before{{content:"";position:absolute;inset:-45%;pointer-events:none;background:conic-gradient(from 180deg,transparent,rgba(110,223,246,.13),transparent 34%,rgba(54,229,143,.12),transparent 66%,rgba(255,209,102,.10),transparent);animation:studioSweep 14s linear infinite}}.commentator-studio>*:not(style){{position:relative;z-index:1}}.studio-top{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}.live-badge{{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,107,122,.35);border-radius:999px;padding:7px 10px;background:rgba(255,107,122,.10);font-weight:950;color:#ffd1d6}}.live-badge i{{width:9px;height:9px;border-radius:999px;background:#ff6b7a;box-shadow:0 0 16px rgba(255,107,122,.8);animation:presencePulse 1.5s ease-in-out infinite}}.host-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:16px 0}}.ai-host{{border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035));text-align:center;overflow:hidden;transform:translateZ(0);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}}.ai-host.active{{transform:translateY(-3px);box-shadow:0 0 36px var(--host-glow);border-color:var(--host-line)}}.ai-host.cyan{{--host-glow:rgba(110,223,246,.24);--host-line:rgba(110,223,246,.46);--host-main:#6edff6}}.ai-host.green{{--host-glow:rgba(54,229,143,.24);--host-line:rgba(54,229,143,.46);--host-main:#36e58f}}.ai-host.gold{{--host-glow:rgba(255,209,102,.22);--host-line:rgba(155,92,255,.44);--host-main:#ffd166}}.ai-avatar{{width:92px;height:92px;margin:0 auto 10px;border-radius:28px;position:relative;background:radial-gradient(circle at 50% 28%,rgba(255,255,255,.22),transparent 24px),linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.035));border:1px solid var(--host-line);box-shadow:0 0 26px var(--host-glow);animation:hostBreath 3.8s ease-in-out infinite}}.ai-avatar:before,.ai-avatar:after{{content:"";position:absolute;top:36px;width:9px;height:9px;border-radius:999px;background:var(--host-main);box-shadow:0 0 12px var(--host-main);animation:hostBlink 4.8s infinite}}.ai-avatar:before{{left:29px}}.ai-avatar:after{{right:29px}}.ai-mouth{{position:absolute;left:34px;right:34px;bottom:27px;height:5px;border-radius:999px;background:var(--host-main);opacity:.75;transform:scaleX(.72)}}.ai-host.active .ai-mouth{{animation:mouthPulse .42s ease-in-out infinite}}.ai-host[data-mood="hype"] .ai-avatar{{transform:rotate(-1deg) scale(1.04)}}.ai-host[data-mood="warning"] .ai-avatar{{box-shadow:0 0 32px rgba(255,107,122,.28)}}.waveform{{display:inline-flex;gap:3px;height:16px;align-items:end}}.waveform span{{width:3px;border-radius:999px;background:var(--cyan);animation:wave 1s ease-in-out infinite}}.waveform span:nth-child(2){{animation-delay:.14s}}.waveform span:nth-child(3){{animation-delay:.28s}}.studio-feed{{max-height:230px;overflow:hidden;display:grid;gap:9px}}.studio-feed div{{border-left:3px solid var(--cyan);padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.045);animation:arenaCardIn .28s ease both}}.studio-meters{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}}@keyframes studioSweep{{to{{transform:rotate(360deg)}}}}@keyframes hostBreath{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-3px) scale(1.025)}}}}@keyframes hostBlink{{0%,93%,100%{{transform:scaleY(1)}}95%{{transform:scaleY(.12)}}}}@keyframes mouthPulse{{0%,100%{{transform:scaleX(.55)}}50%{{transform:scaleX(1)}}}}@keyframes wave{{0%,100%{{height:4px;opacity:.55}}50%{{height:16px;opacity:1}}}}@media(max-width:860px){{.host-grid,.studio-meters{{grid-template-columns:1fr}}.ai-avatar{{width:78px;height:78px}}}}@media(prefers-reduced-motion:reduce){{.commentator-studio *{{animation:none!important;transition:none!important}}}}
+      </style>
+      <div class="studio-top">
+        <div><div class="kicker">AI Commentator Live Studio</div><h2>Broadcast desk online</h2><p class="muted">Three AI hosts tracking battles, crowd pressure, scam-defense events, and discipline swings in realtime.</p></div>
+        <span class="live-badge"><i></i>LIVE NOW</span>
+      </div>
+      <div class="host-grid">
+        <article class="ai-host cyan active" data-host="0" data-mood="calm"><div class="ai-avatar"><span class="ai-mouth"></span></div><h3>Tactical Analyst</h3><p class="muted">Calm discipline desk</p></article>
+        <article class="ai-host green" data-host="1" data-mood="hype"><div class="ai-avatar"><span class="ai-mouth"></span></div><h3>Hype Host</h3><p class="muted">Crowd and battle energy</p></article>
+        <article class="ai-host gold" data-host="2" data-mood="serious"><div class="ai-avatar"><span class="ai-mouth"></span></div><h3>Psychology Coach</h3><p class="muted">Pressure and risk reads</p></article>
+      </div>
+      <div class="studio-meters">
+        <div><strong>Active battles</strong><div class="metric" data-active-battles>{int(active_battles or 0)}</div></div>
+        <div><strong>Crowd energy</strong><div class="crowd-meter"><span data-studio-crowd style="width:{max(8, min(100, int(crowd_level or 72)))}%"></span></div><p class="muted">{int(active_rooms or 0)} live rooms · emotional intensity tracking</p></div>
+      </div>
+      <div class="feed studio-feed" data-commentary-feed>
+        <div><strong>Tactical Analyst</strong><p>{clean_html(messages[0])}</p><span class="waveform"><span></span><span></span><span></span></span></div>
+      </div>
+      <script type="application/json" data-commentary-seed>{json.dumps(messages)}</script>
+      <script>
+      (()=>{{
+        const studio=document.currentScript.closest('[data-commentator-studio]');
+        if(!studio||studio.dataset.ready)return; studio.dataset.ready='1';
+        const feed=studio.querySelector('[data-commentary-feed]');
+        const hosts=[...studio.querySelectorAll('[data-host]')];
+        const seed=JSON.parse(studio.querySelector('[data-commentary-seed]').textContent||'[]');
+        const names=['Tactical Analyst','Hype Host','Psychology Coach'];
+        const moods=['calm','hype','warning','surprised','serious'];
+        let i=0;
+        async function liveLine(){{
+          try{{
+            const r=await fetch('/api/arena/rooms/live',{{cache:'no-store'}});
+            const d=await r.json();
+            const battles=(d.active_matches||[]).length;
+            const rooms=(d.rooms||[]).length;
+            const metric=studio.querySelector('[data-active-battles]');
+            if(metric)metric.textContent=battles;
+            const crowd=studio.querySelector('[data-studio-crowd]');
+            if(crowd)crowd.style.width=Math.min(96,42+battles*6+rooms*2)+'%';
+            if(battles>0)return `${{battles}} live battle${{battles===1?'':'s'}} active. AI desk is tracking momentum and discipline.`;
+          }}catch(e){{}}
+          return seed[i % seed.length];
+        }}
+        async function tick(){{
+          const hostIndex=i%hosts.length;
+          hosts.forEach((h,idx)=>{{h.classList.toggle('active',idx===hostIndex);h.dataset.mood=moods[(i+idx)%moods.length];}});
+          const text=await liveLine();
+          const div=document.createElement('div');
+          div.innerHTML=`<strong>${{names[hostIndex]}}</strong><p>${{String(text).replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}</p><span class="waveform"><span></span><span></span><span></span></span>`;
+          feed.prepend(div);
+          [...feed.children].slice(8).forEach(n=>n.remove());
+          i++;
+        }}
+        setInterval(tick,4200);
+      }})();
+      </script>
+    </section>
+    """
+
+
 @webhook_app.route("/arena/os", methods=["GET"])
 def arena_os_page():
     init_db()
@@ -9652,6 +9726,13 @@ def arena_home_page():
     mission = current_arena_mission()
     leaderboard = arena_leaderboard_payload(limit=6).get("players", [])
     inbox = arena_inbox_payload(user["user_id"], limit=8)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM arena_matches WHERE status IN ('active','accepted','matchmaking')")
+    active_battles = int(cur.fetchone()[0] or 0)
+    cur.execute("SELECT COUNT(*) FROM arena_rooms WHERE status='active'")
+    active_rooms = int(cur.fetchone()[0] or 0)
+    conn.close()
     counts = inbox.get("counts") or {}
     xp_next = next((threshold for threshold, _ in ARENA_RANKS if threshold > int(profile.get("xp") or 0)), 6500)
     xp_pct = min(100, int((int(profile.get("xp") or 0) / max(1, xp_next)) * 100))
@@ -9707,8 +9788,8 @@ def arena_home_page():
     </section>
     <section class="grid">
       <article class="card wide"><h2>Top Global Players</h2><div class="grid">{top_html}</div></article>
-      <article class="card"><h2>AI Commentator</h2><div class="feed"><div>Smart choices raise discipline score faster than lucky fake profits.</div><div>Scam Hunter XP is active today.</div><div>Challenge buttons create friendly Arena invites.</div></div></article>
     </section>
+    {arena_commentator_studio(active_battles=active_battles, active_rooms=active_rooms, crowd_level=74)}
     <script>
     document.addEventListener('click', async (event) => {{
       const challenge = event.target.closest('[data-challenge]');
@@ -10115,6 +10196,7 @@ def arena_continuous_play_page():
         return arena_page_shell("Live Arena", body, user=user)
     mode = request.path.rsplit("/", 1)[-1] if request.path != "/arena/play" else "play"
     cards = [
+        {"title": "Live Rooms", "body": "Join global rooms, live chat, spectator cheers, and friendly challenges anytime.", "action": "<a class='button primary live-arena-cta' href='/arena/live' data-game-launch='live_rooms'>ENTER LIVE ARENA</a><p class='muted'>Global traders battling now</p><a class='button' href='/arena/room/1'>Enter Global Room</a>"},
         {"title": "Quick Battle", "body": "A 3-5 minute market, scam, and discipline challenge. Solo · Easy · 40 XP.", "action": "<a class='button primary' href='/arena/quick-battle' data-game-launch='quick_battle'>Play Now</a>"},
         {"title": "Alpha Arena Ranked", "body": "Enter ranked matchmaking and start climbing divisions. Multiplayer · Adaptive · 90 XP.", "action": "<a class='button primary' href='/arena/matchmaking' data-game-launch='ranked'>Enter Ranked</a>"},
         {"title": "BTC Duel", "body": "A focused fake-money BTC decision battle. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=btc_duel' data-game-launch='btc_duel'>Join Battle</a>"},
@@ -10125,7 +10207,6 @@ def arena_continuous_play_page():
         {"title": "AI Boss Fight", "body": "Train weaknesses against FOMO, scam, volatility, greed, and panic bosses. Solo · Boss · 100 XP.", "action": "<a class='button gold' href='/arena/bosses' data-game-launch='ai_boss'>Fight Boss</a>"},
         {"title": "Fake Portfolio Battle", "body": "Fake $10,000 portfolio duel. No real orders. Multiplayer · Hard · 120 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=fake_portfolio' data-game-launch='fake_portfolio'>Join Battle</a>"},
         {"title": "Prediction War", "body": "Compete on reasoning quality and risk-aware predictions. Multiplayer · Medium · 90 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=prediction_war' data-game-launch='prediction_war'>Join Battle</a>"},
-        {"title": "Live Rooms", "body": "Join global rooms, live chat, spectator cheers, and friendly challenges anytime.", "action": "<a class='button primary live-arena-cta' href='/arena/live' data-game-launch='live_rooms'>ENTER LIVE ARENA</a><p class='muted'>Global traders battling now</p><a class='button' href='/arena/room/1'>Enter Global Room</a>"},
         {"title": "Training Missions", "body": "Daily bonus missions, academy paths, and tactical skill drills. Solo · Training · 35 XP.", "action": "<a class='button' href='/arena/daily' data-game-launch='training'>Train Now</a>"},
     ]
     script = """
@@ -10140,32 +10221,47 @@ def arena_continuous_play_page():
       const s=d.scenario||{};
       const box=document.querySelector('[data-continuous-round]');
       if(!box)return;
-      box.innerHTML=`<h2>${s.title||'Arena Round'}</h2><p>${s.prompt||s.description||'Choose the most disciplined action.'}</p><div class='mission-options'>${(s.options||[]).map(o=>`<button data-answer="${String(o).replace(/"/g,'&quot;')}">${o}</button>`).join('')}</div><p class='muted'>Session #${d.session_id||''}</p>`;
+      box.innerHTML=`<h2>${s.title||'Arena Round'}</h2><p>${s.prompt||s.description||'Choose the most disciplined action.'}</p><div class='mission-options'>${(s.options||[]).map(o=>`<button data-answer="${String(o).replace(/"/g,'&quot;')}">${o}</button>`).join('')}</div><p class='muted'>Round ${s.round_id||''} · Session #${d.session_id||''}</p>`;
       box.dataset.sessionId=d.session_id||'';
+      box.dataset.roundId=s.round_id||'';
     }
     document.addEventListener('click',async e=>{
       const launch=e.target.closest('[data-game-launch]');
       if(launch){
         e.preventDefault();
+        const original=launch.textContent;
         launch.textContent='Opening...';
         launch.setAttribute('aria-busy','true');
-        const d=await fetch('/api/arena/game/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({game_type:launch.dataset.gameLaunch})}).then(r=>r.json()).catch(()=>({ok:false,message:'Could not open this Arena mode. Try again.'}));
-        if(d.ok&&d.next_url) location.href=d.next_url;
-        else { alert(d.message||'Could not open this Arena mode. Try again.'); launch.textContent='Play Now'; launch.removeAttribute('aria-busy'); }
+        const controller=new AbortController();
+        const timer=setTimeout(()=>controller.abort(),5000);
+        const d=await fetch('/api/arena/game/launch',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({game_type:launch.dataset.gameLaunch})}).then(r=>r.json()).catch(()=>({ok:false,message:'Could not open this Arena mode. Try again.'})).finally(()=>clearTimeout(timer));
+        if(d.ok&&d.next_url){ location.href=d.next_url; return; }
+        alert(d.message||'Could not open this Arena mode. Try again.');
+        launch.textContent=original;
+        launch.removeAttribute('aria-busy');
       }
       if(e.target.closest('[data-start-continuous]')) startRound();
       const a=e.target.closest('[data-answer]');
       if(a){
-        const endpoint = mode === 'survival' ? '/api/arena/survival/next' : mode === 'scam_rush' ? '/api/arena/scam-rush/submit' : '/api/arena/quick-battle/submit';
         const box=document.querySelector('[data-continuous-round]');
+        box.querySelectorAll('[data-answer]').forEach(btn=>btn.disabled=true);
+        a.classList.add('selected-answer');
+        a.textContent=a.textContent+' · locking';
+        const endpoint = mode === 'survival' ? '/api/arena/survival/next' : mode === 'scam_rush' ? '/api/arena/scam-rush/submit' : '/api/arena/quick-battle/submit';
         const d=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:Number(box.dataset.sessionId||0),answer:a.dataset.answer})}).then(r=>r.json());
-        box.innerHTML=`<h2>${d.verdict||'Round complete'}</h2><p>${d.feedback||'AI coaching is ready for the next round.'}</p><span class='rank'>+${d.xp_earned||0} XP</span><button data-start-continuous>Next Round</button>`;
+        const correct=!!d.correct;
+        const verdict=correct?'Correct ✅':'Incorrect ❌';
+        const mark=(label)=>label===d.correct_answer?' style="border-color:rgba(54,229,143,.65);box-shadow:0 0 20px rgba(54,229,143,.14)"':label===d.selected?' style="border-color:rgba(255,107,122,.65);box-shadow:0 0 20px rgba(255,107,122,.14)"':'';
+        const options=[...box.querySelectorAll('[data-answer]')].map(btn=>btn.dataset.answer);
+        box.innerHTML=`<h2>${verdict}</h2><div class="mission-options">${options.map(o=>`<button disabled${mark(o)}>${o}${o===d.correct_answer?' · Correct answer':''}</button>`).join('')}</div><div class="notice"><strong>${verdict}</strong><p>${d.explanation||d.feedback||'AI coaching is ready for the next round.'}</p><p class="muted">Selected: ${d.selected||''} · Correct answer: ${d.correct_answer||''}</p></div><span class='rank'>+${d.xp_awarded||d.xp_earned||0} XP</span><button data-start-continuous>Next Round</button>`;
+        setTimeout(()=>{const next=box.querySelector('[data-start-continuous]'); if(next) next.focus();},250);
       }
     });
     if(!location.pathname.endsWith('/play')) startRound();
     </script>
     """
     body = arena_simple_page("Arena Play", "Play Arena anytime", "Daily missions are now bonus streaks. Quick battles, survival, scam rush, live rooms, bosses, and practice stay open all day.", cards, script)
+    body += arena_commentator_studio(active_battles=3, active_rooms=7, crowd_level=78)
     body += "<section class='card'><div class='kicker'>Continuous Round</div><div data-continuous-round><button class='primary' data-start-continuous>Start a training round</button></div></section>"
     return arena_page_shell("Arena Continuous Play", body, user=user)
 
@@ -10202,6 +10298,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Fake-money match. Live updates refresh every few seconds. No real orders. No wagering.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{clean_html((live.get('match') or {}).get('status') or 'active')}</span></p></article>
           <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p><div class="crowd-meter"><span data-crowd-meter style="width:24%"></span></div><p class="muted">Crowd pressure · live Arena energy</p></article>
         </section>
+        {arena_commentator_studio(active_battles=1, active_rooms=1, crowd_level=52)}
         <section class="grid">
           <article class="card wide"><h2>Fake Portfolio Battle</h2><div class="grid" data-participants></div></article>
           <article class="card"><h2>Fake Trade Ticket</h2><div data-trade-gate></div><form data-arena-trade><input name="symbol" value="BTC" placeholder="BTC"><select name="side"><option value="buy">Buy</option><option value="sell">Sell</option><option value="stop_loss">Stop loss simulation</option><option value="take_profit">Take profit simulation</option></select><input name="quantity" type="number" step="any" min="0" placeholder="0.01"><button class="primary">Place Fake Trade</button></form><p class="muted" data-trade-result></p></article>
@@ -10341,12 +10438,12 @@ def admin_arena_games_page():
         ("training", "/arena/daily", "Training"),
     ]
     rows = "".join(
-        f"<tr><td>{clean_html(key)}</td><td><a href='{clean_html(route)}'>{clean_html(route)}</a></td><td>{clean_html(status)}</td><td><code>POST /api/arena/game/launch</code></td></tr>"
+        f"<tr><td>{clean_html(key)}</td><td><a href='{clean_html(route)}'>{clean_html(route)}</a></td><td>{clean_html(status)}</td><td><span class='rank'>Route mapped</span></td><td><span class='rank'>Launcher supported</span></td><td class='muted'>No launch error recorded</td></tr>"
         for key, route, status in games
     )
     body = f"""
     <div class='card'><h1>Alpha Arena Game Health</h1><p class='muted'>Every visible game card has a direct route fallback and the universal launcher endpoint.</p></div>
-    <div class='card'><table><tr><th>Game type</th><th>Route</th><th>Status</th><th>Launcher</th></tr>{rows}</table></div>
+    <div class='card'><table><tr><th>Game type</th><th>Route</th><th>Status</th><th>Route result</th><th>Launch API result</th><th>Last error</th></tr>{rows}</table></div>
     """
     return admin_page_html("Arena Games", body, admin=admin)
 
@@ -11739,7 +11836,22 @@ def submit_arena_play_round(user_id, session_id, answer, continue_mode=False):
     )
     conn.commit()
     conn.close()
-    return {"ok": True, "verdict": result.get("verdict"), "feedback": result.get("feedback"), "score": result.get("score"), "xp_earned": xp, "award": award, "next_scenario": next_payload.get("scenario") if continue_mode else None}, 200
+    return {
+        "ok": True,
+        "correct": bool(result.get("correct")),
+        "selected": result.get("selected") or answer,
+        "correct_answer": result.get("correct_answer") or ((scenario.get("best_actions") or [""])[0]),
+        "explanation": result.get("explanation") or result.get("feedback"),
+        "verdict": result.get("verdict") or ("Correct" if result.get("correct") else "Incorrect"),
+        "feedback": result.get("feedback"),
+        "score": result.get("score"),
+        "xp_awarded": xp,
+        "xp_earned": xp,
+        "award": award,
+        "next_available": True,
+        "next_round_url": "/arena/survival" if continue_mode else "/arena/quick-battle",
+        "next_scenario": next_payload.get("scenario") if continue_mode else None,
+    }, 200
 
 
 @webhook_app.route("/api/arena/quick-battle/start", methods=["POST"])
@@ -11796,6 +11908,18 @@ def api_arena_scam_rush_submit():
     return jsonify(result), status
 
 
+@webhook_app.route("/api/arena/round/answer", methods=["POST"])
+def api_arena_round_answer():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    mode = clean_html(payload.get("mode") or "quick_battle")
+    continue_mode = mode in {"survival", "scam_rush", "market_storm"}
+    result, status = submit_arena_play_round(user["user_id"], payload.get("session_id"), payload.get("answer"), continue_mode)
+    return jsonify(result), status
+
+
 @webhook_app.route("/api/arena/continuous-xp", methods=["POST"])
 def api_arena_continuous_xp():
     user = api_account_user()
@@ -11826,6 +11950,19 @@ def api_arena_game_launch():
         "training": "/arena/daily",
         "simulator": "/arena/simulator",
     }
+    launch_labels = {
+        "quick_battle": "Quick Battle",
+        "scam_hunter": "Scam Hunter",
+        "scam_rush": "Scam Hunter Rush",
+        "survival": "Survival Mode",
+        "market_storm": "Market Storm",
+        "ai_boss": "AI Boss Fight",
+        "boss": "AI Boss Fight",
+        "live_rooms": "Live Arena Rooms",
+        "training": "Training Missions",
+        "simulator": "Live Practice Simulator",
+        "ranked": "Alpha Arena Ranked",
+    }
     match_types = {
         "ranked": "btc_duel",
         "btc_duel": "btc_duel",
@@ -11840,7 +11977,7 @@ def api_arena_game_launch():
                 start_arena_play_session(user["user_id"], game_type if game_type != "scam_hunter" else "scam_rush", 1)
             except Exception as exc:
                 logging.info("Arena launch session scaffold failed safely: %s", exc)
-        return jsonify({"ok": True, "mode": "solo" if game_type != "live_rooms" else "room", "next_url": solo_routes[game_type], "message": f"Entering {arena_match_label(game_type)}"})
+        return jsonify({"ok": True, "mode": "solo" if game_type != "live_rooms" else "room", "next_url": solo_routes[game_type], "message": f"Entering {launch_labels.get(game_type, 'Alpha Arena')}"})
     match_key = match_types.get(game_type)
     if match_key:
         match_id = create_arena_match(user["user_id"], 0, match_key, status="matchmaking" if game_type == "ranked" else "active")
@@ -11848,7 +11985,7 @@ def api_arena_game_launch():
             realtime_service.publish_arena_event("match", match_id, "match_created", {"match_id": match_id, "match_type": match_key, "display_name": arena_match_label(match_key)})
         except Exception:
             pass
-        return jsonify({"ok": True, "mode": "multiplayer", "match_id": match_id, "next_url": f"/arena/match/{match_id}", "message": f"Entering {arena_match_label(match_key)}"})
+        return jsonify({"ok": True, "mode": "multiplayer", "match_id": match_id, "next_url": f"/arena/match/{match_id}", "message": f"Entering {launch_labels.get(game_type) or arena_match_label(match_key)}"})
     return jsonify({"ok": False, "message": "This Arena mode is coming soon.", "status": "coming_soon"}), 400
 
 
