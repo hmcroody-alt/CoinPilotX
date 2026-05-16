@@ -305,14 +305,32 @@
               <button class="button primary" type="submit">Save Settings</button>
             </form>
             <div class="profile-card">
-              <h3>Connect Telegram Companion</h3>
-              <p>Generate a one-time code, then send it to the Telegram bot with <code>/connect CODE</code>. Codes expire in 10 minutes.</p>
-              {% if link_code %}<p>Your code: <code>{{ link_code }}</code></p>{% endif %}
+              <h3>Account Sync &amp; Companion Alerts</h3>
+              <p class="muted">Your website account remains the source of truth. Telegram is available only as an optional companion alert channel.</p>
+              <p><strong>Plan:</strong> {{ access.label }}</p>
+              <p><strong>Subscription status:</strong> {{ current_user.subscription_status or "inactive" }}</p>
+              {% if access.is_paid_pro %}
+                <p><strong>Pro access:</strong> Paid Pro active.</p>
+                <p><strong>Billing/access date:</strong> <span data-friendly-date>{{ access.pro_expires_at or "Active" }}</span></p>
+              {% elif access.is_trial %}
+                <p><strong>Trial ends:</strong> <span data-friendly-date>{{ access.trial_end }}</span></p>
+              {% elif access.trial_expired %}
+                <p><strong>Trial:</strong> Ended. Upgrade anytime when deeper intelligence becomes useful.</p>
+              {% else %}
+                <p><strong>Pro access:</strong> Free account.</p>
+              {% endif %}
+              <p><strong>Companion channel:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>
+              <p>Generate a one-time code, then send it to the optional Telegram companion with <code>/connect CODE</code>. Codes expire in 10 minutes.</p>
+              {% if link_code %}
+                <p>Your code: <code data-connect-code>{{ link_code }}</code></p>
+                <button class="button" type="button" data-copy-code>Copy Code</button>
+              {% endif %}
               <form method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                 <input type="hidden" name="action" value="connect_telegram" />
-                <button class="button gold" type="submit">Connect Telegram Companion</button>
+                <button class="button gold" type="submit">{% if link_code %}Regenerate Companion Code{% else %}Generate Companion Code{% endif %}</button>
               </form>
+              <p class="muted">Codes are visible only to your logged-in account. Generate a fresh code if an old one expires.</p>
             </div>
           </div>
 
@@ -432,6 +450,33 @@
             });
         };
         pollStatus();
+      }
+
+      document.querySelectorAll("[data-friendly-date]").forEach(function (node) {
+        var raw = (node.textContent || "").trim();
+        if (!raw || raw === "Active" || raw === "None") return;
+        var parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) return;
+        node.textContent = parsed.toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit"
+        });
+      });
+
+      var copyCodeButton = document.querySelector("[data-copy-code]");
+      if (copyCodeButton) {
+        copyCodeButton.addEventListener("click", function () {
+          var codeNode = document.querySelector("[data-connect-code]");
+          var code = codeNode ? (codeNode.textContent || "").trim() : "";
+          if (!code || !navigator.clipboard) return;
+          navigator.clipboard.writeText(code).then(function () {
+            copyCodeButton.textContent = "Copied";
+            setTimeout(function () { copyCodeButton.textContent = "Copy Code"; }, 1400);
+          }).catch(function () {});
+        });
       }
     })();
   </script>

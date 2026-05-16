@@ -1037,12 +1037,51 @@ def education_shell(title, h1, intro, body):
   <style>
     :root {{ color-scheme:dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; }}
     *{{box-sizing:border-box}} body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);line-height:1.65;overflow-x:hidden}} a{{color:inherit;text-decoration:none}}
-    .wrap{{width:min(100% - 32px,1180px);margin:auto}} header{{position:sticky;top:0;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);z-index:5}} nav{{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}} nav a,.edu-cta{{display:inline-flex;min-height:42px;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.05);font-weight:850}}
+    .wrap{{width:min(100% - 32px,1180px);margin:auto}} header{{position:sticky;top:0;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);z-index:5}} nav{{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}} nav a,.edu-cta,.edu-customize-button{{display:inline-flex;min-height:42px;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.05);font-weight:850}} .edu-customize-button{{color:var(--text);cursor:pointer}} [data-edu-hidden="true"]{{display:none!important}} .edu-customize{{position:relative}} .edu-customize-panel{{position:absolute;right:0;top:48px;z-index:10;width:min(92vw,320px);padding:14px;border:1px solid var(--line);border-radius:16px;background:rgba(7,15,28,.96);box-shadow:0 24px 80px rgba(0,0,0,.38)}} .edu-toggle{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:8px 0;color:var(--muted)}} .edu-toggle input{{accent-color:var(--cyan);inline-size:42px;block-size:22px}}
     main{{padding:42px 0 70px}} .hero{{padding:32px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035));box-shadow:0 28px 90px rgba(0,0,0,.28)}} h1{{font-size:clamp(38px,7vw,68px);line-height:1;margin:8px 0}} h2{{font-size:clamp(24px,4vw,34px)}} .muted,p{{color:var(--muted)}} .edu-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:18px 0}} .edu-card,.edu-panel{{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.045);padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.22)}} .edu-card{{transition:transform .18s ease,box-shadow .18s ease}} .edu-card:hover{{transform:translateY(-3px);box-shadow:0 0 32px rgba(110,223,246,.18)}} .edu-card span,.edu-card strong{{display:block;font-size:18px;color:var(--cyan);font-weight:950}} small{{color:var(--gold)}} .edu-actions{{display:flex;gap:10px;flex-wrap:wrap}} .concepts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}} .concept{{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;background:rgba(0,0,0,.16)}} .radar{{height:130px;border-radius:999px;background:radial-gradient(circle,rgba(54,229,143,.28),transparent 28%,rgba(110,223,246,.18),transparent 58%);animation:pulseRadar 4s ease-in-out infinite}} @keyframes pulseRadar{{50%{{filter:brightness(1.35);transform:scale(1.02)}}}} @media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}} @media(max-width:720px){{.hero{{padding:22px}}.edu-actions a{{width:100%}}}}
   </style>
 </head><body>
-  <header><div class="wrap"><nav><a href="/">CoinPilotXAI</a><div class="edu-actions"><a href="/dashboard">Dashboard</a><a href="/education">Education</a><a href="/scam-shield">Scam Shield</a></div></nav></div></header>
+  <header><div class="wrap"><nav><a href="/" data-edu-nav="show_edu_nav_home">CoinPilotXAI</a><div class="edu-actions"><a href="/dashboard" data-edu-nav="show_edu_nav_dashboard">Dashboard</a><a href="/education" data-edu-nav="show_edu_nav_education">Education</a><a href="/scam-shield" data-edu-nav="show_edu_nav_scam_shield">Scam Shield</a><div class="edu-customize"><button class="edu-customize-button" type="button" data-edu-customize>Customize</button><div class="edu-customize-panel" data-edu-customize-panel hidden><strong>Customize Education Navigation</strong><label class="edu-toggle">Show CoinPilotXAI <input type="checkbox" data-edu-pref="show_edu_nav_home" checked></label><label class="edu-toggle">Show Dashboard <input type="checkbox" data-edu-pref="show_edu_nav_dashboard" checked></label><label class="edu-toggle">Show Education <input type="checkbox" data-edu-pref="show_edu_nav_education" checked></label><label class="edu-toggle">Show Scam Shield <input type="checkbox" data-edu-pref="show_edu_nav_scam_shield" checked></label><button class="edu-cta" type="button" data-edu-reset>Reset defaults</button></div></div></div></nav></div></header>
   <main class="wrap"><section class="hero"><div class="radar" aria-hidden="true"></div><h1>{clean_html(h1)}</h1><p>{clean_html(intro)}</p></section>{body}<p class="muted">Educational market intelligence only. Not financial, investment, legal, betting, or tax advice. Never share seed phrases or private keys.</p></main>
+  <script>
+    (function () {{
+      function applyPrefs(prefs) {{
+        Object.keys(prefs || {{}}).forEach(function (key) {{
+          if (!key.startsWith("show_edu_nav_")) return;
+          document.querySelectorAll('[data-edu-nav="' + key + '"]').forEach(function (node) {{ node.dataset.eduHidden = prefs[key] ? "false" : "true"; }});
+          document.querySelectorAll('[data-edu-pref="' + key + '"]').forEach(function (input) {{ input.checked = !!prefs[key]; }});
+        }});
+      }}
+      async function loadPrefs() {{
+        try {{
+          var response = await fetch("/api/education/preferences", {{ cache: "no-store", credentials: "same-origin" }});
+          var prefs = await response.json();
+          if (response.ok && prefs.ok) applyPrefs(prefs);
+        }} catch (error) {{}}
+      }}
+      async function savePref(key, value) {{
+        applyPrefs({{ [key]: value }});
+        var response = await fetch("/api/education/preferences", {{ method: "POST", headers: {{ "Content-Type": "application/json" }}, credentials: "same-origin", body: JSON.stringify({{ [key]: value }}) }});
+        var prefs = await response.json();
+        if (response.ok && prefs.ok) applyPrefs(prefs);
+      }}
+      document.addEventListener("click", function (event) {{
+        var button = event.target.closest("[data-edu-customize]");
+        if (button) {{
+          var panel = document.querySelector("[data-edu-customize-panel]");
+          if (panel) panel.hidden = !panel.hidden;
+        }}
+        if (event.target.closest("[data-edu-reset]")) {{
+          ["show_edu_nav_home","show_edu_nav_dashboard","show_edu_nav_education","show_edu_nav_scam_shield"].forEach(function (key) {{ savePref(key, true); }});
+        }}
+      }});
+      document.addEventListener("change", function (event) {{
+        var input = event.target.closest("[data-edu-pref]");
+        if (input) savePref(input.dataset.eduPref, input.checked);
+      }});
+      loadPrefs();
+    }})();
+  </script>
 </body></html>"""
 
 
@@ -2622,6 +2661,7 @@ def friendly_method_not_allowed(error):
     )
 
 
+@webhook_app.route("/settings", methods=["GET", "POST"])
 @webhook_app.route("/account/settings", methods=["GET", "POST"])
 def account_settings_page():
     init_db()
@@ -6933,7 +6973,7 @@ def quote_center_page():
 @webhook_app.route("/quote/crypto/<symbol>", methods=["GET"])
 def quote_symbol_page(symbol):
     symbol = clean_html(symbol).upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPilotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@media(max-width:720px){{.actions .button{{width:100%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/dashboard#add-alert'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();setInterval(load,30000)</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{symbol} Live Price, Market Data, AI Crypto Intelligence | CoinPilotXAI</title><meta name='description' content='{symbol} live price, market data, educational AI explanation, watchlist actions, and risk notes from CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/quote/crypto/{symbol}'><meta property='og:title' content='{symbol} Live Price | CoinPilotXAI'><meta property='og:description' content='Live quote intelligence, AI context, and educational risk notes for {symbol}.'><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.psych-market-bg,.intelligence-glow-bg{{position:relative;isolation:isolate;overflow:hidden;background:radial-gradient(circle at 14% 4%,rgba(110,223,246,.2),transparent 28rem),radial-gradient(circle at 86% 18%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421)}}.soft-data-grid:before{{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.055) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(circle at 50% 15%,black,transparent 72%);pointer-events:none;z-index:-2}}.wrap{{width:min(100% - 28px,1050px);margin:auto;padding:30px 0 90px}}a{{color:inherit}}.trust-gradient-panel,.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.82);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px;margin:14px 0}}.metric{{font-size:clamp(40px,8vw,68px);font-weight:950}}p{{color:var(--muted)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;padding:10px 14px;text-decoration:none;cursor:pointer;box-shadow:0 0 30px rgba(110,223,246,.16)}}canvas{{width:100%;height:260px;background:rgba(0,0,0,.18);border-radius:14px}}@media(max-width:720px){{.actions .button{{width:100%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body class='psych-market-bg intelligence-glow-bg soft-data-grid'><main class='wrap'><a href='/quote'>← Quote Center</a><section class='card trust-gradient-panel'><h1>{symbol} Live Quote</h1><div class='metric' id='price'>Loading...</div><p id='meta'></p><div class='actions'><button class='button' id='watch'>Add to Watchlist</button><a class='button' href='/alerts'>Create Alert</a><a class='button' href='/simulator?asset={symbol}'>Simulate Trade</a><a class='button' href='/chat?asset={symbol}'>Ask AI</a><a class='button' href='/education'>Open Education</a></div></section><section class='card'><canvas id='chart'></canvas></section><section class='card'><h2>AI Market Explanation</h2><p id='explain'>Educational market intelligence only. Not financial advice.</p></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{try{{const d=await fetch('/api/quote/crypto/{symbol}',{{cache:'no-store'}}).then(r=>r.json());const a=d.asset||{{}};document.getElementById('price').textContent=money(a.price);document.getElementById('meta').textContent=`24h: ${{Number(a.change_24h||0).toFixed(2)}}% · Volume: ${{Number(a.volume_24h||0).toLocaleString()}} · Source: ${{d.source||'unavailable'}} · Last updated: ${{d.last_updated||'now'}}`;document.getElementById('explain').textContent=`${symbol} is being shown with source labels and risk context. Use the watchlist, alert, simulator, and AI tools for education, not guaranteed outcomes.`;const c=document.getElementById('chart'),ctx=c.getContext('2d');c.width=c.clientWidth*2;c.height=260*2;const chart=await fetch('/api/quote/crypto/{symbol}/chart').then(r=>r.json());ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#6edff6';ctx.lineWidth=4;ctx.beginPath();(chart.points||[]).forEach((p,i)=>{{const x=i/(chart.points.length-1||1)*c.width;const y=c.height-(p.price/(a.price*1.04||1))*c.height*.9;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y)}});ctx.stroke()}}catch(e){{document.getElementById('meta').textContent='Live quote source temporarily reconnecting.'}}}}document.getElementById('watch').onclick=async()=>{{await fetch('/api/watch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{watch_type:'coin',value:'{symbol}',channels:['in_app']}})}});document.getElementById('watch').textContent='Saved'}};load();setInterval(load,30000)</script></body></html>""")
 
 
 def prediction_samples():
@@ -6978,6 +7018,28 @@ def predictions_page():
 def predictions_crypto_page():
     public_preview = not bool(account_user_id())
     action_url = "/signup?next=/predictions/crypto" if public_preview else "/predictions/crypto"
+    external_url = clean_html(os.getenv("EXTERNAL_TRADE_URL") or os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())
+    return Response(f"""<!doctype html>
+<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Live Crypto Predictions Intelligence | CoinPilotXAI</title>
+<meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'>
+<link rel='canonical' href='https://coinpilotx.app/predictions/crypto'>
+<style>
+:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px;position:sticky;top:0;background:rgba(5,11,20,.86);backdrop-filter:blur(12px);z-index:2}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850;cursor:pointer}}.pill.active{{box-shadow:0 0 24px rgba(110,223,246,.34);color:#fff}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button,.actions a{{width:100%;text-align:center}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}
+</style></head><body><main class='wrap'><section><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track probabilities, close dates, liquidity context, and market psychology. Actions save inside your CoinPilotXAI account.</p><div class='filters'><button class='pill active' data-filter='active'>Active</button><button class='pill' data-filter='trending'>Trending</button><button class='pill' data-filter='closing'>Closing Soon</button><button class='pill' data-filter='btc'>Bitcoin</button><button class='pill' data-filter='eth'>Ethereum</button><button class='pill' data-filter='alt'>Altcoins</button><button class='pill' data-filter='macro'>Macro Crypto</button><button class='pill' data-filter='volume'>High Volume</button></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main>
+<script>
+const actionUrl='{action_url}';
+const externalUrl='{external_url}';
+let markets=[];
+let currentFilter='active';
+function symbolFor(m){{const text=(m.title||'').toUpperCase();if(text.includes('BTC')||text.includes('BITCOIN'))return'BTC';if(text.includes('ETH')||text.includes('ETHEREUM'))return'ETH';return'CRYPTO'}}
+function card(m){{const p=Number(m.probability||m.yes_probability||0);const symbol=symbolFor(m);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}' data-symbol='${{symbol}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}
+function filtered(){{const now=Date.now();return markets.filter(m=>{{const title=(m.title||'').toLowerCase();if(currentFilter==='btc')return title.includes('btc')||title.includes('bitcoin');if(currentFilter==='eth')return title.includes('eth')||title.includes('ethereum');if(currentFilter==='alt')return title.includes('altcoin');if(currentFilter==='volume')return Number(m.volume||0)>400000;if(currentFilter==='closing')return new Date(m.close_time||0).getTime()-now<1000*60*60*24*30;if(currentFilter==='macro')return title.includes('macro')||m.category==='Market Events';return true;}})}}
+function render(){{document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter===currentFilter));document.getElementById('cards').innerHTML=filtered().map(card).join('')||'<article class=card>Predictions source reconnecting. No matching scenarios are available right now.</article>'}}
+async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());markets=d.markets||[];render()}}
+document.addEventListener('click',async e=>{{const filter=e.target.closest('[data-filter]');if(filter){{currentFilter=filter.dataset.filter;render();return}}const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}if(btn.dataset.action==='ai'){{location.href='/chat?context=prediction&symbol='+encodeURIComponent(btn.dataset.symbol||'CRYPTO')+'&id='+encodeURIComponent(btn.dataset.id);return}}if(btn.dataset.action==='simulate'){{location.href='/simulator?prediction='+encodeURIComponent(btn.dataset.id);return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent=btn.dataset.action==='watch'?'Watching ✓':'Prediction alert activated'}});
+load();
+</script></body></html>""")
     return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPilotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPilotXAI.'><link rel='canonical' href='https://coinpilotx.app/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPilotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPilotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--line:rgba(110,223,246,.22);--muted:#9fb5c0}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPilotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
 
 
@@ -7512,6 +7574,136 @@ def api_dashboard_widgets():
     return jsonify({"ok": True, "widgets": widgets})
 
 
+DASHBOARD_PREF_KEYS = {
+    "show_account": True,
+    "show_upgrade_pro": True,
+    "show_command_center": True,
+    "show_logout": True,
+    "show_saved_insights": True,
+    "show_activity_timeline": True,
+}
+
+
+def get_dashboard_preferences(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM user_dashboard_preferences WHERE user_id=? LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    if not row:
+        now = datetime.now().isoformat()
+        cur.execute(
+            """
+            INSERT INTO user_dashboard_preferences
+            (user_id, show_account, show_upgrade_pro, show_command_center, show_logout, show_saved_insights, show_activity_timeline, created_at, updated_at)
+            VALUES (?, 1, 1, 1, 1, 1, 1, ?, ?)
+            """,
+            (user_id, now, now),
+        )
+        conn.commit()
+        cur.execute("SELECT * FROM user_dashboard_preferences WHERE user_id=? LIMIT 1", (user_id,))
+        row = cur.fetchone()
+    prefs = {key: bool(row[key]) if key in row.keys() else default for key, default in DASHBOARD_PREF_KEYS.items()}
+    conn.close()
+    return prefs
+
+
+@webhook_app.route("/api/dashboard/preferences", methods=["GET", "POST"])
+def api_dashboard_preferences():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        response = jsonify({"ok": True, **get_dashboard_preferences(user["user_id"])})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    payload = request.get_json(silent=True) or {}
+    updates = {}
+    for key in DASHBOARD_PREF_KEYS:
+        if key in payload:
+            value = payload.get(key)
+            if not isinstance(value, bool):
+                return jsonify({"ok": False, "message": f"{key} must be true or false."}), 400
+            updates[key] = int(value)
+    if not updates:
+        return jsonify({"ok": True, **get_dashboard_preferences(user["user_id"])})
+    get_dashboard_preferences(user["user_id"])
+    conn = db()
+    cur = conn.cursor()
+    assignments = ", ".join(f"{key}=?" for key in updates)
+    values = list(updates.values()) + [datetime.now().isoformat(), user["user_id"]]
+    cur.execute(f"UPDATE user_dashboard_preferences SET {assignments}, updated_at=? WHERE user_id=?", values)
+    conn.commit()
+    conn.close()
+    response = jsonify({"ok": True, **get_dashboard_preferences(user["user_id"])})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+EDUCATION_PREF_KEYS = {
+    "show_edu_nav_home": True,
+    "show_edu_nav_dashboard": True,
+    "show_edu_nav_education": True,
+    "show_edu_nav_scam_shield": True,
+}
+
+
+def get_education_preferences(user_id):
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM user_education_preferences WHERE user_id=? LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    if not row:
+        now = datetime.now().isoformat()
+        cur.execute(
+            """
+            INSERT INTO user_education_preferences
+            (user_id, show_edu_nav_home, show_edu_nav_dashboard, show_edu_nav_education, show_edu_nav_scam_shield, created_at, updated_at)
+            VALUES (?, 1, 1, 1, 1, ?, ?)
+            """,
+            (user_id, now, now),
+        )
+        conn.commit()
+        cur.execute("SELECT * FROM user_education_preferences WHERE user_id=? LIMIT 1", (user_id,))
+        row = cur.fetchone()
+    prefs = {key: bool(row[key]) if key in row.keys() else default for key, default in EDUCATION_PREF_KEYS.items()}
+    conn.close()
+    return prefs
+
+
+@webhook_app.route("/api/education/preferences", methods=["GET", "POST"])
+def api_education_preferences():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "GET":
+        response = jsonify({"ok": True, **get_education_preferences(user["user_id"])})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    payload = request.get_json(silent=True) or {}
+    updates = {}
+    for key in EDUCATION_PREF_KEYS:
+        if key in payload:
+            value = payload.get(key)
+            if not isinstance(value, bool):
+                return jsonify({"ok": False, "message": f"{key} must be true or false."}), 400
+            updates[key] = int(value)
+    if not updates:
+        return jsonify({"ok": True, **get_education_preferences(user["user_id"])})
+    get_education_preferences(user["user_id"])
+    conn = db()
+    cur = conn.cursor()
+    assignments = ", ".join(f"{key}=?" for key in updates)
+    values = list(updates.values()) + [datetime.now().isoformat(), user["user_id"]]
+    cur.execute(f"UPDATE user_education_preferences SET {assignments}, updated_at=? WHERE user_id=?", values)
+    conn.commit()
+    conn.close()
+    response = jsonify({"ok": True, **get_education_preferences(user["user_id"])})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 def simulator_snapshot(user_id):
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -7861,6 +8053,14 @@ def alert_item_api(alert_id):
         return jsonify({"ok": False, "message": "Login required."}), 401
     result = portfolio_service.delete_alert(user["user_id"], alert_id)
     return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/alerts", methods=["GET"])
+def alerts_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next="/alerts"))
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.status{color:#c8ffe2;font-weight:900}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>← Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Manage price, whale, wallet, scam keyword, prediction, news, and volatility alerts from one focused page.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='price'>Coin price</option><option value='move_24h'>24h move</option><option value='wallet'>Wallet movement</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='news'>News trigger</option><option value='volatility'>Volatility spike</option></select><input name='symbol' placeholder='BTC, wallet, keyword, prediction...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='changes'>Changes</option></select><input name='target_value' type='number' step='any' placeholder='Target value / threshold' value='0'><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app</label><label><input type='checkbox' name='channels' value='email'> Email</label><label><input type='checkbox' name='channels' value='push'> PWA push</label><label><input type='checkbox' name='channels' value='sms'> SMS/Text</label><label><input type='checkbox' name='channels' value='telegram'> Optional companion</label></div><button class='button'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Alert Preferences</h2><p class='muted'>Delivery follows your notification preferences. Missing SMS or push provider settings will fail gracefully and stay logged.</p><a class='button' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/alerts',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('alerts').innerHTML=(d.alerts||[]).map(a=>`<div class='row'><span><strong>${a.symbol||a.target||'Alert'}</strong><br><span class='muted'>${a.alert_type||'price'} ${a.condition||''} ${a.target_value||a.threshold||''} · ${a.channel||'in-app'}</span></span><button class='button' data-delete='${a.id}'>Delete</button></div>`).join('')||'<p class=muted>No alerts yet.</p>'}document.getElementById('alertForm').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.target);const payload=Object.fromEntries(fd.entries());payload.channels=fd.getAll('channels');const r=await fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)});const d=await r.json();document.getElementById('msg').textContent=d.ok?'Prediction alert activated.':'Alert could not be created: '+(d.message||'check Pro access');if(d.ok){e.target.reset();load()}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-delete]');if(!b)return;await fetch('/api/alerts/'+b.dataset.delete,{method:'DELETE',credentials:'same-origin'});load()});load()</script></body></html>""")
 
 
 @webhook_app.route("/api/notifications", methods=["GET"])
@@ -13194,6 +13394,50 @@ def init_db():
         UNIQUE(user_id, widget_key)
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_dashboard_preferences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        show_account INTEGER DEFAULT 1,
+        show_upgrade_pro INTEGER DEFAULT 1,
+        show_command_center INTEGER DEFAULT 1,
+        show_logout INTEGER DEFAULT 1,
+        show_saved_insights INTEGER DEFAULT 1,
+        show_activity_timeline INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "user_dashboard_preferences", [
+        ("show_account", "INTEGER DEFAULT 1"),
+        ("show_upgrade_pro", "INTEGER DEFAULT 1"),
+        ("show_command_center", "INTEGER DEFAULT 1"),
+        ("show_logout", "INTEGER DEFAULT 1"),
+        ("show_saved_insights", "INTEGER DEFAULT 1"),
+        ("show_activity_timeline", "INTEGER DEFAULT 1"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_education_preferences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        show_edu_nav_home INTEGER DEFAULT 1,
+        show_edu_nav_dashboard INTEGER DEFAULT 1,
+        show_edu_nav_education INTEGER DEFAULT 1,
+        show_edu_nav_scam_shield INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "user_education_preferences", [
+        ("show_edu_nav_home", "INTEGER DEFAULT 1"),
+        ("show_edu_nav_dashboard", "INTEGER DEFAULT 1"),
+        ("show_edu_nav_education", "INTEGER DEFAULT 1"),
+        ("show_edu_nav_scam_shield", "INTEGER DEFAULT 1"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS notification_schedules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

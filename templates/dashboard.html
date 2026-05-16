@@ -35,6 +35,12 @@
     .command-glow-portfolio { --glow-a:#9b5cff; --glow-b:#2f80ff; }
     .command-glow-sports { --glow-a:#b6ff4f; --glow-b:#ffd166; }
     .command-glow-account { --glow-a:#6edff6; --glow-b:#77a7ff; }
+    .glow-education,.glow-optimism,.glow-future,.glow-alert { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.34); box-shadow:0 0 26px rgba(110,223,246,.12); transition:transform .18s ease,box-shadow .18s ease; animation:commandPulse 8s ease-in-out infinite; }
+    .glow-education { --glow-a:#00e5ff; --glow-b:#2f80ff; background:linear-gradient(135deg,rgba(0,229,255,.22),rgba(47,128,255,.12)); }
+    .glow-optimism { --glow-a:#36e58f; --glow-b:#00c2a8; background:linear-gradient(135deg,rgba(54,229,143,.22),rgba(0,194,168,.12)); }
+    .glow-future { --glow-a:#9b5cff; --glow-b:#4f7cff; background:linear-gradient(135deg,rgba(155,92,255,.22),rgba(79,124,255,.12)); }
+    .glow-alert { --glow-a:#ffd166; --glow-b:#ff5a66; background:linear-gradient(135deg,rgba(255,209,102,.22),rgba(255,90,102,.12)); }
+    .glow-education:hover,.glow-optimism:hover,.glow-future:hover,.glow-alert:hover { transform:translateY(-2px); box-shadow:0 14px 42px rgba(0,0,0,.28),0 0 38px color-mix(in srgb,var(--glow-a) 34%,transparent); }
     .alerts-dance { transition:transform .2s ease,box-shadow .2s ease; }
     .alerts-dance.is-dancing { animation:alertDance 1.8s ease-in-out 1; box-shadow:0 0 28px rgba(255,209,102,.55); }
     .timeline-summary { display:grid; gap:8px; }
@@ -44,6 +50,7 @@
     @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
     main { padding:34px 0 64px; }
     .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:18px; align-items:stretch; margin-bottom:18px; }
+    .hero > .card:first-child { grid-column:1 / -1; }
     .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:20px; }
     .kicker { color:var(--green); font-weight:900; letter-spacing:.08em; text-transform:uppercase; font-size:12px; }
     h1 { margin:8px 0 8px; font-size:clamp(34px,6vw,58px); line-height:1; letter-spacing:0; }
@@ -74,6 +81,12 @@
     .bottom-nav a:hover,.bottom-nav a.active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .channel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .channel-grid label { display:flex; gap:8px; align-items:center; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:8px; color:var(--muted); }
+    .customize-home { position:relative; }
+    .customize-panel { position:absolute; right:0; top:52px; z-index:35; width:min(360px,calc(100vw - 32px)); border:1px solid rgba(110,223,246,.25); border-radius:16px; background:rgba(8,15,28,.96); backdrop-filter:blur(18px); padding:14px; box-shadow:0 22px 70px rgba(0,0,0,.38),0 0 28px rgba(110,223,246,.12); }
+    .customize-panel[hidden] { display:none; }
+    .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:12px; margin-top:8px; color:var(--muted); }
+    .toggle-row input { width:44px; height:24px; min-height:24px; accent-color:var(--green); filter:drop-shadow(0 0 10px rgba(54,229,143,.3)); }
+    [data-home-hidden="true"] { display:none!important; }
     .private-chat-launcher { position:fixed; right:20px; bottom:92px; z-index:65; min-width:154px; border:1px solid rgba(110,223,246,.34); box-shadow:0 18px 58px rgba(0,0,0,.34),0 0 34px rgba(110,223,246,.2); }
     .private-chat-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--gold),var(--green)); font-size:12px; font-weight:950; box-shadow:0 0 18px rgba(255,209,102,.5); }
     .private-chat-shell { position:fixed; inset:0; z-index:64; pointer-events:none; }
@@ -114,10 +127,10 @@
       <nav>
         <a class="brand" href="/"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI Inc.</span></a>
         <div class="nav-links">
-          <a class="button" href="/account">Account</a>
-          <a class="button" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
-          <a class="button" href="/app">Command Center</a>
-          <a class="button" href="/logout">Logout</a>
+          <a class="button" href="/account" data-home-action="show_account">Account</a>
+          <a class="button" href="/upgrade" data-home-action="show_upgrade_pro" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+          <a class="button" href="/app" data-home-action="show_command_center">Command Center</a>
+          <a class="button" href="/logout" data-home-action="show_logout">Logout</a>
         </div>
       </nav>
     </div>
@@ -137,28 +150,24 @@
         <div class="actions">
           <button class="button primary" type="button" data-scroll="#add-holding">Add Holding</button>
           <button class="button" type="button" data-scroll="#add-watchlist">Add Watchlist Coin</button>
-          <button class="button gold alerts-dance" type="button" data-scroll="#add-alert" data-alerts-button>Create Alert</button>
+          <a class="button gold alerts-dance" href="/alerts" data-alerts-button>Create Alert</a>
         </div>
-      </article>
-      <article class="card">
-        <div class="status">Live account sync</div>
-        <p><strong>Plan:</strong> <span data-plan>Loading...</span></p>
-        <p><strong>Subscription:</strong> <span data-subscription>Loading...</span></p>
-        <p><strong>Companion channel:</strong> <span data-telegram>Loading...</span></p>
-        <p><strong>Pro/trial expiration:</strong> <span data-expires>Loading...</span></p>
-        <p class="muted" data-account-sync-message>Syncing live account status...</p>
-        {% if link_code %}
-          <div class="notice">
-            <strong>Connect companion alerts:</strong>
-            <p>Send this code to the bot within 10 minutes:</p>
-            <p><code>/connect {{ link_code }}</code></p>
-            <a class="button gold" href="/account/settings">Companion Settings</a>
-          </div>
-        {% endif %}
       </article>
     </section>
 
     <section class="grid">
+      <article class="card" data-priority-card="portfolio">
+        <div class="kicker">Portfolio Value</div>
+        <div class="metric" data-total-value>$0.00</div>
+        <p>P/L: <strong data-pnl>$0.00</strong> · <strong data-pnl-percent>0.00%</strong></p>
+        <p class="muted" data-top-movers>Add your first holding to activate portfolio intelligence.</p>
+        <a class="button command-glow command-glow-portfolio" href="#add-holding">Open Portfolio Details</a>
+      </article>
+      <article class="card" data-priority-card="market">
+        <div class="kicker">Live Market Snapshot</div>
+        <div class="list" data-market-snapshot><p class="muted">Loading market data...</p></div>
+        <a class="button command-glow command-glow-market" href="/quote">View More</a>
+      </article>
       <article class="card">
         <div class="kicker">Daily Intelligence Brief</div>
         <h2>Today’s Market Pulse</h2>
@@ -196,16 +205,6 @@
         <p class="muted" data-memory-card>Recent saved insights and suggested next actions will appear here.</p>
       </article>
 
-      <article class="card">
-        <div class="kicker">Portfolio Value</div>
-        <div class="metric" data-total-value>$0.00</div>
-        <p>P/L: <strong data-pnl>$0.00</strong> · <strong data-pnl-percent>0.00%</strong></p>
-        <p class="muted" data-top-movers>Top gainer/loser will appear here.</p>
-      </article>
-      <article class="card">
-        <div class="kicker">Live Market Snapshot</div>
-        <div class="list" data-market-snapshot><p class="muted">Loading market data...</p></div>
-      </article>
       <article class="card">
         <div class="kicker">Today's Risk Note</div>
         <p data-ai-insight>Loading AI portfolio insight...</p>
@@ -249,48 +248,22 @@
       </article>
 
       <article class="card wide">
-        <h2>Alerts Center</h2>
-        <div class="list" data-alerts><p class="muted">No active alerts yet.</p></div>
-      </article>
-      <article class="card" id="add-alert">
-        <h2>Create Alert</h2>
-        <form data-alert-form>
-          <div class="form-grid">
-            <select name="alert_type"><option value="price">Price</option><option value="move_24h">24h Move %</option><option value="portfolio_value">Portfolio Value</option></select>
-            <input name="symbol" placeholder="Symbol, e.g. SOL" required>
-            <select name="condition"><option value="above">Above</option><option value="below">Below</option></select>
-            <input name="target_value" type="number" step="any" placeholder="Target value" required>
-          </div>
-          <select name="channel"><option value="website">Website</option><option value="telegram">Companion</option></select>
-          <div class="channel-grid" aria-label="Alert delivery channels">
-            <label><input type="checkbox" name="channels" value="in_app" checked> In-app</label>
-            <label><input type="checkbox" name="channels" value="email"> Email</label>
-            <label><input type="checkbox" name="channels" value="push"> PWA push</label>
-            <label><input type="checkbox" name="channels" value="sms"> SMS/Text</label>
-            <label><input type="checkbox" name="channels" value="telegram"> Optional companion</label>
-          </div>
-          <button class="button gold" type="submit">Create Alert</button>
-          <p class="muted" data-alert-message></p>
-        </form>
-      </article>
-
-      <article class="card wide">
         <h2>Crypto Education Journey</h2>
         <p class="muted">Daily lessons for crypto basics, investor safety, scam defense, wallet intelligence, market psychology, and on-chain analysis.</p>
         <div class="list">
-          <a class="button" href="/education">Open Education Hub</a>
-          <a class="button" href="/education/optimism">Live Optimism Market Data</a>
-          <a class="button" href="/education/toncoin-scenarios">Toncoin Scenario Education</a>
-          <a class="button" href="/dashboard/scam-alerts">Crypto Scam Alerts</a>
+          <a class="button glow-education" href="/education">Open Education Hub</a>
+          <a class="button glow-optimism" href="/education/optimism">Live Optimism Market Data</a>
+          <a class="button glow-future" href="/education/toncoin-scenarios">Toncoin Scenario Education</a>
+          <a class="button glow-alert" href="/dashboard/scam-alerts">Crypto Scam Alerts</a>
         </div>
         <p class="muted" data-education-progress>Education progress will appear here.</p>
       </article>
-      <article class="card">
+      <article class="card" data-home-card="show_saved_insights">
         <h2>Saved Insights Library</h2>
         <div class="list" data-saved-insights><p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p></div>
       </article>
 
-      <article class="card wide">
+      <article class="card wide" data-home-card="show_activity_timeline">
         <h2>Activity Timeline</h2>
         <div class="timeline-summary">
           <p class="muted" data-activity-summary>Latest activity will appear here.</p>
@@ -302,7 +275,23 @@
         </div>
       </article>
       <article class="card">
-        <h2>Quick Actions</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative">
+          <h2>Quick Actions</h2>
+          <div class="customize-home">
+            <button class="button command-glow command-glow-account" type="button" data-customize-home>⚙ Customize</button>
+            <div class="customize-panel" data-customize-panel hidden>
+              <strong>Customize Home</strong>
+              <p class="muted">Hide or restore dashboard actions and large cards.</p>
+              <label class="toggle-row">Account <input type="checkbox" data-pref-toggle="show_account" checked></label>
+              <label class="toggle-row">Upgrade Pro <input type="checkbox" data-pref-toggle="show_upgrade_pro" checked></label>
+              <label class="toggle-row">Command Center <input type="checkbox" data-pref-toggle="show_command_center" checked></label>
+              <label class="toggle-row">Logout <input type="checkbox" data-pref-toggle="show_logout" checked></label>
+              <label class="toggle-row">Saved Insights Library <input type="checkbox" data-pref-toggle="show_saved_insights" checked></label>
+              <label class="toggle-row">Activity Timeline <input type="checkbox" data-pref-toggle="show_activity_timeline" checked></label>
+              <button class="button" type="button" data-pref-reset>Reset defaults</button>
+            </div>
+          </div>
+        </div>
         <div class="list{% if not access.has_pro %} locked{% endif %}">
           <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
           <a class="button command-glow command-glow-risk" href="/scam-shield">Run Scam Shield</a>
@@ -370,7 +359,7 @@
       <a class="active" href="/dashboard">Home</a>
       <a href="/command-center">Intel</a>
       <a href="/live-market">Live</a>
-      <a class="alerts-dance" href="#add-alert" data-alerts-button>Alerts</a>
+      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
       <a href="/account">Account</a>
     </div>
   </nav>
@@ -508,7 +497,7 @@
         </div>`).join("") || '<p class="muted">No active alerts yet.</p>';
 
       document.querySelector("[data-market-snapshot]").innerHTML = (data.market.markets || []).slice(0, 4).map(item => `
-        <div class="watch-row"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></div>`).join("") || '<p class="muted">Live price feed temporarily unavailable.</p>';
+        <a class="watch-row" href="/quote/crypto/${encodeURIComponent(item.symbol)}"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></a>`).join("") || '<p class="muted">Live source reconnecting. Last known data shown if available.</p>';
 
       const activity = data.activity || [];
       const relative = value => {
@@ -570,6 +559,39 @@
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.message || "Dashboard failed");
       render(data);
+    }
+
+    function applyDashboardPreferences(prefs) {
+      Object.entries(prefs || {}).forEach(([key, value]) => {
+        if (!key.startsWith("show_")) return;
+        document.querySelectorAll(`[data-home-action="${key}"], [data-home-card="${key}"]`).forEach(node => {
+          node.dataset.homeHidden = value ? "false" : "true";
+        });
+        document.querySelectorAll(`[data-pref-toggle="${key}"]`).forEach(input => { input.checked = !!value; });
+      });
+    }
+
+    async function loadDashboardPreferences() {
+      try {
+        const response = await fetch("/api/dashboard/preferences", { cache: "no-store", credentials: "same-origin" });
+        const prefs = await response.json();
+        if (response.ok && prefs.ok) applyDashboardPreferences(prefs);
+      } catch (error) {}
+    }
+
+    async function saveDashboardPreference(key, value) {
+      applyDashboardPreferences({ [key]: value });
+      const payload = { [key]: value };
+      const response = await fetch("/api/dashboard/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || "Could not save preference.");
+      applyDashboardPreferences(data);
     }
 
     async function loadAccountStatus() {
@@ -670,6 +692,15 @@
     });
 
     document.addEventListener("click", async event => {
+      if (event.target.closest("[data-customize-home]")) {
+        const panel = document.querySelector("[data-customize-panel]");
+        panel.hidden = !panel.hidden;
+      }
+      if (event.target.closest("[data-pref-reset]")) {
+        for (const key of ["show_account","show_upgrade_pro","show_command_center","show_logout","show_saved_insights","show_activity_timeline"]) {
+          await saveDashboardPreference(key, true).catch(() => {});
+        }
+      }
       if (event.target.closest("[data-private-chat-open]")) openPrivateChat();
       if (event.target.closest("[data-private-chat-close]")) closePrivateChat();
       const chatTab = event.target.closest("[data-chat-tab]");
@@ -708,6 +739,12 @@
       }
     });
 
+    document.addEventListener("change", event => {
+      const toggle = event.target.closest("[data-pref-toggle]");
+      if (toggle) saveDashboardPreference(toggle.dataset.prefToggle, !!toggle.checked).catch(() => loadDashboardPreferences());
+    });
+
+    loadDashboardPreferences();
     loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); });
     window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); }, 60000);
     loadChatConversations().catch(function () {});

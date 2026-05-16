@@ -158,7 +158,11 @@
       <a href="/dashboard">Home</a>
       <a href="/app">Intel</a>
       <a href="/live-market">Live</a>
+<<<<<<< HEAD
       <a class="alerts-dance" href="/dashboard#add-alert" data-alerts-button>Alerts</a>
+=======
+      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
+>>>>>>> c95b245 (Add dashboard customization alerts settings and prediction actions)
       <a href="/account">Account</a>
     </div>
   </nav>
@@ -232,7 +236,11 @@
       const chip = event.target.closest("[data-chip]");
       if (chip) {
         const label = chip.dataset.chip || "";
+<<<<<<< HEAD
         if (label === "Create Alert") location.href = "/dashboard#add-alert";
+=======
+        if (label === "Create Alert") location.href = "/alerts";
+>>>>>>> c95b245 (Add dashboard customization alerts settings and prediction actions)
         else if (label === "Scan Wallet") runCommand({ command: "/wallet " });
         else if (label === "Check Market") runCommand({ command: "/market" });
         else if (label === "Save Insight") runCommand({ command: "/help save insight" });
