@@ -219,15 +219,15 @@ SEO_PAGES.update({
         "related": ["/app", "/ai-market-analysis", "/crypto-safety", "/portfolio-intelligence"],
     },
     "pricing": {
-        "title": "CoinPilotXAI Pricing | Free and Pro Crypto Intelligence",
-        "description": "Compare CoinPilotXAI Free and Pro access for AI crypto intelligence, live alerts, portfolio tools, wallet intelligence, Scam Shield, and advanced market context.",
+        "title": "CoinPilotXAI Pricing | Free Market Tools and Pro Arena Training",
+        "description": "Compare CoinPilotXAI Free and Pro access for market tracking, limited AI, alerts, education, Scam Shield, Pro Arena battles, live rooms, and immersive fake-money crypto training.",
         "h1": "CoinPilotXAI Pricing",
-        "eyebrow": "Free and Pro",
-        "intro": "Start free with basic CoinPilotXAI intelligence, then upgrade to Pro when deeper AI reasoning, alerts, portfolio context, and wallet risk tools become useful.",
-        "answer": "CoinPilotXAI Pro expands the platform with deeper educational intelligence. It does not guarantee profits, trading outcomes, betting results, or financial success.",
-        "points": ["Free account access", "30-day Pro trial for first-time users", "Website-only Stripe checkout", "Paid Pro account sync", "Optional Telegram companion alerts"],
+        "eyebrow": "Free, Pro Trial, and Pro",
+        "intro": "Start free with basic market tracking, limited AI, limited alerts, and education. Upgrade to Pro for Arena access, live multiplayer fake-money battles, AI tactical systems, advanced alerts, and immersive training.",
+        "answer": "CoinPilotXAI Pro unlocks the Arena ecosystem and deeper intelligence tools. Arena remains educational simulation only: no real-money wagering, no trading execution, and no guaranteed outcomes.",
+        "points": ["Free market tracking", "Limited AI and alerts", "Pro Arena access", "Live rooms and fake portfolio battles", "AI tactical commentary", "Pro Trial temporary premium access"],
         "faqs": COMMON_FAQS,
-        "related": ["/signup", "/features", "/app", "/support"],
+        "related": ["/signup", "/features", "/arena-preview", "/scam-shield", "/support"],
     },
     "crypto-scam-checker": {
         "title": "Crypto Scam Checker | CoinPilotXAI Inc.",
@@ -1111,7 +1111,7 @@ def search_pages(query, limit=12):
 
 
 def all_public_paths():
-    paths = ["/", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge"]
+    paths = ["/", "/about", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge", "/arena-preview"]
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
     paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]

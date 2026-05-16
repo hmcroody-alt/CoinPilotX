@@ -259,7 +259,7 @@
         {% elif page == "upgrade" %}
           <div class="grid">
             <div class="profile-card">
-              <h3>CoinPilotX Pro</h3>
+              <h3>CoinPilotXAI Pro</h3>
               <p><strong>Price:</strong> $14.99/month</p>
               <p><strong>Current plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
@@ -271,9 +271,16 @@
                   <a class="button" href="/account">Account</a>
                 </div>
               {% else %}
-                <p>Pro unlocks deeper AI intelligence, wallet and transaction risk details, portfolio decision support, whale intelligence, Sports Edge context, advanced scam protection, and optional Telegram notifications.</p>
+                <p>Pro unlocks Arena access, live multiplayer fake-money battles, AI tactical systems, live rooms, advanced alerts, Scam Shield intelligence, portfolio context, immersive training, faction systems, cinematic match participation, and privacy-safe social learning.</p>
                 <a class="button primary" href="/upgrade?checkout=1&source=website" data-analytics="stripe_checkout_started">Continue to Secure Checkout</a>
               {% endif %}
+            </div>
+            <div class="profile-card">
+              <h3>Free vs Pro</h3>
+              <p><strong>Free:</strong> market tracking, limited AI previews, limited alerts, and limited education.</p>
+              <p><strong>Pro:</strong> full Arena, live rooms, AI commentary, fake portfolio battles, tournaments, advanced intelligence, and advanced notifications.</p>
+              <p><strong>Pro Trial:</strong> temporary Arena access and selected premium features during the active trial window.</p>
+              <p class="muted">Arena is educational simulation only. Fake balances, no real-money wagering, no trading execution.</p>
             </div>
             <div class="profile-card">
               <h3>Optional Telegram Companion</h3>

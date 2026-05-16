@@ -996,6 +996,29 @@ def terms_page():
     return render_template("terms.html")
 
 
+@webhook_app.route("/about", methods=["GET"])
+def about_page():
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "CoinPilotXAI Inc.",
+        "url": "https://coinpilotx.app/about",
+        "sameAs": ["https://coinpilotx.app/arena-preview"],
+        "description": "CoinPilotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
+    }
+    sections = [
+        ("Mission", "CoinPilotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
+        ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
+        ("Arena Training Ecosystem", "CoinPilotXAI Arena is a Pro training world with fake portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses fake money only and rewards discipline, scam defense, and learning."),
+        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPilotXAI never asks for seed phrases or private keys."),
+        ("Privacy + Security", "Arena uses public player identities instead of exposing email addresses, payment details, real names, or internal account IDs. Security logging, admin audit trails, rate-aware APIs, and browser protections help keep the platform accountable."),
+        ("Continuous Innovation", "CoinPilotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
+        ("Educational Disclaimer", "CoinPilotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money wagering or trading execution occurs inside Arena."),
+    ]
+    cards = "".join(f"<article class='card'><h2>{clean_html(title)}</h2><p>{clean_html(text)}</p></article>" for title, text in sections)
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, fake portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://coinpilotx.app/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena fake-money training."><meta property="og:url" content="https://coinpilotx.app/about"><meta property="og:image" content="https://coinpilotx.app/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+
+
 @webhook_app.route("/search", methods=["GET"])
 def site_search():
     query = (request.args.get("q") or "").strip()[:120]
@@ -1563,7 +1586,7 @@ def add_pwa_headers(response):
     if not request.path.startswith(("/api/", "/static/")):
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.stripe.com;",
+            "default-src 'self'; object-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; upgrade-insecure-requests;",
         )
     if request.path in ("/static/service-worker.js", "/sw.js"):
         response.headers["Service-Worker-Allowed"] = "/"
@@ -1583,6 +1606,29 @@ def enforce_https():
     forwarded_proto = request.headers.get("X-Forwarded-Proto", request.scheme)
     if forwarded_proto == "http":
         return redirect(request.url.replace("http://", "https://", 1), code=301)
+
+
+@webhook_app.before_request
+def enforce_arena_pro_access():
+    path = request.path or ""
+    public_arena_prefixes = (
+        "/arena-preview",
+        "/arena/player/",
+        "/api/arena/share/",
+    )
+    if not (path == "/arena" or path.startswith("/arena/") or path.startswith("/api/arena/")):
+        return None
+    if path.startswith(public_arena_prefixes):
+        return None
+    user = load_account_by_id(account_user_id())
+    if not user:
+        if path.startswith("/api/arena/"):
+            log_security_event("arena_api_auth_required", "blocked", 0, path)
+            return jsonify({"ok": False, "message": "Login and Pro access required.", "login_url": url_for("login_page", next=path)}), 401
+        return redirect(url_for("login_page", next=path))
+    if not platform_pro_access(user):
+        return arena_access_preview_response(user)
+    return None
     return None
 
 
@@ -5939,6 +5985,21 @@ def admin_security_page():
     return admin_page_html("Security", body, admin)
 
 
+@webhook_app.route("/admin/security-events", methods=["GET"])
+def admin_security_events_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT event_type, user_id, ip_address, path, status, details_json, created_at FROM security_events ORDER BY id DESC LIMIT 250")
+    events = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Security Events</h1><p class='muted'>Arena access blocks, suspicious API activity, spam prevention, auth anomalies, and other security signals.</p><div class='card'>{admin_rows_table(events, [('event_type','Event'),('user_id','User'),('ip_address','IP'),('path','Path'),('status','Status'),('details_json','Details'),('created_at','Created')])}</div>"
+    return admin_page_html("Security Events", body, admin)
+
+
 @webhook_app.route("/admin/settings", methods=["GET"])
 def admin_settings_page():
     admin, denied = require_admin_page("settings.edit")
@@ -6628,6 +6689,51 @@ def api_commands():
     response = jsonify(payload)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
+
+
+def log_security_event(event_type, status="observed", user_id=0, path="", details=None):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO security_events (event_type, user_id, ip_address, path, status, details_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                clean_html(event_type)[:120],
+                int(user_id or 0),
+                (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip() if request else "")[:80],
+                clean_html(path or (request.path if request else ""))[:240],
+                clean_html(status)[:80],
+                json.dumps(details or {})[:2000],
+                datetime.now().isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.info("SECURITY_EVENT_LOG_SKIPPED type=%s error=%s", event_type, exc)
+
+
+def arena_access_preview_response(user=None):
+    next_url = quote(request.path, safe="")
+    if request.path.startswith("/api/arena/"):
+        log_security_event("arena_api_pro_gate", "blocked", (user or {}).get("user_id") or 0, request.path, {"next": request.path})
+        return jsonify({"ok": False, "message": "CoinPilotXAI Arena requires Pro or an active Pro Trial.", "upgrade_url": f"/upgrade?next={next_url}"}), 403
+    body = f"""
+    <section class="hero">
+      <article class="card wide">
+        <div class="kicker">Arena Pro Access</div>
+        <h1>CoinPilotXAI Arena is a Pro training ecosystem.</h1>
+        <p>Unlock live fake-money battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training.</p>
+        <div class="actions"><a class="button primary" href="/upgrade?next={next_url}">Upgrade Pro</a><a class="button" href="/arena-preview">View Arena Preview</a><a class="button" href="/dashboard">Dashboard</a></div>
+      </article>
+      <article class="card"><h2>Educational Only</h2><p>Fake balances only. No real-money wagering, no trade execution, and no guaranteed outcomes.</p></article>
+    </section>
+    """
+    log_security_event("arena_page_pro_gate", "blocked", (user or {}).get("user_id") or 0, request.path, {"next": request.path})
+    return arena_page_shell("Arena Pro Access", body, user=user)
 
 
 @webhook_app.route("/api/menu", methods=["GET"])
@@ -9314,12 +9420,16 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     document.addEventListener('change',async e=>{const i=e.target.closest('[data-arena-pref]');if(!i)return;await fetch('/api/arena/preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[i.dataset.arenaPref]:i.checked})});location.reload();});
     function arenaPopup(item){if(!item)return;let box=document.querySelector('[data-arena-popup]');if(!box){box=document.createElement('div');box.dataset.arenaPopup='1';box.style.cssText='position:fixed;right:18px;bottom:18px;z-index:60;max-width:360px;border:1px solid rgba(110,223,246,.35);border-radius:16px;background:linear-gradient(180deg,rgba(10,22,38,.96),rgba(6,12,24,.96));box-shadow:0 24px 80px rgba(0,0,0,.45),0 0 32px rgba(110,223,246,.18);padding:14px;color:#f2fbff';document.body.appendChild(box);}const title=item.type==='challenge'?'Challenge Received':'New Arena Message';const action=item.type==='challenge'?`<button data-arena-accept='${item.id}' data-arena-kind='challenge'>Accept</button><button data-arena-reject='${item.id}' data-arena-kind='challenge'>Decline</button>`:`<button data-arena-accept='${item.id}' data-arena-kind='message'>Open Chat</button><button data-arena-reject='${item.id}' data-arena-kind='message'>Dismiss</button>`;box.innerHTML=`<strong>${title}</strong><p><b>${arenaEsc(item.sender?.display_name||'Arena Pilot')}</b><br>${arenaEsc(item.message_preview||'Arena request')}</p><div class='actions'>${action}<a class='button' href='/arena/inbox'>Inbox</a></div>`;}
     async function loadArenaInboxPulse(){try{const r=await fetch('/api/arena/inbox',{cache:'no-store'});if(!r.ok)return;const d=await r.json();const count=(d.counts&&d.counts.pending_requests)||0;const badge=document.querySelector('[data-arena-badge]');if(badge)badge.textContent=count?`🔴 ${count}`:'';const first=(d.requests||[])[0];if(first&&String(localStorage.getItem('arenaLastPopup')||'')!==`${first.type}:${first.id}`){localStorage.setItem('arenaLastPopup',`${first.type}:${first.id}`);arenaPopup(first);if(navigator.vibrate)navigator.vibrate([200,100,200]);}}catch(e){}}
+    async function updateArenaPresence(){try{await fetch('/api/arena/presence/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:location.pathname.includes('/match/')?'battling':location.pathname.includes('/room/')?'joined room':location.pathname.includes('/chat/')?'typing-ready':'online',path:location.pathname})});}catch(e){}}
+    async function loadArenaPresence(){try{const r=await fetch('/api/arena/presence',{cache:'no-store'});if(!r.ok)return;const d=await r.json();const panel=document.querySelector('[data-arena-presence-panel]');if(panel)panel.innerHTML=(d.presence||[]).slice(0,6).map(p=>`<span class="presence-pill"><i></i>${arenaEsc(p.display_name||'Pilot')} · ${arenaEsc(p.status||'online')}</span>`).join('')||'<span class="presence-pill"><i></i>Arena world warming up</span>';const feed=document.querySelector('[data-arena-world-feed]');if(feed)feed.innerHTML=(d.activity||[]).slice(0,5).map(x=>`<div>${arenaEsc(x)}</div>`).join('');}catch(e){}}
     document.addEventListener('click',async e=>{const a=e.target.closest('[data-arena-accept]');const r=e.target.closest('[data-arena-reject]');const target=a||r;if(!target)return;target.disabled=true;const kind=target.dataset.arenaKind;const accept=!!a;const url=kind==='challenge'?(accept?'/api/arena/challenge/accept':'/api/arena/challenge/reject'):(accept?'/api/arena/message/accept':'/api/arena/message/reject');const key=kind==='challenge'?'challenge_id':'request_id';const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({[key]:Number(target.dataset.arenaAccept||target.dataset.arenaReject)})});const d=await res.json();if(d.next_url)location.href=d.next_url;else if(d.chat_url)location.href=d.chat_url;else if(d.match_id)location.href='/arena/match/'+d.match_id;else{const box=document.querySelector('[data-arena-popup]');if(box)box.remove();loadArenaInboxPulse();}});
     loadArenaPrefs();
     loadArenaInboxPulse();
+    updateArenaPresence(); loadArenaPresence();
+    setInterval(updateArenaPresence,20000); setInterval(loadArenaPresence,20000);
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/">CoinPilotXAI Arena</a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
@@ -9902,14 +10012,16 @@ def arena_phase_two_page(room_id=None, match_id=None):
             return arena_page_shell("Arena Match", "<section class='card'><h1>Match not found</h1><p>This Arena battle is not available.</p></section>", user=user), 404
         match_label = clean_html(live.get("match_label") or (live.get("match") or {}).get("display_name") or "Arena Match")
         body = f"""
+        <div class="arena-intro"><div class="arena-intro-card"><div class="kicker">Match Opening</div><h2>{match_label}</h2><p>AI commentator online · fake market pressure rising</p></div></div>
         <section class="hero">
           <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Fake-money match. Live updates refresh every few seconds. No real orders. No wagering.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{clean_html((live.get('match') or {}).get('status') or 'active')}</span></p></article>
-          <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p></article>
+          <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p><div class="crowd-meter"><span data-crowd-meter style="width:24%"></span></div><p class="muted">Crowd pressure · live Arena energy</p></article>
         </section>
         <section class="grid">
           <article class="card wide"><h2>Fake Portfolio Battle</h2><div class="grid" data-participants></div></article>
           <article class="card"><h2>Fake Trade Ticket</h2><div data-trade-gate></div><form data-arena-trade><input name="symbol" value="BTC" placeholder="BTC"><select name="side"><option value="buy">Buy</option><option value="sell">Sell</option><option value="stop_loss">Stop loss simulation</option><option value="take_profit">Take profit simulation</option></select><input name="quantity" type="number" step="any" min="0" placeholder="0.01"><button class="primary">Place Fake Trade</button></form><p class="muted" data-trade-result></p></article>
           <article class="card"><h2>Market Context</h2><div data-market-context></div></article>
+          <article class="card wide"><h2>Post-Match Recap</h2><div data-match-recap><p class="muted">Recap appears when the battle is completed.</p></div></article>
           <article class="card wide"><h2>Positions</h2><div data-positions></div></article>
           <article class="card"><h2>Battle Chat</h2><form data-match-chat><input name="message" placeholder="Keep it respectful"><button>Send</button></form><div class="feed" data-match-chat-feed></div></article>
           <article class="card wide"><h2>Live Commentary Stream</h2><div class="feed" data-match-events></div></article>
@@ -9924,6 +10036,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           document.querySelector('[data-match-commentary]').textContent = d.ai_commentary || 'AI commentary is warming up.';
           document.querySelector('[data-spectators]').textContent = d.spectator_count || d.spectators || 0;
           document.querySelector('[data-cheers]').textContent = d.cheer_count || 0;
+          document.querySelector('[data-crowd-meter]').style.width = Math.min(100, 18 + Number(d.spectator_count||d.spectators||0)*12 + Number(d.cheer_count||0)*4) + '%';
           document.querySelector('[data-match-state]').textContent = d.match?.status || 'active';
           const joinBtn=document.querySelector('[data-join-battle]');
           joinBtn.hidden=!d.can_join;
@@ -9934,6 +10047,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           document.querySelector('[data-match-events]').innerHTML = (d.events || []).map(e => `<div><strong>${{esc(e.title || e.event_type)}}</strong><p>${{esc(e.body || '')}}</p><small>${{esc(e.created_at || '')}}</small></div>`).join('') || '<div>Waiting for the first Arena event.</div>';
           const m=d.market_context||{{}};
           document.querySelector('[data-market-context]').innerHTML=`<p><strong>BTC</strong> $${{Number(m.BTC||0).toLocaleString()}}</p><p><strong>ETH</strong> $${{Number(m.ETH||0).toLocaleString()}}</p><small class="muted">${{esc(m.source||'live/cached')}} · ${{esc(m.updated_at||'')}}</small>`;
+          document.querySelector('[data-match-recap]').innerHTML=(d.match?.status==='completed')?`<div class="player-card elite"><strong>Winner: ${{esc(d.winner_display_name||'Arena Pilot')}}</strong><p>${{esc(d.ai_commentary||'AI recap ready.')}}</p><p class="muted">Smartest move, discipline score, XP movement, and shareable highlight are ready for this completed fake-money battle.</p></div>`:'<p class="muted">Recap appears when the battle is completed.</p>';
         }}
         document.querySelector('[data-arena-trade]').addEventListener('submit', async e => {{
           e.preventDefault();
@@ -10085,6 +10199,75 @@ def api_arena_profile():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     return jsonify(arena_profile_payload(user["user_id"]))
+
+
+@webhook_app.route("/api/arena/presence", methods=["GET"])
+def api_arena_presence():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
+    cur.execute(
+        """
+        SELECT pr.status, pr.room_id, pr.match_id, pr.updated_at, ap.public_player_id, ap.display_name, ap.rank, ap.online_status
+        FROM arena_presence pr
+        LEFT JOIN arena_profiles ap ON ap.user_id=pr.user_id
+        WHERE pr.updated_at>=?
+        ORDER BY pr.updated_at DESC
+        LIMIT 30
+        """,
+        (cutoff,),
+    )
+    presence = []
+    for row in cur.fetchall():
+        item = dict(row)
+        item.update(public_arena_player(item))
+        item.pop("user_id", None)
+        presence.append(item)
+    cur.execute("SELECT title, body, event_type, created_at FROM arena_match_events ORDER BY id DESC LIMIT 8")
+    events = [f"{row['title']}: {row['body']}" if row["body"] else row["title"] for row in cur.fetchall()]
+    conn.close()
+    if not events:
+        events = ["AI commentator is scanning market pressure.", "Arena rooms are open for Pro training.", "Scam Hunter drills are active."]
+    return jsonify({"ok": True, "presence": presence, "activity": events, "updated_at": datetime.now().isoformat()})
+
+
+@webhook_app.route("/api/arena/presence/update", methods=["POST"])
+def api_arena_presence_update():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    status = clean_html(payload.get("status") or "online")[:80]
+    path = clean_html(payload.get("path") or "")[:160]
+    match_id = 0
+    room_id = 0
+    try:
+        if "/match/" in path:
+            match_id = int(path.rsplit("/match/", 1)[-1].split("/")[0].split("?")[0] or 0)
+        if "/room/" in path:
+            room_id = int(path.rsplit("/room/", 1)[-1].split("/")[0].split("?")[0] or 0)
+    except Exception:
+        pass
+    conn = db()
+    cur = conn.cursor()
+    now = datetime.now().isoformat()
+    cur.execute(
+        """
+        INSERT INTO arena_presence (user_id, status, room_id, match_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET status=excluded.status, room_id=excluded.room_id, match_id=excluded.match_id, updated_at=excluded.updated_at
+        """,
+        (user["user_id"], status, room_id, match_id, now),
+    )
+    cur.execute("UPDATE arena_profiles SET online_status=?, last_seen_at=?, updated_at=? WHERE user_id=?", (status, now, now, user["user_id"]))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "status": status, "updated_at": now})
 
 
 @webhook_app.route("/api/arena/preferences", methods=["GET", "POST"])
@@ -18756,6 +18939,8 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_id_id ON private_messages(conversation_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_private_messages_sender_created ON private_messages(sender_user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_conversation_members_user_conversation ON conversation_members(user_id, conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_security_events_type_created ON security_events(event_type, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_presence_updated ON arena_presence(updated_at)",
     ]
     for statement in index_statements:
         try:
@@ -18878,6 +19063,18 @@ def init_db():
         status TEXT DEFAULT 'open',
         created_at TEXT,
         updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS security_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        user_id INTEGER,
+        ip_address TEXT,
+        path TEXT,
+        status TEXT,
+        details_json TEXT,
+        created_at TEXT
     )
     """)
 
