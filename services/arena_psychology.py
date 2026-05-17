@@ -1,4 +1,4 @@
-"""Arena psychology scoring for fake-money educational battles."""
+"""Arena psychology scoring for virtual-dollar educational battles."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def analyze_trade_behavior(side: str, notional: float, balance: float, existing_
     if side == "sell" and existing_position <= 0:
         panic += 20
         discipline -= 10
-        notes.append("Selling without an existing position can reflect a rushed reaction in this fake engine.")
+        notes.append("Selling without an existing position can reflect a rushed reaction in this simulation engine.")
     if recent_loss:
         revenge += 22
         discipline -= 12

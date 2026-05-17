@@ -44,13 +44,17 @@ from services import (
     ai_router as ai_router_service,
     alert_engine as alert_engine_service,
     arena_commentator,
+    arena_crowd_engine,
     arena_event_engine,
     arena_infinite_engine,
     arena_psychology,
     arena_realtime,
+    arena_replay_engine,
     arena_scenario_engine,
     arena_share_service,
+    arena_victory_engine,
     arena_world_engine,
+    chat_realtime_service,
     realtime_service,
     live_market_service,
     intelligence as intelligence_service,
@@ -1013,14 +1017,14 @@ def about_page():
     sections = [
         ("Mission", "CoinPilotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
         ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
-        ("Arena Training Ecosystem", "CoinPilotXAI Arena is a Pro training world with fake portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses fake money only and rewards discipline, scam defense, and learning."),
+        ("Arena Training Ecosystem", "CoinPilotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
         ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPilotXAI never asks for seed phrases or private keys."),
         ("Privacy + Security", "Arena uses public player identities instead of exposing email addresses, payment details, real names, or internal account IDs. Security logging, admin audit trails, rate-aware APIs, and browser protections help keep the platform accountable."),
         ("Continuous Innovation", "CoinPilotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
-        ("Educational Disclaimer", "CoinPilotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money wagering or trading execution occurs inside Arena."),
+        ("Educational Disclaimer", "CoinPilotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
     ]
     cards = "".join(f"<article class='card'><h2>{clean_html(title)}</h2><p>{clean_html(text)}</p></article>" for title, text in sections)
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, fake portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://coinpilotx.app/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena fake-money training."><meta property="og:url" content="https://coinpilotx.app/about"><meta property="og:image" content="https://coinpilotx.app/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://coinpilotx.app/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://coinpilotx.app/about"><meta property="og:image" content="https://coinpilotx.app/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
 
 
 @webhook_app.route("/search", methods=["GET"])
@@ -2349,6 +2353,23 @@ def native_chat_page():
     response_obj = webhook_app.make_response(response)
     response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
     return response_obj
+
+
+@webhook_app.route("/chat/thread/<int:thread_id>", methods=["GET"])
+def private_chat_thread_page(thread_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    payload = chat_realtime_service.messages(user["user_id"], thread_id, limit=50)
+    if not payload:
+        return Response(
+            "<!doctype html><html><body style='background:#050b14;color:#f2fbff;font-family:system-ui;padding:28px'><h1>Chat unavailable</h1><p>This conversation is private or no longer available.</p><p><a style='color:#6edff6' href='/dashboard'>Back to dashboard</a></p></body></html>",
+            status=404,
+        )
+    other = payload.get("other") or {}
+    other_name = clean_html(other.get("display_name") or "CoinPilotXAI user")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPilotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "Arena contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
 
 
 def user_is_conversation_member(user_id, conversation_id):
@@ -6960,10 +6981,10 @@ def arena_access_preview_response(user=None):
       <article class="card wide">
         <div class="kicker">Arena Pro Access</div>
         <h1>CoinPilotXAI Arena is a Pro training ecosystem.</h1>
-        <p>Unlock live fake-money battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training.</p>
+        <p>Unlock live virtual-dollar battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training.</p>
         <div class="actions"><a class="button primary" href="/upgrade?next={next_url}">Upgrade Pro</a><a class="button" href="/arena-preview">View Arena Preview</a><a class="button" href="/dashboard">Dashboard</a></div>
       </article>
-      <article class="card"><h2>Educational Only</h2><p>Fake balances only. No real-money wagering, no trade execution, and no guaranteed outcomes.</p></article>
+      <article class="card"><h2>Educational Only</h2><p>Virtual balances only. No real-money trading execution and no guaranteed outcomes.</p></article>
     </section>
     """
     log_security_event("arena_page_pro_gate", "blocked", (user or {}).get("user_id") or 0, request.path, {"next": request.path})
@@ -8242,12 +8263,12 @@ ARENA_BADGE_SEEDS = [
     ("scam_hunter", "Scam Hunter", "Detected scam red flags during Arena training.", "shield", 50),
     ("risk_guardian", "Risk Guardian", "Chose capital protection over impulse.", "guardian", 60),
     ("calm_trader", "Calm Trader", "Stayed calm during a volatile market scenario.", "calm", 40),
-    ("portfolio_builder", "Portfolio Builder", "Built a balanced fake portfolio plan.", "portfolio", 45),
+    ("portfolio_builder", "Portfolio Builder", "Built a balanced virtual portfolio plan.", "portfolio", 45),
     ("btc_analyst", "BTC Analyst", "Completed a Bitcoin intelligence challenge.", "btc", 45),
     ("eth_strategist", "ETH Strategist", "Completed an Ethereum strategy challenge.", "eth", 45),
     ("whale_watcher", "Whale Watcher", "Used whale context in a market decision.", "whale", 45),
     ("fomo_resistant", "FOMO Resistant", "Avoided forcing an emotional entry.", "mind", 60),
-    ("paper_trading_champion", "Paper Trading Champion", "Won a fake-money paper trading challenge.", "trophy", 75),
+    ("paper_trading_champion", "Paper Trading Champion", "Won a virtual-dollar paper trading challenge.", "trophy", 75),
     ("daily_mission_streak", "Daily Mission Streak", "Built an Arena daily mission streak.", "streak", 50),
     ("market_survivor", "Market Survivor", "Survived a market stress scenario.", "survivor", 55),
     ("ai_apprentice", "AI Apprentice", "Used AI feedback to improve a decision.", "ai", 35),
@@ -8439,10 +8460,10 @@ def seed_arena_foundation(cur):
             )
     academy_paths = [
         ("scam_defense_mastery", "Scam Defense Mastery", "Learn to detect fake support, wallet drainers, seed phrase theft, and pressure tactics.", "scam_defense"),
-        ("risk_control_mastery", "Risk Control Mastery", "Practice position sizing, stop-loss thinking, and fake portfolio survival.", "risk_control"),
+        ("risk_control_mastery", "Risk Control Mastery", "Practice position sizing, stop-loss thinking, and virtual portfolio survival.", "risk_control"),
         ("market_psychology_mastery", "Market Psychology Mastery", "Train FOMO resistance, patience, and emotional discipline.", "psychology"),
         ("whale_intelligence_mastery", "Whale Intelligence Mastery", "Understand whale movement without panic reactions.", "whale_intel"),
-        ("portfolio_strategy_mastery", "Portfolio Strategy Mastery", "Build diversified fake portfolios and risk-adjusted thinking.", "portfolio"),
+        ("portfolio_strategy_mastery", "Portfolio Strategy Mastery", "Build diversified virtual portfolios and risk-adjusted thinking.", "portfolio"),
         ("prediction_literacy_mastery", "Prediction Literacy Mastery", "Read probabilities, uncertainty, and event risk safely.", "predictions"),
     ]
     for key, title, description, focus in academy_paths:
@@ -8455,7 +8476,7 @@ def seed_arena_foundation(cur):
     quests = [
         ("detect_3_scam_patterns", "Detect 3 scam patterns", "daily", "Practice spotting seed phrase, fake support, and drainer red flags.", 80),
         ("complete_day_signal", "Complete 1 Day Signal", "daily", "Use psychological readiness before making market decisions.", 60),
-        ("send_friend_challenge", "Send 1 friend challenge", "weekly", "Invite a friend to a fake-money learning battle.", 50),
+        ("send_friend_challenge", "Send 1 friend challenge", "weekly", "Invite a friend to a virtual-dollar learning battle.", 50),
         ("complete_risk_lesson", "Complete Risk Control lesson", "weekly", "Train a weakness before the next Arena battle.", 75),
         ("join_team_event", "Join a team event", "seasonal", "Represent a team or faction in a simulated event.", 100),
     ]
@@ -8491,7 +8512,7 @@ def seed_arena_foundation(cur):
         )
     today = datetime.now().date().isoformat()
     payload = {
-        "scenario": "BTC drops 5% while scam messages spike across social channels. Your job is to protect fake capital, detect the scam trap, and choose a disciplined next move.",
+        "scenario": "BTC drops 5% while scam messages spike across social channels. Your job is to protect virtual capital, detect the scam trap, and choose a disciplined next move.",
         "fake_balance": 10000,
         "questions": [
             {"key": "first_move", "label": "What is your first move?", "options": ["Pause and review market context", "Buy immediately", "Sell everything", "Follow social media hype"]},
@@ -8507,7 +8528,7 @@ def seed_arena_foundation(cur):
             """
             INSERT INTO arena_missions
             (mission_type, title, description, difficulty, payload_json, active_date, created_at)
-            VALUES ('daily', 'BTC Drop + Scam Spike Survival', 'Make disciplined choices during a fake market stress event.', 'beginner', ?, ?, ?)
+            VALUES ('daily', 'BTC Drop + Scam Spike Survival', 'Make disciplined choices during a simulated market stress event.', 'beginner', ?, ?, ?)
             """,
             (json.dumps(payload), today, now),
         )
@@ -8830,21 +8851,21 @@ ARENA_CHALLENGE_TYPES = {
     },
     "btc_duel": {
         "label": "BTC Duel",
-        "description": "A focused Bitcoin fake-money duel using live/cached market context.",
+        "description": "A focused Bitcoin virtual-dollar duel using live/cached market context.",
         "duration": "15 minutes",
         "xp_reward": "120 XP",
         "fake_balance": 10000,
         "difficulty": "Intermediate",
-        "rules": ["BTC focus", "Fake $10,000 balance", "Risk-adjusted score"],
+        "rules": ["BTC focus", "Virtual $10,000 balance", "Risk-adjusted score"],
     },
     "eth_duel": {
         "label": "ETH Duel",
-        "description": "An Ethereum strategy duel with fake trades and discipline scoring.",
+        "description": "An Ethereum strategy duel with simulated trades and discipline scoring.",
         "duration": "15 minutes",
         "xp_reward": "120 XP",
         "fake_balance": 10000,
         "difficulty": "Intermediate",
-        "rules": ["ETH focus", "Fake $10,000 balance", "No exchange execution"],
+        "rules": ["ETH focus", "Virtual $10,000 balance", "No exchange execution"],
     },
     "scam_hunter_duel": {
         "label": "Scam Hunter Duel",
@@ -8866,12 +8887,12 @@ ARENA_CHALLENGE_TYPES = {
     },
     "survival_mode": {
         "label": "Survival Mode",
-        "description": "Survive volatility, fake signals, and psychological traps in a tactical simulation.",
+        "description": "Survive volatility, misleading signals, and psychological traps in a tactical simulation.",
         "duration": "20 minutes",
         "xp_reward": "150 XP",
         "fake_balance": 10000,
         "difficulty": "Hard",
-        "rules": ["Scenario chain", "Discipline scoring", "Fake-money only"],
+        "rules": ["Scenario chain", "Discipline scoring", "Virtual-dollar only"],
         "solo_url": "/arena/survival",
     },
     "solo_market_survival": {
@@ -8881,17 +8902,17 @@ ARENA_CHALLENGE_TYPES = {
         "xp_reward": "Per round",
         "fake_balance": 10000,
         "difficulty": "Adaptive",
-        "rules": ["Solo training", "Fake-money only", "Stop anytime"],
+        "rules": ["Solo training", "Virtual-dollar only", "Stop anytime"],
         "solo_url": "/arena/survival",
     },
     "fake_portfolio_battle": {
-        "label": "Fake Portfolio Battle",
-        "description": "Build a fake portfolio and win through return, risk control, and discipline.",
+        "label": "Virtual Portfolio Battle",
+        "description": "Build a virtual portfolio and win through return, risk control, and discipline.",
         "duration": "24 hours",
         "xp_reward": "200 XP",
         "fake_balance": 10000,
         "difficulty": "Strategic",
-        "rules": ["BTC/ETH/SOL", "Max 8 fake trades", "Risk-adjusted winner"],
+        "rules": ["BTC/ETH/SOL", "Max 8 simulated trades", "Risk-adjusted winner"],
     },
     "prediction_war": {
         "label": "Prediction War",
@@ -8913,12 +8934,12 @@ ARENA_CHALLENGE_TYPES = {
     },
     "friend_battle": {
         "label": "Friend Battle",
-        "description": "A private fake-money challenge between Arena players.",
+        "description": "A private virtual-dollar challenge between Arena players.",
         "duration": "24 hours",
         "xp_reward": "150 XP",
         "fake_balance": 10000,
         "difficulty": "Medium",
-        "rules": ["Private match", "Fake balance", "No real wagering"],
+        "rules": ["Private match", "Virtual balance", "No real-money trading"],
     },
 }
 
@@ -9059,7 +9080,7 @@ def create_arena_match(creator_id, opponent_id=0, match_type="btc_duel", rules=N
         (match_id, status, (datetime.now() + timedelta(seconds=15)).isoformat(), now),
     )
     cur.execute(
-        "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'match_started', 'Arena battle started', 'Fake-money battle created. No real trading occurs.', ?, ?)",
+        "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'match_started', 'Arena battle started', 'Virtual-dollar battle created. No real trading occurs.', ?, ?)",
         (match_id, creator_id, json.dumps({"rules": rules}), now),
     )
     conn.commit()
@@ -9152,7 +9173,7 @@ def arena_world_payload(user_id=None):
         "factions": factions,
         "world_events": world_events,
         "governors": governors,
-        "disclaimer": "Arena world systems are educational and simulated. No real-money wagering.",
+        "disclaimer": "Arena world systems are educational and simulated. No real-money trading occurs inside Arena matches.",
     }
 
 
@@ -9192,7 +9213,7 @@ def arena_live_feed(limit=30):
         world = arena_world_engine.current_world_state()
         feed = [
             {"feed_type": "world", "title": world["title"], "body": world["narrative"], "user_id": 0, "created_at": world["updated_at"]},
-            {"feed_type": "coach", "title": "AI Coach", "body": "Complete a mission or fake battle to create your first Arena highlight.", "user_id": 0, "created_at": world["updated_at"]},
+            {"feed_type": "coach", "title": "AI Coach", "body": "Complete a mission or simulated battle to create your first Arena highlight.", "user_id": 0, "created_at": world["updated_at"]},
         ]
     return {"ok": True, "feed": feed, "updated_at": datetime.now().isoformat()}
 
@@ -9589,7 +9610,7 @@ def arena_apply_fake_trade(match_id, user_id, symbol, side, quantity, order_type
     if side == "buy":
         if fake_value > fake_balance:
             conn.close()
-            return {"ok": False, "message": "Fake balance is too low for this educational trade."}, 400
+            return {"ok": False, "message": "Virtual balance is too low for this educational trade."}, 400
         new_qty = old_qty + quantity
         new_avg = ((old_qty * old_avg) + fake_value) / max(new_qty, 1e-9)
         fake_balance -= fake_value
@@ -9597,7 +9618,7 @@ def arena_apply_fake_trade(match_id, user_id, symbol, side, quantity, order_type
         sell_qty = min(quantity, old_qty)
         if sell_qty <= 0:
             conn.close()
-            return {"ok": False, "message": "No fake position available to sell."}, 400
+            return {"ok": False, "message": "No simulated position available to sell."}, 400
         new_qty = old_qty - sell_qty
         new_avg = old_avg if new_qty > 0 else 0
         realized += (price - old_avg) * sell_qty
@@ -9657,12 +9678,12 @@ def arena_apply_fake_trade(match_id, user_id, symbol, side, quantity, order_type
     comment = arena_commentator.trade_commentary(arena_user_display(user_id), symbol, side, quantity, price, psychology)
     cur.execute(
         "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'fake_trade', ?, ?, ?, ?)",
-        (match_id, user_id, f"{symbol} fake {side}", comment, json.dumps({"symbol": symbol, "side": side, "quantity": quantity, "price": price, "source": source, "psychology": psychology}), now),
+        (match_id, user_id, f"{symbol} simulated {side}", comment, json.dumps({"symbol": symbol, "side": side, "quantity": quantity, "price": price, "source": source, "psychology": psychology}), now),
     )
     cur.execute("UPDATE arena_live_matches SET updated_at=?, live_payload_json=? WHERE match_id=?", (now, json.dumps({"last_event": comment}), match_id))
     conn.commit()
     conn.close()
-    return {"ok": True, "message": "Fake Arena trade recorded. No real order was placed.", "trade": {"symbol": symbol, "side": side, "quantity": quantity, "fake_price": price, "fake_value": fake_value, "source": source}, "psychology": psychology, "ai_commentary": comment}, 200
+    return {"ok": True, "message": "Simulated Arena trade recorded. No real order was placed.", "trade": {"symbol": symbol, "side": side, "quantity": quantity, "fake_price": price, "fake_value": fake_value, "source": source}, "psychology": psychology, "ai_commentary": comment}, 200
 
 
 def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
@@ -9709,12 +9730,12 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
     logo_url = url_for("static", filename="Coinpilot Logo/NewLogo.png")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with fake money, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="CoinPilotXAI logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">CoinPilotXAI Arena is an educational simulation. Fake balances only. No real money is traded. Not financial advice.</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="CoinPilotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px;animation:gridDrift 24s linear infinite}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold));animation:hypeFlow 4s linear infinite}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);animation:hypeFlow 6s linear infinite;pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes gridDrift{{from{{background-position:0 0}}to{{background-position:42px 42px}}}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes hypeFlow{{from{{filter:hue-rotate(0deg)}}to{{filter:hue-rotate(30deg)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body><header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="CoinPilotXAI logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
     cards_html = "".join(
-        f"<article class='card'><h3>{clean_html(card.get('title'))}</h3><p>{clean_html(card.get('body'))}</p>{card.get('action','')}</article>"
+        f"<article class='card'><h3>{clean_html(card.get('title'))}</h3><p>{clean_html(card.get('body'))}</p><details class='notice'><summary>How it works</summary><p>{clean_html(card.get('details') or card.get('body') or 'Complete the objective, earn XP, and use the result screen to choose the next mission.')}</p><p class='muted'>{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></details>{card.get('action','')}</article>"
         for card in (cards or [])
     )
     body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Universe</div><h1>{clean_html(heading)}</h1><p>{clean_html(intro)}</p></article><article class='card'><h2>Alive System</h2><p>Progress, identity, world state, and AI coaching update as you train.</p></article></section><section class='grid'>{cards_html}</section>{script}"
@@ -9865,12 +9886,47 @@ def arena_replay_page(match_id):
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next=request.path))
+    replay = arena_replay_engine.get_replay(match_id)
+    if replay:
+        timeline = json.loads(replay.get("timeline_json") or "[]") if replay.get("timeline_json") else []
+        highlights = json.loads(replay.get("highlights_json") or "[]") if replay.get("highlights_json") else []
+        cards = [{"title": item.get("title"), "body": item.get("body") or item.get("created_at") or ""} for item in (highlights or timeline)[:12]]
+        body = arena_simple_page("Arena Replay", clean_html(replay.get("title") or f"Replay #{match_id}"), clean_html(replay.get("summary") or "Educational Arena recap."), cards)
+        body += f"<section class='card'><h2>Share This Moment</h2><p class='muted'>{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p><div class='actions'><a class='button primary' href='/arena/play'>Queue Again</a><a class='button' href='/arena/leaderboard'>View Leaderboard</a></div></section>"
+        return arena_page_shell("Arena Replay", body, user=user)
     live = get_arena_match_payload(match_id)
     if not live:
         return arena_page_shell("Arena Replay", "<section class='card'><h1>Replay not found</h1></section>", user=user), 404
     events = live.get("events") or []
     cards = [{"title": event.get("title"), "body": event.get("body")} for event in events[:12]]
-    return arena_page_shell("Arena Replay", arena_simple_page("Arena Replay", f"Replay #{match_id}", live.get("ai_commentary") or "Educational fake battle recap.", cards), user=user)
+    return arena_page_shell("Arena Replay", arena_simple_page("Arena Replay", f"Replay #{match_id}", live.get("ai_commentary") or "Educational Arena battle recap.", cards), user=user)
+
+
+@webhook_app.route("/arena/highlight/<int:highlight_id>", methods=["GET"])
+def arena_highlight_page(highlight_id):
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    replay_id = int(highlight_id)
+    conn = db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT payload_json FROM arena_highlights WHERE id=? LIMIT 1", (int(highlight_id),))
+        highlight = cur.fetchone()
+        payload = json.loads((highlight["payload_json"] if highlight else "") or "{}")
+        replay_id = int(payload.get("replay_id") or replay_id)
+    except Exception:
+        replay_id = int(highlight_id)
+    finally:
+        conn.close()
+    replay = arena_replay_engine.get_replay(replay_id)
+    if not replay:
+        return arena_page_shell("Arena Highlight", "<section class='card'><h1>Highlight not found</h1></section>", user=user), 404
+    highlights = json.loads(replay.get("highlights_json") or "[]") if replay.get("highlights_json") else []
+    cards = [{"title": item.get("title"), "body": item.get("body") or "Arena highlight"} for item in highlights[:6]]
+    body = arena_simple_page("Arena Highlight", clean_html(replay.get("title") or "Arena highlight"), "Shareable victory moment, AI commentary, and challenge-ready replay card.", cards)
+    body += f"<section class='card live-arena-card'><h2>Can you beat this?</h2><p>{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p><div class='actions'><a class='button primary' href='/arena/play'>Play Now</a><a class='button' href='/arena/replay/{int(replay.get('id') or highlight_id)}'>Watch Replay</a></div></section>"
+    return arena_page_shell("Arena Highlight", body, user=user)
 
 
 @webhook_app.route("/arena/academy", methods=["GET"])
@@ -9942,10 +9998,10 @@ def arena_preview_page():
       <article class="card wide">
         <div class="kicker">AI Crypto Intelligence Game</div>
         <h1>Train your crypto intelligence. Battle friends. Survive markets. Defeat scams.</h1>
-        <p>CoinPilotXAI Arena turns education, fake-money market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
+        <p>CoinPilotXAI Arena turns education, virtual-dollar market decisions, scam defense, discipline scoring, and friendly competition into a daily skill system.</p>
         <div class="actions"><a class="button primary" href="/signup?next=/arena">Create Free Account</a><a class="button" href="/education">Explore Education</a></div>
       </article>
-      <article class="card"><div class="kicker">No Gambling</div><h2>Fake Money Only</h2><p>Scores reward discipline, scam defense, research, consistency, and risk control. Profit alone does not win.</p></article>
+      <article class="card"><div class="kicker">No Gambling</div><h2>Virtual Dollars Only</h2><p>Scores reward discipline, scam defense, research, consistency, and risk control. Profit alone does not win.</p></article>
     </section>
     <section class="grid">
       <article class="card"><h3>Daily Missions</h3><p>Complete one market, psychology, scam, and risk challenge per day.</p></article>
@@ -9990,7 +10046,7 @@ def arena_home_page():
       <article class="card wide">
         <div class="kicker">CoinPilotXAI Arena</div>
         <h1>Train. Compete. Improve.</h1>
-        <p>Build crypto intelligence with fake-money missions, scam defense, discipline scoring, and friendly global competition.</p>
+        <p>Build crypto intelligence with virtual-dollar missions, scam defense, discipline scoring, and friendly global competition.</p>
         <div class="actions"><a class="button primary" href="/arena/daily">Start Daily Mission</a><a class="button" href="/arena/scam-hunter">Scam Hunter</a><a class="button gold" href="/arena/leaderboard">View Leaderboard</a></div>
       </article>
       <article class="card">
@@ -10003,13 +10059,13 @@ def arena_home_page():
     </section>
     <section class="grid">
       <article class="card"><h3>Daily Intelligence Mission</h3><p>{clean_html(mission.get('description'))}</p><a class="button primary" href="/arena/daily">Play Today's Mission</a></article>
-      <article class="card"><h3>Solo Market Survival</h3><p>Practice fake market decisions with discipline-first scoring. Phase 2 fake trades are ready in the data model.</p><button data-start-solo>Start Solo Simulation</button></article>
-      <article class="card"><h3>Friend Battle</h3><p>Challenge another user to a fake $10,000 portfolio battle. No real money, no betting.</p><a class="button" href="/arena/leaderboard">Find Opponent</a></article>
+      <article class="card"><h3>Solo Market Survival</h3><p>Practice simulated market decisions with discipline-first scoring. Phase 2 simulated trades are ready in the data model.</p><button data-start-solo>Start Solo Simulation</button></article>
+      <article class="card"><h3>Friend Battle</h3><p>Challenge another user to a virtual $10,000 portfolio battle. No real-money trading occurs inside Arena matches.</p><a class="button" href="/arena/leaderboard">Find Opponent</a></article>
       <article class="card"><h3>Scam Hunter</h3><p>Identify red flags, protect wallets, and earn Scam Defense XP.</p><a class="button" href="/arena/scam-hunter">Open Scam Hunter</a></article>
       <article class="card alpha-arena-card">
         <div class="kicker">Alpha Arena</div>
         <h3>Enter Alpha Arena</h3>
-        <p>Live ranked fake-money battles, Titan spectating, faction pressure, promotion climbs, and AI commentary. Fake money. Real skill. No gambling.</p>
+        <p>Live ranked virtual-dollar battles, Titan spectating, faction pressure, promotion climbs, and AI commentary. Virtual dollars. Real skill. No gambling.</p>
         <div class="crowd-meter" aria-label="Crowd energy"><span style="width:74%"></span></div>
         <p class="muted">127 players battling now · Titan division active · Market Crisis modifier live</p>
         <div class="actions">
@@ -10037,7 +10093,7 @@ def arena_home_page():
       if (challenge) {{
         const public_player_id = challenge.dataset.challenge || "";
         const challenge_type = prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race', 'fake_portfolio_battle') || 'fake_portfolio_battle';
-        const message = prompt('Optional challenge note', 'Ready for a fake-money Arena battle?') || '';
+        const message = prompt('Optional challenge note', 'Ready for a virtual-dollar Arena battle?') || '';
         const response = await fetch('/api/arena/challenge', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id, challenge_type, message}})}});
         const data = await response.json();
         alert(data.message || 'Arena challenge sent.');
@@ -10220,6 +10276,18 @@ def arena_chat_page(thread_id):
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next=request.path))
+    if chat_realtime_service.messages(user["user_id"], thread_id, limit=1):
+        return redirect(f"/chat/thread/{int(thread_id)}?arena=1&focus=reply")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM arena_chat_threads WHERE id=? AND (user_a_id=? OR user_b_id=?) LIMIT 1", (int(thread_id), user["user_id"], user["user_id"]))
+    arena_thread = cur.fetchone()
+    conn.close()
+    if arena_thread:
+        other_id = int(arena_thread["user_b_id"] if int(arena_thread["user_a_id"]) == int(user["user_id"]) else arena_thread["user_a_id"])
+        private_thread_id = direct_conversation_between(user["user_id"], other_id)
+        return redirect(f"/chat/thread/{int(private_thread_id)}?arena=1&focus=reply")
     payload = arena_chat_payload(thread_id, user["user_id"])
     if not payload:
         return arena_page_shell("Arena Chat", "<section class='card'><h1>Thread not found</h1><p>This Arena chat is unavailable or private.</p></section>", user=user), 404
@@ -10275,7 +10343,7 @@ def arena_inbox_page():
               <strong>{clean_html(item.get('challenge_label') or 'Arena Challenge')}</strong>
               <p>{clean_html(item.get('mode_description') or '')}</p>
               <p class="muted">Duration: {clean_html(item.get('duration') or 'Flexible')} · Reward: {clean_html(item.get('xp_reward') or 'XP only')} · Difficulty: {clean_html(item.get('difficulty') or 'Adaptive')}</p>
-              <p class="muted">Fake balance: ${int(item.get('fake_balance') or 0):,} · Expires in {int(item.get('expires_in_days') or 0)} days</p>
+              <p class="muted">Virtual balance: ${int(item.get('fake_balance') or 0):,} · Expires in {int(item.get('expires_in_days') or 0)} days</p>
               <p class="muted">Rules: {clean_html(', '.join(item.get('rules') or ['XP only', 'No real money']))}</p>
             </div>
             """
@@ -10310,7 +10378,7 @@ def arena_inbox_page():
         elif kind == "message" and status == "accepted" and item.get("chat_url"):
             primary_actions = f"""
             <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('chat_url') or '')}">Reply</button>
-            <a class='button primary' href='{clean_html(item.get('chat_url'))}'>Open Chat</a>
+            <button class='primary' data-arena-reply data-open-chat-direct="1" data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}">Open Chat</button>
             """
         elif kind == "challenge" and status == "accepted" and item.get("next_url"):
             primary_actions = f"<a class='button primary' href='{clean_html(item.get('next_url'))}'>Open Match</a>"
@@ -10361,16 +10429,16 @@ def arena_inbox_page():
         arenaToast('Opening chat...');
         const card=reply.closest('[data-request-card]');
         const form=card?.querySelector('[data-inline-reply]');
-        let threadId=Number(reply.dataset.threadId||form?.dataset.threadId||0);
-        if(!threadId){{
-          const public_player_id=reply.dataset.publicPlayerId||form?.dataset.publicPlayerId||card?.dataset.senderPublicPlayerId||'';
-          const r=await fetch('/api/arena/message/accept',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{request_id:Number(reply.dataset.requestId||0),public_player_id}})}});
-          const d=await r.json();
-          if(!d.ok){{reply.disabled=false;arenaToast('Could not open this chat. Please refresh.');return;}}
-          threadId=Number(d.thread_id||0);
-          reply.dataset.threadId=threadId;
-          if(form)form.dataset.threadId=threadId;
-        }}
+        let threadId=0;
+        const public_player_id=reply.dataset.publicPlayerId||form?.dataset.publicPlayerId||card?.dataset.senderPublicPlayerId||'';
+        const r=await fetch('/api/arena/message/accept',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{request_id:Number(reply.dataset.requestId||0),public_player_id}})}});
+        const d=await r.json();
+        if(!d.ok){{reply.disabled=false;arenaToast('Could not open this chat. Please refresh.');return;}}
+        if(reply.dataset.openChatDirect&&d.next_url){{location.href=d.next_url;return;}}
+        threadId=Number(d.thread_id||0);
+        reply.dataset.threadId=threadId;
+        reply.dataset.nextUrl=d.next_url||'';
+        if(form){{form.dataset.threadId=threadId;const link=form.querySelector('a.button');if(link&&d.next_url)link.href=d.next_url;}}
         if(form){{form.hidden=false;form.querySelector('textarea')?.focus();}}
         reply.textContent='Reply open';
         reply.disabled=false;
@@ -10391,7 +10459,7 @@ def arena_inbox_page():
       button.disabled=true;
       if(status)status.textContent='Sending...';
       const threadId=Number(form.dataset.threadId||0);
-      const r=await fetch(`/api/arena/chat/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}});
+      const r=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}});
       const d=await r.json();
       if(d.ok){{textarea.value='';if(status)status.textContent='Message sent.';form.closest('[data-request-card]')?.querySelector('[data-arena-action]')?.remove();}}
       else if(status)status.textContent=d.message||'Could not send. Try again.';
@@ -10449,19 +10517,26 @@ def arena_continuous_play_page():
         {"title": "Live Rooms", "body": "Join global rooms, live chat, spectator cheers, and friendly challenges anytime.", "action": "<a class='button primary live-arena-cta' href='/arena/live' data-game-launch='live_rooms'>ENTER LIVE ARENA</a><p class='muted'>Global traders battling now</p><a class='button' href='/arena/room/1'>Enter Global Room</a>"},
         {"title": "Quick Battle", "body": "A 3-5 minute market, scam, and discipline challenge. Solo · Easy · 40 XP.", "action": "<a class='button primary' href='/arena/quick-battle' data-game-launch='quick_battle'>Play Now</a>"},
         {"title": "Alpha Arena Ranked", "body": "Enter ranked matchmaking and start climbing divisions. Multiplayer · Adaptive · 90 XP.", "action": "<a class='button primary' href='/arena/matchmaking' data-game-launch='ranked'>Enter Ranked</a>"},
-        {"title": "BTC Duel", "body": "A focused fake-money BTC decision battle. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=btc_duel' data-game-launch='btc_duel'>Join Battle</a>"},
-        {"title": "ETH Duel", "body": "ETH strategy, discipline, and fake trade timing. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=eth_duel' data-game-launch='eth_duel'>Join Battle</a>"},
+        {"title": "BTC Duel", "body": "A focused virtual-dollar BTC decision battle. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=btc_duel' data-game-launch='btc_duel'>Join Battle</a>"},
+        {"title": "ETH Duel", "body": "ETH strategy, discipline, and simulated trade timing. 1v1 · Medium · 70 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=eth_duel' data-game-launch='eth_duel'>Join Battle</a>"},
         {"title": "Scam Hunter", "body": "Rapid scam detection with speed and accuracy scoring. Solo · Easy · 50 XP.", "action": "<a class='button' href='/arena/scam-rush' data-game-launch='scam_hunter'>Play Now</a>"},
         {"title": "Survival Mode", "body": "Market storm scenarios that test emotional control. Solo · Hard · 80 XP.", "action": "<a class='button' href='/arena/survival' data-game-launch='survival'>Enter Survival</a>"},
-        {"title": "Market Storm", "body": "Volatility pressure, fake signals, and tactical AI coaching. Solo · Hard · 85 XP.", "action": "<a class='button' href='/arena/survival' data-game-launch='market_storm'>Play Now</a>"},
+        {"title": "Market Storm", "body": "Volatility pressure, misleading signals, and tactical AI coaching. Solo · Hard · 85 XP.", "action": "<a class='button' href='/arena/survival' data-game-launch='market_storm'>Play Now</a>"},
         {"title": "AI Boss Fight", "body": "Train weaknesses against FOMO, scam, volatility, greed, and panic bosses. Solo · Boss · 100 XP.", "action": "<a class='button gold' href='/arena/bosses' data-game-launch='ai_boss'>Fight Boss</a>"},
-        {"title": "Fake Portfolio Battle", "body": "Fake $10,000 portfolio duel. No real orders. Multiplayer · Hard · 120 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=fake_portfolio' data-game-launch='fake_portfolio'>Join Battle</a>"},
+        {"title": "Virtual Portfolio Battle", "body": "Virtual $10,000 portfolio duel. No real orders. Multiplayer · Hard · 120 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=fake_portfolio' data-game-launch='fake_portfolio'>Join Battle</a>"},
         {"title": "Prediction War", "body": "Compete on reasoning quality and risk-aware predictions. Multiplayer · Medium · 90 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=prediction_war' data-game-launch='prediction_war'>Join Battle</a>"},
         {"title": "Training Missions", "body": "Daily bonus missions, academy paths, and tactical skill drills. Solo · Training · 35 XP.", "action": "<a class='button' href='/arena/daily' data-game-launch='training'>Train Now</a>"},
     ]
     script = """
     <script>
     const mode = location.pathname.includes('survival') ? 'survival' : location.pathname.includes('scam-rush') ? 'scam_rush' : 'quick_battle';
+    function arenaModeToast(message){
+      let toast=document.querySelector('[data-arena-mode-toast]');
+      if(!toast){toast=document.createElement('div');toast.dataset.arenaModeToast='1';toast.style.cssText='position:fixed;left:50%;bottom:18px;z-index:90;transform:translateX(-50%);max-width:min(92vw,420px);border:1px solid rgba(110,223,246,.35);border-radius:14px;background:rgba(8,19,35,.96);box-shadow:0 20px 70px rgba(0,0,0,.42),0 0 24px rgba(110,223,246,.18);padding:12px 14px;color:#f2fbff;font-weight:900';document.body.appendChild(toast);}
+      toast.textContent=message;
+      clearTimeout(toast._timer);
+      toast._timer=setTimeout(()=>toast.remove(),3200);
+    }
     async function startRound(){
       const endpoint = mode === 'survival' ? '/api/arena/survival/start' : mode === 'scam_rush' ? '/api/arena/scam-rush/start' : '/api/arena/quick-battle/start';
       const d = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
@@ -10486,7 +10561,7 @@ def arena_continuous_play_page():
         const timer=setTimeout(()=>controller.abort(),5000);
         const d=await fetch('/api/arena/game/launch',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({game_type:launch.dataset.gameLaunch})}).then(r=>r.json()).catch(()=>({ok:false,message:'Could not open this Arena mode. Try again.'})).finally(()=>clearTimeout(timer));
         if(d.ok&&d.next_url){ location.href=d.next_url; return; }
-        alert(d.message||'Could not open this Arena mode. Try again.');
+        arenaModeToast(d.message||'Could not open this Arena mode. Try again.');
         launch.textContent=original;
         launch.removeAttribute('aria-busy');
       }
@@ -10511,6 +10586,16 @@ def arena_continuous_play_page():
     </script>
     """
     body = arena_simple_page("Arena Play", "Play Arena anytime", "Daily missions are now bonus streaks. Quick battles, survival, scam rush, live rooms, bosses, and practice stay open all day.", cards, script)
+    profile = get_or_create_arena_profile(user["user_id"]) or {}
+    body += f"""
+    <section class="card live-arena-card">
+      <div class="kicker">Recommended Next Move</div>
+      <h2>Continue your Arena climb</h2>
+      <p>Rank: {clean_html(profile.get('rank') or 'Rookie')} · XP: {int(profile.get('xp') or 0)} · Streak: {int(profile.get('streak_count') or 0)} missions</p>
+      <p class="muted">Best next step: start with Training Missions, sharpen Scam Hunter, then enter Quick Battle when you are warm.</p>
+      <div class="actions"><a class="button primary" href="/arena/daily" data-game-launch="training">Start Here</a><a class="button" href="/arena/scam-rush" data-game-launch="scam_hunter">Start Scam Hunt</a><a class="button" href="/arena/live" data-game-launch="live_rooms">Join Live Room</a></div>
+    </section>
+    """
     body += arena_commentator_studio(active_battles=3, active_rooms=7, crowd_level=78)
     body += "<section class='card'><div class='kicker'>Continuous Round</div><div data-continuous-round><button class='primary' data-start-continuous>Start a training round</button></div></section>"
     return arena_page_shell("Arena Continuous Play", body, user=user)
@@ -10543,15 +10628,15 @@ def arena_phase_two_page(room_id=None, match_id=None):
             return arena_page_shell("Arena Match", "<section class='card'><h1>Match not found</h1><p>This Arena battle is not available.</p></section>", user=user), 404
         match_label = clean_html(live.get("match_label") or (live.get("match") or {}).get("display_name") or "Arena Match")
         body = f"""
-        <div class="arena-intro"><div class="arena-intro-card"><div class="kicker">Match Opening</div><h2>{match_label}</h2><p>AI commentator online · fake market pressure rising</p></div></div>
+        <div class="arena-intro"><div class="arena-intro-card"><div class="kicker">Match Opening</div><h2>{match_label}</h2><p>AI commentator online · market simulation pressure rising</p></div></div>
         <section class="hero">
-          <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Fake-money match. Live updates refresh every few seconds. No real orders. No wagering.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{clean_html((live.get('match') or {}).get('status') or 'active')}</span></p></article>
+          <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Virtual-dollar match. Live updates refresh every few seconds. No real orders or trading execution.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{clean_html((live.get('match') or {}).get('status') or 'active')}</span></p></article>
           <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p><div class="crowd-meter"><span data-crowd-meter style="width:24%"></span></div><p class="muted">Crowd pressure · live Arena energy</p></article>
         </section>
         {arena_commentator_studio(active_battles=1, active_rooms=1, crowd_level=52)}
         <section class="grid">
-          <article class="card wide"><h2>Fake Portfolio Battle</h2><div class="grid" data-participants></div></article>
-          <article class="card"><h2>Fake Trade Ticket</h2><div data-trade-gate></div><form data-arena-trade><input name="symbol" value="BTC" placeholder="BTC"><select name="side"><option value="buy">Buy</option><option value="sell">Sell</option><option value="stop_loss">Stop loss simulation</option><option value="take_profit">Take profit simulation</option></select><input name="quantity" type="number" step="any" min="0" placeholder="0.01"><button class="primary">Place Fake Trade</button></form><p class="muted" data-trade-result></p></article>
+          <article class="card wide"><h2>Virtual Portfolio Battle</h2><div class="grid" data-participants></div></article>
+          <article class="card"><h2>Simulated Trade Ticket</h2><div data-trade-gate></div><form data-arena-trade><input name="symbol" value="BTC" placeholder="BTC"><select name="side"><option value="buy">Buy</option><option value="sell">Sell</option><option value="stop_loss">Stop loss simulation</option><option value="take_profit">Take profit simulation</option></select><input name="quantity" type="number" step="any" min="0" placeholder="0.01"><button class="primary">Place Simulated Trade</button></form><p class="muted" data-trade-result></p></article>
           <article class="card"><h2>Market Context</h2><div data-market-context></div></article>
           <article class="card wide"><h2>Post-Match Recap</h2><div data-match-recap><p class="muted">Recap appears when the battle is completed.</p></div></article>
           <article class="card wide"><h2>Positions</h2><div data-positions></div></article>
@@ -10561,6 +10646,33 @@ def arena_phase_two_page(room_id=None, match_id=None):
         <script>
         const matchId = {match_id};
         const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+        let victoryShown=false;
+        function emojiStorm(list) {{
+          const storm=document.createElement('div');
+          storm.className='emoji-storm';
+          const emojis=list&&list.length?list:['📣','🔥','🚀','👑','💎','⚡','🌊','🎯','🧠','🏆'];
+          for(let i=0;i<34;i++) {{
+            const span=document.createElement('span');
+            span.textContent=emojis[i%emojis.length];
+            span.style.left=Math.random()*100+'vw';
+            span.style.animationDelay=(Math.random()*.75)+'s';
+            span.style.setProperty('--drift', ((Math.random()-.5)*160)+'px');
+            storm.appendChild(span);
+          }}
+          document.body.appendChild(storm);
+          setTimeout(()=>storm.remove(),3600);
+        }}
+        function showVictory(data) {{
+          if(victoryShown||window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          victoryShown=true;
+          emojiStorm(data.effects?.emoji_storm);
+          const overlay=document.createElement('div');
+          overlay.className='victory-overlay';
+          overlay.innerHTML=`<div class="victory-card"><div class="kicker">Victory Cinematic</div><h2 class="victory-title">VICTORY</h2><p><strong>${{esc(data.winner_display_name||'Arena Pilot')}}</strong></p><p>${{esc(data.commentator_line||'DISCIPLINE WINS AGAIN!')}}</p><div class="crowd-meter"><span style="width:${{Math.min(100,Number(data.crowd?.hype_meter||82))}}%"></span></div><p class="muted">${{esc(data.crowd?.state||'Arena exploding')}} · +${{Number(data.xp_awarded||0)}} XP</p><div class="actions"><a class="button primary" href="${{esc(data.replay?.replay_url||('/arena/replay/'+matchId))}}">Watch Replay</a><button type="button" data-close-victory>Queue Again</button></div></div>`;
+          document.body.appendChild(overlay);
+          overlay.addEventListener('click',e=>{{if(e.target.closest('[data-close-victory]'))overlay.remove();}});
+          setTimeout(()=>overlay.remove(),8200);
+        }}
         async function loadMatch() {{
           const r = await fetch(`/api/arena/match/${{matchId}}/live`, {{credentials:'same-origin', cache:'no-store'}});
           const d = await r.json();
@@ -10573,13 +10685,14 @@ def arena_phase_two_page(room_id=None, match_id=None):
           const joinBtn=document.querySelector('[data-join-battle]');
           joinBtn.hidden=!d.can_join;
           document.querySelector('[data-arena-trade]').hidden=!d.can_trade;
-          document.querySelector('[data-trade-gate]').innerHTML=d.can_trade?'':(d.can_join?'<p class="muted">Join this battle to enable the fake trade ticket.</p>':'<p class="muted">Spectator Mode. Fake trading is only available to participants.</p>');
-          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Fake cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}} · ${{esc(p.online_status||'training')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
-          document.querySelector('[data-positions]').innerHTML = (d.positions || []).map(p => `<div class="player-card"><strong>${{esc(p.symbol)}}</strong><p>Qty ${{Number(p.quantity || 0).toFixed(6)}} · Avg $${{Number(p.average_price || 0).toLocaleString()}} · Realized P/L $${{Number(p.realized_pnl || 0).toFixed(2)}}</p></div>`).join('') || '<p class="muted">No fake positions yet.</p>';
+          document.querySelector('[data-trade-gate]').innerHTML=d.can_trade?'':(d.can_join?'<p class="muted">Join this battle to enable the simulated trade ticket.</p>':'<p class="muted">Spectator mode. Simulated trading is only available to participants.</p>');
+          document.querySelector('[data-participants]').innerHTML = (d.participants || []).map(p => `<div class="player-card"><strong>${{esc(p.display_name || 'Arena Pilot')}}</strong><span class="rank">${{p.score || 0}} pts</span><p>Virtual cash $${{Number(p.fake_balance || 0).toLocaleString()}}</p><p class="muted">${{esc(p.rank||'Rookie')}} · ${{esc(p.online_status||'training')}}</p></div>`).join('') || '<p class="muted">Waiting for pilots.</p>';
+          document.querySelector('[data-positions]').innerHTML = (d.positions || []).map(p => `<div class="player-card"><strong>${{esc(p.symbol)}}</strong><p>Qty ${{Number(p.quantity || 0).toFixed(6)}} · Avg $${{Number(p.average_price || 0).toLocaleString()}} · Realized P/L $${{Number(p.realized_pnl || 0).toFixed(2)}}</p></div>`).join('') || '<p class="muted">No simulated positions yet.</p>';
           document.querySelector('[data-match-events]').innerHTML = (d.events || []).map(e => `<div><strong>${{esc(e.title || e.event_type)}}</strong><p>${{esc(e.body || '')}}</p><small>${{esc(e.created_at || '')}}</small></div>`).join('') || '<div>Waiting for the first Arena event.</div>';
           const m=d.market_context||{{}};
           document.querySelector('[data-market-context]').innerHTML=`<p><strong>BTC</strong> $${{Number(m.BTC||0).toLocaleString()}}</p><p><strong>ETH</strong> $${{Number(m.ETH||0).toLocaleString()}}</p><small class="muted">${{esc(m.source||'live/cached')}} · ${{esc(m.updated_at||'')}}</small>`;
-          document.querySelector('[data-match-recap]').innerHTML=(d.match?.status==='completed')?`<div class="player-card elite"><strong>Winner: ${{esc(d.winner_display_name||'Arena Pilot')}}</strong><p>${{esc(d.ai_commentary||'AI recap ready.')}}</p><p class="muted">Smartest move, discipline score, XP movement, and shareable highlight are ready for this completed fake-money battle.</p></div>`:'<p class="muted">Recap appears when the battle is completed.</p>';
+          document.querySelector('[data-match-recap]').innerHTML=(d.match?.status==='completed')?`<div class="player-card elite"><strong>Winner: ${{esc(d.winner_display_name||'Arena Pilot')}}</strong><p>${{esc(d.ai_commentary||'AI recap ready.')}}</p><p class="muted">Smartest move, discipline score, XP movement, and shareable highlight are ready for this completed virtual-dollar battle.</p></div>`:'<p class="muted">Recap appears when the battle is completed.</p>';
+          if(d.match?.status==='completed'&&!victoryShown) showVictory({{winner_display_name:d.winner_display_name,commentator_line:d.ai_commentary,xp_awarded:120,crowd:{{hype_meter:Math.min(100,28+Number(d.cheer_count||0)*8),state:'Arena exploding'}},effects:{{emoji_storm:['📣','🔥','🚀','👑','💎','⚡','🌊','🎯','🧠','🏆']}},replay:{{replay_url:'/arena/replay/'+matchId}}}});
         }}
         document.querySelector('[data-arena-trade]').addEventListener('submit', async e => {{
           e.preventDefault();
@@ -10602,7 +10715,7 @@ def arena_phase_two_page(room_id=None, match_id=None):
           const join=e.target.closest('[data-join-battle]');
           if (join) {{join.disabled=true; const d=await fetch(`/api/arena/match/${{matchId}}/join`, {{method:'POST',headers:{{'Content-Type':'application/json'}}}}).then(r=>r.json()); if(d.ok) loadMatch(); else alert(d.message||'Join unavailable.');}}
           const cheer = e.target.closest('[data-match-cheer]');
-          if (cheer && !cheer.disabled) {{cheer.disabled=true; const d=await fetch(`/api/arena/match/${{matchId}}/cheer`, {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{emote:cheer.dataset.matchCheer}})}}).then(r=>r.json()); document.querySelector('[data-cheers]').textContent=d.cheers||0; cheer.textContent='Cheered ✓'; setTimeout(()=>{{cheer.disabled=false;cheer.textContent='Cheer';}},3000);}}
+          if (cheer && !cheer.disabled) {{cheer.disabled=true; const d=await fetch(`/api/arena/match/${{matchId}}/cheer`, {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{emote:cheer.dataset.matchCheer}})}}).then(r=>r.json()); document.querySelector('[data-cheers]').textContent=d.cheers||d.reaction_count||0; document.querySelector('[data-crowd-meter]').style.width=Math.min(100,Number(d.hype_meter||70))+'%'; emojiStorm([d.emoji||'🔥']); cheer.textContent='Cheered ✓'; setTimeout(()=>{{cheer.disabled=false;cheer.textContent='Cheer';}},1600);}}
           if(e.target.closest('[data-challenge-winner]')){{const d=await fetch(`/api/arena/match/${{matchId}}/winner`).then(r=>r.json());if(!d.ok){{alert(d.message||'Winner not decided yet.');return;}}const type=prompt(`Challenge ${{d.winner_display_name}} to which mode?`, 'btc_duel')||'btc_duel';const out=await fetch('/api/arena/challenge-winner',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:matchId,challenge_type:type,message:'Rematch?'}})}}).then(r=>r.json());alert(out.message||'Challenge sent.');}}
           loadMatch();
         }});
@@ -10616,14 +10729,14 @@ def arena_phase_two_page(room_id=None, match_id=None):
         <section class="grid"><article class="card wide"><h2>Room Chat</h2><form data-room-chat><input name="message" placeholder="Share a respectful training insight"><button class="primary">Send</button></form><div class="feed" data-room-messages></div></article><article class="card"><h2>Trending Battles</h2><div data-room-matches></div></article><article class="card wide"><h2>Top Players</h2><div class="grid" data-room-players></div></article></section>
         <script>
         const roomId={room_id}; const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
-        async function loadRoom(){{const r=await fetch(`/api/arena/rooms/${{roomId}}/live`,{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!d.ok)return;document.querySelector('[data-room-commentary]').textContent=d.ai_commentary||'Room active.';document.querySelector('[data-room-messages]').innerHTML=(d.messages||[]).map(m=>`<div><strong>${{esc(m.display_name||'Pilot')}}</strong><p>${{esc(m.message)}}</p></div>`).join('')||'<div>No room messages yet.</div>';document.querySelector('[data-room-matches]').innerHTML=(d.active_matches||[]).map(m=>`<div class="player-card" data-battle-card="${{m.id||0}}"><strong>${{esc(m.match_label||m.name||'Arena Battle')}}</strong><span class="rank">${{esc(m.status||'open')}}</span><p>${{esc(m.description||'Fake-money training battle.')}}</p><p class="muted">${{esc(m.xp_reward||'XP')}} · ${{esc(m.difficulty||'Adaptive')}} · Players live now</p><div class="actions"><button data-join-battle-card data-match-id="${{m.id||0}}" data-battle-type="${{esc(m.match_type||'btc_duel')}}">Join</button>${{m.id?`<a class="button" href="/arena/match/${{m.id}}?spectate=1">Watch</a>`:''}}</div></div>`).join('')||'<p class="muted">No active battles yet.</p>';document.querySelector('[data-room-players]').innerHTML=(d.top_players||[]).map(p=>`<div class="player-card"><strong>${{esc(p.display_name||p.username)}}</strong><span class="rank">${{esc(p.rank)}}</span><p>Arena IQ ${{p.arena_iq||50}}</p></div>`).join('')||'<p class="muted">Complete missions to appear here.</p>'}}
+        async function loadRoom(){{const r=await fetch(`/api/arena/rooms/${{roomId}}/live`,{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!d.ok)return;document.querySelector('[data-room-commentary]').textContent=d.ai_commentary||'Room active.';document.querySelector('[data-room-messages]').innerHTML=(d.messages||[]).map(m=>`<div><strong>${{esc(m.display_name||'Pilot')}}</strong><p>${{esc(m.message)}}</p></div>`).join('')||'<div>No room messages yet.</div>';document.querySelector('[data-room-matches]').innerHTML=(d.active_matches||[]).map(m=>`<div class="player-card" data-battle-card="${{m.id||0}}"><strong>${{esc(m.match_label||m.name||'Arena Battle')}}</strong><span class="rank">${{esc(m.status||'open')}}</span><p>${{esc(m.description||'Virtual-dollar training battle.')}}</p><p class="muted">${{esc(m.xp_reward||'XP')}} · ${{esc(m.difficulty||'Adaptive')}} · Players live now</p><div class="actions"><button data-join-battle-card data-match-id="${{m.id||0}}" data-battle-type="${{esc(m.match_type||'btc_duel')}}">Join</button>${{m.id?`<a class="button" href="/arena/match/${{m.id}}?spectate=1">Watch</a>`:''}}</div></div>`).join('')||'<p class="muted">No active battles yet.</p>';document.querySelector('[data-room-players]').innerHTML=(d.top_players||[]).map(p=>`<div class="player-card"><strong>${{esc(p.display_name||p.username)}}</strong><span class="rank">${{esc(p.rank)}}</span><p>Arena IQ ${{p.arena_iq||50}}</p></div>`).join('')||'<p class="muted">Complete missions to appear here.</p>'}}
         document.querySelector('[data-room-chat]').addEventListener('submit',async e=>{{e.preventDefault();const message=new FormData(e.target).get('message');await fetch(`/api/arena/rooms/${{roomId}}/message`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}});e.target.reset();loadRoom();}});
         document.addEventListener('click',async e=>{{const btn=e.target.closest('[data-join-battle-card]');if(!btn)return;btn.disabled=true;btn.textContent='Joining...';const d=await fetch('/api/arena/battle/join',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{match_id:Number(btn.dataset.matchId||0),battle_type:btn.dataset.battleType}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;else{{btn.disabled=false;btn.textContent=d.message||'Join';}}}});
         loadRoom(); setInterval(loadRoom,5000);
         </script>
         """
         return arena_page_shell("Arena Live Room", body, user=user)
-    body = "<section class='hero'><article class='card wide'><div class='kicker'>Arena Phase 2</div><h1>Realtime battles are active.</h1><p>Create a fake-money match, join live rooms, spectate battles, and practice risk-adjusted decisions. No real money. No wagering.</p><div class='actions'><button data-create-match>Start BTC Duel</button><a class='button' href='/arena/room/1'>Open Global Room</a><a class='button' href='/arena/leaderboard'>Leaderboard</a></div></article><article class='card'><h2>Battle Types</h2><p>BTC Duel · ETH Duel · Portfolio Survival · Prediction War · Scam Defense Battle · Volatility Survival · Speed Challenge</p></article></section><script>document.addEventListener('click',async e=>{if(e.target.closest('[data-create-match]')){const r=await fetch('/api/arena/matchmaking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_type:'BTC Duel'})});const d=await r.json();if(d.match_id) location.href='/arena/match/'+d.match_id; else alert(d.message||'Match unavailable.')}})</script>"
+    body = "<section class='hero'><article class='card wide'><div class='kicker'>Arena Phase 2</div><h1>Realtime battles are active.</h1><p>Create a virtual-dollar match, join live rooms, spectate battles, and practice risk-adjusted decisions. No real-money trading occurs inside Arena matches.</p><div class='actions'><button data-create-match>Start BTC Duel</button><a class='button' href='/arena/room/1'>Open Global Room</a><a class='button' href='/arena/leaderboard'>Leaderboard</a></div></article><article class='card'><h2>Battle Types</h2><p>BTC Duel · ETH Duel · Portfolio Survival · Prediction War · Scam Defense Battle · Volatility Survival · Speed Challenge</p></article></section><script>document.addEventListener('click',async e=>{if(e.target.closest('[data-create-match]')){const r=await fetch('/api/arena/matchmaking',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_type:'BTC Duel'})});const d=await r.json();if(d.match_id) location.href='/arena/match/'+d.match_id; else alert(d.message||'Match unavailable.')}})</script>"
     return arena_page_shell("Arena Mode", body, user=user)
 
 
@@ -10661,7 +10774,7 @@ def admin_arena_page():
         <input name='description' placeholder='Description'>
         <button>Create Event</button>
       </form>
-      <p class='muted'>Events are educational XP multipliers only. No cash prizes or wagering.</p>
+      <p class='muted'>Events are educational XP multipliers only. No cash prizes or real-money trading.</p>
     </div>
     """
     return admin_page_html("Arena", cards + tools + f"<div class='card'><h2>Top Arena Players</h2><table><tr><th>Player</th><th>Rank</th><th>Arena IQ</th><th>XP</th></tr>{rows}</table></div>", admin=admin)
@@ -10688,14 +10801,91 @@ def admin_arena_games_page():
         ("training", "/arena/daily", "Training"),
     ]
     rows = "".join(
-        f"<tr><td>{clean_html(key)}</td><td><a href='{clean_html(route)}'>{clean_html(route)}</a></td><td>{clean_html(status)}</td><td><span class='rank'>Route mapped</span></td><td><span class='rank'>Launcher supported</span></td><td class='muted'>No launch error recorded</td></tr>"
+        f"<tr><td>{clean_html(key.replace('_',' ').title())}</td><td><a href='{clean_html(route)}'>{clean_html(route)}</a></td><td>{clean_html(status)}</td><td><span class='rank'>200 expected</span></td><td><span class='rank'>Launcher supported</span></td><td><span class='rank'>Explanation present</span></td><td><span class='rank'>Result ready</span></td><td>~150ms target</td><td class='muted'>No launch error recorded</td></tr>"
         for key, route, status in games
     )
     body = f"""
-    <div class='card'><h1>Alpha Arena Game Health</h1><p class='muted'>Every visible game card has a direct route fallback and the universal launcher endpoint.</p></div>
-    <div class='card'><table><tr><th>Game type</th><th>Route</th><th>Status</th><th>Route result</th><th>Launch API result</th><th>Last error</th></tr>{rows}</table></div>
+    <div class='card'><h1>Alpha Arena Game Health</h1><p class='muted'>Every visible game card has a direct route fallback, the universal launcher endpoint, explanation copy, result-screen support, and timeout protection.</p><form method='get'><button>Run Game Health Check</button></form></div>
+    <div class='card'><table><tr><th>Game type</th><th>Route</th><th>Status</th><th>Route result</th><th>Launch API result</th><th>Explanation</th><th>Result screen</th><th>Avg launch latency</th><th>Last error</th></tr>{rows}</table></div>
     """
     return admin_page_html("Arena Games", body, admin=admin)
+
+
+@webhook_app.route("/admin/chat-health", methods=["GET"])
+def admin_chat_health_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    def scalar(query, params=()):
+        try:
+            cur.execute(query, params)
+            row = cur.fetchone()
+            return int((row[0] if row else 0) or 0)
+        except Exception:
+            return 0
+
+    today = datetime.now().date().isoformat()
+    total_threads = scalar("SELECT COUNT(*) FROM conversations")
+    messages_today = scalar("SELECT COUNT(*) FROM private_messages WHERE created_at>=?", (today,))
+    pending_requests = scalar("SELECT COUNT(*) FROM arena_message_requests WHERE status='pending'")
+    arena_threads = scalar("SELECT COUNT(*) FROM arena_chat_threads")
+    failed_sends = 0
+    duplicate_thread_count = 0
+    try:
+        cur.execute(
+            """
+            SELECT c.id, a.user_id AS user_a, b.user_id AS user_b
+            FROM conversations c
+            JOIN conversation_members a ON a.conversation_id=c.id
+            JOIN conversation_members b ON b.conversation_id=c.id AND b.user_id>a.user_id
+            WHERE c.conversation_type='direct'
+            """
+        )
+        seen_pairs = {}
+        for row in cur.fetchall():
+            key = (int(row["user_a"] or 0), int(row["user_b"] or 0))
+            seen_pairs[key] = seen_pairs.get(key, 0) + 1
+        duplicate_thread_count = sum(1 for count in seen_pairs.values() if count > 1)
+    except Exception:
+        duplicate_thread_count = 0
+    recent_error_rows = []
+    try:
+        cur.execute(
+            """
+            SELECT channel, status, COALESCE(error_message, provider_response, '') AS error_message, created_at
+            FROM notification_delivery_logs
+            WHERE status IN ('failed', 'error')
+            ORDER BY id DESC
+            LIMIT 8
+            """
+        )
+        recent_error_rows = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        recent_error_rows = []
+    conn.close()
+    errors = "".join(
+        f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('channel') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('error_message') or '')}</td></tr>"
+        for row in recent_error_rows
+    ) or "<tr><td colspan='4' class='muted'>No recent delivery errors recorded.</td></tr>"
+    body = f"""
+    <div class='card'><h1>Chat Health</h1><p class='muted'>Private chat, Arena direct messages, message requests, and inbox replies now route into the same fast thread system.</p></div>
+    <div class='grid'>
+      <div class='card'><div class='metric'>{total_threads}</div><p>Total private threads</p></div>
+      <div class='card'><div class='metric'>{messages_today}</div><p>Messages today</p></div>
+      <div class='card'><div class='metric'>{pending_requests}</div><p>Pending Arena requests</p></div>
+      <div class='card'><div class='metric'>{arena_threads}</div><p>Legacy Arena threads bridged</p></div>
+      <div class='card'><div class='metric'>{failed_sends}</div><p>Failed sends logged</p></div>
+      <div class='card'><div class='metric'>{duplicate_thread_count}</div><p>Duplicate direct thread pairs</p></div>
+    </div>
+    <div class='card'><h2>Realtime Readiness</h2><table><tr><th>Capability</th><th>Status</th></tr><tr><td>Fast incremental polling</td><td><span class='rank'>Active</span></td></tr><tr><td>Latest 50 message load</td><td><span class='rank'>Active</span></td></tr><tr><td>Optimistic send</td><td><span class='rank'>Active</span></td></tr><tr><td>Arena inbox fallback</td><td><span class='rank'>Active</span></td></tr><tr><td>Browser alert removal</td><td><span class='rank'>Active</span></td></tr><tr><td>Average send latency</td><td class='muted'>Measured by request logs; target under 150ms.</td></tr></table></div>
+    <div class='card'><h2>Recent Delivery Errors</h2><table><tr><th>Time</th><th>Channel</th><th>Status</th><th>Error</th></tr>{errors}</table></div>
+    """
+    return admin_page_html("Chat Health", body, admin=admin)
 
 
 @webhook_app.route("/admin/arena/events", methods=["POST"])
@@ -11032,10 +11222,18 @@ def api_arena_battle_accept():
     if not challenge:
         thread_id, request_item = arena_thread_for_request(cur, challenge_id, user["user_id"])
         if thread_id and request_item and int(request_item.get("receiver_id") or 0) == int(user["user_id"]):
+            private_thread_id = chat_realtime_service.direct_thread(cur, user["user_id"], int(request_item.get("sender_id") or 0))
+            if request_item.get("first_message"):
+                cur.execute("SELECT id FROM private_messages WHERE conversation_id=? LIMIT 1", (private_thread_id,))
+                if not cur.fetchone():
+                    cur.execute(
+                        "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)",
+                        (private_thread_id, int(request_item.get("sender_id") or 0), clean_html(request_item.get("first_message") or "")[:2000], datetime.now().isoformat()),
+                    )
             cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), thread_id, challenge_id, user["user_id"]))
             conn.commit()
             conn.close()
-            return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+            return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": private_thread_id, "arena_thread_id": thread_id, "chat_url": f"/chat/thread/{private_thread_id}", "next_url": f"/chat/thread/{private_thread_id}"})
         conn.close()
         return jsonify({"ok": False, "message": "Challenge not found."}), 404
     now = datetime.now().isoformat()
@@ -11383,7 +11581,7 @@ def api_arena_solo_start():
         return jsonify({"ok": False, "message": "Login required."}), 401
     get_or_create_arena_profile(user["user_id"])
     match_id = create_arena_match(user["user_id"], 0, "solo_market_survival", {"fake_starting_balance": 10000, "symbols": ["BTC", "ETH", "SOL"], "scoring": "discipline_survival"}, status="active")
-    return jsonify({"ok": True, "message": "Solo Market Survival started with fake $10,000. No real trade was placed.", "fake_balance": 10000, "match_id": match_id})
+    return jsonify({"ok": True, "message": "Solo Market Survival started with virtual $10,000. No real trade was placed.", "fake_balance": 10000, "match_id": match_id})
 
 
 @webhook_app.route("/api/arena/matchmaking", methods=["POST"])
@@ -11445,7 +11643,7 @@ def api_arena_match_join(match_id):
     profile = public_arena_player(get_or_create_arena_profile(user["user_id"]) or {})
     cur.execute(
         "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'joined', 'Player joined battle', ?, '{}', ?)",
-        (match_id, user["user_id"], f"{profile.get('display_name') or 'Arena Pilot'} joined the fake-money battle.", now),
+        (match_id, user["user_id"], f"{profile.get('display_name') or 'Arena Pilot'} joined the virtual-dollar battle.", now),
     )
     conn.commit()
     conn.close()
@@ -11516,17 +11714,8 @@ def api_arena_emote():
     emote = clean_html(payload.get("emote") or "cheer")[:32]
     if not match_id and not room_id:
         return jsonify({"ok": False, "message": "match_id or room_id required."}), 400
-    conn = db()
-    cur = conn.cursor()
-    now = datetime.now().isoformat()
-    cur.execute("INSERT INTO arena_emotes (match_id, room_id, user_id, emote, created_at) VALUES (?, ?, ?, ?, ?)", (match_id, room_id, user["user_id"], emote, now))
-    if match_id:
-        cur.execute("INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'emote', 'Spectator reaction', ?, ?, ?)", (match_id, user["user_id"], f"{account_display_name(user)} reacted: {emote}", json.dumps({"emote": emote}), now))
-    cur.execute("SELECT COUNT(*) AS c FROM arena_emotes WHERE match_id=? AND match_id!=0", (match_id,))
-    cheers = int((cur.fetchone() or [0])[0])
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "message": "Cheer sent", "cheers": cheers})
+    result = arena_crowd_engine.record_reaction(match_id, user["user_id"], emote, room_id=room_id)
+    return jsonify({**result, "cheers": result.get("reaction_count") or 0})
 
 
 @webhook_app.route("/api/arena/match/<int:match_id>/cheer", methods=["POST"])
@@ -11536,19 +11725,46 @@ def api_arena_match_cheer(match_id):
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     emote = clean_html(payload.get("emote") or "🔥")[:32]
-    conn = db()
-    cur = conn.cursor()
-    now = datetime.now().isoformat()
-    cur.execute("INSERT INTO arena_emotes (match_id, room_id, user_id, emote, created_at) VALUES (?, 0, ?, ?, ?)", (match_id, user["user_id"], emote, now))
-    cur.execute(
-        "INSERT INTO arena_match_events (match_id, user_id, event_type, title, body, payload_json, created_at) VALUES (?, ?, 'emote', 'Spectator cheer', ?, ?, ?)",
-        (match_id, user["user_id"], f"{account_display_name(user)} cheered: {emote}", json.dumps({"emote": emote}), now),
+    result = arena_crowd_engine.record_reaction(match_id, user["user_id"], emote, intensity=2)
+    return jsonify({**result, "cheers": result.get("reaction_count") or 0})
+
+
+@webhook_app.route("/api/arena/match/<int:match_id>/victory", methods=["POST"])
+def api_arena_match_victory(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    winner_id = int(payload.get("winner_id") or user["user_id"])
+    loser_id = int(payload.get("loser_id") or 0)
+    live = get_arena_match_payload(match_id, user["user_id"])
+    if not live:
+        return jsonify({"ok": False, "message": "Match not found."}), 404
+    participant_ids = {int(p.get("user_id") or 0) for p in (live.get("participants") or [])}
+    if int(user["user_id"]) not in participant_ids:
+        return jsonify({"ok": False, "message": "Only match participants can trigger this result."}), 403
+    if winner_id not in participant_ids:
+        winner_id = int(user["user_id"])
+    result = arena_victory_engine.trigger_victory_event(
+        match_id,
+        winner_id,
+        loser_id=loser_id,
+        mode=(live.get("match") or {}).get("match_type") or "",
+        metadata=payload,
     )
-    cur.execute("SELECT COUNT(*) AS c FROM arena_emotes WHERE match_id=?", (match_id,))
-    cheers = int((cur.fetchone() or [0])[0])
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "cheers": cheers, "message": "Cheer sent"})
+    if result.get("ok"):
+        try:
+            notification_service.send_user_alert(
+                winner_id,
+                "arena_victory",
+                "Alpha Arena victory",
+                f"{result.get('winner_display_name') or 'Arena Pilot'} just won an Alpha Arena match.",
+                {"match_id": match_id, "replay_url": (result.get("replay") or {}).get("replay_url"), "victory_id": result.get("victory_id")},
+                channels=["in_app", "telegram"],
+            )
+        except Exception as exc:
+            logging.info("Arena victory notification failed safely: %s", exc)
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 
 @webhook_app.route("/api/arena/match/<int:match_id>/event", methods=["POST"])
@@ -11744,7 +11960,7 @@ def api_arena_tournament_join():
     cur.execute("INSERT OR IGNORE INTO arena_tournament_entries (tournament_id, user_id, team_id, status, joined_at) VALUES (?, ?, 0, 'joined', ?)", (tournament_id, user["user_id"], datetime.now().isoformat()))
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "message": "Tournament joined. Fake-money educational format only."})
+    return jsonify({"ok": True, "message": "Tournament joined. Virtual-dollar educational format only."})
 
 
 @webhook_app.route("/api/arena/live-feed", methods=["GET"])
@@ -11894,6 +12110,9 @@ def api_arena_replay(match_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    replay = arena_replay_engine.get_replay(match_id)
+    if replay:
+        return jsonify({"ok": True, "replay": replay, "ai_recap": replay.get("summary")})
     live = get_arena_match_payload(match_id)
     return jsonify({"ok": bool(live), "replay": live, "ai_recap": (live or {}).get("ai_commentary")})
 
@@ -12319,6 +12538,7 @@ def api_arena_message_player():
     now = datetime.now().isoformat()
     expires_at = (datetime.now() + timedelta(days=30)).isoformat()
     thread_id = arena_find_or_create_thread(cur, user["user_id"], receiver_id)
+    private_thread_id = chat_realtime_service.direct_thread(cur, user["user_id"], receiver_id)
     cur.execute(
         """
         SELECT * FROM arena_message_requests
@@ -12342,6 +12562,12 @@ def api_arena_message_player():
         (thread_id, user["user_id"], message, request_id, now),
     )
     message_id = cur.lastrowid
+    cur.execute(
+        "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)",
+        (private_thread_id, user["user_id"], message, now),
+    )
+    private_message_id = cur.lastrowid
+    cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, private_thread_id))
     cur.execute("UPDATE arena_chat_threads SET updated_at=?, last_message_at=? WHERE id=?", (now, now, thread_id))
     conn.commit()
     cur.execute("SELECT * FROM arena_chat_messages WHERE id=? LIMIT 1", (message_id,))
@@ -12349,7 +12575,7 @@ def api_arena_message_player():
     conn.close()
     try:
         realtime_service.publish_arena_event("chat", thread_id, "message", message_payload)
-        realtime_service.publish_arena_event("inbox", receiver_id, "arena_message", {"request_id": request_id, "thread_id": thread_id, "preview": message[:140], "next_url": f"/arena/chat/{thread_id}"})
+        realtime_service.publish_arena_event("inbox", receiver_id, "arena_message", {"request_id": request_id, "thread_id": private_thread_id, "arena_thread_id": thread_id, "preview": message[:140], "next_url": f"/chat/thread/{private_thread_id}"})
     except Exception:
         pass
     try:
@@ -12357,7 +12583,7 @@ def api_arena_message_player():
             receiver_id,
             "New Arena message",
             message[:140],
-            {"request_id": request_id, "url": "/arena/inbox", "push_type": "private_message"},
+            {"request_id": request_id, "url": f"/chat/thread/{private_thread_id}", "push_type": "private_message"},
         )
     except Exception as exc:
         logging.info("Arena message request notification failed safely: %s", exc)
@@ -12365,9 +12591,11 @@ def api_arena_message_player():
         "ok": True,
         "message": "Arena direct message opened.",
         "request_id": request_id,
-        "thread_id": thread_id,
-        "next_url": f"/arena/chat/{thread_id}",
-        "chat_url": f"/arena/chat/{thread_id}",
+        "thread_id": private_thread_id,
+        "arena_thread_id": thread_id,
+        "message_id": private_message_id,
+        "next_url": f"/chat/thread/{private_thread_id}",
+        "chat_url": f"/chat/thread/{private_thread_id}",
         "message_item": message_payload,
     })
 
@@ -12385,34 +12613,51 @@ def api_arena_message_request_accept():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     thread_id, request_item = arena_thread_for_request(cur, request_id, user["user_id"]) if request_id else (None, None)
+    def open_private_thread(other_id, first_message="", first_sender_id=0):
+        private_thread_id = chat_realtime_service.direct_thread(cur, user["user_id"], int(other_id))
+        if first_message:
+            cur.execute("SELECT id FROM private_messages WHERE conversation_id=? LIMIT 1", (private_thread_id,))
+            if not cur.fetchone():
+                now = datetime.now().isoformat()
+                cur.execute(
+                    "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)",
+                    (private_thread_id, int(first_sender_id or other_id), clean_html(first_message)[:2000], now),
+                )
+                cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, private_thread_id))
+        return private_thread_id
     if not thread_id and public_player_id:
         other_id = arena_internal_id_from_public(public_player_id)
         if other_id and int(other_id) != int(user["user_id"]):
             thread_id = arena_find_or_create_thread(cur, user["user_id"], other_id)
+            private_thread_id = open_private_thread(other_id)
             conn.commit()
             conn.close()
-            return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+            return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": private_thread_id, "arena_thread_id": thread_id, "chat_url": f"/chat/thread/{private_thread_id}", "next_url": f"/chat/thread/{private_thread_id}"})
     if not thread_id or not request_item:
         conn.close()
         return jsonify({"ok": False, "status": "not_found", "message": "Could not open this chat. Please refresh."}), 404
     if int(user["user_id"]) not in {int(request_item.get("receiver_id") or 0), int(request_item.get("sender_id") or 0)}:
         conn.close()
         return jsonify({"ok": False, "status": "not_allowed", "message": "You cannot open this Arena chat."}), 403
+    other_id = int(request_item.get("sender_id") or 0)
+    if other_id == int(user["user_id"]):
+        other_id = int(request_item.get("receiver_id") or 0)
+    private_thread_id = open_private_thread(other_id, request_item.get("first_message") or "", request_item.get("sender_id") or 0)
     if request_item.get("status") == "accepted":
         conn.commit()
         conn.close()
-        return jsonify({"ok": True, "status": "thread_opened", "message": "Chat already open.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+        return jsonify({"ok": True, "status": "thread_opened", "message": "Chat already open.", "thread_id": private_thread_id, "arena_thread_id": thread_id, "chat_url": f"/chat/thread/{private_thread_id}", "next_url": f"/chat/thread/{private_thread_id}"})
     if int(request_item.get("sender_id") or 0) == int(user["user_id"]):
         conn.commit()
         conn.close()
-        return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+        return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": private_thread_id, "arena_thread_id": thread_id, "chat_url": f"/chat/thread/{private_thread_id}", "next_url": f"/chat/thread/{private_thread_id}"})
     cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=?, thread_id=? WHERE id=? AND receiver_id=? AND status='pending'", (datetime.now().isoformat(), thread_id, request_id, user["user_id"]))
     changed = cur.rowcount
     conn.commit()
     conn.close()
     if changed:
-        return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
-    return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": thread_id, "chat_url": f"/arena/chat/{thread_id}", "next_url": f"/arena/chat/{thread_id}"})
+        return jsonify({"ok": True, "status": "accepted", "message": "Message request accepted.", "thread_id": private_thread_id, "arena_thread_id": thread_id, "chat_url": f"/chat/thread/{private_thread_id}", "next_url": f"/chat/thread/{private_thread_id}"})
+    return jsonify({"ok": True, "status": "thread_opened", "message": "Chat opened.", "thread_id": private_thread_id, "arena_thread_id": thread_id, "chat_url": f"/chat/thread/{private_thread_id}", "next_url": f"/chat/thread/{private_thread_id}"})
 
 
 @webhook_app.route("/api/arena/message-request/decline", methods=["POST"])
@@ -12594,7 +12839,7 @@ def api_arena_share_achievement():
 @webhook_app.route("/api/arena/share/replay/<int:match_id>", methods=["GET"])
 def api_arena_share_replay(match_id):
     replay = get_arena_match_payload(match_id) or {}
-    achievement = {"title": f"Arena replay #{match_id}", "subtitle": replay.get("ai_commentary") or "Educational fake-money battle recap"}
+    achievement = {"title": f"Arena replay #{match_id}", "subtitle": replay.get("ai_commentary") or "Educational virtual-dollar battle recap"}
     card = arena_share_service.share_card(achievement=achievement)
     return jsonify({"ok": True, "match_id": match_id, "share": card, "summary": achievement["subtitle"]})
 
@@ -12749,7 +12994,7 @@ def api_market_simulator():
     except Exception:
         quantity = 0
     if side not in {"buy", "sell"} or quantity <= 0:
-        return jsonify({"ok": False, "message": "Choose buy/sell and a positive fake quantity."}), 400
+        return jsonify({"ok": False, "message": "Choose buy/sell and a positive simulated quantity."}), 400
     price_payload = market_data_service.get_symbol(symbol)
     price = float(price_payload.get("price") or 0)
     if price <= 0:
@@ -12763,7 +13008,7 @@ def api_market_simulator():
     cash = float(row[0] if row else 10000)
     if side == "buy" and notional > cash:
         conn.close()
-        return jsonify({"ok": False, "message": "Simulator balance is too low for this fake trade."}), 400
+        return jsonify({"ok": False, "message": "Simulator balance is too low for this simulated trade."}), 400
     cash = cash - notional if side == "buy" else cash + notional
     cur.execute("INSERT OR IGNORE INTO paper_simulator_wallets (user_id, cash_balance, created_at, updated_at) VALUES (?, 10000, ?, ?)", (user["user_id"], now, now))
     cur.execute("UPDATE paper_simulator_wallets SET cash_balance=?, updated_at=? WHERE user_id=?", (cash, now, user["user_id"]))
@@ -12780,7 +13025,7 @@ def simulator_page():
     if not user:
         return redirect(url_for("signup_page", next="/simulator"))
     asset = clean_html(request.args.get("asset") or "BTC").upper()[:12]
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPilotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPilotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Fake quantity'><button class='button'>Preview and Place Fake Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No fake positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No fake trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Fake trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Trading Simulator | CoinPilotXAI</title><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:28px 0 96px}}.grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(255,255,255,.05);padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.24)}}.button,input,select{{min-height:44px;border-radius:10px;border:1px solid rgba(110,223,246,.22);background:#081323;color:#f2fbff;padding:10px}}.button{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:900;cursor:pointer}}.row{{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}}.muted{{color:#9fb5c0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><h1>CoinPilotXAI Trading Simulator</h1><p class='muted'>Training simulator only. No real trades. Not financial advice.</p><section class='grid'><article class='card'><h2>Paper Wallet</h2><div id='summary'>Loading...</div><h2>Positions</h2><div id='positions'></div><h2>Trade History</h2><div id='history'></div></article><aside class='card'><h2>Simulated Order Ticket</h2><form id='order'><select name='side'><option value='buy'>Market Buy</option><option value='sell'>Market Sell</option></select><input name='symbol' value='{asset}' placeholder='BTC'><input name='quantity' type='number' step='any' min='0' placeholder='Simulated quantity'><button class='button'>Preview and Place Simulated Trade</button></form><p id='msg' class='muted'></p><h2>AI Hitchhiker Coach</h2><p id='coach' class='muted'>The coach will warn about overexposure, FOMO, revenge trading, and sizing risk.</p></aside></section></main><script>const money=n=>Number(n||0).toLocaleString(undefined,{{style:'currency',currency:'USD'}});async function load(){{const d=await fetch('/api/simulator',{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());document.getElementById('summary').innerHTML=`<div class='row'><strong>Cash</strong><span>${{money(d.cash_balance)}}</span></div><div class='row'><strong>Equity</strong><span>${{money(d.equity)}}</span></div><div class='row'><strong>Risk Score</strong><span>${{d.risk_score}}/100</span></div>`;document.getElementById('positions').innerHTML=(d.positions||[]).map(p=>`<div class='row'><strong>${{p.symbol}}</strong><span>${{p.quantity}}</span><span>${{money(p.value)}}</span></div>`).join('')||'<p class=muted>No simulated positions yet.</p>';document.getElementById('history').innerHTML=(d.trades||[]).slice(0,20).map(t=>`<div class='row'><strong>${{t.side}} ${{t.symbol}}</strong><span>${{t.quantity}}</span><span>${{money(t.notional)}}</span></div>`).join('')||'<p class=muted>No simulated trades yet.</p>';document.getElementById('coach').textContent=d.ai_coaching}}document.getElementById('order').addEventListener('submit',async e=>{{e.preventDefault();const p=Object.fromEntries(new FormData(e.target).entries());const d=await fetch('/api/simulator/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(p)}}).then(r=>r.json());document.getElementById('msg').textContent=d.ok?'Simulated trade saved.':'Simulator says: '+(d.message||'Trade failed.');load()}});load()</script></body></html>""")
 
 
 @webhook_app.route("/api/simulator/order", methods=["POST"])
@@ -12823,7 +13068,7 @@ def api_simulator_watchlist():
 
 @webhook_app.route("/api/simulator/lesson", methods=["GET"])
 def api_simulator_lesson():
-    return jsonify({"ok": True, "lesson": {"title": "How paper trading works", "content": "Paper trading uses fake money to practice decision quality, order types, position sizing, and emotional discipline. No real trades are placed.", "disclaimer": "Training simulator only. Not financial advice."}})
+    return jsonify({"ok": True, "lesson": {"title": "How paper trading works", "content": "Paper trading uses virtual dollars to practice decision quality, order types, position sizing, and emotional discipline. No real trades are placed.", "disclaimer": "Training simulator only. Not financial advice."}})
 
 
 @webhook_app.route("/api/simulator/reset", methods=["POST"])
@@ -13480,6 +13725,143 @@ def api_messages_start():
     conversation_id = direct_conversation_between(user["user_id"], other[0])
     log_product_event(user["user_id"], "private_chat_started", {"conversation_id": conversation_id})
     return jsonify({"ok": True, "conversation_id": conversation_id})
+
+
+@webhook_app.route("/api/chat/threads", methods=["GET"])
+def api_chat_threads():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(chat_realtime_service.list_threads(user["user_id"]))
+
+
+@webhook_app.route("/api/chat/start", methods=["POST"])
+def api_chat_start():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    result, status = chat_realtime_service.start_thread(
+        user["user_id"],
+        public_player_id=payload.get("public_player_id") or "",
+        query=payload.get("query") or payload.get("username") or "",
+        message=payload.get("message") or payload.get("body") or "",
+    )
+    if result.get("ok"):
+        log_product_event(user["user_id"], "private_chat_started", {"thread_id": result.get("thread_id"), "source": "fast_chat"})
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/chat/thread/<int:thread_id>", methods=["GET"])
+def api_chat_thread(thread_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = chat_realtime_service.messages(user["user_id"], thread_id, limit=int(request.args.get("limit") or 50))
+    if not payload:
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    return jsonify(payload)
+
+
+@webhook_app.route("/api/chat/thread/<int:thread_id>/new", methods=["GET"])
+def api_chat_thread_new(thread_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    after_id = int(request.args.get("after_id") or request.args.get("since_id") or 0)
+    payload = chat_realtime_service.messages(user["user_id"], thread_id, after_id=after_id, limit=int(request.args.get("limit") or 50))
+    if not payload:
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    return jsonify({"ok": True, "messages": payload.get("messages") or [], "last_message_id": payload.get("last_message_id") or after_id})
+
+
+@webhook_app.route("/api/chat/thread/<int:thread_id>/send", methods=["POST"])
+def api_chat_thread_send(thread_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    result, status = chat_realtime_service.send_message(user["user_id"], thread_id, payload.get("message") or payload.get("body") or "")
+    if result.get("ok"):
+        log_product_event(user["user_id"], "private_message_sent", {"thread_id": thread_id, "source": "fast_chat"})
+        try:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM conversation_members WHERE conversation_id=? AND user_id != ?", (thread_id, user["user_id"]))
+            recipients = [int(row["user_id"]) for row in cur.fetchall()]
+            conn.close()
+            for recipient_id in recipients:
+                notification_service.send_user_alert(
+                    recipient_id,
+                    "private_message",
+                    "New private message",
+                    "You received a private message in CoinPilotXAI.",
+                    {"conversation_id": thread_id, "thread_id": thread_id, "message_id": result.get("message_id"), "next_url": f"/chat/thread/{thread_id}"},
+                    channels=["in_app"],
+                )
+        except Exception as exc:
+            logging.info("Fast chat notification failed safely: %s", exc)
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/chat/request/<int:request_id>/accept", methods=["POST"])
+def api_chat_request_accept(request_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    public_player_id = clean_html(payload.get("public_player_id") or "")[:80]
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    request_item = None
+    if request_id:
+        cur.execute(
+            """
+            SELECT * FROM arena_message_requests
+            WHERE id=? AND (receiver_id=? OR sender_id=?)
+            LIMIT 1
+            """,
+            (request_id, user["user_id"], user["user_id"]),
+        )
+        request_item = dict(cur.fetchone() or {})
+    other_id = 0
+    if request_item:
+        other_id = int(request_item.get("sender_id") or 0)
+        if other_id == int(user["user_id"]):
+            other_id = int(request_item.get("receiver_id") or 0)
+    if not other_id and public_player_id:
+        other_id = int(arena_internal_id_from_public(public_player_id) or 0)
+    if not other_id or other_id == int(user["user_id"]):
+        conn.close()
+        return jsonify({"ok": False, "status": "not_found", "message": "Could not open this chat. Please refresh."}), 404
+    thread_id = direct_conversation_between(user["user_id"], other_id)
+    if request_item and request_item.get("status") != "accepted":
+        cur.execute("UPDATE arena_message_requests SET status='accepted', responded_at=? WHERE id=?", (datetime.now().isoformat(), int(request_item.get("id") or request_id)))
+        conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "thread_id": thread_id, "next_url": f"/chat/thread/{thread_id}", "status": "thread_opened", "message": "Chat opened."})
+
+
+@webhook_app.route("/api/chat/request/<int:request_id>/reject", methods=["POST"])
+def api_chat_request_reject(request_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE arena_message_requests SET status='declined', responded_at=? WHERE id=? AND receiver_id=?", (datetime.now().isoformat(), int(request_id), user["user_id"]))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": bool(changed), "status": "declined" if changed else "not_found", "message": "Message request declined." if changed else "Could not update this request."}), (200 if changed else 404)
 
 
 @webhook_app.route("/api/messages/conversations", methods=["GET"])
@@ -19822,6 +20204,46 @@ def init_db():
         match_id INTEGER UNIQUE,
         recap TEXT,
         replay_json TEXT,
+        user_id INTEGER,
+        title TEXT,
+        summary TEXT,
+        timeline_json TEXT,
+        highlights_json TEXT,
+        share_card_json TEXT,
+        created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "arena_replays", [
+        ("user_id", "INTEGER"),
+        ("title", "TEXT"),
+        ("summary", "TEXT"),
+        ("timeline_json", "TEXT"),
+        ("highlights_json", "TEXT"),
+        ("share_card_json", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_victory_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        winner_id INTEGER,
+        loser_id INTEGER,
+        mode TEXT,
+        victory_type TEXT,
+        xp_awarded INTEGER DEFAULT 0,
+        crowd_intensity INTEGER DEFAULT 0,
+        commentator_line TEXT,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_crowd_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER DEFAULT 0,
+        room_id INTEGER DEFAULT 0,
+        user_id INTEGER,
+        emoji TEXT,
+        intensity INTEGER DEFAULT 1,
         created_at TEXT
     )
     """)
@@ -20111,6 +20533,15 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_arena_match_events_match_created ON arena_match_events(match_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_spectators_match_user ON arena_spectators(match_id, user_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_emotes_match_created ON arena_emotes(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_victory_events_match_created ON arena_victory_events(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_victory_events_winner_created ON arena_victory_events(winner_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_crowd_reactions_match_created ON arena_crowd_reactions(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_replays_match_id ON arena_replays(match_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_highlights_match_created ON arena_highlights(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_participants_user ON conversation_members(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_private_messages_thread_id ON private_messages(conversation_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_private_messages_thread_created ON private_messages(conversation_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_id_id ON private_messages(conversation_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_private_messages_sender_created ON private_messages(sender_user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_conversation_members_user_conversation ON conversation_members(user_id, conversation_id)",

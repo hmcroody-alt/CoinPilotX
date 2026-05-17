@@ -13,7 +13,7 @@ def briefing(player_profile=None):
         "world_headline": world["title"],
         "intelligence_briefing": world["narrative"],
         "recommended_scenario": scenario,
-        "ethical_note": "Arena rewards mastery, learning, and healthy competition. No real money or wagering.",
+        "ethical_note": "Arena rewards mastery, learning, and healthy competition. No real-money trading occurs inside Arena matches.",
     }
 
 

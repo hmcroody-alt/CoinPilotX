@@ -35,6 +35,13 @@
     .command-glow-portfolio { --glow-a:#9b5cff; --glow-b:#2f80ff; }
     .command-glow-sports { --glow-a:#b6ff4f; --glow-b:#ffd166; }
     .command-glow-account { --glow-a:#6edff6; --glow-b:#77a7ff; }
+    .arena-cta-card { position:relative; overflow:hidden; border-color:rgba(54,229,143,.42); background:radial-gradient(circle at 12% 8%,rgba(54,229,143,.22),transparent 15rem),radial-gradient(circle at 92% 0,rgba(110,223,246,.20),transparent 18rem),linear-gradient(160deg,rgba(17,29,50,.96),rgba(5,11,20,.9)); box-shadow:0 24px 80px rgba(0,0,0,.32),0 0 42px rgba(54,229,143,.14); animation:arenaPortalPulse 7s ease-in-out infinite; }
+    .arena-cta-card::before { content:""; position:absolute; inset:-60% -30%; opacity:.36; background:linear-gradient(110deg,transparent 28%,rgba(255,255,255,.18),transparent 45%); transform:translateX(-40%) rotate(8deg); animation:arenaLightSweep 5.8s ease-in-out infinite; pointer-events:none; }
+    .arena-cta-card > * { position:relative; z-index:1; }
+    .arena-live-badge { display:inline-flex; align-items:center; gap:7px; width:max-content; border:1px solid rgba(54,229,143,.38); border-radius:999px; padding:5px 9px; color:#c8ffe2; background:rgba(54,229,143,.12); font-size:12px; font-weight:950; letter-spacing:.04em; }
+    .arena-live-badge::before { content:""; width:8px; height:8px; border-radius:999px; background:var(--green); box-shadow:0 0 14px rgba(54,229,143,.85); }
+    .arena-preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:10px 0 14px; }
+    .arena-preview-grid span { border:1px solid rgba(255,255,255,.09); border-radius:10px; background:rgba(255,255,255,.045); padding:8px; color:#dffcff; font-weight:850; }
     .glow-education,.glow-optimism,.glow-future,.glow-alert { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.34); box-shadow:0 0 26px rgba(110,223,246,.12); transition:transform .18s ease,box-shadow .18s ease; animation:commandPulse 8s ease-in-out infinite; }
     .glow-education { --glow-a:#00e5ff; --glow-b:#2f80ff; background:linear-gradient(135deg,rgba(0,229,255,.22),rgba(47,128,255,.12)); }
     .glow-optimism { --glow-a:#36e58f; --glow-b:#00c2a8; background:linear-gradient(135deg,rgba(54,229,143,.22),rgba(0,194,168,.12)); }
@@ -48,6 +55,8 @@
     .timeline-panel { max-height:400px; overflow:auto; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px; margin-top:12px; background:rgba(0,0,0,.16); }
     @keyframes commandPulse { 0%,78%,100%{box-shadow:0 0 0 1px rgba(255,255,255,.03),0 0 20px rgba(110,223,246,.08)} 84%{box-shadow:0 0 0 1px rgba(255,255,255,.06),0 0 34px color-mix(in srgb,var(--glow-a,#6edff6) 28%,transparent)} }
     @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
+    @keyframes arenaPortalPulse { 0%,100%{box-shadow:0 24px 80px rgba(0,0,0,.32),0 0 32px rgba(54,229,143,.12)} 50%{box-shadow:0 26px 86px rgba(0,0,0,.34),0 0 48px rgba(110,223,246,.18)} }
+    @keyframes arenaLightSweep { 0%,55%,100%{transform:translateX(-48%) rotate(8deg)} 72%{transform:translateX(58%) rotate(8deg)} }
     main { padding:34px 0 64px; }
     .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:18px; align-items:stretch; margin-bottom:18px; }
     .hero > .card:first-child { grid-column:1 / -1; }
@@ -117,7 +126,7 @@
     .private-chat-form input { min-width:0; }
     .private-chat-empty { min-height:180px; display:grid; place-items:center; text-align:center; color:var(--muted); padding:20px; }
     .private-chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:88px;min-width:136px}.private-chat-panel{inset:auto 0 0 0; width:100%; height:min(92vh,760px); border-radius:20px 20px 0 0}.private-chat-form .button{width:auto;min-width:86px} }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:88px;min-width:136px}.private-chat-panel{inset:auto 0 0 0; width:100%; height:min(92vh,760px); border-radius:20px 20px 0 0}.private-chat-form .button{width:auto;min-width:86px}.arena-preview-grid{grid-template-columns:1fr} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -164,6 +173,21 @@
         <p class="muted" data-top-movers>Add your first holding to activate portfolio intelligence.</p>
         <a class="button command-glow command-glow-portfolio" href="#add-holding">Open Portfolio Details</a>
       </article>
+      <article class="card arena-cta-card" data-priority-card="arena">
+        <span class="arena-live-badge">{% if access.has_pro %}LIVE / PRO{% else %}PRO REQUIRED{% endif %}</span>
+        <div class="kicker">Alpha Arena</div>
+        <h2>Enter Alpha Arena</h2>
+        <p>Battle, train, survive scams, and climb the ranks.</p>
+        <div class="arena-preview-grid">
+          <span data-arena-rank-preview>Rank: Rookie</span>
+          <span data-arena-xp-preview>XP: 0</span>
+        </div>
+        <p class="muted" data-arena-summary>Virtual dollars. Real skill. No gambling.</p>
+        <div class="private-chat-actions">
+          <a class="button primary command-glow command-glow-ai" href="{% if access.has_pro %}/arena/play{% else %}/upgrade?next=/arena/play{% endif %}">Play Now</a>
+          <a class="button" href="/arena/leaderboard">View Leaderboard</a>
+        </div>
+      </article>
       <article class="card" data-priority-card="market">
         <div class="kicker">Live Market Snapshot</div>
         <div class="list" data-market-snapshot><p class="muted">Loading market data...</p></div>
@@ -186,14 +210,6 @@
         <p>daily check-in streak</p>
         <p class="muted" data-progress-note>Build safer habits one clear review at a time.</p>
       </article>
-      <article class="card">
-        <div class="kicker">CoinPilotXAI Arena</div>
-        <h2>Play Arena</h2>
-        <p>Train crypto intelligence with fake-money missions, scam defense, XP, ranks, and skill leaderboards.</p>
-        <p class="muted" data-arena-summary>Arena XP and rank will appear here.</p>
-        <a class="button command-glow command-glow-sports" href="/arena">Play Arena</a>
-      </article>
-
       <article class="card wide">
         <h2>Personal Watch Command Center</h2>
         <p class="muted">Watch coins, wallets, exchanges, scam keywords, whale movements, news topics, sports edges, and portfolio assets.</p>
@@ -387,7 +403,7 @@
     const accountSyncText = message => text("[data-account-sync-message]", message);
     const postJson = (url, payload, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed"); return j; }));
     const escapeHtml = value => String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
-    const chatState = { open: false, activeConversationId: null, activeOtherUserId: null, currentUserId: null };
+    const chatState = { open: false, activeConversationId: null, activeOtherUserId: null, currentUserId: null, lastMessageId: 0, polling: false };
 
     function setChatTab(tab) {
       document.querySelectorAll("[data-chat-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.chatTab === tab));
@@ -418,7 +434,7 @@
       const node = document.querySelector("[data-chat-conversations]");
       node.innerHTML = '<div class="private-chat-empty">Loading private conversations...</div>';
       try {
-        const response = await fetch("/api/messages/conversations", { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load conversations.");
         const totalUnread = (data.conversations || []).reduce((sum, item) => sum + Number(item.unread_count || 0), 0);
@@ -449,9 +465,48 @@
       return Math.floor(hours / 24) + "d ago";
     }
 
+    function chatMessageHtml(message, optimistic = false) {
+      const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_id || message.sender_user_id) === Number(chatState.currentUserId);
+      const id = message.message_id || message.id || "";
+      return `<div class="chat-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><strong>${mine ? "You" : "CoinPilotXAI user"}</strong><div>${escapeHtml(message.body)}</div><small>${optimistic ? "sending..." : friendlyTime(message.created_at) + " · " + escapeHtml(message.delivery_status || "delivered")}</small></div>`;
+    }
+
+    function renderChatMessages(messages) {
+      const thread = document.querySelector("[data-chat-thread]");
+      thread.innerHTML = (messages || []).map(message => chatMessageHtml(message)).join("") || '<div class="private-chat-empty">No messages yet. Send the first one.</div>';
+      chatState.lastMessageId = Math.max(0, ...(messages || []).map(message => Number(message.message_id || message.id || 0)));
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function appendChatMessages(messages) {
+      const thread = document.querySelector("[data-chat-thread]");
+      const seen = new Set([...thread.querySelectorAll("[data-message-id]")].map(node => node.dataset.messageId));
+      (messages || []).forEach(message => {
+        const id = String(message.message_id || message.id || "");
+        if (id && seen.has(id)) return;
+        thread.insertAdjacentHTML("beforeend", chatMessageHtml(message));
+        chatState.lastMessageId = Math.max(chatState.lastMessageId, Number(message.message_id || message.id || 0));
+      });
+      if ((messages || []).length) thread.scrollTop = thread.scrollHeight;
+    }
+
+    async function pollActiveConversation() {
+      if (!chatState.open || !chatState.activeConversationId || chatState.polling || document.hidden) return;
+      chatState.polling = true;
+      try {
+        const response = await fetch(`/api/chat/thread/${chatState.activeConversationId}/new?after_id=${chatState.lastMessageId}`, { cache: "no-store", credentials: "same-origin" });
+        const data = await response.json();
+        if (response.ok && data.ok) appendChatMessages(data.messages || []);
+      } catch (error) {
+      } finally {
+        chatState.polling = false;
+      }
+    }
+
     async function openConversation(conversationId, otherUserId) {
       chatState.activeConversationId = conversationId;
       chatState.activeOtherUserId = otherUserId || null;
+      chatState.lastMessageId = 0;
       setChatTab("thread");
       const thread = document.querySelector("[data-chat-thread]");
       const empty = document.querySelector("[data-chat-thread-empty]");
@@ -460,16 +515,11 @@
       actions.hidden = false;
       thread.innerHTML = '<div class="private-chat-empty">Loading messages...</div>';
       try {
-        const response = await fetch("/api/messages/" + conversationId, { cache: "no-store", credentials: "same-origin" });
+        const response = await fetch("/api/chat/thread/" + conversationId, { cache: "no-store", credentials: "same-origin" });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load messages.");
-        chatState.currentUserId = data.current_user_id;
-        thread.innerHTML = (data.messages || []).map(message => {
-          const mine = Number(message.sender_user_id) === Number(data.current_user_id);
-          return `<div class="chat-bubble ${mine ? "me" : "them"}"><strong>${mine ? "You" : "CoinPilotXAI user"}</strong><div>${escapeHtml(message.body)}</div><small>${friendlyTime(message.created_at)}${mine ? " · sent" : " · read"}</small></div>`;
-        }).join("") || '<div class="private-chat-empty">No messages yet. Send the first one.</div>';
-        thread.scrollTop = thread.scrollHeight;
-        await fetch("/api/messages/" + conversationId + "/read", { method: "POST", credentials: "same-origin" }).catch(() => {});
+        chatState.currentUserId = data.me?.user_id || null;
+        renderChatMessages(data.messages || []);
         loadChatConversations();
       } catch (error) {
         thread.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
@@ -571,6 +621,8 @@
       }
       if (arena && arena.ok && arena.profile) {
         text("[data-arena-summary]", `${arena.profile.rank || "Rookie"} · Arena IQ ${arena.profile.arena_iq || 50} · ${arena.profile.xp || 0} XP · ${arena.profile.streak_count || 0} mission streak`);
+        text("[data-arena-rank-preview]", `Rank: ${arena.profile.rank || "Rookie"}`);
+        text("[data-arena-xp-preview]", `XP: ${arena.profile.xp || 0}`);
       }
     }
 
@@ -688,11 +740,11 @@
         const form = event.target;
         const payload = Object.fromEntries(new FormData(form).entries());
         try {
-          const result = await postJson("/api/messages/start", payload);
+          const result = await postJson("/api/chat/start", payload);
           form.reset();
           text("[data-chat-start-message]", "Conversation opened.");
           await loadChatConversations();
-          await openConversation(result.conversation_id, null);
+          await openConversation(result.thread_id || result.conversation_id, null);
         } catch (err) {
           text("[data-chat-start-message]", err.message);
         }
@@ -703,12 +755,21 @@
         if (!chatState.activeConversationId) return;
         const body = new FormData(form).get("body");
         if (!String(body || "").trim()) return;
+        const thread = document.querySelector("[data-chat-thread]");
+        const tempId = "temp-" + Date.now();
+        thread.insertAdjacentHTML("beforeend", `<div class="chat-bubble me" data-message-id="${tempId}"><strong>You</strong><div>${escapeHtml(body)}</div><small>sending...</small></div>`);
+        thread.scrollTop = thread.scrollHeight;
+        form.reset();
         try {
-          await postJson("/api/messages/" + chatState.activeConversationId + "/send", { body });
-          form.reset();
-          await openConversation(chatState.activeConversationId, chatState.activeOtherUserId);
+          const result = await postJson("/api/chat/thread/" + chatState.activeConversationId + "/send", { message: body });
+          const pending = thread.querySelector(`[data-message-id="${tempId}"]`);
+          if (pending && result.message) pending.outerHTML = chatMessageHtml(result.message);
+          if (result.message) chatState.lastMessageId = Math.max(chatState.lastMessageId, Number(result.message.message_id || result.message.id || 0));
+          await loadChatConversations();
         } catch (err) {
-          const thread = document.querySelector("[data-chat-thread]");
+          const pending = thread.querySelector(`[data-message-id="${tempId}"]`);
+          if (pending) pending.querySelector("small").textContent = "failed - retry";
+          form.elements.body.value = body;
           thread.insertAdjacentHTML("beforeend", `<div class="private-chat-empty">${escapeHtml(err.message)}</div>`);
         }
       }
@@ -771,6 +832,8 @@
     window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); }, 60000);
     loadChatConversations().catch(function () {});
     window.setInterval(function () { if (!chatState.open) loadChatConversations().catch(function () {}); }, 30000);
+    window.setInterval(function () { pollActiveConversation().catch(function () {}); }, 1500);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) pollActiveConversation().catch(function () {}); });
     function danceAlerts() {
       document.querySelectorAll("[data-alerts-button]").forEach(button => {
         if (button.classList.contains("is-dancing")) return;

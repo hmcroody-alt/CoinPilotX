@@ -57,7 +57,7 @@ def share_card(profile=None, achievement=None, base_url="https://coinpilotx.app"
   <text x="105" y="312" fill="#9fb5c0" font-family="Inter,Arial,sans-serif" font-size="34">{_svg_escape(achievement_title)}</text>
   <text x="105" y="412" fill="#ffd166" font-family="Inter,Arial,sans-serif" font-size="54" font-weight="900">{_svg_escape(rank)}</text>
   <text x="105" y="475" fill="#6edff6" font-family="Inter,Arial,sans-serif" font-size="34" font-weight="800">Arena IQ {arena_iq}</text>
-  <text x="105" y="522" fill="#9fb5c0" font-family="Inter,Arial,sans-serif" font-size="24">Educational simulation · no real-money wagering · privacy-safe identity</text>
+  <text x="105" y="522" fill="#9fb5c0" font-family="Inter,Arial,sans-serif" font-size="24">Educational simulation · no real-money trading · privacy-safe identity</text>
 </svg>"""
     return {
         "ok": True,
