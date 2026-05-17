@@ -1860,8 +1860,32 @@ def has_pro_access(user):
     return pro_access_service.has_pro_access(user or {})
 
 
+def is_user_pro_or_trial(user_id):
+    try:
+        user = load_account_by_id(int(user_id))
+    except Exception:
+        user = None
+    return has_pro_access(user or {})
+
+
 def platform_pro_access(user):
+    user = user or {}
+    user_id = user.get("user_id")
+    if user_id:
+        return is_user_pro_or_trial(user_id)
     return has_pro_access(user)
+
+
+def pro_activation_columns_payload(user):
+    user = user or {}
+    return {
+        "pro_active": int(has_pro_access(user)),
+        "pro_started_at": user.get("pro_started_at") or user.get("subscription_started_at") or "",
+        "payment_provider": user.get("payment_provider") or "",
+        "provider_customer_id": user.get("provider_customer_id") or user.get("stripe_customer_id") or "",
+        "provider_subscription_id": user.get("provider_subscription_id") or user.get("stripe_subscription_id") or "",
+        "last_payment_status": user.get("last_payment_status") or user.get("subscription_status") or "",
+    }
 
 
 def backend_pro_status_payload(user):
@@ -1877,12 +1901,14 @@ def backend_pro_status_payload(user):
         "subscription_status": user.get("subscription_status") or "",
         "is_pro": int(user.get("is_pro") or 0),
         "has_pro_access": has_access,
+        "pro_active": int(has_access),
         "pro_access_type": pro_access_type(user),
         "is_paid_pro": paid,
         "is_trialing": trial,
         "pro_expires_at": user.get("pro_expires_at") or user.get("subscription_expires_at") or "",
         "stripe_customer_id": user.get("stripe_customer_id") or "",
         "stripe_subscription_id": user.get("stripe_subscription_id") or "",
+        **pro_activation_columns_payload(user),
         "source": "database",
     }
 
@@ -4394,13 +4420,17 @@ def admin_manual_upgrade_route():
             subscription_plan='pro',
             subscription_status='active',
             is_pro=1,
+            pro_active=1,
+            pro_started_at=COALESCE(pro_started_at, ?),
+            payment_provider='manual',
+            last_payment_status='approved',
             trial_status=CASE WHEN lower(COALESCE(trial_status,''))='trialing' THEN 'converted' ELSE COALESCE(trial_status, '') END,
             pro_expires_at=?,
             subscription_expires_at=?,
             updated_at=?
         WHERE user_id=?
         """,
-        (pro_expires_at, pro_expires_at, now, int(target_user_id)),
+        (now, pro_expires_at, pro_expires_at, now, int(target_user_id)),
     )
     conn.commit()
     conn.close()
@@ -5398,10 +5428,12 @@ def admin_user_convert_paid_pro(user_id):
         """
         UPDATE users
         SET plan='pro', subscription_plan='pro', subscription_status='active', is_pro=1,
+            pro_active=1, pro_started_at=COALESCE(pro_started_at, ?),
+            payment_provider='manual', last_payment_status='approved',
             trial_status='converted', pro_expires_at=?, subscription_expires_at=?, updated_at=?
         WHERE user_id=?
         """,
-        (pro_expires_at, pro_expires_at, datetime.now().isoformat(), user_id),
+        (datetime.now().isoformat(), pro_expires_at, pro_expires_at, datetime.now().isoformat(), user_id),
     )
     conn.commit()
     conn.close()
@@ -12655,6 +12687,7 @@ def account_status_api():
         "subscription_plan": fresh_user.get("subscription_plan") or fresh_user.get("plan") or "free",
         "subscription_status": fresh_user.get("subscription_status") or "inactive",
         "is_pro": int(fresh_user.get("is_pro") or 0),
+        "pro_active": int(has_pro_access(fresh_user)),
         "trial_status": fresh_user.get("trial_status") or "",
         "has_pro_access": has_pro_access(fresh_user),
         "has_pro": has_pro_access(fresh_user),
@@ -12667,6 +12700,7 @@ def account_status_api():
         "trial_end_date": fresh_user.get("trial_end_date") or "",
         "stripe_customer_id": fresh_user.get("stripe_customer_id") or "",
         "stripe_subscription_id": fresh_user.get("stripe_subscription_id") or "",
+        **pro_activation_columns_payload(fresh_user),
         "telegram_linked": bool(fresh_user.get("telegram_user_id")),
         "telegram_username": fresh_user.get("telegram_username") or "",
         "updated_at": fresh_user.get("updated_at") or "",
@@ -13600,7 +13634,10 @@ def stripe_webhook():
             if customer_email and is_valid_email(customer_email):
                 save_user_email(user_id, customer_email)
             subscription = fetch_stripe_subscription(subscription_id) if subscription_id else None
-            period_end = stripe_period_end_to_iso((subscription or {}).get("current_period_end")) if subscription else None
+            period_end = (
+                stripe_period_end_to_iso((subscription or {}).get("current_period_end"))
+                or stripe_period_end_to_iso((subscription or {}).get("trial_end"))
+            ) if subscription else None
             if payment_status == "paid" or subscription_id:
                 timestamp = datetime.now().isoformat()
                 logging.info("STRIPE_PRO_ACTIVATION_START event_id=%s user_id=%s session_id=%s subscription_id=%s", event_id, user_id, session_id, subscription_id)
@@ -13745,6 +13782,50 @@ def stripe_webhook():
         if not synced_user_id:
             logging.error("STRIPE_USER_NOT_FOUND event_id=%s object_id=%s customer_id=%s", event_id, event["data"]["object"].get("id"), event["data"]["object"].get("customer"))
             record_unmatched_payment(event, event["data"]["object"], "invoice event could not resolve local user")
+
+    if event_type == "payment_intent.succeeded":
+        payment_intent = event["data"]["object"]
+        metadata = payment_intent.get("metadata") or {}
+        customer_id = payment_intent.get("customer") or ""
+        user_id = find_user_by_stripe(
+            customer_id=customer_id,
+            subscription_id=None,
+            metadata_user_id=metadata.get("user_id") or metadata.get("client_reference_id"),
+            customer_email=metadata.get("email"),
+        )
+        if user_id:
+            resolved_event_user_id = user_id
+            activated_user_id = activate_pro(
+                user_id,
+                payment_type="stripe",
+                stripe_customer_id=customer_id,
+                subscription_status="active",
+                pro_expires_at=default_pro_period_end(),
+            )
+            amount = payment_intent.get("amount_received") or payment_intent.get("amount")
+            record_payment_record(
+                activated_user_id or user_id,
+                stripe_event_id=event_id,
+                stripe_customer_id=customer_id,
+                payment_intent_id=payment_intent.get("id") or "",
+                amount=(amount / 100 if amount else None),
+                currency=payment_intent.get("currency", "usd"),
+                status="succeeded",
+            )
+            user = load_account_by_id(activated_user_id or user_id)
+            if user and has_pro_access(user):
+                send_successful_payment_email_bundle(user, {
+                    "stripe_event_id": event_id,
+                    "payment_id": payment_intent.get("id") or "",
+                    "amount": (amount / 100 if amount else None),
+                    "currency": payment_intent.get("currency", "usd"),
+                    "billing_date": datetime.now().strftime("%b %d, %Y"),
+                    "next_billing_date": format_date(user.get("pro_expires_at") or user.get("subscription_expires_at")),
+                })
+            logging.info("PAYMENT_INTENT_PRO_ACTIVATED event_id=%s user_id=%s activated_user_id=%s", event_id, user_id, activated_user_id)
+        else:
+            logging.error("STRIPE_USER_NOT_FOUND event_id=%s object_id=%s customer_id=%s", event_id, payment_intent.get("id"), customer_id)
+            record_unmatched_payment(event, payment_intent, "payment_intent.succeeded could not resolve local user")
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     return "OK", 200
@@ -17255,10 +17336,16 @@ def init_db():
 
     add_columns_if_missing(cur, "users", [
         ("is_pro", "INTEGER DEFAULT 0"),
+        ("pro_active", "INTEGER DEFAULT 0"),
+        ("pro_started_at", "TEXT"),
         ("subscription_plan", "TEXT DEFAULT 'free'"),
         ("subscription_status", "TEXT DEFAULT 'inactive'"),
         ("subscription_started_at", "TEXT"),
         ("subscription_expires_at", "TEXT"),
+        ("payment_provider", "TEXT"),
+        ("provider_customer_id", "TEXT"),
+        ("provider_subscription_id", "TEXT"),
+        ("last_payment_status", "TEXT"),
         ("risk_profile", "TEXT DEFAULT 'balanced'"),
         ("preferred_exchange_goal", "TEXT DEFAULT 'beginner'"),
         ("stripe_customer_id", "TEXT"),
@@ -22293,6 +22380,15 @@ def fetch_stripe_subscription(subscription_id):
         return None
 
 
+def default_pro_period_end(days=None):
+    try:
+        configured_days = int(days or os.getenv("PRO_ACCESS_DAYS") or os.getenv("STRIPE_PRO_ACCESS_DAYS") or 30)
+    except Exception:
+        configured_days = 30
+    configured_days = max(1, min(configured_days, 3650))
+    return (datetime.now() + timedelta(days=configured_days)).isoformat()
+
+
 def user_id_from_candidate(value):
     if not value:
         return None
@@ -22392,7 +22488,7 @@ def sync_stripe_subscription(subscription):
         return None
     raw_status = (subscription.get("status") or "").lower()
     status = raw_status if raw_status in {"active", "trialing"} else ("past_due" if raw_status in {"past_due", "unpaid"} else ("canceled" if raw_status in {"canceled", "incomplete_expired"} else raw_status or "inactive"))
-    period_end = stripe_period_end_to_iso(subscription.get("current_period_end"))
+    period_end = stripe_period_end_to_iso(subscription.get("current_period_end")) or stripe_period_end_to_iso(subscription.get("trial_end"))
     before = load_account_by_id(user_id) or {}
     logging.info(
         "Stripe subscription sync start event_subscription=%s user_id=%s before_plan=%s before_status=%s stripe_status=%s period_end=%s",
@@ -22403,46 +22499,45 @@ def sync_stripe_subscription(subscription):
         raw_status,
         period_end,
     )
-    conn = db()
-    cur = conn.cursor()
     if status in {"active", "trialing"}:
-        cur.execute(
-            """
-            UPDATE users
-            SET plan='pro', subscription_plan='pro', subscription_status=?, is_pro=1,
-                stripe_customer_id=COALESCE(?, stripe_customer_id),
-                stripe_subscription_id=COALESCE(?, stripe_subscription_id),
-                trial_status=CASE WHEN ?='active' THEN 'converted' ELSE COALESCE(trial_status, '') END,
-                pro_expires_at=?,
-                subscription_expires_at=?,
-                updated_at=?
-            WHERE user_id=?
-            """,
-            (status, customer_id, subscription_id, status, period_end, period_end, datetime.now().isoformat(), user_id),
+        activate_pro(
+            user_id,
+            payment_type="stripe",
+            stripe_customer_id=customer_id,
+            stripe_subscription_id=subscription_id,
+            subscription_status=status,
+            pro_expires_at=period_end,
         )
     else:
+        conn = db()
+        cur = conn.cursor()
         cur.execute(
             """
             UPDATE users
-            SET subscription_status=?, stripe_customer_id=COALESCE(?, stripe_customer_id),
+            SET subscription_status=?, pro_active=0, is_pro=0,
+                stripe_customer_id=COALESCE(?, stripe_customer_id),
                 stripe_subscription_id=COALESCE(?, stripe_subscription_id),
+                payment_provider='stripe',
+                provider_customer_id=COALESCE(?, provider_customer_id),
+                provider_subscription_id=COALESCE(?, provider_subscription_id),
+                last_payment_status=?,
                 pro_expires_at=COALESCE(?, pro_expires_at),
                 subscription_expires_at=COALESCE(?, subscription_expires_at),
                 updated_at=?
             WHERE user_id=?
             """,
-            (status, customer_id, subscription_id, period_end, period_end, datetime.now().isoformat(), user_id),
+            (status, customer_id, subscription_id, customer_id, subscription_id, status, period_end, period_end, datetime.now().isoformat(), user_id),
         )
-    cur.execute(
-        """
-        INSERT INTO subscriptions
-        (user_id, plan, status, payment_type, stripe_customer_id, stripe_subscription_id, current_period_end, pro_expires_at, created_at, updated_at)
-        VALUES (?, 'pro', ?, 'stripe', ?, ?, ?, ?, ?, ?)
-        """,
-        (user_id, status, customer_id, subscription_id, period_end, period_end, datetime.now().isoformat(), datetime.now().isoformat()),
-    )
-    conn.commit()
-    conn.close()
+        cur.execute(
+            """
+            INSERT INTO subscriptions
+            (user_id, plan, status, payment_type, stripe_customer_id, stripe_subscription_id, current_period_end, pro_expires_at, created_at, updated_at)
+            VALUES (?, 'pro', ?, 'stripe', ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, status, customer_id, subscription_id, period_end, period_end, datetime.now().isoformat(), datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
     after = load_account_by_id(user_id) or {}
     logging.info(
         "Stripe subscription sync committed user_id=%s after_plan=%s after_status=%s customer_id=%s subscription_id=%s",
@@ -22514,6 +22609,13 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
         logging.error("Pro activation failed: local user not found user_id=%s payment_type=%s customer_id=%s subscription_id=%s", user_id, payment_type, stripe_customer_id, stripe_subscription_id)
         return None
     target_user_id = (target_user or {}).get("user_id") or user_id
+    activation_time = datetime.now().isoformat()
+    normalized_status = (subscription_status or "active").lower()
+    if normalized_status in {"active", "trialing"} and not pro_expires_at:
+        pro_expires_at = default_pro_period_end()
+    provider = payment_type or "manual"
+    last_payment_status = "approved" if normalized_status in {"active", "trialing"} else normalized_status
+    pro_active = 1 if normalized_status in {"active", "trialing"} else 0
     logging.info(
         "Pro activation starting user_id=%s before_plan=%s before_status=%s payment_type=%s customer_id=%s session_id=%s subscription_id=%s expires=%s",
         target_user_id,
@@ -22539,32 +22641,48 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
         """
         UPDATE users
         SET is_pro=1,
+            pro_active=?,
+            pro_started_at=COALESCE(pro_started_at, ?),
             subscription_plan='pro',
             plan='pro',
             subscription_status=?,
             subscription_started_at=?,
             updated_at=?,
             last_payment_type=COALESCE(?, last_payment_type),
+            payment_provider=?,
+            provider_customer_id=COALESCE(?, provider_customer_id),
+            provider_subscription_id=COALESCE(?, provider_subscription_id),
+            last_payment_status=?,
             stripe_customer_id=COALESCE(?, stripe_customer_id),
             stripe_session_id=COALESCE(?, stripe_session_id),
             stripe_subscription_id=COALESCE(?, stripe_subscription_id),
-            trial_status=CASE WHEN ?='active' THEN 'converted' ELSE COALESCE(trial_status, '') END,
+            trial_status=CASE WHEN ?='trialing' THEN 'active' WHEN ?='active' THEN 'converted' ELSE COALESCE(trial_status, '') END,
+            trial_end_date=CASE WHEN ?='trialing' THEN COALESCE(?, trial_end_date) ELSE trial_end_date END,
             pro_expires_at=?,
             subscription_expires_at=?
         WHERE user_id=? OR telegram_user_id=?
         """,
         (
-            subscription_status,
-            datetime.now().isoformat(),
-            datetime.now().isoformat(),
+            pro_active,
+            activation_time,
+            normalized_status,
+            activation_time,
+            activation_time,
             payment_type,
+            provider,
+            stripe_customer_id,
+            stripe_subscription_id,
+            last_payment_status,
             stripe_customer_id,
             stripe_session_id,
             stripe_subscription_id,
-            subscription_status,
+            normalized_status,
+            normalized_status,
+            normalized_status,
             pro_expires_at,
             pro_expires_at,
-            user_id,
+            pro_expires_at,
+            target_user_id,
             user_id,
         )
     )
@@ -22576,14 +22694,14 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
         """,
         (
             target_user_id,
-            subscription_status,
-            payment_type,
+            normalized_status,
+            provider,
             stripe_customer_id,
             stripe_subscription_id,
             pro_expires_at,
             pro_expires_at,
-            datetime.now().isoformat(),
-            datetime.now().isoformat(),
+            activation_time,
+            activation_time,
         ),
     )
     conn.commit()
@@ -22604,10 +22722,11 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
         after_user.get("trial_status"),
         after_user.get("stripe_subscription_id"),
     )
-    if (target_user.get("subscription_status") or "").lower() == "trialing" and subscription_status == "active":
+    if (target_user.get("subscription_status") or "").lower() == "trialing" and normalized_status == "active":
         logging.info("TRIAL_TO_PAID_CONVERSION user_id=%s subscription_id=%s", target_user_id, stripe_subscription_id)
-    logging.info("PRO_UPGRADE_COMPLETED user_id=%s status=%s", target_user_id, subscription_status)
-    log_product_event(target_user_id, "pro_subscription_active" if subscription_status == "active" else "pro_subscription_updated", {"payment_type": payment_type, "status": subscription_status})
+    logging.info("PRO_UPGRADE_COMPLETED user_id=%s status=%s", target_user_id, normalized_status)
+    log_product_event(target_user_id, "pro_subscription_active" if normalized_status == "active" else "pro_subscription_updated", {"payment_type": provider, "status": normalized_status})
+    log_security_event("pro_access_activated", "success", target_user_id, "/stripe-webhook", {"provider": provider, "status": normalized_status, "subscription_id": stripe_subscription_id or ""})
     user = load_account_by_id(target_user_id)
     if user:
         sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or target_user_id)

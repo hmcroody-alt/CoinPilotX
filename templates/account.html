@@ -456,16 +456,16 @@
             .then(function (response) { return response.json(); })
             .then(function (data) {
               if (data && data.ok && data.is_paid_pro) {
-                upgradeStatus.textContent = "Your CoinPilotXAI paid Pro subscription is active.";
+                upgradeStatus.textContent = "Pro Active";
                 upgradeDetail.textContent = "Your dashboard, command center, and optional Telegram companion can now use Pro intelligence.";
                 return;
               }
               if (data && data.ok && data.has_pro_access) {
-                upgradeStatus.textContent = "Your CoinPilotXAI Pro access is active.";
+                upgradeStatus.textContent = "Pro Active";
                 upgradeDetail.textContent = "Your dashboard and optional Telegram companion can now use Pro intelligence.";
                 return;
               }
-              if (attempts < 10) {
+              if (attempts < 20) {
                 setTimeout(pollStatus, 3000);
               } else {
                 upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
@@ -473,7 +473,7 @@
               }
             })
             .catch(function () {
-              if (attempts < 10) {
+              if (attempts < 20) {
                 setTimeout(pollStatus, 3000);
               } else {
                 upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
