@@ -1,8 +1,9 @@
 """Safe, esports-style Roast Battle engine for Alpha Arena."""
 
+import json
 from datetime import datetime
 
-from . import roast_safety_filter, user_context
+from . import roast_live_engine, roast_safety_filter, user_context
 
 
 def _now():
@@ -37,19 +38,24 @@ def submit_message(user_id, match_id, message):
     now = _now()
     cur.execute(
         "INSERT INTO roast_messages (match_id, user_id, message, moderation_status, score_json, created_at) VALUES (?, ?, ?, 'approved', ?, ?)",
-        (int(match_id), int(user_id), message, str(score), now),
+        (int(match_id), int(user_id), message, json.dumps(score), now),
     )
     message_id = cur.lastrowid
     conn.commit()
     conn.close()
-    return {
+    result = {
         "ok": True,
         "message": {"id": message_id, "match_id": int(match_id), "user_id": int(user_id), "body": message, "created_at": now},
         "score": score,
         "avatar_reaction": score["avatar_reaction"],
         "crowd_delta": score["crowd_delta"],
         "commentator_line": "The crowd felt that one. Sharp, clean, and still inside the lines.",
-    }, 200
+    }
+    try:
+        roast_live_engine.broadcast_roast_message(result)
+    except Exception:
+        pass
+    return result, 200
 
 
 def rooms():
