@@ -86,7 +86,7 @@ from seo.content import (
 BOT_NAME = "CoinPilotX"
 DB_FILE = "coinpilotx.db"
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
@@ -2154,8 +2154,8 @@ def generate_telegram_link_code(user_id):
     conn = db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO telegram_link_codes (user_id, code, expires_at, created_at) VALUES (?, ?, ?, ?)",
-        (user_id, code, (now + timedelta(minutes=10)).isoformat(), now.isoformat())
+        "INSERT INTO telegram_link_codes (user_id, code, status, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, code, "pending", (now + timedelta(minutes=10)).isoformat(), now.isoformat())
     )
     conn.commit()
     conn.close()
@@ -2831,7 +2831,7 @@ def account_settings_page():
         action = request.form.get("action", "save")
         if action == "connect_telegram":
             link_code = generate_telegram_link_code(user["user_id"])
-            message = "Telegram link code generated. Send /connect " + link_code + " to the CoinPilotX bot within 10 minutes."
+            message = "Telegram link code generated. Send /link " + link_code + " or /connect " + link_code + " to the CoinPilotX bot within 10 minutes."
         else:
             full_name = clean_html(request.form.get("full_name", ""))[:160]
             phone = clean_html(request.form.get("phone", "")).strip()
@@ -14904,7 +14904,7 @@ def send_upgrade_confirmation_email(user, details=None):
         "Account: https://coinpilotx.app/account\n"
         "Support: https://coinpilotx.app/support\n"
         "Optional Telegram companion: https://t.me/DocShieldX_bot\n\n"
-        "Telegram activation: log in at https://coinpilotx.app/account/settings, generate a Telegram code, then return to the bot and send /connect CODE.\n\n"
+        "Telegram activation: log in at https://coinpilotx.app/account/settings, generate a Telegram code, then return to the bot and send /link CODE or /connect CODE.\n\n"
         "If you experience any issue after payment, please email us immediately at support@coinpilotx.app and include the email address used for your CoinPilotXAI account.\n\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
     )
@@ -14916,7 +14916,7 @@ def send_upgrade_confirmation_email(user, details=None):
       <strong>Billing date:</strong> {clean_html(str(billing_date))}<br>
       <strong>Next billing date:</strong> {clean_html(str(next_billing_date))}</p>
       <p><a href="https://coinpilotx.app/dashboard" style="color:#36e58f">Open Dashboard</a> · <a href="https://coinpilotx.app/account" style="color:#6edff6">Account</a> · <a href="https://coinpilotx.app/support" style="color:#6edff6">Support</a></p>
-      <p>Telegram activation: open Account Settings, generate a Telegram code, then return to the bot and send <strong>/connect CODE</strong>.</p>
+      <p>Telegram activation: open Account Settings, generate a Telegram code, then return to the bot and send <strong>/link CODE</strong> or <strong>/connect CODE</strong>.</p>
       <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
     """)
     sent = send_platform_email(to_email, subject, text, html, user_id)
@@ -16952,11 +16952,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not onboarding_complete(user_id):
         onboarding_state[user_id] = "name"
         await update.message.reply_text(
-            f"🚀 Welcome to {BOT_NAME}, powered by CoinPilotXAI Inc.\n\nHow do you want me to call you?"
+            "Welcome to CoinPilotXAI. Use /link to connect your account.\n\n"
+            f"🚀 {BOT_NAME} is powered by CoinPilotXAI Inc.\n\n"
+            "How do you want me to call you?"
         )
         return
 
     await update.message.reply_text(
+        "Welcome to CoinPilotXAI. Use /link to connect your account.\n\n"
         f"🚀 Welcome back, {get_user_name(user_id)}.\n\nWhat would you like to do today?",
         reply_markup=main_menu()
     )
@@ -16985,6 +16988,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ CoinPilotX Help\n\n"
         "/start — open menu\n"
+        "/link CODE — connect your CoinPilotXAI account\n"
+        "/connect CODE — connect your CoinPilotXAI account\n"
+        "/status — check account and Telegram connection\n"
+        "/alerts — show linked alert status\n"
+        "/unlink — disconnect Telegram from your account\n"
         "/about — about CoinPilotX\n"
         "/price — BTC price\n"
         "/price ETH — ETH price\n"
@@ -17364,7 +17372,7 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Direct Telegram payment verification is no longer used. For your safety, Pro payments and subscription status are managed by your CoinPilotXAI website account.\n\n"
         "1. Open your website account.\n"
         "2. Upgrade to Pro on the website.\n"
-        "3. Return here and send your activation code with /connect CODE.\n\n"
+        "3. Return here and send your activation code with /link CODE or /connect CODE.\n\n"
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
         reply_markup=upgrade_payment_menu(update.effective_user.id),
     )
@@ -18096,11 +18104,37 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         code TEXT UNIQUE,
+        status TEXT DEFAULT 'pending',
         expires_at TEXT,
         used_at TEXT,
+        telegram_user_id INTEGER,
+        telegram_chat_id INTEGER,
+        telegram_username TEXT,
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "telegram_link_codes", [
+        ("status", "TEXT DEFAULT 'pending'"),
+        ("telegram_user_id", "INTEGER"),
+        ("telegram_chat_id", "INTEGER"),
+        ("telegram_username", "TEXT"),
+    ], conn=conn)
+    cur.execute(
+        """
+        UPDATE telegram_link_codes
+        SET status='used'
+        WHERE used_at IS NOT NULL
+          AND (status IS NULL OR status='' OR status='pending')
+        """
+    )
+    cur.execute(
+        """
+        UPDATE telegram_link_codes
+        SET status='pending'
+        WHERE used_at IS NULL
+          AND (status IS NULL OR status='')
+        """
+    )
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -20055,6 +20089,9 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_last_checked ON alert_rules(last_checked_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_events_user_created ON alert_events(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_delivery_user_created ON notification_delivery_logs(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code ON telegram_link_codes(code)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_user_id ON telegram_link_codes(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_status ON telegram_link_codes(status)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_receiver_status ON arena_friend_challenges(receiver_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_sender_status ON arena_friend_challenges(sender_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_match_id ON arena_friend_challenges(match_id)",
@@ -20297,7 +20334,8 @@ def help_message():
         "/subscribe — website Pro upgrade link\n"
         "/setemail you@example.com — save email for payment confirmations\n"
         "/myemail — show the email saved for confirmations\n"
-        "/connect CODE — link the optional Telegram companion to your website account\n"
+        "/link CODE — link the optional Telegram companion to your website account\n"
+        "/connect CODE — same as /link CODE\n"
         "/portfolio — website dashboard portfolio summary\n"
         "/watchlist — website dashboard watchlist\n"
         "/alerts — website dashboard alerts\n"
@@ -22054,13 +22092,20 @@ def mask_phone(phone):
     return f"***-***-{digits[-4:]}"
 
 
-def get_linked_website_account(telegram_user_id):
+def get_linked_website_account(telegram_user_id, telegram_chat_id=None):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    chat_id = telegram_chat_id if telegram_chat_id is not None else telegram_user_id
     cur.execute(
-        "SELECT * FROM users WHERE telegram_user_id=? AND email!='' LIMIT 1",
-        (telegram_user_id,)
+        """
+        SELECT * FROM users
+        WHERE email!=''
+          AND (telegram_user_id=? OR telegram_chat_id=?)
+        ORDER BY last_seen_at DESC, updated_at DESC
+        LIMIT 1
+        """,
+        (telegram_user_id, chat_id)
     )
     row = cur.fetchone()
     conn.close()
@@ -22529,48 +22574,108 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
     ensure_user(update.effective_user)
     if not context.args:
         await update.message.reply_text(
-            "Connect your website account by logging in at https://coinpilotx.app/account/settings, generating a code, then sending:\n\n/connect CODE",
+            "Go to CoinPilotXAI Account Settings and click Connect Telegram. Then send one of these here:\n\n/link CODE\n/connect CODE",
             reply_markup=account_reply_markup(update.effective_user.id),
         )
         return
-    code = clean_html(context.args[0]).upper()
+    code = clean_html(context.args[0]).strip().upper()
     now = datetime.now().isoformat()
     conn = db()
     cur = conn.cursor()
-    cur.execute(
-        "SELECT id, user_id, expires_at, used_at FROM telegram_link_codes WHERE code=? ORDER BY id DESC LIMIT 1",
-        (code,)
-    )
-    row = cur.fetchone()
-    if not row or row[3] or row[2] < now:
+    try:
+        cur.execute(
+            """
+            SELECT id, user_id, expires_at, used_at, status
+            FROM telegram_link_codes
+            WHERE code=?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (code,)
+        )
+        row = cur.fetchone()
+        link = dict(row) if row else None
+        status = ((link or {}).get("status") or "pending").lower()
+        expires_at = (link or {}).get("expires_at") or ""
+        if not link or link.get("used_at") or status != "pending" or not expires_at or expires_at < now:
+            if link and status != "used":
+                cur.execute("UPDATE telegram_link_codes SET status='expired' WHERE id=?", (link["id"],))
+                conn.commit()
+            logging.info("Telegram linking failed for user %s reason=invalid_or_expired", update.effective_user.id)
+            conn.close()
+            await update.message.reply_text(
+                "Invalid or expired code. Generate a new one from Account Settings.",
+                reply_markup=account_reply_markup(update.effective_user.id),
+            )
+            return
+
+        telegram_user_id = update.effective_user.id
+        telegram_username = update.effective_user.username or ""
+        telegram_chat_id = update.effective_chat.id if update.effective_chat else telegram_user_id
+        target_user_id = link["user_id"]
+        existing = get_linked_website_account(telegram_user_id, telegram_chat_id)
+        if existing and int(existing.get("user_id") or 0) == int(target_user_id):
+            cur.execute(
+                """
+                UPDATE telegram_link_codes
+                SET status='used', used_at=?, telegram_user_id=?, telegram_chat_id=?, telegram_username=?
+                WHERE id=?
+                """,
+                (now, telegram_user_id, telegram_chat_id, telegram_username, link["id"]),
+            )
+            conn.commit()
+            conn.close()
+            await update.message.reply_text(
+                "Telegram is already connected.",
+                reply_markup=account_reply_markup(telegram_user_id),
+            )
+            return
+
+        cur.execute(
+            """
+            UPDATE users
+            SET telegram_user_id=NULL, telegram_username=NULL, telegram_chat_id=NULL, updated_at=?
+            WHERE telegram_user_id=? OR telegram_chat_id=?
+            """,
+            (now, telegram_user_id, telegram_chat_id),
+        )
+        cur.execute(
+            """
+            UPDATE users
+            SET telegram_user_id=?, telegram_username=?, telegram_chat_id=?, updated_at=?, last_seen_at=?
+            WHERE user_id=?
+            """,
+            (
+                telegram_user_id,
+                telegram_username,
+                telegram_chat_id,
+                now,
+                now,
+                target_user_id,
+            )
+        )
+        cur.execute(
+            """
+            UPDATE telegram_link_codes
+            SET status='used', used_at=?, telegram_user_id=?, telegram_chat_id=?, telegram_username=?
+            WHERE id=?
+            """,
+            (now, telegram_user_id, telegram_chat_id, telegram_username, link["id"]),
+        )
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
         conn.close()
-        logging.info("Telegram linking failed for user %s", update.effective_user.id)
+        logging.exception("Telegram linking command failed for Telegram user %s: %s", update.effective_user.id, exc)
         await update.message.reply_text(
-            "That connection code is invalid or expired. Please generate a new code from Account Settings.",
+            "Could not connect Telegram right now. Please generate a fresh code and try again.",
             reply_markup=account_reply_markup(update.effective_user.id),
         )
         return
-    cur.execute(
-        """
-        UPDATE users
-        SET telegram_user_id=?, telegram_username=?, telegram_chat_id=?, updated_at=?, last_seen_at=?
-        WHERE user_id=?
-        """,
-        (
-            update.effective_user.id,
-            update.effective_user.username or "",
-            update.effective_chat.id if update.effective_chat else update.effective_user.id,
-            now,
-            now,
-            row[1],
-        )
-    )
-    cur.execute("UPDATE telegram_link_codes SET used_at=? WHERE id=?", (now, row[0]))
-    conn.commit()
     conn.close()
-    linked_user = load_account_by_id(row[1])
+    linked_user = load_account_by_id(target_user_id)
     if linked_user:
-        sync_brevo_contact_safe({**linked_user, "source": "telegram_link"}, entity_type="user", entity_id=row[1])
+        sync_brevo_contact_safe({**linked_user, "source": "telegram_link"}, entity_type="user", entity_id=target_user_id)
     logging.info("Telegram linking success for Telegram user %s", update.effective_user.id)
     pro_line = (
         "\n\nYour CoinPilotXAI Pro access is now active in Telegram.\n\n"
@@ -22578,15 +22683,85 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
         if linked_user and has_pro_access(linked_user)
         else "\n\nYour Telegram account is linked. Upgrade Pro on the website when you want deeper intelligence."
     )
-    log_product_event(row[1], "telegram_account_linked", {"telegram_user_id": update.effective_user.id})
+    log_product_event(target_user_id, "telegram_account_linked", {"telegram_user_id": update.effective_user.id})
     if linked_user and has_pro_access(linked_user):
-        log_product_event(row[1], "telegram_pro_verified", {"telegram_user_id": update.effective_user.id})
+        log_product_event(target_user_id, "telegram_pro_verified", {"telegram_user_id": update.effective_user.id})
     await update.message.reply_text(
         "✅ Telegram connected successfully.\n\n"
         "Your CoinPilotX account is now connected to this Telegram profile. You can now use the Account button anytime to view your plan, subscription, preferences, and account status."
         f"{pro_line}",
         reply_markup=account_reply_markup(update.effective_user.id),
     )
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    telegram_chat_id = update.effective_chat.id if update.effective_chat else update.effective_user.id
+    user = get_linked_website_account(update.effective_user.id, telegram_chat_id)
+    if not user:
+        await update.message.reply_text(
+            "Account linked: No.\n\nUse /link CODE after generating a Telegram code from CoinPilotXAI Account Settings.",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
+        return
+    active_alerts = 0
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM alert_rules WHERE user_id=? AND COALESCE(status, 'active')='active'",
+            (user["user_id"],),
+        )
+        active_alerts = cur.fetchone()[0] or 0
+        conn.close()
+    except Exception as exc:
+        logging.info("Telegram status alert count failed for user=%s error=%s", user.get("user_id"), exc)
+    pro_status = "Pro Active" if platform_pro_access(user) else "Free"
+    await update.message.reply_text(
+        "CoinPilotXAI Status\n\n"
+        "Account linked: Yes\n"
+        f"Plan: {pro_status}\n"
+        f"Active alerts: {active_alerts}\n\n"
+        "Manage your account: https://coinpilotx.app/account/settings",
+        reply_markup=account_reply_markup(update.effective_user.id),
+    )
+
+
+async def unlink_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ensure_user(update.effective_user)
+    telegram_chat_id = update.effective_chat.id if update.effective_chat else update.effective_user.id
+    user = get_linked_website_account(update.effective_user.id, telegram_chat_id)
+    if not user:
+        await update.message.reply_text(
+            "Telegram is not linked yet.",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
+        return
+    now = datetime.now().isoformat()
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE users
+            SET telegram_user_id=NULL, telegram_username=NULL, telegram_chat_id=NULL, updated_at=?
+            WHERE user_id=?
+            """,
+            (now, user["user_id"]),
+        )
+        conn.commit()
+        conn.close()
+        log_product_event(user["user_id"], "telegram_account_unlinked", {"telegram_user_id": update.effective_user.id})
+        await update.message.reply_text(
+            "Telegram disconnected successfully.",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
+    except Exception as exc:
+        logging.exception("Telegram unlink failed for Telegram user %s: %s", update.effective_user.id, exc)
+        await update.message.reply_text(
+            "Could not unlink Telegram right now. Please try again from Account Settings.",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
 
 
 async def help_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -22599,7 +22774,7 @@ async def help_account_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "1. Log in on the website.\n"
         "2. Open Account Settings.\n"
         "3. Tap Connect Telegram Bot.\n"
-        "4. Send the generated code here with /connect CODE.\n\n"
+        "4. Send the generated code here with /link CODE or /connect CODE.\n\n"
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
         reply_markup=account_reply_markup(update.effective_user.id),
     )
@@ -22668,22 +22843,69 @@ async def website_watchlist_command(update: Update, context: ContextTypes.DEFAUL
 
 async def website_alerts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    user, message = linked_account_or_message(update.effective_user.id)
+    telegram_chat_id = update.effective_chat.id if update.effective_chat else update.effective_user.id
+    user = get_linked_website_account(update.effective_user.id, telegram_chat_id)
+    message = None if user else linked_account_or_message(update.effective_user.id)[1]
     if not user:
         await update.message.reply_text(message, reply_markup=account_reply_markup(update.effective_user.id))
         return
-    alerts = portfolio_service.get_alerts(user["user_id"])
-    lines = ["🚨 CoinPilotX Alerts Center", ""]
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT symbol, alert_type, condition, threshold_value, target_value, status, trigger_count, last_triggered_at
+            FROM alert_rules
+            WHERE user_id=? AND COALESCE(status, 'active')!='deleted'
+            ORDER BY
+                CASE WHEN COALESCE(status, 'active')='active' THEN 0 ELSE 1 END,
+                updated_at DESC,
+                id DESC
+            LIMIT 12
+            """,
+            (user["user_id"],),
+        )
+        alerts = [dict(row) if hasattr(row, "keys") else row for row in cur.fetchall()]
+        cur.execute(
+            """
+            SELECT symbol, alert_type, observed_value, message, created_at
+            FROM alert_events
+            WHERE user_id=? AND COALESCE(status, '')='triggered'
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (user["user_id"],),
+        )
+        last_event_row = cur.fetchone()
+        last_event = dict(last_event_row) if last_event_row and hasattr(last_event_row, "keys") else None
+        conn.close()
+    except Exception as exc:
+        logging.exception("Telegram alerts command failed for user=%s: %s", user.get("user_id"), exc)
+        await update.message.reply_text(
+            "Could not load alerts right now. Manage alerts on the site: https://coinpilotx.app/alerts",
+            reply_markup=account_reply_markup(update.effective_user.id),
+        )
+        return
+
+    active_count = sum(1 for alert in alerts if (alert.get("status") or "active") == "active")
+    lines = ["🚨 CoinPilotXAI Alerts", "", f"Active alerts: {active_count}"]
     if alerts:
-        for alert in alerts[:12]:
-            status = "active" if alert.get("active") else "paused"
+        lines.append("")
+        for alert in alerts[:6]:
+            status = alert.get("status") or "active"
+            threshold = alert.get("threshold_value") if alert.get("threshold_value") is not None else alert.get("target_value")
+            threshold_text = "" if threshold is None else f" {threshold:g}" if isinstance(threshold, (int, float)) else f" {threshold}"
             lines.append(
-                f"• {alert.get('symbol') or 'Portfolio'} {alert.get('condition') or alert.get('alert_type')} "
-                f"{alert.get('target_value') or ''} · {status}"
+                f"• {alert.get('symbol') or 'Portfolio'} {alert.get('condition') or alert.get('alert_type')}{threshold_text} · {status}"
             )
     else:
-        lines.append("No website alerts saved yet. Create price or portfolio alerts from your dashboard.")
-    lines.append("\nDashboard: https://coinpilotx.app/dashboard")
+        lines.append("\nNo active alerts yet. Create one from the Alerts Command Center.")
+    if last_event:
+        observed = last_event.get("observed_value")
+        observed_text = "" if observed is None else f" at {observed:g}" if isinstance(observed, (int, float)) else f" at {observed}"
+        lines.append("")
+        lines.append(f"Last triggered: {last_event.get('symbol') or last_event.get('alert_type')}{observed_text}")
+    lines.append("\nManage alerts: https://coinpilotx.app/alerts")
     lines.append("Educational information only. Not financial, betting, investment, or legal advice.")
     await update.message.reply_text("\n".join(lines), reply_markup=account_reply_markup(update.effective_user.id))
 
@@ -23843,7 +24065,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "⭐ Website Checkout Required\n\n"
             "For security and account consistency, Pro payments now happen only on the CoinPilotXAI website.\n\n"
-            "Create or log in to your website account, upgrade there, then return here and send your activation code with /connect CODE.\n\n"
+            "Create or log in to your website account, upgrade there, then return here and send your activation code with /link CODE or /connect CODE.\n\n"
             "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
             reply_markup=upgrade_payment_menu(user_id)
         )
@@ -24035,6 +24257,9 @@ def main():
     app.add_handler(CommandHandler("myemail", myemail_command))
     app.add_handler(CommandHandler("account", account_command))
     app.add_handler(CommandHandler("connect", connect_account_command))
+    app.add_handler(CommandHandler("link", connect_account_command))
+    app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("unlink", unlink_command))
     app.add_handler(CommandHandler("help_account", help_account_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("cryptonews", cryptonews_command))
