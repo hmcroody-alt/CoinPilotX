@@ -22,7 +22,7 @@ def _row(row):
 def _public_profile(cur, user_id):
     cur.execute(
         """
-        SELECT u.user_id, u.display_name, u.full_name, u.last_seen_at,
+        SELECT u.user_id, u.roast_call_sign, u.last_seen_at,
                ap.public_player_id, ap.display_name AS arena_name, ap.rank, ap.avatar_url, ap.faction
         FROM users u
         LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
@@ -32,10 +32,13 @@ def _public_profile(cur, user_id):
         (int(user_id),),
     )
     row = _row(cur.fetchone()) or {}
+    public_id = row.get("public_player_id") or f"pilot-{int(row.get('user_id') or 0)}"
+    display = row.get("roast_call_sign") or f"Arena Pilot #{int(row.get('user_id') or 0)}"
     return {
-        "user_id": int(row.get("user_id") or 0),
-        "display_name": row.get("arena_name") or row.get("display_name") or row.get("full_name") or "CoinPilotXAI user",
-        "public_player_id": row.get("public_player_id") or "",
+        "player_id": public_id,
+        "display_name": display,
+        "call_sign": row.get("roast_call_sign") or display,
+        "public_player_id": public_id,
         "rank": row.get("rank") or "Rookie",
         "avatar": row.get("avatar_url") or "",
         "faction": row.get("faction") or "",
@@ -84,7 +87,7 @@ def list_threads(user_id, limit=80):
     cur.execute(
         """
         SELECT c.id, c.updated_at, ou.user_id AS other_user_id,
-               COALESCE(NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), NULLIF(ou.display_name, ''), 'CoinPilotXAI user') AS other_name,
+               COALESCE(NULLIF(ou.roast_call_sign, ''), NULLIF(ap.public_player_id, ''), 'Arena Pilot #' || ou.user_id) AS other_name,
                ap.public_player_id AS other_public_player_id, ou.last_seen_at AS other_last_seen_at,
                MAX(pm.created_at) AS last_message_at,
                (
@@ -99,7 +102,7 @@ def list_threads(user_id, limit=80):
         LEFT JOIN users ou ON ou.user_id=other_cm.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=ou.user_id
         LEFT JOIN private_messages pm ON pm.conversation_id=c.id AND pm.deleted_at IS NULL
-        GROUP BY c.id, c.updated_at, ou.user_id, ap.display_name, ap.public_player_id, ou.display_name, ou.last_seen_at
+        GROUP BY c.id, c.updated_at, ou.user_id, ou.roast_call_sign, ap.display_name, ap.public_player_id, ou.last_seen_at
         ORDER BY COALESCE(MAX(pm.created_at), c.updated_at) DESC
         LIMIT ?
         """,
@@ -181,7 +184,7 @@ def messages(user_id, thread_id, after_id=0, limit=50):
     }
 
 
-def send_message(user_id, thread_id, body, media_ids=None):
+def send_message(user_id, thread_id, body, media_ids=None, source_context="private_chat"):
     body = _clean(body)
     media_ids = media_ids or []
     if not body and not media_ids:
@@ -209,9 +212,13 @@ def send_message(user_id, thread_id, body, media_ids=None):
         conn.close()
         return {"ok": False, "message": "Messaging is blocked for this conversation."}, 403
     created_at = now_iso()
+    sender_public = _public_profile(cur, user_id)
+    cur.execute("SELECT user_id FROM conversation_members WHERE conversation_id=? AND user_id != ? LIMIT 1", (int(thread_id), int(user_id)))
+    other_row = cur.fetchone()
+    receiver_public = _public_profile(cur, int(other_row["user_id"])) if other_row else {}
     cur.execute(
-        "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)",
-        (int(thread_id), int(user_id), body, created_at),
+        "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at, public_sender_display_name, public_receiver_display_name, source_context, call_sign_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (int(thread_id), int(user_id), body, created_at, sender_public.get("display_name"), receiver_public.get("display_name"), source_context, sender_public.get("call_sign") or sender_public.get("display_name")),
     )
     message_id = int(cur.lastrowid)
     cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (created_at, int(thread_id)))
@@ -235,7 +242,7 @@ def send_message(user_id, thread_id, body, media_ids=None):
     }, 200
 
 
-def start_thread(user_id, public_player_id="", query="", message=""):
+def start_thread(user_id, public_player_id="", query="", message="", source_context="profile"):
     lookup = _clean(public_player_id or query, 160)
     if not lookup:
         return {"ok": False, "message": "Public player ID required."}, 400
@@ -246,13 +253,10 @@ def start_thread(user_id, public_player_id="", query="", message=""):
         SELECT u.user_id FROM users u
         LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
         WHERE lower(ap.public_player_id)=lower(?)
-           OR lower(ap.display_name)=lower(?)
-           OR lower(u.display_name)=lower(?)
-           OR lower(u.full_name)=lower(?)
-           OR lower(u.username)=lower(?)
+           OR lower(u.roast_call_sign_slug)=lower(?)
         ORDER BY u.user_id LIMIT 1
         """,
-        (lookup, lookup, lookup, lookup, lookup),
+        (lookup, lookup.lower().replace(" ", "-")),
     )
     other = cur.fetchone()
     if not other:
@@ -263,8 +267,14 @@ def start_thread(user_id, public_player_id="", query="", message=""):
         conn.close()
         return {"ok": False, "message": "You cannot message yourself."}, 400
     thread_id = direct_thread(cur, user_id, other_user_id)
+    sender_public = _public_profile(cur, user_id)
+    receiver_public = _public_profile(cur, other_user_id)
+    cur.execute(
+        "UPDATE conversations SET source_context=?, public_sender_display_name=?, public_receiver_display_name=?, public_player_id=? WHERE id=?",
+        (source_context, sender_public.get("display_name"), receiver_public.get("display_name"), public_player_id or receiver_public.get("public_player_id"), thread_id),
+    )
     conn.commit()
     conn.close()
     if message:
-        send_message(user_id, thread_id, message)
+        send_message(user_id, thread_id, message, source_context=source_context)
     return {"ok": True, "thread_id": thread_id, "conversation_id": thread_id, "next_url": f"/chat/thread/{thread_id}"}, 200

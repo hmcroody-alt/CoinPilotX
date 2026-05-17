@@ -31,14 +31,14 @@ def _clean_call_sign(value):
 
 def _call_sign_for_user(cur, user_id):
     try:
-        cur.execute("SELECT roast_call_sign, username, display_name FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
+        cur.execute("SELECT roast_call_sign FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
         row = cur.fetchone()
         if row:
             data = _row_to_dict(row)
-            return data.get("roast_call_sign") or data.get("display_name") or data.get("username") or f"Pilot {int(user_id)}"
+            return data.get("roast_call_sign") or f"Arena Pilot #{int(user_id)}"
     except Exception:
         pass
-    return f"Pilot {int(user_id)}"
+    return f"Arena Pilot #{int(user_id)}"
 
 
 def set_call_sign(user_id, call_sign):
@@ -83,9 +83,10 @@ def ensure_match(match_id=1, room_id=None, max_players=None):
 def _participants(cur, match_id):
     cur.execute(
         """
-        SELECT p.*, COALESCE(u.roast_call_sign, u.display_name, u.username, 'Arena Pilot') AS display_name
+        SELECT p.*, u.roast_call_sign, ap.public_player_id
         FROM arena_roast_participants p
         LEFT JOIN users u ON u.user_id=p.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
         WHERE p.match_id=?
         ORDER BY p.current_balance DESC, p.joined_at ASC
         """,
@@ -97,11 +98,13 @@ def _participants(cur, match_id):
 def _format_participant(row):
     balance = float(row.get("current_balance") or DEFAULT_STAGE_BALANCE)
     status = "Dominating" if balance >= 1_075_000 else "Hot" if balance >= 1_025_000 else "Shaken" if balance < 960_000 else "Recovering"
+    public_id = row.get("public_player_id") or f"pilot-{int(row.get('user_id') or 0)}"
+    call_sign = row.get("call_sign") or row.get("roast_call_sign") or f"Arena Pilot #{int(row.get('user_id') or 0)}"
     return {
-        "user_id": int(row.get("user_id") or 0),
-        "public_player_id": row.get("public_player_id") or f"pilot-{int(row.get('user_id') or 0)}",
-        "call_sign": row.get("call_sign") or row.get("display_name") or "Arena Pilot",
-        "display_name": row.get("display_name") or row.get("call_sign") or "Arena Pilot",
+        "player_id": public_id,
+        "public_player_id": public_id,
+        "call_sign": call_sign,
+        "display_name": call_sign,
         "starting_balance": float(row.get("starting_balance") or DEFAULT_STAGE_BALANCE),
         "current_balance": balance,
         "stage_balance": f"${balance:,.0f}",
@@ -153,6 +156,22 @@ def _choose_target(cur, match_id, sender_user_id, target_user_id=None, target_ty
     return opponents[0] if opponents else None
 
 
+def _user_id_from_public(cur, public_player_id):
+    public_player_id = str(public_player_id or "").strip()
+    if not public_player_id:
+        return 0
+    cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (public_player_id,))
+    row = cur.fetchone()
+    if row:
+        return int(row["user_id"] if hasattr(row, "keys") else row[0])
+    if public_player_id.startswith("pilot-"):
+        try:
+            return int(public_player_id.replace("pilot-", "", 1))
+        except Exception:
+            return 0
+    return 0
+
+
 def match_state(match_id, user_id=None):
     ensure_match(match_id)
     conn = user_context.connect()
@@ -173,7 +192,7 @@ def match_state(match_id, user_id=None):
             "id": int(match_id),
             "max_players": int(match.get("max_players") or 2),
             "match_type": match.get("match_type") or "two_player",
-            "current_turn_user_id": int(match.get("current_turn_user_id") or (participants[0]["user_id"] if participants else 0)),
+            "current_turn_player_id": participants[0]["public_player_id"] if participants else "",
             "turn_started_at": match.get("turn_started_at"),
             "turn_duration_seconds": int(match.get("turn_duration_seconds") or TURN_SECONDS),
         },
@@ -214,7 +233,7 @@ def _commentator_line(call_sign, impact, sender_delta, target_delta, target_name
     return f"{call_sign} landed a {impact}. The crowd is rewarding clean pressure."
 
 
-def submit_message(user_id, match_id, message, target_user_id=None, target_type="single"):
+def submit_message(user_id, match_id, message, target_user_id=None, target_type="single", target_public_player_id=None):
     message = str(message or "").strip()[:500]
     if not message:
         return {"ok": False, "message": "Send a clean, clever line first."}, 400
@@ -224,6 +243,11 @@ def submit_message(user_id, match_id, message, target_user_id=None, target_type=
     conn.row_factory = __import__("sqlite3").Row
     cur = conn.cursor()
     sender_name = _call_sign_for_user(cur, user_id)
+    cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
+    sender_profile = cur.fetchone()
+    sender_public_id = (sender_profile["public_player_id"] if sender_profile else "") or f"pilot-{int(user_id)}"
+    if not target_user_id and target_public_player_id:
+        target_user_id = _user_id_from_public(cur, target_public_player_id)
     target = _choose_target(cur, match_id, user_id, target_user_id, target_type)
     weight = roast_line_weight_engine.score_line(message, moderation=moderation)
     sender_delta = float(weight.get("balance_delta") or 0)
@@ -280,7 +304,7 @@ def submit_message(user_id, match_id, message, target_user_id=None, target_type=
     conn.close()
     result = {
         "ok": bool(weight.get("safe")),
-        "message": {"id": message_id, "line_id": line_id, "match_id": int(match_id), "user_id": int(user_id), "body": message, "created_at": now},
+        "message": {"id": message_id, "line_id": line_id, "match_id": int(match_id), "player_id": sender_public_id, "public_player_id": sender_public_id, "call_sign": sender_name, "body": message, "created_at": now},
         "line_weight": weight,
         "score": score,
         "avatar_reaction": score["avatar_reaction"],

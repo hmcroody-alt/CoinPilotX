@@ -55,6 +55,8 @@ from services import (
     arena_victory_engine,
     arena_world_engine,
     chat_realtime_service,
+    crowd_energy_engine,
+    realtime_sync_engine,
     realtime_service,
     telegram_text_router,
     live_market_service,
@@ -2408,6 +2410,21 @@ def private_chat_thread_page(thread_id):
     other = payload.get("other") or {}
     other_name = clean_html(other.get("display_name") or "CoinPilotXAI user")
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPilotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "Arena contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
+
+
+@webhook_app.route("/chat/fan-messages", methods=["GET"])
+def fan_messages_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next="/chat/fan-messages"))
+    payload = chat_realtime_service.list_threads(user["user_id"], limit=80)
+    cards = "".join(
+        f"<article class='card'><h3>{clean_html(item.get('title') or 'Arena Pilot')}</h3><p class='muted'>{clean_html(item.get('latest_message') or 'No message preview yet.')}</p><p class='muted'>{int(item.get('unread_count') or 0)} unread</p><div class='actions'><a class='button primary' href='/chat/thread/{int(item.get('id') or 0)}'>Reply</a><button data-chat-block='{int(item.get('other_user_id') or 0)}'>Block</button><button data-chat-report='{int(item.get('other_user_id') or 0)}'>Report</button></div></article>"
+        for item in payload.get("conversations", [])
+    ) or "<article class='card'><h3>No fan messages yet</h3><p class='muted'>Messages from leaderboards, profiles, and Roast Battle will appear here with call signs only.</p></article>"
+    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Fan Messages</div><h1>Reply to Arena players fast.</h1><p>Only public call signs and Arena IDs are shown. Real names, emails, phone numbers, and billing data stay private.</p></article></section><section class='grid'>{cards}</section>"
+    return arena_page_shell("Fan Messages", body, user=user)
 
 
 def user_is_conversation_member(user_id, conversation_id):
@@ -10401,7 +10418,7 @@ def arena_leaderboard_page():
       if (message) {{
         const text = prompt('Message this Arena player');
         if (text) {{
-          const response = await fetch('/api/arena/message-player', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:message.dataset.message,message:text}})}});
+          const response = await fetch('/api/players/' + encodeURIComponent(message.dataset.message) + '/message', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text,source_context:'leaderboard'}})}});
           const data = await response.json(); if (data.next_url) location.href = data.next_url; else alert(data.message || 'Message request sent.');
         }}
       }}
@@ -10447,7 +10464,7 @@ def arena_player_page(public_player_id):
     document.addEventListener('click',async e=>{{const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');const m=e.target.closest('[data-message]');const r=e.target.closest('[data-report]');const b=e.target.closest('[data-block]');const s=e.target.closest('.arena-share-btn');
       if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','btc_duel')||'btc_duel';const message=prompt('Optional challenge note','Ready for an Arena challenge?')||'';const res=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:challenge_type,message:message}})}});alert((await res.json()).message||'Challenge sent.');}}
       if(f){{const res=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await res.json()).message||'Followed.');}}
-      if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});const d=await res.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
+      if(m){{const text=prompt('Message this Arena player');if(text){{const res=await fetch('/api/players/' + encodeURIComponent(m.dataset.message) + '/message',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text,source_context:'profile'}})}});const d=await res.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
       if(r){{const res=await fetch('/api/arena/report-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:r.dataset.report,report_type:'profile',details:'Reported from profile'}})}});alert((await res.json()).message||'Report sent.');}}
       if(b){{const res=await fetch('/api/arena/block-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:b.dataset.block,reason:'Blocked from profile'}})}});alert((await res.json()).message||'Player blocked.');}}
       if(s){{const url=s.dataset.shareUrl;await trackShare(s.dataset.publicPlayerId,'native_or_copy');if(navigator.share){{try{{await navigator.share({{title:'CoinPilotXAI Arena Player',text:'Check out this Arena player profile on CoinPilotXAI.',url:url}});return;}}catch(err){{if(err&&err.name==='AbortError')return;}}}}try{{await copyShare(url);}}catch(err){{openShareModal(url);}}}}
@@ -10474,7 +10491,7 @@ def arena_players_page():
     <section class="hero"><article class="card wide"><div class="kicker">Arena Players</div><h1>Find pilots without exposing private identity</h1><p>Message, challenge, follow, and invite Arena players through public Arena IDs only. Emails, internal IDs, billing data, and account usernames stay private.</p></article><article class="card"><h2>Privacy Safe</h2><p>Every action maps public player IDs to accounts only on the server.</p></article></section>
     <section class="grid">{cards or '<article class="card"><h2>No pilots yet</h2><p>Complete a mission to appear in the Arena directory.</p></article>'}</section>
     <script>document.addEventListener('click',async e=>{{const m=e.target.closest('[data-message]');const c=e.target.closest('[data-challenge]');const f=e.target.closest('[data-follow]');
-      if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/arena/message-player',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:m.dataset.message,message:text}})}});const d=await r.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
+      if(m){{const text=prompt('Message this Arena player');if(text){{const r=await fetch('/api/players/' + encodeURIComponent(m.dataset.message) + '/message',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text,source_context:'players'}})}});const d=await r.json();if(d.next_url)location.href=d.next_url;else alert(d.message||'Message request sent.');}}}}
       if(c){{const challenge_type=prompt('Choose challenge type: quick_battle, btc_duel, eth_duel, scam_hunter_duel, survival_mode, fake_portfolio_battle, prediction_war, ai_boss_race','quick_battle')||'quick_battle';const message=prompt('Optional challenge note','Quick Arena challenge?')||'';const r=await fetch('/api/arena/challenge',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:c.dataset.challenge,challenge_type:challenge_type,message:message}})}});alert((await r.json()).message||'Challenge sent.');}}
       if(f){{const r=await fetch('/api/arena/follow',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{public_player_id:f.dataset.follow}})}});alert((await r.json()).message||'Followed.');}}
     }})</script>
@@ -10903,7 +10920,7 @@ def arena_roast_battle_page(room_id=None, match_id=None):
       <article class="card">
         <h2>Live Voting</h2>
         <p class="muted">Vote for the player controlling the room. Votes feed the crowd heat meter.</p>
-        <div class="actions"><button data-roast-vote="1">Vote Player A</button><button data-roast-vote="2">Vote Player B</button></div>
+        <div class="actions" data-roast-vote-buttons><p class="muted">Join or wait for active call signs.</p></div>
       </article>
     </section>
     <script>
@@ -10914,20 +10931,59 @@ def arena_roast_battle_page(room_id=None, match_id=None):
     function roastStorm(emoji){{const layer=document.createElement('div');layer.className='emoji-storm';for(let i=0;i<18;i++){{const s=document.createElement('span');s.textContent=emoji||['🔥','😂','👑','🚀','🧠'][i%5];s.style.left=Math.random()*100+'vw';s.style.animationDelay=(Math.random()*.35)+'s';s.style.setProperty('--drift',((Math.random()-.5)*120)+'px');layer.appendChild(s);}}document.body.appendChild(layer);setTimeout(()=>layer.remove(),3200);}}
     function addFeed(sel,html){{const el=document.querySelector(sel);if(!el)return;el.insertAdjacentHTML('afterbegin',html);while(el.children.length>24)el.lastElementChild.remove();}}
     function money(v){{return '$'+Number(v||0).toLocaleString(undefined,{{maximumFractionDigits:0}});}}
-    function renderPlayers(players){{const grid=document.querySelector('[data-roast-players]');const targets=document.querySelector('[data-roast-targets]');if(!grid)return;grid.innerHTML=(players||[]).map((p,i)=>`<div class="roast-avatar" data-roast-player="${{p.user_id}}"><div><div class="roast-face">${{['😎','😤','🧠','👑'][i%4]}}</div><strong>${{esc(p.call_sign||p.display_name||'Arena Pilot')}}</strong><p class="roast-balance">Stage Balance: ${{money(p.current_balance)}}</p><p class="muted">${{esc(p.status||'Ready')}} · Crowd ${{Math.round(Number(p.crowd_score||0))}}</p></div></div>`).join('')||'<div class="roast-avatar"><div><strong>Waiting for players</strong><p class="roast-balance">Stage Balance: $1,000,000</p></div></div>';if(targets)targets.innerHTML='<option value="">Auto target</option>'+(players||[]).map(p=>`<option value="${{Number(p.user_id||0)}}">${{esc(p.call_sign||p.display_name||'Arena Pilot')}}</option>`).join('');}}
+    function renderPlayers(players){{const grid=document.querySelector('[data-roast-players]');const targets=document.querySelector('[data-roast-targets]');const votes=document.querySelector('[data-roast-vote-buttons]');if(!grid)return;grid.innerHTML=(players||[]).map((p,i)=>`<div class="roast-avatar" data-roast-player="${{esc(p.public_player_id||p.player_id||'')}}"><div><div class="roast-face">${{['😎','😤','🧠','👑'][i%4]}}</div><strong>${{esc(p.call_sign||'Arena Pilot')}}</strong><p class="roast-balance">Stage Balance: ${{money(p.current_balance)}}</p><p class="muted">${{esc(p.status||'Ready')}} · Crowd ${{Math.round(Number(p.crowd_score||0))}}</p><div class="actions"><button data-message-player="${{esc(p.public_player_id||p.player_id||'')}}">Message</button></div></div></div>`).join('')||'<div class="roast-avatar"><div><strong>Waiting for players</strong><p class="roast-balance">Stage Balance: $1,000,000</p></div></div>';if(targets)targets.innerHTML='<option value="">Auto target</option>'+(players||[]).map(p=>`<option value="${{esc(p.public_player_id||p.player_id||'')}}">${{esc(p.call_sign||'Arena Pilot')}}</option>`).join('');if(votes)votes.innerHTML=(players||[]).map(p=>`<button data-roast-vote="${{esc(p.public_player_id||p.player_id||'')}}">${{esc('Vote '+(p.call_sign||'Arena Pilot'))}}</button>`).join('')||'<p class="muted">Waiting for active call signs.</p>';}}
     async function loadRoastState(){{try{{const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/state`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{renderPlayers(d.participants||[]);const turn=document.querySelector('[data-roast-turn]');if(turn)turn.textContent=`${{d.match?.match_type==='four_player'?'Four-player chaos':'Two-player duel'}} · 30-second timed turns · virtual dollars decide the room`;}}}}catch(e){{}}}}
     function applySnapshot(snapshot){{if(!snapshot)return;const count=document.querySelector('[data-roast-world-count]');const heat=document.querySelector('[data-roast-crowd]');const label=document.querySelector('[data-roast-heat-label]');const ticker=document.querySelector('[data-roast-ticker]');if(count)count.textContent=Number(snapshot.watching_worldwide||0).toLocaleString()+' watching worldwide';if(heat)heat.style.width=Math.min(100,Number(snapshot.heat_meter||52))+'%';if(label)label.textContent=(snapshot.heat_meter||0)>82?'Arena exploding':'Arena heating up';if(ticker&&snapshot.ticker)ticker.textContent=snapshot.ticker.join(' · ')+' · ';}}
-    function renderRoastEvent(ev){{if(!ev||roastSeen.has(String(ev.id)))return;roastSeen.add(String(ev.id));const p=ev.payload||{{}};if(ev.event_type==='roast_message'){{const m=p.message||{{}};const up=Number(p.balance_delta_sender||0)>=0;addFeed('[data-roast-feed]',`<div><strong>Pilot:</strong> ${{esc(m.body)}}<br><small>${{esc(p.impact_label||'Clean Hit')}} · Weight ${{Number((p.line_weight||{{}}).weight||(p.score||{{}}).total||0)}} · <span class="roast-delta ${{up?'up':'down'}}">${{up?'+':''}}${{money(p.balance_delta_sender||0)}}</span></small></div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'The room felt that one.')}}</div>`);renderPlayers(p.participants||[]);const card=document.querySelector(`[data-roast-player="${{m.user_id}}"]`);if(card){{card.classList.add(up?'balance-up':'balance-down');setTimeout(()=>card.classList.remove('balance-up','balance-down'),760);}}const face=document.querySelector('[data-roast-avatar-a]');if(face)face.textContent=p.avatar_reaction==='laughing'?'😂':'😤';roastStorm(up?'🔥':'💀');}}if(ev.event_type==='crowd_reaction'){{const r=p.reaction||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Crowd:</strong> ${{esc(r.emoji||'🔥')}} reaction landed.</div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'Chat is lighting up.')}}</div>`);roastStorm(r.emoji||'🔥');}}if(ev.event_type==='crowd_vote'){{addFeed('[data-roast-crowd-chat]',`<div><strong>Vote:</strong> Crowd backed Player ${{Number((p.vote||{{}}).target_user_id||0)===2?'B':'A'}}.</div>`);}}}}
+    function renderRoastEvent(ev){{if(!ev||roastSeen.has(String(ev.id)))return;roastSeen.add(String(ev.id));const p=ev.payload||{{}};if(ev.event_type==='roast_message'){{const m=p.message||{{}};const up=Number(p.balance_delta_sender||0)>=0;addFeed('[data-roast-feed]',`<div><strong>${{esc(m.call_sign||'Arena Pilot')}}:</strong> ${{esc(m.body)}}<br><small>${{esc(p.impact_label||'Clean Hit')}} · Weight ${{Number((p.line_weight||{{}}).weight||(p.score||{{}}).total||0)}} · <span class="roast-delta ${{up?'up':'down'}}">${{up?'+':''}}${{money(p.balance_delta_sender||0)}}</span></small></div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'The room felt that one.')}}</div>`);renderPlayers(p.participants||[]);const card=document.querySelector(`[data-roast-player="${{esc(m.public_player_id||m.player_id||'')}}"]`);if(card){{card.classList.add(up?'balance-up':'balance-down');setTimeout(()=>card.classList.remove('balance-up','balance-down'),760);}}const face=document.querySelector('[data-roast-avatar-a]');if(face)face.textContent=p.avatar_reaction==='laughing'?'😂':'😤';roastStorm(up?'🔥':'💀');}}if(ev.event_type==='crowd_reaction'){{const r=p.reaction||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Crowd:</strong> ${{esc(r.emoji||'🔥')}} reaction landed.</div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'Chat is lighting up.')}}</div>`);roastStorm(r.emoji||'🔥');}}if(ev.event_type==='crowd_vote'){{const v=p.vote||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Vote:</strong> Crowd backed ${{esc(v.call_sign||'Arena Pilot')}} · heat ${{Number(v.crowd_heat||0)}}</div>`);}}}}
     async function pollRoastLive(){{try{{const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/new?after_id=${{roastLastEventId}}`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{(d.events||[]).forEach(ev=>{{roastLastEventId=Math.max(roastLastEventId,Number(ev.id||0));renderRoastEvent(ev);}});applySnapshot(d.snapshot);}}}}catch(e){{}}}}
     document.querySelector('[data-roast-call-sign]')?.addEventListener('submit',async e=>{{e.preventDefault();const call_sign=new FormData(e.target).get('call_sign');const d=await fetch('/api/arena/roast/call-sign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{call_sign}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Call sign could not be saved.'}}));addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.ok?'Call sign locked: '+d.call_sign:(d.message||'Choose a different call sign.'))}}</div>`);if(d.ok)loadRoastState();}});
-    document.querySelector('[data-roast-message]').addEventListener('submit',async e=>{{e.preventDefault();const fd=new FormData(e.target);const message=fd.get('message');if(!String(message||'').trim())return;const btn=e.target.querySelector('button');btn.disabled=true;addFeed('[data-roast-feed]',`<div><strong>You:</strong> ${{esc(message)}}<br><small>Sending live...</small></div>`);const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/say`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message,target_type:fd.get('target_type')||'single',target_user_id:Number(fd.get('target_user_id')||0)}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Connection hiccup. Try again.'}}));btn.disabled=false;if(d.ok){{e.target.reset();pollRoastLive();loadRoastState();}}else{{addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.message||'Too personal. Keep it clever, not harmful.')}}</div>`);loadRoastState();}}}});
-    document.addEventListener('click',async e=>{{const react=e.target.closest('[data-roast-react]');if(react){{await fetch(`/api/arena/roast/match/${{roastMatchId}}/reaction`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{emoji:react.textContent.trim()}})}}).catch(()=>null);pollRoastLive();}}const vote=e.target.closest('[data-roast-vote]');if(vote){{await fetch(`/api/arena/roast/match/${{roastMatchId}}/vote`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{target_user_id:Number(vote.dataset.roastVote)}})}}).catch(()=>null);pollRoastLive();}}if(e.target.closest('[data-roast-enroll]')){{const d=await fetch('/api/arena/roast/enroll',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{room_id:1}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;}}if(e.target.closest('[data-roast-fullscreen]')){{document.querySelector('[data-roast-stage]').classList.toggle('roast-stage-fullscreen');}}}});
+    document.querySelector('[data-roast-message]').addEventListener('submit',async e=>{{e.preventDefault();const fd=new FormData(e.target);const message=fd.get('message');if(!String(message||'').trim())return;const btn=e.target.querySelector('button');btn.disabled=true;addFeed('[data-roast-feed]',`<div><strong>You:</strong> ${{esc(message)}}<br><small>Sending live...</small></div>`);const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/say`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message,target_type:fd.get('target_type')||'single',target_public_player_id:fd.get('target_user_id')||''}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Connection hiccup. Try again.'}}));btn.disabled=false;if(d.ok){{e.target.reset();pollRoastLive();loadRoastState();}}else{{addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.message||'Too personal. Keep it clever, not harmful.')}}</div>`);loadRoastState();}}}});
+    document.addEventListener('click',async e=>{{const react=e.target.closest('[data-roast-react]');if(react){{await fetch(`/api/arena/roast/match/${{roastMatchId}}/reaction`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{emoji:react.textContent.trim()}})}}).catch(()=>null);pollRoastLive();}}const vote=e.target.closest('[data-roast-vote]');if(vote){{await fetch(`/api/arena/roast/match/${{roastMatchId}}/vote`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{target_public_player_id:vote.dataset.roastVote}})}}).catch(()=>null);pollRoastLive();}}const msg=e.target.closest('[data-message-player]');if(msg){{const text=prompt('Message this Arena player');if(text){{const d=await fetch(`/api/players/${{encodeURIComponent(msg.dataset.messagePlayer)}}/message`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text,source_context:'roast_battle'}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;else addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.message||'Message could not be sent.')}}</div>`);}}}}if(e.target.closest('[data-roast-enroll]')){{const d=await fetch('/api/arena/roast/enroll',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{room_id:1}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;}}if(e.target.closest('[data-roast-fullscreen]')){{document.querySelector('[data-roast-stage]').classList.toggle('roast-stage-fullscreen');}}}});
     pollRoastLive(); loadRoastState();
     setInterval(pollRoastLive,1400);
     setInterval(loadRoastState,5000);
     </script>
     """
     return arena_page_shell("Roast Battle", body, user=user)
+
+
+@webhook_app.route("/arena/creator", methods=["GET"])
+@webhook_app.route("/roast/creator", methods=["GET"])
+def arena_creator_mode_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("signup_page", next=request.path))
+    is_roast = request.path.startswith("/roast")
+    title = "Roast Creator Mode" if is_roast else "Arena Creator Mode"
+    primary_url = "/arena/roast-battle/match/1" if is_roast else "/arena/live"
+    body = f"""
+    <style>
+      .creator-stage{{min-height:78dvh;display:grid;grid-template-columns:1.35fr .65fr;gap:16px;align-items:stretch}}
+      .creator-preview{{position:relative;overflow:hidden;border-radius:18px;background:radial-gradient(circle at 30% 20%,rgba(110,223,246,.22),transparent 20rem),linear-gradient(135deg,#060b16,#111a33);border:1px solid rgba(110,223,246,.22);padding:24px;display:grid;align-content:end}}
+      .creator-preview:before{{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent,rgba(255,255,255,.08),transparent);animation:creatorSweep 5s ease-in-out infinite;pointer-events:none}}
+      .creator-preview>*{{position:relative;z-index:1}}.creator-big{{font-size:clamp(2.4rem,7vw,5.8rem);line-height:.95;margin:0}}.creator-card{{font-size:1.15rem}}
+      @keyframes creatorSweep{{0%,100%{{transform:translateX(-60%)}}50%{{transform:translateX(60%)}}}}
+      @media(max-width:768px){{.creator-stage{{grid-template-columns:1fr;min-height:auto}}.creator-preview{{min-height:56dvh;padding:16px}}}}
+      @media(prefers-reduced-motion:reduce){{.creator-preview:before{{animation:none!important}}}}
+    </style>
+    <section class="creator-stage">
+      <article class="creator-preview">
+        <div class="kicker">Creator Mode</div>
+        <h1 class="creator-big">{clean_html(title)}</h1>
+        <p class="creator-card">Clean fullscreen stage, large commentator cards, audience reaction meter, spotlight mode, and reduced clutter for streaming or screen recording.</p>
+        <div class="crowd-meter"><span style="width:76%"></span></div>
+        <div class="actions"><a class="button primary" href="{primary_url}">Open Live Stage</a><button data-copy-overlay>Copy Overlay Link</button></div>
+      </article>
+      <aside class="card">
+        <h2>Creator Controls</h2>
+        <div class="actions"><button>Battle Spotlight</button><button>Audience Meter</button><button>Replay Marker</button><button>Commentator Cards</button></div>
+        <p class="muted">Auto-posting is disabled. Creator Mode is for approved manual streaming, replays, and safe highlights.</p>
+      </aside>
+    </section>
+    <script>document.addEventListener('click',async e=>{{if(e.target.closest('[data-copy-overlay]')){{await navigator.clipboard.writeText(location.origin+'{primary_url}?creator=1');e.target.textContent='Overlay Copied';}}}});</script>
+    """
+    return arena_page_shell(title, body, user=user)
 
 
 @webhook_app.route("/arena/matchmaking", methods=["GET"])
@@ -11223,7 +11279,10 @@ def admin_chat_health_page():
     today = datetime.now().date().isoformat()
     total_threads = scalar("SELECT COUNT(*) FROM conversations")
     messages_today = scalar("SELECT COUNT(*) FROM private_messages WHERE created_at>=?", (today,))
+    fan_messages_today = scalar("SELECT COUNT(*) FROM private_messages WHERE created_at>=? AND source_context IN ('leaderboard','profile','players','roast_battle')", (today,))
     pending_requests = scalar("SELECT COUNT(*) FROM arena_message_requests WHERE status='pending'")
+    reports_today = scalar("SELECT COUNT(*) FROM chat_reports WHERE created_at>=?", (today,))
+    blocked_fan_messages = scalar("SELECT COUNT(*) FROM blocked_users")
     arena_threads = scalar("SELECT COUNT(*) FROM arena_chat_threads")
     failed_sends = 0
     duplicate_thread_count = 0
@@ -11268,7 +11327,10 @@ def admin_chat_health_page():
     <div class='grid'>
       <div class='card'><div class='metric'>{total_threads}</div><p>Total private threads</p></div>
       <div class='card'><div class='metric'>{messages_today}</div><p>Messages today</p></div>
+      <div class='card'><div class='metric'>{fan_messages_today}</div><p>Fan messages today</p></div>
       <div class='card'><div class='metric'>{pending_requests}</div><p>Pending Arena requests</p></div>
+      <div class='card'><div class='metric'>{reports_today}</div><p>Reports today</p></div>
+      <div class='card'><div class='metric'>{blocked_fan_messages}</div><p>Blocked users</p></div>
       <div class='card'><div class='metric'>{arena_threads}</div><p>Legacy Arena threads bridged</p></div>
       <div class='card'><div class='metric'>{failed_sends}</div><p>Failed sends logged</p></div>
       <div class='card'><div class='metric'>{duplicate_thread_count}</div><p>Duplicate direct thread pairs</p></div>
@@ -12846,6 +12908,7 @@ def api_arena_roast_message(match_id):
         payload.get("message") or "",
         target_user_id=payload.get("target_user_id"),
         target_type=payload.get("target_type") or "single",
+        target_public_player_id=payload.get("target_public_player_id") or "",
     )
     return jsonify(result), status
 
@@ -12902,7 +12965,7 @@ def api_arena_roast_vote(match_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    return jsonify(roast_live_engine.record_vote(user["user_id"], match_id, payload.get("target_user_id") or 0))
+    return jsonify(roast_live_engine.record_vote(user["user_id"], match_id, payload.get("target_user_id") or 0, payload.get("target_public_player_id") or ""))
 
 
 @webhook_app.route("/api/arena/game/launch", methods=["POST"])
@@ -13024,6 +13087,7 @@ def api_arena_message_player():
     payload = request.get_json(silent=True) or {}
     receiver_id = arena_internal_id_from_public(payload.get("public_player_id") or "")
     message = clean_html(payload.get("message") or "")[:1000]
+    source_context = clean_html(payload.get("source_context") or "arena")[:80]
     if not receiver_id:
         return jsonify({"ok": False, "message": "Arena player not found."}), 404
     if receiver_id == user["user_id"]:
@@ -13048,6 +13112,12 @@ def api_arena_message_player():
     expires_at = (datetime.now() + timedelta(days=ARENA_REQUEST_EXPIRATION_DAYS)).isoformat()
     thread_id = arena_find_or_create_thread(cur, user["user_id"], receiver_id)
     private_thread_id = chat_realtime_service.direct_thread(cur, user["user_id"], receiver_id)
+    sender_public = chat_realtime_service._public_profile(cur, user["user_id"])
+    receiver_public = chat_realtime_service._public_profile(cur, receiver_id)
+    cur.execute(
+        "UPDATE conversations SET source_context=?, public_sender_display_name=?, public_receiver_display_name=?, public_player_id=? WHERE id=?",
+        (source_context, sender_public.get("display_name"), receiver_public.get("display_name"), payload.get("public_player_id") or receiver_public.get("public_player_id"), private_thread_id),
+    )
     cur.execute(
         """
         SELECT * FROM arena_message_requests
@@ -13072,8 +13142,8 @@ def api_arena_message_player():
     )
     message_id = cur.lastrowid
     cur.execute(
-        "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at) VALUES (?, ?, ?, ?)",
-        (private_thread_id, user["user_id"], message, now),
+        "INSERT INTO private_messages (conversation_id, sender_user_id, body, created_at, public_sender_display_name, public_receiver_display_name, source_context, call_sign_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (private_thread_id, user["user_id"], message, now, sender_public.get("display_name"), receiver_public.get("display_name"), source_context, sender_public.get("call_sign") or sender_public.get("display_name")),
     )
     private_message_id = cur.lastrowid
     cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (now, private_thread_id))
@@ -13091,7 +13161,7 @@ def api_arena_message_player():
         notification_service.send_push_alert(
             receiver_id,
             "New Arena message",
-            message[:140],
+            f"{sender_public.get('display_name') or 'Arena Pilot'}: {message[:120]}",
             {"request_id": request_id, "url": f"/chat/thread/{private_thread_id}", "push_type": "private_message"},
         )
     except Exception as exc:
@@ -13107,6 +13177,26 @@ def api_arena_message_player():
         "chat_url": f"/chat/thread/{private_thread_id}",
         "message_item": message_payload,
     })
+
+
+@webhook_app.route("/api/players/<public_player_id>/message", methods=["POST"])
+def api_public_player_message(public_player_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required.", "signup_url": url_for("signup_page", next=request.referrer or "/arena/leaderboard")}), 401
+    payload = request.get_json(silent=True) or {}
+    payload["public_player_id"] = public_player_id
+    payload["source_context"] = payload.get("source_context") or "leaderboard"
+    result, status = chat_realtime_service.start_thread(
+        user["user_id"],
+        public_player_id=public_player_id,
+        message=payload.get("message") or "",
+        source_context=payload.get("source_context") or "leaderboard",
+    )
+    if result.get("ok"):
+        log_product_event(user["user_id"], "fan_message_started", {"public_player_id": public_player_id, "source": payload.get("source_context")})
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/arena/message-request/accept", methods=["POST"])
@@ -19382,6 +19472,12 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "conversations", [
+        ("source_context", "TEXT"),
+        ("public_sender_display_name", "TEXT"),
+        ("public_receiver_display_name", "TEXT"),
+        ("public_player_id", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS conversation_members (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19402,6 +19498,12 @@ def init_db():
         deleted_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "private_messages", [
+        ("public_sender_display_name", "TEXT"),
+        ("public_receiver_display_name", "TEXT"),
+        ("source_context", "TEXT"),
+        ("call_sign_snapshot", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS message_read_receipts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

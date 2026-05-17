@@ -3,7 +3,7 @@
 import sqlite3
 from datetime import datetime
 
-from . import live_event_engine, user_context
+from . import crowd_energy_engine, live_event_engine, realtime_sync_engine, user_context
 
 ROAST_EMOJIS = {"🔥", "😂", "👑", "💀", "🚀", "🎯", "⚡", "🧠", "🏆", "😤"}
 
@@ -32,7 +32,8 @@ def broadcast_roast_message(result):
         "target_user_id": result.get("target_user_id"),
         "participants": result.get("participants") or [],
     }
-    return live_event_engine.publish(_channel(match_id), "roast_message", payload, dedupe_key=f"roast-message:{message.get('id')}", cooldown_seconds=60)
+    payload["emotional_phase"] = realtime_sync_engine.emotional_phase((payload.get("line_weight") or {}).get("weight"), 0, "roast_message")
+    return realtime_sync_engine.publish_synced(_channel(match_id), "roast_message", payload, entity_id=message.get("id"), cooldown_seconds=60)
 
 
 def record_reaction(user_id, match_id, emoji):
@@ -57,18 +58,63 @@ def record_reaction(user_id, match_id, emoji):
     return {"ok": True, **payload}
 
 
-def record_vote(user_id, match_id, target_user_id):
+def _target_from_public(cur, target_public_player_id):
+    target_public_player_id = str(target_public_player_id or "").strip()
+    if not target_public_player_id:
+        return 0
+    cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (target_public_player_id,))
+    row = cur.fetchone()
+    if row:
+        return int(row["user_id"] if hasattr(row, "keys") else row[0])
+    if target_public_player_id.startswith("pilot-"):
+        try:
+            return int(target_public_player_id.replace("pilot-", "", 1))
+        except Exception:
+            return 0
+    return 0
+
+
+def record_vote(user_id, match_id, target_user_id=0, target_public_player_id=""):
     conn = user_context.connect()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    if not target_user_id and target_public_player_id:
+        target_user_id = _target_from_public(cur, target_public_player_id)
     cur.execute(
         "INSERT INTO roast_votes (match_id, user_id, target_user_id, created_at) VALUES (?, ?, ?, ?)",
         (int(match_id), int(user_id), int(target_user_id or 0), _now()),
     )
     vote_id = cur.lastrowid
     conn.commit()
+    cur.execute(
+        """
+        SELECT COALESCE(p.call_sign, u.roast_call_sign, 'Arena Pilot #' || p.user_id) AS call_sign,
+               COALESCE(ap.public_player_id, 'pilot-' || p.user_id) AS public_player_id
+        FROM arena_roast_participants p
+        LEFT JOIN users u ON u.user_id=p.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
+        WHERE p.match_id=? AND p.user_id=?
+        LIMIT 1
+        """,
+        (int(match_id), int(target_user_id or 0)),
+    )
+    target = cur.fetchone()
+    cur.execute("SELECT COUNT(*) AS total FROM roast_votes WHERE match_id=? AND target_user_id=?", (int(match_id), int(target_user_id or 0)))
+    vote_count = int((cur.fetchone() or {"total": 0})["total"] or 0)
     conn.close()
-    payload = {"vote": {"id": int(vote_id), "match_id": int(match_id), "target_user_id": int(target_user_id or 0)}, "crowd_delta": 5}
-    live_event_engine.publish(_channel(match_id), "crowd_vote", payload, cooldown_seconds=0)
+    energy = crowd_energy_engine.room_energy(match_id)
+    payload = {
+        "vote": {
+            "id": int(vote_id),
+            "match_id": int(match_id),
+            "player_id": (target["public_player_id"] if target else target_public_player_id) or "",
+            "call_sign": (target["call_sign"] if target else "Arena Pilot"),
+            "vote_count": vote_count,
+            "crowd_heat": energy.get("room_heat") or 0,
+        },
+        "crowd_delta": 5,
+    }
+    realtime_sync_engine.publish_synced(_channel(match_id), "crowd_vote", payload, entity_id=vote_id, cooldown_seconds=0)
     return {"ok": True, **payload}
 
 
@@ -82,9 +128,12 @@ def snapshot(match_id):
     reactions = int((cur.fetchone() or {"total": 0})["total"])
     conn.close()
     heat = min(100, 42 + messages * 8 + reactions * 3)
+    energy = crowd_energy_engine.room_energy(match_id)
     return {
-        "watching_worldwide": 1200 + int(match_id) * 37 + messages * 19 + reactions * 11,
-        "heat_meter": heat,
+        "watching_worldwide": energy.get("active_spectators") or (1200 + int(match_id) * 37 + messages * 19 + reactions * 11),
+        "heat_meter": max(heat, int(energy.get("room_heat") or 0)),
+        "emotional_phase": energy.get("emotional_phase") or "calm",
+        "crowd_favorite": energy.get("crowd_favorite") or "",
         "ticker": [
             "New challenger entered the global stage.",
             "Crowd energy rising across the room.",
@@ -94,5 +143,5 @@ def snapshot(match_id):
 
 
 def poll_match(match_id, after_id=0):
-    events = live_event_engine.poll(_channel(match_id), after_id=after_id, limit=80)
+    events = realtime_sync_engine.poll_synced(_channel(match_id), after_id=after_id, limit=80)
     return {"ok": True, "events": events, "last_event_id": int(events[-1]["id"]) if events else int(after_id or 0), "snapshot": snapshot(match_id)}
