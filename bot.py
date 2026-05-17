@@ -58,6 +58,7 @@ from services import (
     realtime_service,
     telegram_text_router,
     live_market_service,
+    live_ops_engine,
     intelligence as intelligence_service,
     market_data as market_data_service,
     media_service,
@@ -67,6 +68,7 @@ from services import (
     portfolio_service,
     predictions_service,
     pro_access as pro_access_service,
+    retention_analytics,
     roast_battle_engine,
     roast_live_engine,
     scam_shield as scam_shield_service,
@@ -74,6 +76,7 @@ from services import (
     sports_data as sports_data_service,
     user_context as user_context_service,
     wallet_intel as wallet_intel_service,
+    world_presence_engine,
 )
 from seo import schema as seo_schema
 from seo.content import (
@@ -4348,6 +4351,65 @@ def admin_dashboard_page():
     return admin_page_html("Owner Dashboard", body, admin)
 
 
+@webhook_app.route("/admin/live-ops", methods=["GET"])
+def admin_live_ops_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    data = live_ops_engine.get_daily_plan()
+    plan = data.get("plan") or {}
+    steps = data.get("start_here") or []
+    body = (
+        "<h1>Live Ops</h1><p class='muted'>Daily operational plan for the Enter → Play → React → Earn Status → Share → Return loop.</p>"
+        "<div class='grid'>"
+        f"<div class='card'><strong>Featured Mode</strong><p class='metric'>{clean_html(plan.get('featured_mode') or '')}</p></div>"
+        f"<div class='card'><strong>Daily Reward</strong><p>{clean_html(plan.get('daily_reward') or '')}</p></div>"
+        f"<div class='card'><strong>Roast Theme</strong><p>{clean_html(plan.get('roast_theme') or '')}</p></div>"
+        f"<div class='card'><strong>Scam Lesson</strong><p>{clean_html(plan.get('scam_lesson') or '')}</p></div>"
+        "</div><h2>Start Here Path</h2><div class='card'>"
+        f"{admin_rows_table(steps, [('title','Step'),('url','Route'),('xp','XP')])}</div>"
+    )
+    return admin_page_html("Live Ops", body, admin)
+
+
+@webhook_app.route("/admin/retention", methods=["GET"])
+def admin_retention_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    summary = retention_analytics.retention_summary()
+    counts = [{"event": key, "total": value} for key, value in (summary.get("counts") or {}).items()]
+    body = (
+        "<h1>Retention</h1><p class='muted'>Core loop analytics before growth scaling.</p>"
+        "<div class='grid'>"
+        f"<div class='card'><strong>Active Users 1D</strong><p class='metric'>{summary.get('active_1d', 0)}</p></div>"
+        f"<div class='card'><strong>Active Users 7D</strong><p class='metric'>{summary.get('active_7d', 0)}</p></div>"
+        "</div>"
+        f"<h2>Core Events</h2><div class='card'>{admin_rows_table(counts, [('event','Event'),('total','30D Total')])}</div>"
+        f"<h2>Drop-Offs</h2><div class='card'>{admin_rows_table(summary.get('dropoffs') or [], [('step','Step'),('risk','Risk'),('detail','Detail')])}</div>"
+        f"<h2>Arena Mode Signals</h2><div class='card'>{admin_rows_table(summary.get('top_modes') or [], [('mode','Mode/Event'),('total','Total')])}</div>"
+    )
+    return admin_page_html("Retention", body, admin)
+
+
+@webhook_app.route("/admin/product-health", methods=["GET", "POST"])
+def admin_product_health_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    summary = retention_analytics.record_product_health_check(admin.get("id") or 0) if request.method == "POST" else retention_analytics.product_health_summary()
+    body = (
+        "<h1>Product Health</h1><p class='muted'>Primary-flow reliability: launches, workers, chat, alerts, and broken-route signals.</p>"
+        f"<form method='post' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}'><button type='submit'>Run Product Health Check</button></form>"
+        f"<h2>Checks</h2><div class='card'>{admin_rows_table(summary.get('checks') or [], [('name','Check'),('ok','OK'),('detail','Detail')])}</div>"
+        f"<h2>Recent Error Signals</h2><div class='card'>{admin_rows_table(summary.get('recent_errors') or [], [('event_name','Event'),('page_url','Page'),('metadata','Metadata'),('created_at','Created')])}</div>"
+    )
+    return admin_page_html("Product Health", body, admin)
+
+
 @webhook_app.route("/admin/system", methods=["GET"])
 def admin_system_page():
     init_db()
@@ -6258,6 +6320,67 @@ def admin_private_chat_reports_page():
     return admin_page_html("Private Chat Reports", body, admin)
 
 
+@webhook_app.route("/admin/reports", methods=["GET"])
+def admin_reports_page():
+    admin, denied = require_admin_page("support.manage")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, reporter_user_id, reported_user_id, conversation_id, message_id, reason, status, created_at FROM chat_reports ORDER BY id DESC LIMIT 200")
+    chat_reports = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, user_id, report_type, target, description, status, created_at FROM security_reports ORDER BY id DESC LIMIT 200")
+    security_reports = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = (
+        "<h1>Reports</h1><p class='muted'>Unified trust queue for private chat, security, scam, and user-submitted safety issues.</p>"
+        f"<h2>Chat Reports</h2><div class='card'>{admin_rows_table(chat_reports, [('id','ID'),('reporter_user_id','Reporter'),('reported_user_id','Reported'),('reason','Reason'),('status','Status'),('created_at','Created')])}</div>"
+        f"<h2>Security Reports</h2><div class='card'>{admin_rows_table(security_reports, [('id','ID'),('user_id','User'),('report_type','Type'),('target','Target'),('description','Description'),('status','Status'),('created_at','Created')])}</div>"
+    )
+    return admin_page_html("Reports", body, admin)
+
+
+@webhook_app.route("/admin/media-moderation", methods=["GET"])
+def admin_media_moderation_page():
+    admin, denied = require_admin_page("support.manage")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, uploader_user_id, context_type, context_id, media_type, mime_type, file_size_bytes, moderation_status, moderation_reason, created_at FROM chat_media_uploads ORDER BY id DESC LIMIT 200")
+    uploads = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    body = f"<h1>Media Moderation</h1><p class='muted'>Media uploads stay reviewable and blockable as social surfaces scale.</p><div class='card'>{admin_rows_table(uploads, [('id','ID'),('uploader_user_id','Uploader'),('context_type','Context'),('media_type','Type'),('mime_type','MIME'),('file_size_bytes','Bytes'),('moderation_status','Status'),('moderation_reason','Reason'),('created_at','Created')])}</div>"
+    return admin_page_html("Media Moderation", body, admin)
+
+
+@webhook_app.route("/admin/moderation", methods=["GET"])
+def admin_moderation_page():
+    admin, denied = require_admin_page("support.manage")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT moderation_status, COUNT(*) AS total FROM chat_media_uploads GROUP BY moderation_status ORDER BY total DESC")
+    media = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT status, COUNT(*) AS total FROM chat_reports GROUP BY status ORDER BY total DESC")
+    reports = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) AS total FROM blocked_users")
+    blocked = int((cur.fetchone() or {"total": 0})["total"])
+    conn.close()
+    body = (
+        "<h1>Moderation Command Center</h1><p class='muted'>Safety foundation for chat, media, Roast Battle, and Arena social systems.</p>"
+        f"<div class='grid'><div class='card'><strong>Blocked Users</strong><p class='metric'>{blocked}</p></div>"
+        f"<div class='card'><h2>Media Queue</h2>{admin_rows_table(media, [('moderation_status','Status'),('total','Total')])}</div>"
+        f"<div class='card'><h2>Reports</h2>{admin_rows_table(reports, [('status','Status'),('total','Total')])}</div></div>"
+        "<p><a class='button' href='/admin/reports'>Open Reports</a> <a class='button' href='/admin/media-moderation'>Open Media Moderation</a></p>"
+    )
+    return admin_page_html("Moderation", body, admin)
+
+
 @webhook_app.route("/admin/security", methods=["GET"])
 def admin_security_page():
     admin, denied = require_admin_page("system.view")
@@ -7946,6 +8069,37 @@ def dashboard_api():
     response = jsonify(portfolio_service.get_user_dashboard_data(user["user_id"]))
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
+
+
+@webhook_app.route("/api/world-presence", methods=["GET"])
+def api_world_presence():
+    response = jsonify(world_presence_engine.world_feed(limit=int(request.args.get("limit") or 12)))
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/live-ops/today", methods=["GET"])
+def api_live_ops_today():
+    init_db()
+    user = api_account_user()
+    plan = live_ops_engine.get_daily_plan()
+    if user:
+        plan["progress"] = live_ops_engine.user_start_here_progress(user["user_id"])
+    response = jsonify(plan)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/onboarding/step", methods=["POST"])
+def api_onboarding_step():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    result = live_ops_engine.mark_step(user["user_id"], clean_html(payload.get("step_key") or ""))
+    log_product_event(user["user_id"], "onboarding_step_completed", {"step_key": payload.get("step_key"), "ok": result.get("ok")})
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 
 def dashboard_brief_payload(user_id):
@@ -10539,6 +10693,7 @@ def arena_continuous_play_page():
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next=request.path))
+    log_product_event(user["user_id"], "arena_entered", {"path": request.path})
     if request.path == "/arena/live":
         live_cards = [
             {"title": "Global Arena Room", "body": "The main live room for challenges, chat, spectators, and realtime Arena activity.", "action": "<a class='button primary live-arena-cta' href='/arena/room/1'>Enter Global Room</a>"},
@@ -10586,6 +10741,14 @@ def arena_continuous_play_page():
         {"title": "Prediction War", "body": "Compete on reasoning quality and risk-aware predictions. Multiplayer · Medium · 90 XP.", "action": "<a class='button' href='/arena/matchmaking?mode=prediction_war' data-game-launch='prediction_war'>Join Battle</a>"},
         {"title": "Training Missions", "body": "Daily bonus missions, academy paths, and tactical skill drills. Solo · Training · 35 XP.", "action": "<a class='button' href='/arena/daily' data-game-launch='training'>Train Now</a>"},
     ]
+    if request.path == "/arena/play":
+        cards = [
+            {"title": "Training Mission", "body": "Start here. One short mission explains the Arena loop and gives instant feedback. Solo · Training · 35 XP.", "action": "<a class='button primary' href='/arena/daily' data-game-launch='training'>Start Here</a>"},
+            {"title": "Scam Hunter", "body": "Spot wallet traps, fake support, and phishing pressure before they catch you. Solo · Easy · 50 XP.", "action": "<a class='button' href='/arena/scam-rush' data-game-launch='scam_hunter'>Start Scam Hunt</a>"},
+            {"title": "Quick Battle", "body": "A 3-5 minute market, scam, and discipline challenge with clear scoring. Solo · Easy · 40 XP.", "action": "<a class='button' href='/arena/quick-battle' data-game-launch='quick_battle'>Play Quick Battle</a>"},
+            {"title": "Live Room", "body": "Watch, cheer, chat, and jump into live Arena energy when you are warm. Live · Social · 25 XP.", "action": "<a class='button primary live-arena-cta' href='/arena/live' data-game-launch='live_rooms'>Enter Live Arena</a>"},
+            {"title": "Roast Battle", "body": "Step into the global stage for clever, moderated banter and crowd reactions. Live Multiplayer · 30 XP.", "action": "<a class='button' href='/arena/roast-battle'>Enter Roast Battle</a>"},
+        ]
     script = """
     <script>
     const mode = location.pathname.includes('survival') ? 'survival' : location.pathname.includes('scam-rush') ? 'scam_rush' : 'quick_battle';
@@ -12552,6 +12715,8 @@ def api_arena_round_answer():
     mode = clean_html(payload.get("mode") or "quick_battle")
     continue_mode = mode in {"survival", "scam_rush", "market_storm"}
     result, status = submit_arena_play_round(user["user_id"], payload.get("session_id"), payload.get("answer"), continue_mode, selected_option_id=payload.get("selected_option_id"), round_id=payload.get("round_id"))
+    if result.get("ok"):
+        log_product_event(user["user_id"], "arena_game_completed", {"mode": mode, "correct": bool(result.get("correct")), "xp_awarded": result.get("xp_awarded") or result.get("xp_earned") or 0})
     return jsonify(result), status
 
 
@@ -13604,6 +13769,63 @@ def alert_events_api():
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
+
+
+@webhook_app.route("/api/auto-signals/activate", methods=["POST"])
+def api_auto_signals_activate():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    gated = api_pro_required(user, "Auto Signals")
+    if gated:
+        return gated
+    payload = request.get_json(silent=True) or {}
+    mode = clean_html(payload.get("mode") or "balanced").lower()
+    if mode not in {"conservative", "balanced", "aggressive"}:
+        mode = "balanced"
+    sensitivity = {"conservative": 0.06, "balanced": 0.04, "aggressive": 0.025}[mode]
+    readiness = alert_engine_service.channel_readiness(user["user_id"], browser_permission=payload.get("push_permission") or request.headers.get("X-Push-Permission"))
+    channels = {
+        "in_app": True,
+        "email": bool((readiness.get("email") or {}).get("ready")),
+        "push": bool((readiness.get("push") or {}).get("ready")),
+        "sms": False,
+        "telegram": bool((readiness.get("telegram") or {}).get("ready")),
+    }
+    created, skipped = [], []
+    for symbol in ("BTC", "ETH", "SOL"):
+        quote = live_market_service.get_crypto_quote(symbol)
+        asset = quote.get("asset") if quote.get("ok") else {}
+        price = asset.get("price") or asset.get("current_price") or asset.get("usd")
+        if not price:
+            skipped.append({"symbol": symbol, "reason": "live price unavailable"})
+            continue
+        price = float(price)
+        for condition, threshold in (("above", price * (1 + sensitivity)), ("below", price * (1 - sensitivity))):
+            result = alert_engine_service.create_alert_rule(
+                user["user_id"],
+                alert_type="coin_price",
+                symbol=symbol,
+                condition=condition,
+                threshold=round(threshold, 2),
+                channels=channels,
+                target=f"{symbol} auto {mode}",
+                cooldown_seconds={"conservative": 1800, "balanced": 900, "aggressive": 600}[mode],
+            )
+            if result.get("ok"):
+                created.append({"symbol": symbol, "condition": condition, "threshold": round(threshold, 2), "alert_id": result.get("alert_id")})
+            else:
+                skipped.append({"symbol": symbol, "reason": result.get("message")})
+    log_product_event(user["user_id"], "auto_signals_activated", {"mode": mode, "created": len(created), "skipped": skipped})
+    return jsonify({
+        "ok": bool(created),
+        "mode": mode,
+        "created": created,
+        "skipped": skipped,
+        "channels": channels,
+        "message": f"Auto Signals activated in {mode.title()} mode." if created else "Auto Signals could not activate because live prices were unavailable.",
+    }), (200 if created else 503)
 
 
 @webhook_app.route("/api/alerts/channel-readiness", methods=["GET"])
@@ -19134,6 +19356,33 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS live_ops_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_date TEXT UNIQUE,
+        payload_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_onboarding_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        step_key TEXT,
+        completed_at TEXT,
+        created_at TEXT,
+        UNIQUE(user_id, step_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS product_health_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_id INTEGER,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS roast_reactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         match_id INTEGER,
@@ -20976,6 +21225,9 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_chat_media_created ON chat_media_uploads(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_channel_id ON live_events(channel, id)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_dedupe ON live_events(channel, dedupe_key, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_live_ops_plans_date ON live_ops_plans(plan_date)",
+        "CREATE INDEX IF NOT EXISTS idx_onboarding_progress_user ON user_onboarding_progress(user_id, step_key)",
+        "CREATE INDEX IF NOT EXISTS idx_product_health_checks_created ON product_health_checks(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_roast_messages_match_id ON roast_messages(match_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_roast_reactions_match_created ON roast_reactions(match_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_roast_votes_match_created ON roast_votes(match_id, created_at)",

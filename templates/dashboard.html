@@ -42,6 +42,14 @@
     .arena-live-badge::before { content:""; width:8px; height:8px; border-radius:999px; background:var(--green); box-shadow:0 0 14px rgba(54,229,143,.85); }
     .arena-preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:10px 0 14px; }
     .arena-preview-grid span { border:1px solid rgba(255,255,255,.09); border-radius:10px; background:rgba(255,255,255,.045); padding:8px; color:#dffcff; font-weight:850; }
+    .start-path { display:grid; gap:8px; }
+    .start-step { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; border:1px solid rgba(255,255,255,.09); border-radius:10px; padding:10px; background:rgba(255,255,255,.045); text-decoration:none; }
+    .start-step b { width:28px; height:28px; display:grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
+    .start-step.done b { background:linear-gradient(135deg,var(--gold),var(--green)); }
+    .world-feed { display:grid; gap:8px; max-height:280px; overflow:auto; }
+    .world-feed a { display:grid; gap:3px; border-left:3px solid var(--cyan); border-radius:10px; padding:9px 10px; background:rgba(255,255,255,.04); text-decoration:none; }
+    .signal-mode { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:10px 0; }
+    .signal-mode label { border:1px solid rgba(255,255,255,.09); border-radius:10px; padding:9px; color:var(--muted); }
     .glow-education,.glow-optimism,.glow-future,.glow-alert { position:relative; overflow:hidden; border:1px solid rgba(110,223,246,.34); box-shadow:0 0 26px rgba(110,223,246,.12); transition:transform .18s ease,box-shadow .18s ease; animation:commandPulse 8s ease-in-out infinite; }
     .glow-education { --glow-a:#00e5ff; --glow-b:#2f80ff; background:linear-gradient(135deg,rgba(0,229,255,.22),rgba(47,128,255,.12)); }
     .glow-optimism { --glow-a:#36e58f; --glow-b:#00c2a8; background:linear-gradient(135deg,rgba(54,229,143,.22),rgba(0,194,168,.12)); }
@@ -188,10 +196,33 @@
           <a class="button" href="/arena/leaderboard">View Leaderboard</a>
         </div>
       </article>
+      <article class="card wide" data-priority-card="start-here">
+        <div class="kicker">Start Here</div>
+        <h2>Your Core Loop</h2>
+        <p class="muted">One clear path: train, detect scams, battle, enter live rooms, then react with the crowd.</p>
+        <div class="start-path" data-start-here><p class="muted">Loading your next mission...</p></div>
+      </article>
+      <article class="card" data-priority-card="auto-signals">
+        <div class="kicker">Auto Signals</div>
+        <h2>Hands-free market monitoring</h2>
+        <p class="muted">Creates real BTC, ETH, and SOL alert rules tuned to your sensitivity. External channels activate only when configured.</p>
+        <div class="signal-mode">
+          <label><input type="radio" name="auto_signal_mode" value="conservative"> Conservative</label>
+          <label><input type="radio" name="auto_signal_mode" value="balanced" checked> Balanced</label>
+          <label><input type="radio" name="auto_signal_mode" value="aggressive"> Aggressive</label>
+        </div>
+        <button class="button primary command-glow command-glow-market" type="button" data-auto-signals>Activate Auto Signals</button>
+        <p class="muted" data-auto-signals-result>Ready to monitor major market moves.</p>
+      </article>
       <article class="card" data-priority-card="market">
         <div class="kicker">Live Market Snapshot</div>
         <div class="list" data-market-snapshot><p class="muted">Loading market data...</p></div>
         <a class="button command-glow command-glow-market" href="/quote">View More</a>
+      </article>
+      <article class="card">
+        <div class="kicker">Live World Feed</div>
+        <h2>Platform Pulse</h2>
+        <div class="world-feed" data-world-feed><p class="muted">Connecting live activity...</p></div>
       </article>
       <article class="card">
         <div class="kicker">Daily Intelligence Brief</div>
@@ -633,6 +664,53 @@
       render(data);
     }
 
+    async function loadLiveOps() {
+      const [ops, world] = await Promise.all([
+        fetch("/api/live-ops/today", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/world-presence?limit=8", { cache: "no-store", credentials: "same-origin" }).then(r => r.json()).catch(() => null)
+      ]);
+      if (ops && ops.ok) {
+        const progress = ops.progress || {};
+        const completed = new Set((progress.steps || []).filter(step => step.completed).map(step => step.key));
+        document.querySelector("[data-start-here]").innerHTML = (ops.start_here || []).map((step, index) => `
+          <a class="start-step ${completed.has(step.key) ? "done" : ""}" href="${step.url}" data-core-step="${step.key}">
+            <b>${completed.has(step.key) ? "✓" : index + 1}</b>
+            <span><strong>${step.title}</strong><small class="muted"> · ${step.xp} XP</small></span>
+            <small>${completed.has(step.key) ? "Done" : "Start"}</small>
+          </a>`).join("");
+      }
+      if (world && world.ok) {
+        document.querySelector("[data-world-feed]").innerHTML = (world.items || []).map(item => `
+          <a href="${item.url || "/arena/play"}"><strong>${escapeHtml(item.title || "Live event")}</strong><small class="muted">${escapeHtml(item.body || "")}</small></a>`).join("") || '<p class="muted">No live events yet.</p>';
+      }
+    }
+
+    async function activateAutoSignals() {
+      const button = document.querySelector("[data-auto-signals]");
+      const result = document.querySelector("[data-auto-signals-result]");
+      const mode = document.querySelector("input[name='auto_signal_mode']:checked")?.value || "balanced";
+      button.disabled = true;
+      button.textContent = "Activating...";
+      result.textContent = "Creating live monitoring rules...";
+      try {
+        const response = await fetch("/api/auto-signals/activate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Push-Permission": ("Notification" in window ? Notification.permission : "unsupported") },
+          credentials: "same-origin",
+          body: JSON.stringify({ mode, push_permission: ("Notification" in window ? Notification.permission : "unsupported") })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not activate.");
+        result.textContent = `${data.message} ${data.created.length} alert rules created.`;
+        await loadDashboard();
+      } catch (err) {
+        result.textContent = err.message || "Auto Signals could not activate.";
+      } finally {
+        button.disabled = false;
+        button.textContent = "Activate Auto Signals";
+      }
+    }
+
     function applyDashboardPreferences(prefs) {
       Object.entries(prefs || {}).forEach(([key, value]) => {
         if (!key.startsWith("show_")) return;
@@ -803,6 +881,12 @@
       }
       const scrollButton = event.target.closest("[data-scroll]");
       if (scrollButton) document.querySelector(scrollButton.dataset.scroll)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const autoSignals = event.target.closest("[data-auto-signals]");
+      if (autoSignals) await activateAutoSignals();
+      const coreStep = event.target.closest("[data-core-step]");
+      if (coreStep) {
+        fetch("/api/onboarding/step", { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ step_key: coreStep.dataset.coreStep }) }).catch(() => {});
+      }
       const holding = event.target.closest("[data-delete-portfolio]");
       const watch = event.target.closest("[data-delete-watchlist]");
       const alert = event.target.closest("[data-delete-alert]");
@@ -828,8 +912,8 @@
     });
 
     loadDashboardPreferences();
-    loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); });
-    window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); }, 60000);
+    loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).then(loadLiveOps).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); });
+    window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); }, 60000);
     loadChatConversations().catch(function () {});
     window.setInterval(function () { if (!chatState.open) loadChatConversations().catch(function () {}); }, 30000);
     window.setInterval(function () { pollActiveConversation().catch(function () {}); }, 1500);
