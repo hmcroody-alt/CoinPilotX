@@ -772,7 +772,9 @@ BASE_URL = APP_BASE_URL
 
 stripe.api_key = STRIPE_SECRET_KEY
 logging.info(
-    "Stripe startup validation: secret_key_loaded=%s publishable_key_loaded=%s webhook_secret_loaded=%s price_id_loaded=%s app_base_url=%s",
+    "Stripe startup validation: initialized=%s mode=%s secret_key_loaded=%s publishable_key_loaded=%s webhook_secret_loaded=%s price_id_loaded=%s app_base_url=%s",
+    bool(STRIPE_SECRET_KEY),
+    "live" if (STRIPE_SECRET_KEY or "").startswith("sk_live_") else ("test" if (STRIPE_SECRET_KEY or "").startswith("sk_test_") else "unknown"),
     bool(STRIPE_SECRET_KEY),
     bool(STRIPE_PUBLISHABLE_KEY),
     bool(STRIPE_WEBHOOK_SECRET),
@@ -780,11 +782,11 @@ logging.info(
     APP_BASE_URL,
 )
 if not STRIPE_SECRET_KEY:
-    logging.warning("Railway Stripe warning: STRIPE_SECRET_KEY is missing. Checkout session creation will fail.")
+    logging.error("Railway Stripe ERROR: STRIPE_SECRET_KEY is missing. Checkout session creation and success-page confirmation will fail.")
 if not STRIPE_PUBLISHABLE_KEY:
     logging.warning("Railway Stripe warning: STRIPE_PUBLISHABLE_KEY is missing. Frontend publishable-key integrations may not work.")
 if not STRIPE_WEBHOOK_SECRET:
-    logging.warning("Railway Stripe warning: STRIPE_WEBHOOK_SECRET is missing. Webhook signature verification is not fully configured.")
+    logging.error("Railway Stripe ERROR: STRIPE_WEBHOOK_SECRET is missing. Live Stripe webhooks cannot be verified.")
 if not STRIPE_PRICE_ID:
     logging.warning("Railway Stripe warning: STRIPE_PRICE_ID is missing. Website checkout will be disabled until the Railway variable is configured.")
 
@@ -1885,6 +1887,11 @@ def pro_activation_columns_payload(user):
         "provider_customer_id": user.get("provider_customer_id") or user.get("stripe_customer_id") or "",
         "provider_subscription_id": user.get("provider_subscription_id") or user.get("stripe_subscription_id") or "",
         "last_payment_status": user.get("last_payment_status") or user.get("subscription_status") or "",
+        "payment_status": user.get("payment_status") or user.get("last_payment_status") or "",
+        "payment_amount": user.get("payment_amount"),
+        "payment_currency": user.get("payment_currency") or "",
+        "latest_stripe_event": user.get("latest_stripe_event") or "",
+        "latest_payment_at": user.get("latest_payment_at") or "",
     }
 
 
@@ -2731,12 +2738,44 @@ def upgrade_success_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page"))
+    session_id = clean_html(request.args.get("session_id", ""))[:180]
     return render_account_page(
         "upgrade_success",
         "Upgrade Confirmation",
         current_user=user,
+        stripe_session_id=session_id,
         message="Your Pro upgrade is being confirmed. You will receive a confirmation email shortly. If you experience any issue after payment, email support@coinpilotx.app.",
     )
+
+
+@webhook_app.route("/api/billing/confirm-session", methods=["POST"])
+def api_billing_confirm_session():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    if not STRIPE_SECRET_KEY:
+        logging.error("STRIPE_SESSION_CONFIRM_CONFIG_ERROR user_id=%s reason=missing_secret", user.get("user_id"))
+        return jsonify({"ok": False, "message": "Stripe is not configured. Contact support."}), 503
+    payload = request.get_json(silent=True) or request.form or {}
+    session_id = clean_html(payload.get("session_id") or request.args.get("session_id") or "")[:180]
+    if not session_id or not session_id.startswith("cs_"):
+        return jsonify({"ok": False, "message": "Missing checkout session."}), 400
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        logging.info("STRIPE_SESSION_RETRIEVE_START user_id=%s session_id=%s", user.get("user_id"), session_id)
+        session_obj = stripe.checkout.Session.retrieve(session_id, expand=["subscription"])
+        logging.info("STRIPE_SESSION_RETRIEVED user_id=%s session_id=%s payment_status=%s", user.get("user_id"), session_id, stripe_object_get(session_obj, "payment_status", ""))
+    except Exception as exc:
+        logging.exception("STRIPE_SESSION_RETRIEVE_FAILED user_id=%s session_id=%s error=%s", user.get("user_id"), session_id, safe_stripe_error(exc))
+        return jsonify({"ok": False, "message": "Could not confirm Stripe session yet."}), 502
+    resolved_user_id, _ = resolve_checkout_session_user(session_obj)
+    if resolved_user_id and int(resolved_user_id) != int(user["user_id"]):
+        logging.warning("STRIPE_SESSION_CONFIRM_FORBIDDEN session_id=%s session_user=%s current_user=%s", session_id, resolved_user_id, user.get("user_id"))
+        return jsonify({"ok": False, "message": "This payment belongs to a different account."}), 403
+    result = activate_pro_from_stripe_session(session_obj, event_id=f"session_confirm_{session_id}", source="success_page")
+    status_code = 200 if result.get("ok") else 400
+    return jsonify(result), status_code
 
 
 @webhook_app.errorhandler(405)
@@ -5294,13 +5333,15 @@ def admin_user_detail_page(user_id):
     activity = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT email_type, subject, status, created_at FROM email_logs WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
     emails = [dict(row) for row in cur.fetchall()]
-    cur.execute("SELECT stripe_event_id, stripe_session_id, invoice_id, amount, currency, status, created_at FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
+    cur.execute("SELECT stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, amount, currency, status, email_sent, pro_activated_at, stripe_payload, created_at FROM payment_records WHERE user_id=? ORDER BY id DESC LIMIT 30", (user_id,))
     payments = [dict(row) for row in cur.fetchall()]
     latest_payment = payments[0] if payments else {}
     cur.execute("SELECT stripe_event_id, event_type, status, created_at, processed_at FROM stripe_events WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
     latest_stripe_event = dict(cur.fetchone() or {})
     cur.execute("SELECT email_type, template, status, stripe_event_id, payment_id, created_at, sent_at, error_message FROM payment_email_logs WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
     latest_payment_email = dict(cur.fetchone() or {})
+    cur.execute("SELECT stripe_session_id, status, error_message, created_at FROM checkout_attempts WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
+    latest_checkout_attempt = dict(cur.fetchone() or {})
     conn.close()
     paid_class = "Paid Pro" if is_paid_pro_user(user) else "Trial" if is_trialing_user(user) else "Free/Inactive"
     backend_status = backend_pro_status_payload(user)
@@ -5314,6 +5355,14 @@ def admin_user_detail_page(user_id):
         "has_pro_access": backend_status.get("has_pro_access"),
         "Latest payment": f"{latest_payment.get('status') or 'none'} {latest_payment.get('amount') or ''} {latest_payment.get('currency') or ''} {latest_payment.get('created_at') or ''}",
         "Latest Stripe event": f"{latest_stripe_event.get('event_type') or 'none'} {latest_stripe_event.get('status') or ''} {latest_stripe_event.get('stripe_event_id') or ''}",
+        "Webhook received?": "yes" if latest_stripe_event else "no",
+        "Webhook verified?": "yes" if latest_stripe_event.get("status") == "processed" else "no",
+        "Session confirmed?": "yes" if str(latest_payment.get("stripe_event_id") or "").startswith("session_confirm_") or latest_checkout_attempt.get("status") == "success" else "no",
+        "Stripe customer id": user.get("stripe_customer_id") or latest_payment.get("stripe_customer_id") or "empty",
+        "Stripe subscription id": user.get("stripe_subscription_id") or latest_payment.get("stripe_subscription_id") or "empty",
+        "Payment email sent?": "yes" if latest_payment.get("email_sent") or latest_payment_email.get("status") == "sent" else "no",
+        "Pro activation timestamp": user.get("pro_started_at") or latest_payment.get("pro_activated_at") or "none",
+        "Latest Stripe payload": (latest_payment.get("stripe_payload") or "")[:240] or "none",
         "Latest payment email": f"{latest_payment_email.get('email_type') or latest_payment_email.get('template') or 'none'} {latest_payment_email.get('status') or ''} {latest_payment_email.get('created_at') or ''}",
     }
     diagnostic = "".join(f"<div class='card'><strong>{clean_html(str(label))}</strong><p>{clean_html(str(value))}</p></div>" for label, value in diagnostic_rows.items())
@@ -5338,6 +5387,9 @@ def admin_user_detail_page(user_id):
         f"<h1>User #{user_id}</h1><p><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></p>"
         f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to Paid Pro</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Pro From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or '')}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates Pro if paid.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/reprocess-latest-webhook' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Reprocess Latest Webhook</button><p class='muted'>Retries local payment/email repair from the latest processed Stripe event.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/send-pro-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Confirmation Email</button><p class='muted'>Sends the Pro activation/payment confirmation email bundle again.</p></form>"
         f"<h2>Backend Pro Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
@@ -5523,6 +5575,93 @@ def admin_user_force_sync_pro(user_id):
     log_admin_audit(admin["id"], "admin_force_sync_pro_from_payment", "user", str(user_id), {"payment_record_id": payment.get("id"), "stripe_event_id": payment.get("stripe_event_id")})
     log_product_event(user_id, "admin_force_sync_pro_from_payment", {"admin_id": admin.get("id"), "payment_record_id": payment.get("id")})
     logging.info("ADMIN_FORCE_SYNC_PRO_FROM_PAYMENT user_id=%s payment_record_id=%s has_pro_access=%s", user_id, payment.get("id"), has_pro_access(fresh_user))
+    return redirect(url_for("admin_user_detail_page", user_id=user_id))
+
+
+@webhook_app.route("/admin/users/<int:user_id>/retry-stripe-session", methods=["POST"])
+def admin_user_retry_stripe_session(user_id):
+    admin, denied = require_admin_page("billing.repair")
+    if denied:
+        return denied
+    if not verify_csrf():
+        return admin_page_html("Security Check", "<h1>Security check failed.</h1>", admin), 400
+    if not STRIPE_SECRET_KEY:
+        return admin_page_html("Stripe Not Configured", "<h1>Stripe secret missing</h1><p>Set STRIPE_SECRET_KEY in Railway first.</p>", admin), 503
+    session_id = clean_html(request.form.get("session_id", ""))[:180]
+    if not session_id:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT stripe_session_id FROM checkout_attempts WHERE user_id=? AND stripe_session_id!='' ORDER BY id DESC LIMIT 1", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        session_id = (dict(row or {}).get("stripe_session_id") or "")[:180]
+    if not session_id:
+        return admin_page_html("No Stripe Session", "<h1>No Stripe session found</h1><p>Paste a Stripe checkout session id from Stripe Dashboard.</p>", admin), 400
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        session_obj = stripe.checkout.Session.retrieve(session_id, expand=["subscription"])
+        result = activate_pro_from_stripe_session(session_obj, event_id=f"admin_session_confirm_{session_id}", source="admin_retry")
+        log_admin_audit(admin["id"], "admin_retry_stripe_session", "user", str(user_id), {"session_id": session_id, "ok": bool(result.get("ok"))})
+    except Exception as exc:
+        logging.exception("ADMIN_RETRY_STRIPE_SESSION_FAILED user_id=%s session_id=%s error=%s", user_id, session_id, safe_stripe_error(exc))
+        return admin_page_html("Stripe Lookup Failed", f"<h1>Stripe lookup failed</h1><p>{clean_html(safe_stripe_error(exc))}</p>", admin), 502
+    return redirect(url_for("admin_user_detail_page", user_id=user_id))
+
+
+@webhook_app.route("/admin/users/<int:user_id>/reprocess-latest-webhook", methods=["POST"])
+def admin_user_reprocess_latest_webhook(user_id):
+    admin, denied = require_admin_page("billing.repair")
+    if denied:
+        return denied
+    if not verify_csrf():
+        return admin_page_html("Security Check", "<h1>Security check failed.</h1>", admin), 400
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM payment_records WHERE user_id=? AND lower(COALESCE(status,''))='succeeded' ORDER BY id DESC LIMIT 1", (user_id,))
+    payment = dict(cur.fetchone() or {})
+    cur.execute("SELECT stripe_event_id FROM stripe_events WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
+    latest_event = dict(cur.fetchone() or {})
+    conn.close()
+    if payment:
+        activate_pro(
+            user_id,
+            payment_type=payment.get("payment_type") or "stripe",
+            stripe_customer_id=payment.get("stripe_customer_id") or None,
+            stripe_session_id=payment.get("stripe_session_id") or None,
+            stripe_subscription_id=payment.get("stripe_subscription_id") or None,
+            subscription_status="active",
+            stripe_event_id=payment.get("stripe_event_id") or latest_event.get("stripe_event_id") or "",
+            payment_status="paid",
+            payment_amount=payment.get("amount"),
+            payment_currency=payment.get("currency") or "usd",
+        )
+    if latest_event.get("stripe_event_id"):
+        retry_failed_payment_emails_for_event(latest_event.get("stripe_event_id"))
+    log_admin_audit(admin["id"], "admin_reprocess_latest_webhook", "user", str(user_id), {"payment_found": bool(payment), "stripe_event_id": latest_event.get("stripe_event_id") or ""})
+    return redirect(url_for("admin_user_detail_page", user_id=user_id))
+
+
+@webhook_app.route("/admin/users/<int:user_id>/send-pro-email", methods=["POST"])
+def admin_user_send_pro_email(user_id):
+    admin, denied = require_admin_page("emails.resend")
+    if denied:
+        return denied
+    if not verify_csrf():
+        return admin_page_html("Security Check", "<h1>Security check failed.</h1>", admin), 400
+    user = load_account_by_id(user_id)
+    if not user:
+        return admin_page_html("User Not Found", "<h1>User not found</h1>", admin), 404
+    send_successful_payment_email_bundle(user, {
+        "stripe_event_id": user.get("latest_stripe_event") or f"admin-email-{user_id}",
+        "payment_id": user.get("stripe_session_id") or user.get("stripe_subscription_id") or f"admin-email-{user_id}",
+        "amount": user.get("payment_amount"),
+        "currency": user.get("payment_currency") or "USD",
+        "billing_date": format_date(user.get("latest_payment_at") or datetime.now().isoformat()),
+        "next_billing_date": format_date(user.get("pro_expires_at") or user.get("subscription_expires_at")),
+    }, force=True)
+    log_admin_audit(admin["id"], "admin_send_pro_confirmation_email", "user", str(user_id), {})
     return redirect(url_for("admin_user_detail_page", user_id=user_id))
 
 
@@ -13408,7 +13547,7 @@ def record_stripe_event(event, status="processed", user_id=None, error_message="
     conn.close()
 
 
-def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", stripe_customer_id="", stripe_subscription_id="", invoice_id="", payment_intent_id="", amount=None, currency="usd", status="succeeded", payment_type="stripe", manual=False, metadata=None):
+def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", stripe_customer_id="", stripe_subscription_id="", invoice_id="", payment_intent_id="", amount=None, currency="usd", status="succeeded", payment_type="stripe", manual=False, metadata=None, stripe_payload=None, email_sent=False, pro_activated_at=""):
     if not user_id:
         return
     if amount is None and status == "succeeded" and payment_type == "stripe":
@@ -13448,8 +13587,8 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
     cur.execute(
         """
         INSERT INTO payment_records
-        (user_id, stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, payment_intent_id, amount, currency, status, payment_type, manual, metadata, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, stripe_event_id, stripe_session_id, stripe_customer_id, stripe_subscription_id, invoice_id, payment_intent_id, amount, currency, status, payment_type, manual, metadata, stripe_payload, email_sent, pro_activated_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -13465,6 +13604,9 @@ def record_payment_record(user_id, stripe_event_id="", stripe_session_id="", str
             payment_type,
             1 if manual else 0,
             json.dumps(metadata or {})[:4000],
+            json.dumps(stripe_payload or {})[:8000],
+            1 if email_sent else 0,
+            pro_activated_at or "",
             datetime.now().isoformat(),
         ),
     )
@@ -13560,6 +13702,7 @@ def record_unmatched_payment(event, stripe_object, reason):
 
 @webhook_app.route("/stripe-webhook", methods=["GET"])
 @webhook_app.route("/stripe/webhook", methods=["GET"])
+@webhook_app.route("/webhook/stripe", methods=["GET"])
 def stripe_webhook_health():
     return jsonify({
         "ok": True,
@@ -13570,6 +13713,7 @@ def stripe_webhook_health():
 
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 @webhook_app.route("/stripe/webhook", methods=["POST"])
+@webhook_app.route("/webhook/stripe", methods=["POST"])
 def stripe_webhook():
     init_db()
     payload = request.data
@@ -13578,15 +13722,16 @@ def stripe_webhook():
 
     try:
         if STRIPE_WEBHOOK_SECRET:
-            event = stripe.Webhook.construct_event(
+            stripe.Webhook.construct_event(
                 payload,
                 sig_header,
                 STRIPE_WEBHOOK_SECRET
             )
+            event = json.loads(payload.decode("utf-8"))
             logging.info("STRIPE_SIGNATURE_VERIFIED signature_present=%s", bool(sig_header))
         else:
-            logging.warning("STRIPE_WEBHOOK_SECRET missing. Stripe webhook is parsing unsigned payload; configure the Railway variable immediately.")
-            event = json.loads(payload.decode("utf-8"))
+            logging.error("STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook; configure Railway STRIPE_WEBHOOK_SECRET.")
+            return "Webhook secret missing", 503
     except Exception as e:
         logging.exception("Stripe webhook error details: %s", e)
         return "Invalid", 400
@@ -13649,6 +13794,10 @@ def stripe_webhook():
                     stripe_subscription_id=subscription_id,
                     subscription_status="active" if payment_status == "paid" else ((subscription or {}).get("status") or "active"),
                     pro_expires_at=period_end,
+                    stripe_event_id=event_id,
+                    payment_status=payment_status or "paid",
+                    payment_amount=(session.get("amount_total") / 100 if session.get("amount_total") else None),
+                    payment_currency=session.get("currency", "usd"),
                 )
                 logging.info("STRIPE_PRO_ACTIVATION_COMMITTED event_id=%s user_id=%s activated_user_id=%s", event_id, user_id, activated_user_id)
                 logging.info("STRIPE_USER_UPGRADED event_id=%s user_id=%s activated_user_id=%s", event_id, user_id, activated_user_id)
@@ -13795,14 +13944,18 @@ def stripe_webhook():
         )
         if user_id:
             resolved_event_user_id = user_id
+            amount = payment_intent.get("amount_received") or payment_intent.get("amount")
             activated_user_id = activate_pro(
                 user_id,
                 payment_type="stripe",
                 stripe_customer_id=customer_id,
                 subscription_status="active",
                 pro_expires_at=default_pro_period_end(),
+                stripe_event_id=event_id,
+                payment_status="paid",
+                payment_amount=(amount / 100 if amount else None),
+                payment_currency=payment_intent.get("currency", "usd"),
             )
-            amount = payment_intent.get("amount_received") or payment_intent.get("amount")
             record_payment_record(
                 activated_user_id or user_id,
                 stripe_event_id=event_id,
@@ -17346,6 +17499,11 @@ def init_db():
         ("provider_customer_id", "TEXT"),
         ("provider_subscription_id", "TEXT"),
         ("last_payment_status", "TEXT"),
+        ("payment_status", "TEXT"),
+        ("payment_amount", "REAL"),
+        ("payment_currency", "TEXT"),
+        ("latest_stripe_event", "TEXT"),
+        ("latest_payment_at", "TEXT"),
         ("risk_profile", "TEXT DEFAULT 'balanced'"),
         ("preferred_exchange_goal", "TEXT DEFAULT 'beginner'"),
         ("stripe_customer_id", "TEXT"),
@@ -17618,6 +17776,9 @@ def init_db():
     add_columns_if_missing(cur, "transactions", [
         ("manual", "INTEGER DEFAULT 0"),
         ("metadata", "TEXT"),
+        ("stripe_payload", "TEXT"),
+        ("email_sent", "INTEGER DEFAULT 0"),
+        ("pro_activated_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS email_logs (
@@ -18692,6 +18853,9 @@ def init_db():
     add_columns_if_missing(cur, "payment_records", [
         ("manual", "INTEGER DEFAULT 0"),
         ("metadata", "TEXT"),
+        ("stripe_payload", "TEXT"),
+        ("email_sent", "INTEGER DEFAULT 0"),
+        ("pro_activated_at", "TEXT"),
     ], conn=conn)
 
     cur.execute("""
@@ -22380,6 +22544,38 @@ def fetch_stripe_subscription(subscription_id):
         return None
 
 
+def stripe_amount_to_decimal(value):
+    try:
+        if value is not None:
+            return int(value) / 100
+    except Exception:
+        return None
+    return None
+
+
+def stripe_object_summary(obj):
+    try:
+        if isinstance(obj, dict):
+            data = obj
+        else:
+            data = dict(obj)
+    except Exception:
+        data = {}
+    return {
+        "id": stripe_object_get(obj, "id", data.get("id")),
+        "object": stripe_object_get(obj, "object", data.get("object")),
+        "customer": stripe_object_get(obj, "customer", data.get("customer")),
+        "subscription": stripe_object_get(obj, "subscription", data.get("subscription")),
+        "payment_status": stripe_object_get(obj, "payment_status", data.get("payment_status")),
+        "status": stripe_object_get(obj, "status", data.get("status")),
+        "amount_total": stripe_object_get(obj, "amount_total", data.get("amount_total")),
+        "amount_paid": stripe_object_get(obj, "amount_paid", data.get("amount_paid")),
+        "currency": stripe_object_get(obj, "currency", data.get("currency")),
+        "client_reference_id": stripe_object_get(obj, "client_reference_id", data.get("client_reference_id")),
+        "metadata": stripe_object_get(obj, "metadata", data.get("metadata")) or {},
+    }
+
+
 def default_pro_period_end(days=None):
     try:
         configured_days = int(days or os.getenv("PRO_ACCESS_DAYS") or os.getenv("STRIPE_PRO_ACCESS_DAYS") or 30)
@@ -22387,6 +22583,119 @@ def default_pro_period_end(days=None):
         configured_days = 30
     configured_days = max(1, min(configured_days, 3650))
     return (datetime.now() + timedelta(days=configured_days)).isoformat()
+
+
+def activate_pro_from_stripe_session(session, event_id="", source="success_page"):
+    session = session or {}
+    session_id = stripe_object_get(session, "id", "")
+    customer_id = stripe_object_get(session, "customer", "")
+    payment_status = (stripe_object_get(session, "payment_status", "") or "").lower()
+    amount = stripe_amount_to_decimal(stripe_object_get(session, "amount_total"))
+    currency = stripe_object_get(session, "currency", "usd") or "usd"
+    subscription = stripe_object_get(session, "subscription")
+    subscription_id = subscription if isinstance(subscription, str) else stripe_object_get(subscription, "id", "")
+    if subscription_id and isinstance(subscription, str):
+        subscription = fetch_stripe_subscription(subscription_id)
+    period_end = None
+    subscription_status = "active"
+    if subscription:
+        subscription_status = (stripe_object_get(subscription, "status", "") or "active").lower()
+        period_end = stripe_period_end_to_iso(stripe_object_get(subscription, "current_period_end")) or stripe_period_end_to_iso(stripe_object_get(subscription, "trial_end"))
+    user_id, resolved_email = resolve_checkout_session_user(session)
+    logging.info(
+        "STRIPE_SESSION_CONFIRM session_id=%s source=%s user_id=%s customer_id=%s subscription_id=%s payment_status=%s period_end=%s",
+        session_id,
+        source,
+        user_id,
+        customer_id,
+        subscription_id,
+        payment_status,
+        period_end,
+    )
+    if not user_id:
+        record_unmatched_payment({"id": event_id or f"session_confirm_{session_id}", "type": "checkout.session.confirmed"}, stripe_object_summary(session), "success page session confirmation could not resolve local user")
+        return {"ok": False, "message": "Could not match this Stripe session to a CoinPilotXAI account.", "status": "user_not_found"}
+    if payment_status not in {"paid", "no_payment_required"} and not subscription_id:
+        logging.warning("STRIPE_SESSION_CONFIRM_NOT_PAID session_id=%s user_id=%s payment_status=%s", session_id, user_id, payment_status)
+        return {"ok": False, "message": "Stripe has not marked this checkout session as paid yet.", "status": payment_status or "pending", "user_id": user_id}
+    if resolved_email and is_valid_email(resolved_email):
+        save_user_email(user_id, resolved_email)
+    activation_event_id = event_id or f"session_confirm_{session_id}"
+    activated_user_id = activate_pro(
+        user_id,
+        payment_type="stripe",
+        stripe_customer_id=customer_id,
+        stripe_session_id=session_id,
+        stripe_subscription_id=subscription_id,
+        subscription_status=subscription_status if subscription_status in {"active", "trialing"} else "active",
+        pro_expires_at=period_end,
+        stripe_event_id=activation_event_id,
+        payment_status=payment_status or "paid",
+        payment_amount=amount,
+        payment_currency=currency,
+    )
+    if not activated_user_id:
+        logging.error("STRIPE_SESSION_CONFIRM_ACTIVATION_FAILED session_id=%s user_id=%s", session_id, user_id)
+        return {"ok": False, "message": "Payment was found, but Pro activation failed.", "status": "activation_failed", "user_id": user_id}
+    payment_id = record_payment_record(
+        activated_user_id,
+        stripe_event_id=activation_event_id,
+        stripe_session_id=session_id,
+        stripe_customer_id=customer_id,
+        stripe_subscription_id=subscription_id,
+        payment_intent_id=stripe_object_get(session, "payment_intent", "") or "",
+        amount=amount,
+        currency=currency,
+        status="succeeded",
+        payment_type="stripe",
+        metadata={"source": source, "payment_status": payment_status},
+        stripe_payload=stripe_object_summary(session),
+        pro_activated_at=datetime.now().isoformat(),
+    )
+    save_payment_verification(
+        activated_user_id,
+        txid=session_id,
+        payment_type="stripe",
+        amount=amount,
+        status="verified",
+        details=f"Stripe checkout session confirmed from {source}",
+    )
+    record_stripe_event(
+        {"id": activation_event_id, "type": "checkout.session.confirmed", "data": {"object": stripe_object_summary(session)}},
+        "processed",
+        activated_user_id,
+    )
+    fresh_user = load_account_by_id(activated_user_id)
+    email_results = {}
+    if fresh_user and has_pro_access(fresh_user):
+        email_results = send_successful_payment_email_bundle(fresh_user, {
+            "stripe_event_id": activation_event_id,
+            "stripe_session_id": session_id,
+            "payment_id": session_id or stripe_object_get(session, "payment_intent", "") or "",
+            "amount": amount,
+            "currency": currency,
+            "billing_date": datetime.now().strftime("%b %d, %Y"),
+            "next_billing_date": format_date(period_end) if period_end else "",
+        })
+        email_sent = any(bool(value) for value in (email_results or {}).values())
+        try:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute("UPDATE payment_records SET email_sent=? WHERE id=?", (1 if email_sent else 0, payment_id))
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logging.info("Payment email_sent flag update skipped payment_id=%s error=%s", payment_id, exc)
+    logging.info("STRIPE_SESSION_CONFIRM_SUCCESS session_id=%s user_id=%s payment_record_id=%s email_sent=%s", session_id, activated_user_id, payment_id, bool(email_results))
+    return {
+        "ok": True,
+        "status": "pro_active",
+        "user_id": activated_user_id,
+        "payment_record_id": payment_id,
+        "stripe_customer_id": customer_id,
+        "stripe_subscription_id": subscription_id,
+        "next_url": "/dashboard?pro=active",
+    }
 
 
 def user_id_from_candidate(value):
@@ -22443,29 +22752,30 @@ def find_user_by_stripe(customer_id=None, subscription_id=None, metadata_user_id
 
 def resolve_checkout_session_user(session):
     session = session or {}
-    metadata = session.get("metadata") or {}
-    customer_details = session.get("customer_details") or {}
+    metadata = stripe_object_get(session, "metadata", {}) or {}
+    customer_details = stripe_object_get(session, "customer_details", {}) or {}
     customer_email = (
         customer_details.get("email")
-        or session.get("customer_email")
+        or stripe_object_get(session, "customer_email", "")
         or metadata.get("email")
         or ""
     )
     metadata_user_id = (
-        session.get("client_reference_id")
+        stripe_object_get(session, "client_reference_id", "")
         or metadata.get("user_id")
         or metadata.get("client_reference_id")
         or metadata.get("account_user_id")
     )
-    subscription_id = session.get("subscription")
-    customer_id = session.get("customer")
+    subscription = stripe_object_get(session, "subscription", "")
+    subscription_id = subscription if isinstance(subscription, str) else stripe_object_get(subscription, "id", "")
+    customer_id = stripe_object_get(session, "customer", "")
     user_id = find_user_by_stripe(customer_id, subscription_id, metadata_user_id, customer_email)
     logging.info(
         "Stripe checkout resolution session_id=%s customer_id=%s customer_email=%s client_reference_id=%s metadata_user_id=%s resolved_user_id=%s",
-        session.get("id"),
+        stripe_object_get(session, "id", ""),
         customer_id,
         bool(customer_email),
-        session.get("client_reference_id"),
+        stripe_object_get(session, "client_reference_id", ""),
         metadata.get("user_id"),
         user_id,
     )
@@ -22588,7 +22898,18 @@ def sync_stripe_invoice(invoice, event_type):
         period_end = stripe_period_end_to_iso((lines[0].get("period") or {}).get("end"))
     if event_type in {"invoice.paid", "invoice.payment_succeeded"}:
         logging.info("Stripe invoice payment succeeded user_id=%s invoice_id=%s customer_id=%s subscription_id=%s", user_id, invoice.get("id"), customer_id, subscription_id)
-        activate_pro(user_id, payment_type="stripe", stripe_customer_id=customer_id, stripe_subscription_id=subscription_id, subscription_status="active", pro_expires_at=period_end)
+        activate_pro(
+            user_id,
+            payment_type="stripe",
+            stripe_customer_id=customer_id,
+            stripe_subscription_id=subscription_id,
+            subscription_status="active",
+            pro_expires_at=period_end,
+            stripe_event_id=invoice.get("id") or "",
+            payment_status="paid",
+            payment_amount=stripe_amount_to_decimal(invoice.get("amount_paid")),
+            payment_currency=invoice.get("currency", "usd"),
+        )
         return user_id
     logging.warning("Stripe invoice payment failed user_id=%s invoice_id=%s customer_id=%s subscription_id=%s", user_id, invoice.get("id"), customer_id, subscription_id)
     conn = db()
@@ -22603,7 +22924,7 @@ def sync_stripe_invoice(invoice, event_type):
     return user_id
 
 
-def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, stripe_subscription_id=None, subscription_status="active", pro_expires_at=None):
+def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_session_id=None, stripe_subscription_id=None, subscription_status="active", pro_expires_at=None, stripe_event_id="", payment_status="", payment_amount=None, payment_currency="usd"):
     target_user = load_account_by_id(user_id) or get_linked_website_account(user_id)
     if not target_user:
         logging.error("Pro activation failed: local user not found user_id=%s payment_type=%s customer_id=%s subscription_id=%s", user_id, payment_type, stripe_customer_id, stripe_subscription_id)
@@ -22614,7 +22935,7 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
     if normalized_status in {"active", "trialing"} and not pro_expires_at:
         pro_expires_at = default_pro_period_end()
     provider = payment_type or "manual"
-    last_payment_status = "approved" if normalized_status in {"active", "trialing"} else normalized_status
+    last_payment_status = payment_status or ("approved" if normalized_status in {"active", "trialing"} else normalized_status)
     pro_active = 1 if normalized_status in {"active", "trialing"} else 0
     logging.info(
         "Pro activation starting user_id=%s before_plan=%s before_status=%s payment_type=%s customer_id=%s session_id=%s subscription_id=%s expires=%s",
@@ -22653,6 +22974,11 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
             provider_customer_id=COALESCE(?, provider_customer_id),
             provider_subscription_id=COALESCE(?, provider_subscription_id),
             last_payment_status=?,
+            payment_status=?,
+            payment_amount=COALESCE(?, payment_amount),
+            payment_currency=COALESCE(?, payment_currency),
+            latest_stripe_event=COALESCE(?, latest_stripe_event),
+            latest_payment_at=?,
             stripe_customer_id=COALESCE(?, stripe_customer_id),
             stripe_session_id=COALESCE(?, stripe_session_id),
             stripe_subscription_id=COALESCE(?, stripe_subscription_id),
@@ -22673,6 +22999,11 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
             stripe_customer_id,
             stripe_subscription_id,
             last_payment_status,
+            last_payment_status,
+            payment_amount,
+            (payment_currency or "usd").upper() if payment_currency else None,
+            stripe_event_id or None,
+            activation_time,
             stripe_customer_id,
             stripe_session_id,
             stripe_subscription_id,
@@ -22726,7 +23057,7 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
         logging.info("TRIAL_TO_PAID_CONVERSION user_id=%s subscription_id=%s", target_user_id, stripe_subscription_id)
     logging.info("PRO_UPGRADE_COMPLETED user_id=%s status=%s", target_user_id, normalized_status)
     log_product_event(target_user_id, "pro_subscription_active" if normalized_status == "active" else "pro_subscription_updated", {"payment_type": provider, "status": normalized_status})
-    log_security_event("pro_access_activated", "success", target_user_id, "/stripe-webhook", {"provider": provider, "status": normalized_status, "subscription_id": stripe_subscription_id or ""})
+    log_security_event("pro_access_activated", "success", target_user_id, "/stripe-webhook", {"provider": provider, "status": normalized_status, "subscription_id": stripe_subscription_id or "", "stripe_event_id": stripe_event_id or ""})
     user = load_account_by_id(target_user_id)
     if user:
         sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or target_user_id)

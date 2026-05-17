@@ -291,7 +291,7 @@
           </div>
 
         {% elif page == "upgrade_success" %}
-          <div class="profile-card">
+          <div class="profile-card" data-upgrade-session="{{ stripe_session_id or '' }}">
             <h3>Payment Confirmation In Progress</h3>
             <p data-upgrade-status>Your Pro upgrade is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
             <p class="muted" data-upgrade-detail>Checking your account status now...</p>
@@ -449,7 +449,37 @@
       var upgradeStatus = document.querySelector("[data-upgrade-status]");
       var upgradeDetail = document.querySelector("[data-upgrade-detail]");
       if (upgradeStatus && upgradeDetail) {
+        var upgradeSessionNode = document.querySelector("[data-upgrade-session]");
+        var upgradeSessionId = upgradeSessionNode ? (upgradeSessionNode.getAttribute("data-upgrade-session") || "") : "";
         var attempts = 0;
+        var confirmStarted = false;
+        var confirmSession = function () {
+          if (!upgradeSessionId || confirmStarted) return Promise.resolve(false);
+          confirmStarted = true;
+          upgradeStatus.textContent = "Payment received, activating...";
+          return fetch("/api/billing/confirm-session", {
+            method: "POST",
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: upgradeSessionId })
+          })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (data && data.ok) {
+                upgradeStatus.textContent = "Pro Active";
+                upgradeDetail.textContent = "Arena is unlocked. Opening your dashboard...";
+                setTimeout(function () { window.location.href = data.next_url || "/dashboard?pro=active"; }, 900);
+                return true;
+              }
+              confirmStarted = false;
+              return false;
+            })
+            .catch(function () {
+              confirmStarted = false;
+              return false;
+            });
+        };
         var pollStatus = function () {
           attempts += 1;
           fetch("/api/account/status?ts=" + Date.now(), { cache: "no-store", credentials: "same-origin" })
@@ -466,7 +496,9 @@
                 return;
               }
               if (attempts < 20) {
-                setTimeout(pollStatus, 3000);
+                confirmSession().then(function (confirmed) {
+                  if (!confirmed) setTimeout(pollStatus, 3000);
+                });
               } else {
                 upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
                 upgradeDetail.textContent = "If it does not activate in a few minutes, email support@coinpilotx.app with your account email.";
@@ -481,6 +513,7 @@
               }
             });
         };
+        confirmSession();
         pollStatus();
       }
 
