@@ -25,6 +25,12 @@ def broadcast_roast_message(result):
         "avatar_reaction": result.get("avatar_reaction"),
         "crowd_delta": result.get("crowd_delta") or 0,
         "commentator_line": result.get("commentator_line"),
+        "line_weight": result.get("line_weight") or {},
+        "impact_label": result.get("impact_label"),
+        "balance_delta_sender": result.get("balance_delta_sender") or 0,
+        "balance_delta_target": result.get("balance_delta_target") or 0,
+        "target_user_id": result.get("target_user_id"),
+        "participants": result.get("participants") or [],
     }
     return live_event_engine.publish(_channel(match_id), "roast_message", payload, dedupe_key=f"roast-message:{message.get('id')}", cooldown_seconds=60)
 

@@ -171,6 +171,8 @@ AUTO_PK_TABLES = {
     "roast_messages": "id",
     "roast_reactions": "id",
     "roast_votes": "id",
+    "arena_roast_participants": "id",
+    "arena_roast_lines": "id",
     "blocked_users": "id",
     "chat_reports": "id",
     "saved_wallets": "id",

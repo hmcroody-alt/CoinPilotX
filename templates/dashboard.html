@@ -213,6 +213,7 @@
         </div>
         <button class="button primary command-glow command-glow-market" type="button" data-auto-signals>Activate Auto Signals</button>
         <p class="muted" data-auto-signals-result>Ready to monitor major market moves.</p>
+        <div class="list" data-auto-signals-alerts></div>
       </article>
       <article class="card" data-priority-card="market">
         <div class="kicker">Live Market Snapshot</div>
@@ -431,6 +432,8 @@
     const money = value => Number(value || 0).toLocaleString(undefined, { style: "currency", currency: "USD" });
     const pct = value => (Number(value || 0) >= 0 ? "+" : "") + Number(value || 0).toFixed(2) + "%";
     const text = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
+    const qs = selector => document.querySelector(selector);
+    const setHTML = (selector, html) => { const node = qs(selector); if (node) node.innerHTML = html; };
     const accountSyncText = message => text("[data-account-sync-message]", message);
     const postJson = (url, payload, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed"); return j; }));
     const escapeHtml = value => String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
@@ -438,13 +441,16 @@
 
     function setChatTab(tab) {
       document.querySelectorAll("[data-chat-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.chatTab === tab));
-      document.querySelector("[data-chat-list-view]").hidden = tab !== "list";
-      document.querySelector("[data-chat-thread-view]").hidden = tab !== "thread";
+      const listView = qs("[data-chat-list-view]");
+      const threadView = qs("[data-chat-thread-view]");
+      if (listView) listView.hidden = tab !== "list";
+      if (threadView) threadView.hidden = tab !== "thread";
     }
 
     function openPrivateChat() {
       const shell = document.querySelector("[data-private-chat-shell]");
       const launcher = document.querySelector("[data-private-chat-open]");
+      if (!shell || !launcher) return;
       shell.classList.add("is-open");
       shell.setAttribute("aria-hidden", "false");
       launcher.setAttribute("aria-expanded", "true");
@@ -455,6 +461,7 @@
     function closePrivateChat() {
       const shell = document.querySelector("[data-private-chat-shell]");
       const launcher = document.querySelector("[data-private-chat-open]");
+      if (!shell || !launcher) return;
       shell.classList.remove("is-open");
       shell.setAttribute("aria-hidden", "true");
       launcher.setAttribute("aria-expanded", "false");
@@ -463,6 +470,7 @@
 
     async function loadChatConversations() {
       const node = document.querySelector("[data-chat-conversations]");
+      if (!node) return;
       node.innerHTML = '<div class="private-chat-empty">Loading private conversations...</div>';
       try {
         const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
@@ -470,8 +478,10 @@
         if (!response.ok || !data.ok) throw new Error(data.message || "Unable to load conversations.");
         const totalUnread = (data.conversations || []).reduce((sum, item) => sum + Number(item.unread_count || 0), 0);
         const badge = document.querySelector("[data-private-chat-unread]");
-        badge.hidden = totalUnread <= 0;
-        badge.textContent = totalUnread > 99 ? "99+" : totalUnread;
+        if (badge) {
+          badge.hidden = totalUnread <= 0;
+          badge.textContent = totalUnread > 99 ? "99+" : totalUnread;
+        }
         node.innerHTML = (data.conversations || []).map(item => `
           <button class="conversation-row" type="button" data-open-conversation="${item.id}" data-other-user-id="${item.other_user_id || ""}">
             <strong>${escapeHtml(item.title || "CoinPilotXAI user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
@@ -504,6 +514,7 @@
 
     function renderChatMessages(messages) {
       const thread = document.querySelector("[data-chat-thread]");
+      if (!thread) return;
       thread.innerHTML = (messages || []).map(message => chatMessageHtml(message)).join("") || '<div class="private-chat-empty">No messages yet. Send the first one.</div>';
       chatState.lastMessageId = Math.max(0, ...(messages || []).map(message => Number(message.message_id || message.id || 0)));
       thread.scrollTop = thread.scrollHeight;
@@ -511,6 +522,7 @@
 
     function appendChatMessages(messages) {
       const thread = document.querySelector("[data-chat-thread]");
+      if (!thread) return;
       const seen = new Set([...thread.querySelectorAll("[data-message-id]")].map(node => node.dataset.messageId));
       (messages || []).forEach(message => {
         const id = String(message.message_id || message.id || "");
@@ -542,9 +554,9 @@
       const thread = document.querySelector("[data-chat-thread]");
       const empty = document.querySelector("[data-chat-thread-empty]");
       const actions = document.querySelector("[data-chat-thread-actions]");
-      empty.hidden = true;
-      actions.hidden = false;
-      thread.innerHTML = '<div class="private-chat-empty">Loading messages...</div>';
+      if (empty) empty.hidden = true;
+      if (actions) actions.hidden = false;
+      if (thread) thread.innerHTML = '<div class="private-chat-empty">Loading messages...</div>';
       try {
         const response = await fetch("/api/chat/thread/" + conversationId, { cache: "no-store", credentials: "same-origin" });
         const data = await response.json();
@@ -553,7 +565,7 @@
         renderChatMessages(data.messages || []);
         loadChatConversations();
       } catch (error) {
-        thread.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
+        if (thread) thread.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
       }
     }
 
@@ -570,31 +582,31 @@
       const mover = data.portfolio.top_gainer ? "Top gainer: " + data.portfolio.top_gainer.symbol + " · Top loser: " + (data.portfolio.top_loser ? data.portfolio.top_loser.symbol : "n/a") : "Add holdings to see top gainer and loser.";
       text("[data-top-movers]", mover);
 
-      document.querySelector("[data-holdings]").innerHTML = (data.portfolio.holdings || []).map(item => `
+      setHTML("[data-holdings]", (data.portfolio.holdings || []).map(item => `
         <div class="row">
           <strong>${item.symbol}</strong>
           <span>${money(item.price)}</span>
           <span>${money(item.value)}</span>
           <span class="${item.pnl_value >= 0 ? "green" : "red"}">${money(item.pnl_value)} · ${pct(item.pnl_percent)}</span>
           <button class="button" data-delete-portfolio="${item.id}">Delete</button>
-        </div>`).join("") || '<p class="muted">No holdings yet.</p>';
+        </div>`).join("") || '<p class="muted">No holdings yet.</p>');
 
-      document.querySelector("[data-watchlist]").innerHTML = (data.watchlist || []).map(item => `
+      setHTML("[data-watchlist]", (data.watchlist || []).map(item => `
         <div class="watch-row">
           <strong>${item.symbol}</strong>
           <span>${money(item.price)} · ${pct(item.change_24h)}</span>
           <button class="button" data-delete-watchlist="${item.id}">Delete</button>
-        </div>`).join("") || '<p class="muted">No watchlist coins yet.</p>';
+        </div>`).join("") || '<p class="muted">No watchlist coins yet.</p>');
 
-      document.querySelector("[data-alerts]").innerHTML = (data.alerts || []).map(item => `
+      setHTML("[data-alerts]", (data.alerts || []).map(item => `
         <div class="alert-row">
           <strong>${item.symbol || item.target || "Alert"}</strong>
           <span>${item.alert_type || "price"} ${item.condition || ""} ${item.target_value || item.threshold || ""}</span>
           <button class="button" data-delete-alert="${item.id}">Delete</button>
-        </div>`).join("") || '<p class="muted">No active alerts yet.</p>';
+        </div>`).join("") || '<p class="muted">No active alerts yet.</p>');
 
-      document.querySelector("[data-market-snapshot]").innerHTML = (data.market.markets || []).slice(0, 4).map(item => `
-        <a class="watch-row" href="/quote/crypto/${encodeURIComponent(item.symbol)}"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></a>`).join("") || '<p class="muted">Live source reconnecting. Last known data shown if available.</p>';
+      setHTML("[data-market-snapshot]", (data.market.markets || []).slice(0, 4).map(item => `
+        <a class="watch-row" href="/quote/crypto/${encodeURIComponent(item.symbol)}"><strong>${item.symbol}</strong><span>${money(item.price)} · ${pct(item.change_24h)}</span></a>`).join("") || '<p class="muted">Live source reconnecting. Last known data shown if available.</p>');
 
       const activity = data.activity || [];
       const relative = value => {
@@ -609,13 +621,13 @@
       };
       const latest = activity[0];
       text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "CoinPilotXAI"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
-      document.querySelector("[data-activity]").innerHTML = activity.slice(0, 10).map(item => `
-        <div class="activity-row"><strong>✓ ${String(item.event_type || "activity").replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${relative(item.created_at)}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>';
+      setHTML("[data-activity]", activity.slice(0, 10).map(item => `
+        <div class="activity-row"><strong>✓ ${String(item.event_type || "activity").replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${relative(item.created_at)}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>');
 
-      const chart = document.querySelector("[data-allocation-chart]");
+      const chart = qs("[data-allocation-chart]");
       const holdings = data.portfolio.holdings || [];
       const max = Math.max(...holdings.map(i => i.value || 0), 1);
-      chart.innerHTML = holdings.map(i => `<div class="bar" title="${i.symbol} ${money(i.value)}" style="height:${Math.max(8, (i.value || 0) / max * 100)}%"></div>`).join("") || '<p class="muted">Add holdings to see allocation.</p>';
+      if (chart) chart.innerHTML = holdings.map(i => `<div class="bar" title="${i.symbol} ${money(i.value)}" style="height:${Math.max(8, (i.value || 0) / max * 100)}%"></div>`).join("") || '<p class="muted">Add holdings to see allocation.</p>';
     }
 
     async function loadRetentionPanels() {
@@ -641,11 +653,11 @@
         text("[data-progress-note]", "Scam safety " + (streak.scam_safety_score || 70) + " · Portfolio discipline " + (streak.portfolio_discipline_score || 70));
       }
       if (insights && insights.ok) {
-        document.querySelector("[data-saved-insights]").innerHTML = (insights.insights || []).slice(0, 5).map(item => `<div class="activity-row"><strong>${item.title}</strong><span>${item.insight_type}</span></div>`).join("") || '<p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p>';
+        setHTML("[data-saved-insights]", (insights.insights || []).slice(0, 5).map(item => `<div class="activity-row"><strong>${item.title}</strong><span>${item.insight_type}</span></div>`).join("") || '<p class="muted">Save AI responses, market notes, scam checks, wallet reports, and lessons here.</p>');
         text("[data-memory-card]", (insights.insights || [])[0]?.title || "Ask AI or save an insight to build your memory card.");
       }
       if (watch && watch.ok) {
-        document.querySelector("[data-watch-items]").innerHTML = (watch.items || []).slice(0, 8).map(item => `<div class="watch-row"><strong>${item.label || item.value}</strong><span>${item.watch_type}</span></div>`).join("") || '<p class="muted">No watched intelligence items yet.</p>';
+        setHTML("[data-watch-items]", (watch.items || []).slice(0, 8).map(item => `<div class="watch-row"><strong>${item.label || item.value}</strong><span>${item.watch_type}</span></div>`).join("") || '<p class="muted">No watched intelligence items yet.</p>');
       }
       if (progress && progress.ok) {
         text("[data-education-progress]", progress.paths.join(" · "));
@@ -672,26 +684,28 @@
       if (ops && ops.ok) {
         const progress = ops.progress || {};
         const completed = new Set((progress.steps || []).filter(step => step.completed).map(step => step.key));
-        document.querySelector("[data-start-here]").innerHTML = (ops.start_here || []).map((step, index) => `
+        setHTML("[data-start-here]", (ops.start_here || []).map((step, index) => `
           <a class="start-step ${completed.has(step.key) ? "done" : ""}" href="${step.url}" data-core-step="${step.key}">
             <b>${completed.has(step.key) ? "✓" : index + 1}</b>
             <span><strong>${step.title}</strong><small class="muted"> · ${step.xp} XP</small></span>
             <small>${completed.has(step.key) ? "Done" : "Start"}</small>
-          </a>`).join("");
+          </a>`).join(""));
       }
       if (world && world.ok) {
-        document.querySelector("[data-world-feed]").innerHTML = (world.items || []).map(item => `
-          <a href="${item.url || "/arena/play"}"><strong>${escapeHtml(item.title || "Live event")}</strong><small class="muted">${escapeHtml(item.body || "")}</small></a>`).join("") || '<p class="muted">No live events yet.</p>';
+        setHTML("[data-world-feed]", (world.items || []).map(item => `
+          <a href="${item.url || "/arena/play"}"><strong>${escapeHtml(item.title || "Live event")}</strong><small class="muted">${escapeHtml(item.body || "")}</small></a>`).join("") || '<p class="muted">No live events yet.</p>');
       }
     }
 
     async function activateAutoSignals() {
-      const button = document.querySelector("[data-auto-signals]");
-      const result = document.querySelector("[data-auto-signals-result]");
-      const mode = document.querySelector("input[name='auto_signal_mode']:checked")?.value || "balanced";
-      button.disabled = true;
-      button.textContent = "Activating...";
-      result.textContent = "Creating live monitoring rules...";
+      const button = qs("[data-auto-signals]");
+      const result = qs("[data-auto-signals-result]");
+      const mode = qs("input[name='auto_signal_mode']:checked")?.value || "balanced";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Activating...";
+      }
+      if (result) result.textContent = "Creating live monitoring rules...";
       try {
         const response = await fetch("/api/auto-signals/activate", {
           method: "POST",
@@ -701,13 +715,26 @@
         });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not activate.");
-        result.textContent = `${data.message} ${data.created.length} alert rules created.`;
-        await loadDashboard();
+        const alerts = Array.isArray(data.alerts) ? data.alerts : (Array.isArray(data.created) ? data.created : []);
+        if (result) result.textContent = `Auto Signals activated. CoinPilotXAI is now monitoring your market alerts. ${alerts.length} alert rules created.`;
+        setHTML("[data-auto-signals-alerts]", alerts.map(item => `
+          <div class="alert-row">
+            <strong>${escapeHtml(item.symbol || "Signal")}</strong>
+            <span>${escapeHtml(item.condition || "")} ${escapeHtml(item.threshold || "")}</span>
+          </div>`).join("") || '<p class="muted">Auto Signals is active. Alert details will appear in the Alerts Command Center.</p>');
+        if (button) {
+          button.dataset.active = "true";
+          button.textContent = "Auto Signals Active";
+        }
+        await loadDashboard().catch(() => {});
       } catch (err) {
-        result.textContent = err.message || "Auto Signals could not activate.";
+        if (result) result.textContent = "Auto Signals could not activate right now. Please try again.";
+        setHTML("[data-auto-signals-alerts]", `<p class="muted">${escapeHtml(err.message || "Live monitoring setup did not complete.")}</p>`);
       } finally {
-        button.disabled = false;
-        button.textContent = "Activate Auto Signals";
+        if (button) {
+          button.disabled = false;
+          if (button.dataset.active !== "true") button.textContent = "Activate Auto Signals";
+        }
       }
     }
 
@@ -834,6 +861,7 @@
         const body = new FormData(form).get("body");
         if (!String(body || "").trim()) return;
         const thread = document.querySelector("[data-chat-thread]");
+        if (!thread) return;
         const tempId = "temp-" + Date.now();
         thread.insertAdjacentHTML("beforeend", `<div class="chat-bubble me" data-message-id="${tempId}"><strong>You</strong><div>${escapeHtml(body)}</div><small>sending...</small></div>`);
         thread.scrollTop = thread.scrollHeight;
@@ -856,7 +884,7 @@
     document.addEventListener("click", async event => {
       if (event.target.closest("[data-customize-home]")) {
         const panel = document.querySelector("[data-customize-panel]");
-        panel.hidden = !panel.hidden;
+        if (panel) panel.hidden = !panel.hidden;
       }
       if (event.target.closest("[data-pref-reset]")) {
         const defaults = { show_account:false, show_upgrade_pro:false, show_command_center:false, show_logout:false, show_saved_insights:true, show_activity_timeline:true };
@@ -896,11 +924,12 @@
       const timeline = event.target.closest("[data-toggle-timeline]");
       if (timeline) {
         const panel = document.querySelector("[data-activity-panel]");
-        panel.hidden = false;
+        if (panel) panel.hidden = false;
         timeline.textContent = "Activity Timeline Open";
       }
       if (event.target.closest("[data-hide-timeline]")) {
-        document.querySelector("[data-activity-panel]").hidden = true;
+        const panel = document.querySelector("[data-activity-panel]");
+        if (panel) panel.hidden = true;
         const btn = document.querySelector("[data-toggle-timeline]");
         if (btn) btn.textContent = "View Activity Timeline";
       }

@@ -6,6 +6,10 @@ BLOCKED_TERMS = {
     "dox",
     "address is",
     "real name",
+    "seed phrase",
+    "private key",
+    "i will find you",
+    "hurt you",
 }
 
 

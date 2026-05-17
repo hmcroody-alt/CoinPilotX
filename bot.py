@@ -10842,7 +10842,13 @@ def arena_roast_battle_page(room_id=None, match_id=None):
       .roast-ticker span{{animation:roastTicker 22s linear infinite}}
       .roast-live-grid{{display:grid;grid-template-columns:1.25fr .75fr;gap:16px;margin-top:16px}}
       .roast-avatar-duel{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}}
+      .roast-player-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}}
       .roast-avatar{{min-height:150px;border:1px solid rgba(110,223,246,.22);border-radius:18px;background:radial-gradient(circle at 50% 18%,rgba(110,223,246,.16),transparent 5rem),rgba(255,255,255,.04);display:grid;place-items:center;text-align:center;box-shadow:0 0 34px rgba(110,223,246,.10)}}
+      .roast-avatar.balance-up{{animation:balanceUp .72s ease both}}
+      .roast-avatar.balance-down{{animation:balanceDown .72s ease both}}
+      .roast-balance{{font-size:1.25rem;font-weight:1000;color:#dff7ff}}
+      .roast-delta{{display:inline-block;margin-top:4px;font-weight:1000}}
+      .roast-delta.up{{color:#36e58f}}.roast-delta.down{{color:#ff6b7a}}
       .roast-face{{font-size:60px;animation:roastAvatarPulse 2.6s ease-in-out infinite}}
       .roast-feed-card{{max-height:360px;overflow:auto}}
       .roast-live-commentary div,.roast-crowd-chat div{{animation:arenaCardIn .22s ease both}}
@@ -10851,8 +10857,10 @@ def arena_roast_battle_page(room_id=None, match_id=None):
       @keyframes roastWorldSpin{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}
       @keyframes roastTicker{{from{{transform:translateX(0)}}to{{transform:translateX(-55%)}}}}
       @keyframes roastAvatarPulse{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-4px) scale(1.04)}}}}
-      @media(max-width:768px){{.roast-live-grid,.roast-avatar-duel{{grid-template-columns:1fr}}.roast-avatar{{min-height:104px}}.roast-face{{font-size:46px}}.roast-feed-card{{max-height:260px}}.roast-world-stage:before,.roast-world-stage:after{{animation:none;opacity:.25}}}}
-      @media(prefers-reduced-motion:reduce){{.roast-world-stage:before,.roast-world-stage:after,.roast-ticker span,.roast-face{{animation:none!important}}}}
+      @keyframes balanceUp{{0%{{box-shadow:0 0 0 rgba(54,229,143,0)}}45%{{box-shadow:0 0 34px rgba(54,229,143,.34);transform:translateY(-2px)}}100%{{box-shadow:0 0 34px rgba(110,223,246,.10);transform:none}}}}
+      @keyframes balanceDown{{0%{{box-shadow:0 0 0 rgba(255,107,122,0)}}45%{{box-shadow:0 0 34px rgba(255,107,122,.30);transform:translateY(2px)}}100%{{box-shadow:0 0 34px rgba(110,223,246,.10);transform:none}}}}
+      @media(max-width:768px){{.roast-live-grid,.roast-avatar-duel,.roast-player-grid{{grid-template-columns:1fr}}.roast-avatar{{min-height:104px}}.roast-face{{font-size:46px}}.roast-feed-card{{max-height:260px}}.roast-world-stage:before,.roast-world-stage:after{{animation:none;opacity:.25}}}}
+      @media(prefers-reduced-motion:reduce){{.roast-world-stage:before,.roast-world-stage:after,.roast-ticker span,.roast-face,.roast-avatar.balance-up,.roast-avatar.balance-down{{animation:none!important}}}}
     </style>
     <section class="hero roast-world-stage" data-roast-stage>
       <article class="card wide live-arena-card">
@@ -10860,6 +10868,8 @@ def arena_roast_battle_page(room_id=None, match_id=None):
         <h1>Roast Battle</h1>
         <p>Step into the spotlight, throw clever lines, survive the crowd, and win the room. The energy is sharp, safe, and live across the Arena.</p>
         <div class="roast-ticker" aria-live="polite"><span data-roast-ticker>New challenger entered · Crowd surging · AI commentators online · Viral roast detected · Room heat rising · </span></div>
+        <p class="muted">Roast Battle uses virtual dollars for entertainment scoring only. No real-money value.</p>
+        <form data-roast-call-sign class="actions"><input name="call_sign" minlength="3" maxlength="24" placeholder="Choose call sign, e.g. Cyber Flame"><button type="submit">Save Call Sign</button></form>
         <div class="actions"><button class="primary" data-roast-enroll>Enter Roast Battle</button><a class="button" href="/arena/roast-battle/room/1">Watch Live</a><button type="button" data-roast-fullscreen>Theater Mode</button><a class="button" href="/arena/play">Back to Play Hub</a></div>
       </article>
       <article class="card"><h2>World Stage</h2><p><strong data-roast-world-count>Loading</strong> watching worldwide · <span data-roast-heat-label>Arena heating up</span></p><div class="crowd-meter"><span data-roast-crowd style="width:52%"></span></div><p class="muted">Playful roasts and rivalry energy are welcome. Personal attacks, threats, slurs, doxxing, and protected-class insults are blocked.</p></article>
@@ -10867,12 +10877,17 @@ def arena_roast_battle_page(room_id=None, match_id=None):
     <section class="roast-live-grid">
       <article class="card wide">
         <h2>Player Roast Feed</h2>
-        <div class="roast-avatar-duel">
-          <div class="roast-avatar"><div><div class="roast-face" data-roast-avatar-a>😎</div><strong>Player A</strong><p class="muted">Confidence rising</p></div></div>
-          <strong class="rank">VS</strong>
-          <div class="roast-avatar"><div><div class="roast-face" data-roast-avatar-b>😤</div><strong>Player B</strong><p class="muted">Ready to answer</p></div></div>
+        <div class="roast-player-grid" data-roast-players>
+          <div class="roast-avatar"><div><div class="roast-face" data-roast-avatar-a>😎</div><strong>Player A</strong><p class="roast-balance">Stage Balance: $1,000,000</p><p class="muted">Confidence rising</p></div></div>
+          <div class="roast-avatar"><div><div class="roast-face" data-roast-avatar-b>😤</div><strong>Player B</strong><p class="roast-balance">Stage Balance: $1,000,000</p><p class="muted">Ready to answer</p></div></div>
         </div>
-        <form data-roast-message class="actions" style="margin-top:12px"><input name="message" placeholder="Drop a clever, safe line" autocomplete="off"><button class="primary">Send Roast</button></form>
+        <form data-roast-message class="actions" style="margin-top:12px">
+          <select name="target_type"><option value="single">Target player</option><option value="leader">Current leader</option><option value="all">All opponents</option><option value="crowd">Crowd-facing line</option></select>
+          <select name="target_user_id" data-roast-targets><option value="">Auto target</option></select>
+          <input name="message" placeholder="Drop a clever, safe line" autocomplete="off">
+          <button class="primary">Send Roast</button>
+        </form>
+        <p class="muted" data-roast-turn>Timed turns · 30 seconds per player · clean pressure scores highest.</p>
         <div class="feed roast-feed-card" data-roast-feed><div>The global stage is ready.</div></div>
       </article>
       <aside class="card">
@@ -10898,13 +10913,18 @@ def arena_roast_battle_page(room_id=None, match_id=None):
     const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
     function roastStorm(emoji){{const layer=document.createElement('div');layer.className='emoji-storm';for(let i=0;i<18;i++){{const s=document.createElement('span');s.textContent=emoji||['🔥','😂','👑','🚀','🧠'][i%5];s.style.left=Math.random()*100+'vw';s.style.animationDelay=(Math.random()*.35)+'s';s.style.setProperty('--drift',((Math.random()-.5)*120)+'px');layer.appendChild(s);}}document.body.appendChild(layer);setTimeout(()=>layer.remove(),3200);}}
     function addFeed(sel,html){{const el=document.querySelector(sel);if(!el)return;el.insertAdjacentHTML('afterbegin',html);while(el.children.length>24)el.lastElementChild.remove();}}
+    function money(v){{return '$'+Number(v||0).toLocaleString(undefined,{{maximumFractionDigits:0}});}}
+    function renderPlayers(players){{const grid=document.querySelector('[data-roast-players]');const targets=document.querySelector('[data-roast-targets]');if(!grid)return;grid.innerHTML=(players||[]).map((p,i)=>`<div class="roast-avatar" data-roast-player="${{p.user_id}}"><div><div class="roast-face">${{['😎','😤','🧠','👑'][i%4]}}</div><strong>${{esc(p.call_sign||p.display_name||'Arena Pilot')}}</strong><p class="roast-balance">Stage Balance: ${{money(p.current_balance)}}</p><p class="muted">${{esc(p.status||'Ready')}} · Crowd ${{Math.round(Number(p.crowd_score||0))}}</p></div></div>`).join('')||'<div class="roast-avatar"><div><strong>Waiting for players</strong><p class="roast-balance">Stage Balance: $1,000,000</p></div></div>';if(targets)targets.innerHTML='<option value="">Auto target</option>'+(players||[]).map(p=>`<option value="${{Number(p.user_id||0)}}">${{esc(p.call_sign||p.display_name||'Arena Pilot')}}</option>`).join('');}}
+    async function loadRoastState(){{try{{const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/state`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{renderPlayers(d.participants||[]);const turn=document.querySelector('[data-roast-turn]');if(turn)turn.textContent=`${{d.match?.match_type==='four_player'?'Four-player chaos':'Two-player duel'}} · 30-second timed turns · virtual dollars decide the room`;}}}}catch(e){{}}}}
     function applySnapshot(snapshot){{if(!snapshot)return;const count=document.querySelector('[data-roast-world-count]');const heat=document.querySelector('[data-roast-crowd]');const label=document.querySelector('[data-roast-heat-label]');const ticker=document.querySelector('[data-roast-ticker]');if(count)count.textContent=Number(snapshot.watching_worldwide||0).toLocaleString()+' watching worldwide';if(heat)heat.style.width=Math.min(100,Number(snapshot.heat_meter||52))+'%';if(label)label.textContent=(snapshot.heat_meter||0)>82?'Arena exploding':'Arena heating up';if(ticker&&snapshot.ticker)ticker.textContent=snapshot.ticker.join(' · ')+' · ';}}
-    function renderRoastEvent(ev){{if(!ev||roastSeen.has(String(ev.id)))return;roastSeen.add(String(ev.id));const p=ev.payload||{{}};if(ev.event_type==='roast_message'){{const m=p.message||{{}};addFeed('[data-roast-feed]',`<div><strong>Pilot:</strong> ${{esc(m.body)}}<br><small>Score ${{Number((p.score||{{}}).total||0)}} · ${{esc(p.avatar_reaction||'confident')}}</small></div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'The room felt that one.')}}</div>`);document.querySelector('[data-roast-avatar-a]').textContent=p.avatar_reaction==='laughing'?'😂':'😤';roastStorm('🔥');}}if(ev.event_type==='crowd_reaction'){{const r=p.reaction||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Crowd:</strong> ${{esc(r.emoji||'🔥')}} reaction landed.</div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'Chat is lighting up.')}}</div>`);roastStorm(r.emoji||'🔥');}}if(ev.event_type==='crowd_vote'){{addFeed('[data-roast-crowd-chat]',`<div><strong>Vote:</strong> Crowd backed Player ${{Number((p.vote||{{}}).target_user_id||0)===2?'B':'A'}}.</div>`);}}}}
+    function renderRoastEvent(ev){{if(!ev||roastSeen.has(String(ev.id)))return;roastSeen.add(String(ev.id));const p=ev.payload||{{}};if(ev.event_type==='roast_message'){{const m=p.message||{{}};const up=Number(p.balance_delta_sender||0)>=0;addFeed('[data-roast-feed]',`<div><strong>Pilot:</strong> ${{esc(m.body)}}<br><small>${{esc(p.impact_label||'Clean Hit')}} · Weight ${{Number((p.line_weight||{{}}).weight||(p.score||{{}}).total||0)}} · <span class="roast-delta ${{up?'up':'down'}}">${{up?'+':''}}${{money(p.balance_delta_sender||0)}}</span></small></div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'The room felt that one.')}}</div>`);renderPlayers(p.participants||[]);const card=document.querySelector(`[data-roast-player="${{m.user_id}}"]`);if(card){{card.classList.add(up?'balance-up':'balance-down');setTimeout(()=>card.classList.remove('balance-up','balance-down'),760);}}const face=document.querySelector('[data-roast-avatar-a]');if(face)face.textContent=p.avatar_reaction==='laughing'?'😂':'😤';roastStorm(up?'🔥':'💀');}}if(ev.event_type==='crowd_reaction'){{const r=p.reaction||{{}};addFeed('[data-roast-crowd-chat]',`<div><strong>Crowd:</strong> ${{esc(r.emoji||'🔥')}} reaction landed.</div>`);addFeed('[data-roast-commentator-feed]',`<div>${{esc(p.commentator_line||'Chat is lighting up.')}}</div>`);roastStorm(r.emoji||'🔥');}}if(ev.event_type==='crowd_vote'){{addFeed('[data-roast-crowd-chat]',`<div><strong>Vote:</strong> Crowd backed Player ${{Number((p.vote||{{}}).target_user_id||0)===2?'B':'A'}}.</div>`);}}}}
     async function pollRoastLive(){{try{{const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/new?after_id=${{roastLastEventId}}`,{{cache:'no-store'}}).then(r=>r.json());if(d.ok){{(d.events||[]).forEach(ev=>{{roastLastEventId=Math.max(roastLastEventId,Number(ev.id||0));renderRoastEvent(ev);}});applySnapshot(d.snapshot);}}}}catch(e){{}}}}
-    document.querySelector('[data-roast-message]').addEventListener('submit',async e=>{{e.preventDefault();const message=new FormData(e.target).get('message');if(!String(message||'').trim())return;const btn=e.target.querySelector('button');btn.disabled=true;addFeed('[data-roast-feed]',`<div><strong>You:</strong> ${{esc(message)}}<br><small>Sending live...</small></div>`);const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/message`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Connection hiccup. Try again.'}}));btn.disabled=false;if(d.ok){{e.target.reset();pollRoastLive();}}else{{addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.message||'Too personal. Keep it clever, not harmful.')}}</div>`);}}}});
+    document.querySelector('[data-roast-call-sign]')?.addEventListener('submit',async e=>{{e.preventDefault();const call_sign=new FormData(e.target).get('call_sign');const d=await fetch('/api/arena/roast/call-sign',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{call_sign}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Call sign could not be saved.'}}));addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.ok?'Call sign locked: '+d.call_sign:(d.message||'Choose a different call sign.'))}}</div>`);if(d.ok)loadRoastState();}});
+    document.querySelector('[data-roast-message]').addEventListener('submit',async e=>{{e.preventDefault();const fd=new FormData(e.target);const message=fd.get('message');if(!String(message||'').trim())return;const btn=e.target.querySelector('button');btn.disabled=true;addFeed('[data-roast-feed]',`<div><strong>You:</strong> ${{esc(message)}}<br><small>Sending live...</small></div>`);const d=await fetch(`/api/arena/roast/match/${{roastMatchId}}/say`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message,target_type:fd.get('target_type')||'single',target_user_id:Number(fd.get('target_user_id')||0)}})}}).then(r=>r.json()).catch(()=>({{ok:false,message:'Connection hiccup. Try again.'}}));btn.disabled=false;if(d.ok){{e.target.reset();pollRoastLive();loadRoastState();}}else{{addFeed('[data-roast-commentator-feed]',`<div>${{esc(d.message||'Too personal. Keep it clever, not harmful.')}}</div>`);loadRoastState();}}}});
     document.addEventListener('click',async e=>{{const react=e.target.closest('[data-roast-react]');if(react){{await fetch(`/api/arena/roast/match/${{roastMatchId}}/reaction`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{emoji:react.textContent.trim()}})}}).catch(()=>null);pollRoastLive();}}const vote=e.target.closest('[data-roast-vote]');if(vote){{await fetch(`/api/arena/roast/match/${{roastMatchId}}/vote`,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{target_user_id:Number(vote.dataset.roastVote)}})}}).catch(()=>null);pollRoastLive();}}if(e.target.closest('[data-roast-enroll]')){{const d=await fetch('/api/arena/roast/enroll',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{room_id:1}})}}).then(r=>r.json());if(d.next_url)location.href=d.next_url;}}if(e.target.closest('[data-roast-fullscreen]')){{document.querySelector('[data-roast-stage]').classList.toggle('roast-stage-fullscreen');}}}});
-    pollRoastLive();
+    pollRoastLive(); loadRoastState();
     setInterval(pollRoastLive,1400);
+    setInterval(loadRoastState,5000);
     </script>
     """
     return arena_page_shell("Roast Battle", body, user=user)
@@ -11122,6 +11142,64 @@ def admin_arena_games_page():
     <div class='card'><table><tr><th>Game type</th><th>Route</th><th>Status</th><th>Route result</th><th>Launch API result</th><th>Explanation</th><th>Result screen</th><th>Avg launch latency</th><th>Last error</th></tr>{rows}</table></div>
     """
     return admin_page_html("Arena Games", body, admin=admin)
+
+
+@webhook_app.route("/admin/roast-battle", methods=["GET"])
+def admin_roast_battle_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return redirect(url_for("admin_login_page"))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    def scalar(query, params=()):
+        try:
+            cur.execute(query, params)
+            row = cur.fetchone()
+            return int((row[0] if row else 0) or 0)
+        except Exception:
+            return 0
+
+    active_matches = scalar("SELECT COUNT(*) FROM roast_matches WHERE COALESCE(status,'active')='active'")
+    four_player = scalar("SELECT COUNT(*) FROM roast_matches WHERE match_type='four_player'")
+    unsafe_lines = scalar("SELECT COUNT(*) FROM arena_roast_lines WHERE safe=0")
+    participants = scalar("SELECT COUNT(*) FROM arena_roast_participants")
+    cur.execute(
+        """
+        SELECT call_sign, MAX(current_balance) AS balance, MAX(crowd_score) AS crowd
+        FROM arena_roast_participants
+        GROUP BY call_sign
+        ORDER BY balance DESC
+        LIMIT 10
+        """
+    )
+    top_rows = cur.fetchall()
+    cur.execute(
+        """
+        SELECT message, impact_label, moderation_reason, created_at
+        FROM arena_roast_lines
+        WHERE safe=0
+        ORDER BY id DESC
+        LIMIT 10
+        """
+    )
+    unsafe_rows = cur.fetchall()
+    conn.close()
+    top = "".join(f"<tr><td>{clean_html(row['call_sign'] or 'Arena Pilot')}</td><td>${float(row['balance'] or 0):,.0f}</td><td>{float(row['crowd'] or 0):.0f}</td></tr>" for row in top_rows)
+    unsafe = "".join(f"<tr><td>{clean_html(row['message'] or '')}</td><td>{clean_html(row['impact_label'] or '')}</td><td>{clean_html(row['moderation_reason'] or '')}</td><td>{clean_html(row['created_at'] or '')}</td></tr>" for row in unsafe_rows)
+    body = f"""
+    <div class='grid'>
+      <div class='card'><div class='metric'>{active_matches}</div><p>Active roast matches</p></div>
+      <div class='card'><div class='metric'>{four_player}</div><p>4-player floors</p></div>
+      <div class='card'><div class='metric'>{participants}</div><p>Stage participants</p></div>
+      <div class='card'><div class='metric'>{unsafe_lines}</div><p>Unsafe/penalized lines</p></div>
+    </div>
+    <div class='card'><h2>Top Call Signs</h2><table><tr><th>Call sign</th><th>Best stage balance</th><th>Crowd score</th></tr>{top or '<tr><td colspan="3">No players yet.</td></tr>'}</table></div>
+    <div class='card'><h2>Moderation Events</h2><table><tr><th>Line</th><th>Impact</th><th>Reason</th><th>Time</th></tr>{unsafe or '<tr><td colspan="4">No unsafe lines logged.</td></tr>'}</table></div>
+    """
+    return admin_page_html("Roast Battle Health", body, admin=admin)
 
 
 @webhook_app.route("/admin/chat-health", methods=["GET"])
@@ -12744,7 +12822,16 @@ def api_arena_roast_enroll():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     room_id = int((request.get_json(silent=True) or {}).get("room_id") or 1)
-    return jsonify({"ok": True, "room_id": room_id, "match_id": room_id, "queue_position": 0, "next_url": f"/arena/roast-battle/room/{room_id}", "message": "You are on the Roast Battle stage."})
+    return jsonify(roast_battle_engine.enroll(user["user_id"], room_id))
+
+
+@webhook_app.route("/api/arena/roast/call-sign", methods=["POST"])
+def api_arena_roast_call_sign():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result, status = roast_battle_engine.set_call_sign(user["user_id"], (request.get_json(silent=True) or {}).get("call_sign") or "")
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/arena/roast/match/<int:match_id>/message", methods=["POST"])
@@ -12752,8 +12839,44 @@ def api_arena_roast_message(match_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    result, status = roast_battle_engine.submit_message(user["user_id"], match_id, (request.get_json(silent=True) or {}).get("message") or "")
+    payload = request.get_json(silent=True) or {}
+    result, status = roast_battle_engine.submit_message(
+        user["user_id"],
+        match_id,
+        payload.get("message") or "",
+        target_user_id=payload.get("target_user_id"),
+        target_type=payload.get("target_type") or "single",
+    )
     return jsonify(result), status
+
+
+@webhook_app.route("/api/arena/roast/match/<int:match_id>/say", methods=["POST"])
+def api_arena_roast_say(match_id):
+    return api_arena_roast_message(match_id)
+
+
+@webhook_app.route("/api/arena/roast/match/<int:match_id>/state", methods=["GET"])
+def api_arena_roast_state(match_id):
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(roast_battle_engine.match_state(match_id, user["user_id"]))
+
+
+@webhook_app.route("/api/arena/roast/queue", methods=["GET"])
+def api_arena_roast_queue():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(roast_battle_engine.rooms())
+
+
+@webhook_app.route("/api/arena/roast/leaderboard", methods=["GET"])
+def api_arena_roast_leaderboard():
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify(roast_battle_engine.leaderboard())
 
 
 @webhook_app.route("/api/arena/roast/match/<int:match_id>/new", methods=["GET"])
@@ -13822,6 +13945,7 @@ def api_auto_signals_activate():
         "ok": bool(created),
         "mode": mode,
         "created": created,
+        "alerts": created,
         "skipped": skipped,
         "channels": channels,
         "message": f"Auto Signals activated in {mode.title()} mode." if created else "Auto Signals could not activate because live prices were unavailable.",
@@ -18670,6 +18794,9 @@ def init_db():
         ("notification_email_opt_in", "INTEGER DEFAULT 1"),
         ("security_email_opt_in", "INTEGER DEFAULT 1"),
         ("payment_receipt_opt_in", "INTEGER DEFAULT 1"),
+        ("roast_call_sign", "TEXT"),
+        ("roast_call_sign_slug", "TEXT"),
+        ("roast_call_sign_updated_at", "TEXT"),
         ("deleted_at", "TEXT"),
         ("restricted_reason", "TEXT"),
         ("suspended_reason", "TEXT"),
@@ -19334,6 +19461,13 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "roast_matches", [
+        ("max_players", "INTEGER DEFAULT 2"),
+        ("current_turn_user_id", "INTEGER"),
+        ("turn_started_at", "TEXT"),
+        ("turn_duration_seconds", "INTEGER DEFAULT 30"),
+        ("match_type", "TEXT DEFAULT 'two_player'"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS roast_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19342,6 +19476,41 @@ def init_db():
         message TEXT,
         moderation_status TEXT,
         score_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_roast_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        user_id INTEGER,
+        public_player_id TEXT,
+        call_sign TEXT,
+        starting_balance REAL DEFAULT 1000000,
+        current_balance REAL DEFAULT 1000000,
+        crowd_score REAL DEFAULT 0,
+        safety_score REAL DEFAULT 100,
+        wit_score REAL DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        joined_at TEXT,
+        UNIQUE(match_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS arena_roast_lines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        sender_user_id INTEGER,
+        target_user_id INTEGER,
+        target_type TEXT,
+        message TEXT,
+        weight_score REAL,
+        impact_label TEXT,
+        balance_delta_sender REAL,
+        balance_delta_target REAL,
+        emotion TEXT,
+        safe INTEGER DEFAULT 1,
+        moderation_reason TEXT,
         created_at TEXT
     )
     """)
@@ -21231,6 +21400,11 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_roast_messages_match_id ON roast_messages(match_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_roast_reactions_match_created ON roast_reactions(match_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_roast_votes_match_created ON roast_votes(match_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_roast_participants_match ON arena_roast_participants(match_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_roast_participants_user ON arena_roast_participants(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_roast_lines_match ON arena_roast_lines(match_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_roast_lines_safe ON arena_roast_lines(safe)",
+        "CREATE INDEX IF NOT EXISTS idx_users_roast_call_sign_slug ON users(roast_call_sign_slug)",
         "CREATE INDEX IF NOT EXISTS idx_security_events_type_created ON security_events(event_type, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_presence_updated ON arena_presence(updated_at)",
     ]
