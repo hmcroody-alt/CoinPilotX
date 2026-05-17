@@ -289,7 +289,7 @@ def send_sms_alert(user, title, message, notification_id=None):
     if not os.getenv("TWILIO_ACCOUNT_SID") or not os.getenv("TWILIO_AUTH_TOKEN") or not os.getenv("TWILIO_FROM_NUMBER"):
         return {"ok": False, "status": "not_configured", "message": "Twilio SMS variables are not configured."}
     if not user.get("phone") or int(user.get("sms_opt_in") or 0) != 1:
-        return {"ok": False, "status": "skipped", "message": "User has not opted in to SMS alerts or has no phone."}
+        return {"ok": False, "status": "not_configured", "message": "User has not opted in to SMS alerts or has no phone."}
     try:
         import requests
 
@@ -319,7 +319,7 @@ def send_push_alert(user_id, title, message, metadata=None):
 def send_telegram_alert(user, title, message):
     user = user or {}
     if not user.get("telegram_chat_id"):
-        return {"ok": False, "status": "skipped", "message": "Telegram companion is not linked."}
+        return {"ok": False, "status": "not_configured", "message": "Telegram companion is not linked."}
     return {"ok": False, "status": "queued", "message": "Telegram delivery is handled by the bot runtime."}
 
 
@@ -397,7 +397,7 @@ def send_email_alert(*_args, **_kwargs):
 def send_telegram_alert(user=None, title="", message=""):
     user = user or {}
     if not user.get("telegram_chat_id"):
-        return {"ok": False, "status": "skipped", "message": "Telegram companion is not linked."}
+        return {"ok": False, "status": "not_configured", "message": "Telegram companion is not linked."}
     return {"ok": False, "status": "queued", "message": "Telegram delivery is handled by the bot runtime.", "title": title, "body": message}
 
 

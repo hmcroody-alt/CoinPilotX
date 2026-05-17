@@ -92,7 +92,7 @@ def send_push(user_id, title, body, data=None, push_type="general"):
     rows = cur.fetchall()
     if not rows:
         conn.close()
-        return {"ok": False, "status": "skipped", "message": "No active browser push subscription."}
+        return {"ok": False, "status": "not_configured", "message": "No active browser push subscription."}
     sent = 0
     failures = []
     invalid_ids = []

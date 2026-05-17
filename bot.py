@@ -2487,13 +2487,29 @@ def notifications_page():
         f"<article class='profile-card'><h3>{clean_html(item.get('title') or 'Notification')}</h3><p>{clean_html(item.get('message') or '')}</p><p class='muted'>{clean_html(item.get('created_at') or '')}</p></article>"
         for item in payload.get("notifications", [])
     ) or "<p class='muted'>No notifications yet.</p>"
+    setup = """
+      <section class="profile-card" data-notification-settings>
+        <h2>Alert Channel Setup</h2>
+        <p class="muted">Push, SMS, and Telegram only become selectable in Alerts after setup is complete.</p>
+        <div class="actions">
+          <button class="button primary" type="button" data-notification-action="enable-push">Enable Push</button>
+          <button class="button" type="button" data-notification-action="test-push">Test Push</button>
+          <a class="button" href="/account/settings">Add Phone for SMS</a>
+          <button class="button" type="button" data-notification-action="test-sms">Test SMS</button>
+          <a class="button" href="/account/settings">Connect Telegram</a>
+          <button class="button" type="button" data-notification-action="test-telegram">Test Telegram</button>
+        </div>
+        <p class="muted" data-notification-status></p>
+        <p class="muted" data-notification-message></p>
+      </section>
+    """
     return render_account_page(
         "custom",
         "Notifications",
         current_user=user,
         message="",
         error="",
-        custom_body=f"<div class='grid'>{rows}</div>",
+        custom_body=f"{setup}<div class='grid'>{rows}</div>",
     )
 
 
@@ -6157,6 +6173,7 @@ def admin_alerts_page():
     </div>
     <div class="card"><h2>Provider Status</h2>{admin_rows_table(provider_rows, [('provider','Provider'),('status','Status'),('details','Details')])}</div>
     <div class="card"><h2>Delivery Status</h2>{admin_rows_table(summary.get('channel_statuses') or [], [('channel','Channel'),('status','Status'),('total','Total')])}</div>
+    <div class="card"><h2>Recent Delivery Errors</h2>{admin_rows_table(summary.get('recent_delivery_errors') or [], [('user_id','User'),('channel','Channel'),('status','Status'),('provider','Provider'),('error_message','Error'),('created_at','Created')])}</div>
     <div class="card"><h2>Recent Alert Events</h2>{admin_rows_table(summary.get('recent_events') or [], [('id','ID'),('user_id','User'),('symbol','Symbol'),('status','Status'),('observed_value','Observed'),('message','Message'),('created_at','Created')])}</div>
     <script>
     document.getElementById('runAlertCheck').addEventListener('click', async () => {{
@@ -7639,7 +7656,10 @@ def admin_notification_health_page():
     admin, denied = require_admin_page("system.view")
     if denied:
         return denied
-    health = notification_orchestrator_service.health()
+    health = {
+        "notification_orchestrator": notification_orchestrator_service.health(),
+        "alert_channels": alert_engine_service.admin_summary(),
+    }
     return admin_page_html("Notification Health", f"<h1>Notification Health</h1><div class='card'><pre>{clean_html(json.dumps(health, indent=2))}</pre></div>", admin)
 
 
@@ -12999,6 +13019,10 @@ def alerts_api():
             "alerts": result.get("alerts", []),
             "events": events.get("events", []),
             "worker": alert_engine_service.worker_health(),
+            "channel_readiness": alert_engine_service.channel_readiness(
+                user["user_id"],
+                browser_permission=request.args.get("push_permission") or request.headers.get("X-Push-Permission"),
+            ),
         })
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
@@ -13006,6 +13030,15 @@ def alerts_api():
     if gated:
         return gated
     payload = request.get_json(silent=True) or {}
+    channel_validation = alert_engine_service.validate_requested_channels(
+        user["user_id"],
+        payload.get("channels") or {"in_app": True},
+        browser_permission=payload.get("push_permission") or request.headers.get("X-Push-Permission"),
+    )
+    if not channel_validation.get("ok"):
+        response = jsonify(channel_validation)
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 400
     threshold = (
         payload.get("threshold")
         if payload.get("threshold") is not None
@@ -13021,7 +13054,7 @@ def alerts_api():
         clean_html(payload.get("symbol", "")),
         clean_html(payload.get("condition", "above")),
         threshold,
-        payload.get("channels") or {"in_app": True},
+        channel_validation.get("channels") or {"in_app": True},
         target=clean_html(str(payload.get("target") or payload.get("symbol") or "")),
         cooldown_seconds=payload.get("cooldown_seconds"),
     )
@@ -13104,6 +13137,23 @@ def alert_events_api():
     return response
 
 
+@webhook_app.route("/api/alerts/channel-readiness", methods=["GET"])
+def alert_channel_readiness_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    response = jsonify({
+        "ok": True,
+        "channel_readiness": alert_engine_service.channel_readiness(
+            user["user_id"],
+            browser_permission=request.args.get("push_permission") or request.headers.get("X-Push-Permission"),
+        ),
+    })
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/admin/alerts/run-check", methods=["POST"])
 def admin_alerts_run_check_api():
     admin, denied = require_admin_api("system.view")
@@ -13120,7 +13170,7 @@ def alerts_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next="/alerts"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled{opacity:.62;cursor:wait}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app</label><label><input type='checkbox' name='channels' value='email'> Email</label><label><input type='checkbox' name='channels' value='push'> PWA push</label><label><input type='checkbox' name='channels' value='sms'> SMS/Text</label><label><input type='checkbox' name='channels' value='telegram'> Optional companion</label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function money(v){const n=Number(v);return Number.isFinite(n)?(Math.abs(n)>=100?'$'+n.toLocaleString(undefined,{maximumFractionDigits:0}):'$'+n.toLocaleString(undefined,{maximumFractionDigits:4})):''}function channels(c){return Object.entries(c||{}).filter(x=>x[1]).map(x=>`<span class="pill">${x[0].replace('_',' ')}</span>`).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels)}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts');$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent)}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled,.channel-grid label.disabled{opacity:.55;cursor:not-allowed}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.pill.ready{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.12)}.pill.needs,.pill.permission{border-color:rgba(255,209,102,.42);background:rgba(255,209,102,.12);color:#ffe6a6}.pill.failed{border-color:rgba(255,107,122,.42);background:rgba(255,107,122,.12);color:#ffd7dc}.pill.disabled{opacity:.62}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.setup-grid{display:grid;gap:8px;margin:10px 0}.setup-card{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.04)}.setup-card strong{display:flex;justify-content:space-between;gap:8px}.setup-card p{margin:6px 0;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app <span data-channel-label='in_app'></span></label><label><input type='checkbox' name='channels' value='email'> Email <span data-channel-label='email'></span></label><label><input type='checkbox' name='channels' value='push'> PWA push <span data-channel-label='push'></span></label><label><input type='checkbox' name='channels' value='sms'> SMS/Text <span data-channel-label='sms'></span></label><label><input type='checkbox' name='channels' value='telegram'> Telegram Companion <span data-channel-label='telegram'></span></label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><div id='channelReadiness' class='setup-grid'>Checking channels...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);const CHANNELS=['in_app','email','push','sms','telegram'];let READINESS={};function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function channels(c,delivery={}){return CHANNELS.map(ch=>{const enabled=!!(c||{})[ch];const last=(delivery||{})[ch]||{};let cls='disabled',label='Disabled';if(enabled){if(last.status==='failed'){cls='failed';label='Failed'}else if(last.status==='not_configured'||last.status==='permission_denied'){cls='needs';label='Needs setup'}else{const r=READINESS[ch]||{};cls=r.ready?'ready':'needs';label=r.ready?'Ready':'Needs setup'}}return `<span class="pill ${cls}">${ch.replace('_',' ')} · ${label}</span>`}).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Push-Permission':('Notification'in window?Notification.permission:'unsupported'),...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function renderReadiness(){const node=$('#channelReadiness');node.innerHTML=CHANNELS.map(ch=>{const r=READINESS[ch]||{};const cls=r.ready?'ready':(r.status==='permission_denied'?'permission':'needs');const action=ch==='push'&&!r.ready?`<a class="button secondary" href="/notifications">Enable Push</a>`:ch==='sms'&&!r.ready?`<a class="button secondary" href="/account/settings">Add Phone for SMS</a>`:ch==='telegram'&&!r.ready?`<a class="button secondary" href="/account/settings">Connect Telegram</a>`:'';return `<div class="setup-card"><strong>${ch.replace('_',' ')} <span class="pill ${cls}">${r.label||'Needs setup'}</span></strong><p>${r.message||''}</p>${action}</div>`}).join('');CHANNELS.forEach(ch=>{const input=document.querySelector(`input[name="channels"][value="${ch}"]`);const label=input&&input.closest('label');const r=READINESS[ch]||{};if(input&&ch!=='in_app'&&ch!=='email'){input.disabled=!r.ready;if(!r.ready)input.checked=false}if(label)label.classList.toggle('disabled',!!input.disabled);const badge=document.querySelector(`[data-channel-label="${ch}"]`);if(badge)badge.innerHTML=` <span class="pill ${r.ready?'ready':'needs'}">${r.label||''}</span>`})}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels,a.delivery_statuses||{})}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts?push_permission='+encodeURIComponent('Notification'in window?Notification.permission:'unsupported'));READINESS=d.channel_readiness||{};renderReadiness();$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),push_permission:('Notification'in window?Notification.permission:'unsupported'),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent);if(d.channel_readiness){READINESS=d.channel_readiness;renderReadiness()}}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
 
 
 @webhook_app.route("/api/notifications", methods=["GET"])
@@ -13194,16 +13244,10 @@ def api_notifications_test_push():
         response = jsonify({"ok": False, "message": "Login required."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    result = notification_service.send_user_alert(
-        user["user_id"],
-        "AI_briefing",
-        "CoinPilotXAI push test",
-        "Your realtime AI notification path is ready where push is configured.",
-        {"url": "/notifications", "push_type": "AI_briefing", "test": True},
-        channels=["in_app", "push"],
-    )
+    payload = request.get_json(silent=True) or {}
+    result = alert_engine_service.test_delivery_channel(user["user_id"], "push", {"permission": payload.get("permission")})
     log_product_event(user["user_id"], "test_push_notification_sent", {"result": result})
-    response = jsonify({"ok": True, "delivery": result})
+    response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -13274,16 +13318,32 @@ def api_push_test():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    result = notification_service.send_user_alert(
-        user["user_id"],
-        "product_updates",
-        "CoinPilotXAI push test",
-        "Your CoinPilotXAI alert channels are connected where configured.",
-        {"url": "/notifications"},
-        channels=["in_app", "push"],
-    )
+    payload = request.get_json(silent=True) or {}
+    result = alert_engine_service.test_delivery_channel(user["user_id"], "push", {"permission": payload.get("permission")})
     log_product_event(user["user_id"], "push_test_requested", result)
-    return jsonify({"ok": True, "delivery": result})
+    return jsonify(result)
+
+
+@webhook_app.route("/api/sms/test", methods=["POST"])
+def api_sms_test():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.test_delivery_channel(user["user_id"], "sms", request.get_json(silent=True) or {})
+    log_product_event(user["user_id"], "sms_test_requested", result)
+    return jsonify(result)
+
+
+@webhook_app.route("/api/telegram/test", methods=["POST"])
+def api_telegram_test():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.test_delivery_channel(user["user_id"], "telegram", request.get_json(silent=True) or {})
+    log_product_event(user["user_id"], "telegram_test_requested", result)
+    return jsonify(result)
 
 
 @webhook_app.route("/admin/notification-delivery", methods=["GET"])

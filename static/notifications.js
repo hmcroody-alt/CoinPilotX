@@ -169,6 +169,20 @@
     return payload;
   }
 
+  async function testChannel(channel) {
+    const permission = "Notification" in window ? Notification.permission : "unsupported";
+    const response = await fetch(`/api/${channel}/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify({ permission })
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.ok === false) throw new Error(payload.message || payload.status || `${channel} test failed.`);
+    return payload;
+  }
+
   function renderSettings(payload) {
     const root = document.querySelector("[data-notification-settings]");
     if (!root) return;
@@ -201,6 +215,9 @@
       try {
         if (action.dataset.notificationAction === "enable-push") await subscribePush();
         if (action.dataset.notificationAction === "disable-push") await unsubscribePush();
+        if (action.dataset.notificationAction === "test-push") await testChannel("push");
+        if (action.dataset.notificationAction === "test-sms") await testChannel("sms");
+        if (action.dataset.notificationAction === "test-telegram") await testChannel("telegram");
         if (action.dataset.notificationAction === "test-sound") { STATE.interacted = true; playSound(); }
         if (action.dataset.notificationAction === "test-vibration") vibrate();
         if (action.dataset.notificationAction === "test-notification") await testNotification();

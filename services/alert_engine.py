@@ -132,6 +132,104 @@ def _user_record(user_id):
     return user_context.get_user_by_id(user_id) or {}
 
 
+def _telegram_token():
+    return os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+
+
+def _sms_provider_ready():
+    return bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN") and os.getenv("TWILIO_FROM_NUMBER"))
+
+
+def _push_provider_ready():
+    return bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY"))
+
+
+def _push_subscription_count(user_id=None):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    if user_id:
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1",
+            (user_id,),
+        )
+    else:
+        cur.execute("SELECT COUNT(*) AS total FROM push_subscriptions WHERE COALESCE(is_active, active, 1)=1")
+    row = _row_to_dict(cur.fetchone())
+    conn.close()
+    return int((row or {}).get("total") or 0)
+
+
+def _telegram_connected_count():
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS total FROM users WHERE telegram_chat_id IS NOT NULL")
+    row = _row_to_dict(cur.fetchone())
+    conn.close()
+    return int((row or {}).get("total") or 0)
+
+
+def _status_payload(ready, status, label, message, setup_url=""):
+    return {
+        "ready": bool(ready),
+        "status": status,
+        "label": label,
+        "message": message,
+        "setup_url": setup_url,
+    }
+
+
+def channel_readiness(user_id, browser_permission=None):
+    user = _user_record(user_id)
+    push_subscriptions = _push_subscription_count(user_id)
+    vapid_ready = _push_provider_ready()
+    sms_ready = _sms_provider_ready()
+    telegram_token_ready = bool(_telegram_token())
+    permission = (browser_permission or "").strip().lower()
+    if permission == "denied":
+        push = _status_payload(False, "permission_denied", "Failed", "Browser push permission is denied. Enable notifications in browser settings.", "/notifications")
+    elif not vapid_ready:
+        push = _status_payload(False, "not_configured", "Needs setup", "Push keys are not configured yet.", "/notifications")
+    elif push_subscriptions <= 0:
+        push = _status_payload(False, "not_configured", "Needs setup", "Enable Push Notifications before using push alerts.", "/notifications")
+    else:
+        push = _status_payload(True, "ready", "Ready", "Push alerts are ready.", "/notifications")
+    if not sms_ready:
+        sms = _status_payload(False, "not_configured", "Needs setup", "SMS provider is not configured.", "/account/settings")
+    elif not user.get("phone"):
+        sms = _status_payload(False, "not_configured", "Needs setup", "Add a phone number for SMS alerts.", "/account/settings")
+    elif int(user.get("sms_opt_in") or 0) != 1:
+        sms = _status_payload(False, "not_configured", "Needs setup", "Turn on SMS opt-in before using text alerts.", "/account/settings")
+    else:
+        sms = _status_payload(True, "ready", "Ready", "SMS alerts are ready.", "/account/settings")
+    if not telegram_token_ready:
+        telegram = _status_payload(False, "not_configured", "Needs setup", "Telegram bot token is not configured.", "/account/settings")
+    elif not user.get("telegram_chat_id"):
+        telegram = _status_payload(False, "not_configured", "Needs setup", "Connect Telegram Companion before using Telegram alerts.", "/account/settings")
+    else:
+        telegram = _status_payload(True, "ready", "Ready", "Telegram Companion is connected.", "/account/settings")
+    email_ready = bool(user.get("email") and os.getenv("BREVO_API_KEY"))
+    return {
+        "in_app": _status_payload(True, "ready", "Ready", "In-app alerts are always available.", "/notifications"),
+        "email": _status_payload(email_ready, "ready" if email_ready else "not_configured", "Ready" if email_ready else "Needs setup", "Email alerts are ready." if email_ready else "Email provider or account email is missing.", "/account/settings"),
+        "push": {**push, "subscription_count": push_subscriptions, "vapid_configured": vapid_ready},
+        "sms": {**sms, "provider_configured": sms_ready, "phone_configured": bool(user.get("phone")), "sms_opt_in": bool(int(user.get("sms_opt_in") or 0))},
+        "telegram": {**telegram, "bot_configured": telegram_token_ready, "connected": bool(user.get("telegram_chat_id"))},
+    }
+
+
+def validate_requested_channels(user_id, channels, browser_permission=None):
+    channel_map = _normalize_channels(channels)
+    readiness = channel_readiness(user_id, browser_permission=browser_permission)
+    blocked = []
+    for channel in ("push", "sms", "telegram"):
+        if channel_map.get(channel) and not readiness[channel].get("ready"):
+            blocked.append({"channel": channel, **readiness[channel]})
+    if blocked:
+        message = " ".join(item.get("message") or f"{item['channel']} needs setup." for item in blocked)
+        return {"ok": False, "message": message, "blocked_channels": blocked, "channel_readiness": readiness}
+    return {"ok": True, "channels": channel_map, "channel_readiness": readiness}
+
+
 def _quiet_hours_active(user_id):
     prefs = notification_service.get_preferences(user_id).get("experience") or {}
     if not prefs.get("quiet_hours_enabled"):
@@ -220,7 +318,39 @@ def list_alert_rules(user_id, limit=100, include_deleted=False):
     )
     rows = [_public_rule(_row_to_dict(row)) for row in cur.fetchall()]
     conn.close()
+    _attach_delivery_statuses(user_id, rows)
     return {"ok": True, "alerts": rows}
+
+
+def _attach_delivery_statuses(user_id, rules):
+    rule_ids = [int(rule.get("id") or 0) for rule in rules if rule.get("id")]
+    if not rule_ids:
+        return rules
+    placeholders = ",".join(["?"] * len(rule_ids))
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT alert_rule_id, channel, status, error_message, created_at
+        FROM notification_delivery_logs
+        WHERE user_id=? AND alert_rule_id IN ({placeholders})
+        ORDER BY id DESC
+        """,
+        (user_id, *rule_ids),
+    )
+    latest = {}
+    for row in cur.fetchall():
+        item = _row_to_dict(row)
+        key = (item.get("alert_rule_id"), item.get("channel"))
+        if key not in latest:
+            latest[key] = item
+    conn.close()
+    for rule in rules:
+        rule["delivery_statuses"] = {
+            channel: latest.get((rule.get("id"), channel), {})
+            for channel in ("in_app", "email", "push", "sms", "telegram")
+        }
+    return rules
 
 
 def get_alert_rule(alert_id, user_id=None):
@@ -449,12 +579,12 @@ def _log_delivery(user_id, channel, status, provider="", provider_response="", e
 
 
 def _telegram_send(user, title, body, metadata=None):
-    token = os.getenv("BOT_TOKEN")
+    token = _telegram_token()
     chat_id = (user or {}).get("telegram_chat_id")
     if not token:
-        return {"ok": False, "status": "not_configured", "message": "BOT_TOKEN is not configured."}
+        return {"ok": False, "status": "not_configured", "message": "Telegram bot token is not configured."}
     if not chat_id:
-        return {"ok": False, "status": "skipped", "message": "Telegram companion is not linked."}
+        return {"ok": False, "status": "not_configured", "message": "Telegram companion is not linked."}
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
@@ -493,6 +623,7 @@ def dispatch_alert_event(event, rule=None):
     quiet = _quiet_hours_active(user_id)
     external_sent = False
     external_attempted = False
+    readiness = channel_readiness(user_id)
     for channel in ("email", "push", "sms", "telegram"):
         if not channels.get(channel):
             continue
@@ -513,20 +644,36 @@ def dispatch_alert_event(event, rule=None):
             external_sent = external_sent or status == "sent"
             _log_delivery(user_id, channel, status, "brevo", result, result.get("error") or result.get("message"), notification_id, rule.get("id"), event.get("id"))
         elif channel == "push":
-            result = push_service.send_push(user_id, title, body, metadata, push_type="market_alert")
-            status = _delivery_status_from_result(result)
+            if not readiness["push"].get("ready"):
+                result = {"ok": False, "status": readiness["push"].get("status") or "not_configured", "message": readiness["push"].get("message")}
+                status = "permission_denied" if result.get("status") == "permission_denied" else "not_configured"
+            else:
+                result = push_service.send_push(user_id, title, body, metadata, push_type="market_alert")
+                status = _delivery_status_from_result(result)
+                if status == "skipped":
+                    status = "not_configured"
             delivery["channels"][channel] = status
             external_sent = external_sent or status == "sent"
             _log_delivery(user_id, channel, status, "web_push", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
         elif channel == "sms":
-            result = notification_service.send_sms_alert(user, title, body, notification_id)
-            status = _delivery_status_from_result(result)
+            if not readiness["sms"].get("ready"):
+                result = {"ok": False, "status": "not_configured", "message": readiness["sms"].get("message")}
+                status = "not_configured"
+            else:
+                result = notification_service.send_sms_alert(user, title, body, notification_id)
+                status = _delivery_status_from_result(result)
+                if status == "skipped":
+                    status = "not_configured"
             delivery["channels"][channel] = status
             external_sent = external_sent or status == "sent"
             _log_delivery(user_id, channel, status, "twilio", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
         elif channel == "telegram":
-            result = _telegram_send(user, title, body, metadata)
-            status = _delivery_status_from_result(result)
+            if not readiness["telegram"].get("ready"):
+                result = {"ok": False, "status": "not_configured", "message": readiness["telegram"].get("message")}
+                status = "not_configured"
+            else:
+                result = _telegram_send(user, title, body, metadata)
+                status = _delivery_status_from_result(result)
             delivery["channels"][channel] = status
             external_sent = external_sent or status == "sent"
             _log_delivery(user_id, channel, status, "telegram", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
@@ -591,6 +738,68 @@ def send_test_alert(rule_id, user_id):
     return {"ok": True, "message": "Test alert sent.", "event": event, "delivery": delivery}
 
 
+def test_delivery_channel(user_id, channel, client_state=None):
+    channel = (channel or "").strip().lower()
+    client_state = client_state or {}
+    title = f"CoinPilotXAI {channel.title()} alert test"
+    body = "This is a setup test for CoinPilotXAI alert delivery."
+    metadata = {"url": "/notifications", "test": True, "channel": channel}
+    readiness = channel_readiness(user_id, browser_permission=client_state.get("permission"))
+    user = _user_record(user_id)
+    provider = channel
+    if channel == "push":
+        provider = "web_push"
+        if not readiness["push"].get("ready"):
+            status = "permission_denied" if readiness["push"].get("status") == "permission_denied" else "not_configured"
+            result = {"ok": False, "status": status, "message": readiness["push"].get("message")}
+        else:
+            result = push_service.send_push(user_id, title, body, metadata, push_type="market_alert")
+            status = _delivery_status_from_result(result)
+            if status == "skipped":
+                status = "not_configured"
+    elif channel == "sms":
+        provider = "twilio"
+        if not readiness["sms"].get("ready"):
+            status = "not_configured"
+            result = {"ok": False, "status": status, "message": readiness["sms"].get("message")}
+        else:
+            result = notification_service.send_sms_alert(user, title, body)
+            status = _delivery_status_from_result(result)
+            if status == "skipped":
+                status = "not_configured"
+    elif channel == "telegram":
+        provider = "telegram"
+        if not readiness["telegram"].get("ready"):
+            status = "not_configured"
+            result = {"ok": False, "status": status, "message": readiness["telegram"].get("message")}
+        else:
+            result = _telegram_send(user, title, body, metadata)
+            status = _delivery_status_from_result(result)
+    elif channel == "email":
+        provider = "brevo"
+        if not readiness["email"].get("ready"):
+            status = "not_configured"
+            result = {"ok": False, "status": status, "message": readiness["email"].get("message")}
+        else:
+            result = email_service.send_email(user.get("email"), title, f"<p>{body}</p>", body, email_type="market_alerts", user_id=user_id)
+            status = "sent" if result.get("ok") else "failed"
+    elif channel == "in_app":
+        provider = "database"
+        result = notification_service.queue_notification(user_id, title, body, "market_alerts", metadata)
+        status = "created" if result.get("ok") else "failed"
+    else:
+        return {"ok": False, "status": "failed", "message": "Unsupported channel."}
+    _log_delivery(user_id, channel, status, provider, result, result.get("error") or result.get("message"))
+    return {
+        "ok": status in {"sent", "created"},
+        "channel": channel,
+        "status": status,
+        "message": result.get("message") or readiness.get(channel, {}).get("message") or status,
+        "delivery": result,
+        "channel_readiness": channel_readiness(user_id, browser_permission=client_state.get("permission")),
+    }
+
+
 def record_worker_heartbeat(worker_name="alert_worker", checked_count=0, triggered_count=0, error_count=0, last_error=""):
     now = _now()
     conn = user_context.connect()
@@ -634,28 +843,19 @@ def worker_health():
 def provider_status():
     return {
         "brevo_email": email_service.provider_status(),
-        "brevo_sms": {"provider": "twilio", "ready": bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN") and os.getenv("TWILIO_FROM_NUMBER"))},
-        "vapid_push": {"ready": bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY"))},
-        "telegram": {"ready": bool(os.getenv("BOT_TOKEN"))},
+        "brevo_sms": {"provider": "twilio", "ready": _sms_provider_ready()},
+        "vapid_push": {"ready": _push_provider_ready(), "active_subscriptions": _push_subscription_count()},
+        "telegram": {"ready": bool(_telegram_token()), "connected_users": _telegram_connected_count()},
         "live_market_provider": live_market_service.health().get("providers", {}).get("coingecko_or_fallback", {}),
     }
 
 
 def channel_warnings(user_id, channels):
-    user = _user_record(user_id)
+    readiness = channel_readiness(user_id)
     warnings = []
-    if channels.get("sms") and (not user.get("phone") or int(user.get("sms_opt_in") or 0) != 1):
-        warnings.append("SMS is not configured for your account yet.")
-    if channels.get("push"):
-        conn = user_context.connect()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) AS total FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1", (user_id,))
-        row = _row_to_dict(cur.fetchone())
-        conn.close()
-        if not int((row or {}).get("total") or 0):
-            warnings.append("Enable push notifications in Settings to receive browser/PWA alerts.")
-    if channels.get("telegram") and not user.get("telegram_chat_id"):
-        warnings.append("Telegram companion is not connected yet.")
+    for channel in ("push", "sms", "telegram"):
+        if channels.get(channel) and not readiness[channel].get("ready"):
+            warnings.append(readiness[channel].get("message") or f"{channel} needs setup.")
     return warnings
 
 
@@ -670,6 +870,16 @@ def admin_summary():
     delivery_statuses = [_row_to_dict(row) for row in cur.fetchall()]
     cur.execute("SELECT channel, status, COUNT(*) AS total FROM notification_delivery_logs GROUP BY channel, status ORDER BY channel, total DESC")
     channel_statuses = [_row_to_dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT user_id, channel, status, provider, error_message, created_at
+        FROM notification_delivery_logs
+        WHERE status IN ('failed', 'not_configured', 'permission_denied')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 30
+        """
+    )
+    recent_delivery_errors = [_row_to_dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM alert_events ORDER BY created_at DESC, id DESC LIMIT 20")
     recent_events = [_row_to_dict(row) for row in cur.fetchall()]
     conn.close()
@@ -679,6 +889,7 @@ def admin_summary():
         "triggered_today": int(triggered_today),
         "delivery_statuses": delivery_statuses,
         "channel_statuses": channel_statuses,
+        "recent_delivery_errors": recent_delivery_errors,
         "recent_events": recent_events,
         "worker": worker_health(),
         "providers": provider_status(),
