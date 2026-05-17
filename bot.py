@@ -42,6 +42,7 @@ from services import (
     day_signal as day_signal_service,
     email_service as email_service_service,
     ai_router as ai_router_service,
+    alert_engine as alert_engine_service,
     arena_commentator,
     arena_event_engine,
     arena_infinite_engine,
@@ -6124,6 +6125,50 @@ def admin_notifications_page():
     conn.close()
     body = f"<h1>Notifications</h1><h2>Notification Stats</h2><div class='card'>{admin_rows_table(stats, [('notification_type','Type'),('status','Status'),('total','Total')])}</div><h2>Delivery Logs</h2><div class='card'>{admin_rows_table(delivery, [('channel','Channel'),('status','Status'),('total','Total')])}</div>"
     return admin_page_html("Notifications", body, admin)
+
+
+@webhook_app.route("/admin/alerts", methods=["GET"])
+def admin_alerts_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    summary = alert_engine_service.admin_summary()
+    worker = summary.get("worker") or {}
+    heartbeat = worker.get("heartbeat") or {}
+    providers = summary.get("providers") or {}
+    provider_rows = [
+        {"provider": key, "status": "ready" if (value or {}).get("ready") or (value or {}).get("ok") else "not configured", "details": json.dumps(value)[:500]}
+        for key, value in providers.items()
+    ]
+    worker_status = "stale" if worker.get("stale") else "healthy"
+    body = f"""
+    <h1>Alert Health</h1>
+    <p class="muted">Production alert monitoring, worker heartbeat, and delivery channel status.</p>
+    <div class="grid">
+      <div class="card"><h2>Active Alerts</h2><div class="metric">{summary.get('active_alert_count', 0)}</div></div>
+      <div class="card"><h2>Triggered Today</h2><div class="metric">{summary.get('triggered_today', 0)}</div></div>
+      <div class="card"><h2>Worker</h2><div class="metric">{clean_html(worker_status)}</div><p class="muted">Last run: {clean_html(heartbeat.get('last_run_at') or 'never')}</p></div>
+    </div>
+    <div class="card">
+      <h2>Manual Check</h2>
+      <p class="muted">Runs one alert evaluation cycle. Use this for smoke tests; production should run <code>python alert_worker.py</code> as a separate Railway worker.</p>
+      <button class="button" id="runAlertCheck">Run Check Now</button>
+      <pre id="alertCheckResult"></pre>
+    </div>
+    <div class="card"><h2>Provider Status</h2>{admin_rows_table(provider_rows, [('provider','Provider'),('status','Status'),('details','Details')])}</div>
+    <div class="card"><h2>Delivery Status</h2>{admin_rows_table(summary.get('channel_statuses') or [], [('channel','Channel'),('status','Status'),('total','Total')])}</div>
+    <div class="card"><h2>Recent Alert Events</h2>{admin_rows_table(summary.get('recent_events') or [], [('id','ID'),('user_id','User'),('symbol','Symbol'),('status','Status'),('observed_value','Observed'),('message','Message'),('created_at','Created')])}</div>
+    <script>
+    document.getElementById('runAlertCheck').addEventListener('click', async () => {{
+      const out = document.getElementById('alertCheckResult');
+      out.textContent = 'Running...';
+      const response = await fetch('/api/admin/alerts/run-check', {{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{limit:500}})}});
+      const data = await response.json();
+      out.textContent = JSON.stringify(data, null, 2);
+    }});
+    </script>
+    """
+    return admin_page_html("Alert Health", body, admin)
 
 
 @webhook_app.route("/admin/private-chat-reports", methods=["GET"])
@@ -12947,34 +12992,54 @@ def alerts_api():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if request.method == "GET":
-        return jsonify({"ok": True, "alerts": portfolio_service.get_alerts(user["user_id"])})
+        result = alert_engine_service.list_alert_rules(user["user_id"])
+        events = alert_engine_service.list_alert_events(user["user_id"], limit=25)
+        response = jsonify({
+            "ok": True,
+            "alerts": result.get("alerts", []),
+            "events": events.get("events", []),
+            "worker": alert_engine_service.worker_health(),
+        })
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
     gated = api_pro_required(user, "Alerts")
     if gated:
         return gated
     payload = request.get_json(silent=True) or {}
-    channels = payload.get("channels") or [payload.get("channel") or "in_app"]
-    if not isinstance(channels, list):
-        channels = [str(channels)]
-    channel_value = ",".join(clean_html(str(channel)) for channel in channels if channel)
-    result = portfolio_service.create_price_alert(
+    threshold = (
+        payload.get("threshold")
+        if payload.get("threshold") is not None
+        else payload.get("threshold_value")
+        if payload.get("threshold_value") is not None
+        else payload.get("target_value")
+        if payload.get("target_value") is not None
+        else payload.get("target")
+    )
+    result = alert_engine_service.create_alert_rule(
         user["user_id"],
-        clean_html(payload.get("alert_type", "price")),
+        payload.get("alert_type") or "coin_price",
         clean_html(payload.get("symbol", "")),
-        payload.get("target_value", 0),
         clean_html(payload.get("condition", "above")),
-        channel_value or "in_app",
+        threshold,
+        payload.get("channels") or {"in_app": True},
+        target=clean_html(str(payload.get("target") or payload.get("symbol") or "")),
+        cooldown_seconds=payload.get("cooldown_seconds"),
     )
     log_product_event(user["user_id"], "alert_created", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
     if result.get("ok"):
-        notification_service.send_user_alert(
-            user["user_id"],
-            "market_alerts",
-            f"Alert created for {clean_html(payload.get('symbol', '')).upper()}",
-            "CoinPilotXAI saved your alert rule and will notify you through enabled channels when it triggers.",
-            {"symbol": payload.get("symbol", ""), "channels": channels},
-            channels=["in_app"],
-        )
-    return jsonify(result), (200 if result.get("ok") else 400)
+        try:
+            notification_service.queue_notification(
+                user["user_id"],
+                f"Alert activated for {clean_html(payload.get('symbol', '')).upper()}",
+                "CoinPilotXAI is now monitoring this rule and will trigger through the selected channels when conditions are met.",
+                "market_alerts",
+                {"alert_id": result.get("alert_id"), "url": "/alerts"},
+            )
+        except Exception:
+            logging.exception("Alert activation notification failed safely.")
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, (200 if result.get("ok") else 400)
 
 
 @webhook_app.route("/api/alerts/<int:alert_id>", methods=["DELETE"])
@@ -12983,8 +13048,71 @@ def alert_item_api(alert_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    result = portfolio_service.delete_alert(user["user_id"], alert_id)
+    result = alert_engine_service.delete_alert(alert_id, user["user_id"])
     return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/alerts/<int:alert_id>/pause", methods=["POST"])
+def alert_pause_api(alert_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.pause_alert(alert_id, user["user_id"])
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/alerts/<int:alert_id>/resume", methods=["POST"])
+def alert_resume_api(alert_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.resume_alert(alert_id, user["user_id"])
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/alerts/<int:alert_id>/delete", methods=["POST"])
+def alert_delete_api(alert_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.delete_alert(alert_id, user["user_id"])
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/alerts/<int:alert_id>/test", methods=["POST"])
+def alert_test_api(alert_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.send_test_alert(alert_id, user["user_id"])
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
+@webhook_app.route("/api/alerts/events", methods=["GET"])
+def alert_events_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = alert_engine_service.list_alert_events(user["user_id"], limit=int(request.args.get("limit") or 50))
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/admin/alerts/run-check", methods=["POST"])
+def admin_alerts_run_check_api():
+    admin, denied = require_admin_api("system.view")
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = alert_engine_service.evaluate_all_active_alerts(limit=int(payload.get("limit") or 500), worker_name="manual_admin_check")
+    log_admin_audit(admin.get("id"), "alerts_manual_check", "alerts", "run-check", result)
+    return jsonify(result)
 
 
 @webhook_app.route("/alerts", methods=["GET"])
@@ -12992,7 +13120,7 @@ def alerts_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next="/alerts"))
-    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.status{color:#c8ffe2;font-weight:900}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>← Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Manage price, whale, wallet, scam keyword, prediction, news, and volatility alerts from one focused page.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='price'>Coin price</option><option value='move_24h'>24h move</option><option value='wallet'>Wallet movement</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='news'>News trigger</option><option value='volatility'>Volatility spike</option></select><input name='symbol' placeholder='BTC, wallet, keyword, prediction...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='changes'>Changes</option></select><input name='target_value' type='number' step='any' placeholder='Target value / threshold' value='0'><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app</label><label><input type='checkbox' name='channels' value='email'> Email</label><label><input type='checkbox' name='channels' value='push'> PWA push</label><label><input type='checkbox' name='channels' value='sms'> SMS/Text</label><label><input type='checkbox' name='channels' value='telegram'> Optional companion</label></div><button class='button'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Alert Preferences</h2><p class='muted'>Delivery follows your notification preferences. Missing SMS or push provider settings will fail gracefully and stay logged.</p><a class='button' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section></main><script>async function load(){const d=await fetch('/api/alerts',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json());document.getElementById('alerts').innerHTML=(d.alerts||[]).map(a=>`<div class='row'><span><strong>${a.symbol||a.target||'Alert'}</strong><br><span class='muted'>${a.alert_type||'price'} ${a.condition||''} ${a.target_value||a.threshold||''} · ${a.channel||'in-app'}</span></span><button class='button' data-delete='${a.id}'>Delete</button></div>`).join('')||'<p class=muted>No alerts yet.</p>'}document.getElementById('alertForm').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.target);const payload=Object.fromEntries(fd.entries());payload.channels=fd.getAll('channels');const r=await fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(payload)});const d=await r.json();document.getElementById('msg').textContent=d.ok?'Prediction alert activated.':'Alert could not be created: '+(d.message||'check Pro access');if(d.ok){e.target.reset();load()}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-delete]');if(!b)return;await fetch('/api/alerts/'+b.dataset.delete,{method:'DELETE',credentials:'same-origin'});load()});load()</script></body></html>""")
+    return Response("""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Alerts Command Center | CoinPilotXAI</title><style>:root{color-scheme:dark;--bg:#050b14;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--panel:rgba(13,22,39,.88)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}.wrap{width:min(100% - 28px,1120px);margin:auto;padding:28px 0 92px}a{color:var(--cyan)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),var(--panel));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}.button,input,select{min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:#f2fbff;padding:10px;font:inherit}.button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-weight:900;cursor:pointer}.button.secondary{background:rgba(255,255,255,.06);color:#f2fbff}.button.warn{background:rgba(255,107,122,.15);color:#ffd7dc}.button:disabled{opacity:.62;cursor:wait}.row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.04)}.actions{display:flex;gap:8px;flex-wrap:wrap}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08);font-size:12px}.status-active{color:#c8ffe2}.status-paused{color:#ffd166}.status-deleted{color:#ffadb5}.muted{color:var(--muted)}.channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0}.channel-grid label{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;color:var(--muted)}.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;color:#f2fbff;padding:12px 14px;box-shadow:0 18px 60px rgba(0,0,0,.4);display:none}.toast.show{display:block}.warnbox{border:1px solid rgba(255,209,102,.32);background:rgba(255,209,102,.08);border-radius:12px;padding:10px;margin:10px 0;color:#ffe6a6}.events{display:grid;gap:8px}.event{border-left:3px solid var(--cyan);padding:10px;background:rgba(255,255,255,.04);border-radius:10px}.event.error{border-left-color:var(--red)}.event.skipped{border-left-color:var(--gold)}@media(max-width:800px){.grid{grid-template-columns:1fr}.button{width:100%}.row{grid-template-columns:1fr}.actions{display:grid;grid-template-columns:1fr 1fr}.channel-grid{grid-template-columns:1fr}}</style></head><body><main class='wrap'><a href='/dashboard'>Back to Dashboard</a><h1>Alerts Command Center</h1><p class='muted'>Live market alerts with in-app, email, PWA push, SMS, and Telegram delivery logging. Coin price alerts are monitored by the production worker; news, prediction, scam keyword, and Arena alerts are safely scaffolded for expansion.</p><section class='grid'><article class='card'><h2>Create Alert</h2><form id='alertForm'><select name='alert_type'><option value='coin_price'>Coin price</option><option value='volatility'>24h volatility</option><option value='move_24h'>24h move</option><option value='news'>News keyword</option><option value='scam_keyword'>Scam keyword</option><option value='prediction'>Prediction probability</option><option value='arena'>Arena activity</option></select><input name='symbol' placeholder='BTC, ETH, SOL, ETF, scam keyword...' required><select name='condition'><option value='above'>Above</option><option value='below'>Below</option><option value='moves_up_percent'>Moves up %</option><option value='moves_down_percent'>Moves down %</option><option value='volatility_above'>Volatility above %</option></select><input name='threshold' type='number' step='any' placeholder='Threshold value' required><div class='channel-grid'><label><input type='checkbox' name='channels' value='in_app' checked> In-app</label><label><input type='checkbox' name='channels' value='email'> Email</label><label><input type='checkbox' name='channels' value='push'> PWA push</label><label><input type='checkbox' name='channels' value='sms'> SMS/Text</label><label><input type='checkbox' name='channels' value='telegram'> Optional companion</label></div><button class='button' id='activateBtn'>Activate Alert</button><p id='msg' class='muted'></p></form></article><article class='card'><h2>Delivery Readiness</h2><p class='muted'>Every trigger creates delivery logs. Missing provider settings are logged as not configured instead of crashing or silently failing.</p><div id='workerStatus' class='warnbox'>Checking worker heartbeat...</div><a class='button secondary' href='/notifications'>Notification Center</a></article></section><section class='card'><h2>Active Alerts</h2><div id='alerts'>Loading...</div></section><section class='card'><h2>Recent Alert Events</h2><div id='events' class='events'>Loading...</div></section></main><div id='toast' class='toast'></div><script>const $=s=>document.querySelector(s);function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3800)}function money(v){const n=Number(v);return Number.isFinite(n)?(Math.abs(n)>=100?'$'+n.toLocaleString(undefined,{maximumFractionDigits:0}):'$'+n.toLocaleString(undefined,{maximumFractionDigits:4})):''}function channels(c){return Object.entries(c||{}).filter(x=>x[1]).map(x=>`<span class="pill">${x[0].replace('_',' ')}</span>`).join(' ')}async function api(url,opts={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});let d={};try{d=await r.json()}catch(e){}if(!r.ok&&!d.message)d.message='Request failed.';return d}function alertRow(a){const status=a.status||'active';const action=status==='active'?`<button class="button secondary" data-action="pause" data-id="${a.id}">Pause</button>`:`<button class="button secondary" data-action="resume" data-id="${a.id}">Resume</button>`;return `<div class="row"><div><strong>${a.symbol||a.target||'Alert'}</strong> <span class="pill status-${status}">${status}</span><p class="muted">${(a.alert_type||'coin_price').replace('_',' ')} ${(a.condition||'above').replaceAll('_',' ')} ${a.threshold_value??a.target_value??''}</p><p>${channels(a.channels)}</p><p class="muted">Last checked: ${a.last_checked_at||'not yet'} · Last triggered: ${a.last_triggered_at||'not yet'} · Triggers: ${a.trigger_count||0}</p></div><div class="actions">${action}<button class="button secondary" data-action="test" data-id="${a.id}">Test Alert</button><button class="button warn" data-action="delete" data-id="${a.id}">Delete</button></div></div>`}function eventRow(e){return `<div class="event ${e.status||''}"><strong>${e.symbol||'Alert'} ${e.status||''}</strong><p>${e.message||e.body||''}</p><p class="muted">Observed: ${e.observed_value??'n/a'} · ${e.created_at||''}</p></div>`}async function load(){const d=await api('/api/alerts');$('#alerts').innerHTML=(d.alerts||[]).map(alertRow).join('')||'<p class=muted>No alerts yet.</p>';$('#events').innerHTML=(d.events||[]).map(eventRow).join('')||'<p class=muted>No alert events yet.</p>';const w=d.worker||{};$('#workerStatus').textContent=w.stale?'Alert worker has not checked rules recently. Ask an admin to start python alert_worker.py on Railway.':'Alert worker heartbeat is healthy.'}$('#alertForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#activateBtn');btn.disabled=true;btn.textContent='Activating...';const fd=new FormData(e.target);const payload={alert_type:fd.get('alert_type'),symbol:fd.get('symbol'),condition:fd.get('condition'),threshold:Number(fd.get('threshold')),channels:{in_app:false,email:false,push:false,sms:false,telegram:false}};fd.getAll('channels').forEach(c=>payload.channels[c]=true);const d=await api('/api/alerts',{method:'POST',body:JSON.stringify(payload)});btn.disabled=false;btn.textContent='Activate Alert';if(d.ok){$('#msg').textContent='Alert activated.';if((d.warnings||[]).length)toast(d.warnings.join(' '));else toast('Alert activated.');e.target.reset();e.target.querySelector('[value=in_app]').checked=true;load()}else{$('#msg').textContent=d.message||'Alert could not be created.';toast($('#msg').textContent)}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;b.disabled=true;const action=b.dataset.action;const id=b.dataset.id;const method=action==='delete'?'delete':action;const d=await api(`/api/alerts/${id}/${method}`,{method:'POST',body:'{}'});if(d.ok){toast(d.message||'Alert updated.');load()}else{toast(d.message||'Could not update alert.');b.disabled=false}});load();setInterval(load,10000)</script></body></html>""")
 
 
 @webhook_app.route("/api/notifications", methods=["GET"])
@@ -18266,8 +18394,11 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         notification_id INTEGER,
+        alert_rule_id INTEGER,
+        alert_event_id INTEGER,
         channel TEXT,
         status TEXT,
+        provider TEXT,
         provider_response TEXT,
         error_message TEXT,
         retry_count INTEGER DEFAULT 0,
@@ -18275,6 +18406,11 @@ def init_db():
         sent_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "notification_delivery_logs", [
+        ("alert_rule_id", "INTEGER"),
+        ("alert_event_id", "INTEGER"),
+        ("provider", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS notification_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18355,14 +18491,32 @@ def init_db():
         user_id INTEGER,
         alert_type TEXT,
         symbol TEXT,
+        target TEXT,
         condition TEXT,
+        threshold_value REAL,
         target_value REAL,
+        channels_json TEXT,
         channels TEXT,
+        status TEXT DEFAULT 'active',
         active INTEGER DEFAULT 1,
+        cooldown_seconds INTEGER DEFAULT 900,
+        last_checked_at TEXT,
+        last_triggered_at TEXT,
+        trigger_count INTEGER DEFAULT 0,
         created_at TEXT,
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "alert_rules", [
+        ("target", "TEXT"),
+        ("threshold_value", "REAL"),
+        ("channels_json", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("cooldown_seconds", "INTEGER DEFAULT 900"),
+        ("last_checked_at", "TEXT"),
+        ("last_triggered_at", "TEXT"),
+        ("trigger_count", "INTEGER DEFAULT 0"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS watch_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18381,14 +18535,40 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS alert_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_rule_id INTEGER,
         user_id INTEGER,
         watch_rule_id INTEGER,
+        symbol TEXT,
         alert_type TEXT,
+        condition TEXT,
+        threshold_value REAL,
+        observed_value REAL,
         title TEXT,
         body TEXT,
         status TEXT,
+        message TEXT,
         metadata TEXT,
         created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "alert_events", [
+        ("alert_rule_id", "INTEGER"),
+        ("symbol", "TEXT"),
+        ("condition", "TEXT"),
+        ("threshold_value", "REAL"),
+        ("observed_value", "REAL"),
+        ("message", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS alert_worker_heartbeat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        worker_name TEXT UNIQUE,
+        last_run_at TEXT,
+        last_success_at TEXT,
+        checked_count INTEGER DEFAULT 0,
+        triggered_count INTEGER DEFAULT 0,
+        error_count INTEGER DEFAULT 0,
+        last_error TEXT
     )
     """)
     cur.execute("""
@@ -19809,6 +19989,12 @@ def init_db():
         _rollback_failed_migration(conn, "pre_index_schema_commit", exc)
     index_statements = [
         "CREATE INDEX IF NOT EXISTS idx_notifications_user_type_status ON notifications(user_id, notification_type, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_rules_user_id ON alert_rules(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_rules_status ON alert_rules(status)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_rules_symbol_status ON alert_rules(symbol, status)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_rules_last_checked ON alert_rules(last_checked_at)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_events_user_created ON alert_events(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notification_delivery_user_created ON notification_delivery_logs(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_receiver_status ON arena_friend_challenges(receiver_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_sender_status ON arena_friend_challenges(sender_id, status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_challenges_match_id ON arena_friend_challenges(match_id)",

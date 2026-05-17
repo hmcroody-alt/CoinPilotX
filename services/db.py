@@ -175,6 +175,8 @@ AUTO_PK_TABLES = {
     "push_subscriptions": "id",
     "user_alert_rules": "id",
     "alert_rules": "id",
+    "alert_events": "id",
+    "alert_worker_heartbeat": "id",
     "daily_briefs": "id",
     "user_streaks": "id",
     "saved_insights": "id",
