@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from . import user_context
+from . import media_service, user_context
 
 
 def now_iso():
@@ -156,6 +156,7 @@ def messages(user_id, thread_id, after_id=0, limit=50):
     me = _public_profile(cur, user_id)
     other = _public_profile(cur, other_id) if other_id else {}
     conn.close()
+    media_map = media_service.media_for_messages([message["id"] for message in raw])
     items = [
         {
             "message_id": int(message["id"]),
@@ -164,6 +165,7 @@ def messages(user_id, thread_id, after_id=0, limit=50):
             "sender_id": int(message["sender_user_id"]),
             "is_mine": int(message["sender_user_id"]) == int(user_id),
             "body": message["body"],
+            "media": media_map.get(int(message["id"]), []),
             "created_at": message["created_at"],
             "delivery_status": "delivered",
         }
@@ -179,10 +181,11 @@ def messages(user_id, thread_id, after_id=0, limit=50):
     }
 
 
-def send_message(user_id, thread_id, body):
+def send_message(user_id, thread_id, body, media_ids=None):
     body = _clean(body)
-    if not body:
-        return {"ok": False, "message": "Message required."}, 400
+    media_ids = media_ids or []
+    if not body and not media_ids:
+        return {"ok": False, "message": "Message or media required."}, 400
     conn = user_context.connect()
     cur = conn.cursor()
     if not is_participant(cur, user_id, thread_id):
@@ -214,6 +217,7 @@ def send_message(user_id, thread_id, body):
     cur.execute("UPDATE conversations SET updated_at=? WHERE id=?", (created_at, int(thread_id)))
     conn.commit()
     conn.close()
+    attached_media = media_service.attach_media_to_message(user_id, message_id, media_ids, context_type="private_chat", context_id=thread_id)
     return {
         "ok": True,
         "message": {
@@ -223,6 +227,7 @@ def send_message(user_id, thread_id, body):
             "sender_id": int(user_id),
             "is_mine": True,
             "body": body,
+            "media": attached_media,
             "created_at": created_at,
             "delivery_status": "delivered",
         },

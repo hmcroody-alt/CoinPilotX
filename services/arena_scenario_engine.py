@@ -6,14 +6,60 @@ import hashlib
 from datetime import datetime
 
 
+OPTION_IDS = ["A", "B", "C", "D"]
+
+
 SCENARIOS = [
     ("market_panic", "BTC drops fast while social feeds amplify fear.", ["Wait for confirmation", "Full-size panic sell", "Scan news source", "Chase rebound"]),
     ("fake_support", "A fake support account says your wallet must be validated.", ["Never share secrets", "Send seed phrase", "Install remote access", "Pay unlock fee"]),
     ("whale_movement", "A whale transfer appears during low liquidity.", ["Observe and size small", "Assume guaranteed pump", "Go max leverage", "Ignore risk"]),
-    ("breakout_trap", "Price breaks resistance but volume is weak.", ["Wait for confirmation", "FOMO buy", "Ask AI for context", "Use fake small size"]),
+    ("breakout_trap", "Price breaks resistance but volume is weak.", ["Wait for confirmation", "FOMO buy", "Ask AI for context", "Use simulated small size"]),
     ("fake_airdrop", "A free token claim asks you to connect wallet now.", ["Scan first", "Sign approval", "Share private key", "Ignore official sources"]),
     ("volatility_spike", "Volatility expands near a major news event.", ["Reduce size", "Revenge trade", "Observe", "Force entry"]),
 ]
+
+
+def normalize_scenario(scenario):
+    scenario = dict(scenario or {})
+    raw_options = scenario.get("options") or []
+    normalized = []
+    for index, option in enumerate(raw_options[:4]):
+        option_id = OPTION_IDS[index] if index < len(OPTION_IDS) else str(index + 1)
+        if isinstance(option, dict):
+            text = str(option.get("text") or option.get("label") or option.get("answer") or "").strip()
+            option_id = str(option.get("id") or option.get("option_id") or option_id).strip() or option_id
+        else:
+            text = str(option or "").strip()
+        if text:
+            normalized.append({"id": option_id, "text": text})
+    if not normalized:
+        normalized = [{"id": "A", "text": "Pause and verify"}]
+    correct_option_id = str(scenario.get("correct_option_id") or "").strip()
+    correct_answer = str(
+        scenario.get("correct_answer")
+        or scenario.get("answer")
+        or ((scenario.get("best_actions") or [""])[0])
+        or ""
+    ).strip()
+    correct_index = scenario.get("correct_index", scenario.get("correct_choice"))
+    if not correct_option_id and correct_index is not None:
+        try:
+            correct_option_id = normalized[int(correct_index)]["id"]
+        except Exception:
+            correct_option_id = ""
+    if not correct_option_id and correct_answer:
+        for option in normalized:
+            if option["text"].strip().lower() == correct_answer.lower():
+                correct_option_id = option["id"]
+                break
+    if not correct_option_id:
+        correct_option_id = normalized[0]["id"]
+    correct = next((option for option in normalized if option["id"] == correct_option_id), normalized[0])
+    scenario["options"] = normalized
+    scenario["correct_option_id"] = correct["id"]
+    scenario["correct_answer"] = correct["text"]
+    scenario["best_actions"] = [correct["text"]]
+    return scenario
 
 
 def generate_scenario(mode="quick_battle", difficulty=1, player_profile=None, world_state=None):
@@ -23,25 +69,40 @@ def generate_scenario(mode="quick_battle", difficulty=1, player_profile=None, wo
     if world_state and world_state.get("title"):
         prompt = f"{prompt} World state: {world_state.get('title')}."
     round_id = hashlib.sha256(f"{seed_text}:{key}".encode("utf-8")).hexdigest()[:16]
-    return {
+    return normalize_scenario({
         "round_id": round_id,
         "scenario_key": key,
         "mode": mode,
         "difficulty": max(1, int(difficulty or 1)),
+        "question": prompt,
         "prompt": prompt,
-        "options": options,
-        "best_actions": [options[0]],
+        "options": [{"id": OPTION_IDS[index], "text": option} for index, option in enumerate(options)],
+        "correct_option_id": "A",
+        "correct_answer": options[0],
+        "explanation": "",
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
-    }
+    })
 
 
-def score_answer(scenario, answer):
-    answer = answer or ""
-    best_actions = (scenario or {}).get("best_actions") or []
-    correct_answer = best_actions[0] if best_actions else ""
-    best = set(best_actions)
-    correct = answer in best
-    partial = any(word in answer.lower() for word in ["scan", "wait", "observe", "small", "reduce"])
+def score_answer(scenario, answer=None, selected_option_id=None):
+    scenario = normalize_scenario(scenario)
+    selected_option_id = str(selected_option_id or "").strip()
+    answer = str(answer or "").strip()
+    if not selected_option_id and answer:
+        for option in scenario.get("options") or []:
+            if answer == option.get("id") or answer.lower() == str(option.get("text") or "").lower():
+                selected_option_id = option.get("id")
+                break
+    selected = next((option for option in scenario.get("options") or [] if option.get("id") == selected_option_id), None)
+    if not selected and answer:
+        selected = {"id": selected_option_id or "", "text": answer}
+    if not selected:
+        selected = {"id": "", "text": ""}
+    correct_option_id = scenario.get("correct_option_id") or "A"
+    correct_answer = scenario.get("correct_answer") or ""
+    correct = bool(selected.get("id")) and selected.get("id") == correct_option_id
+    selected_text = selected.get("text") or ""
+    partial = any(word in selected_text.lower() for word in ["scan", "wait", "observe", "small", "reduce"])
     score = 90 if correct else 55 if partial else 25
     xp = 35 + max(0, score - 40)
     key = (scenario or {}).get("scenario_key") or ""
@@ -77,10 +138,13 @@ def score_answer(scenario, answer):
     )
     return {
         "correct": correct,
-        "selected": answer,
+        "selected": selected_text,
+        "selected_answer": selected_text,
+        "selected_option_id": selected.get("id") or "",
+        "correct_option_id": correct_option_id,
         "correct_answer": correct_answer,
         "score": score,
-        "xp": xp if correct else max(5, xp // 3),
+        "xp": xp if correct else 0,
         "explanation": explanation,
         "feedback": explanation,
         "verdict": "Correct" if correct else "Incorrect",

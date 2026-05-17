@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from . import email_service, live_market_service, notification_service, push_service, user_context
+from . import email_service, live_market_service, notification_service, push_service, sms_service, user_context
 
 
 SUPPORTED_ALERT_TYPES = {
@@ -137,7 +137,7 @@ def _telegram_token():
 
 
 def _sms_provider_ready():
-    return bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN") and os.getenv("TWILIO_FROM_NUMBER"))
+    return sms_service.is_sms_configured()
 
 
 def _push_provider_ready():
@@ -193,10 +193,13 @@ def channel_readiness(user_id, browser_permission=None):
         push = _status_payload(False, "not_configured", "Needs setup", "Enable Push Notifications before using push alerts.", "/notifications")
     else:
         push = _status_payload(True, "ready", "Ready", "Push alerts are ready.", "/notifications")
+    phone = user.get("phone_number") or user.get("phone")
     if not sms_ready:
         sms = _status_payload(False, "not_configured", "Needs setup", "SMS provider is not configured.", "/account/settings")
-    elif not user.get("phone"):
+    elif not phone:
         sms = _status_payload(False, "not_configured", "Needs setup", "Add a phone number for SMS alerts.", "/account/settings")
+    elif not user.get("phone_verified"):
+        sms = _status_payload(False, "not_configured", "Needs setup", "Phone verification required.", "/account/settings")
     elif int(user.get("sms_opt_in") or 0) != 1:
         sms = _status_payload(False, "not_configured", "Needs setup", "Turn on SMS opt-in before using text alerts.", "/account/settings")
     else:
@@ -212,7 +215,7 @@ def channel_readiness(user_id, browser_permission=None):
         "in_app": _status_payload(True, "ready", "Ready", "In-app alerts are always available.", "/notifications"),
         "email": _status_payload(email_ready, "ready" if email_ready else "not_configured", "Ready" if email_ready else "Needs setup", "Email alerts are ready." if email_ready else "Email provider or account email is missing.", "/account/settings"),
         "push": {**push, "subscription_count": push_subscriptions, "vapid_configured": vapid_ready},
-        "sms": {**sms, "provider_configured": sms_ready, "phone_configured": bool(user.get("phone")), "sms_opt_in": bool(int(user.get("sms_opt_in") or 0))},
+        "sms": {**sms, "provider_configured": sms_ready, "phone_configured": bool(phone), "phone_verified": bool(user.get("phone_verified")), "sms_opt_in": bool(int(user.get("sms_opt_in") or 0))},
         "telegram": {**telegram, "bot_configured": telegram_token_ready, "connected": bool(user.get("telegram_chat_id"))},
     }
 
@@ -660,13 +663,13 @@ def dispatch_alert_event(event, rule=None):
                 result = {"ok": False, "status": "not_configured", "message": readiness["sms"].get("message")}
                 status = "not_configured"
             else:
-                result = notification_service.send_sms_alert(user, title, body, notification_id)
+                result = sms_service.send_alert_sms(user_id, {"message": f"{title}: {body}", "alert_rule_id": rule.get("id"), "alert_event_id": event.get("id")})
                 status = _delivery_status_from_result(result)
                 if status == "skipped":
                     status = "not_configured"
             delivery["channels"][channel] = status
             external_sent = external_sent or status == "sent"
-            _log_delivery(user_id, channel, status, "twilio", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
+            _log_delivery(user_id, channel, status, "brevo_sms", result, result.get("message"), notification_id, rule.get("id"), event.get("id"))
         elif channel == "telegram":
             if not readiness["telegram"].get("ready"):
                 result = {"ok": False, "status": "not_configured", "message": readiness["telegram"].get("message")}
@@ -758,12 +761,12 @@ def test_delivery_channel(user_id, channel, client_state=None):
             if status == "skipped":
                 status = "not_configured"
     elif channel == "sms":
-        provider = "twilio"
+        provider = "brevo_sms"
         if not readiness["sms"].get("ready"):
             status = "not_configured"
             result = {"ok": False, "status": status, "message": readiness["sms"].get("message")}
         else:
-            result = notification_service.send_sms_alert(user, title, body)
+            result = sms_service.send_test_sms(user_id)
             status = _delivery_status_from_result(result)
             if status == "skipped":
                 status = "not_configured"
@@ -843,7 +846,7 @@ def worker_health():
 def provider_status():
     return {
         "brevo_email": email_service.provider_status(),
-        "brevo_sms": {"provider": "twilio", "ready": _sms_provider_ready()},
+        "brevo_sms": {"provider": "brevo_sms", "ready": _sms_provider_ready()},
         "vapid_push": {"ready": _push_provider_ready(), "active_subscriptions": _push_subscription_count()},
         "telegram": {"ready": bool(_telegram_token()), "connected_users": _telegram_connected_count()},
         "live_market_provider": live_market_service.health().get("providers", {}).get("coingecko_or_fallback", {}),

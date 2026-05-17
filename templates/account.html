@@ -154,7 +154,7 @@
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
         {% if page == "signup" %}
-          <p>Create your CoinPilotXAI platform account. First-time account users receive 30 days of free Pro access, then automatically return to Free unless they subscribe.</p>
+          <p>Create your CoinPilotXAI platform account. First-time account users receive a 7-day Pro Trial, then automatically return to Free unless they subscribe.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />

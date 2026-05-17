@@ -8,6 +8,8 @@ import requests
 
 CACHE = {"markets": None, "created_at": 0, "status": {}}
 CACHE_SECONDS = int(os.getenv("PREDICTIONS_CACHE_SECONDS", "90"))
+PREDICTION_SAMPLE_WINDOW_DAYS = 30
+PREDICTION_SAMPLE_RESOLUTION_DAYS = 37
 CRYPTO_TERMS = (
     "bitcoin",
     "btc",
@@ -47,8 +49,8 @@ def _sample_markets(limit=30):
             "price": round(probability / 100, 2),
             "volume": volume,
             "liquidity": liquidity,
-            "close_time": (now + timedelta(days=30)).isoformat(),
-            "resolve_time": (now + timedelta(days=37)).isoformat(),
+            "close_time": (now + timedelta(days=PREDICTION_SAMPLE_WINDOW_DAYS)).isoformat(),
+            "resolve_time": (now + timedelta(days=PREDICTION_SAMPLE_RESOLUTION_DAYS)).isoformat(),
             "last_updated": now.isoformat(),
             "risk_level": risk,
             "symbol": symbol,
