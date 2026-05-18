@@ -56,6 +56,7 @@ from services import (
     arena_world_engine,
     auto_signals_service,
     chat_realtime_service,
+    conversion_funnel_engine,
     crowd_energy_engine,
     realtime_sync_engine,
     realtime_service,
@@ -833,8 +834,22 @@ app = webhook_app
 
 @webhook_app.context_processor
 def inject_seo_runtime_config():
+    google_ads_id = os.getenv("GOOGLE_ADS_ID", os.getenv("GOOGLE_ADS_CONVERSION_ID", "")).strip()
+    google_ads_conversions = {
+        "account_creation": os.getenv("GOOGLE_ADS_ACCOUNT_CREATION_LABEL", "").strip(),
+        "pro_upgrade": os.getenv("GOOGLE_ADS_PRO_UPGRADE_LABEL", "").strip(),
+        "arena_session_start": os.getenv("GOOGLE_ADS_ARENA_SESSION_START_LABEL", "").strip(),
+        "roast_battle_join": os.getenv("GOOGLE_ADS_ROAST_BATTLE_JOIN_LABEL", "").strip(),
+        "scam_shield_scan": os.getenv("GOOGLE_ADS_SCAM_SHIELD_SCAN_LABEL", "").strip(),
+        "replay_share": os.getenv("GOOGLE_ADS_REPLAY_SHARE_LABEL", "").strip(),
+        "return_visit": os.getenv("GOOGLE_ADS_RETURN_VISIT_LABEL", "").strip(),
+        "alert_activation": os.getenv("GOOGLE_ADS_ALERT_ACTIVATION_LABEL", "").strip(),
+    }
     return {
         "ga_measurement_id": os.getenv("GA_MEASUREMENT_ID", "").strip(),
+        "google_ads_id": google_ads_id,
+        "google_ads_conversions": google_ads_conversions,
+        "google_ads_conversions_json": json.dumps(google_ads_conversions),
         "google_site_verification": os.getenv("GOOGLE_SITE_VERIFICATION", "").strip(),
         "bing_site_verification": os.getenv("BING_SITE_VERIFICATION", "").strip(),
     }
@@ -857,6 +872,130 @@ def home():
     if user:
         response_obj.headers["Cache-Control"] = "private, no-store, max-age=0"
     return response_obj
+
+
+ADS_LANDING_PAGES = {
+    "live-roast-battle": {
+        "title": "Live Roast Battle | CoinPilotXAI",
+        "headline_a": "Enter the live Roast Battle stage.",
+        "headline_b": "Outwit the room in a moderated live roast arena.",
+        "description": "Step onto a creator-friendly live stage with call signs, crowd heat, virtual-dollar scoring, replay moments, and safety moderation.",
+        "cta_a": "Enter Live Roast Battle",
+        "cta_b": "Join the Roast Battle",
+        "secondary": "Watch Live",
+        "next": "/arena/roast-battle",
+        "analytics": "roast_battle_join",
+        "accent": "#ff3df2",
+        "schema_type": "Game",
+        "proof": ["Moderated live competition", "Call signs protect identity", "Virtual-dollar scoring only"],
+    },
+    "crypto-scam-scanner": {
+        "title": "Crypto Scam Scanner | CoinPilotXAI Scam Shield",
+        "headline_a": "Scan a suspicious crypto link before you click.",
+        "headline_b": "Spot phishing, wallet drainers, and fake giveaways faster.",
+        "description": "Use Scam Shield to check URLs, wallet prompts, token claims, and suspicious messages with plain-English safety explanations.",
+        "cta_a": "Scan a Suspicious Crypto Link",
+        "cta_b": "Open Scam Shield",
+        "secondary": "Read Scam Lessons",
+        "next": "/scam-shield",
+        "analytics": "scam_scan_started",
+        "accent": "#36e58f",
+        "schema_type": "SoftwareApplication",
+        "proof": ["Educational safety guidance", "No seed phrases requested", "Privacy-aware scans"],
+    },
+    "alpha-arena": {
+        "title": "Alpha Arena | Crypto Training Simulator",
+        "headline_a": "Train in Alpha Arena without real-money trades.",
+        "headline_b": "Compete, learn, and climb ranks in simulated crypto battles.",
+        "description": "Alpha Arena is a simulated educational trading environment using virtual dollars. Build discipline, scam defense, and market intuition.",
+        "cta_a": "Join Live Arena Battles",
+        "cta_b": "Start Alpha Arena",
+        "secondary": "Preview Training Modes",
+        "next": "/arena/play",
+        "analytics": "arena_entered",
+        "accent": "#6edff6",
+        "schema_type": "Game",
+        "proof": ["Virtual dollars only", "XP, ranks, and replays", "Built for mobile play"],
+    },
+    "crypto-training-simulator": {
+        "title": "Crypto Training Simulator | CoinPilotXAI",
+        "headline_a": "Practice crypto decisions in a training environment.",
+        "headline_b": "Build market discipline with simulated missions.",
+        "description": "Train against realistic crypto scenarios, scam traps, volatility decisions, and risk psychology lessons before you face real-world pressure.",
+        "cta_a": "Train Against Real Scam Scenarios",
+        "cta_b": "Start Training Mission",
+        "secondary": "Explore Risk Lessons",
+        "next": "/arena/play",
+        "analytics": "arena_session_start",
+        "accent": "#ffd166",
+        "schema_type": "EducationalApplication",
+        "proof": ["Scenario-based learning", "Risk-first education", "Mobile-ready missions"],
+    },
+}
+
+
+def google_tag_script():
+    ga_id = os.getenv("GA_MEASUREMENT_ID", "").strip()
+    ads_id = os.getenv("GOOGLE_ADS_ID", os.getenv("GOOGLE_ADS_CONVERSION_ID", "")).strip()
+    if not ga_id and not ads_id:
+        return ""
+    loader_id = ga_id or ads_id
+    conversions = {
+        "account_creation": os.getenv("GOOGLE_ADS_ACCOUNT_CREATION_LABEL", "").strip(),
+        "pro_upgrade": os.getenv("GOOGLE_ADS_PRO_UPGRADE_LABEL", "").strip(),
+        "arena_session_start": os.getenv("GOOGLE_ADS_ARENA_SESSION_START_LABEL", "").strip(),
+        "roast_battle_join": os.getenv("GOOGLE_ADS_ROAST_BATTLE_JOIN_LABEL", "").strip(),
+        "scam_shield_scan": os.getenv("GOOGLE_ADS_SCAM_SHIELD_SCAN_LABEL", "").strip(),
+        "replay_share": os.getenv("GOOGLE_ADS_REPLAY_SHARE_LABEL", "").strip(),
+        "return_visit": os.getenv("GOOGLE_ADS_RETURN_VISIT_LABEL", "").strip(),
+        "alert_activation": os.getenv("GOOGLE_ADS_ALERT_ACTIVATION_LABEL", "").strip(),
+    }
+    ga_config = f'gtag("config", "{ga_id}", {{ anonymize_ip: true }});' if ga_id else ""
+    ads_config = f'gtag("config", "{ads_id}", {{ anonymize_ip: true }});' if ads_id else ""
+    return f"""<script async src="https://www.googletagmanager.com/gtag/js?id={clean_html(loader_id)}"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){{dataLayer.push(arguments);}}gtag("js",new Date());window.CPX_ADS_CONFIG={{googleAdsId:"{clean_html(ads_id)}",conversions:{json.dumps(conversions)}}};{ads_config}{ga_config}</script>"""
+
+
+def render_ads_landing_page(slug):
+    page = ADS_LANDING_PAGES.get(slug)
+    if not page:
+        return Response("Not found.", status=404)
+    variant = "b" if (request.args.get("v") or "").lower() == "b" else "a"
+    headline = page[f"headline_{variant}"]
+    cta = page[f"cta_{variant}"]
+    canonical = f"https://coinpilotx.app/{slug}"
+    signup_url = f"/signup?next={quote(page['next'], safe='')}&utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
+    secondary_url = page["next"] if slug != "crypto-scam-scanner" else "/learn/crypto-scams"
+    schema = {
+        "@context": "https://schema.org",
+        "@type": page["schema_type"],
+        "name": page["title"].split("|")[0].strip(),
+        "url": canonical,
+        "description": page["description"],
+        "publisher": {"@type": "Organization", "name": "CoinPilotXAI Inc.", "url": "https://coinpilotx.app"},
+    }
+    proof = "".join(f"<span>{clean_html(item)}</span>" for item in page["proof"])
+    related = "".join(
+        f"<a href='{path}'>{label}</a>"
+        for label, path in [
+            ("Alpha Arena", "/alpha-arena"),
+            ("Live Roast Battle", "/live-roast-battle"),
+            ("Scam Shield", "/crypto-scam-scanner"),
+            ("Training Simulator", "/crypto-training-simulator"),
+        ]
+        if path != f"/{slug}"
+    )
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(page['title'])}</title><meta name="description" content="{clean_html(page['description'])}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{clean_html(page['title'])}"><meta property="og:description" content="{clean_html(page['description'])}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(page['title'])}"><meta name="twitter:description" content="{clean_html(page['description'])}"><meta name="twitter:image" content="https://coinpilotx.app/static/Coinpilot%20Logo/NewLogo.png"><link rel="icon" type="image/png" href="/static/Coinpilot%20Logo/NewLogo.png"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo" width="38" height="38">CoinPilotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{clean_html(headline)}</h1><p>{clean_html(page['description'])}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{clean_html(page['analytics'])}">{clean_html(cta)}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{clean_html(page['secondary'])}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPilotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPilotXAI live preview"><img class="logo" src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{clean_html(cta)}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
+    response = Response(html)
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+@webhook_app.route("/live-roast-battle", methods=["GET"])
+@webhook_app.route("/crypto-scam-scanner", methods=["GET"])
+@webhook_app.route("/alpha-arena", methods=["GET"])
+@webhook_app.route("/crypto-training-simulator", methods=["GET"])
+def ads_landing_page():
+    return render_ads_landing_page(request.path.strip("/"))
 
 
 @webhook_app.route("/support", methods=["GET", "POST"])
@@ -2205,6 +2344,7 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
         except Exception:
             pass
     user = load_account_by_id(user_id)
+    log_product_event(user_id, "signup_completed", {"source": "website_signup"})
     log_product_event(user_id, "pro_trial_started", {"trial_end_date": trial_end, "source": "website_signup"})
     record_referral_signup(user_id, referred_by)
     sync_brevo_contact_safe({**(user or {}), "source": "website_account"}, entity_type="user", entity_id=user_id)
@@ -2280,6 +2420,8 @@ def signup_page():
     init_db()
     if request.method == "GET" and require_account():
         return redirect(safe_redirect_target("dashboard_page"))
+    if request.method == "GET":
+        log_product_event(0, "signup_started", {"source": "signup_page"})
     if request.method == "POST":
         logging.info("signup endpoint started")
         if not verify_csrf():
@@ -2311,7 +2453,7 @@ def signup_page():
         verification_token = create_email_verification(user["user_id"])
         verification_link = url_for("verify_email_page", token=verification_token, _external=True)
         send_email_verification(user, verification_link)
-        return redirect(url_for("dashboard_page"))
+        return redirect(url_for("dashboard_page", signup_completed="1"))
     return render_account_page("signup", "Create Account")
 
 
@@ -3440,6 +3582,13 @@ def get_utm_payload(payload):
     )
 
 
+def track_conversion_step(user_id=0, session_id="", event_name="", source_path="", metadata=None):
+    try:
+        conversion_funnel_engine.track_step(user_id, session_id, event_name, source_path, metadata or {})
+    except Exception as exc:
+        logging.info("Conversion funnel tracking failed safely: %s", exc)
+
+
 @webhook_app.route("/api/track", methods=["POST"])
 def track_event_api():
     try:
@@ -3501,6 +3650,7 @@ def track_event_api():
         )
         conn.commit()
         conn.close()
+        track_conversion_step(0, session_id, event_name, page_url, metadata)
         return jsonify({"ok": True, "session_id": session_id})
     except Exception as exc:
         logging.info("Analytics track failed: %s", exc)
@@ -3550,6 +3700,7 @@ def log_product_event(user_id, event_name, metadata=None):
         )
         conn.commit()
         conn.close()
+        track_conversion_step(user_id, request.cookies.get("coinpilotxai_session_id", "") if in_request else "", event_name, request.path if in_request else "", metadata or {})
     except Exception as exc:
         logging.info("Product event log failed: %s", exc)
 
@@ -7100,7 +7251,7 @@ def sitemap_xml():
         "/portfolio-intelligence": "0.86",
     }
     body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-    for path in all_public_paths():
+    for path in sorted(set(all_public_paths()) | set(seo_engine.ADS_LANDING_PATHS)):
         loc = "https://coinpilotx.app" + path
         if path.startswith("/markets/") and path.endswith("/live"):
             page_priority = "0.82"
@@ -7126,7 +7277,7 @@ def sitemap_xml():
 
 @webhook_app.route("/sitemap-pages.xml", methods=["GET"])
 def sitemap_pages_xml():
-    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS))
+    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS))
     return Response(seo_engine.sitemap_xml(paths), mimetype="application/xml")
 
 
@@ -8189,6 +8340,7 @@ def scam_shield_analyze_api():
     user_context_service.log_interaction(user_id, "scam_shield_used", text, result.get("response", ""), "website")
     record_command_history(user_id, "scam_shield", text, {"summary": result.get("response", ""), "action_key": "scam_shield"}, source="web", pro_required=False, status="success")
     log_product_event(user_id, "scam_shield_used", {"risk_level": result.get("risk_level"), "scan_id": scan_id})
+    log_product_event(user_id, "scam_shield_scan", {"risk_level": result.get("risk_level"), "scan_id": scan_id})
     return jsonify({**result, "scan_id": scan_id})
 
 
@@ -10349,6 +10501,7 @@ def arena_replay_page(match_id):
     user = require_account()
     if not user:
         return redirect(url_for("signup_page", next=request.path))
+    log_product_event(user["user_id"], "replay_view", {"match_id": match_id, "source": "arena_replay_page"})
     replay = arena_replay_engine.get_replay(match_id)
     if replay:
         timeline = json.loads(replay.get("timeline_json") or "[]") if replay.get("timeline_json") else []
@@ -13118,7 +13271,9 @@ def api_arena_roast_enroll():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     room_id = int((request.get_json(silent=True) or {}).get("room_id") or 1)
-    return jsonify(roast_battle_engine.enroll(user["user_id"], room_id))
+    result = roast_battle_engine.enroll(user["user_id"], room_id)
+    log_product_event(user["user_id"], "roast_battle_join", {"room_id": room_id, "ok": result.get("ok")})
+    return jsonify(result)
 
 
 @webhook_app.route("/api/arena/roast/call-sign", methods=["POST"])
@@ -13674,6 +13829,7 @@ def api_arena_share_replay(match_id):
     replay = get_arena_match_payload(match_id) or {}
     achievement = {"title": f"Arena replay #{match_id}", "subtitle": replay.get("ai_commentary") or "Educational virtual-dollar battle recap"}
     card = arena_share_service.share_card(achievement=achievement)
+    log_product_event(account_user_id() or 0, "replay_view", {"match_id": match_id, "source": "share_replay_api"})
     return jsonify({"ok": True, "match_id": match_id, "share": card, "summary": achievement["subtitle"]})
 
 
@@ -13702,6 +13858,7 @@ def api_arena_share_generate():
     cur.execute("INSERT INTO arena_share_events (user_id, public_player_id, share_type, platform, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user["user_id"], profile.get("public_player_id"), clean_html(payload.get("share_type") or "achievement")[:80], clean_html(payload.get("platform") or "copy_link")[:80], json.dumps({"achievement": achievement, "shared_player_id": shared_player_id}), datetime.now().isoformat()))
     conn.commit()
     conn.close()
+    log_product_event(user["user_id"], "replay_share", {"share_type": payload.get("share_type") or "achievement", "platform": payload.get("platform") or "copy_link"})
     return jsonify({"ok": True, "share": card, "urls": arena_share_service.share_urls(card["url"], arena_share_service.share_text("achievement", profile=profile, achievement=achievement))})
 
 
@@ -14140,6 +14297,7 @@ def alerts_api():
         cooldown_seconds=payload.get("cooldown_seconds"),
     )
     log_product_event(user["user_id"], "alert_created", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
+    log_product_event(user["user_id"], "alert_activation", {"symbol": payload.get("symbol", ""), "ok": result.get("ok")})
     if result.get("ok"):
         try:
             notification_service.queue_notification(
@@ -14499,6 +14657,8 @@ def api_sms_verify_code():
     payload = request.get_json(silent=True) or {}
     result = sms_service.verify_sms_code(user["user_id"], payload.get("code") or "")
     log_product_event(user["user_id"], "sms_verification_completed", {"status": result.get("status"), "ok": result.get("ok")})
+    if result.get("ok"):
+        log_product_event(user["user_id"], "sms_activation", {"status": result.get("status"), "ok": True})
     return jsonify(result), (200 if result.get("ok") else 400)
 
 
@@ -19527,6 +19687,18 @@ def init_db():
         utm_campaign TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS conversion_funnel_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        session_id TEXT,
+        funnel_name TEXT,
+        step_name TEXT,
+        source_path TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS telegram_link_codes (
@@ -21783,6 +21955,9 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_users_roast_call_sign_slug ON users(roast_call_sign_slug)",
         "CREATE INDEX IF NOT EXISTS idx_security_events_type_created ON security_events(event_type, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_arena_presence_updated ON arena_presence(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conversion_funnel_session ON conversion_funnel_events(session_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conversion_funnel_name_created ON conversion_funnel_events(funnel_name, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conversion_funnel_user_created ON conversion_funnel_events(user_id, created_at)",
     ]
     for statement in index_statements:
         safe_create_index(cur, conn, statement)
@@ -24351,6 +24526,7 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
         else "\n\nYour Telegram account is linked. Upgrade Pro on the website when you want deeper intelligence."
     )
     log_product_event(target_user_id, "telegram_account_linked", {"telegram_user_id": update.effective_user.id})
+    log_product_event(target_user_id, "telegram_connect", {"telegram_user_id": update.effective_user.id})
     if linked_user and has_pro_access(linked_user):
         log_product_event(target_user_id, "telegram_pro_verified", {"telegram_user_id": update.effective_user.id})
     await update.message.reply_text(

@@ -18,6 +18,13 @@ PUBLIC_LEARN_PATHS = [
     "/learn/arena-ranking-system",
 ]
 
+ADS_LANDING_PATHS = [
+    "/live-roast-battle",
+    "/crypto-scam-scanner",
+    "/alpha-arena",
+    "/crypto-training-simulator",
+]
+
 
 def page_meta(path="/"):
     path = path or "/"
@@ -26,6 +33,10 @@ def page_meta(path="/"):
         "/arena/play": "Alpha Arena | Simulated Crypto Training Battles",
         "/arena/roast-battle": "Roast Battle Arena | Live Social Competition",
         "/scam-shield": "Scam Shield | AI Crypto Scam Detection",
+        "/live-roast-battle": "Live Roast Battle | CoinPilotXAI",
+        "/crypto-scam-scanner": "Crypto Scam Scanner | CoinPilotXAI Scam Shield",
+        "/alpha-arena": "Alpha Arena | Crypto Training Simulator",
+        "/crypto-training-simulator": "Crypto Training Simulator | CoinPilotXAI",
     }
     title = title_map.get(path, "CoinPilotXAI | AI Crypto Intelligence")
     description = "CoinPilotXAI combines AI crypto intelligence, Alpha Arena simulated training, Scam Shield education, alerts, and live social gameplay."

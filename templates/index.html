@@ -33,13 +33,20 @@
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="preload" as="image" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
-  {% if ga_measurement_id %}
-  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
+  {% if ga_measurement_id or google_ads_id %}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id or google_ads_id }}"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag("js", new Date());
+    window.CPX_ADS_CONFIG = {
+      googleAdsId: "{{ google_ads_id }}",
+      conversions: {{ google_ads_conversions_json|safe }}
+    };
+    {% if google_ads_id %}gtag("config", "{{ google_ads_id }}", { anonymize_ip: true });{% endif %}
+    {% if ga_measurement_id %}
     gtag("config", "{{ ga_measurement_id }}", { anonymize_ip: true });
+    {% endif %}
   </script>
   {% endif %}
   <script type="application/ld+json">

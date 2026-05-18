@@ -140,6 +140,7 @@ AUTO_PK_TABLES = {
     "brevo_contact_sync_logs": "id",
     "leads": "id",
     "analytics_events": "id",
+    "conversion_funnel_events": "id",
     "sessions": "id",
     "telegram_link_codes": "id",
     "password_reset_tokens": "id",

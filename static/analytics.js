@@ -1,7 +1,12 @@
 (function () {
   var SESSION_KEY = "coinpilotxai_session_id";
+  var RETURN_VISIT_KEY = "coinpilotxai_last_visit_day";
   var scrollDepthSent = {};
   var pageStart = Date.now();
+
+  function adsConfig() {
+    return window.CPX_ADS_CONFIG || {};
+  }
 
   function getSessionId() {
     try {
@@ -24,10 +29,14 @@
       return "telegram_click";
     }
     var map = {
-      launch_free: "telegram_click",
+      launch_free: "signup_started",
       continue_telegram: "telegram_click",
       upgrade_pro: "pro_upgrade_click",
+      pro_checkout_started: "pro_checkout_started",
+      pro_payment_success: "pro_payment_success",
       telegram_upgrade_clicked: "telegram_upgrade_clicked",
+      telegram_connect: "telegram_connect",
+      sms_activation: "sms_activation",
       website_upgrade_started: "website_upgrade_started",
       stripe_checkout_started: "stripe_checkout_started",
       dashboard_upgrade_clicked: "dashboard_upgrade_clicked",
@@ -43,6 +52,20 @@
       view_safety: "support_click",
       support_click: "support_click",
       signup_form_submit: "signup_form_submit",
+      signup_started: "signup_started",
+      signup_completed: "signup_completed",
+      enter_alpha_arena: "arena_entered",
+      alpha_arena_enter_clicked: "alpha_arena_enter_clicked",
+      alpha_arena_preview_clicked: "alpha_arena_preview_clicked",
+      enter_roast_battle: "roast_battle_entered",
+      roast_battle_join: "roast_battle_join",
+      scam_scan_started: "scam_scan_started",
+      scam_scan_completed: "scam_shield_scan",
+      alert_activation: "alert_activation",
+      alert_created: "alert_created",
+      replay_view: "replay_view",
+      replay_share: "replay_share",
+      creator_profile_visit: "creator_profile_visit",
       share_telegram: "share_click",
       share_x: "share_click",
       share_reddit: "share_click",
@@ -64,8 +87,48 @@
     return {
       utm_source: params.get("utm_source") || "",
       utm_medium: params.get("utm_medium") || "",
-      utm_campaign: params.get("utm_campaign") || ""
+      utm_campaign: params.get("utm_campaign") || "",
+      utm_content: params.get("utm_content") || "",
+      utm_term: params.get("utm_term") || "",
+      gclid: params.get("gclid") || "",
+      gbraid: params.get("gbraid") || "",
+      wbraid: params.get("wbraid") || ""
     };
+  }
+
+  function googleAdsConversionKey(eventName) {
+    var map = {
+      signup_completed: "account_creation",
+      account_created: "account_creation",
+      pro_upgrade: "pro_upgrade",
+      pro_checkout_started: "pro_upgrade",
+      pro_payment_success: "pro_upgrade",
+      pro_subscription_active: "pro_upgrade",
+      arena_entered: "arena_session_start",
+      arena_session_start: "arena_session_start",
+      roast_battle_join: "roast_battle_join",
+      scam_shield_scan: "scam_shield_scan",
+      scam_shield_used: "scam_shield_scan",
+      replay_share: "replay_share",
+      return_visit: "return_visit",
+      alert_activation: "alert_activation",
+      alert_created: "alert_activation"
+    };
+    return map[eventName] || "";
+  }
+
+  function sendGoogleAdsConversion(eventName, payload) {
+    var config = adsConfig();
+    var adsId = config.googleAdsId || "";
+    var labels = config.conversions || {};
+    var key = googleAdsConversionKey(eventName);
+    var label = key ? labels[key] : "";
+    if (!window.gtag || !adsId || !label) {
+      return;
+    }
+    window.gtag("event", "conversion", Object.assign({}, payload || {}, {
+      send_to: adsId + "/" + label
+    }));
   }
 
   function trackFirstParty(eventName, metadata, options) {
@@ -78,6 +141,11 @@
       utm_source: utm.utm_source,
       utm_medium: utm.utm_medium,
       utm_campaign: utm.utm_campaign,
+      utm_content: utm.utm_content,
+      utm_term: utm.utm_term,
+      gclid: utm.gclid,
+      gbraid: utm.gbraid,
+      wbraid: utm.wbraid,
       metadata: metadata || {}
     };
     var body = JSON.stringify(payload);
@@ -112,6 +180,7 @@
     if (window.gtag) {
       window.gtag("event", normalizedEvent, payload);
     }
+    sendGoogleAdsConversion(normalizedEvent, payload);
 
     if (window.posthog && window.posthog.capture) {
       window.posthog.capture(normalizedEvent, payload);
@@ -128,6 +197,7 @@
     if (window.gtag) {
       window.gtag("event", eventName, metadata || {});
     }
+    sendGoogleAdsConversion(eventName, metadata || {});
     if (window.posthog && window.posthog.capture) {
       window.posthog.capture(eventName, metadata || {});
     }
@@ -176,13 +246,34 @@
   }
 
   function setupScrollAndTimeTracking() {
+    var params = new URLSearchParams(window.location.search || "");
     trackFirstParty("page_view", {
       title: document.title,
       path: window.location.pathname,
-      ref: new URLSearchParams(window.location.search || "").get("ref") || "",
+      ref: params.get("ref") || "",
       screen_width: window.innerWidth,
       screen_height: window.innerHeight
     });
+    if (params.get("signup_completed") === "1") {
+      window.coinPilotXTrack("signup_completed", { path: window.location.pathname });
+    }
+    if (params.get("pro_payment_success") === "1" || params.get("payment_success") === "1") {
+      window.coinPilotXTrack("pro_payment_success", { path: window.location.pathname });
+    }
+    try {
+      var today = new Date().toISOString().slice(0, 10);
+      var previousDay = window.localStorage.getItem(RETURN_VISIT_KEY);
+      if (previousDay && previousDay !== today) {
+        window.coinPilotXTrack("return_visit", {
+          previous_visit_day: previousDay,
+          current_visit_day: today,
+          path: window.location.pathname
+        });
+      }
+      window.localStorage.setItem(RETURN_VISIT_KEY, today);
+    } catch (err) {
+      // Return visit tracking is optional and must not block the page.
+    }
 
     window.addEventListener("scroll", function () {
       var doc = document.documentElement;
@@ -270,7 +361,7 @@
           }
           setMessage(result.message || "Thanks — you’re on the CoinPilotXAI Inc. update list.", "success");
           form.reset();
-          trackFirstParty("signup_form_submit", {
+          window.coinPilotXTrack("signup_form_submit", {
             source: payload.source,
             email_opt_in: emailOptIn,
             sms_opt_in: smsOptIn
