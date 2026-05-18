@@ -178,7 +178,42 @@ def _status_payload(ready, status, label, message, setup_url=""):
     }
 
 
-def channel_readiness(user_id, browser_permission=None):
+def _recent_successful_delivery(user_id, channel, hours=168):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    since = (_utcnow() - timedelta(hours=hours)).isoformat()
+    cur.execute(
+        """
+        SELECT created_at
+        FROM notification_delivery_logs
+        WHERE user_id=? AND channel=? AND status IN ('sent', 'created') AND created_at>=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (user_id, channel, since),
+    )
+    row = _row_to_dict(cur.fetchone())
+    conn.close()
+    return row
+
+
+def _require_recent_test(payload, user_id, channel):
+    if not payload.get("ready"):
+        return payload
+    recent = _recent_successful_delivery(user_id, channel)
+    if recent:
+        payload["last_success_at"] = recent.get("created_at")
+        return payload
+    payload.update({
+        "ready": False,
+        "status": "test_required",
+        "label": "Test required",
+        "message": f"{channel.replace('_', ' ').title()} needs a successful delivery test before it is marked Ready.",
+    })
+    return payload
+
+
+def channel_readiness(user_id, browser_permission=None, require_recent_test=True):
     user = _user_record(user_id)
     push_subscriptions = _push_subscription_count(user_id)
     vapid_ready = _push_provider_ready()
@@ -211,13 +246,17 @@ def channel_readiness(user_id, browser_permission=None):
     else:
         telegram = _status_payload(True, "ready", "Ready", "Telegram Companion is connected.", "/account/settings")
     email_ready = bool(user.get("email") and os.getenv("BREVO_API_KEY"))
-    return {
+    readiness = {
         "in_app": _status_payload(True, "ready", "Ready", "In-app alerts are always available.", "/notifications"),
         "email": _status_payload(email_ready, "ready" if email_ready else "not_configured", "Ready" if email_ready else "Needs setup", "Email alerts are ready." if email_ready else "Email provider or account email is missing.", "/account/settings"),
         "push": {**push, "subscription_count": push_subscriptions, "vapid_configured": vapid_ready},
         "sms": {**sms, "provider_configured": sms_ready, "phone_configured": bool(phone), "phone_verified": bool(user.get("phone_verified")), "sms_opt_in": bool(int(user.get("sms_opt_in") or 0))},
         "telegram": {**telegram, "bot_configured": telegram_token_ready, "connected": bool(user.get("telegram_chat_id"))},
     }
+    if require_recent_test:
+        for channel in ("email", "push", "sms", "telegram"):
+            readiness[channel] = _require_recent_test(readiness[channel], user_id, channel)
+    return readiness
 
 
 def validate_requested_channels(user_id, channels, browser_permission=None):
@@ -556,6 +595,26 @@ def _delivery_status_from_result(result):
 def _log_delivery(user_id, channel, status, provider="", provider_response="", error_message="", notification_id=None, alert_rule_id=None, alert_event_id=None):
     conn = user_context.connect()
     cur = conn.cursor()
+    if alert_rule_id:
+        cur.execute(
+            """
+            INSERT INTO alert_delivery_jobs
+            (alert_id, user_id, channel, status, provider, provider_message_id, error_message,
+             attempts, next_retry_at, created_at, sent_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)
+            """,
+            (
+                alert_rule_id,
+                user_id,
+                channel,
+                status,
+                provider,
+                "",
+                str(error_message or "")[:1200],
+                _now(),
+                _now() if status in {"sent", "created", "skipped", "not_configured", "queued"} else None,
+            ),
+        )
     cur.execute(
         """
         INSERT INTO notification_delivery_logs
@@ -747,7 +806,7 @@ def test_delivery_channel(user_id, channel, client_state=None):
     title = f"CoinPilotXAI {channel.title()} alert test"
     body = "This is a setup test for CoinPilotXAI alert delivery."
     metadata = {"url": "/notifications", "test": True, "channel": channel}
-    readiness = channel_readiness(user_id, browser_permission=client_state.get("permission"))
+    readiness = channel_readiness(user_id, browser_permission=client_state.get("permission"), require_recent_test=False)
     user = _user_record(user_id)
     provider = channel
     if channel == "push":

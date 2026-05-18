@@ -75,6 +75,7 @@ from services import (
     retention_analytics,
     roast_battle_engine,
     roast_live_engine,
+    scam_shield_engine,
     scam_shield as scam_shield_service,
     security_guard,
     security_monitor,
@@ -106,7 +107,7 @@ BOT_NAME = "CoinPilotX"
 DB_FILE = "coinpilotx.db"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
-TELEGRAM_REQUIRED_COMMANDS = {"start", "help", "link", "connect", "status", "alerts", "unlink"}
+TELEGRAM_REQUIRED_COMMANDS = {"start", "help", "link", "connect", "connectwebsite", "status", "alerts", "unlink"}
 TELEGRAM_RUNTIME_STATE = {
     "mode": "polling",
     "command_handler_registered": False,
@@ -894,10 +895,10 @@ ADS_LANDING_PAGES = {
         "headline_a": "Scan a suspicious crypto link before you click.",
         "headline_b": "Spot phishing, wallet drainers, and fake giveaways faster.",
         "description": "Use Scam Shield to check URLs, wallet prompts, token claims, and suspicious messages with plain-English safety explanations.",
-        "cta_a": "Scan a Suspicious Crypto Link",
-        "cta_b": "Open Scam Shield",
+        "cta_a": "Open Scam Shield Scanner",
+        "cta_b": "Scan Suspicious Crypto Links",
         "secondary": "Read Scam Lessons",
-        "next": "/scam-shield",
+        "next": "/scam-shield/scan",
         "analytics": "scam_scan_started",
         "accent": "#36e58f",
         "schema_type": "SoftwareApplication",
@@ -963,7 +964,10 @@ def render_ads_landing_page(slug):
     headline = page[f"headline_{variant}"]
     cta = page[f"cta_{variant}"]
     canonical = f"https://coinpilotx.app/{slug}"
-    signup_url = f"/signup?next={quote(page['next'], safe='')}&utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
+    if slug == "crypto-scam-scanner":
+        signup_url = f"{page['next']}?utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
+    else:
+        signup_url = f"/signup?next={quote(page['next'], safe='')}&utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
     secondary_url = page["next"] if slug != "crypto-scam-scanner" else "/learn/crypto-scams"
     schema = {
         "@context": "https://schema.org",
@@ -1144,6 +1148,7 @@ def api_security_report():
 
 @webhook_app.route("/scam-shield", methods=["GET"])
 def scam_shield_page():
+    return redirect("/scam-shield/scan")
     return simple_public_page(
         "scam-shield",
         "Scam Shield Crypto Threat Scanner | CoinPilotXAI",
@@ -1157,6 +1162,39 @@ def scam_shield_page():
         ],
         ["/dashboard/scam-alerts", "/crypto-scams", "/wallet-security", "/safety"],
     )
+
+
+@webhook_app.route("/scam-shield/scan", methods=["GET"])
+def scam_shield_scan_page():
+    user = load_account_by_id(account_user_id())
+    recent_rows = []
+    if user:
+        try:
+            conn = db()
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT id, scan_type, risk_score, risk_level, summary, confidence, created_at
+                FROM scam_shield_scans
+                WHERE user_id=?
+                ORDER BY id DESC
+                LIMIT 8
+                """,
+                (user["user_id"],),
+            )
+            recent_rows = [dict(row) for row in cur.fetchall()]
+            conn.close()
+        except Exception:
+            recent_rows = []
+    recent_html = "".join(
+        f"<div class='history-item'><strong>{clean_html(row.get('risk_level') or 'Low')} · {int(row.get('risk_score') or 0)}/100</strong><span>{clean_html(row.get('scan_type') or 'auto')} · {clean_html(row.get('created_at') or '')}</span><p>{clean_html(row.get('summary') or '')}</p></div>"
+        for row in recent_rows
+    ) or "<p class='muted'>Recent scans will appear here after you run the scanner.</p>"
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suspicious Crypto Link Scanner | CoinPilotXAI</title><meta name="description" content="Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPilotXAI will inspect it for scam risk."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(54,229,143,.18),transparent 28rem),radial-gradient(circle at 90% 6%,rgba(110,223,246,.14),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:24px 0 calc(84px + env(safe-area-inset-bottom))}}a{{color:var(--cyan)}}.hero{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:16px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}h1{{font-size:clamp(34px,7vw,64px);line-height:.98;margin:12px 0}}p,.muted{{color:var(--muted)}}textarea,select{{width:100%;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}textarea{{min-height:190px;resize:vertical}}select{{min-height:46px}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}}button,.button{{min-height:48px;border:1px solid var(--line);border-radius:10px;padding:11px 15px;font-weight:950;cursor:pointer;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.5;cursor:not-allowed}}.result{{display:none;margin-top:16px}}.result.show{{display:block}}.score{{font-size:clamp(38px,8vw,72px);font-weight:950}}.badge{{display:inline-flex;border-radius:999px;padding:7px 11px;border:1px solid var(--line);font-weight:950}}.badge.Low{{border-color:rgba(54,229,143,.4);color:#c8ffe2}}.badge.Medium{{border-color:rgba(255,209,102,.45);color:#ffe6a6}}.badge.High,.badge.Critical{{border-color:rgba(255,107,122,.5);color:#ffd6dc}}.warning{{border:1px solid rgba(255,107,122,.38);background:rgba(255,107,122,.1);border-radius:12px;padding:12px;color:#ffd6dc}}ul{{padding-left:20px}}li{{margin:7px 0}}.history{{display:grid;gap:10px}}.history-item{{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);padding:12px}}.history-item span{{display:block;color:var(--muted);font-size:13px}}.toast{{min-height:22px;color:#ffe6a6;margin-top:8px}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.actions{{display:grid;grid-template-columns:1fr}}.card{{padding:14px}}textarea{{min-height:170px}}}}</style></head><body><main class="wrap"><a href="/dashboard">Back to Dashboard</a><section class="hero"><article class="card"><div class="muted">Scam Shield</div><h1>Suspicious Crypto Link Scanner</h1><p>Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPilotXAI will inspect it for scam risk.</p><form id="scanForm"><label>Scan type<select name="scan_type"><option value="auto">Auto Detect</option><option value="crypto_link">Crypto Link</option><option value="wallet_address">Wallet Address</option><option value="token_contract">Token Contract</option><option value="telegram_dm">Telegram/DM Message</option><option value="email_text">Email/Text</option><option value="website_url">Website URL</option></select></label><label>Paste suspicious content<textarea name="input" placeholder="Paste suspicious link, message, wallet address, token contract, or email text..."></textarea></label><div class="actions"><button class="primary" id="scanBtn" type="submit" disabled>Scan Now</button><button type="button" id="clearBtn">Clear</button><button type="button" id="copyBtn" disabled>Copy Report</button></div><div class="toast" id="scanMsg"></div></form><section class="result card" id="resultPanel" aria-live="polite"></section></article><aside class="card"><h2>Recent Scan History</h2><p class="muted">History never exposes your full pasted content here. Only risk summaries and timestamps are shown.</p><div class="history" id="historyPanel">{recent_html}</div></aside></section></main><script>const form=document.getElementById('scanForm'),input=form.elements.input,btn=document.getElementById('scanBtn'),msg=document.getElementById('scanMsg'),panel=document.getElementById('resultPanel'),copyBtn=document.getElementById('copyBtn'),historyPanel=document.getElementById('historyPanel');let lastReport='';function esc(s){{return String(s||'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]))}}function setReady(){{btn.disabled=!input.value.trim();}}input.addEventListener('input',setReady);document.getElementById('clearBtn').addEventListener('click',()=>{{input.value='';panel.classList.remove('show');panel.innerHTML='';msg.textContent='';copyBtn.disabled=true;lastReport='';setReady();}});copyBtn.addEventListener('click',async()=>{{if(!lastReport)return;try{{await navigator.clipboard.writeText(lastReport);msg.textContent='Report copied.'}}catch(e){{msg.textContent='Copy failed. Select the report text manually.'}}}});function render(data){{const flags=(data.red_flags||[]).map(x=>`<li>${{esc(x)}}</li>`).join('')||'<li>No obvious high-risk pattern detected. Still verify independently.</li>';const actions=(data.safe_actions||[]).map(x=>`<li>${{esc(x)}}</li>`).join('');const warn=['High','Critical'].includes(data.risk_level)?'<p class="warning">Do not connect your wallet, sign approvals, share seed phrases, or send funds until independently verified.</p>':'';panel.innerHTML=`<h2>Scan Result</h2><span class="badge ${{esc(data.risk_level)}}">${{esc(data.risk_level)}} Risk</span><div class="score">${{Number(data.risk_score||0)}}/100</div>${{warn}}<p><strong>Summary:</strong> ${{esc(data.summary)}}</p><p><strong>Why it matters:</strong> ${{esc(data.why_it_matters)}}</p><h3>Red flags</h3><ul>${{flags}}</ul><h3>Safe next steps</h3><ul>${{actions}}</ul><p class="muted">Confidence: ${{Number(data.confidence||0).toFixed(2)}} · Source: ${{esc(data.source||data.source_status||'Local rules + AI review')}} · ${{new Date().toLocaleString()}}</p>`;panel.classList.add('show');lastReport=panel.innerText;copyBtn.disabled=false;historyPanel.insertAdjacentHTML('afterbegin',`<div class="history-item"><strong>${{esc(data.risk_level)}} · ${{Number(data.risk_score||0)}}/100</strong><span>${{esc(data.scan_type||'auto')}} · just now</span><p>${{esc(data.summary)}}</p></div>`);}}form.addEventListener('submit',async e=>{{e.preventDefault();const text=input.value.trim();if(!text){{msg.textContent='Paste a suspicious crypto link, wallet address, token contract, or message to scan.';return;}}btn.disabled=true;btn.textContent='Scanning...';msg.textContent='Inspecting scam patterns...';try{{const r=await fetch('/api/scam-shield/scan',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{input:text,scan_type:form.elements.scan_type.value}})}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Scan failed.');render(data);msg.textContent='Scan complete.';if(window.coinPilotXTrack)window.coinPilotXTrack('scam_shield_scan',{{risk_level:data.risk_level,scan_type:data.scan_type}})}}catch(err){{msg.textContent=err.message||'Could not scan right now.'}}finally{{btn.textContent='Scan Now';setReady();}}}});setReady();</script></body></html>"""
+    response = Response(html)
+    response.headers["Cache-Control"] = "private, no-store, max-age=0" if user else "public, max-age=120"
+    return response
 
 
 @webhook_app.route("/privacy", methods=["GET"])
@@ -1189,7 +1227,7 @@ def about_page():
         ("Educational Disclaimer", "CoinPilotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
     ]
     cards = "".join(f"<article class='card'><h2>{clean_html(title)}</h2><p>{clean_html(text)}</p></article>" for title, text in sections)
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://coinpilotx.app/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://coinpilotx.app/about"><meta property="og:image" content="https://coinpilotx.app/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPilotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPilotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://coinpilotx.app/about"><meta property="og:title" content="About CoinPilotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://coinpilotx.app/about"><meta property="og:image" content="https://coinpilotx.app/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPilotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPilotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
 
 
 @webhook_app.route("/search", methods=["GET"])
@@ -1413,7 +1451,7 @@ def education_scam_alerts_page():
             ("Safety Checklist", "Verify domains manually, avoid shortened links, refuse seed phrase requests, and run suspicious text through Scam Shield."),
         ],
         "scam-alert-checklist",
-        cta="<a class='edu-cta' href='/scam-shield'>Run Scam Shield</a>",
+        cta="<a class='edu-cta' href='/scam-shield/scan'>Run Scam Shield</a>",
     )
 
 
@@ -1906,11 +1944,9 @@ def log_visitor_request():
         ip_hash = client_ip_hash()
         user_agent = (request.headers.get("User-Agent") or "")[:500]
         referrer = (request.headers.get("Referer") or "")[:500]
-        ua_lower = user_agent.lower()
-        device_type = "mobile" if any(token in ua_lower for token in ("mobile", "iphone", "android")) else "tablet" if "ipad" in ua_lower or "tablet" in ua_lower else "desktop"
-        browser = "Chrome" if "chrome" in ua_lower and "edg" not in ua_lower else "Safari" if "safari" in ua_lower and "chrome" not in ua_lower else "Firefox" if "firefox" in ua_lower else "Edge" if "edg" in ua_lower else "Other"
-        os_name = "iOS" if "iphone" in ua_lower or "ipad" in ua_lower else "Android" if "android" in ua_lower else "macOS" if "mac os" in ua_lower or "macintosh" in ua_lower else "Windows" if "windows" in ua_lower else "Linux" if "linux" in ua_lower else "Other"
+        device_type, browser, os_name, _is_bot = visitor_user_agent_meta(user_agent)
         path = request.path[:500]
+        upsert_visitor_session(path)
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -3582,6 +3618,63 @@ def get_utm_payload(payload):
     )
 
 
+def visitor_user_agent_meta(user_agent):
+    ua_lower = (user_agent or "").lower()
+    device_type = "mobile" if any(token in ua_lower for token in ("mobile", "iphone", "android")) else "tablet" if "ipad" in ua_lower or "tablet" in ua_lower else "desktop"
+    browser = "Chrome" if "chrome" in ua_lower and "edg" not in ua_lower else "Safari" if "safari" in ua_lower and "chrome" not in ua_lower else "Firefox" if "firefox" in ua_lower else "Edge" if "edg" in ua_lower else "Other"
+    os_name = "iOS" if "iphone" in ua_lower or "ipad" in ua_lower else "Android" if "android" in ua_lower else "macOS" if "mac os" in ua_lower or "macintosh" in ua_lower else "Windows" if "windows" in ua_lower else "Linux" if "linux" in ua_lower else "Other"
+    is_bot = any(token in ua_lower for token in ("bot", "crawl", "spider", "slurp", "uptime", "monitor", "healthcheck", "headless", "preview", "facebookexternalhit", "twitterbot"))
+    return device_type, browser, os_name, is_bot
+
+
+def upsert_visitor_session(path=None, visibility="visible"):
+    visitor_id = session.get("visitor_session_id")
+    if not visitor_id:
+        visitor_id = secrets.token_urlsafe(18)
+        session["visitor_session_id"] = visitor_id
+    now = datetime.now().isoformat()
+    user_agent = (request.headers.get("User-Agent") or "")[:500]
+    device_type, browser, _os_name, is_bot = visitor_user_agent_meta(user_agent)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO visitor_sessions
+        (visitor_id, user_id, session_id, ip_hash, user_agent, device_type, country, region, city,
+         latitude, longitude, current_path, first_seen_at, last_seen_at, is_bot, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
+        ON CONFLICT(visitor_id) DO UPDATE SET
+            user_id=excluded.user_id,
+            session_id=excluded.session_id,
+            ip_hash=excluded.ip_hash,
+            user_agent=excluded.user_agent,
+            device_type=excluded.device_type,
+            current_path=excluded.current_path,
+            last_seen_at=excluded.last_seen_at,
+            is_bot=excluded.is_bot
+        """,
+        (
+            visitor_id,
+            account_user_id() or None,
+            visitor_id,
+            client_ip_hash(),
+            user_agent,
+            device_type,
+            (request.headers.get("CF-IPCountry") or request.headers.get("X-Country") or "")[:80],
+            (request.headers.get("X-Region") or "")[:120],
+            (request.headers.get("X-City") or "")[:120],
+            (path or request.path)[:500],
+            now,
+            now,
+            1 if is_bot or visibility == "bot" else 0,
+            now,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return visitor_id
+
+
 def track_conversion_step(user_id=0, session_id="", event_name="", source_path="", metadata=None):
     try:
         conversion_funnel_engine.track_step(user_id, session_id, event_name, source_path, metadata or {})
@@ -3654,6 +3747,22 @@ def track_event_api():
         return jsonify({"ok": True, "session_id": session_id})
     except Exception as exc:
         logging.info("Analytics track failed: %s", exc)
+        return jsonify({"ok": False}), 200
+
+
+@webhook_app.route("/api/visitor/heartbeat", methods=["POST"])
+def visitor_heartbeat_api():
+    try:
+        init_db()
+        payload = request.get_json(silent=True) or {}
+        path = clean_html(payload.get("path") or request.path)[:500]
+        visibility = clean_html(payload.get("visibility") or "visible")[:40]
+        visitor_id = upsert_visitor_session(path, visibility)
+        response = jsonify({"ok": True, "visitor_id": visitor_id, "active_window_seconds": 60})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+    except Exception as exc:
+        logging.info("Visitor heartbeat failed safely: %s", exc)
         return jsonify({"ok": False}), 200
 
 
@@ -4944,6 +5053,85 @@ def admin_visitors_route():
     return jsonify(payload)
 
 
+@webhook_app.route("/api/admin/visitors/live", methods=["GET"])
+def api_admin_visitors_live():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    init_db()
+    now = datetime.now()
+    active_since = (now - timedelta(seconds=60)).isoformat()
+    since_24h = (now - timedelta(hours=24)).isoformat()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(DISTINCT visitor_id) AS total FROM visitor_sessions WHERE last_seen_at>=? AND COALESCE(is_bot,0)=0", (active_since,))
+    active_now = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(DISTINCT visitor_id) AS total FROM visitor_sessions WHERE last_seen_at>=? AND COALESCE(is_bot,0)=0", (since_24h,))
+    unique_24h = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(DISTINCT user_id) AS total FROM visitor_sessions WHERE last_seen_at>=? AND COALESCE(user_id,0)>0 AND COALESCE(is_bot,0)=0", (since_24h,))
+    logged_in_24h = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(DISTINCT visitor_id) AS total FROM visitor_sessions WHERE last_seen_at>=? AND COALESCE(user_id,0)=0 AND COALESCE(is_bot,0)=0", (since_24h,))
+    anonymous_24h = int(dict(cur.fetchone() or {}).get("total") or 0)
+    def grouped(field, limit=12):
+        field_name = _migration_identifier(field)
+        cur.execute(f"SELECT COALESCE({field_name}, '') AS value, COUNT(DISTINCT visitor_id) AS count FROM visitor_sessions WHERE last_seen_at>=? AND COALESCE(is_bot,0)=0 GROUP BY COALESCE({field_name}, '') ORDER BY count DESC LIMIT {int(limit)}", (since_24h,))
+        return [dict(row) for row in cur.fetchall()]
+    countries = grouped("country")
+    devices = grouped("device_type")
+    cur.execute("SELECT COUNT(DISTINCT visitor_id) AS total FROM visitor_sessions WHERE last_seen_at>=? AND COALESCE(is_bot,0)=1", (since_24h,))
+    bot_traffic = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute(
+        """
+        SELECT visitor_id, user_id, current_path AS path, device_type, country, region, city, last_seen_at AS timestamp
+        FROM visitor_sessions
+        WHERE last_seen_at>=? AND COALESCE(is_bot,0)=0
+        ORDER BY last_seen_at DESC
+        LIMIT 120
+        """,
+        (since_24h,),
+    )
+    visitors = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT current_path AS value, COUNT(DISTINCT visitor_id) AS count
+        FROM visitor_sessions
+        WHERE last_seen_at>=? AND COALESCE(is_bot,0)=0
+        GROUP BY current_path
+        ORDER BY count DESC
+        LIMIT 12
+        """,
+        (since_24h,),
+    )
+    top_pages = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    mobile_24h = next((int(row.get("count") or 0) for row in devices if (row.get("value") or "").lower() == "mobile"), 0)
+    desktop_24h = next((int(row.get("count") or 0) for row in devices if (row.get("value") or "").lower() == "desktop"), 0)
+    payload = {
+        "ok": True,
+        "active_now": active_now,
+        "active_sessions_now": active_now,
+        "unique_24h": unique_24h,
+        "unique_visitors": unique_24h,
+        "logged_in_24h": logged_in_24h,
+        "logged_in_visitors": logged_in_24h,
+        "anonymous_24h": anonymous_24h,
+        "anonymous_visitors": anonymous_24h,
+        "mobile_24h": mobile_24h,
+        "desktop_24h": desktop_24h,
+        "bot_traffic_24h": bot_traffic,
+        "countries": countries,
+        "country": countries,
+        "device_type": devices,
+        "top_pages": top_pages,
+        "recent_visit_stream": visitors,
+        "visitors": visitors,
+        "points": [],
+        "last_updated_at": now.isoformat(),
+    }
+    return jsonify(payload)
+
+
 @webhook_app.route("/admin/visitors", methods=["GET"])
 def admin_visitors_dashboard_page():
     admin, denied = require_admin_page("analytics.view")
@@ -4952,7 +5140,8 @@ def admin_visitors_dashboard_page():
     body = """
     <style>
       .analytics-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;align-items:stretch}
-      .live-map{min-height:320px;border:1px solid var(--line);border-radius:18px;background:radial-gradient(circle at 28% 42%,rgba(54,229,143,.26),transparent 7px),radial-gradient(circle at 55% 36%,rgba(110,223,246,.24),transparent 9px),radial-gradient(circle at 70% 58%,rgba(255,209,102,.22),transparent 8px),linear-gradient(135deg,rgba(110,223,246,.08),rgba(54,229,143,.04));position:relative;overflow:hidden}
+      .live-map{min-height:320px;border:1px solid var(--line);border-radius:18px;background:radial-gradient(circle at 50% 45%,rgba(110,223,246,.16),transparent 12rem),linear-gradient(135deg,rgba(2,7,14,.98),rgba(5,16,30,.94));position:relative;overflow:hidden}
+      .live-map canvas{width:100%;height:360px;display:block}
       .live-map:before{content:"";position:absolute;inset:12%;border:1px solid rgba(255,255,255,.08);border-radius:45% 55% 48% 52%;box-shadow:0 0 70px rgba(110,223,246,.16) inset;animation:mapPulse 5s ease-in-out infinite}
       .analytics-card{position:relative;overflow:hidden}.analytics-card:after{content:"";position:absolute;inset:auto -20% -60% -20%;height:80%;background:radial-gradient(circle,rgba(110,223,246,.18),transparent 65%);pointer-events:none}
       .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0}
@@ -4976,15 +5165,17 @@ def admin_visitors_dashboard_page():
       <div class="card"><h2>Live Activity Stream</h2><div id="activityStream" class="stream"></div></div>
     </section>
     <script>
-      const api = "/api/admin/visitors";
+      const api = "/api/admin/visitors/live";
       const fmt = n => Number(n || 0).toLocaleString();
       const rel = value => { const d = new Date(value || Date.now()); const s = Math.max(1, Math.floor((Date.now()-d.getTime())/1000)); if(s<60)return s+"s ago"; const m=Math.floor(s/60); if(m<60)return m+"m ago"; const h=Math.floor(m/60); if(h<24)return h+"h ago"; return Math.floor(h/24)+"d ago"; };
       const mask = value => String(value || "").replace(/(\\d+\\.\\d+)\\.\\d+\\.\\d+/, "$1.x.x").slice(0, 64);
       function bars(node, rows){ const max=Math.max(...rows.map(r=>r.count||0),1); node.innerHTML=rows.map(r=>`<div class="bar-row"><span>${r.value||"Direct/Unknown"}</span><span class="bar-fill" style="width:${Math.max(4,(r.count||0)/max*100)}%"></span><strong>${fmt(r.count)}</strong></div>`).join("") || "<p class='muted'>No data yet.</p>"; }
-      function stream(node, rows){ node.innerHTML=(rows||[]).slice(0,60).map(v=>`<div class="stream-row"><span class="tag">${v.user_id ? "User" : "Visitor"}</span><span>${mask(v.city||v.country||"Unknown")} opened <strong>${v.path||"/"}</strong><br><small class="muted">${mask(v.browser||v.device_type||"browser")} · ${mask(v.referrer||"direct")}</small></span><time>${rel(v.timestamp)}</time></div>`).join("") || "<p class='muted'>No visits yet.</p>"; }
+      function stream(node, rows){ node.innerHTML=(rows||[]).slice(0,60).map(v=>`<div class="stream-row"><span class="tag">${v.user_id ? "User" : "Visitor"}</span><span>${mask(v.city||v.country||"Unknown")} opened <strong>${v.path||"/"}</strong><br><small class="muted">${mask(v.device_type||"browser")}</small></span><time>${rel(v.timestamp)}</time></div>`).join("") || "<p class='muted'>No visits yet.</p>"; }
       async function loadVisitors(){ const data = await fetch(api,{cache:"no-store",credentials:"same-origin"}).then(r=>r.json()); const c=data.conversion_events||{}; const cards=[
-        ["Active Visitors Now",data.active_sessions_now],["Unique Visitors 24h",data.unique_visitors],["Logged-In Users",data.logged_in_visitors],["Anonymous Visitors",data.anonymous_visitors],["Mobile Users",(data.device_type||[]).find(x=>(x.value||"").toLowerCase()==="mobile")?.count||0],["Desktop Users",(data.device_type||[]).find(x=>(x.value||"").toLowerCase()==="desktop")?.count||0],["Upgrade Clicks",c.upgrade_clicks],["Pro Conversions",c.successful_checkout_returns],["AI Chat Sessions",c.chat_usage],["Command Center Sessions",c.command_center_usage],["Scam Shield Usage",c.scam_scans],["Notification Opt-ins",c.notification_opt_ins]
+        ["Active Visitors Now",data.active_now],["Unique Visitors 24h",data.unique_24h],["Logged-In Users",data.logged_in_24h],["Anonymous Visitors",data.anonymous_24h],["Mobile Users",data.mobile_24h],["Desktop Users",data.desktop_24h],["Bot/Monitor Traffic",data.bot_traffic_24h]
       ]; document.getElementById("summaryCards").innerHTML=cards.map(([label,value])=>`<div class="metric-card"><span class="muted">${label}</span><strong>${fmt(value)}</strong></div>`).join(""); bars(document.getElementById("topPages"),data.top_pages||[]); bars(document.getElementById("devices"),data.device_type||[]); bars(document.getElementById("geoTop"),data.country||[]); bars(document.getElementById("funnel"),Object.entries(c).map(([value,count])=>({value:value.replaceAll("_"," "),count}))); stream(document.getElementById("activityStream"),data.recent_visit_stream||[]); }
+      function initFallbackGlobe(){const box=document.querySelector('.live-map'); if(!box || box.querySelector('canvas')) return; const c=document.createElement('canvas'); box.appendChild(c); const ctx=c.getContext('2d'); function draw(){const w=c.width=box.clientWidth*devicePixelRatio,h=c.height=360*devicePixelRatio, cx=w/2, cy=h/2, r=Math.min(w,h)*.34; ctx.clearRect(0,0,w,h); ctx.fillStyle='#020817'; ctx.fillRect(0,0,w,h); const grad=ctx.createRadialGradient(cx-r*.25,cy-r*.35,r*.1,cx,cy,r); grad.addColorStop(0,'#2bd3ff'); grad.addColorStop(.55,'#0b5790'); grad.addColorStop(1,'#05243f'); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='rgba(110,223,246,.28)'; for(let i=-3;i<=3;i++){ctx.beginPath();ctx.ellipse(cx,cy,r,Math.abs(i)*r/4,0,0,Math.PI*2);ctx.stroke()} ctx.shadowColor='#36e58f'; ctx.shadowBlur=18; ctx.fillStyle='#36e58f'; [[-.35,-.18],[.18,-.25],[.4,.08],[-.08,.28]].forEach(p=>{ctx.beginPath();ctx.arc(cx+p[0]*r,cy+p[1]*r,5*devicePixelRatio,0,Math.PI*2);ctx.fill()}); requestAnimationFrame(draw)} draw();}
+      initFallbackGlobe();
       loadVisitors().catch(()=>{}); setInterval(()=>loadVisitors().catch(()=>{}),15000);
     </script>
     """
@@ -6439,6 +6630,8 @@ def admin_telegram_health_page():
         {"name": "Worker heartbeat", "value": "stale" if stale else "fresh", "detail": heartbeat.get("last_seen_at") or "never"},
         {"name": "Last inbound update", "value": metadata.get("last_inbound_update_at") or TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at") or "", "detail": "Masked in logs"},
         {"name": "Last outbound reply", "value": metadata.get("last_outbound_reply_at") or TELEGRAM_RUNTIME_STATE.get("last_outbound_reply_at") or "", "detail": "Updated after reply_text succeeds"},
+        {"name": "OpenAI key loaded", "value": bool(os.getenv("OPENAI_API_KEY")), "detail": "Normal typed questions use OpenAI fallback"},
+        {"name": "Last OpenAI reply status", "value": metadata.get("last_openai_reply_status") or TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status") or "", "detail": "success/fallback"},
         {"name": "Last error", "value": heartbeat.get("last_error") or TELEGRAM_RUNTIME_STATE.get("last_error") or "", "detail": ""},
         {"name": "Linked Telegram users", "value": linked_count, "detail": ""},
         {"name": "Pending link codes", "value": pending_codes, "detail": ""},
@@ -8297,6 +8490,50 @@ def website_scam_shield_api():
     if not text:
         return jsonify({"ok": False, "response": "Paste a suspicious message, link, or crypto pitch first."}), 400
     return scam_shield_analyze_api()
+
+
+@webhook_app.route("/api/scam-shield/scan", methods=["POST"])
+def scam_shield_scan_api():
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    text = clean_html(payload.get("input") or payload.get("text") or payload.get("message") or payload.get("url") or "").strip()
+    scan_type = clean_html(payload.get("scan_type") or "auto")[:80] or "auto"
+    if not text:
+        return jsonify({"ok": False, "message": scam_shield_engine.EMPTY_MESSAGE}), 400
+    user = load_account_by_id(account_user_id())
+    user_id = user.get("user_id") if user else 0
+    result = scam_shield_engine.analyze(text, scan_type)
+    if result.get("ok"):
+        try:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO scam_shield_scans
+                (user_id, scan_type, input_hash, risk_score, risk_level, summary, red_flags_json,
+                 safe_actions_json, confidence, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    scan_type,
+                    result.get("input_hash"),
+                    int(result.get("risk_score") or 0),
+                    result.get("risk_level") or "Low",
+                    (result.get("summary") or "")[:1200],
+                    json.dumps(result.get("red_flags") or [])[:4000],
+                    json.dumps(result.get("safe_actions") or [])[:4000],
+                    float(result.get("confidence") or 0),
+                    datetime.now().isoformat(),
+                ),
+            )
+            result["scan_id"] = cur.lastrowid
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logging.warning("scam_shield_scans save failed safely: %s", exc)
+    log_product_event(user_id, "scam_shield_scan", {"risk_level": result.get("risk_level"), "scan_type": scan_type})
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 
 @webhook_app.route("/api/scam-shield/analyze", methods=["POST"])
@@ -14455,6 +14692,31 @@ def alert_channel_readiness_api():
     return response
 
 
+@webhook_app.route("/api/alerts/test/<channel>", methods=["POST"])
+def api_alerts_test_channel(channel):
+    init_db()
+    user = api_account_user()
+    if not user:
+        response = jsonify({"ok": False, "message": "Login required."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 401
+    normalized = (channel or "").strip().lower().replace("-", "_")
+    aliases = {"inapp": "in_app", "in_app": "in_app", "email": "email", "push": "push", "sms": "sms", "telegram": "telegram"}
+    normalized = aliases.get(normalized)
+    if not normalized:
+        response = jsonify({"ok": False, "message": "Unsupported alert test channel."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 400
+    payload = request.get_json(silent=True) or {}
+    if normalized == "push" and not payload.get("permission"):
+        payload["permission"] = request.headers.get("X-Push-Permission")
+    result = alert_engine_service.test_delivery_channel(user["user_id"], normalized, payload)
+    log_product_event(user["user_id"], "alert_channel_test_requested", {"channel": normalized, "status": result.get("status"), "ok": result.get("ok")})
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/admin/alerts/run-check", methods=["POST"])
 def admin_alerts_run_check_api():
     admin, denied = require_admin_api("system.view")
@@ -14690,6 +14952,53 @@ def admin_notification_delivery_page():
     )
     body = f"<h1>Notification Delivery</h1><p class='muted'>In-app, email, SMS, push, and optional companion alert attempts.</p><div class='card'><table><tr><th>User</th><th>Channel</th><th>Status</th><th>Error</th><th>Created</th></tr>{table}</table></div>"
     return admin_page_html("Notification Delivery", body, admin)
+
+
+@webhook_app.route("/admin/alert-delivery", methods=["GET"])
+def admin_alert_delivery_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    summary = alert_engine_service.admin_summary()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT status, COUNT(*) AS total FROM alert_delivery_jobs GROUP BY status ORDER BY total DESC")
+    status_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT channel, status, COUNT(*) AS total FROM alert_delivery_jobs GROUP BY channel, status ORDER BY channel, total DESC")
+    channel_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT alert_id, user_id, channel, status, provider, error_message, attempts, created_at, sent_at
+        FROM alert_delivery_jobs
+        ORDER BY created_at DESC, id DESC
+        LIMIT 120
+        """
+    )
+    recent_rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    worker = summary.get("worker") or {}
+    status_table = "".join(f"<tr><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in status_rows)
+    channel_table = "".join(f"<tr><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in channel_rows)
+    recent_table = "".join(
+        f"<tr><td>{clean_html(r.get('created_at') or '')}</td><td>{r.get('user_id') or ''}</td><td>{r.get('alert_id') or ''}</td><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('provider') or '')}</td><td>{clean_html(r.get('error_message') or '')}</td></tr>"
+        for r in recent_rows
+    )
+    body = f"""
+    <h1>Alert Delivery</h1>
+    <p class='muted'>Every triggered alert creates per-channel delivery jobs and provider logs. Ready states should be backed by real tests or delivery success.</p>
+    <div class='grid'>
+      <div class='card'><h2>Worker</h2><p><strong>{'Healthy' if not worker.get('stale') else 'Stale / Offline'}</strong></p><p class='muted'>Last seen: {clean_html(worker.get('last_seen_at') or 'never')}</p><p class='muted'>Last error: {clean_html(worker.get('last_error') or 'none')}</p></div>
+      <div class='card'><h2>Triggered Today</h2><p style='font-size:34px;font-weight:900'>{int(summary.get('triggered_today') or 0)}</p><p class='muted'>Active alerts: {int(summary.get('active_alert_count') or 0)}</p></div>
+    </div>
+    <div class='grid'>
+      <div class='card'><h2>Jobs By Status</h2><table><tr><th>Status</th><th>Total</th></tr>{status_table or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div>
+      <div class='card'><h2>Jobs By Channel</h2><table><tr><th>Channel</th><th>Status</th><th>Total</th></tr>{channel_table or '<tr><td colspan=3>No jobs yet.</td></tr>'}</table></div>
+    </div>
+    <div class='card'><h2>Recent Delivery Jobs</h2><table><tr><th>Created</th><th>User</th><th>Alert</th><th>Channel</th><th>Status</th><th>Provider</th><th>Error</th></tr>{recent_table or '<tr><td colspan=7>No delivery jobs yet.</td></tr>'}</table></div>
+    """
+    return admin_page_html("Alert Delivery", body, admin)
 
 
 @webhook_app.route("/admin/test-notification", methods=["GET", "POST"])
@@ -18477,32 +18786,7 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "ℹ️ CoinPilotX Help\n\n"
-        "/start — open menu\n"
-        "/link CODE — connect your CoinPilotXAI account\n"
-        "/connect CODE — connect your CoinPilotXAI account\n"
-        "/status — check account and Telegram connection\n"
-        "/alerts — show linked alert status\n"
-        "/unlink — disconnect Telegram from your account\n"
-        "/about — about CoinPilotX\n"
-        "/price — BTC price\n"
-        "/price ETH — ETH price\n"
-        "/alerts_on — start alerts\n"
-        "/alerts_off — stop alerts\n"
-        "/track BTC ETH SOL — set watchlist\n"
-        "/watchlist — show watchlist\n"
-        "/addholding BTC 0.02 — manually track holdings\n"
-        "/removeholding BTC 0.01 — remove tracked holdings\n"
-        "/myportfolio — see tracked portfolio\n"
-        "/paper — practice portfolio\n"
-        "/signal BTC BUY 25 — practice trade\n"
-        "/deposit — safe deposit guide\n"
-        "/exchange beginner — exchange guide\n"
-        "/users — user report\n\n"
-        "If you send a regular message, I will either answer naturally or ask before scanning it.",
-        reply_markup=main_menu()
-    )
+    await update.message.reply_text(help_message(), reply_markup=main_menu())
 
 
 async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -18839,6 +19123,7 @@ async def telegram_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
         record_worker_heartbeat("telegram_worker", "reply_sent", metadata={
             "last_inbound_update_at": TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at"),
             "last_outbound_reply_at": TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"],
+            "last_openai_reply_status": TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status"),
             "chat_id_masked": _mask_telegram_id(chat_id),
         })
         return result
@@ -18900,6 +19185,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if intent == "reply" and routed.get("message"):
             await telegram_reply(update, context, routed["message"], reply_markup=account_reply_markup(update.effective_user.id))
+            return
+        if intent == "openai":
+            answer = telegram_text_router.answer_telegram_with_openai(original_text, {"linked_user": linked_user})
+            TELEGRAM_RUNTIME_STATE["last_openai_reply_status"] = "success" if "temporarily unavailable" not in answer.lower() else "fallback"
+            await telegram_reply(update, context, answer, reply_markup=account_reply_markup(update.effective_user.id))
             return
     except Exception as exc:
         logging.exception("Telegram text router failed for user=%s: %s", update.effective_user.id, exc)
@@ -20261,6 +20551,22 @@ def init_db():
         sent_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS alert_delivery_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_id INTEGER,
+        user_id INTEGER,
+        channel TEXT,
+        status TEXT,
+        provider TEXT,
+        provider_message_id TEXT,
+        error_message TEXT,
+        attempts INTEGER DEFAULT 0,
+        next_retry_at TEXT,
+        created_at TEXT,
+        sent_at TEXT
+    )
+    """)
     add_columns_if_missing(cur, "notification_delivery_logs", [
         ("alert_rule_id", "INTEGER"),
         ("alert_event_id", "INTEGER"),
@@ -20921,6 +21227,44 @@ def init_db():
         ("country", "TEXT"),
         ("city", "TEXT"),
     ], conn=conn)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS visitor_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        visitor_id TEXT UNIQUE,
+        user_id INTEGER,
+        session_id TEXT,
+        ip_hash TEXT,
+        user_agent TEXT,
+        device_type TEXT,
+        country TEXT,
+        region TEXT,
+        city TEXT,
+        latitude REAL,
+        longitude REAL,
+        current_path TEXT,
+        first_seen_at TEXT,
+        last_seen_at TEXT,
+        is_bot INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scam_shield_scans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        scan_type TEXT,
+        input_hash TEXT,
+        risk_score INTEGER,
+        risk_level TEXT,
+        summary TEXT,
+        red_flags_json TEXT,
+        safe_actions_json TEXT,
+        confidence REAL,
+        created_at TEXT
+    )
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS checkout_attempts (
@@ -21900,6 +22244,10 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_worker_heartbeats_seen ON worker_heartbeats(worker_name, last_seen_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_events_user_created ON alert_events(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_delivery_user_created ON notification_delivery_logs(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_alert ON alert_delivery_jobs(alert_id)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_user_created ON alert_delivery_jobs(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_status ON alert_delivery_jobs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_next_retry ON alert_delivery_jobs(next_retry_at)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code ON telegram_link_codes(code)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_user_id ON telegram_link_codes(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_status ON telegram_link_codes(status)",
@@ -21958,6 +22306,13 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_conversion_funnel_session ON conversion_funnel_events(session_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_conversion_funnel_name_created ON conversion_funnel_events(funnel_name, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_conversion_funnel_user_created ON conversion_funnel_events(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_scam_shield_scans_user_created ON scam_shield_scans(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_scam_shield_scans_risk ON scam_shield_scans(risk_level, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_visitor_sessions_visitor ON visitor_sessions(visitor_id)",
+        "CREATE INDEX IF NOT EXISTS idx_visitor_sessions_user ON visitor_sessions(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_visitor_sessions_last_seen ON visitor_sessions(last_seen_at)",
+        "CREATE INDEX IF NOT EXISTS idx_visitor_sessions_country ON visitor_sessions(country)",
+        "CREATE INDEX IF NOT EXISTS idx_visitor_sessions_device ON visitor_sessions(device_type)",
     ]
     for statement in index_statements:
         safe_create_index(cur, conn, statement)
@@ -22132,59 +22487,32 @@ def init_db():
 
 def help_message():
     return (
-        "ℹ️ CoinPilotX Help\n"
-        "Powered by CoinPilotXAI Inc.\n\n"
-        "/price BTC — live price and signal\n"
-        "/chart BTC — real BTC/ETH live chart\n"
-        "/analysis BTC — AI-style crypto analysis\n"
-        "/markets — live top market cap board\n"
-        "/topvolume — top crypto assets by 24h volume\n"
-        "/gainers — strongest 24h movers\n"
-        "/losers — weakest 24h movers\n"
-        "/daysignal — CoinPilotX Day Signal readiness check\n"
-        "/signals — auto signal engine summary\n"
-        "/feargreed — market fear/greed read\n"
-        "/whales — latest whale-style activity\n"
-        "/exchange beginner — smarter exchange recommendation\n"
-        "/portfolio_live — real-time portfolio value\n"
-        "/setbalance 1250 — manually override displayed portfolio balance\n"
-        "/clearbalance — return to live holdings balance\n"
-        "/portfolio_advice — portfolio decision intelligence\n"
-        "/whalebtc — BTC whale intelligence\n"
-        "/whalealerts — latest saved whale alerts\n"
-        "/btcstats — Bitcoin network statistics\n"
-        "/network — network health\n"
-        "/fees — miner fee estimates\n"
-        "/mempool — mempool congestion\n"
-        "/checktx TXID — public transaction explorer\n"
-        "/walletinfo ADDRESS — public wallet intelligence\n"
-        "/connectwallet ADDRESS — track a public wallet address\n"
-        "/walletscan ADDRESS — scam-risk wallet scan\n"
-        "/chainintel — blockchain sentiment read\n"
-        "/marketpressure — whale and exchange-flow pressure\n"
-        "/mining — mining and network strength\n"
-        "/difficulty — Bitcoin difficulty read\n"
-        "/networkhealth — chain health summary\n"
-        "/cryptonews — recent crypto news with market read\n"
-        "/marketevents — global event impact on BTC/ETH\n"
-        "/wisdom — daily risk-management wisdom\n"
-        "/scamstories — recent scam examples and prevention\n"
-        "/countrynews Haiti — country crypto intelligence\n"
-        "/sportsedge — live sports edge board\n"
-        "/livegames — live game list and risk labels\n"
-        "/gameedge GAME_ID — deeper game intelligence\n"
-        "/subscribe — website Pro upgrade link\n"
-        "/setemail you@example.com — save email for payment confirmations\n"
-        "/myemail — show the email saved for confirmations\n"
-        "/link CODE — link the optional Telegram companion to your website account\n"
-        "/connect CODE — same as /link CODE\n"
-        "/portfolio — website dashboard portfolio summary\n"
-        "/watchlist — website dashboard watchlist\n"
-        "/alerts — website dashboard alerts\n"
-        "/account — account and subscription status\n"
-        "/admin — admin dashboard summary\n\n"
-        "Portfolio: /addholding BTC 0.02, /setbalance 1250, /portfolio_advice\n"
-        "Alerts: /alerts_on, /alerts_off, /track BTC ETH SOL"
+        "CONNECT YOUR WEBSITE ACCOUNT:\n"
+        "1. Open CoinPilotXAI website\n"
+        "2. Go to Account -> Telegram Companion\n"
+        "3. Generate link code\n"
+        "4. Send this in Telegram:\n"
+        "/link YOUR_CODE\n\n"
+        "Also works: /connect YOUR_CODE\n\n"
+        "Account:\n"
+        "- /connectwebsite\n"
+        "- /link CODE\n"
+        "- /status\n"
+        "- /unlink\n\n"
+        "Market:\n"
+        "- /price BTC\n"
+        "- /analysis BTC\n"
+        "- /markets\n"
+        "- /feargreed\n\n"
+        "Alerts:\n"
+        "- /alerts\n"
+        "- /signals\n"
+        "- /track BTC ETH SOL\n\n"
+        "Scam Shield:\n"
+        "- /walletscan ADDRESS\n"
+        "- Paste any suspicious link or message and I’ll scan it.\n\n"
+        "AI Chat:\n"
+        "- You can ask me anything in normal language."
     )
 
 
@@ -24623,6 +24951,18 @@ async def help_account_command(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+async def connectwebsite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "To connect Telegram to your CoinPilotXAI account:\n"
+        "1. Open coinpilotx.app\n"
+        "2. Go to Account -> Telegram Companion\n"
+        "3. Generate your code\n"
+        "4. Send /link YOUR_CODE here.\n\n"
+        "Website: https://coinpilotx.app/account",
+        reply_markup=account_reply_markup(update.effective_user.id),
+    )
+
+
 def linked_account_or_message(telegram_user_id):
     user = get_linked_website_account(telegram_user_id)
     if user:
@@ -26173,6 +26513,7 @@ def build_telegram_application(token=None):
         "status": status_command,
         "unlink": unlink_command,
         "help_account": help_account_command,
+        "connectwebsite": connectwebsite_command,
         "admin": admin_command,
         "cryptonews": cryptonews_command,
         "marketevents": marketevents_command,

@@ -296,6 +296,37 @@
     window.addEventListener("beforeunload", sendTimeOnPage);
   }
 
+  function setupVisitorHeartbeat() {
+    if (!window.fetch) {
+      return;
+    }
+    var lastSent = 0;
+    function sendHeartbeat(force) {
+      var now = Date.now();
+      if (!force && document.visibilityState !== "visible") {
+        return;
+      }
+      if (!force && now - lastSent < 20000) {
+        return;
+      }
+      lastSent = now;
+      fetch("/api/visitor/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        keepalive: true,
+        body: JSON.stringify({ path: window.location.pathname, visibility: document.visibilityState })
+      }).catch(function () {});
+    }
+    sendHeartbeat(true);
+    window.setInterval(function () { sendHeartbeat(false); }, 25000);
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") {
+        sendHeartbeat(true);
+      }
+    });
+  }
+
   function setupLeadForms() {
     document.querySelectorAll("[data-lead-form]").forEach(function (form) {
       form.addEventListener("submit", async function (event) {
@@ -1135,6 +1166,7 @@
       setupSportsEdge();
       setupLeadForms();
       setupScrollAndTimeTracking();
+      setupVisitorHeartbeat();
     });
   } else {
     setupReveal();
@@ -1146,5 +1178,6 @@
     setupSportsEdge();
     setupLeadForms();
     setupScrollAndTimeTracking();
+    setupVisitorHeartbeat();
   }
 })();
