@@ -312,7 +312,8 @@ def submit_message(user_id, match_id, message, target_user_id=None, target_type=
         "balance_delta_sender": sender_delta,
         "balance_delta_target": target_delta,
         "impact_label": weight.get("impact_label"),
-        "target_user_id": target_id,
+        "target_player_id": (target or {}).get("public_player_id") or "",
+        "target_call_sign": target_name,
         "participants": state.get("participants") or [],
         "commentator_line": _commentator_line(sender_name, weight.get("impact_label"), sender_delta, target_delta, target_name),
     }

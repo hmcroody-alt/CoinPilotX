@@ -29,7 +29,8 @@ def broadcast_roast_message(result):
         "impact_label": result.get("impact_label"),
         "balance_delta_sender": result.get("balance_delta_sender") or 0,
         "balance_delta_target": result.get("balance_delta_target") or 0,
-        "target_user_id": result.get("target_user_id"),
+        "target_player_id": result.get("target_player_id") or "",
+        "target_call_sign": result.get("target_call_sign") or "",
         "participants": result.get("participants") or [],
     }
     payload["emotional_phase"] = realtime_sync_engine.emotional_phase((payload.get("line_weight") or {}).get("weight"), 0, "roast_message")
@@ -50,7 +51,7 @@ def record_reaction(user_id, match_id, emoji):
     conn.commit()
     conn.close()
     payload = {
-        "reaction": {"id": int(reaction_id), "match_id": int(match_id), "user_id": int(user_id), "emoji": emoji},
+        "reaction": {"id": int(reaction_id), "match_id": int(match_id), "emoji": emoji},
         "crowd_delta": 3,
         "commentator_line": "Chat is lighting up. The room felt that reaction.",
     }

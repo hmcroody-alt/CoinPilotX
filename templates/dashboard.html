@@ -38,6 +38,13 @@
     .arena-cta-card { position:relative; overflow:hidden; border-color:rgba(54,229,143,.42); background:radial-gradient(circle at 12% 8%,rgba(54,229,143,.22),transparent 15rem),radial-gradient(circle at 92% 0,rgba(110,223,246,.20),transparent 18rem),linear-gradient(160deg,rgba(17,29,50,.96),rgba(5,11,20,.9)); box-shadow:0 24px 80px rgba(0,0,0,.32),0 0 42px rgba(54,229,143,.14); animation:arenaPortalPulse 7s ease-in-out infinite; }
     .arena-cta-card::before { content:""; position:absolute; inset:-60% -30%; opacity:.36; background:linear-gradient(110deg,transparent 28%,rgba(255,255,255,.18),transparent 45%); transform:translateX(-40%) rotate(8deg); animation:arenaLightSweep 5.8s ease-in-out infinite; pointer-events:none; }
     .arena-cta-card > * { position:relative; z-index:1; }
+    .roast-dashboard-card { position:relative; overflow:hidden; border-color:rgba(255,90,102,.48); background:radial-gradient(circle at 12% 0,rgba(255,90,102,.22),transparent 15rem),radial-gradient(circle at 90% 10%,rgba(255,209,102,.18),transparent 18rem),linear-gradient(160deg,rgba(17,29,50,.97),rgba(5,11,20,.92)); box-shadow:0 24px 82px rgba(0,0,0,.34),0 0 44px rgba(255,90,102,.16); animation:roastPulse 6.8s ease-in-out infinite; }
+    .roast-dashboard-card::before { content:""; position:absolute; inset:-60% -30%; opacity:.34; background:linear-gradient(112deg,transparent 28%,rgba(255,255,255,.2),transparent 46%); transform:translateX(-45%) rotate(10deg); animation:arenaLightSweep 5.4s ease-in-out infinite; pointer-events:none; }
+    .roast-dashboard-card > * { position:relative; z-index:1; }
+    .roast-live-badge { border-color:rgba(255,90,102,.42); color:#ffe2e6; background:rgba(255,90,102,.14); animation:roastBadgePulse 1.8s ease-in-out infinite; }
+    .roast-live-badge::before { background:#ff5a66; box-shadow:0 0 14px rgba(255,90,102,.85); }
+    .roast-emoji-row { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; font-size:22px; }
+    .roast-emoji-row span { display:inline-grid; place-items:center; width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.09); box-shadow:0 0 18px rgba(255,209,102,.08); }
     .arena-live-badge { display:inline-flex; align-items:center; gap:7px; width:max-content; border:1px solid rgba(54,229,143,.38); border-radius:999px; padding:5px 9px; color:#c8ffe2; background:rgba(54,229,143,.12); font-size:12px; font-weight:950; letter-spacing:.04em; }
     .arena-live-badge::before { content:""; width:8px; height:8px; border-radius:999px; background:var(--green); box-shadow:0 0 14px rgba(54,229,143,.85); }
     .arena-preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:10px 0 14px; }
@@ -65,6 +72,8 @@
     @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
     @keyframes arenaPortalPulse { 0%,100%{box-shadow:0 24px 80px rgba(0,0,0,.32),0 0 32px rgba(54,229,143,.12)} 50%{box-shadow:0 26px 86px rgba(0,0,0,.34),0 0 48px rgba(110,223,246,.18)} }
     @keyframes arenaLightSweep { 0%,55%,100%{transform:translateX(-48%) rotate(8deg)} 72%{transform:translateX(58%) rotate(8deg)} }
+    @keyframes roastPulse { 0%,100%{box-shadow:0 24px 82px rgba(0,0,0,.34),0 0 32px rgba(255,90,102,.12)} 50%{box-shadow:0 28px 88px rgba(0,0,0,.36),0 0 52px rgba(255,209,102,.18)} }
+    @keyframes roastBadgePulse { 0%,100%{transform:scale(1);box-shadow:0 0 0 rgba(255,90,102,0)} 50%{transform:scale(1.04);box-shadow:0 0 24px rgba(255,90,102,.22)} }
     main { padding:34px 0 64px; }
     .hero { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:18px; align-items:stretch; margin-bottom:18px; }
     .hero > .card:first-child { grid-column:1 / -1; }
@@ -196,6 +205,22 @@
           <a class="button" href="/arena/leaderboard">View Leaderboard</a>
         </div>
       </article>
+      <article class="card roast-dashboard-card" data-priority-card="roast-battle">
+        <span class="arena-live-badge roast-live-badge">LIVE WORLD STAGE</span>
+        <div class="kicker">Roast Battle</div>
+        <h2>Roast Battle Arena</h2>
+        <p>Step onto the global stage. Drop clever lines, win crowd heat, and climb the leaderboard.</p>
+        <div class="roast-emoji-row" aria-hidden="true"><span>🔥</span><span>😂</span><span>👑</span><span>⚡</span><span>🧠</span></div>
+        <div class="arena-preview-grid">
+          <span>Stage Balance: $1,000,000</span>
+          <span>Top call sign: Cyber Flame</span>
+        </div>
+        <p class="muted">Virtual-dollar scoring for entertainment only. No real-money value.</p>
+        <div class="private-chat-actions">
+          <a class="button primary command-glow command-glow-risk" href="/arena/roast-battle">Enter Roast Battle</a>
+          <a class="button" href="/arena/roast-battle/room/1">Watch Live</a>
+        </div>
+      </article>
       <article class="card wide" data-priority-card="start-here">
         <div class="kicker">Start Here</div>
         <h2>Your Core Loop</h2>
@@ -211,8 +236,13 @@
           <label><input type="radio" name="auto_signal_mode" value="balanced" checked> Balanced</label>
           <label><input type="radio" name="auto_signal_mode" value="aggressive"> Aggressive</label>
         </div>
-        <button class="button primary command-glow command-glow-market" type="button" data-auto-signals>Activate Auto Signals</button>
+        <div class="private-chat-actions">
+          <button class="button primary command-glow command-glow-market" type="button" data-auto-signals>Activate Auto Signals</button>
+          <button class="button" type="button" data-auto-signals-stop hidden>Stop Auto Signals</button>
+          <a class="button" href="/alerts">View Alerts</a>
+        </div>
         <p class="muted" data-auto-signals-result>Ready to monitor major market moves.</p>
+        <p class="muted" data-auto-signals-meta>Monitoring status will appear here.</p>
         <div class="list" data-auto-signals-alerts></div>
       </article>
       <article class="card" data-priority-card="market">
@@ -700,6 +730,7 @@
     async function activateAutoSignals() {
       const button = qs("[data-auto-signals]");
       const result = qs("[data-auto-signals-result]");
+      const stopButton = qs("[data-auto-signals-stop]");
       const mode = qs("input[name='auto_signal_mode']:checked")?.value || "balanced";
       if (button) {
         button.disabled = true;
@@ -716,7 +747,7 @@
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not activate.");
         const alerts = Array.isArray(data.alerts) ? data.alerts : (Array.isArray(data.created) ? data.created : []);
-        if (result) result.textContent = `Auto Signals activated. CoinPilotXAI is now monitoring your market alerts. ${alerts.length} alert rules created.`;
+        if (result) result.textContent = data.message || `Auto Signals activated. CoinPilotXAI is now monitoring your market alerts. ${alerts.length} signal rules active.`;
         setHTML("[data-auto-signals-alerts]", alerts.map(item => `
           <div class="alert-row">
             <strong>${escapeHtml(item.symbol || "Signal")}</strong>
@@ -726,6 +757,8 @@
           button.dataset.active = "true";
           button.textContent = "Auto Signals Active";
         }
+        if (stopButton) stopButton.hidden = false;
+        await loadAutoSignalsStatus();
         await loadDashboard().catch(() => {});
       } catch (err) {
         if (result) result.textContent = "Auto Signals could not activate right now. Please try again.";
@@ -734,6 +767,49 @@
         if (button) {
           button.disabled = false;
           if (button.dataset.active !== "true") button.textContent = "Activate Auto Signals";
+        }
+      }
+    }
+
+    async function loadAutoSignalsStatus() {
+      try {
+        const data = await fetch("/api/auto-signals/status", { cache: "no-store", credentials: "same-origin" }).then(r => r.json());
+        if (!data.ok) return;
+        const button = qs("[data-auto-signals]");
+        const stopButton = qs("[data-auto-signals-stop]");
+        const modeInput = qs(`input[name='auto_signal_mode'][value='${data.mode || "balanced"}']`);
+        if (modeInput) modeInput.checked = true;
+        if (button) {
+          button.dataset.active = data.enabled ? "true" : "false";
+          button.textContent = data.enabled ? "Auto Signals Active" : "Activate Auto Signals";
+        }
+        if (stopButton) stopButton.hidden = !data.enabled;
+        text("[data-auto-signals-result]", data.enabled ? "Monitoring nonstop until you stop it." : "Ready to monitor major market moves.");
+        const checked = data.last_checked_at ? friendlyTime(data.last_checked_at) : "not checked yet";
+        text("[data-auto-signals-meta]", data.enabled ? `Mode: ${data.mode}. Active signal rules: ${data.active_alerts_count || 0}. Last checked: ${checked}.` : "Choose a sensitivity and activate hands-free monitoring.");
+      } catch (error) {}
+    }
+
+    async function stopAutoSignals() {
+      const button = qs("[data-auto-signals-stop]");
+      const result = qs("[data-auto-signals-result]");
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Stopping...";
+      }
+      try {
+        const response = await fetch("/api/auto-signals/stop", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: "{}" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not stop.");
+        if (result) result.textContent = data.message || "Auto Signals stopped.";
+        setHTML("[data-auto-signals-alerts]", '<p class="muted">Auto Signals history remains available in Alerts.</p>');
+        await loadAutoSignalsStatus();
+      } catch (error) {
+        if (result) result.textContent = "Auto Signals could not stop right now. Please try again.";
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Stop Auto Signals";
         }
       }
     }
@@ -911,6 +987,8 @@
       if (scrollButton) document.querySelector(scrollButton.dataset.scroll)?.scrollIntoView({ behavior: "smooth", block: "start" });
       const autoSignals = event.target.closest("[data-auto-signals]");
       if (autoSignals) await activateAutoSignals();
+      const autoSignalsStop = event.target.closest("[data-auto-signals-stop]");
+      if (autoSignalsStop) await stopAutoSignals();
       const coreStep = event.target.closest("[data-core-step]");
       if (coreStep) {
         fetch("/api/onboarding/step", { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ step_key: coreStep.dataset.coreStep }) }).catch(() => {});
@@ -941,6 +1019,7 @@
     });
 
     loadDashboardPreferences();
+    loadAutoSignalsStatus();
     loadDashboard().then(loadAccountStatus).then(loadRetentionPanels).then(loadLiveOps).catch(err => { text("[data-ai-insight]", err.message); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); });
     window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); }, 60000);
     loadChatConversations().catch(function () {});

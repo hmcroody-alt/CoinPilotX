@@ -54,6 +54,7 @@ from services import (
     arena_share_service,
     arena_victory_engine,
     arena_world_engine,
+    auto_signals_service,
     chat_realtime_service,
     crowd_energy_engine,
     realtime_sync_engine,
@@ -74,6 +75,9 @@ from services import (
     roast_battle_engine,
     roast_live_engine,
     scam_shield as scam_shield_service,
+    security_guard,
+    security_monitor,
+    seo_engine,
     sms_service,
     sports_data as sports_data_service,
     user_context as user_context_service,
@@ -1614,7 +1618,7 @@ def add_pwa_headers(response):
         response.headers["Cache-Control"] = "no-store, max-age=0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -1710,6 +1714,30 @@ def basic_abuse_guard():
         return Response("Too many attempts. Please wait a few minutes and try again.", status=429)
     bucket.append(now)
     RATE_LIMIT_BUCKETS[key] = bucket
+    return None
+
+
+@webhook_app.before_request
+def interactive_security_guard():
+    limit = security_guard.request_limit_for(request.path or "", request.method)
+    if limit:
+        max_hits, window_seconds = limit
+        key = f"{client_ip_hash()}:{request.path}"
+        if security_guard.rate_limited(key, max_hits, window_seconds):
+            security_monitor.record("interactive_rate_limit", "medium", account_user_id() or 0, client_ip_hash(), request.path, {"limit": max_hits, "window_seconds": window_seconds})
+            return jsonify({"ok": False, "message": "Slow down for a moment, then try again."}), 429
+    if request.method in {"POST", "PUT", "PATCH"} and request.content_length and request.content_length > 30 * 1024 * 1024:
+        security_monitor.record("oversized_request_blocked", "high", account_user_id() or 0, client_ip_hash(), request.path, {"content_length": request.content_length})
+        return jsonify({"ok": False, "message": "That upload or request is too large."}), 413
+    if request.mimetype == "application/json":
+        raw = request.get_data(cache=True, as_text=True)[:6000]
+        if security_guard.suspicious_text(raw):
+            security_monitor.record("xss_payload_blocked", "high", account_user_id() or 0, client_ip_hash(), request.path, {"sample": raw[:180]})
+            return jsonify({"ok": False, "message": "That content contains unsafe markup."}), 400
+    for upload in request.files.values():
+        if not security_guard.file_extension_allowed(upload.filename):
+            security_monitor.record("unsafe_upload_extension_blocked", "high", account_user_id() or 0, client_ip_hash(), request.path, {"filename": upload.filename})
+            return jsonify({"ok": False, "message": "That file type is not allowed."}), 400
     return None
 
 
@@ -6284,6 +6312,19 @@ def admin_alerts_page():
     if denied:
         return denied
     summary = alert_engine_service.admin_summary()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS total FROM users WHERE COALESCE(auto_signals_enabled, 0)=1")
+    auto_active = dict(cur.fetchone() or {}).get("total", 0)
+    cur.execute("SELECT COUNT(*) AS total FROM alert_rules WHERE target LIKE ? AND created_at>=?", ("auto_signal:%", (datetime.utcnow() - timedelta(days=1)).isoformat(timespec="seconds")))
+    auto_created_today = dict(cur.fetchone() or {}).get("total", 0)
+    cur.execute("""
+        SELECT COUNT(*) AS total FROM alert_events e
+        JOIN alert_rules r ON r.id=e.alert_rule_id
+        WHERE r.target LIKE ? AND e.created_at>=?
+    """, ("auto_signal:%", (datetime.utcnow() - timedelta(days=1)).isoformat(timespec="seconds")))
+    auto_triggered_today = dict(cur.fetchone() or {}).get("total", 0)
+    conn.close()
     worker = summary.get("worker") or {}
     heartbeat = worker.get("heartbeat") or {}
     providers = summary.get("providers") or {}
@@ -6299,6 +6340,7 @@ def admin_alerts_page():
       <div class="card"><h2>Active Alerts</h2><div class="metric">{summary.get('active_alert_count', 0)}</div></div>
       <div class="card"><h2>Triggered Today</h2><div class="metric">{summary.get('triggered_today', 0)}</div></div>
       <div class="card"><h2>Worker</h2><div class="metric">{clean_html(worker_status)}</div><p class="muted">Last run: {clean_html(heartbeat.get('last_run_at') or 'never')}</p></div>
+      <div class="card"><h2>Auto Signals Active</h2><div class="metric">{auto_active}</div><p class="muted">Created today: {auto_created_today} · Triggered today: {auto_triggered_today}</p></div>
     </div>
     <div class="card">
       <h2>Manual Check</h2>
@@ -6892,7 +6934,7 @@ def admin_repair_user_pro():
 
 @webhook_app.route("/robots.txt", methods=["GET"])
 def robots_txt():
-    return send_from_directory(webhook_app.static_folder, "robots.txt", mimetype="text/plain")
+    return Response(seo_engine.robots_txt(), mimetype="text/plain")
 
 
 @webhook_app.route("/llms.txt", methods=["GET"])
@@ -6940,6 +6982,58 @@ def sitemap_xml():
         body.append("  </url>")
     body.append("</urlset>")
     return Response("\n".join(body), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-pages.xml", methods=["GET"])
+def sitemap_pages_xml():
+    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS))
+    return Response(seo_engine.sitemap_xml(paths), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-live.xml", methods=["GET"])
+def sitemap_live_xml():
+    paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard", "/momentum"]
+    return Response(seo_engine.sitemap_xml(paths, changefreq="hourly"), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-replays.xml", methods=["GET"])
+def sitemap_replays_xml():
+    paths = ["/arena/highlights", "/arena/momentum"]
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT replay_token FROM arena_replays WHERE replay_token IS NOT NULL ORDER BY id DESC LIMIT 200")
+        for row in cur.fetchall():
+            token = (dict(row).get("replay_token") if hasattr(row, "keys") else row[0])
+            if token:
+                paths.append(f"/arena/replay/{token}")
+        conn.close()
+    except Exception:
+        logging.info("Replay sitemap fell back to static highlight paths.")
+    return Response(seo_engine.sitemap_xml(paths, changefreq="daily"), mimetype="application/xml")
+
+
+@webhook_app.route("/learn/<slug>", methods=["GET"])
+def public_learn_page(slug):
+    safe_slug = re.sub(r"[^a-z0-9-]", "", (slug or "").lower())[:120]
+    path = f"/learn/{safe_slug}"
+    if path not in seo_engine.PUBLIC_LEARN_PATHS:
+        return Response("Learning page not found.", status=404)
+    title = safe_slug.replace("-", " ").title()
+    meta = seo_engine.page_meta(path)
+    topics = {
+        "crypto-scams": ["Phishing links", "Wallet drainers", "Fake giveaways", "Impersonation"],
+        "crypto-trading-simulator": ["Simulated decisions", "Risk sizing", "Discipline", "Replay learning"],
+        "how-to-detect-phishing": ["Domain checks", "Approval warnings", "Seed phrase safety", "Urgency traps"],
+        "market-psychology": ["FOMO", "Panic selling", "Patience", "Decision journals"],
+        "crypto-risk-management": ["Position sizing", "Drawdown control", "Alert cooldowns", "Scenario planning"],
+        "roast-battle-rules": ["Call signs", "Clean intensity", "Virtual-dollar scoring", "Crowd heat"],
+        "arena-ranking-system": ["XP", "Ranks", "Badges", "Streaks"],
+    }.get(safe_slug, ["Safety", "Education", "Practice", "Review"])
+    cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPilotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
+    schema_json = json.dumps(seo_engine.json_ld(path))
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPilotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPilotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
+    return Response(html)
 
 
 @webhook_app.route("/manifest.json", methods=["GET"])
@@ -13997,49 +14091,53 @@ def api_auto_signals_activate():
     mode = clean_html(payload.get("mode") or "balanced").lower()
     if mode not in {"conservative", "balanced", "aggressive"}:
         mode = "balanced"
-    sensitivity = {"conservative": 0.06, "balanced": 0.04, "aggressive": 0.025}[mode]
-    readiness = alert_engine_service.channel_readiness(user["user_id"], browser_permission=payload.get("push_permission") or request.headers.get("X-Push-Permission"))
-    channels = {
-        "in_app": True,
-        "email": bool((readiness.get("email") or {}).get("ready")),
-        "push": bool((readiness.get("push") or {}).get("ready")),
-        "sms": False,
-        "telegram": bool((readiness.get("telegram") or {}).get("ready")),
-    }
-    created, skipped = [], []
-    for symbol in ("BTC", "ETH", "SOL"):
-        quote = live_market_service.get_crypto_quote(symbol)
-        asset = quote.get("asset") if quote.get("ok") else {}
-        price = asset.get("price") or asset.get("current_price") or asset.get("usd")
-        if not price:
-            skipped.append({"symbol": symbol, "reason": "live price unavailable"})
-            continue
-        price = float(price)
-        for condition, threshold in (("above", price * (1 + sensitivity)), ("below", price * (1 - sensitivity))):
-            result = alert_engine_service.create_alert_rule(
-                user["user_id"],
-                alert_type="coin_price",
-                symbol=symbol,
-                condition=condition,
-                threshold=round(threshold, 2),
-                channels=channels,
-                target=f"{symbol} auto {mode}",
-                cooldown_seconds={"conservative": 1800, "balanced": 900, "aggressive": 600}[mode],
-            )
-            if result.get("ok"):
-                created.append({"symbol": symbol, "condition": condition, "threshold": round(threshold, 2), "alert_id": result.get("alert_id")})
-            else:
-                skipped.append({"symbol": symbol, "reason": result.get("message")})
-    log_product_event(user["user_id"], "auto_signals_activated", {"mode": mode, "created": len(created), "skipped": skipped})
-    return jsonify({
-        "ok": bool(created),
-        "mode": mode,
-        "created": created,
-        "alerts": created,
-        "skipped": skipped,
-        "channels": channels,
-        "message": f"Auto Signals activated in {mode.title()} mode." if created else "Auto Signals could not activate because live prices were unavailable.",
-    }), (200 if created else 503)
+    result = auto_signals_service.activate(
+        user["user_id"],
+        mode,
+        browser_permission=payload.get("push_permission") or request.headers.get("X-Push-Permission"),
+    )
+    log_product_event(user["user_id"], "auto_signals_activated", {"mode": mode, "created": len(result.get("created") or []), "maintained": len(result.get("maintained") or []), "skipped": result.get("skipped") or []})
+    status = auto_signals_service.status(user["user_id"])
+    response = jsonify({**result, "status": status})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, (200 if result.get("ok") else 503)
+
+
+@webhook_app.route("/api/auto-signals/status", methods=["GET"])
+def api_auto_signals_status():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    response = jsonify(auto_signals_service.status(user["user_id"]))
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/auto-signals/stop", methods=["POST"])
+def api_auto_signals_stop():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = auto_signals_service.stop(user["user_id"])
+    log_product_event(user["user_id"], "auto_signals_stopped", {})
+    response = jsonify({**result, "status": auto_signals_service.status(user["user_id"])})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@webhook_app.route("/api/auto-signals/pause", methods=["POST"])
+def api_auto_signals_pause():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    result = auto_signals_service.pause(user["user_id"])
+    log_product_event(user["user_id"], "auto_signals_paused", {})
+    response = jsonify({**result, "status": auto_signals_service.status(user["user_id"])})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @webhook_app.route("/api/alerts/channel-readiness", methods=["GET"])
@@ -18887,6 +18985,12 @@ def init_db():
         ("roast_call_sign", "TEXT"),
         ("roast_call_sign_slug", "TEXT"),
         ("roast_call_sign_updated_at", "TEXT"),
+        ("auto_signals_enabled", "INTEGER DEFAULT 0"),
+        ("auto_signals_mode", "TEXT DEFAULT 'balanced'"),
+        ("auto_signals_started_at", "TEXT"),
+        ("auto_signals_last_checked_at", "TEXT"),
+        ("auto_signals_paused_at", "TEXT"),
+        ("auto_signals_stopped_at", "TEXT"),
         ("deleted_at", "TEXT"),
         ("restricted_reason", "TEXT"),
         ("suspended_reason", "TEXT"),

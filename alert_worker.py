@@ -14,7 +14,7 @@ import os
 import signal
 import time
 
-from services import alert_engine
+from services import alert_engine, auto_signals_service
 
 
 RUNNING = True
@@ -41,9 +41,12 @@ def main():
     signal.signal(signal.SIGINT, _handle_stop)
     while RUNNING:
         try:
+            auto_result = auto_signals_service.process_enabled_users(limit=200)
             result = alert_engine.evaluate_all_active_alerts(limit=limit, worker_name="alert_worker")
             logging.info(
-                "Alert worker cycle checked=%s triggered=%s errors=%s latency_ms=%s",
+                "Alert worker cycle auto_users=%s auto_rules=%s checked=%s triggered=%s errors=%s latency_ms=%s",
+                auto_result.get("checked_users"),
+                auto_result.get("maintained_rules"),
                 result.get("checked_count"),
                 result.get("triggered_count"),
                 result.get("error_count"),
