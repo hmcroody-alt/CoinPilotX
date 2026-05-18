@@ -105,6 +105,15 @@ BOT_NAME = "CoinPilotX"
 DB_FILE = "coinpilotx.db"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+TELEGRAM_REQUIRED_COMMANDS = {"start", "help", "link", "connect", "status", "alerts", "unlink"}
+TELEGRAM_RUNTIME_STATE = {
+    "mode": "polling",
+    "command_handler_registered": False,
+    "text_handler_registered": False,
+    "last_inbound_update_at": "",
+    "last_outbound_reply_at": "",
+    "last_error": "",
+}
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
@@ -6234,6 +6243,137 @@ def admin_telegram_page():
     return admin_page_html("Telegram", body, admin)
 
 
+def telegram_getme_status():
+    token_loaded = telegram_token_configured()
+    if not token_loaded:
+        return {"ok": False, "message": "Telegram bot token is missing or invalid.", "token_loaded": False}
+    try:
+        response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe", timeout=8)
+        payload = response.json() if response.content else {}
+        return {"ok": bool(payload.get("ok")), "token_loaded": True, "provider_response": payload, "status_code": response.status_code}
+    except Exception as exc:
+        return {"ok": False, "token_loaded": True, "message": str(exc)}
+
+
+@webhook_app.route("/admin/telegram-health", methods=["GET"])
+def admin_telegram_health_page():
+    admin, denied = require_admin_page("telegram.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS total FROM users WHERE telegram_user_id IS NOT NULL OR telegram_chat_id IS NOT NULL")
+    linked_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(*) AS total FROM telegram_link_codes WHERE COALESCE(status, 'pending')='pending' AND expires_at>?", (datetime.utcnow().isoformat(timespec="seconds"),))
+    pending_codes = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name='telegram_worker' LIMIT 1")
+    heartbeat = dict(cur.fetchone() or {})
+    conn.close()
+    metadata = {}
+    try:
+        metadata = json.loads(heartbeat.get("metadata_json") or "{}")
+    except Exception:
+        metadata = {}
+    stale = True
+    if heartbeat.get("last_seen_at"):
+        try:
+            stale = datetime.utcnow() - datetime.fromisoformat(heartbeat.get("last_seen_at")) > timedelta(minutes=3)
+        except Exception:
+            stale = True
+    rows = [
+        {"name": "Bot token loaded", "value": bool(BOT_TOKEN), "detail": "TELEGRAM_BOT_TOKEN or BOT_TOKEN"},
+        {"name": "Worker mode", "value": metadata.get("mode") or TELEGRAM_RUNTIME_STATE.get("mode") or "polling", "detail": "Polling worker should run python telegram_worker.py"},
+        {"name": "Worker heartbeat", "value": "stale" if stale else "fresh", "detail": heartbeat.get("last_seen_at") or "never"},
+        {"name": "Last inbound update", "value": metadata.get("last_inbound_update_at") or TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at") or "", "detail": "Masked in logs"},
+        {"name": "Last outbound reply", "value": metadata.get("last_outbound_reply_at") or TELEGRAM_RUNTIME_STATE.get("last_outbound_reply_at") or "", "detail": "Updated after reply_text succeeds"},
+        {"name": "Last error", "value": heartbeat.get("last_error") or TELEGRAM_RUNTIME_STATE.get("last_error") or "", "detail": ""},
+        {"name": "Linked Telegram users", "value": linked_count, "detail": ""},
+        {"name": "Pending link codes", "value": pending_codes, "detail": ""},
+        {"name": "Command handlers registered", "value": bool(metadata.get("command_handler_registered", TELEGRAM_RUNTIME_STATE.get("command_handler_registered"))), "detail": ", ".join(sorted(TELEGRAM_REQUIRED_COMMANDS))},
+        {"name": "Text handler registered", "value": bool(metadata.get("text_handler_registered", TELEGRAM_RUNTIME_STATE.get("text_handler_registered"))), "detail": "filters.TEXT & ~filters.COMMAND"},
+    ]
+    body = f"""
+    <h1>Telegram Health</h1>
+    <p class="muted">Production readiness for the polling worker, account linking commands, typed-question routing, and bot identity.</p>
+    <div class="card">
+      <button class="button" id="checkBotIdentity">Check Bot Identity</button>
+      <label class="muted">Linked website user ID for safe test message</label>
+      <input id="telegramTestUserId" placeholder="User ID with Telegram connected">
+      <button class="button" id="sendTelegramTest" type="button">Send Test Telegram Message</button>
+      <pre id="telegramHealthResult"></pre>
+    </div>
+    <div class="card">{admin_rows_table(rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div>
+    <script>
+    document.getElementById('checkBotIdentity').addEventListener('click', async () => {{
+      const out = document.getElementById('telegramHealthResult');
+      out.textContent = 'Checking Telegram getMe...';
+      const r = await fetch('/api/admin/telegram-health/getme', {{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:'{{}}'}});
+      const d = await r.json();
+      out.textContent = JSON.stringify(d, null, 2);
+    }});
+    document.getElementById('sendTelegramTest').addEventListener('click', async () => {{
+      const out = document.getElementById('telegramHealthResult');
+      const userId = document.getElementById('telegramTestUserId').value.trim();
+      out.textContent = 'Sending safe Telegram test...';
+      const r = await fetch('/api/admin/telegram-health/send-test', {{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{user_id:userId}})}});
+      const d = await r.json();
+      out.textContent = JSON.stringify(d, null, 2);
+    }});
+    </script>
+    """
+    return admin_page_html("Telegram Health", body, admin)
+
+
+@webhook_app.route("/api/admin/telegram-health/getme", methods=["POST"])
+def api_admin_telegram_getme():
+    admin, denied = require_admin_page("telegram.view")
+    if denied:
+        return jsonify({"ok": False, "message": "Admin access required."}), 403
+    result = telegram_getme_status()
+    log_admin_audit(admin.get("id"), "telegram_getme_check", "telegram", "getMe", {"ok": result.get("ok")})
+    return jsonify(result), (200 if result.get("ok") else 503)
+
+
+@webhook_app.route("/api/admin/telegram-health/send-test", methods=["POST"])
+def api_admin_telegram_send_test():
+    admin, denied = require_admin_page("telegram.view")
+    if denied:
+        return jsonify({"ok": False, "message": "Admin access required."}), 403
+    payload = request.get_json(silent=True) or {}
+    try:
+        target_user_id = int(payload.get("user_id") or 0)
+    except Exception:
+        target_user_id = 0
+    if not target_user_id:
+        return jsonify({"ok": False, "message": "Enter a linked website user ID."}), 400
+    user = load_account_by_id(target_user_id)
+    if not user or not user.get("telegram_chat_id"):
+        return jsonify({"ok": False, "message": "That user does not have Telegram connected."}), 404
+    if not telegram_token_configured():
+        return jsonify({"ok": False, "message": "Telegram token is not configured."}), 503
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": user.get("telegram_chat_id"),
+                "text": "CoinPilotXAI Telegram health check: your bot connection is working.",
+                "disable_web_page_preview": True,
+            },
+            timeout=10,
+        )
+        data = response.json() if response.content else {}
+        ok = bool(data.get("ok"))
+        log_admin_audit(admin.get("id"), "telegram_send_test", "user", str(target_user_id), {"ok": ok})
+        if ok:
+            record_worker_heartbeat("telegram_worker", "manual_test_sent", metadata={"target_user_id": target_user_id, "chat_id_masked": _mask_telegram_id(user.get("telegram_chat_id"))})
+        return jsonify({"ok": ok, "status_code": response.status_code, "provider_response": data}), (200 if ok else 502)
+    except Exception as exc:
+        log_admin_audit(admin.get("id"), "telegram_send_test_failed", "user", str(target_user_id), {"error": str(exc)[:300]})
+        return jsonify({"ok": False, "message": str(exc)}), 502
+
+
 @webhook_app.route("/admin/ai-usage", methods=["GET"])
 def admin_ai_usage_page():
     admin, denied = require_admin_page("ai.view")
@@ -7032,7 +7172,7 @@ def public_learn_page(slug):
     }.get(safe_slug, ["Safety", "Education", "Practice", "Review"])
     cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPilotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
     schema_json = json.dumps(seo_engine.json_ld(path))
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPilotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPilotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPilotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><meta property="og:url" content="{clean_html(meta['canonical'])}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(title)} | CoinPilotXAI"><meta name="twitter:description" content="{clean_html(meta['description'])}"><meta name="twitter:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPilotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
     return Response(html)
 
 
@@ -18530,9 +18670,29 @@ async def hourly_market_update(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=msg)
 
 
+async def telegram_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, **kwargs):
+    chat_id = update.effective_chat.id if update.effective_chat else ""
+    try:
+        result = await update.message.reply_text(text, **kwargs)
+        TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        logging.info("TELEGRAM_OUTBOUND chat=%s status=sent", _mask_telegram_id(chat_id))
+        record_worker_heartbeat("telegram_worker", "reply_sent", metadata={
+            "last_inbound_update_at": TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at"),
+            "last_outbound_reply_at": TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"],
+            "chat_id_masked": _mask_telegram_id(chat_id),
+        })
+        return result
+    except Exception as exc:
+        TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+        logging.exception("TELEGRAM_OUTBOUND chat=%s status=failed error=%s", _mask_telegram_id(chat_id), exc)
+        record_worker_heartbeat("telegram_worker", "reply_error", str(exc), {"chat_id_masked": _mask_telegram_id(chat_id)})
+        raise
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
-    logging.info("TELEGRAM_COMMAND_RECEIVED command=text_message telegram_user_id=%s", update.effective_user.id)
+    chat_id_for_log = update.effective_chat.id if update.effective_chat else update.effective_user.id
+    logging.info("TELEGRAM_COMMAND_RECEIVED command=text_message telegram_user_id=%s chat=%s", update.effective_user.id, _mask_telegram_id(chat_id_for_log))
 
     original_text = update.message.text.strip()
     text = original_text.lower()
@@ -18559,7 +18719,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if intent == "create_alert":
             if not linked_user:
-                await update.message.reply_text(
+                await telegram_reply(update, context,
                     "To create account alerts from Telegram, generate a code from CoinPilotXAI Account Settings and send /link CODE.",
                     reply_markup=account_reply_markup(update.effective_user.id),
                 )
@@ -18573,17 +18733,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 threshold=spec.get("threshold"),
                 channels={"in_app": True, "email": True, "telegram": True, "push": False, "sms": False},
             )
-            await update.message.reply_text(
+            await telegram_reply(update, context,
                 (f"Alert created: {spec.get('symbol')} {spec.get('condition')} {spec.get('threshold'):g}.\n\nManage it: https://coinpilotx.app/alerts" if result.get("ok") else result.get("message", "Could not create that alert right now.")),
                 reply_markup=account_reply_markup(update.effective_user.id),
             )
             return
         if intent == "reply" and routed.get("message"):
-            await update.message.reply_text(routed["message"], reply_markup=account_reply_markup(update.effective_user.id))
+            await telegram_reply(update, context, routed["message"], reply_markup=account_reply_markup(update.effective_user.id))
             return
     except Exception as exc:
         logging.exception("Telegram text router failed for user=%s: %s", update.effective_user.id, exc)
-        await update.message.reply_text(
+        await telegram_reply(update, context,
             "I hit a temporary issue answering that. Try /help, /alerts, or ask again in a moment.",
             reply_markup=account_reply_markup(update.effective_user.id),
         )
@@ -18594,7 +18754,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # =========================
     if any(x in text for x in ["http", "www", ".com", "airdrop", "claim", "wallet"]):
         context.user_data["pending_scan"] = text
-        await update.message.reply_text(
+        await telegram_reply(update, context,
             "⚠️ This looks like a crypto-related message.\n\nDo you want me to scan it?",
             reply_markup=scan_confirm_menu()
         )
@@ -18604,10 +18764,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # NORMAL CONVERSATION
     # =========================
     if is_conversation_message(text):
-        await update.message.reply_text(openai_chat_completion(update.effective_user.id, original_text), reply_markup=main_menu())
+        await telegram_reply(update, context, openai_chat_completion(update.effective_user.id, original_text), reply_markup=main_menu())
         return
 
-    await update.message.reply_text(openai_chat_completion(update.effective_user.id, original_text), reply_markup=main_menu())
+    await telegram_reply(update, context, openai_chat_completion(update.effective_user.id, original_text), reply_markup=main_menu())
 
 async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_user(update.effective_user)
@@ -20095,6 +20255,15 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS worker_heartbeats (
+        worker_name TEXT PRIMARY KEY,
+        status TEXT,
+        last_seen_at TEXT,
+        last_error TEXT,
+        metadata_json TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS daily_briefs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -21556,6 +21725,7 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_status ON alert_rules(status)",
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_symbol_status ON alert_rules(symbol, status)",
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_last_checked ON alert_rules(last_checked_at)",
+        "CREATE INDEX IF NOT EXISTS idx_worker_heartbeats_seen ON worker_heartbeats(worker_name, last_seen_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_events_user_created ON alert_events(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_delivery_user_created ON notification_delivery_logs(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code ON telegram_link_codes(code)",
@@ -25663,6 +25833,193 @@ def telegram_token_configured():
     return True
 
 
+def _mask_telegram_id(value):
+    text = str(value or "")
+    if len(text) <= 4:
+        return "****" if text else ""
+    return f"{text[:2]}***{text[-2:]}"
+
+
+def record_worker_heartbeat(worker_name, status="healthy", last_error="", metadata=None):
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO worker_heartbeats (worker_name, status, last_seen_at, last_error, metadata_json)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(worker_name) DO UPDATE SET
+                status=excluded.status,
+                last_seen_at=excluded.last_seen_at,
+                last_error=excluded.last_error,
+                metadata_json=excluded.metadata_json
+            """,
+            (worker_name, status, datetime.utcnow().isoformat(timespec="seconds"), str(last_error or "")[:1000], json.dumps(metadata or {})),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        logging.exception("Worker heartbeat write failed for %s", worker_name)
+
+
+def get_worker_heartbeat(worker_name):
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name=? LIMIT 1", (worker_name,))
+        row = cur.fetchone()
+        conn.close()
+        return dict(row) if row else {}
+    except Exception:
+        return {}
+
+
+async def telegram_runtime_heartbeat(context: ContextTypes.DEFAULT_TYPE):
+    record_worker_heartbeat("telegram_worker", "polling", metadata={
+        "mode": TELEGRAM_RUNTIME_STATE.get("mode"),
+        "command_handler_registered": TELEGRAM_RUNTIME_STATE.get("command_handler_registered"),
+        "text_handler_registered": TELEGRAM_RUNTIME_STATE.get("text_handler_registered"),
+    })
+
+
+async def telegram_activity_probe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id if update.effective_chat else ""
+    username = getattr(update.effective_user, "username", "") if update.effective_user else ""
+    message = update.effective_message
+    message_type = "command" if message and message.text and message.text.strip().startswith("/") else "text" if message and message.text else "other"
+    TELEGRAM_RUNTIME_STATE["last_inbound_update_at"] = datetime.utcnow().isoformat(timespec="seconds")
+    logging.info(
+        "TELEGRAM_INBOUND chat=%s username=%s type=%s handler_probe=received",
+        _mask_telegram_id(chat_id),
+        username or "",
+        message_type,
+    )
+    record_worker_heartbeat("telegram_worker", "inbound", metadata={
+        "last_inbound_update_at": TELEGRAM_RUNTIME_STATE["last_inbound_update_at"],
+        "last_message_type": message_type,
+        "chat_id_masked": _mask_telegram_id(chat_id),
+        "username": username or "",
+    })
+
+
+async def telegram_startup(application):
+    try:
+        info = await application.bot.get_webhook_info()
+        webhook_url = getattr(info, "url", "") or ""
+        if webhook_url:
+            await application.bot.delete_webhook(drop_pending_updates=False)
+            logging.info("TELEGRAM_WEBHOOK_CLEARED before_polling url_present=true")
+        me = await application.bot.get_me()
+        record_worker_heartbeat("telegram_worker", "polling", metadata={
+            "mode": "polling",
+            "bot_username": getattr(me, "username", ""),
+            "webhook_was_set": bool(webhook_url),
+            "command_handler_registered": True,
+            "text_handler_registered": True,
+        })
+    except Exception as exc:
+        TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+        record_worker_heartbeat("telegram_worker", "startup_error", str(exc), {"mode": "polling"})
+        logging.exception("TELEGRAM_STARTUP_HEALTH_FAILED error=%s", exc)
+
+
+def build_telegram_application(token=None):
+    token = token or BOT_TOKEN
+    app = ApplicationBuilder().token(token).post_init(telegram_startup).build()
+    job_queue = app.job_queue
+    if job_queue:
+        job_queue.run_repeating(send_menu_job, interval=10800, first=30)
+        job_queue.run_repeating(telegram_runtime_heartbeat, interval=45, first=5)
+    else:
+        logging.warning("TELEGRAM_JOB_QUEUE_DISABLED reason=missing_job_queue")
+
+    command_handlers = {
+        "start": start,
+        "about": about,
+        "help": help_command,
+        "price": price,
+        "track": track,
+        "watchlist": website_watchlist_command,
+        "portfolio": website_portfolio_command,
+        "alerts": website_alerts_command,
+        "alerts_on": alerts_on,
+        "alerts_off": alerts_off,
+        "addholding": addholding,
+        "removeholding": removeholding,
+        "myportfolio": myportfolio,
+        "paper": paper,
+        "deposit": deposit,
+        "exchange": exchange,
+        "signal": signal,
+        "verify_payment": verify_payment,
+        "analysis": analysis_command,
+        "markets": markets_command,
+        "market": market_command,
+        "btc": btc_command,
+        "topvolume": topvolume_command,
+        "gainers": gainers_command,
+        "losers": losers_command,
+        "daysignal": daysignal_command,
+        "ask": ask_command,
+        "chart": chart_command,
+        "feargreed": feargreed_command,
+        "whales": whales_command,
+        "whalebtc": whalebtc_command,
+        "whalealerts": whalealerts_command,
+        "btcstats": btcstats_command,
+        "network": network_command,
+        "fees": fees_command,
+        "mempool": mempool_command,
+        "checktx": checktx_command,
+        "connectwallet": connectwallet_command,
+        "walletinfo": walletinfo_command,
+        "walletscan": walletscan_command,
+        "scamintel": scamintel_command,
+        "chainintel": chainintel_command,
+        "marketpressure": marketpressure_command,
+        "mining": mining_command,
+        "difficulty": difficulty_command,
+        "networkhealth": networkhealth_command,
+        "signals": signals_command,
+        "portfolio_live": portfolio_live_command,
+        "setbalance": setbalance_command,
+        "clearbalance": clearbalance_command,
+        "portfolio_advice": portfolio_advice_command,
+        "subscribe": subscribe_command,
+        "upgrade": upgrade_command,
+        "chat": chat_command,
+        "setemail": setemail_command,
+        "myemail": myemail_command,
+        "account": account_command,
+        "connect": connect_account_command,
+        "link": connect_account_command,
+        "status": status_command,
+        "unlink": unlink_command,
+        "help_account": help_account_command,
+        "admin": admin_command,
+        "cryptonews": cryptonews_command,
+        "marketevents": marketevents_command,
+        "wisdom": wisdom_command,
+        "scamstories": scamstories_command,
+        "countrynews": countrynews_command,
+        "sportsedge": sportsedge_command,
+        "livegames": livegames_command,
+        "gameedge": gameedge_command,
+    }
+    app.add_handler(MessageHandler(filters.ALL, telegram_activity_probe), group=-1)
+    for command, handler in command_handlers.items():
+        app.add_handler(CommandHandler(command, handler))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.VOICE, voice_assistant))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(telegram_error_handler)
+    registered = set(command_handlers)
+    TELEGRAM_RUNTIME_STATE["command_handler_registered"] = TELEGRAM_REQUIRED_COMMANDS.issubset(registered)
+    TELEGRAM_RUNTIME_STATE["text_handler_registered"] = True
+    return app
+
+
 def keep_web_process_alive_without_telegram():
     logging.warning("Telegram subsystem disabled; Flask web app remains active.")
     while True:
@@ -25675,104 +26032,18 @@ def main():
     print(f"{BOT_NAME} starting...")
 
     if not telegram_token_configured():
+        record_worker_heartbeat("telegram_worker", "disabled", "missing or invalid bot token", {"mode": "polling"})
         keep_web_process_alive_without_telegram()
 
     try:
-        app = ApplicationBuilder().token(BOT_TOKEN).build()
+        app = build_telegram_application(BOT_TOKEN)
     except Exception as exc:
+        TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+        record_worker_heartbeat("telegram_worker", "startup_error", str(exc), {"mode": "polling"})
         logging.warning("TELEGRAM_DISABLED reason=startup_error error=%s", exc)
         keep_web_process_alive_without_telegram()
 
     job_queue = app.job_queue
-
-    # MENU PUSH EVERY 3 HOURS
-    if job_queue:
-        job_queue.run_repeating(
-            send_menu_job,
-            interval=10800,
-            first=30
-        )
-    else:
-        logging.warning("TELEGRAM_JOB_QUEUE_DISABLED reason=missing_job_queue")
-
-    # Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("about", about))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("price", price))
-    app.add_handler(CommandHandler("track", track))
-    app.add_handler(CommandHandler("watchlist", website_watchlist_command))
-    app.add_handler(CommandHandler("portfolio", website_portfolio_command))
-    app.add_handler(CommandHandler("alerts", website_alerts_command))
-    app.add_handler(CommandHandler("alerts_on", alerts_on))
-    app.add_handler(CommandHandler("alerts_off", alerts_off))
-    app.add_handler(CommandHandler("addholding", addholding))
-    app.add_handler(CommandHandler("removeholding", removeholding))
-    app.add_handler(CommandHandler("myportfolio", myportfolio))
-    app.add_handler(CommandHandler("paper", paper))
-    app.add_handler(CommandHandler("deposit", deposit))
-    app.add_handler(CommandHandler("exchange", exchange))
-    app.add_handler(CommandHandler("signal", signal))
-    app.add_handler(CommandHandler("verify_payment", verify_payment))
-    app.add_handler(CommandHandler("analysis", analysis_command))
-    app.add_handler(CommandHandler("markets", markets_command))
-    app.add_handler(CommandHandler("market", market_command))
-    app.add_handler(CommandHandler("btc", btc_command))
-    app.add_handler(CommandHandler("topvolume", topvolume_command))
-    app.add_handler(CommandHandler("gainers", gainers_command))
-    app.add_handler(CommandHandler("losers", losers_command))
-    app.add_handler(CommandHandler("daysignal", daysignal_command))
-    app.add_handler(CommandHandler("ask", ask_command))
-    app.add_handler(CommandHandler("chart", chart_command))
-    app.add_handler(CommandHandler("feargreed", feargreed_command))
-    app.add_handler(CommandHandler("whales", whales_command))
-    app.add_handler(CommandHandler("whalebtc", whalebtc_command))
-    app.add_handler(CommandHandler("whalealerts", whalealerts_command))
-    app.add_handler(CommandHandler("btcstats", btcstats_command))
-    app.add_handler(CommandHandler("network", network_command))
-    app.add_handler(CommandHandler("fees", fees_command))
-    app.add_handler(CommandHandler("mempool", mempool_command))
-    app.add_handler(CommandHandler("checktx", checktx_command))
-    app.add_handler(CommandHandler("connectwallet", connectwallet_command))
-    app.add_handler(CommandHandler("walletinfo", walletinfo_command))
-    app.add_handler(CommandHandler("walletscan", walletscan_command))
-    app.add_handler(CommandHandler("scamintel", scamintel_command))
-    app.add_handler(CommandHandler("chainintel", chainintel_command))
-    app.add_handler(CommandHandler("marketpressure", marketpressure_command))
-    app.add_handler(CommandHandler("mining", mining_command))
-    app.add_handler(CommandHandler("difficulty", difficulty_command))
-    app.add_handler(CommandHandler("networkhealth", networkhealth_command))
-    app.add_handler(CommandHandler("signals", signals_command))
-    app.add_handler(CommandHandler("portfolio_live", portfolio_live_command))
-    app.add_handler(CommandHandler("setbalance", setbalance_command))
-    app.add_handler(CommandHandler("clearbalance", clearbalance_command))
-    app.add_handler(CommandHandler("portfolio_advice", portfolio_advice_command))
-    app.add_handler(CommandHandler("subscribe", subscribe_command))
-    app.add_handler(CommandHandler("upgrade", upgrade_command))
-    app.add_handler(CommandHandler("chat", chat_command))
-    app.add_handler(CommandHandler("setemail", setemail_command))
-    app.add_handler(CommandHandler("myemail", myemail_command))
-    app.add_handler(CommandHandler("account", account_command))
-    app.add_handler(CommandHandler("connect", connect_account_command))
-    app.add_handler(CommandHandler("link", connect_account_command))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("unlink", unlink_command))
-    app.add_handler(CommandHandler("help_account", help_account_command))
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(CommandHandler("cryptonews", cryptonews_command))
-    app.add_handler(CommandHandler("marketevents", marketevents_command))
-    app.add_handler(CommandHandler("wisdom", wisdom_command))
-    app.add_handler(CommandHandler("scamstories", scamstories_command))
-    app.add_handler(CommandHandler("countrynews", countrynews_command))
-    app.add_handler(CommandHandler("sportsedge", sportsedge_command))
-    app.add_handler(CommandHandler("livegames", livegames_command))
-    app.add_handler(CommandHandler("gameedge", gameedge_command))
-
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.VOICE, voice_assistant))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(telegram_error_handler)
-
     if job_queue:
         job_queue.run_repeating(market_signal_job, interval=SIGNAL_CHECK_SECONDS, first=10)
         job_queue.run_repeating(hourly_market_update, interval=HOURLY_UPDATE_SECONDS, first=30)
@@ -25781,8 +26052,12 @@ def main():
         job_queue.run_repeating(trial_maintenance_job, interval=3600, first=120)
 
     try:
-        app.run_polling()
+        logging.info("TELEGRAM_POLLING_START command_handlers=%s text_handler=%s", TELEGRAM_RUNTIME_STATE.get("command_handler_registered"), TELEGRAM_RUNTIME_STATE.get("text_handler_registered"))
+        record_worker_heartbeat("telegram_worker", "polling_starting", metadata={"mode": "polling", "command_handler_registered": TELEGRAM_RUNTIME_STATE.get("command_handler_registered"), "text_handler_registered": TELEGRAM_RUNTIME_STATE.get("text_handler_registered")})
+        app.run_polling(drop_pending_updates=False)
     except Exception as exc:
+        TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+        record_worker_heartbeat("telegram_worker", "polling_error", str(exc), {"mode": "polling"})
         logging.warning("TELEGRAM_DISABLED reason=polling_startup_error error=%s", exc)
         keep_web_process_alive_without_telegram()
 
