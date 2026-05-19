@@ -57,7 +57,13 @@ from services import (
     auto_signals_service,
     chat_realtime_service,
     conversion_funnel_engine,
+    ad_policy_engine,
+    creator_monetization_engine,
     crowd_energy_engine,
+    intelligence_products_engine,
+    marketplace_engine,
+    monetization_engine,
+    privacy_intelligence_engine,
     realtime_sync_engine,
     realtime_service,
     telegram_text_router,
@@ -116,6 +122,12 @@ TELEGRAM_RUNTIME_STATE = {
     "text_handler_registered": False,
     "last_inbound_update_at": "",
     "last_outbound_reply_at": "",
+    "last_successful_reply_at": "",
+    "last_handler": "",
+    "last_handler_latency_ms": "",
+    "last_webhook_status": "",
+    "last_openai_reply_status": "",
+    "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
     "last_error": "",
 }
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
@@ -6616,6 +6628,8 @@ def admin_telegram_health_page():
     pending_codes = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name='telegram_worker' LIMIT 1")
     heartbeat = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM telegram_debug_events ORDER BY id DESC LIMIT 40")
+    debug_events = [dict(row) for row in cur.fetchall()]
     conn.close()
     metadata = {}
     try:
@@ -6634,6 +6648,9 @@ def admin_telegram_health_page():
         {"name": "Worker heartbeat", "value": "stale" if stale else "fresh", "detail": heartbeat.get("last_seen_at") or "never"},
         {"name": "Last inbound update", "value": metadata.get("last_inbound_update_at") or TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at") or "", "detail": "Masked in logs"},
         {"name": "Last outbound reply", "value": metadata.get("last_outbound_reply_at") or TELEGRAM_RUNTIME_STATE.get("last_outbound_reply_at") or "", "detail": "Updated after reply_text succeeds"},
+        {"name": "Last successful reply", "value": metadata.get("last_successful_reply_at") or TELEGRAM_RUNTIME_STATE.get("last_successful_reply_at") or "", "detail": "Silent-bot protection heartbeat"},
+        {"name": "Polling status", "value": "fresh polling" if not stale else "stale or offline", "detail": metadata.get("bot_username") or ""},
+        {"name": "Webhook status", "value": metadata.get("webhook_status") or TELEGRAM_RUNTIME_STATE.get("last_webhook_status") or "unknown", "detail": "Webhook is cleared before polling"},
         {"name": "OpenAI key loaded", "value": bool(os.getenv("OPENAI_API_KEY")), "detail": "Normal typed questions use OpenAI fallback"},
         {"name": "Last OpenAI reply status", "value": metadata.get("last_openai_reply_status") or TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status") or "", "detail": "success/fallback"},
         {"name": "Last error", "value": heartbeat.get("last_error") or TELEGRAM_RUNTIME_STATE.get("last_error") or "", "detail": ""},
@@ -6642,6 +6659,10 @@ def admin_telegram_health_page():
         {"name": "Command handlers registered", "value": bool(metadata.get("command_handler_registered", TELEGRAM_RUNTIME_STATE.get("command_handler_registered"))), "detail": ", ".join(sorted(TELEGRAM_REQUIRED_COMMANDS))},
         {"name": "Text handler registered", "value": bool(metadata.get("text_handler_registered", TELEGRAM_RUNTIME_STATE.get("text_handler_registered"))), "detail": "filters.TEXT & ~filters.COMMAND"},
     ]
+    event_rows = "".join(
+        f"<tr><td>{clean_html(e.get('created_at') or '')}</td><td>{clean_html(e.get('event_type') or '')}</td><td>{clean_html(e.get('telegram_user_id') or '')}</td><td>{clean_html(e.get('username') or '')}</td><td>{clean_html(e.get('handler') or '')}</td><td>{int(e.get('latency_ms') or 0)}</td><td>{clean_html((e.get('message_text') or '')[:160])}</td><td>{clean_html((e.get('exception_text') or '')[:160])}</td></tr>"
+        for e in debug_events
+    )
     body = f"""
     <h1>Telegram Health</h1>
     <p class="muted">Production readiness for the polling worker, account linking commands, typed-question routing, and bot identity.</p>
@@ -6653,6 +6674,7 @@ def admin_telegram_health_page():
       <pre id="telegramHealthResult"></pre>
     </div>
     <div class="card">{admin_rows_table(rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div>
+    <div class="card"><h2>Live Telegram Debug Events</h2><table><tr><th>Time</th><th>Event</th><th>User</th><th>Username</th><th>Handler</th><th>Latency</th><th>Message</th><th>Error</th></tr>{event_rows or '<tr><td colspan="8">No Telegram debug events yet.</td></tr>'}</table></div>
     <script>
     document.getElementById('checkBotIdentity').addEventListener('click', async () => {{
       const out = document.getElementById('telegramHealthResult');
@@ -15234,7 +15256,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     active_feed = clean_html(active_feed or "for_you")
     topic = clean_html(topic or "")
     profile_id = clean_html(profile_id or "")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 88% 8%,rgba(155,92,255,.16),transparent 25rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(86px + env(safe-area-inset-bottom))}}a{{color:inherit}}.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:36px;height:36px;border-radius:10px}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}}.pulse-hero{{display:flex;justify-content:space-between;gap:12px;align-items:center}}h1{{font-size:clamp(34px,7vw,64px);line-height:.95;margin:4px 0}}h2,h3{{margin:.2rem 0}}p,.muted{{color:var(--muted)}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);padding:9px 12px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}button.primary,.button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.55;cursor:not-allowed}}textarea,input,select{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}}textarea{{min-height:96px;resize:vertical}}.tabs,.actions,.reactions{{display:flex;gap:8px;flex-wrap:wrap}}.tabs button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.composer{{display:grid;gap:10px;margin:12px 0}}.composer-tools{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}}.feed{{display:grid;gap:12px;margin-top:12px}}.post{{display:grid;gap:10px}}.author{{display:flex;align-items:center;justify-content:space-between;gap:10px}}.author-main{{display:flex;align-items:center;gap:10px;min-width:0}}.avatar{{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}}.avatar img{{width:100%;height:100%;object-fit:cover}}.author-name{{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08)}}.media-grid{{display:grid;gap:8px}}.media-grid img,.media-grid video{{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}}.tags{{display:flex;gap:6px;flex-wrap:wrap}}.tag{{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}}.reaction-btn.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.42)}}.comment-box{{display:grid;grid-template-columns:1fr auto;gap:8px}}.comments{{display:grid;gap:8px}}.comment{{border-left:3px solid var(--cyan);background:rgba(255,255,255,.035);border-radius:8px;padding:8px}}.side{{position:sticky;top:12px;display:grid;gap:12px}}.intel-list{{display:grid;gap:8px}}.intel-item{{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04)}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.live-dot{{display:inline-flex;align-items:center;gap:7px}}.live-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9);animation:pulse 2s ease-in-out infinite}}@keyframes pulse{{50%{{transform:scale(1.35)}}}}@media(max-width:880px){{.layout{{grid-template-columns:1fr}}.side{{position:static}}.composer-tools{{grid-template-columns:1fr 1fr}}.pulse-hero{{display:grid}}.top{{align-items:flex-start}}.comment-box{{grid-template-columns:1fr}}button,.button{{min-height:46px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap" data-feed="{active_feed}" data-topic="{topic}" data-profile="{profile_id}"><nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions"><a class="button" href="/dashboard">Dashboard</a><a class="button primary" href="/pulse/create">Create</a></div></nav><section class="card pulse-hero"><div><span class="badge live-dot">Global Pulse Feed</span><h1>Pulse Feed</h1><p>Share crypto ideas, Scam Shield warnings, Arena highlights, Roast Battle clips, questions, and creator updates with the CoinPilotXAI community.</p></div><p class="muted">{PULSE_DISCLAIMER}</p></section><section class="layout"><div><section class="card composer" id="composer"><textarea id="postBody" placeholder="What’s happening in crypto today?"></textarea><input id="postTitle" placeholder="Optional title"><select id="postType"><option value="text">Text</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="poll">Poll</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="replay">Replay Card</option></select><input id="postMedia" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-tools"><button type="button" data-type="text">Text</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button><button type="button" data-type="scam_report">Scam Warning</button></div><div class="actions"><button class="primary" id="publishBtn">Publish Pulse</button><button type="button" id="aiBtn">Enhance with AI</button><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted" id="composeMsg">Links are scanned by Scam Shield. Unsafe posts go to review.</p></section><section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button></div></section><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div><aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section></main><div class="toast" id="toast"></div><script>const state={{feed:document.querySelector('main').dataset.feed||'for_you',topic:document.querySelector('main').dataset.topic||'',offset:0,loading:false}};const reactions={{fire:'🔥 Fire',smart:'🧠 Smart',scam_alert:'🚨 Scam Alert',whale:'🐋 Whale',bullish:'📈 Bullish',bearish:'📉 Bearish',funny:'😂 Funny',elite:'👑 Elite',brutal:'💀 Brutal',fast_signal:'⚡ Fast Signal'}};const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));const toast=m=>{{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.message||'Request failed');return d}}function mediaHtml(items){{return (items||[]).map(m=>m.media_type==='video'?`<video src="${{esc(m.media_url)}}" poster="${{esc(m.thumbnail_url||'')}}" muted controls playsinline preload="metadata"></video>`:`<img src="${{esc(m.thumbnail_url||m.media_url)}}" alt="Pulse media" loading="lazy">`).join('')}}function postHtml(p){{const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${{encodeURIComponent(t)}}">#${{esc(t)}}</a>`).join('');const react=Object.entries(reactions).map(([k,label])=>`<button class="reaction-btn ${{p.viewer_reaction===k?'active':''}}" data-react="${{k}}" data-post="${{p.id}}">${{label}} ${{(p.reaction_counts||{{}})[k]||''}}</button>`).join('');return `<article class="card post" data-post-id="${{p.id}}"><div class="author"><div class="author-main"><span class="avatar">${{p.author.avatar_url?`<img src="${{esc(p.author.avatar_url)}}" alt="">`:esc((p.author.display_name||'P').slice(0,1))}}</span><div><div class="author-name">${{esc(p.author.display_name)}}</div><span class="badge">${{esc(p.author.rank||'Rookie')}}</span></div></div><div class="actions"><button data-follow="${{esc(p.author.public_player_id||'')}}">Follow</button><button data-report="post" data-id="${{p.id}}">Report</button></div></div>${{p.title?`<h2>${{esc(p.title)}}</h2>`:''}}<p>${{esc(p.body)}}</p>${{p.media&&p.media.length?`<div class="media-grid">${{mediaHtml(p.media)}}</div>`:''}}<div class="tags">${{tags}}</div><p class="muted">AI summary: ${{esc(p.ai_summary||'Pulse post')}} · Sentiment: ${{esc(p.sentiment)}} · Risk score: ${{Number(p.risk_score||0)}} · <a href="${{p.permalink}}">Open</a></p><div class="reactions">${{react}}</div><div class="comments" data-comments-for="${{p.id}}"></div><form class="comment-box" data-comment-form="${{p.id}}"><input name="body" placeholder="Reply with a comment..."><button>Comment</button></form></article>`}}function renderIntel(intel){{document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';document.getElementById('intel').innerHTML=`<div class="intel-item"><strong>${{esc(intel.community_mood||'Curious')}}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${{Number(intel.posts_today||0)}}</strong><br><span class="muted">Posts today</span></div>`+(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${{encodeURIComponent(t.tag)}}">#${{esc(t.tag)}} · ${{t.count}}</a>`).join('')}}async function load(reset=false){{if(state.loading)return;state.loading=true;if(reset){{state.offset=0;document.getElementById('feed').innerHTML=''}}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{{const d=await api(`/api/pulse/feed?feed=${{encodeURIComponent(state.feed)}}&topic=${{encodeURIComponent(state.topic)}}&offset=${{state.offset}}`);document.getElementById('feed').insertAdjacentHTML('beforeend',(d.posts||[]).map(postHtml).join('')|| (state.offset?'':'<section class="card"><p class="muted">No Pulse posts yet. Start the conversation.</p></section>'));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{{}});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}}catch(e){{toast(e.message)}}finally{{state.loading=false}}}}document.getElementById('tabs').addEventListener('click',e=>{{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',`/pulse/${{state.feed==='for_you'?'':state.feed}}`);load(true)}});document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>document.getElementById('postType').value=b.dataset.type));document.getElementById('aiBtn').addEventListener('click',()=>{{const body=document.getElementById('postBody');if(!body.value.trim()){{body.value='Question for Pulse: ';body.focus();return}}body.value=body.value.trim()+\"\\n\\n#CoinPilotXAI #MarketPsychology\";toast('AI clarity pass added tags.')}});document.getElementById('publishBtn').addEventListener('click',async()=>{{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){{const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const r=await fetch('/api/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Upload failed');mediaIds.push(d.media.id)}}const d=await api('/api/pulse/posts',{{method:'POST',body:JSON.stringify({{body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds}})}});toast(d.message||'Pulse posted.');document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';load(true)}}catch(e){{toast(e.message)}}finally{{btn.disabled=false}}}});document.addEventListener('click',async e=>{{const r=e.target.closest('[data-react]');if(r){{try{{await api(`/api/pulse/posts/${{r.dataset.post}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:r.dataset.react}})}});r.classList.add('active')}}catch(err){{toast(err.message)}}}}const rep=e.target.closest('[data-report]');if(rep){{const reason=prompt('Why are you reporting this?')||'reported';try{{await api('/api/pulse/report',{{method:'POST',body:JSON.stringify({{target_type:rep.dataset.report,target_id:rep.dataset.id,reason}})}});toast('Report sent.')}}catch(err){{toast(err.message)}}}}const f=e.target.closest('[data-follow]');if(f&&f.dataset.follow){{try{{await api('/api/pulse/follow',{{method:'POST',body:JSON.stringify({{public_player_id:f.dataset.follow}})}});toast('Creator followed.')}}catch(err){{toast(err.message)}}}}}});document.addEventListener('submit',async e=>{{const form=e.target.closest('[data-comment-form]');if(!form)return;e.preventDefault();try{{await api(`/api/pulse/posts/${{form.dataset.commentForm}}/comments`,{{method:'POST',body:JSON.stringify({{body:form.body.value}})}});form.body.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}});load(true);setInterval(()=>{{if(!document.hidden&&state.offset===0)load(true)}},45000);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 88% 8%,rgba(155,92,255,.16),transparent 25rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(86px + env(safe-area-inset-bottom))}}a{{color:inherit}}.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:36px;height:36px;border-radius:10px}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}}.pulse-hero{{display:flex;justify-content:space-between;gap:12px;align-items:center}}h1{{font-size:clamp(34px,7vw,64px);line-height:.95;margin:4px 0}}h2,h3{{margin:.2rem 0}}p,.muted{{color:var(--muted)}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);padding:9px 12px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}button.primary,.button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.55;cursor:not-allowed}}textarea,input,select{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}}textarea{{min-height:96px;resize:vertical}}.tabs,.actions,.reactions{{display:flex;gap:8px;flex-wrap:wrap}}.tabs button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.composer{{display:grid;gap:10px;margin:12px 0}}.composer-tools{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}}.feed{{display:grid;gap:12px;margin-top:12px}}.post{{display:grid;gap:10px}}.author{{display:flex;align-items:center;justify-content:space-between;gap:10px}}.author-main{{display:flex;align-items:center;gap:10px;min-width:0}}.avatar{{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}}.avatar img{{width:100%;height:100%;object-fit:cover}}.author-name{{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08)}}.media-grid{{display:grid;gap:8px}}.media-grid img,.media-grid video{{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}}.tags{{display:flex;gap:6px;flex-wrap:wrap}}.tag{{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}}.reaction-btn.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.42)}}.comment-box{{display:grid;grid-template-columns:1fr auto;gap:8px}}.comments{{display:grid;gap:8px}}.comment{{border-left:3px solid var(--cyan);background:rgba(255,255,255,.035);border-radius:8px;padding:8px}}.side{{position:sticky;top:12px;display:grid;gap:12px}}.intel-list{{display:grid;gap:8px}}.intel-item{{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04)}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.live-dot{{display:inline-flex;align-items:center;gap:7px}}.live-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9);animation:pulse 2s ease-in-out infinite}}@keyframes pulse{{50%{{transform:scale(1.35)}}}}@media(max-width:880px){{.layout{{grid-template-columns:1fr}}.side{{position:static}}.composer-tools{{grid-template-columns:1fr 1fr}}.pulse-hero{{display:grid}}.top{{align-items:flex-start}}.comment-box{{grid-template-columns:1fr}}button,.button{{min-height:46px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap" data-feed="{active_feed}" data-topic="{topic}" data-profile="{profile_id}"><nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions"><a class="button" href="/dashboard">Dashboard</a><a class="button primary" href="/pulse/create">Create</a></div></nav><section class="card pulse-hero"><div><span class="badge live-dot">Global Pulse Feed</span><h1>Pulse Feed</h1><p>Share crypto ideas, Scam Shield warnings, Arena highlights, Roast Battle clips, questions, and creator updates with the CoinPilotXAI community.</p></div><p class="muted">{PULSE_DISCLAIMER}</p></section><section class="layout"><div><section class="card composer" id="composer"><textarea id="postBody" placeholder="What’s happening in crypto today?"></textarea><input id="postTitle" placeholder="Optional title"><select id="postType"><option value="text">Text</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="poll">Poll</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="replay">Replay Card</option></select><input id="postMedia" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-tools"><button type="button" data-type="text">Text</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button><button type="button" data-type="scam_report">Scam Warning</button></div><div class="actions"><button class="primary" id="publishBtn">Publish Pulse</button><button type="button" id="aiBtn">Enhance with AI</button><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted" id="composeMsg">Links are scanned by Scam Shield. Unsafe posts go to review.</p></section><section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button></div></section><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div><aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section></main><div class="toast" id="toast"></div><script>const state={{feed:document.querySelector('main').dataset.feed||'for_you',topic:document.querySelector('main').dataset.topic||'',offset:0,loading:false}};const reactions={{fire:'🔥 Fire',smart:'🧠 Smart',scam_alert:'🚨 Scam Alert',whale:'🐋 Whale',bullish:'📈 Bullish',bearish:'📉 Bearish',funny:'😂 Funny',elite:'👑 Elite',brutal:'💀 Brutal',fast_signal:'⚡ Fast Signal'}};const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));const toast=m=>{{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false){{const msg=d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Server error while publishing.');throw new Error(msg)}}return d}}function mediaHtml(items){{return (items||[]).map(m=>m.media_type==='video'?`<video src="${{esc(m.media_url)}}" poster="${{esc(m.thumbnail_url||'')}}" muted controls playsinline preload="metadata"></video>`:`<img src="${{esc(m.thumbnail_url||m.media_url)}}" alt="Pulse media" loading="lazy">`).join('')}}function postHtml(p){{const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${{encodeURIComponent(t)}}">#${{esc(t)}}</a>`).join('');const react=Object.entries(reactions).map(([k,label])=>`<button class="reaction-btn ${{p.viewer_reaction===k?'active':''}}" data-react="${{k}}" data-post="${{p.id}}">${{label}} ${{(p.reaction_counts||{{}})[k]||''}}</button>`).join('');return `<article class="card post" data-post-id="${{p.id}}"><div class="author"><div class="author-main"><span class="avatar">${{p.author.avatar_url?`<img src="${{esc(p.author.avatar_url)}}" alt="">`:esc((p.author.display_name||'P').slice(0,1))}}</span><div><div class="author-name">${{esc(p.author.display_name)}}</div><span class="badge">${{esc(p.author.rank||'Rookie')}}</span></div></div><div class="actions"><button data-follow="${{esc(p.author.public_player_id||'')}}">Follow</button><button data-report="post" data-id="${{p.id}}">Report</button></div></div>${{p.title?`<h2>${{esc(p.title)}}</h2>`:''}}<p>${{esc(p.body)}}</p>${{p.media&&p.media.length?`<div class="media-grid">${{mediaHtml(p.media)}}</div>`:''}}<div class="tags">${{tags}}</div><p class="muted">AI summary: ${{esc(p.ai_summary||'Pulse post')}} · Sentiment: ${{esc(p.sentiment)}} · Risk score: ${{Number(p.risk_score||0)}} · <a href="${{p.permalink}}">Open</a></p><div class="reactions">${{react}}</div><div class="comments" data-comments-for="${{p.id}}"></div><form class="comment-box" data-comment-form="${{p.id}}"><input name="body" placeholder="Reply with a comment..."><button>Comment</button></form></article>`}}function renderIntel(intel){{document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';document.getElementById('intel').innerHTML=`<div class="intel-item"><strong>${{esc(intel.community_mood||'Curious')}}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${{Number(intel.posts_today||0)}}</strong><br><span class="muted">Posts today</span></div>`+(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${{encodeURIComponent(t.tag)}}">#${{esc(t.tag)}} · ${{t.count}}</a>`).join('')}}async function load(reset=false){{if(state.loading)return;state.loading=true;if(reset){{state.offset=0;document.getElementById('feed').innerHTML=''}}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{{const d=await api(`/api/pulse/feed?feed=${{encodeURIComponent(state.feed)}}&topic=${{encodeURIComponent(state.topic)}}&offset=${{state.offset}}`);document.getElementById('feed').insertAdjacentHTML('beforeend',(d.posts||[]).map(postHtml).join('')|| (state.offset?'':'<section class="card"><p class="muted">No Pulse posts yet. Start the conversation.</p></section>'));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{{}});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}}catch(e){{toast(e.message)}}finally{{state.loading=false}}}}document.getElementById('tabs').addEventListener('click',e=>{{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',`/pulse/${{state.feed==='for_you'?'':state.feed}}`);load(true)}});document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>document.getElementById('postType').value=b.dataset.type));document.getElementById('aiBtn').addEventListener('click',()=>{{const body=document.getElementById('postBody');if(!body.value.trim()){{body.value='Question for Pulse: ';body.focus();return}}body.value=body.value.trim()+\"\\n\\n#CoinPilotXAI #MarketPsychology\";toast('AI clarity pass added tags.')}});document.getElementById('publishBtn').addEventListener('click',async()=>{{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){{const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const r=await fetch('/api/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Upload failed');mediaIds.push(d.media.id)}}const d=await api('/api/pulse/posts',{{method:'POST',body:JSON.stringify({{body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds}})}});toast(d.message||'Pulse posted.');if(d.next_url){{window.location.href=d.next_url;return}}document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';load(true)}}catch(e){{toast(e.message)}}finally{{btn.disabled=false}}}});document.addEventListener('click',async e=>{{const r=e.target.closest('[data-react]');if(r){{try{{await api(`/api/pulse/posts/${{r.dataset.post}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:r.dataset.react}})}});r.classList.add('active')}}catch(err){{toast(err.message)}}}}const rep=e.target.closest('[data-report]');if(rep){{const reason=prompt('Why are you reporting this?')||'reported';try{{await api('/api/pulse/report',{{method:'POST',body:JSON.stringify({{target_type:rep.dataset.report,target_id:rep.dataset.id,reason}})}});toast('Report sent.')}}catch(err){{toast(err.message)}}}}const f=e.target.closest('[data-follow]');if(f&&f.dataset.follow){{try{{await api('/api/pulse/follow',{{method:'POST',body:JSON.stringify({{public_player_id:f.dataset.follow}})}});toast('Creator followed.')}}catch(err){{toast(err.message)}}}}}});document.addEventListener('submit',async e=>{{const form=e.target.closest('[data-comment-form]');if(!form)return;e.preventDefault();try{{await api(`/api/pulse/posts/${{form.dataset.commentForm}}/comments`,{{method:'POST',body:JSON.stringify({{body:form.body.value}})}});form.body.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}});load(true);setInterval(()=>{{if(!document.hidden&&state.offset===0)load(true)}},45000);</script></body></html>""")
 
 
 @webhook_app.route("/pulse", methods=["GET"])
@@ -15302,10 +15324,87 @@ def api_pulse_posts():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    payload = request.get_json(silent=True) or {}
-    result = pulse_feed_engine.create_post(user["user_id"], payload.get("body") or "", payload.get("post_type") or "text", payload.get("title") or "", payload.get("tags") or [], payload.get("visibility") or "public", payload.get("media_ids") or [])
-    log_product_event(user["user_id"], "pulse_post_created", {"post_id": result.get("post_id"), "status": result.get("status")})
-    return jsonify(result), (200 if result.get("ok") else 400)
+    post_type = "text"
+    try:
+        if request.content_type and ("multipart/form-data" in request.content_type or "application/x-www-form-urlencoded" in request.content_type):
+            form = request.form
+            post_type = form.get("post_type") or "text"
+            tags_raw = form.get("tags") or ""
+            try:
+                tags = json.loads(tags_raw) if tags_raw.strip().startswith("[") else [x.strip() for x in tags_raw.split(",") if x.strip()]
+            except Exception:
+                tags = []
+            media_ids = []
+            media_ids_raw = form.get("media_ids") or ""
+            if media_ids_raw:
+                try:
+                    parsed = json.loads(media_ids_raw)
+                    media_ids = parsed if isinstance(parsed, list) else []
+                except Exception:
+                    media_ids = [x.strip() for x in media_ids_raw.split(",") if x.strip()]
+            for upload in request.files.getlist("file") + request.files.getlist("files"):
+                result, status = media_service.save_upload(user["user_id"], upload, context_type="pulse", context_id="draft")
+                if not result.get("ok"):
+                    raise ValueError(result.get("message") or "File upload failed.")
+                media_ids.append(result.get("media", {}).get("id"))
+            payload = {
+                "body": form.get("body") or form.get("message") or "",
+                "title": form.get("title") or "",
+                "post_type": post_type,
+                "tags": tags,
+                "visibility": form.get("visibility") or "public",
+                "media_ids": media_ids,
+            }
+        else:
+            payload = request.get_json(silent=True)
+            if payload is None:
+                return jsonify({"ok": False, "message": "Could not read the post request. Please refresh and try again."}), 400
+            post_type = payload.get("post_type") or "text"
+        result = pulse_feed_engine.create_post(
+            user["user_id"],
+            payload.get("body") or "",
+            payload.get("post_type") or "text",
+            payload.get("title") or "",
+            payload.get("tags") or [],
+            payload.get("visibility") or "public",
+            payload.get("media_ids") or [],
+        )
+        status = 200 if result.get("ok") else 400
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_post_attempts (user_id, post_type, status, error_reason, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user["user_id"], post_type, "success" if result.get("ok") else "failed", "" if result.get("ok") else result.get("message", ""), datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        conn.close()
+        log_product_event(user["user_id"], "pulse_post_created", {"post_id": result.get("post_id"), "status": result.get("status"), "ok": result.get("ok")})
+        return jsonify(result), status
+    except ValueError as exc:
+        message = str(exc) or "Server error while publishing."
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_post_attempts (user_id, post_type, status, error_reason, created_at) VALUES (?, ?, 'failed', ?, ?)",
+            (user["user_id"], post_type, message[:500], datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": False, "message": message}), 400
+    except Exception as exc:
+        logging.exception("Pulse post publish failed user_id=%s post_type=%s error=%s", user["user_id"], post_type, exc)
+        try:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO pulse_post_attempts (user_id, post_type, status, error_reason, created_at) VALUES (?, ?, 'failed', ?, ?)",
+                (user["user_id"], post_type, str(exc)[:500], datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "message": "Server error while publishing. Please try again."}), 500
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET"])
@@ -15436,8 +15535,291 @@ def admin_pulse_analytics_page():
     data = pulse_feed_engine.admin_analytics()
     topics = "".join(f"<li>#{clean_html(t.get('tag'))}: {int(t.get('count') or 0)}</li>" for t in data.get("intelligence", {}).get("trending_topics", []))
     moderation = "".join(f"<tr><td>{clean_html(row.get('moderation_status') or '')}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("moderation", []))
-    body = f"<h1>Pulse Analytics</h1><div class='grid'><div class='card'><h2>Posts Today</h2><p style='font-size:34px;font-weight:900'>{data.get('posts_today')}</p></div><div class='card'><h2>Comments Today</h2><p style='font-size:34px;font-weight:900'>{data.get('comments_today')}</p></div><div class='card'><h2>Reactions Today</h2><p style='font-size:34px;font-weight:900'>{data.get('reactions_today')}</p></div><div class='card'><h2>Open Reports</h2><p style='font-size:34px;font-weight:900'>{data.get('reports_open')}</p></div></div><div class='card'><h2>Trending Topics</h2><ul>{topics}</ul></div><div class='card'><h2>Moderation</h2><table><tr><th>Status</th><th>Total</th></tr>{moderation}</table></div>"
+    jobs = "".join(f"<tr><td>{clean_html(row.get('status') or '')}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("jobs", []))
+    attempts = "".join(f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('error_reason') or '')}</td></tr>" for row in data.get("post_attempts", []))
+    body = f"<h1>Pulse Analytics</h1><div class='grid'><div class='card'><h2>Posts Today</h2><p style='font-size:34px;font-weight:900'>{data.get('posts_today')}</p></div><div class='card'><h2>Comments Today</h2><p style='font-size:34px;font-weight:900'>{data.get('comments_today')}</p></div><div class='card'><h2>Reactions Today</h2><p style='font-size:34px;font-weight:900'>{data.get('reactions_today')}</p></div><div class='card'><h2>Open Reports</h2><p style='font-size:34px;font-weight:900'>{data.get('reports_open')}</p></div></div><div class='card'><h2>Trending Topics</h2><ul>{topics}</ul></div><div class='card'><h2>Moderation</h2><table><tr><th>Status</th><th>Total</th></tr>{moderation}</table></div><div class='card'><h2>Pulse Worker Jobs</h2><table><tr><th>Status</th><th>Total</th></tr>{jobs or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Recent Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Error</th></tr>{attempts or '<tr><td colspan=3>No publish failures logged.</td></tr>'}</table></div>"
     return admin_page_html("Pulse Analytics", body, admin)
+
+
+@webhook_app.route("/admin/pulse-worker-health", methods=["GET", "POST"])
+def admin_pulse_worker_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        try:
+            result = pulse_feed_engine.process_pending_jobs(20)
+            message = f"Processed {result.get('processed', 0)} jobs. Failed {result.get('failed', 0)}."
+        except Exception as exc:
+            message = f"Worker retry failed: {exc}"
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name='pulse_worker' LIMIT 1")
+    heartbeat = dict(cur.fetchone() or {})
+    cur.execute("SELECT status, COUNT(*) AS total FROM pulse_jobs GROUP BY status")
+    status_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT job_type, status, COUNT(*) AS total FROM pulse_jobs GROUP BY job_type, status ORDER BY job_type")
+    type_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, job_type, target_id, attempts, error_message, updated_at FROM pulse_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 50")
+    failed = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    status_html = "".join(f"<tr><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in status_rows)
+    type_html = "".join(f"<tr><td>{clean_html(r.get('job_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in type_rows)
+    failed_html = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('job_type') or '')}</td><td>{r.get('target_id')}</td><td>{r.get('attempts')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('updated_at') or '')}</td></tr>" for r in failed)
+    body = f"<h1>Pulse Worker Health</h1><p class='muted'>Railway service: coinpilotx-pulse-worker · Start command: python pulse_worker.py</p><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Jobs by Status</h2><table><tr><th>Status</th><th>Total</th></tr>{status_html or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div></div><div class='card'><h2>Jobs by Type</h2><table><tr><th>Type</th><th>Status</th><th>Total</th></tr>{type_html or '<tr><td colspan=3>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Failed Jobs</h2><form method='post'><button>Process Pending Jobs Now</button></form><table><tr><th>ID</th><th>Type</th><th>Target</th><th>Attempts</th><th>Error</th><th>Updated</th></tr>{failed_html or '<tr><td colspan=6>No failed jobs.</td></tr>'}</table></div>"
+    return admin_page_html("Pulse Worker Health", body, admin)
+
+
+def trust_public_page(title, headline, body_html, cta="/signup"):
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | CoinPilotXAI</title><meta name="description" content="{clean_html(headline)}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://coinpilotx.app{clean_html(request.path)}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="button" href="{clean_html(cta)}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{clean_html(headline)}</h1></section>{body_html}</main></body></html>""")
+
+
+@webhook_app.route("/privacy-center", methods=["GET", "POST"])
+def privacy_center_page():
+    init_db()
+    user = require_account()
+    message = ""
+    if request.method == "POST" and user:
+        prefs = {
+            "analytics_opt_out": 1 if request.form.get("analytics_opt_out") else 0,
+            "personalized_ads_opt_out": 1 if request.form.get("personalized_ads_opt_out") else 0,
+            "public_profile": 1 if request.form.get("public_profile") else 0,
+            "creator_visibility": 1 if request.form.get("creator_visibility") else 0,
+        }
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO privacy_preferences (user_id, analytics_opt_out, personalized_ads_opt_out, public_profile, creator_visibility, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                analytics_opt_out=excluded.analytics_opt_out,
+                personalized_ads_opt_out=excluded.personalized_ads_opt_out,
+                public_profile=excluded.public_profile,
+                creator_visibility=excluded.creator_visibility,
+                updated_at=excluded.updated_at
+            """,
+            (user["user_id"], prefs["analytics_opt_out"], prefs["personalized_ads_opt_out"], prefs["public_profile"], prefs["creator_visibility"], datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        conn.close()
+        message = "Privacy preferences saved."
+    policy = privacy_intelligence_engine.data_policy_summary()
+    card_parts = []
+    for name, values in [("Private / Never Sell", policy["private_never_sell"]), ("Product Improvement", policy["product_improvement"]), ("Aggregate Only", policy["monetizable_only_in_aggregate"])]:
+        items = "".join("<li>{}</li>".format(clean_html(str(x).replace("_", " "))) for x in values)
+        card_parts.append(f"<article class='card'><h2>{clean_html(name.replace('_',' ').title())}</h2><ul>{items}</ul></article>")
+    cards = "".join(card_parts)
+    controls = ""
+    if user:
+        controls = f"<section class='card'><h2>Your Controls</h2><p>{clean_html(message)}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p>Download and delete account tools are prepared for staged rollout.</p></section>"
+    return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{clean_html(policy['principle'])}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
+
+
+@webhook_app.route("/trust-center", methods=["GET"])
+def trust_center_page():
+    body = """
+    <section class="grid">
+      <article class="card"><h2>Data Use</h2><p>CoinPilotXAI uses product signals to improve safety, speed, and community quality. Private identity data is never sold.</p></article>
+      <article class="card"><h2>Ads</h2><p>Sponsored placements are labeled, reviewed, contextual-first, and blocked when they include scam-token or guaranteed-profit language.</p></article>
+      <article class="card"><h2>Moderation</h2><p>Pulse, Roast Battle, media uploads, and comments include report paths, safety filters, and admin review queues.</p></article>
+      <article class="card"><h2>Security</h2><p>Scam Shield, upload validation, admin permissions, rate limits, and worker health checks are monitored from admin control rooms.</p></article>
+      <article class="card"><h2>Education</h2><p>CoinPilotXAI is educational only. It is not financial, investment, betting, legal, or professional advice.</p></article>
+      <article class="card"><h2>Creators</h2><p>Creator content is community-generated and educational. Monetization foundations are staged until compliance is ready.</p></article>
+    </section>
+    """
+    return trust_public_page("Trust Center", "How CoinPilotXAI keeps growth aligned with trust.", body, "/privacy-center")
+
+
+@webhook_app.route("/enterprise", methods=["GET", "POST"])
+def enterprise_page():
+    init_db()
+    message = ""
+    if request.method == "POST":
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO enterprise_leads (email, company, use_case, status, created_at) VALUES (?, ?, ?, 'new', ?)",
+            (normalize_email(request.form.get("email", "")), clean_html(request.form.get("company", ""))[:160], clean_html(request.form.get("use_case", ""))[:800], datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        conn.close()
+        message = "Request received. We will review it for fit and safety."
+    products = intelligence_products_engine.enterprise_products()
+    cards = "".join(f"<article class='card'><h2>{clean_html(p['name'])}</h2><p>{clean_html(p['description'])}</p><span class='badge'>{clean_html(p['privacy'])}</span></article>" for p in products)
+    form = f"<section class='card'><h2>Request Access</h2><p>{clean_html(message)}</p><form method='post'><input name='email' placeholder='Work email'><input name='company' placeholder='Company'><textarea name='use_case' placeholder='What aggregate intelligence do you need?'></textarea><button class='button'>Request Access</button></form></section>"
+    return trust_public_page("Enterprise Intelligence", "Aggregate intelligence without private user identity.", f"<section class='grid'>{cards}</section>{form}", "/enterprise")
+
+
+@webhook_app.route("/pro", methods=["GET"])
+def pro_page():
+    features = monetization_engine.pro_features()
+    free = ["Pulse Feed", "basic Scam Shield", "basic Arena", "basic Roast Battle", "basic alerts", "public replays"]
+    pro_items = "".join(f"<li>{clean_html(item)}</li>" for item in features)
+    free_items = "".join(f"<li>{clean_html(item)}</li>" for item in free)
+    body = f"<section class='grid'><article class='card'><h2>Free</h2><ul>{free_items}</ul></article><article class='card'><h2>7-day Pro Trial</h2><ul>{pro_items}</ul><a class='button' href='/upgrade'>Start 7-day Pro Trial</a></article><article class='card'><h2>Trust Rules</h2><p>No 30-day trial wording. No hidden data sale. Educational intelligence only.</p></article></section>"
+    return trust_public_page("CoinPilotXAI Pro", "Upgrade to advanced alerts, Auto Signals, Scam Shield, and creator tools.", body, "/upgrade")
+
+
+@webhook_app.route("/admin/monetization", methods=["GET"])
+def admin_monetization_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    summary = monetization_engine.admin_summary(conn)
+    candidates = creator_monetization_engine.creator_candidates(12)
+    slot = ad_policy_engine.contextual_slot("pulse")
+    conn.close()
+    layer_parts = []
+    for layer in summary.get("revenue_layers", []):
+        layer_items = "".join("<li>{}</li>".format(clean_html(i)) for i in layer.get("items", []))
+        layer_parts.append(f"<article class='card'><h2>{clean_html(layer.get('layer') or '')}</h2><ul>{layer_items}</ul></article>")
+    layers = "".join(layer_parts)
+    creator_rows = "".join(f"<tr><td>{c.get('user_id')}</td><td>{clean_html(c.get('display_name') or '')}</td><td>{int(c.get('posts') or 0)}</td><td>{clean_html(c.get('verification_status') or '')}</td></tr>" for c in candidates)
+    cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p style='font-size:32px;font-weight:900'>{v}</p></div>" for k, v in summary.items() if isinstance(v, int))
+    body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Pro, creator economy, ethical ads, and aggregate-only intelligence.</p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
+    return admin_page_html("Monetization", body, admin)
+
+
+ADMIN_DEPARTMENTS = {
+    "social": {"title": "Social / Pulse Feed", "permission": "system.view", "focus": ["Pulse posts", "comments", "hashtags", "trending topics", "daily prompts"]},
+    "trust-safety": {"title": "Trust & Safety", "permission": "support.manage", "focus": ["scam reports", "phishing links", "harassment", "doxxing", "unsafe media"]},
+    "moderation": {"title": "Moderation", "permission": "support.manage", "focus": ["reported posts", "reported comments", "media review", "appeals", "repeat offenders"]},
+    "creators": {"title": "Creator Operations", "permission": "system.view", "focus": ["creator profiles", "fan messages", "call signs", "verification", "creator candidates"]},
+    "arena": {"title": "Arena Operations", "permission": "system.view", "focus": ["live rooms", "match failures", "XP economy", "replays", "leaderboards"]},
+    "roast-battle": {"title": "Roast Battle Operations", "permission": "system.view", "focus": ["active rooms", "4-player battles", "unsafe lines", "call signs", "crowd voting"]},
+    "delivery": {"title": "Alerts & Notifications", "permission": "system.view", "focus": ["alert worker", "email", "push", "SMS", "Telegram", "failed jobs"]},
+    "growth": {"title": "Marketing / Growth", "permission": "analytics.view", "focus": ["landing pages", "funnels", "campaigns", "CTA clicks", "signup sources"]},
+    "seo": {"title": "SEO / Content", "permission": "system.view", "focus": ["sitemaps", "metadata", "learning pages", "public posts", "OG previews"]},
+    "monetization": {"title": "Monetization / Ads", "permission": "system.view", "focus": ["Pro", "ad reviews", "sponsor slots", "enterprise leads", "creator readiness"]},
+    "support": {"title": "Support", "permission": "support.manage", "focus": ["tickets", "billing issues", "Telegram connection issues", "alert complaints"]},
+    "security": {"title": "Security", "permission": "system.view", "focus": ["rate limits", "failed logins", "admin activity", "upload abuse", "bot failures"]},
+    "analytics": {"title": "Analytics / Intelligence", "permission": "analytics.view", "focus": ["DAU", "retention", "session time", "feature drop-offs", "conversion"]},
+}
+
+
+def department_counts(slug):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    counts = {"pending_tasks": 0, "warnings": 0, "today": 0}
+    today = datetime.utcnow().date().isoformat()
+    try:
+        cur.execute("SELECT COUNT(*) AS total FROM admin_tasks WHERE department=? AND status!='done'", (slug,))
+        counts["pending_tasks"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        if slug == "social":
+            cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "trust-safety":
+            cur.execute("SELECT COUNT(*) AS total FROM moderation_cases WHERE status IN ('open','reviewing') AND priority IN ('high','critical')")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "delivery":
+            cur.execute("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE status IN ('failed','not_configured')")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "security":
+            cur.execute("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "support":
+            cur.execute("SELECT COUNT(*) AS total FROM support_tickets WHERE status!='closed'")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "monetization":
+            cur.execute("SELECT COUNT(*) AS total FROM ad_reports WHERE status='open'")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "roast-battle":
+            cur.execute("SELECT COUNT(*) AS total FROM arena_roast_lines WHERE safe=0")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+    except Exception:
+        pass
+    conn.close()
+    counts["health"] = max(42, 100 - (counts["warnings"] * 8) - (counts["pending_tasks"] * 2))
+    return counts
+
+
+@webhook_app.route("/admin/command-center", methods=["GET"])
+def admin_command_center_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    cards = []
+    for slug, meta in ADMIN_DEPARTMENTS.items():
+        counts = department_counts(slug)
+        cards.append(
+            f"<a class='card' href='/admin/departments/{slug}' style='text-decoration:none'>"
+            f"<h2>{clean_html(meta['title'])}</h2><p class='muted'>{', '.join(clean_html(x) for x in meta['focus'][:3])}</p>"
+            f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span></p></a>"
+        )
+    body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited.</p><div class='grid'>{''.join(cards)}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a></p>"
+    return admin_page_html("Department Command Center", body, admin)
+
+
+@webhook_app.route("/admin/departments/<slug>", methods=["GET", "POST"])
+def admin_department_page(slug):
+    meta = ADMIN_DEPARTMENTS.get(slug)
+    if not meta:
+        return redirect("/admin/command-center")
+    admin, denied = require_admin_page(meta["permission"])
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        title = clean_html(request.form.get("title", ""))[:180]
+        description = clean_html(request.form.get("description", ""))[:1200]
+        priority = clean_html(request.form.get("priority", "normal"))[:40]
+        if title:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO admin_tasks (department, title, description, priority, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?)",
+                (slug, title, description, priority, datetime.utcnow().isoformat(timespec="seconds"), datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            conn.commit()
+            conn.close()
+            log_admin_audit(admin.get("id"), "admin_task_created", "department", slug, {"title": title, "priority": priority})
+            message = "Department task created."
+    counts = department_counts(slug)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_tasks WHERE department=? ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, id DESC LIMIT 80", (slug,))
+    tasks = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM moderation_cases WHERE status IN ('open','reviewing') ORDER BY id DESC LIMIT 30")
+    cases = [dict(row) for row in cur.fetchall()] if slug in {"trust-safety", "social", "moderation"} else []
+    conn.close()
+    focus = "".join(f"<li>{clean_html(item)}</li>" for item in meta["focus"])
+    task_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('priority') or '')}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('title') or '')}</td><td>{clean_html(t.get('created_at') or '')}</td></tr>" for t in tasks)
+    case_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('priority') or '')}</td><td>{clean_html(c.get('target_type') or '')}</td><td>{clean_html(c.get('reason') or '')}</td></tr>" for c in cases)
+    cases_panel = ""
+    if slug in {"trust-safety", "social", "moderation"}:
+        cases_panel = f"<div class='card'><h2>Moderation Cases</h2><table><tr><th>ID</th><th>Priority</th><th>Target</th><th>Reason</th></tr>{case_rows or '<tr><td colspan=4>No open cases.</td></tr>'}</table></div>"
+    body = f"<h1>{clean_html(meta['title'])}</h1><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Health</h2><p style='font-size:34px;font-weight:900'>{counts['health']}%</p></div><div class='card'><h2>Pending Tasks</h2><p style='font-size:34px;font-weight:900'>{counts['pending_tasks']}</p></div><div class='card'><h2>Warnings</h2><p style='font-size:34px;font-weight:900'>{counts['warnings']}</p></div></div><div class='card'><h2>Department Focus</h2><ul>{focus}</ul></div><div class='card'><h2>Create Task</h2><form method='post'><input name='title' placeholder='Task title'><select name='priority'><option>normal</option><option>high</option><option>critical</option><option>low</option></select><textarea name='description' placeholder='Task details'></textarea><button>Create Task</button></form></div><div class='card'><h2>Work Queue</h2><table><tr><th>ID</th><th>Priority</th><th>Status</th><th>Title</th><th>Created</th></tr>{task_rows or '<tr><td colspan=5>No tasks yet.</td></tr>'}</table></div>{cases_panel}"
+    return admin_page_html(meta["title"], body, admin)
+
+
+@webhook_app.route("/admin/ai-command", methods=["GET"])
+def admin_ai_command_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    summaries = []
+    for slug, meta in ADMIN_DEPARTMENTS.items():
+        counts = department_counts(slug)
+        if counts["warnings"] or counts["pending_tasks"]:
+            summaries.append(f"{meta['title']}: {counts['warnings']} warnings, {counts['pending_tasks']} open tasks.")
+    if not summaries:
+        summaries.append("No urgent department warnings detected from local diagnostics.")
+    body = f"<h1>AI Admin Command</h1><p class='muted'>Secrets and private messages are excluded from this operational summary.</p><div class='card'><h2>What needs attention today?</h2><ul>{''.join(f'<li>{clean_html(s)}</li>' for s in summaries)}</ul></div><div class='card'><h2>Suggested Order</h2><ol><li>Silent Telegram failures and alert delivery</li><li>Pulse post publishing and moderation queues</li><li>Security warnings and admin audit logs</li><li>Growth/SEO checks after reliability is clean</li></ol></div>"
+    return admin_page_html("AI Admin Command", body, admin)
 
 
 @webhook_app.route("/api/media/upload", methods=["POST"])
@@ -19356,19 +19738,28 @@ async def hourly_market_update(context: ContextTypes.DEFAULT_TYPE):
 
 async def telegram_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, **kwargs):
     chat_id = update.effective_chat.id if update.effective_chat else ""
+    start_ts = time.time()
     try:
+        telegram_trace("TELEGRAM_SEND_ATTEMPT", update, handler=TELEGRAM_RUNTIME_STATE.get("last_handler") or "reply")
         result = await update.message.reply_text(text, **kwargs)
-        TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"] = datetime.utcnow().isoformat(timespec="seconds")
-        logging.info("TELEGRAM_OUTBOUND chat=%s status=sent", _mask_telegram_id(chat_id))
+        latency = int((time.time() - start_ts) * 1000)
+        now_iso = datetime.utcnow().isoformat(timespec="seconds")
+        TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"] = now_iso
+        TELEGRAM_RUNTIME_STATE["last_successful_reply_at"] = now_iso
+        logging.info("TELEGRAM_OUTBOUND chat=%s status=sent latency_ms=%s", _mask_telegram_id(chat_id), latency)
+        telegram_trace("TELEGRAM_SEND_SUCCESS", update, handler=TELEGRAM_RUNTIME_STATE.get("last_handler") or "reply", latency_ms=latency)
         record_worker_heartbeat("telegram_worker", "reply_sent", metadata={
             "last_inbound_update_at": TELEGRAM_RUNTIME_STATE.get("last_inbound_update_at"),
-            "last_outbound_reply_at": TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"],
+            "last_outbound_reply_at": now_iso,
+            "last_successful_reply_at": now_iso,
             "last_openai_reply_status": TELEGRAM_RUNTIME_STATE.get("last_openai_reply_status"),
             "chat_id_masked": _mask_telegram_id(chat_id),
         })
         return result
     except Exception as exc:
+        latency = int((time.time() - start_ts) * 1000)
         TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+        telegram_trace("TELEGRAM_SEND_FAILURE", update, handler=TELEGRAM_RUNTIME_STATE.get("last_handler") or "reply", latency_ms=latency, exception_text=str(exc))
         logging.exception("TELEGRAM_OUTBOUND chat=%s status=failed error=%s", _mask_telegram_id(chat_id), exc)
         record_worker_heartbeat("telegram_worker", "reply_error", str(exc), {"chat_id_masked": _mask_telegram_id(chat_id)})
         raise
@@ -19427,16 +19818,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await telegram_reply(update, context, routed["message"], reply_markup=account_reply_markup(update.effective_user.id))
             return
         if intent == "openai":
+            telegram_trace("TELEGRAM_OPENAI_FALLBACK_START", update, handler=f"text:{intent}")
             answer = telegram_text_router.answer_telegram_with_openai(original_text, {"linked_user": linked_user})
             TELEGRAM_RUNTIME_STATE["last_openai_reply_status"] = "success" if "temporarily unavailable" not in answer.lower() else "fallback"
+            telegram_trace("TELEGRAM_OPENAI_RESPONSE_OK", update, handler=f"text:{intent}")
             await telegram_reply(update, context, answer, reply_markup=account_reply_markup(update.effective_user.id))
             return
     except Exception as exc:
         logging.exception("Telegram text router failed for user=%s: %s", update.effective_user.id, exc)
-        await telegram_reply(update, context,
-            "I hit a temporary issue answering that. Try /help, /alerts, or ask again in a moment.",
-            reply_markup=account_reply_markup(update.effective_user.id),
-        )
+        telegram_trace("TELEGRAM_HANDLER_EXCEPTION", update, handler="normal_text", exception_text=str(exc))
+        await attempt_safe_reply(update, context)
         return
 
     # =========================
@@ -20595,6 +20986,170 @@ def init_db():
         visitor_id TEXT,
         viewed_at TEXT,
         dwell_ms INTEGER
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_type TEXT,
+        target_type TEXT,
+        target_id INTEGER,
+        status TEXT DEFAULT 'pending',
+        attempts INTEGER DEFAULT 0,
+        max_attempts INTEGER DEFAULT 3,
+        error_message TEXT,
+        run_after TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        completed_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_post_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        post_type TEXT,
+        status TEXT,
+        error_reason TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_debug_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        telegram_user_id TEXT,
+        username TEXT,
+        chat_id_masked TEXT,
+        message_text TEXT,
+        handler TEXT,
+        latency_ms INTEGER,
+        exception_text TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        public_player_id TEXT,
+        display_name TEXT,
+        call_sign TEXT,
+        verification_status TEXT DEFAULT 'unverified',
+        creator_score REAL DEFAULT 0,
+        follower_count INTEGER DEFAULT 0,
+        monetization_enabled INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_revenue_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        creator_user_id INTEGER,
+        event_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        platform_fee_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS privacy_preferences (
+        user_id INTEGER PRIMARY KEY,
+        analytics_opt_out INTEGER DEFAULT 0,
+        personalized_ads_opt_out INTEGER DEFAULT 1,
+        public_profile INTEGER DEFAULT 1,
+        creator_visibility INTEGER DEFAULT 1,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ad_placements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        placement_key TEXT,
+        page_context TEXT,
+        category TEXT,
+        label TEXT DEFAULT 'Sponsored',
+        headline TEXT,
+        destination_url TEXT,
+        status TEXT DEFAULT 'review',
+        quality_score REAL DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ad_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_user_id INTEGER,
+        placement_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS enterprise_leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT,
+        company TEXT,
+        use_case TEXT,
+        status TEXT DEFAULT 'new',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS department_members (
+        department_id INTEGER,
+        admin_user_id INTEGER,
+        role TEXT,
+        permissions TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        PRIMARY KEY(department_id, admin_user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        department TEXT,
+        title TEXT,
+        description TEXT,
+        priority TEXT DEFAULT 'normal',
+        assigned_to INTEGER,
+        status TEXT DEFAULT 'open',
+        source_type TEXT,
+        source_id TEXT,
+        due_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS moderation_cases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT,
+        target_id TEXT,
+        reporter_user_id INTEGER,
+        assigned_admin_id INTEGER,
+        status TEXT DEFAULT 'open',
+        priority TEXT DEFAULT 'medium',
+        reason TEXT,
+        notes TEXT,
+        decision TEXT,
+        created_at TEXT,
+        resolved_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_session_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_id INTEGER,
+        action TEXT,
+        ip_hash TEXT,
+        user_agent TEXT,
+        created_at TEXT
     )
     """)
     cur.execute("""
@@ -22622,6 +23177,15 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_pulse_follows_follower ON pulse_follows(follower_user_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reports_status ON pulse_reports(status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_views_post ON pulse_post_views(post_id, viewed_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_jobs_status_run ON pulse_jobs(status, run_after)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_jobs_type_status ON pulse_jobs(job_type, status)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_post_attempts_created ON pulse_post_attempts(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_debug_events_created ON telegram_debug_events(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_debug_events_type ON telegram_debug_events(event_type, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_profiles_user ON creator_profiles(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ad_placements_status ON ad_placements(status, page_context)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_tasks_department_status ON admin_tasks(department, status)",
+        "CREATE INDEX IF NOT EXISTS idx_moderation_cases_status ON moderation_cases(status, priority)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_channel_id ON live_events(channel, id)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_dedupe ON live_events(channel, dedupe_key, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_live_ops_plans_date ON live_ops_plans(plan_date)",
@@ -22787,7 +23351,13 @@ def init_db():
             "INSERT OR IGNORE INTO departments (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
             (department, f"{department} department", now_seed, now_seed),
         )
-    for role_name in ["owner", "super_admin", "admin", "billing_manager", "support_manager", "support_agent", "analyst", "content_manager", "developer", "read_only"]:
+    for role_name in [
+        "owner", "super_admin", "admin", "department_manager", "social_manager", "pulse_moderator",
+        "trust_safety_agent", "senior_moderator", "creator_manager", "arena_operator", "roast_operator",
+        "alerts_operator", "marketing_manager", "seo_manager", "monetization_manager", "support_manager",
+        "support_agent", "security_analyst", "analytics_viewer", "developer_ops", "billing_manager",
+        "analyst", "content_manager", "developer", "read_only",
+    ]:
         cur.execute(
             "INSERT OR IGNORE INTO roles (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
             (role_name, f"{role_name.replace('_', ' ').title()} role", now_seed, now_seed),
@@ -22799,6 +23369,9 @@ def init_db():
         "departments.manage", "billing.view", "billing.repair", "subscriptions.edit",
         "emails.view", "emails.resend", "telegram.view", "telegram.unlink", "ai.view",
         "analytics.view", "system.view", "settings.edit", "audit.view", "support.manage",
+        "pulse.moderate", "trust_safety.manage", "creators.manage", "arena.operate",
+        "roast.operate", "alerts.operate", "growth.manage", "seo.manage",
+        "monetization.manage", "security.view",
     ]
     for permission in default_permissions:
         cur.execute(
@@ -22809,6 +23382,34 @@ def init_db():
             "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES ('owner', ?, ?)",
             (permission, now_seed),
         )
+        cur.execute(
+            "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES ('super_admin', ?, ?)",
+            (permission, now_seed),
+        )
+    role_permission_map = {
+        "social_manager": ["pulse.moderate", "analytics.view", "system.view"],
+        "pulse_moderator": ["pulse.moderate", "support.manage"],
+        "trust_safety_agent": ["trust_safety.manage", "support.manage", "security.view"],
+        "senior_moderator": ["trust_safety.manage", "pulse.moderate", "support.manage"],
+        "creator_manager": ["creators.manage", "analytics.view", "system.view"],
+        "arena_operator": ["arena.operate", "system.view"],
+        "roast_operator": ["roast.operate", "system.view", "support.manage"],
+        "alerts_operator": ["alerts.operate", "system.view", "telegram.view"],
+        "marketing_manager": ["growth.manage", "analytics.view"],
+        "seo_manager": ["seo.manage", "system.view"],
+        "monetization_manager": ["monetization.manage", "analytics.view"],
+        "support_agent": ["support.manage"],
+        "security_analyst": ["security.view", "audit.view", "system.view"],
+        "analytics_viewer": ["analytics.view"],
+        "developer_ops": ["system.view", "security.view", "audit.view"],
+        "department_manager": ["system.view", "analytics.view", "support.manage"],
+    }
+    for role_name, permissions in role_permission_map.items():
+        for permission in permissions:
+            cur.execute(
+                "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES (?, ?, ?)",
+                (role_name, permission, now_seed),
+            )
 
     seed_education_knowledge_bank(cur)
     seed_arena_foundation(cur)
@@ -25191,6 +25792,7 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
     log_product_event(target_user_id, "telegram_connect", {"telegram_user_id": update.effective_user.id})
     if linked_user and has_pro_access(linked_user):
         log_product_event(target_user_id, "telegram_pro_verified", {"telegram_user_id": update.effective_user.id})
+    telegram_trace("TELEGRAM_LINK_SUCCESS", update, handler="link")
     await update.message.reply_text(
         "✅ Telegram connected successfully.\n\n"
         "Your CoinPilotX account is now connected to this Telegram profile. You can now use the Account button anytime to view your plan, subscription, preferences, and account status."
@@ -26690,6 +27292,113 @@ def _mask_telegram_id(value):
     return f"{text[:2]}***{text[-2:]}"
 
 
+def _telegram_message_text(update):
+    message = getattr(update, "effective_message", None)
+    text = getattr(message, "text", "") or getattr(message, "caption", "") or ""
+    return str(text).strip()[:700]
+
+
+def _telegram_username(update):
+    user = getattr(update, "effective_user", None)
+    return (getattr(user, "username", "") or getattr(user, "first_name", "") or "")[:120]
+
+
+def _telegram_user_id(update):
+    user = getattr(update, "effective_user", None)
+    return str(getattr(user, "id", "") or "")
+
+
+def telegram_trace(event_type, update=None, handler="", latency_ms=None, exception_text="", message_text=None, telegram_user_id=None, username="", chat_id=""):
+    created_at = datetime.utcnow().isoformat(timespec="seconds")
+    if update is not None:
+        telegram_user_id = telegram_user_id or _telegram_user_id(update)
+        username = username or _telegram_username(update)
+        chat = getattr(update, "effective_chat", None)
+        chat_id = chat_id or getattr(chat, "id", "")
+        message_text = _telegram_message_text(update) if message_text is None else message_text
+    masked_chat = _mask_telegram_id(chat_id)
+    safe_message = str(message_text or "")[:700]
+    safe_exception = str(exception_text or "")[:1000]
+    safe_latency = int(latency_ms or 0)
+    logging.info(
+        "%s timestamp=%s telegram_user_id=%s username=%s chat=%s handler=%s latency_ms=%s message=%s exception=%s",
+        event_type,
+        created_at,
+        telegram_user_id or "",
+        username or "",
+        masked_chat,
+        handler or "",
+        safe_latency,
+        safe_message[:240],
+        safe_exception[:240],
+    )
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO telegram_debug_events
+            (event_type, telegram_user_id, username, chat_id_masked, message_text, handler, latency_ms, exception_text, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (event_type, str(telegram_user_id or ""), username or "", masked_chat, safe_message, handler or "", safe_latency, safe_exception, created_at),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        logging.debug("Telegram debug event write failed", exc_info=True)
+
+
+async def attempt_safe_reply(update, context, text="CoinPilotXAI hit a temporary response issue. Please try again in a moment."):
+    chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
+    try:
+        telegram_trace("TELEGRAM_SEND_ATTEMPT", update, handler="safe_fallback")
+        if getattr(update, "message", None):
+            await update.message.reply_text(text)
+        elif chat_id and context and getattr(context, "bot", None):
+            await context.bot.send_message(chat_id=chat_id, text=text)
+        else:
+            telegram_trace("TELEGRAM_SEND_FAILURE", update, handler="safe_fallback", exception_text="No message or chat id available")
+            return False
+        now_iso = datetime.utcnow().isoformat(timespec="seconds")
+        TELEGRAM_RUNTIME_STATE["last_outbound_reply_at"] = now_iso
+        TELEGRAM_RUNTIME_STATE["last_successful_reply_at"] = now_iso
+        telegram_trace("TELEGRAM_SEND_SUCCESS", update, handler="safe_fallback")
+        record_worker_heartbeat("telegram_worker", "safe_reply_sent", metadata={
+            "last_outbound_reply_at": now_iso,
+            "last_successful_reply_at": now_iso,
+            "chat_id_masked": _mask_telegram_id(chat_id),
+        })
+        return True
+    except Exception as exc:
+        TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+        telegram_trace("TELEGRAM_SEND_FAILURE", update, handler="safe_fallback", exception_text=str(exc))
+        return False
+
+
+def wrap_telegram_handler(handler, handler_name):
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        start_ts = time.time()
+        TELEGRAM_RUNTIME_STATE["last_handler"] = handler_name
+        telegram_trace("TELEGRAM_HANDLER_SELECTED", update, handler=handler_name)
+        if handler_name in {"link", "connect"}:
+            telegram_trace("TELEGRAM_LINK_HANDLER_START", update, handler=handler_name)
+        try:
+            result = await handler(update, context)
+            latency = int((time.time() - start_ts) * 1000)
+            TELEGRAM_RUNTIME_STATE["last_handler_latency_ms"] = latency
+            return result
+        except Exception as exc:
+            latency = int((time.time() - start_ts) * 1000)
+            TELEGRAM_RUNTIME_STATE["last_error"] = str(exc)
+            TELEGRAM_RUNTIME_STATE["last_handler_latency_ms"] = latency
+            telegram_trace("TELEGRAM_HANDLER_EXCEPTION", update, handler=handler_name, latency_ms=latency, exception_text=str(exc))
+            logging.exception("TELEGRAM_HANDLER_EXCEPTION handler=%s error=%s", handler_name, exc)
+            await attempt_safe_reply(update, context)
+            return None
+    return wrapped
+
+
 def record_worker_heartbeat(worker_name, status="healthy", last_error="", metadata=None):
     try:
         conn = db()
@@ -26730,6 +27439,8 @@ async def telegram_runtime_heartbeat(context: ContextTypes.DEFAULT_TYPE):
         "mode": TELEGRAM_RUNTIME_STATE.get("mode"),
         "command_handler_registered": TELEGRAM_RUNTIME_STATE.get("command_handler_registered"),
         "text_handler_registered": TELEGRAM_RUNTIME_STATE.get("text_handler_registered"),
+        "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
+        "last_successful_reply_at": TELEGRAM_RUNTIME_STATE.get("last_successful_reply_at"),
     })
 
 
@@ -26745,6 +27456,7 @@ async def telegram_activity_probe(update: Update, context: ContextTypes.DEFAULT_
         username or "",
         message_type,
     )
+    telegram_trace("TELEGRAM_INBOUND", update, handler="activity_probe")
     record_worker_heartbeat("telegram_worker", "inbound", metadata={
         "last_inbound_update_at": TELEGRAM_RUNTIME_STATE["last_inbound_update_at"],
         "last_message_type": message_type,
@@ -26755,16 +27467,24 @@ async def telegram_activity_probe(update: Update, context: ContextTypes.DEFAULT_
 
 async def telegram_startup(application):
     try:
+        openai_present = bool(os.getenv("OPENAI_API_KEY"))
+        TELEGRAM_RUNTIME_STATE["openai_key_present"] = openai_present
+        logging.info("OPENAI_KEY_PRESENT=%s", str(openai_present).lower())
         info = await application.bot.get_webhook_info()
         webhook_url = getattr(info, "url", "") or ""
+        TELEGRAM_RUNTIME_STATE["last_webhook_status"] = "set" if webhook_url else "empty"
         if webhook_url:
             await application.bot.delete_webhook(drop_pending_updates=False)
             logging.info("TELEGRAM_WEBHOOK_CLEARED before_polling url_present=true")
+            TELEGRAM_RUNTIME_STATE["last_webhook_status"] = "cleared"
         me = await application.bot.get_me()
+        logging.info("TELEGRAM_POLLING_STARTED bot_username=%s command_handlers=%s text_handler=%s", getattr(me, "username", ""), TELEGRAM_RUNTIME_STATE.get("command_handler_registered"), TELEGRAM_RUNTIME_STATE.get("text_handler_registered"))
         record_worker_heartbeat("telegram_worker", "polling", metadata={
             "mode": "polling",
             "bot_username": getattr(me, "username", ""),
             "webhook_was_set": bool(webhook_url),
+            "webhook_status": TELEGRAM_RUNTIME_STATE.get("last_webhook_status"),
+            "openai_key_present": openai_present,
             "command_handler_registered": True,
             "text_handler_registered": True,
         })
@@ -26860,10 +27580,10 @@ def build_telegram_application(token=None):
     }
     app.add_handler(MessageHandler(filters.ALL, telegram_activity_probe), group=-1)
     for command, handler in command_handlers.items():
-        app.add_handler(CommandHandler(command, handler))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.VOICE, voice_assistant))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.add_handler(CommandHandler(command, wrap_telegram_handler(handler, command)))
+    app.add_handler(CallbackQueryHandler(wrap_telegram_handler(button_handler, "callback_query")))
+    app.add_handler(MessageHandler(filters.VOICE, wrap_telegram_handler(voice_assistant, "voice")))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, wrap_telegram_handler(handle_message, "normal_text")))
     app.add_error_handler(telegram_error_handler)
     registered = set(command_handlers)
     TELEGRAM_RUNTIME_STATE["command_handler_registered"] = TELEGRAM_REQUIRED_COMMANDS.issubset(registered)
@@ -26903,7 +27623,7 @@ def main():
         job_queue.run_repeating(trial_maintenance_job, interval=3600, first=120)
 
     try:
-        logging.info("TELEGRAM_POLLING_START command_handlers=%s text_handler=%s", TELEGRAM_RUNTIME_STATE.get("command_handler_registered"), TELEGRAM_RUNTIME_STATE.get("text_handler_registered"))
+        logging.info("TELEGRAM_POLLING_STARTED command_handlers=%s text_handler=%s openai_key_present=%s", TELEGRAM_RUNTIME_STATE.get("command_handler_registered"), TELEGRAM_RUNTIME_STATE.get("text_handler_registered"), bool(os.getenv("OPENAI_API_KEY")))
         record_worker_heartbeat("telegram_worker", "polling_starting", metadata={"mode": "polling", "command_handler_registered": TELEGRAM_RUNTIME_STATE.get("command_handler_registered"), "text_handler_registered": TELEGRAM_RUNTIME_STATE.get("text_handler_registered")})
         app.run_polling(drop_pending_updates=False)
     except Exception as exc:

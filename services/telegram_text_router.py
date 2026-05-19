@@ -62,7 +62,7 @@ def route_text(text, linked_user=None):
     for symbol in ("BTC", "ETH", "SOL"):
         if symbol.lower() in lowered or f"{symbol.lower()} price" in lowered:
             return {"intent": "reply", "message": _price_line(symbol)}
-    if lowered in {"help", "hi", "hello", "start"}:
+    if lowered == "help":
         return {
             "intent": "reply",
             "message": (

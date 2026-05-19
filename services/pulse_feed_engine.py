@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import media_service, pulse_moderation_engine, user_context
 
@@ -125,12 +125,61 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
     }
 
 
-def create_post(user_id, body="", post_type="text", title="", tags=None, visibility="public", media_ids=None):
+def _normalize_media_ids(media_ids):
+    normalized = []
+    for item in media_ids or []:
+        try:
+            normalized.append(int(item))
+        except Exception:
+            continue
+    return normalized[:8]
+
+
+def enqueue_job(job_type, target_type, target_id, run_after=None, max_attempts=3):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    now = _now()
+    cur.execute(
+        """
+        INSERT INTO pulse_jobs
+        (job_type, target_type, target_id, status, attempts, max_attempts, run_after, created_at, updated_at)
+        VALUES (?, ?, ?, 'pending', 0, ?, ?, ?, ?)
+        """,
+        (job_type, target_type, int(target_id), int(max_attempts or 3), run_after or now, now, now),
+    )
+    conn.commit()
+    job_id = int(cur.lastrowid)
+    conn.close()
+    return job_id
+
+
+def enqueue_post_jobs(post_id, post_type="text", has_media=False):
+    jobs = [
+        "moderate_post",
+        "scan_links",
+        "generate_ai_summary",
+        "generate_ai_tags",
+        "rank_feed",
+        "notify_followers",
+        "update_trending_topics",
+    ]
+    if has_media:
+        jobs.append("generate_thumbnail")
+    if post_type == "video":
+        jobs.append("process_video")
+    for job_type in jobs:
+        enqueue_job(job_type, "post", post_id)
+
+
+def create_post(user_id, body="", post_type="text", title="", tags=None, visibility="public", media_ids=None, enqueue_background=True):
     post_type = post_type if post_type in {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result"} else "text"
     body = _clean_text(body, 5000)
     title = _clean_text(title, 160)
     visibility = visibility if visibility in {"public", "followers", "private"} else "public"
     tags = [str(t).strip("# ").lower()[:32] for t in (tags or []) if str(t).strip("# ")]
+    media_ids = _normalize_media_ids(media_ids)
+    if not body and not title and not tags and not media_ids:
+        return {"ok": False, "message": "Write something or attach media before publishing.", "status": "rejected"}
     moderation = pulse_moderation_engine.moderate_text(body or title, post_type)
     all_tags = list(dict.fromkeys((tags + moderation.get("tags", []))[:12]))
     now = _now()
@@ -150,7 +199,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             profile.get("public_player_id"),
             post_type,
             body,
-            json.dumps([int(x) for x in (media_ids or []) if str(x).isdigit()][:8]),
+            json.dumps(media_ids),
             title,
             json.dumps(all_tags),
             visibility,
@@ -168,7 +217,20 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
     conn.commit()
     conn.close()
     media_service.attach_media_to_message(user_id, post_id, media_ids or [], context_type="pulse", context_id=str(post_id))
-    return {"ok": moderation.get("status") != "blocked", "post_id": post_id, "status": moderation.get("status"), "message": moderation.get("message"), "post": get_post(post_id, viewer_user_id=user_id)}
+    if enqueue_background:
+        try:
+            enqueue_post_jobs(post_id, post_type=post_type, has_media=bool(media_ids))
+        except Exception:
+            pass
+    next_url = f"/pulse/post/{post_id}"
+    return {
+        "ok": moderation.get("status") != "blocked",
+        "post_id": post_id,
+        "next_url": next_url,
+        "status": moderation.get("status"),
+        "message": moderation.get("message") or "Pulse post published.",
+        "post": get_post(post_id, viewer_user_id=user_id),
+    }
 
 
 def get_post(post_id, viewer_user_id=None, include_private=False):
@@ -437,6 +499,111 @@ def admin_analytics():
         counts[key] = int((_row(cur.fetchone()) or {}).get("total") or 0)
     cur.execute("SELECT moderation_status, COUNT(*) AS total FROM pulse_posts GROUP BY moderation_status")
     counts["moderation"] = [dict(row) for row in cur.fetchall()]
+    try:
+        cur.execute("SELECT status, COUNT(*) AS total FROM pulse_jobs GROUP BY status")
+        counts["jobs"] = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT status, error_reason, created_at FROM pulse_post_attempts ORDER BY id DESC LIMIT 12")
+        counts["post_attempts"] = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        counts["jobs"] = []
+        counts["post_attempts"] = []
     conn.close()
     counts["intelligence"] = intelligence_panel()
     return counts
+
+
+def _complete_job(cur, job_id, status="done", error_message=""):
+    now = _now()
+    cur.execute(
+        "UPDATE pulse_jobs SET status=?, error_message=?, updated_at=?, completed_at=? WHERE id=?",
+        (status, str(error_message or "")[:1000], now, now if status == "done" else None, int(job_id)),
+    )
+
+
+def _process_job(cur, job):
+    job_type = job.get("job_type")
+    target_id = int(job.get("target_id") or 0)
+    if not target_id:
+        _complete_job(cur, job["id"], "failed", "Missing target id")
+        return
+    if job_type == "moderate_post":
+        cur.execute("SELECT id, body, title, post_type FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
+        post = _row(cur.fetchone())
+        if not post:
+            _complete_job(cur, job["id"], "failed", "Post not found")
+            return
+        moderation = pulse_moderation_engine.moderate_text((post.get("body") or post.get("title") or ""), post.get("post_type") or "text")
+        cur.execute(
+            "UPDATE pulse_posts SET moderation_status=?, sentiment=?, risk_score=?, updated_at=? WHERE id=? AND moderation_status!='blocked'",
+            (moderation.get("status") or "approved", moderation.get("sentiment") or "neutral", int(moderation.get("risk_score") or 0), _now(), target_id),
+        )
+    elif job_type == "scan_links":
+        cur.execute("SELECT body FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
+        post = _row(cur.fetchone()) or {}
+        suspicious = 1 if re.search(r"https?://|www\\.|airdrop|seed phrase|private key|claim", post.get("body") or "", re.I) else 0
+        if suspicious:
+            cur.execute("UPDATE pulse_posts SET risk_score=MAX(COALESCE(risk_score,0), 45), updated_at=? WHERE id=?", (_now(), target_id))
+    elif job_type in {"generate_ai_summary", "generate_ai_tags"}:
+        cur.execute("SELECT body, title, tags_json FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
+        post = _row(cur.fetchone()) or {}
+        if job_type == "generate_ai_summary":
+            summary = _clean_text(post.get("body") or post.get("title") or "Pulse community update", 220)
+            cur.execute("UPDATE pulse_posts SET ai_summary=?, updated_at=? WHERE id=?", (summary, _now(), target_id))
+        else:
+            tags = _json(post.get("tags_json"), [])
+            if not tags and post.get("body"):
+                tags = [token.strip("#").lower() for token in re.findall(r"#([A-Za-z0-9_]{2,32})", post.get("body"))][:8]
+            cur.execute("UPDATE pulse_posts SET ai_tags_json=?, updated_at=? WHERE id=?", (json.dumps(tags), _now(), target_id))
+    elif job_type == "rank_feed":
+        cur.execute(
+            """
+            UPDATE pulse_posts
+            SET engagement_score=COALESCE(engagement_score,0)
+                + (SELECT COUNT(*) FROM pulse_reactions WHERE post_id=?)
+                + ((SELECT COUNT(*) FROM pulse_comments WHERE post_id=? AND deleted_at IS NULL) * 2),
+                updated_at=?
+            WHERE id=?
+            """,
+            (target_id, target_id, _now(), target_id),
+        )
+    elif job_type in {"generate_thumbnail", "process_video"}:
+        cur.execute("UPDATE chat_media_uploads SET moderation_status=COALESCE(moderation_status,'approved') WHERE context_type='pulse' AND context_id=?", (str(target_id),))
+    elif job_type in {"notify_followers", "update_trending_topics"}:
+        pass
+    _complete_job(cur, job["id"], "done")
+
+
+def process_pending_jobs(batch_size=10):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    now = _now()
+    cur.execute(
+        """
+        SELECT * FROM pulse_jobs
+        WHERE status='pending' AND (run_after IS NULL OR run_after<=?)
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (now, max(1, min(int(batch_size or 10), 50))),
+    )
+    jobs = [dict(row) for row in cur.fetchall()]
+    processed = 0
+    failed = 0
+    for job in jobs:
+        try:
+            cur.execute("UPDATE pulse_jobs SET status='processing', attempts=COALESCE(attempts,0)+1, updated_at=? WHERE id=? AND status='pending'", (_now(), job["id"]))
+            _process_job(cur, job)
+            processed += 1
+        except Exception as exc:
+            failed += 1
+            attempts = int(job.get("attempts") or 0) + 1
+            max_attempts = int(job.get("max_attempts") or 3)
+            status = "failed" if attempts >= max_attempts else "pending"
+            run_after = (datetime.utcnow() + timedelta(seconds=min(900, 30 * attempts))).isoformat(timespec="seconds")
+            cur.execute(
+                "UPDATE pulse_jobs SET status=?, attempts=?, error_message=?, run_after=?, updated_at=? WHERE id=?",
+                (status, attempts, str(exc)[:1000], run_after, _now(), job["id"]),
+            )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "processed": processed, "failed": failed, "remaining": max(0, len(jobs) - processed)}
