@@ -4135,6 +4135,10 @@ def admin_current_user():
     return dict(row) if row else None
 
 
+def admin_is_owner_level(admin):
+    return (admin or {}).get("role", "").strip().lower() in {"owner", "super_admin"}
+
+
 def load_admin_by_email(email):
     email = normalize_email(email)
     conn = db()
@@ -4149,6 +4153,10 @@ def load_admin_by_email(email):
 def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadata=None):
     try:
         admin = admin_current_user() if has_request_context() else None
+        now = datetime.now().isoformat()
+        metadata_text = json.dumps(metadata or {})[:4000]
+        ip_hash = client_ip_hash() if has_request_context() else ""
+        user_agent = request.headers.get("User-Agent", "")[:500] if has_request_context() else ""
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -4163,9 +4171,29 @@ def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadat
                 action,
                 target_type,
                 target_id,
-                json.dumps(metadata or {})[:4000],
-                client_ip_hash() if has_request_context() else "",
-                datetime.now().isoformat(),
+                metadata_text,
+                ip_hash,
+                now,
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO admin_activity_logs
+            (admin_user_id, department, action, route, target_type, target_id, before_json, after_json, ip_hash, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                admin_user_id or (admin or {}).get("id") or 0,
+                target_type if str(target_type or "") in (globals().get("ADMIN_DEPARTMENTS") or {}) else "",
+                action,
+                request.path if has_request_context() else "",
+                target_type,
+                target_id,
+                "",
+                metadata_text,
+                ip_hash,
+                user_agent,
+                now,
             ),
         )
         conn.commit()
@@ -4432,8 +4460,10 @@ def latest_checkout_diagnostics():
 
 
 def admin_page_html(title, body, admin=None):
+    command_center_nav = "<a class='command-center-link' href='/admin/command-center'>Backend Command Center</a>" if admin_is_owner_level(admin) else ""
     nav = (
         "<a href='/admin/dashboard'>Dashboard</a>"
+        f"{command_center_nav}"
         "<a href='/admin/users'>Users</a>"
         "<a href='/admin/admins'>Admins</a>"
         "<a href='/admin/employees'>Employees</a>"
@@ -4478,6 +4508,7 @@ def admin_page_html(title, body, admin=None):
     nav {{ display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }}
     a {{ color:var(--cyan); text-decoration:none; }}
     nav a,.button {{ min-height:44px; display:inline-flex; align-items:center; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.04); }}
+    nav a.command-center-link,.button.command-center-link {{ color:#06101b; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--cyan)); font-weight:950; box-shadow:0 0 22px rgba(54,229,143,.22); }}
     h1 {{ margin:.2rem 0; }}
     .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }}
     .card {{ background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.025)); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 24px 80px rgba(0,0,0,.25); overflow-wrap:break-word; }}
@@ -4485,6 +4516,15 @@ def admin_page_html(title, body, admin=None):
     table {{ width:100%; border-collapse:collapse; overflow-wrap:break-word; }}
     th,td {{ text-align:left; padding:10px; border-bottom:1px solid rgba(255,255,255,.08); }}
     .muted {{ color:var(--muted); }}
+    .pill {{ display:inline-flex; align-items:center; gap:7px; margin:3px 4px 3px 0; padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:#dffcff; background:rgba(110,223,246,.08); font-size:.86rem; }}
+    .status-dot {{ width:9px; height:9px; border-radius:999px; background:var(--accent); box-shadow:0 0 14px rgba(54,229,143,.75); display:inline-block; }}
+    .status-warn {{ background:#ffd166; box-shadow:0 0 14px rgba(255,209,102,.8); }}
+    .status-danger {{ background:#ff6b8a; box-shadow:0 0 14px rgba(255,107,138,.8); }}
+    .department-card {{ position:relative; min-height:210px; }}
+    .department-card:before {{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; background:linear-gradient(120deg,transparent,rgba(110,223,246,.10),transparent); opacity:.65; }}
+    .mini-chart {{ height:8px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; }}
+    .mini-chart span {{ display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--cyan)); }}
+    textarea {{ width:100%; min-height:90px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
     input,button,select {{ width:100%; min-height:44px; border-radius:10px; border:1px solid var(--line); background:#081323; color:var(--text); padding:10px; box-sizing:border-box; }}
     button {{ background:linear-gradient(135deg,#00e5ff,#36e58f); color:#031016; font-weight:800; cursor:pointer; }}
     @media(max-width:720px) {{ .wrap {{ padding:16px; }} table {{ display:block; overflow-x:auto; }} }}
@@ -4521,6 +4561,10 @@ def admin_login_page():
                 cur.execute(
                     "UPDATE admin_users SET last_login_at=?, failed_login_count=0, locked_until=NULL, updated_at=? WHERE id=?",
                     (datetime.now().isoformat(), datetime.now().isoformat(), admin["id"])
+                )
+                cur.execute(
+                    "INSERT INTO admin_session_logs (admin_id, action, ip_hash, user_agent, created_at) VALUES (?, 'login', ?, ?, ?)",
+                    (admin["id"], client_ip_hash(), request.headers.get("User-Agent", "")[:500], datetime.now().isoformat()),
                 )
                 conn.commit()
                 conn.close()
@@ -4651,6 +4695,17 @@ def admin_logout_page():
     admin = admin_current_user()
     if admin:
         log_admin_audit(admin["id"], "admin_logout", "admin_user", str(admin["id"]), {})
+        try:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO admin_session_logs (admin_id, action, ip_hash, user_agent, created_at) VALUES (?, 'logout', ?, ?, ?)",
+                (admin["id"], client_ip_hash(), request.headers.get("User-Agent", "")[:500], datetime.now().isoformat()),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
     session.pop("admin_user_id", None)
     return redirect(url_for("admin_login_page"))
 
@@ -4673,9 +4728,18 @@ def admin_dashboard_page():
             "<p><a class='button' href='/admin/profile'>Complete Profile</a></p>"
             "</div>"
         )
+    command_center_cta = ""
+    if admin_is_owner_level(admin):
+        command_center_cta = (
+            "<div class='card' style='border-color:rgba(54,229,143,.45);background:linear-gradient(135deg,rgba(54,229,143,.14),rgba(110,223,246,.08))'>"
+            "<h2>Backend Command Center</h2>"
+            "<p class='muted'>Open the department operations control rooms for Trust & Safety, Pulse, Alerts, Security, Analytics, Growth, and live platform health.</p>"
+            "<p><a class='button command-center-link' href='/admin/command-center'>Backend Command Center</a></p>"
+            "</div>"
+        )
     body = (
         "<h1>Owner Dashboard</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
-        f"{profile_prompt}<div class='grid'>{cards}</div>"
+        f"{profile_prompt}{command_center_cta}<div class='grid'>{cards}</div>"
         f"<form method='post' action='/admin/billing/recalculate' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
     )
     return admin_page_html("Owner Dashboard", body, admin)
@@ -5524,17 +5588,20 @@ def admin_unmatched_payments_page():
 @webhook_app.route("/admin/audit-logs", methods=["GET"])
 def admin_audit_logs_page():
     init_db()
-    admin = admin_login_required()
-    if not admin:
-        return redirect(url_for("admin_login_page"))
+    admin, denied = require_admin_page("audit.view")
+    if denied:
+        return denied
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 150")
     logs = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM admin_activity_logs ORDER BY created_at DESC LIMIT 150")
+    activity = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = "".join(f"<tr><td>{clean_html(r.get('admin_email') or '')}</td><td>{clean_html(r.get('action') or '')}</td><td>{clean_html(r.get('target_type') or '')}</td><td>{clean_html(r.get('target_id') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in logs)
-    body = f"<h1>Audit Logs</h1><div class='card'><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div>"
+    activity_rows = "".join(f"<tr><td>{a.get('admin_user_id') or ''}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('route') or '')}</td><td>{clean_html(a.get('target_type') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in activity)
+    body = f"<h1>Audit Logs</h1><p class='muted'>Owner, super admin, and security-only review of administrative actions.</p><div class='card'><h2>Audit Trail</h2><table><tr><th>Admin</th><th>Action</th><th>Target</th><th>ID</th><th>Date</th></tr>{rows}</table></div><div class='card'><h2>Activity Stream</h2><table><tr><th>Admin ID</th><th>Action</th><th>Route</th><th>Target</th><th>Date</th></tr>{activity_rows or '<tr><td colspan=5>No activity yet.</td></tr>'}</table></div>"
     return admin_page_html("Audit Logs", body, admin)
 
 
@@ -5617,9 +5684,24 @@ ROLE_FALLBACK_PERMISSIONS = {
     "owner": {"*"},
     "super_admin": {"*"},
     "admin": {"users.view", "users.edit", "billing.view", "billing.repair", "emails.view", "telegram.view", "analytics.view", "support.manage", "system.view", "audit.view"},
+    "department_manager": {"command_center.view", "analytics.view", "support.manage"},
+    "social_manager": {"command_center.view", "pulse.moderate", "analytics.view"},
+    "pulse_moderator": {"command_center.view", "pulse.moderate", "moderation.manage", "support.manage"},
+    "trust_safety_agent": {"command_center.view", "trust_safety.manage", "moderation.manage", "support.manage", "security.view"},
+    "senior_moderator": {"command_center.view", "trust_safety.manage", "moderation.manage", "pulse.moderate", "support.manage"},
+    "creator_manager": {"command_center.view", "creators.manage", "analytics.view"},
+    "arena_operator": {"command_center.view", "arena.operate"},
+    "roast_operator": {"command_center.view", "roast.operate", "support.manage"},
+    "alerts_operator": {"command_center.view", "alerts.operate", "telegram.view"},
+    "marketing_manager": {"command_center.view", "growth.manage", "analytics.view"},
+    "seo_manager": {"command_center.view", "seo.manage"},
+    "monetization_manager": {"command_center.view", "monetization.manage", "analytics.view"},
+    "security_analyst": {"command_center.view", "security.view", "audit.view"},
+    "analytics_viewer": {"command_center.view", "analytics.view"},
+    "developer_ops": {"command_center.view", "engineering.operate", "system.view", "security.view", "audit.view"},
     "billing_manager": {"users.view", "billing.view", "billing.repair", "subscriptions.edit", "emails.view"},
     "support_manager": {"users.view", "users.edit", "emails.view", "emails.resend", "telegram.view", "support.manage"},
-    "support_agent": {"users.view", "emails.view", "telegram.view", "support.manage"},
+    "support_agent": {"command_center.view", "users.view", "emails.view", "telegram.view", "support.manage"},
     "analyst": {"analytics.view", "ai.view", "system.view"},
     "content_manager": {"analytics.view", "settings.edit"},
     "developer": {"system.view", "settings.edit", "audit.view", "ai.view"},
@@ -5640,14 +5722,45 @@ def admin_has_permission(admin, permission):
         conn = db()
         cur = conn.cursor()
         cur.execute(
-            "SELECT 1 FROM role_permissions WHERE role_name=? AND permission_key=? LIMIT 1",
-            (role, permission),
+            """
+            SELECT 1 FROM role_permissions WHERE role_name=? AND permission_key=?
+            UNION
+            SELECT 1 FROM admin_role_permissions WHERE role_name=? AND permission_key=?
+            UNION
+            SELECT 1
+            FROM admin_user_roles aur
+            JOIN admin_role_permissions arp ON arp.role_name=aur.role_name
+            WHERE aur.admin_user_id=? AND aur.active=1 AND arp.permission_key=?
+            LIMIT 1
+            """,
+            (role, permission, role, permission, admin.get("id") or 0, permission),
         )
         ok = bool(cur.fetchone())
         conn.close()
         return ok
     except Exception:
         return False
+
+
+def admin_accessible_department_slugs(admin):
+    if not admin:
+        return set()
+    role = (admin.get("role") or "").strip().lower()
+    if role in {"owner", "super_admin"}:
+        return set(ADMIN_DEPARTMENTS.keys()) if "ADMIN_DEPARTMENTS" in globals() else set()
+    slugs = set()
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT department_slug FROM admin_user_roles WHERE admin_user_id=? AND active=1 AND COALESCE(department_slug,'')!=''",
+            (admin.get("id") or 0,),
+        )
+        slugs = {str(row[0]) for row in cur.fetchall()}
+        conn.close()
+    except Exception:
+        pass
+    return slugs
 
 
 def require_admin_page(permission):
@@ -15259,10 +15372,21 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 88% 8%,rgba(155,92,255,.16),transparent 25rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(86px + env(safe-area-inset-bottom))}}a{{color:inherit}}.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:36px;height:36px;border-radius:10px}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}}.pulse-hero{{display:flex;justify-content:space-between;gap:12px;align-items:center}}h1{{font-size:clamp(34px,7vw,64px);line-height:.95;margin:4px 0}}h2,h3{{margin:.2rem 0}}p,.muted{{color:var(--muted)}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);padding:9px 12px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}button.primary,.button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.55;cursor:not-allowed}}textarea,input,select{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}}textarea{{min-height:96px;resize:vertical}}.tabs,.actions,.reactions{{display:flex;gap:8px;flex-wrap:wrap}}.tabs button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.composer{{display:grid;gap:10px;margin:12px 0}}.composer-tools{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}}.feed{{display:grid;gap:12px;margin-top:12px}}.post{{display:grid;gap:10px}}.author{{display:flex;align-items:center;justify-content:space-between;gap:10px}}.author-main{{display:flex;align-items:center;gap:10px;min-width:0}}.avatar{{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}}.avatar img{{width:100%;height:100%;object-fit:cover}}.author-name{{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08)}}.media-grid{{display:grid;gap:8px}}.media-grid img,.media-grid video{{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}}.tags{{display:flex;gap:6px;flex-wrap:wrap}}.tag{{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}}.reaction-btn.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.42)}}.comment-box{{display:grid;grid-template-columns:1fr auto;gap:8px}}.comments{{display:grid;gap:8px}}.comment{{border-left:3px solid var(--cyan);background:rgba(255,255,255,.035);border-radius:8px;padding:8px}}.side{{position:sticky;top:12px;display:grid;gap:12px}}.intel-list{{display:grid;gap:8px}}.intel-item{{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04)}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.live-dot{{display:inline-flex;align-items:center;gap:7px}}.live-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9);animation:pulse 2s ease-in-out infinite}}@keyframes pulse{{50%{{transform:scale(1.35)}}}}@media(max-width:880px){{.layout{{grid-template-columns:1fr}}.side{{position:static}}.composer-tools{{grid-template-columns:1fr 1fr}}.pulse-hero{{display:grid}}.top{{align-items:flex-start}}.comment-box{{grid-template-columns:1fr}}button,.button{{min-height:46px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap" data-feed="{active_feed}" data-topic="{topic}" data-profile="{profile_id}"><nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions"><a class="button" href="/dashboard">Dashboard</a><a class="button primary" href="/pulse/create">Create</a></div></nav><section class="card pulse-hero"><div><span class="badge live-dot">Global Pulse Feed</span><h1>Pulse Feed</h1><p>Share crypto ideas, Scam Shield warnings, Arena highlights, Roast Battle clips, questions, and creator updates with the CoinPilotXAI community.</p></div><p class="muted">{PULSE_DISCLAIMER}</p></section><section class="layout"><div><section class="card composer" id="composer"><textarea id="postBody" placeholder="What’s happening in crypto today?"></textarea><input id="postTitle" placeholder="Optional title"><select id="postType"><option value="text">Text</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="poll">Poll</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="replay">Replay Card</option></select><input id="postMedia" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-tools"><button type="button" data-type="text">Text</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button><button type="button" data-type="scam_report">Scam Warning</button></div><div class="actions"><button class="primary" id="publishBtn">Publish Pulse</button><button type="button" id="aiBtn">Enhance with AI</button><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted" id="composeMsg">Links are scanned by Scam Shield. Unsafe posts go to review.</p></section><section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button></div></section><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div><aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section></main><div class="toast" id="toast"></div><script>const state={{feed:document.querySelector('main').dataset.feed||'for_you',topic:document.querySelector('main').dataset.topic||'',offset:0,loading:false}};const reactions={{fire:'🔥 Fire',smart:'🧠 Smart',scam_alert:'🚨 Scam Alert',whale:'🐋 Whale',bullish:'📈 Bullish',bearish:'📉 Bearish',funny:'😂 Funny',elite:'👑 Elite',brutal:'💀 Brutal',fast_signal:'⚡ Fast Signal'}};const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));const toast=m=>{{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false){{const msg=d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Server error while publishing.');throw new Error(msg)}}return d}}function mediaHtml(items){{return (items||[]).map(m=>m.media_type==='video'?`<video src="${{esc(m.media_url)}}" poster="${{esc(m.thumbnail_url||'')}}" muted controls playsinline preload="metadata"></video>`:`<img src="${{esc(m.thumbnail_url||m.media_url)}}" alt="Pulse media" loading="lazy">`).join('')}}function postHtml(p){{const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${{encodeURIComponent(t)}}">#${{esc(t)}}</a>`).join('');const react=Object.entries(reactions).map(([k,label])=>`<button class="reaction-btn ${{p.viewer_reaction===k?'active':''}}" data-react="${{k}}" data-post="${{p.id}}">${{label}} ${{(p.reaction_counts||{{}})[k]||''}}</button>`).join('');return `<article class="card post" data-post-id="${{p.id}}"><div class="author"><div class="author-main"><span class="avatar">${{p.author.avatar_url?`<img src="${{esc(p.author.avatar_url)}}" alt="">`:esc((p.author.display_name||'P').slice(0,1))}}</span><div><div class="author-name">${{esc(p.author.display_name)}}</div><span class="badge">${{esc(p.author.rank||'Rookie')}}</span></div></div><div class="actions"><button data-follow="${{esc(p.author.public_player_id||'')}}">Follow</button><button data-report="post" data-id="${{p.id}}">Report</button></div></div>${{p.title?`<h2>${{esc(p.title)}}</h2>`:''}}<p>${{esc(p.body)}}</p>${{p.media&&p.media.length?`<div class="media-grid">${{mediaHtml(p.media)}}</div>`:''}}<div class="tags">${{tags}}</div><p class="muted">AI summary: ${{esc(p.ai_summary||'Pulse post')}} · Sentiment: ${{esc(p.sentiment)}} · Risk score: ${{Number(p.risk_score||0)}} · <a href="${{p.permalink}}">Open</a></p><div class="reactions">${{react}}</div><div class="comments" data-comments-for="${{p.id}}"></div><form class="comment-box" data-comment-form="${{p.id}}"><input name="body" placeholder="Reply with a comment..."><button>Comment</button></form></article>`}}function renderIntel(intel){{document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';document.getElementById('intel').innerHTML=`<div class="intel-item"><strong>${{esc(intel.community_mood||'Curious')}}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${{Number(intel.posts_today||0)}}</strong><br><span class="muted">Posts today</span></div>`+(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${{encodeURIComponent(t.tag)}}">#${{esc(t.tag)}} · ${{t.count}}</a>`).join('')}}async function load(reset=false){{if(state.loading)return;state.loading=true;if(reset){{state.offset=0;document.getElementById('feed').innerHTML=''}}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{{const d=await api(`/api/pulse/feed?feed=${{encodeURIComponent(state.feed)}}&topic=${{encodeURIComponent(state.topic)}}&offset=${{state.offset}}`);document.getElementById('feed').insertAdjacentHTML('beforeend',(d.posts||[]).map(postHtml).join('')|| (state.offset?'':'<section class="card"><p class="muted">No Pulse posts yet. Start the conversation.</p></section>'));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{{}});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}}catch(e){{toast(e.message)}}finally{{state.loading=false}}}}document.getElementById('tabs').addEventListener('click',e=>{{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',`/pulse/${{state.feed==='for_you'?'':state.feed}}`);load(true)}});document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>document.getElementById('postType').value=b.dataset.type));document.getElementById('aiBtn').addEventListener('click',()=>{{const body=document.getElementById('postBody');if(!body.value.trim()){{body.value='Question for Pulse: ';body.focus();return}}body.value=body.value.trim()+\"\\n\\n#CoinPilotXAI #MarketPsychology\";toast('AI clarity pass added tags.')}});document.getElementById('publishBtn').addEventListener('click',async()=>{{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){{const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const r=await fetch('/api/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Upload failed');mediaIds.push(d.media.id)}}const d=await api('/api/pulse/posts',{{method:'POST',body:JSON.stringify({{body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds}})}});toast(d.message||'Pulse posted.');if(d.next_url){{window.location.href=d.next_url;return}}document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';load(true)}}catch(e){{toast(e.message)}}finally{{btn.disabled=false}}}});document.addEventListener('click',async e=>{{const r=e.target.closest('[data-react]');if(r){{try{{await api(`/api/pulse/posts/${{r.dataset.post}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:r.dataset.react}})}});r.classList.add('active')}}catch(err){{toast(err.message)}}}}const rep=e.target.closest('[data-report]');if(rep){{const reason=prompt('Why are you reporting this?')||'reported';try{{await api('/api/pulse/report',{{method:'POST',body:JSON.stringify({{target_type:rep.dataset.report,target_id:rep.dataset.id,reason}})}});toast('Report sent.')}}catch(err){{toast(err.message)}}}}const f=e.target.closest('[data-follow]');if(f&&f.dataset.follow){{try{{await api('/api/pulse/follow',{{method:'POST',body:JSON.stringify({{public_player_id:f.dataset.follow}})}});toast('Creator followed.')}}catch(err){{toast(err.message)}}}}}});document.addEventListener('submit',async e=>{{const form=e.target.closest('[data-comment-form]');if(!form)return;e.preventDefault();try{{await api(`/api/pulse/posts/${{form.dataset.commentForm}}/comments`,{{method:'POST',body:JSON.stringify({{body:form.body.value}})}});form.body.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}});load(true);setInterval(()=>{{if(!document.hidden&&state.offset===0)load(true)}},45000);</script></body></html>""")
 
 
+def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    active_feed = clean_html(active_feed or "for_you")
+    topic = clean_html(topic or "")
+    profile_id = clean_html(profile_id or "")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI</title><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png"><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 88% 8%,rgba(155,92,255,.16),transparent 25rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(86px + env(safe-area-inset-bottom))}}a{{color:inherit}}.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:36px;height:36px;border-radius:10px}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}}.pulse-hero{{display:flex;justify-content:space-between;gap:12px;align-items:center}}h1{{font-size:clamp(34px,7vw,64px);line-height:.95;margin:4px 0}}h2,h3{{margin:.2rem 0}}p,.muted{{color:var(--muted)}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);padding:9px 12px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}button.primary,.button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.55;cursor:not-allowed}}textarea,input,select{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}}textarea{{min-height:96px;resize:vertical}}.tabs,.actions,.reactions{{display:flex;gap:8px;flex-wrap:wrap}}.tabs button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.composer{{display:grid;gap:10px;margin:12px 0}}.composer-tools{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}}.feed{{display:grid;gap:12px;margin-top:12px}}.post{{display:grid;gap:10px}}.author{{display:flex;align-items:center;justify-content:space-between;gap:10px}}.author-main{{display:flex;align-items:center;gap:10px;min-width:0}}.avatar{{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}}.avatar img{{width:100%;height:100%;object-fit:cover}}.author-name{{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08)}}.media-grid{{display:grid;gap:8px}}.media-grid img,.media-grid video{{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}}.tags{{display:flex;gap:6px;flex-wrap:wrap}}.tag{{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}}.reaction-btn.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.42)}}.comment-box{{display:grid;grid-template-columns:1fr auto;gap:8px}}.side{{position:sticky;top:12px;display:grid;gap:12px}}.intel-list{{display:grid;gap:8px}}.intel-item{{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04)}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.live-dot{{display:inline-flex;align-items:center;gap:7px}}.live-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9)}}@media(max-width:880px){{.layout{{grid-template-columns:1fr}}.side{{position:static}}.composer-tools{{grid-template-columns:1fr 1fr}}.pulse-hero{{display:grid}}.top{{align-items:flex-start}}.comment-box{{grid-template-columns:1fr}}button,.button{{min-height:46px}}}}</style></head><body><main class="wrap" data-feed="{active_feed}" data-topic="{topic}" data-profile="{profile_id}"><nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button primary" href="/pulse/create">Create</a></div></nav><section class="card pulse-hero"><div><span class="badge live-dot">Global Pulse Feed</span><h1>{clean_html(title)}</h1><p>Share crypto ideas, Scam Shield warnings, Arena highlights, Roast Battle clips, questions, and creator updates with the CoinPilotXAI community.</p></div><p class="muted">{PULSE_DISCLAIMER}</p></section><section class="layout"><div><section class="card composer" id="composer"><textarea id="postBody" placeholder="What’s happening in crypto today?"></textarea><input id="postTitle" placeholder="Optional title"><select id="postType"><option value="text">Text</option><option value="poll">Question</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="replay">Replay Card</option></select><input id="postMedia" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-tools"><button type="button" data-type="text">Text</button><button type="button" data-type="poll">Question</button><button type="button" data-type="scam_report">Scam Warning</button><button type="button" data-type="arena_result">Arena Highlight</button></div><div class="actions"><button class="primary" id="publishBtn">Publish Pulse</button><button type="button" id="aiBtn">Enhance with AI</button><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted" id="composeMsg">Links are scanned by Scam Shield. Unsafe posts go to review.</p></section><section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div><aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section></main><div class="toast" id="toast"></div><script>const main=document.querySelector('main');const state={{feed:main.dataset.feed||'for_you',topic:main.dataset.topic||'',profile:main.dataset.profile||'',offset:0,loading:false}};const feedPaths={{for_you:'/pulse',following:'/pulse/following',trending:'/pulse/trending',questions:'/pulse/questions',my_posts:'/pulse/my-posts',scam_alerts:'/pulse?feed=scam_alerts',arena_highlights:'/pulse?feed=arena_highlights',roast_clips:'/pulse?feed=roast_clips'}};const reactions={{fire:'🔥 Fire',smart:'🧠 Smart',scam_alert:'🚨 Scam Alert',whale:'🐋 Whale',bullish:'📈 Bullish',bearish:'📉 Bearish',funny:'😂 Funny',elite:'👑 Elite',brutal:'💀 Brutal',fast_signal:'⚡ Fast Signal'}};const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));const toast=m=>{{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false){{throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Request failed.'))}}return d}}function mediaHtml(items){{return (items||[]).map(m=>m.media_type==='video'?`<video src="${{esc(m.media_url)}}" poster="${{esc(m.thumbnail_url||'')}}" muted controls playsinline preload="metadata"></video>`:`<img src="${{esc(m.thumbnail_url||m.media_url)}}" alt="Pulse media" loading="lazy">`).join('')}}function postHtml(p){{const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${{encodeURIComponent(t)}}">#${{esc(t)}}</a>`).join('');const react=Object.entries(reactions).slice(0,6).map(([k,label])=>`<button class="reaction-btn ${{p.viewer_reaction===k?'active':''}}" data-react="${{k}}" data-post="${{p.id}}">${{label}} ${{(p.reaction_counts||{{}})[k]||''}}</button>`).join('');return `<article class="card post" data-post-id="${{p.id}}"><div class="author"><div class="author-main"><span class="avatar">${{p.author.avatar_url?`<img src="${{esc(p.author.avatar_url)}}" alt="">`:esc((p.author.display_name||'P').slice(0,1))}}</span><div><div class="author-name">${{esc(p.author.display_name)}}</div><span class="badge">${{esc(p.author.rank||'Rookie')}}</span></div></div><div class="actions"><a class="button" href="${{p.permalink}}">Open</a><button data-report="post" data-id="${{p.id}}">Report</button></div></div>${{p.title?`<h2>${{esc(p.title)}}</h2>`:''}}<p>${{esc(p.body)}}</p>${{p.media&&p.media.length?`<div class="media-grid">${{mediaHtml(p.media)}}</div>`:''}}<div class="tags">${{tags}}</div><p class="muted">${{esc(p.created_at||'')}} · ${{esc(p.post_type||'post')}} · ${{Number(p.comment_count||0)}} comments</p><div class="reactions">${{react}}</div></article>`}}function renderIntel(intel){{document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';document.getElementById('intel').innerHTML=`<div class="intel-item"><strong>${{esc(intel.community_mood||'Curious')}}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${{Number(intel.posts_today||0)}}</strong><br><span class="muted">Posts today</span></div>`+(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${{encodeURIComponent(t.tag)}}">#${{esc(t.tag)}} · ${{t.count}}</a>`).join('')}}async function load(reset=false){{if(state.loading)return;state.loading=true;if(reset){{state.offset=0;document.getElementById('feed').innerHTML=''}}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{{const d=await api(`/api/pulse/feed?feed=${{encodeURIComponent(state.feed)}}&topic=${{encodeURIComponent(state.topic)}}&profile=${{encodeURIComponent(state.profile)}}&offset=${{state.offset}}`);const posts=d.posts||[];document.getElementById('feed').insertAdjacentHTML('beforeend',posts.map(postHtml).join('')|| (state.offset?'':'<section class="card"><p class="muted">No posts yet. Create the first Pulse.</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>'));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{{}});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}}catch(e){{toast(e.message)}}finally{{state.loading=false}}}}document.getElementById('tabs').addEventListener('click',e=>{{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',feedPaths[state.feed]||'/pulse');load(true)}});document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>document.getElementById('postType').value=b.dataset.type));document.getElementById('aiBtn').addEventListener('click',()=>{{const body=document.getElementById('postBody');if(!body.value.trim()){{body.value='Question for Pulse: ';document.getElementById('postType').value='poll';body.focus();return}}body.value=body.value.trim()+"\\n\\n#CoinPilotXAI #MarketPsychology";toast('AI clarity pass added tags.')}});document.getElementById('publishBtn').addEventListener('click',async()=>{{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){{const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const r=await fetch('/api/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Upload failed');mediaIds.push(d.media.id)}}const d=await api('/api/pulse/posts',{{method:'POST',body:JSON.stringify({{body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds}})}});toast(d.message||'Pulse posted.');window.location.href=d.next_url||`/pulse/post/${{d.post_id}}`}}catch(e){{toast(e.message)}}finally{{btn.disabled=false}}}});document.addEventListener('click',async e=>{{const r=e.target.closest('[data-react]');if(r){{try{{await api(`/api/pulse/posts/${{r.dataset.post}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:r.dataset.react}})}});r.classList.add('active')}}catch(err){{toast(err.message)}}}}const rep=e.target.closest('[data-report]');if(rep){{const reason=prompt('Why are you reporting this?')||'reported';try{{await api('/api/pulse/report',{{method:'POST',body:JSON.stringify({{target_type:rep.dataset.report,target_id:rep.dataset.id,reason}})}});toast('Report sent.')}}catch(err){{toast(err.message)}}}}}});document.getElementById('loadMore').addEventListener('click',()=>load(false));load(true);setInterval(()=>{{if(!document.hidden&&state.offset===0)load(true)}},45000);</script></body></html>""")
+
+
 @webhook_app.route("/pulse", methods=["GET"])
 @webhook_app.route("/pulse/trending", methods=["GET"])
 @webhook_app.route("/pulse/following", methods=["GET"])
 @webhook_app.route("/pulse/questions", methods=["GET"])
+@webhook_app.route("/pulse/my-posts", methods=["GET"])
 @webhook_app.route("/pulse/create", methods=["GET"])
 def pulse_page():
     if request.path.endswith("/trending"):
@@ -15271,9 +15395,11 @@ def pulse_page():
         feed = "following"
     elif request.path.endswith("/questions"):
         feed = "questions"
+    elif request.path.endswith("/my-posts"):
+        feed = "my_posts"
     else:
         feed = request.args.get("feed") or "for_you"
-    return pulse_page_html("Global Pulse Feed", feed)
+    return pulse_page_html("My Pulse Posts" if feed == "my_posts" else "Global Pulse Feed", feed)
 
 
 @webhook_app.route("/pulse/topic/<topic>", methods=["GET"])
@@ -15299,14 +15425,23 @@ def pulse_post_page(post_id):
     media = (post.get("media") or [{}])[0]
     image = media.get("thumbnail_url") or media.get("media_url") or "/static/Coinpilot%20Logo/NewLogo.png"
     comments = pulse_feed_engine.list_comments(post_id).get("comments", [])
-    comment_html = "".join(f"<div class='comment'><strong>{clean_html(c.get('author',{}).get('display_name') or 'Pulse user')}</strong><p>{clean_html(c.get('body') or '')}</p></div>" for c in comments)
+    comment_html = "".join(f"<div class='comment'><strong>{clean_html(c.get('author',{}).get('display_name') or 'Pulse user')}</strong><p>{clean_html(c.get('body') or '')}</p><small>{clean_html(c.get('created_at') or '')}</small></div>" for c in comments)
     media_html = ""
     for item in post.get("media") or []:
         if item.get("media_type") == "video":
             media_html += f"<video src='{clean_html(item.get('media_url'))}' controls playsinline preload='metadata'></video>"
         else:
             media_html += f"<img src='{clean_html(item.get('thumbnail_url') or item.get('media_url'))}' alt='Pulse media' loading='lazy'>"
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{clean_html(title)} | CoinPilotXAI Pulse</title><meta name='description' content='{clean_html(description)}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://coinpilotx.app/pulse/post/{post_id}'><meta property='og:title' content='{clean_html(title)}'><meta property='og:description' content='{clean_html(description)}'><meta property='og:image' content='{clean_html(image)}'><meta name='twitter:card' content='summary_large_image'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,860px);margin:auto;padding:24px 0 80px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0}}a{{color:#6edff6}}p{{color:#9fb5c0}}img,video{{width:100%;max-height:620px;object-fit:contain;border-radius:12px;background:#020817}}.comment{{border-left:3px solid #6edff6;padding:8px;background:rgba(255,255,255,.04);border-radius:8px;margin:8px 0}}</style></head><body><main class='wrap'><a href='/pulse'>Back to Pulse</a><article class='card'><p>{clean_html(post.get('author',{}).get('display_name') or 'Pulse creator')} · {clean_html(post.get('author',{}).get('rank') or 'Rookie')}</p><h1>{clean_html(title)}</h1><p>{clean_html(post.get('body') or '')}</p>{media_html}<p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2>{comment_html or '<p>No comments yet.</p>'}</section></main></body></html>""")
+    counts = post.get("reaction_counts") or {}
+    reaction_buttons = "".join(
+        f"<button class='reaction-btn {'active' if post.get('viewer_reaction') == key else ''}' data-react='{clean_html(key)}'>{clean_html(label)} {int(counts.get(key) or 0)}</button>"
+        for key, label in [
+            ("fire", "Fire"), ("smart", "Smart"), ("scam_alert", "Scam Alert"), ("whale", "Whale"),
+            ("bullish", "Bullish"), ("bearish", "Bearish"), ("funny", "Funny"), ("elite", "Elite")
+        ]
+    )
+    tags_html = "".join(f"<a class='tag' href='/pulse/topic/{clean_html(tag)}'>#{clean_html(tag)}</a>" for tag in post.get("tags") or [])
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{clean_html(title)} | CoinPilotXAI Pulse</title><meta name='description' content='{clean_html(description)}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://coinpilotx.app/pulse/post/{post_id}'><meta property='og:title' content='{clean_html(title)}'><meta property='og:description' content='{clean_html(description)}'><meta property='og:image' content='{clean_html(image)}'><meta name='twitter:card' content='summary_large_image'><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:20px 0 calc(88px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24)}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}h1{{font-size:clamp(34px,7vw,64px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:620px;object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}button,.button,input{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.reactions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.reaction-btn.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.42)}}.comment{{border-left:3px solid var(--cyan);padding:9px;background:rgba(255,255,255,.04);border-radius:8px;margin:8px 0}}.comment-box{{display:grid;grid-template-columns:1fr auto;gap:8px}}@media(max-width:720px){{.actions .button,.actions button,.comment-box{{width:100%;grid-template-columns:1fr}}}}</style></head><body><main class='wrap'><nav class='actions'><a class='button' href='/pulse'>Back to Pulse</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse/create'>Create Another</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{clean_html(post.get('author',{}).get('display_name') or 'Pulse creator')}</strong><br><span class='badge'>{clean_html(post.get('author',{}).get('rank') or 'Rookie')}</span></p><small>{clean_html(post.get('created_at') or '')}</small></div><h1>{clean_html(title)}</h1><p>{clean_html(post.get('body') or '')}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {clean_html(post.get('post_type') or 'post')} · Status: {clean_html(post.get('moderation_status') or 'approved')} · Risk score: {int(post.get('risk_score') or 0)}</p><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Reactions</h2><div class='reactions'>{reaction_buttons}</div></section><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Reply with a comment...'><button class='primary'>Comment</button></form></section><section class='card'><h2>Post Actions</h2><div class='actions'><a class='button primary' href='/pulse/post/{post_id}'>View Post</a><a class='button' href='/pulse/create'>Create Another</a><a class='button' href='/pulse'>Go to Pulse Feed</a><a class='button' href='/pulse/my-posts'>My Posts</a></div></section></main><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.message||'Request failed.');return d}}document.getElementById('shareBtn').addEventListener('click',async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}});document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});</script></body></html>""")
 
 
 @webhook_app.route("/api/pulse/feed", methods=["GET"])
@@ -15331,15 +15466,30 @@ def api_pulse_posts():
     content_length = int(request.content_length or 0)
     has_file = False
 
+    def exception_hint(exc_text):
+        text = str(exc_text or "")
+        lower = text.lower()
+        table = ""
+        field = ""
+        for candidate in ["pulse_posts", "pulse_jobs", "pulse_post_attempts", "chat_media_uploads", "arena_profiles", "users"]:
+            if candidate in lower:
+                table = candidate
+                break
+        match = re.search(r"(?:column|field) ['\"]?([a-zA-Z_][a-zA-Z0-9_]*)", text, re.I) or re.search(r"no such column: ([a-zA-Z_][a-zA-Z0-9_\\.]*)(?:\\b|$)", text, re.I)
+        if match:
+            field = match.group(1).split(".")[-1]
+        return table, field
+
     def record_attempt(status_label, status_code, error_reason="", exception_message=""):
         try:
+            failing_table, failing_field = exception_hint(exception_message or error_reason)
             conn = db()
             cur = conn.cursor()
             cur.execute(
                 """
                 INSERT INTO pulse_post_attempts
-                (user_id, post_type, status, error_reason, content_length, has_file, status_code, exception_message, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (user_id, post_type, status, error_reason, content_length, has_file, status_code, exception_message, failing_table, failing_field, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["user_id"],
@@ -15350,6 +15500,8 @@ def api_pulse_posts():
                     1 if has_file else 0,
                     int(status_code or 0),
                     str(exception_message or "")[:1000],
+                    failing_table[:120],
+                    failing_field[:120],
                     datetime.utcnow().isoformat(timespec="seconds"),
                 ),
             )
@@ -15425,8 +15577,10 @@ def api_pulse_posts():
         logging.exception("Pulse post publish failed user_id=%s post_type=%s error=%s", user["user_id"], post_type, exc)
         exc_text = str(exc)
         message = "Server error while publishing. Please try again."
-        if any(token in exc_text.lower() for token in ["pulse_posts", "pulse_post", "no such table", "undefined table", "undefined column", "does not exist"]):
-            message = "Database migration missing. Please run the latest migration and try again."
+        failing_table, failing_field = exception_hint(exc_text)
+        if any(token in exc_text.lower() for token in ["pulse_posts", "pulse_jobs", "chat_media_uploads", "pulse_post", "no such table", "undefined table", "undefined column", "no such column", "does not exist"]):
+            detail = f" ({failing_table}{'.' + failing_field if failing_field else ''})" if failing_table or failing_field else ""
+            message = f"Database migration missing{detail}. Please run the latest migration and try again."
         record_attempt("failed", 500, message, exc_text)
         return jsonify({"ok": False, "message": message}), 500
 
@@ -15627,10 +15781,25 @@ def admin_pulse_post_debug_page():
         heartbeat = dict(cur.fetchone() or {})
     except Exception:
         heartbeat = {}
+    try:
+        cur.execute(
+            """
+            SELECT p.id, p.user_id, p.post_type, p.moderation_status, p.title, p.body, p.created_at,
+                   COALESCE(u.roast_call_sign, u.display_name, u.username, '') AS author_name
+            FROM pulse_posts p
+            LEFT JOIN users u ON u.user_id=p.user_id
+            WHERE p.deleted_at IS NULL
+            ORDER BY p.id DESC
+            LIMIT 20
+            """
+        )
+        latest_posts = [dict(row) for row in cur.fetchall()]
+    except Exception as exc:
+        latest_posts = [{"id": "", "post_type": "debug_error", "moderation_status": "", "title": "", "body": str(exc), "created_at": "", "author_name": ""}]
     conn.close()
     last_error = next((row for row in attempts if row.get("status") != "success"), {})
     attempt_rows = "".join(
-        f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('post_type') or '')}</td><td>{int(row.get('content_length') or 0)}</td><td>{'yes' if int(row.get('has_file') or 0) else 'no'}</td><td>{int(row.get('status_code') or 0)}</td><td>{clean_html(row.get('error_reason') or '')}</td><td>{clean_html((row.get('exception_message') or '')[:180])}</td></tr>"
+        f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('post_type') or '')}</td><td>{int(row.get('content_length') or 0)}</td><td>{'yes' if int(row.get('has_file') or 0) else 'no'}</td><td>{int(row.get('status_code') or 0)}</td><td>{clean_html(row.get('failing_table') or '')}</td><td>{clean_html(row.get('failing_field') or '')}</td><td>{clean_html(row.get('error_reason') or '')}</td><td>{clean_html((row.get('exception_message') or '')[:240])}</td></tr>"
         for row in attempts
     )
     table_rows = "".join(
@@ -15644,7 +15813,11 @@ def admin_pulse_post_debug_page():
         {"name": "Pending Pulse jobs", "value": pending_jobs, "detail": "Background queue"},
         {"name": "Last request error", "value": last_error.get("error_reason") or "none", "detail": last_error.get("created_at") or ""},
     ]
-    body = f"<h1>Pulse Post Debug</h1><p class='muted'>Production publishing diagnostics for /pulse/questions and /api/pulse/posts.</p><div class='card'>{admin_rows_table(status_rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div><div class='card'><h2>Pulse Tables</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{table_rows}</table></div><div class='card'><h2>Worker Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Last 20 Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Type</th><th>Length</th><th>File</th><th>HTTP</th><th>Error</th><th>Exception</th></tr>{attempt_rows or '<tr><td colspan=8>No publish attempts logged yet.</td></tr>'}</table></div>"
+    latest_rows = "".join(
+        f"<tr><td><a href='/pulse/post/{int(row.get('id') or 0)}'>{int(row.get('id') or 0)}</a></td><td>{clean_html(row.get('author_name') or ('User #' + str(row.get('user_id') or '')))}</td><td>{clean_html(row.get('post_type') or '')}</td><td>{clean_html(row.get('moderation_status') or '')}</td><td>{clean_html(row.get('title') or '')}</td><td>{clean_html((row.get('body') or '')[:160])}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>"
+        for row in latest_posts
+    )
+    body = f"<h1>Pulse Post Debug</h1><p class='muted'>Production publishing diagnostics for /pulse/questions and /api/pulse/posts.</p><div class='card'>{admin_rows_table(status_rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div><div class='card'><h2>Latest Created Posts</h2><table><tr><th>ID</th><th>Author</th><th>Type</th><th>Status</th><th>Title</th><th>Body</th><th>Created</th></tr>{latest_rows or '<tr><td colspan=7>No posts created yet.</td></tr>'}</table></div><div class='card'><h2>Pulse Tables</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{table_rows}</table></div><div class='card'><h2>Worker Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Last 20 Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Type</th><th>Length</th><th>File</th><th>HTTP</th><th>Table</th><th>Field</th><th>Error</th><th>Exception</th></tr>{attempt_rows or '<tr><td colspan=10>No publish attempts logged yet.</td></tr>'}</table></div>"
     return admin_page_html("Pulse Post Debug", body, admin)
 
 
@@ -15763,19 +15936,22 @@ def admin_monetization_page():
 
 
 ADMIN_DEPARTMENTS = {
-    "social": {"title": "Social / Pulse Feed", "permission": "system.view", "focus": ["Pulse posts", "comments", "hashtags", "trending topics", "daily prompts"]},
-    "trust-safety": {"title": "Trust & Safety", "permission": "support.manage", "focus": ["scam reports", "phishing links", "harassment", "doxxing", "unsafe media"]},
-    "moderation": {"title": "Moderation", "permission": "support.manage", "focus": ["reported posts", "reported comments", "media review", "appeals", "repeat offenders"]},
-    "creators": {"title": "Creator Operations", "permission": "system.view", "focus": ["creator profiles", "fan messages", "call signs", "verification", "creator candidates"]},
-    "arena": {"title": "Arena Operations", "permission": "system.view", "focus": ["live rooms", "match failures", "XP economy", "replays", "leaderboards"]},
-    "roast-battle": {"title": "Roast Battle Operations", "permission": "system.view", "focus": ["active rooms", "4-player battles", "unsafe lines", "call signs", "crowd voting"]},
-    "delivery": {"title": "Alerts & Notifications", "permission": "system.view", "focus": ["alert worker", "email", "push", "SMS", "Telegram", "failed jobs"]},
-    "growth": {"title": "Marketing / Growth", "permission": "analytics.view", "focus": ["landing pages", "funnels", "campaigns", "CTA clicks", "signup sources"]},
-    "seo": {"title": "SEO / Content", "permission": "system.view", "focus": ["sitemaps", "metadata", "learning pages", "public posts", "OG previews"]},
-    "monetization": {"title": "Monetization / Ads", "permission": "system.view", "focus": ["Pro", "ad reviews", "sponsor slots", "enterprise leads", "creator readiness"]},
+    "executive": {"title": "Executive Command", "permission": "analytics.view", "focus": ["DAU / WAU", "revenue health", "retention", "risk posture", "what needs attention"]},
+    "social": {"title": "Social / Pulse Feed", "permission": "pulse.moderate", "focus": ["Pulse posts", "comments", "hashtags", "trending topics", "daily prompts"]},
+    "trust-safety": {"title": "Trust & Safety", "permission": "trust_safety.manage", "focus": ["scam reports", "phishing links", "harassment", "doxxing", "unsafe media"]},
+    "moderation": {"title": "Moderation", "permission": "moderation.manage", "focus": ["reported posts", "reported comments", "media review", "appeals", "repeat offenders"]},
+    "creators": {"title": "Creator Operations", "permission": "creators.manage", "focus": ["creator profiles", "fan messages", "call signs", "verification", "creator candidates"]},
+    "arena": {"title": "Arena Operations", "permission": "arena.operate", "focus": ["live rooms", "match failures", "XP economy", "replays", "leaderboards"]},
+    "roast-battle": {"title": "Roast Battle Operations", "permission": "roast.operate", "focus": ["active rooms", "4-player battles", "unsafe lines", "call signs", "crowd voting"]},
+    "delivery": {"title": "Alerts & Notifications", "permission": "alerts.operate", "focus": ["alert worker", "email", "push", "SMS", "Telegram", "failed jobs"]},
+    "messaging": {"title": "Telegram / SMS / Push", "permission": "alerts.operate", "focus": ["Telegram health", "SMS setup", "push subscriptions", "provider failures", "test delivery"]},
+    "growth": {"title": "Marketing / Growth", "permission": "growth.manage", "focus": ["landing pages", "funnels", "campaigns", "CTA clicks", "signup sources"]},
+    "seo": {"title": "SEO / Content", "permission": "seo.manage", "focus": ["sitemaps", "metadata", "learning pages", "public posts", "OG previews"]},
+    "monetization": {"title": "Monetization / Ads", "permission": "monetization.manage", "focus": ["Pro", "ad reviews", "sponsor slots", "enterprise leads", "creator readiness"]},
     "support": {"title": "Support", "permission": "support.manage", "focus": ["tickets", "billing issues", "Telegram connection issues", "alert complaints"]},
-    "security": {"title": "Security", "permission": "system.view", "focus": ["rate limits", "failed logins", "admin activity", "upload abuse", "bot failures"]},
+    "security": {"title": "Security", "permission": "security.view", "focus": ["rate limits", "failed logins", "admin activity", "upload abuse", "bot failures"]},
     "analytics": {"title": "Analytics / Intelligence", "permission": "analytics.view", "focus": ["DAU", "retention", "session time", "feature drop-offs", "conversion"]},
+    "engineering": {"title": "Engineering / System Health", "permission": "engineering.operate", "focus": ["worker heartbeats", "slow routes", "recent 500s", "deploy health", "database migrations"]},
 }
 
 
@@ -15788,20 +15964,40 @@ def department_counts(slug):
     try:
         cur.execute("SELECT COUNT(*) AS total FROM admin_tasks WHERE department=? AND status!='done'", (slug,))
         counts["pending_tasks"] = int(dict(cur.fetchone() or {}).get("total") or 0)
-        if slug == "social":
+        if slug == "executive":
+            cur.execute("SELECT COUNT(*) AS total FROM users WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute("SELECT COUNT(*) AS total FROM admin_tasks WHERE status IN ('open','in_progress') AND priority IN ('high','critical')")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "social":
             cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
             cur.execute("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'")
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
-        elif slug == "trust-safety":
+        elif slug in {"trust-safety", "moderation"}:
             cur.execute("SELECT COUNT(*) AS total FROM moderation_cases WHERE status IN ('open','reviewing') AND priority IN ('high','critical')")
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute("SELECT COUNT(*) AS total FROM moderation_cases WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "creators":
+            cur.execute("SELECT COUNT(*) AS total FROM creator_profiles WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "arena":
+            cur.execute("SELECT COUNT(*) AS total FROM arena_matches WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "delivery":
             cur.execute("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE status IN ('failed','not_configured')")
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "messaging":
+            cur.execute("SELECT COUNT(*) AS total FROM notification_delivery_logs WHERE channel IN ('telegram','sms','push') AND status!='sent'")
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "security":
             cur.execute("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute("SELECT COUNT(*) AS total FROM auth_events WHERE status='failed' AND created_at>=?", (today,))
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "support":
             cur.execute("SELECT COUNT(*) AS total FROM support_tickets WHERE status!='closed'")
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
@@ -15811,6 +16007,18 @@ def department_counts(slug):
         elif slug == "roast-battle":
             cur.execute("SELECT COUNT(*) AS total FROM arena_roast_lines WHERE safe=0")
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "growth":
+            cur.execute("SELECT COUNT(*) AS total FROM conversion_events WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "seo":
+            cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE visibility='public' AND moderation_status='approved'")
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "analytics":
+            cur.execute("SELECT COUNT(*) AS total FROM analytics_events WHERE created_at>=?", (today,))
+            counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        elif slug == "engineering":
+            cur.execute("SELECT COUNT(*) AS total FROM worker_heartbeats WHERE last_seen_at IS NULL OR last_seen_at<?", ((datetime.utcnow() - timedelta(minutes=5)).isoformat(timespec="seconds"),))
+            counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
     except Exception:
         pass
     conn.close()
@@ -15818,21 +16026,436 @@ def department_counts(slug):
     return counts
 
 
+def department_control_panels(slug):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    def scalar(query, params=()):
+        try:
+            cur.execute(query, params)
+            row = cur.fetchone()
+            return int((dict(row or {}).get("total") or 0))
+        except Exception:
+            return 0
+
+    def rows(query, params=(), limit=8):
+        try:
+            cur.execute(query, params)
+            return [dict(row) for row in cur.fetchall()[:limit]]
+        except Exception:
+            return []
+
+    today = datetime.utcnow().date().isoformat()
+    panels = []
+    actions = []
+    metrics = []
+    table_rows = []
+    table_cols = []
+    if slug == "executive":
+        metrics = [
+            {"name": "New users today", "value": scalar("SELECT COUNT(*) AS total FROM users WHERE created_at>=?", (today,)), "detail": "Signup momentum"},
+            {"name": "Open critical tasks", "value": scalar("SELECT COUNT(*) AS total FROM admin_tasks WHERE priority='critical' AND status!='done'"), "detail": "Needs leadership attention"},
+            {"name": "Open reports", "value": scalar("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'"), "detail": "Community risk"},
+        ]
+        actions = [("Retention", "/admin/retention"), ("Product Health", "/admin/product-health"), ("Monetization", "/admin/monetization")]
+    elif slug == "social":
+        metrics = [
+            {"name": "Posts today", "value": scalar("SELECT COUNT(*) AS total FROM pulse_posts WHERE created_at>=?", (today,)), "detail": "Pulse creation"},
+            {"name": "Comments today", "value": scalar("SELECT COUNT(*) AS total FROM pulse_comments WHERE created_at>=?", (today,)), "detail": "Conversation"},
+            {"name": "Open reports", "value": scalar("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'"), "detail": "Needs review"},
+        ]
+        table_rows = rows("SELECT id, post_type, moderation_status, risk_score, created_at FROM pulse_posts ORDER BY id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("post_type", "Type"), ("moderation_status", "Status"), ("risk_score", "Risk"), ("created_at", "Created")]
+        actions = [("Pulse Moderation", "/admin/pulse-moderation"), ("Pulse Analytics", "/admin/pulse-analytics"), ("Pulse Post Debug", "/admin/pulse-post-debug")]
+    elif slug in {"trust-safety", "moderation"}:
+        metrics = [
+            {"name": "Open cases", "value": scalar("SELECT COUNT(*) AS total FROM moderation_cases WHERE status IN ('open','reviewing')"), "detail": "Human review"},
+            {"name": "Critical cases", "value": scalar("SELECT COUNT(*) AS total FROM moderation_cases WHERE priority='critical' AND status IN ('open','reviewing')"), "detail": "Escalate now"},
+            {"name": "Open media reports", "value": scalar("SELECT COUNT(*) AS total FROM media_reports WHERE status='open'"), "detail": "Unsafe media"},
+        ]
+        table_rows = rows("SELECT id, target_type, priority, status, reason, created_at FROM moderation_cases ORDER BY id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("target_type", "Target"), ("priority", "Priority"), ("status", "Status"), ("reason", "Reason"), ("created_at", "Created")]
+        actions = [("Moderation Queue", "/admin/moderation"), ("Reports", "/admin/reports"), ("Media Moderation", "/admin/media-moderation")]
+    elif slug == "creators":
+        metrics = [
+            {"name": "Creator profiles", "value": scalar("SELECT COUNT(*) AS total FROM creator_profiles"), "detail": "Total"},
+            {"name": "Fan messages", "value": scalar("SELECT COUNT(*) AS total FROM message_requests"), "detail": "Requests"},
+            {"name": "Open creator reports", "value": scalar("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'"), "detail": "Review"},
+        ]
+        table_rows = rows("SELECT id, user_id, display_name, verification_status, creator_score, created_at FROM creator_profiles ORDER BY creator_score DESC, id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("user_id", "User"), ("display_name", "Creator"), ("verification_status", "Status"), ("creator_score", "Score"), ("created_at", "Created")]
+        actions = [("Creators", "/admin/monetization"), ("Fan Chat Health", "/admin/chat-health")]
+    elif slug == "arena":
+        metrics = [
+            {"name": "Arena games", "value": scalar("SELECT COUNT(*) AS total FROM arena_games"), "detail": "Catalog"},
+            {"name": "Match failures", "value": scalar("SELECT COUNT(*) AS total FROM product_health_events WHERE event_name LIKE '%arena%'"), "detail": "Reliability"},
+            {"name": "Replays", "value": scalar("SELECT COUNT(*) AS total FROM arena_replays"), "detail": "Share loop"},
+        ]
+        actions = [("Arena Ops", "/admin/arena"), ("Arena Games", "/admin/arena-games"), ("Arena World", "/admin/arena-world")]
+    elif slug == "roast-battle":
+        metrics = [
+            {"name": "Roast rooms", "value": scalar("SELECT COUNT(*) AS total FROM roast_rooms"), "detail": "Rooms"},
+            {"name": "Unsafe lines", "value": scalar("SELECT COUNT(*) AS total FROM arena_roast_lines WHERE safe=0"), "detail": "Needs review"},
+            {"name": "Roast matches", "value": scalar("SELECT COUNT(*) AS total FROM roast_matches"), "detail": "Matches"},
+        ]
+        table_rows = rows("SELECT id, match_id, sender_user_id, impact_label, safe, created_at FROM arena_roast_lines ORDER BY id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("match_id", "Match"), ("sender_user_id", "Sender"), ("impact_label", "Impact"), ("safe", "Safe"), ("created_at", "Created")]
+        actions = [("Roast Battle", "/admin/roast-battle"), ("Chat Health", "/admin/chat-health")]
+    elif slug in {"delivery", "messaging"}:
+        metrics = [
+            {"name": "Delivery failures", "value": scalar("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE status IN ('failed','not_configured')"), "detail": "Alert jobs"},
+            {"name": "Sent today", "value": scalar("SELECT COUNT(*) AS total FROM alert_delivery_jobs WHERE status='sent' AND created_at>=?", (today,)), "detail": "Delivered"},
+            {"name": "Provider logs", "value": scalar("SELECT COUNT(*) AS total FROM notification_delivery_logs WHERE created_at>=?", (today,)), "detail": "Email/SMS/Push/Telegram"},
+        ]
+        table_rows = rows("SELECT id, channel, status, provider, error_message, created_at FROM alert_delivery_jobs ORDER BY id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("channel", "Channel"), ("status", "Status"), ("provider", "Provider"), ("error_message", "Error"), ("created_at", "Created")]
+        actions = [("Alert Delivery", "/admin/alert-delivery"), ("Notification Health", "/admin/notification-health"), ("Telegram Health", "/admin/telegram-health")]
+    elif slug == "growth":
+        metrics = [
+            {"name": "Conversion events", "value": scalar("SELECT COUNT(*) AS total FROM conversion_events WHERE created_at>=?", (today,)), "detail": "Today"},
+            {"name": "Product events", "value": scalar("SELECT COUNT(*) AS total FROM product_events WHERE created_at>=?", (today,)), "detail": "Behavior"},
+            {"name": "Visitor sessions", "value": scalar("SELECT COUNT(*) AS total FROM visitor_sessions WHERE last_seen_at>=?", (today,)), "detail": "Traffic"},
+        ]
+        actions = [("Retention", "/admin/retention"), ("Visitors", "/admin/visitors"), ("Product Health", "/admin/product-health")]
+    elif slug == "seo":
+        metrics = [
+            {"name": "Public paths", "value": len(all_public_paths()), "detail": "Crawl targets"},
+            {"name": "Public Pulse posts", "value": scalar("SELECT COUNT(*) AS total FROM pulse_posts WHERE visibility='public' AND moderation_status='approved'"), "detail": "Indexable"},
+            {"name": "Learning pages", "value": scalar("SELECT COUNT(*) AS total FROM education_lessons"), "detail": "Education"},
+        ]
+        actions = [("SEO Center", "/admin/seo"), ("Education", "/admin/education"), ("Sitemap", "/sitemap.xml")]
+    elif slug == "monetization":
+        metrics = [
+            {"name": "Pro users", "value": scalar("SELECT COUNT(*) AS total FROM users WHERE is_pro=1"), "detail": "Active access"},
+            {"name": "Ad reports", "value": scalar("SELECT COUNT(*) AS total FROM ad_reports WHERE status='open'"), "detail": "Ad safety"},
+            {"name": "Enterprise leads", "value": scalar("SELECT COUNT(*) AS total FROM enterprise_leads WHERE status='new'"), "detail": "Pipeline"},
+        ]
+        actions = [("Monetization", "/admin/monetization"), ("Transactions", "/admin/transactions"), ("Subscriptions", "/admin/subscriptions")]
+    elif slug == "support":
+        metrics = [
+            {"name": "Open tickets", "value": scalar("SELECT COUNT(*) AS total FROM support_tickets WHERE status!='closed'"), "detail": "Inbox"},
+            {"name": "Telegram issues", "value": scalar("SELECT COUNT(*) AS total FROM support_tickets WHERE issue_type LIKE '%telegram%' AND status!='closed'"), "detail": "Account linking"},
+            {"name": "Alert complaints", "value": scalar("SELECT COUNT(*) AS total FROM support_tickets WHERE issue_type LIKE '%alert%' AND status!='closed'"), "detail": "Delivery trust"},
+        ]
+        table_rows = rows("SELECT id, email, issue_type, priority, status, created_at FROM support_tickets ORDER BY id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("email", "Email"), ("issue_type", "Issue"), ("priority", "Priority"), ("status", "Status"), ("created_at", "Created")]
+        actions = [("Support Inbox", "/admin/support"), ("Telegram Health", "/admin/telegram-health"), ("Alert Delivery", "/admin/alert-delivery")]
+    elif slug == "security":
+        metrics = [
+            {"name": "Security events today", "value": scalar("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,)), "detail": "Threat signal"},
+            {"name": "Failed logins", "value": scalar("SELECT COUNT(*) AS total FROM auth_events WHERE status='failed' AND created_at>=?", (today,)), "detail": "Auth risk"},
+            {"name": "Admin activity", "value": scalar("SELECT COUNT(*) AS total FROM admin_activity_logs WHERE created_at>=?", (today,)), "detail": "Audit"},
+        ]
+        table_rows = rows("SELECT id, event_type, path, status, created_at FROM security_events ORDER BY id DESC LIMIT 8")
+        table_cols = [("id", "ID"), ("event_type", "Event"), ("path", "Path"), ("status", "Status"), ("created_at", "Created")]
+        actions = [("Security Monitor", "/admin/security"), ("Security Events", "/admin/security-events"), ("Audit Logs", "/admin/audit-logs")]
+    elif slug == "analytics":
+        metrics = [
+            {"name": "Analytics events", "value": scalar("SELECT COUNT(*) AS total FROM analytics_events WHERE created_at>=?", (today,)), "detail": "Today"},
+            {"name": "Product events", "value": scalar("SELECT COUNT(*) AS total FROM product_events WHERE created_at>=?", (today,)), "detail": "Usage"},
+            {"name": "Retention checks", "value": scalar("SELECT COUNT(*) AS total FROM product_health_events WHERE created_at>=?", (today,)), "detail": "Health"},
+        ]
+        actions = [("Analytics", "/admin/analytics"), ("Retention", "/admin/retention"), ("Product Health", "/admin/product-health")]
+    elif slug == "engineering":
+        metrics = [
+            {"name": "Worker heartbeats", "value": scalar("SELECT COUNT(*) AS total FROM worker_heartbeats"), "detail": "Workers"},
+            {"name": "Failed jobs", "value": scalar("SELECT COUNT(*) AS total FROM pulse_jobs WHERE status='failed'"), "detail": "Pulse queue"},
+            {"name": "System errors", "value": scalar("SELECT COUNT(*) AS total FROM product_health_events WHERE event_name LIKE '%error%'"), "detail": "Observed"},
+        ]
+        table_rows = rows("SELECT worker_name, status, last_seen_at, last_error FROM worker_heartbeats ORDER BY last_seen_at DESC LIMIT 8")
+        table_cols = [("worker_name", "Worker"), ("status", "Status"), ("last_seen_at", "Last Seen"), ("last_error", "Last Error")]
+        actions = [("System Health", "/admin/system-health"), ("Provider Health", "/admin/provider-health"), ("Pulse Worker", "/admin/pulse-worker-health")]
+    conn.close()
+    metric_html = "".join(f"<div class='card'><h2>{clean_html(m['name'])}</h2><p class='metric'>{m['value']}</p><p class='muted'>{clean_html(m['detail'])}</p></div>" for m in metrics)
+    if metric_html:
+        panels.append(f"<div class='grid'>{metric_html}</div>")
+    if actions:
+        action_html = " ".join(f"<a class='button' href='{clean_html(url)}'>{clean_html(label)}</a>" for label, url in actions)
+        panels.append(f"<div class='card'><h2>Fast Actions</h2><p>{action_html}</p></div>")
+    if table_rows and table_cols:
+        panels.append(f"<div class='card'><h2>Live Queue Preview</h2>{admin_rows_table(table_rows, table_cols)}</div>")
+    return "".join(panels)
+
+
+def department_action_panel(slug):
+    common = {
+        "social": [
+            ("approve_post", "Approve post", "post", "Approve a pending Pulse post."),
+            ("hide_post", "Hide post", "post", "Hide a risky Pulse post from public feeds."),
+            ("remove_post", "Remove post", "post", "Soft-delete a post."),
+            ("send_to_moderation", "Send to moderation", "post", "Move a post into human review."),
+            ("boost_quality", "Boost quality content", "post", "Increase discovery weight for useful content."),
+            ("mark_misinformation", "Mark misinformation risk", "post", "Flag a post as high-risk context."),
+        ],
+        "trust-safety": [
+            ("quarantine_content", "Quarantine content", "post", "Move suspicious content into review."),
+            ("warn_user", "Warn user", "user", "Create a warning task for a user."),
+            ("restrict_user", "Restrict user", "user", "Create a restriction task for review."),
+            ("suspend_user", "Suspend user", "user", "Escalate a suspension action."),
+            ("dismiss_report", "Dismiss report", "report", "Close a report when reviewed."),
+            ("restore_content", "Restore content", "post", "Approve content after review."),
+        ],
+        "moderation": [
+            ("assign_case", "Assign case", "case", "Assign or reassign a moderation case."),
+            ("escalate_case", "Escalate case", "case", "Raise case priority."),
+            ("resolve_case", "Resolve case", "case", "Mark a case actioned."),
+            ("dismiss_case", "Dismiss case", "case", "Dismiss a case after review."),
+            ("add_case_note", "Add case note", "case", "Append internal notes."),
+        ],
+        "creators": [
+            ("verify_creator", "Verify creator", "creator", "Mark creator verified."),
+            ("remove_verification", "Remove verification", "creator", "Remove verified state."),
+            ("feature_creator", "Feature creator", "creator", "Queue creator for homepage review."),
+            ("restrict_creator", "Restrict creator tools", "creator", "Restrict creator capabilities."),
+            ("review_fan_messages", "Review fan messages", "creator", "Open a fan-message review task."),
+        ],
+        "arena": [
+            ("restart_match", "Restart stuck match", "match", "Queue stuck match repair."),
+            ("end_match", "End match", "match", "Queue match shutdown."),
+            ("disable_mode", "Disable broken game mode", "mode", "Queue mode disable review."),
+            ("feature_match", "Feature match", "match", "Add match to feature queue."),
+            ("repair_leaderboard", "Repair leaderboard", "leaderboard", "Queue leaderboard repair."),
+        ],
+        "roast-battle": [
+            ("timeout_player", "Timeout player", "player", "Queue player timeout."),
+            ("remove_abusive_line", "Remove abusive line", "roast_line", "Mark line unsafe."),
+            ("feature_battle", "Feature battle", "match", "Queue battle for featured placement."),
+            ("end_room", "End room", "room", "Queue room closure."),
+            ("review_scoring_dispute", "Review scoring dispute", "match", "Create scoring review task."),
+        ],
+        "delivery": [
+            ("run_full_delivery_test", "Run full delivery test", "delivery", "Create a full delivery test task."),
+            ("retry_failed_delivery", "Retry failed delivery", "delivery_job", "Move failed delivery job back to pending."),
+            ("pause_channel", "Pause broken channel", "channel", "Create provider pause task."),
+            ("inspect_provider_error", "Inspect provider error", "delivery_job", "Create provider-error investigation."),
+        ],
+        "messaging": [
+            ("test_telegram", "Test Telegram", "telegram", "Create Telegram delivery test task."),
+            ("test_sms", "Test SMS", "sms", "Create SMS delivery test task."),
+            ("test_push", "Test Push", "push", "Create push delivery test task."),
+            ("inspect_provider_error", "Inspect provider error", "provider", "Create provider investigation."),
+        ],
+        "growth": [
+            ("feature_campaign", "Feature campaign", "campaign", "Promote campaign to active review."),
+            ("pause_campaign", "Pause campaign label", "campaign", "Create campaign pause task."),
+            ("update_cta", "Update CTA copy", "landing_page", "Create CTA update task."),
+            ("inspect_funnel", "Inspect funnel dropoff", "funnel", "Create funnel investigation."),
+        ],
+        "seo": [
+            ("regenerate_sitemap", "Regenerate sitemap", "seo", "Create sitemap refresh task."),
+            ("refresh_metadata", "Refresh metadata", "page", "Create metadata refresh task."),
+            ("mark_noindex", "Mark page noindex", "page", "Create noindex review task."),
+            ("preview_og", "Preview OG card", "page", "Create social preview task."),
+        ],
+        "monetization": [
+            ("approve_sponsor", "Approve sponsor", "sponsor", "Mark sponsor review approved."),
+            ("reject_sponsor", "Reject sponsor", "sponsor", "Reject unsafe sponsor."),
+            ("label_sponsored", "Label ad Sponsored", "ad", "Create ad labeling task."),
+            ("inspect_ad_policy", "Inspect ad policy risk", "ad", "Create ad policy review."),
+            ("review_enterprise_lead", "Review enterprise lead", "lead", "Mark lead under review."),
+        ],
+        "support": [
+            ("assign_ticket", "Assign ticket", "ticket", "Assign support ticket."),
+            ("respond_ticket", "Respond", "ticket", "Add internal response task."),
+            ("mark_resolved", "Mark resolved", "ticket", "Close support ticket."),
+            ("escalate_security", "Escalate to security", "ticket", "Create security escalation."),
+            ("escalate_engineering", "Escalate to engineering", "ticket", "Create engineering escalation."),
+        ],
+        "security": [
+            ("lock_account", "Lock account", "user", "Create account lock task."),
+            ("force_logout", "Force logout", "user", "Create forced logout task."),
+            ("block_ip_hash", "Block IP hash", "ip_hash", "Create IP block task."),
+            ("escalate_incident", "Escalate incident", "security_event", "Create incident escalation."),
+            ("false_positive", "Mark false positive", "security_event", "Close event as false positive."),
+        ],
+        "analytics": [
+            ("summarize_health", "Summarize health", "analytics", "Create executive summary task."),
+            ("inspect_churn", "Inspect churn risk", "cohort", "Create churn investigation."),
+            ("export_metrics", "Export campaign summary", "report", "Create report export task."),
+        ],
+        "executive": [
+            ("open_priority_review", "Open priority review", "platform", "Create executive priority task."),
+            ("escalate_department", "Escalate department", "department", "Create department escalation."),
+        ],
+        "engineering": [
+            ("inspect_worker", "Inspect worker", "worker", "Create worker health task."),
+            ("run_health_check", "Run product health check", "system", "Create health-check task."),
+        ],
+    }
+    options = common.get(slug, common["executive"])
+    cards = []
+    for action, label, target, help_text in options:
+        cards.append(
+            f"<form method='post' class='card'>"
+            f"<h2>{clean_html(label)}</h2><p class='muted'>{clean_html(help_text)}</p>"
+            f"<input type='hidden' name='form_action' value='department_action'>"
+            f"<input type='hidden' name='department_action' value='{clean_html(action)}'>"
+            f"<input name='target_id' placeholder='{clean_html(target.title())} ID or slug'>"
+            f"<textarea name='action_note' placeholder='Operator note / reason'></textarea>"
+            f"<button>Run Action</button></form>"
+        )
+    return f"<div class='card'><h2>Operational Controls</h2><p class='muted'>Every action is permission-gated and written to the audit log.</p></div><div class='grid'>{''.join(cards)}</div>"
+
+
+def apply_department_action(slug, action, target_id, note, admin):
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    cur = conn.cursor()
+    message = "Action logged."
+    before = {}
+    after = {"department": slug, "action": action, "target_id": target_id, "note": note}
+
+    def create_task(department, title, priority="high", source_type="", source_id=""):
+        cur.execute(
+            """
+            INSERT INTO admin_tasks
+            (department, title, description, priority, assigned_to, status, source_type, source_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+            """,
+            (department, title, note or title, priority, admin.get("id"), source_type, source_id, now, now),
+        )
+
+    try:
+        if slug == "social" and target_id:
+            cur.execute("SELECT id, moderation_status, engagement_score, deleted_at FROM pulse_posts WHERE id=?", (target_id,))
+            before = dict(cur.fetchone() or {})
+            if action == "approve_post" or action == "restore_content":
+                cur.execute("UPDATE pulse_posts SET moderation_status='approved', updated_at=? WHERE id=?", (now, target_id))
+                message = "Pulse post approved."
+            elif action == "hide_post":
+                cur.execute("UPDATE pulse_posts SET moderation_status='needs_review', updated_at=? WHERE id=?", (now, target_id))
+                message = "Pulse post hidden into review."
+            elif action == "remove_post":
+                cur.execute("UPDATE pulse_posts SET deleted_at=?, updated_at=? WHERE id=?", (now, now, target_id))
+                message = "Pulse post removed."
+            elif action == "send_to_moderation":
+                cur.execute("UPDATE pulse_posts SET moderation_status='needs_review', updated_at=? WHERE id=?", (now, target_id))
+                create_task("moderation", f"Review Pulse post #{target_id}", "high", "post", target_id)
+                message = "Post sent to moderation."
+            elif action == "boost_quality":
+                cur.execute("UPDATE pulse_posts SET engagement_score=COALESCE(engagement_score,0)+25, updated_at=? WHERE id=?", (now, target_id))
+                message = "Pulse post boosted."
+            elif action == "mark_misinformation":
+                cur.execute("UPDATE pulse_posts SET moderation_status='needs_review', risk_score=MAX(COALESCE(risk_score,0), 80), updated_at=? WHERE id=?", (now, target_id))
+                create_task("trust-safety", f"Misinformation risk review for post #{target_id}", "critical", "post", target_id)
+                message = "Misinformation risk queued."
+        elif slug in {"trust-safety", "moderation"}:
+            if action in {"assign_case", "escalate_case", "resolve_case", "dismiss_case", "add_case_note"} and target_id:
+                cur.execute("SELECT * FROM moderation_cases WHERE id=?", (target_id,))
+                before = dict(cur.fetchone() or {})
+                if action == "assign_case":
+                    cur.execute("UPDATE moderation_cases SET assigned_admin_id=?, status='reviewing', notes=COALESCE(notes,'') || ? WHERE id=?", (admin.get("id"), f"\nAssigned: {note}", target_id))
+                    message = "Case assigned."
+                elif action == "escalate_case":
+                    cur.execute("UPDATE moderation_cases SET priority='critical', status='reviewing', notes=COALESCE(notes,'') || ? WHERE id=?", (f"\nEscalated: {note}", target_id))
+                    message = "Case escalated."
+                elif action == "resolve_case":
+                    cur.execute("UPDATE moderation_cases SET status='actioned', decision=?, resolved_at=? WHERE id=?", (note or "Actioned by operator.", now, target_id))
+                    message = "Case resolved."
+                elif action == "dismiss_case":
+                    cur.execute("UPDATE moderation_cases SET status='dismissed', decision=?, resolved_at=? WHERE id=?", (note or "Dismissed by operator.", now, target_id))
+                    message = "Case dismissed."
+                else:
+                    cur.execute("UPDATE moderation_cases SET notes=COALESCE(notes,'') || ? WHERE id=?", (f"\n{now}: {note}", target_id))
+                    message = "Case note added."
+            elif action in {"quarantine_content", "restore_content"} and target_id:
+                status = "approved" if action == "restore_content" else "needs_review"
+                cur.execute("UPDATE pulse_posts SET moderation_status=?, updated_at=? WHERE id=?", (status, now, target_id))
+                message = "Content status updated."
+            elif action == "dismiss_report" and target_id:
+                cur.execute("UPDATE pulse_reports SET status='dismissed' WHERE id=?", (target_id,))
+                message = "Report dismissed."
+            else:
+                create_task(slug, f"{action.replace('_', ' ').title()} {target_id}", "critical" if action in {"ban_user", "suspend_user"} else "high", "admin_action", target_id)
+                message = "Trust & Safety action queued."
+        elif slug == "creators" and target_id:
+            cur.execute("SELECT * FROM creator_profiles WHERE id=? OR user_id=?", (target_id, target_id))
+            before = dict(cur.fetchone() or {})
+            if action == "verify_creator":
+                cur.execute("UPDATE creator_profiles SET verification_status='verified', creator_score=COALESCE(creator_score,0)+10 WHERE id=? OR user_id=?", (target_id, target_id))
+                message = "Creator verified."
+            elif action == "remove_verification":
+                cur.execute("UPDATE creator_profiles SET verification_status='removed' WHERE id=? OR user_id=?", (target_id, target_id))
+                message = "Creator verification removed."
+            elif action == "restrict_creator":
+                cur.execute("UPDATE creator_profiles SET monetization_enabled=0, verification_status='restricted' WHERE id=? OR user_id=?", (target_id, target_id))
+                message = "Creator tools restricted."
+            else:
+                create_task("creators", f"{action.replace('_', ' ').title()} creator {target_id}", "high", "creator", target_id)
+                message = "Creator operation queued."
+        elif slug in {"delivery", "messaging"} and action == "retry_failed_delivery" and target_id:
+            cur.execute("SELECT * FROM alert_delivery_jobs WHERE id=?", (target_id,))
+            before = dict(cur.fetchone() or {})
+            cur.execute("UPDATE alert_delivery_jobs SET status='pending', attempts=COALESCE(attempts,0)+1, next_retry_at=?, error_message='' WHERE id=?", (now, target_id))
+            message = "Delivery job moved to retry queue."
+        elif slug == "support" and target_id:
+            cur.execute("SELECT * FROM support_tickets WHERE id=?", (target_id,))
+            before = dict(cur.fetchone() or {})
+            if action == "mark_resolved":
+                cur.execute("UPDATE support_tickets SET status='closed', updated_at=? WHERE id=?", (now, target_id))
+                message = "Ticket resolved."
+            elif action == "assign_ticket":
+                cur.execute("UPDATE support_tickets SET assigned_to=?, status='open', updated_at=? WHERE id=?", (admin.get("id"), now, target_id))
+                message = "Ticket assigned."
+            else:
+                destination = "security" if action == "escalate_security" else "engineering" if action == "escalate_engineering" else "support"
+                create_task(destination, f"{action.replace('_', ' ').title()} ticket #{target_id}", "high", "ticket", target_id)
+                message = "Support action queued."
+        elif slug == "security" and action == "false_positive" and target_id:
+            cur.execute("SELECT * FROM security_events WHERE id=?", (target_id,))
+            before = dict(cur.fetchone() or {})
+            cur.execute("UPDATE security_events SET status='false_positive' WHERE id=?", (target_id,))
+            message = "Security event marked false positive."
+        elif slug == "roast-battle" and action == "remove_abusive_line" and target_id:
+            cur.execute("SELECT * FROM arena_roast_lines WHERE id=?", (target_id,))
+            before = dict(cur.fetchone() or {})
+            cur.execute("UPDATE arena_roast_lines SET safe=0, moderation_reason=? WHERE id=?", (note or "Removed by admin operator.", target_id))
+            message = "Roast line marked unsafe."
+        elif slug == "monetization" and action == "review_enterprise_lead" and target_id:
+            cur.execute("UPDATE enterprise_leads SET status='reviewing' WHERE id=?", (target_id,))
+            message = "Enterprise lead moved to review."
+        else:
+            create_task(slug, f"{action.replace('_', ' ').title()} {target_id or slug}", "high", "admin_action", target_id)
+            message = "Operational action queued."
+        cur.execute(
+            """
+            INSERT INTO admin_activity_logs
+            (admin_user_id, department, action, route, target_type, target_id, before_json, after_json, ip_hash, user_agent, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                admin.get("id"), slug, action, request.path, slug, target_id,
+                json.dumps(before, default=str)[:4000], json.dumps(after, default=str)[:4000],
+                client_ip_hash(), request.headers.get("User-Agent", "")[:500], now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    log_admin_audit(admin.get("id"), action, slug, str(target_id or ""), after)
+    return message
+
+
 @webhook_app.route("/admin/command-center", methods=["GET"])
 def admin_command_center_page():
-    admin, denied = require_admin_page("system.view")
+    admin, denied = require_admin_page("command_center.view")
     if denied:
         return denied
     init_db()
     cards = []
     for slug, meta in ADMIN_DEPARTMENTS.items():
+        if not admin_has_permission(admin, meta["permission"]):
+            continue
         counts = department_counts(slug)
+        dot_class = "status-danger" if counts["warnings"] >= 5 else "status-warn" if counts["warnings"] else ""
         cards.append(
-            f"<a class='card' href='/admin/departments/{slug}' style='text-decoration:none'>"
-            f"<h2>{clean_html(meta['title'])}</h2><p class='muted'>{', '.join(clean_html(x) for x in meta['focus'][:3])}</p>"
-            f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span></p></a>"
+            f"<a class='card department-card' href='/admin/departments/{slug}' style='text-decoration:none'>"
+            f"<h2><span class='status-dot {dot_class}'></span> {clean_html(meta['title'])}</h2><p class='muted'>{', '.join(clean_html(x) for x in meta['focus'][:3])}</p>"
+            f"<div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div>"
+            f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span> <span class='pill'>Today {counts['today']}</span></p></a>"
         )
-    body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited.</p><div class='grid'>{''.join(cards)}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a></p>"
+    body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited. Only departments allowed for your role appear here.</p><div class='grid'>{''.join(cards) or '<div class=\"card\">No department rooms assigned to this role yet.</div>'}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a></p>"
     return admin_page_html("Department Command Center", body, admin)
 
 
@@ -15847,20 +16470,72 @@ def admin_department_page(slug):
     init_db()
     message = ""
     if request.method == "POST":
-        title = clean_html(request.form.get("title", ""))[:180]
-        description = clean_html(request.form.get("description", ""))[:1200]
-        priority = clean_html(request.form.get("priority", "normal"))[:40]
-        if title:
+        form_action = request.form.get("form_action") or "create_task"
+        conn = db()
+        cur = conn.cursor()
+        if form_action == "update_task":
+            task_id = int(request.form.get("task_id") or 0)
+            status = clean_html(request.form.get("status", "open"))[:40]
+            if task_id and status in {"open", "in_progress", "blocked", "done"}:
+                completed_at = datetime.utcnow().isoformat(timespec="seconds") if status == "done" else None
+                cur.execute("UPDATE admin_tasks SET status=?, completed_at=COALESCE(?, completed_at), updated_at=? WHERE id=? AND department=?", (status, completed_at, datetime.utcnow().isoformat(timespec="seconds"), task_id, slug))
+                conn.commit()
+                log_admin_audit(admin.get("id"), "admin_task_status_updated", "department", slug, {"task_id": task_id, "status": status})
+                message = "Task updated."
+        elif form_action == "department_action":
+            conn.close()
+            action = clean_html(request.form.get("department_action", ""))[:100]
+            target_id = clean_html(request.form.get("target_id", ""))[:140]
+            note = clean_html(request.form.get("action_note", ""))[:1200]
+            message = apply_department_action(slug, action, target_id, note, admin)
             conn = db()
             cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO admin_tasks (department, title, description, priority, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?)",
-                (slug, title, description, priority, datetime.utcnow().isoformat(timespec="seconds"), datetime.utcnow().isoformat(timespec="seconds")),
-            )
-            conn.commit()
-            conn.close()
-            log_admin_audit(admin.get("id"), "admin_task_created", "department", slug, {"title": title, "priority": priority})
-            message = "Department task created."
+        elif form_action == "create_case" and slug in {"trust-safety", "moderation", "social"}:
+            target_type = clean_html(request.form.get("target_type", "post"))[:80]
+            target_id = clean_html(request.form.get("target_id", ""))[:120]
+            reason = clean_html(request.form.get("reason", ""))[:1200]
+            priority = clean_html(request.form.get("case_priority", "medium"))[:40]
+            if target_id and reason:
+                cur.execute(
+                    """
+                    INSERT INTO moderation_cases
+                    (target_type, target_id, assigned_admin_id, status, priority, reason, ai_risk_score, notes, created_at)
+                    VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?)
+                    """,
+                    (target_type, target_id, admin.get("id"), priority, reason, int(request.form.get("ai_risk_score") or 0), "Created from department control room.", datetime.utcnow().isoformat(timespec="seconds")),
+                )
+                conn.commit()
+                log_admin_audit(admin.get("id"), "moderation_case_created", "department", slug, {"target_type": target_type, "target_id": target_id, "priority": priority})
+                message = "Moderation case created."
+        else:
+            title = clean_html(request.form.get("title", ""))[:180]
+            description = clean_html(request.form.get("description", ""))[:1200]
+            priority = clean_html(request.form.get("priority", "normal"))[:40]
+            assigned_to = int(request.form.get("assigned_to") or 0) or None
+            if title:
+                cur.execute(
+                    """
+                    INSERT INTO admin_tasks
+                    (department, title, description, priority, assigned_to, status, source_type, source_id, due_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        slug,
+                        title,
+                        description,
+                        priority,
+                        assigned_to,
+                        clean_html(request.form.get("source_type", ""))[:80],
+                        clean_html(request.form.get("source_id", ""))[:120],
+                        clean_html(request.form.get("due_at", ""))[:80],
+                        datetime.utcnow().isoformat(timespec="seconds"),
+                        datetime.utcnow().isoformat(timespec="seconds"),
+                    ),
+                )
+                conn.commit()
+                log_admin_audit(admin.get("id"), "admin_task_created", "department", slug, {"title": title, "priority": priority, "assigned_to": assigned_to})
+                message = "Department task created."
+        conn.close()
     counts = department_counts(slug)
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -15869,14 +16544,32 @@ def admin_department_page(slug):
     tasks = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM moderation_cases WHERE status IN ('open','reviewing') ORDER BY id DESC LIMIT 30")
     cases = [dict(row) for row in cur.fetchall()] if slug in {"trust-safety", "social", "moderation"} else []
+    cur.execute(
+        """
+        SELECT dm.*, au.email AS admin_email
+        FROM department_members dm
+        LEFT JOIN admin_users au ON au.id=dm.admin_user_id
+        WHERE dm.department_id=(SELECT id FROM departments WHERE lower(name)=lower(?) OR slug=? LIMIT 1)
+          AND dm.active=1
+        ORDER BY dm.role, au.email
+        """,
+        (meta["title"], slug),
+    )
+    members = [dict(row) for row in cur.fetchall()]
     conn.close()
     focus = "".join(f"<li>{clean_html(item)}</li>" for item in meta["focus"])
-    task_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('priority') or '')}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('title') or '')}</td><td>{clean_html(t.get('created_at') or '')}</td></tr>" for t in tasks)
+    task_rows = "".join(
+        f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('priority') or '')}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('title') or '')}</td><td>{clean_html(t.get('created_at') or '')}</td><td><form method='post'><input type='hidden' name='form_action' value='update_task'><input type='hidden' name='task_id' value='{t.get('id')}'><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option></select><button>Update</button></form></td></tr>"
+        for t in tasks
+    )
     case_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('priority') or '')}</td><td>{clean_html(c.get('target_type') or '')}</td><td>{clean_html(c.get('reason') or '')}</td></tr>" for c in cases)
     cases_panel = ""
     if slug in {"trust-safety", "social", "moderation"}:
-        cases_panel = f"<div class='card'><h2>Moderation Cases</h2><table><tr><th>ID</th><th>Priority</th><th>Target</th><th>Reason</th></tr>{case_rows or '<tr><td colspan=4>No open cases.</td></tr>'}</table></div>"
-    body = f"<h1>{clean_html(meta['title'])}</h1><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Health</h2><p style='font-size:34px;font-weight:900'>{counts['health']}%</p></div><div class='card'><h2>Pending Tasks</h2><p style='font-size:34px;font-weight:900'>{counts['pending_tasks']}</p></div><div class='card'><h2>Warnings</h2><p style='font-size:34px;font-weight:900'>{counts['warnings']}</p></div></div><div class='card'><h2>Department Focus</h2><ul>{focus}</ul></div><div class='card'><h2>Create Task</h2><form method='post'><input name='title' placeholder='Task title'><select name='priority'><option>normal</option><option>high</option><option>critical</option><option>low</option></select><textarea name='description' placeholder='Task details'></textarea><button>Create Task</button></form></div><div class='card'><h2>Work Queue</h2><table><tr><th>ID</th><th>Priority</th><th>Status</th><th>Title</th><th>Created</th></tr>{task_rows or '<tr><td colspan=5>No tasks yet.</td></tr>'}</table></div>{cases_panel}"
+        cases_panel = f"<div class='card'><h2>Moderation Cases</h2><table><tr><th>ID</th><th>Priority</th><th>Target</th><th>Reason</th></tr>{case_rows or '<tr><td colspan=4>No open cases.</td></tr>'}</table></div><div class='card'><h2>Create Moderation Case</h2><form method='post'><input type='hidden' name='form_action' value='create_case'><select name='target_type'><option>post</option><option>comment</option><option>media</option><option>user</option><option>roast_line</option></select><input name='target_id' placeholder='Target ID'><select name='case_priority'><option>medium</option><option>high</option><option>critical</option><option>low</option></select><textarea name='reason' placeholder='Reason and context'></textarea><button>Create Case</button></form></div>"
+    member_rows = "".join(f"<tr><td>{clean_html(m.get('admin_email') or '')}</td><td>{clean_html(m.get('role') or '')}</td><td>{clean_html(m.get('permissions') or '')}</td></tr>" for m in members)
+    panels = department_control_panels(slug)
+    controls = department_action_panel(slug)
+    body = f"<h1>{clean_html(meta['title'])}</h1><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Health</h2><p style='font-size:34px;font-weight:900'>{counts['health']}%</p><div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div></div><div class='card'><h2>Pending Tasks</h2><p style='font-size:34px;font-weight:900'>{counts['pending_tasks']}</p></div><div class='card'><h2>Warnings</h2><p style='font-size:34px;font-weight:900'>{counts['warnings']}</p></div><div class='card'><h2>Today</h2><p style='font-size:34px;font-weight:900'>{counts['today']}</p></div></div>{panels}{controls}<div class='card'><h2>Department Focus</h2><ul>{focus}</ul></div><div class='card'><h2>Assigned Team</h2><table><tr><th>Admin</th><th>Role</th><th>Permissions</th></tr>{member_rows or '<tr><td colspan=3>No active department members assigned yet.</td></tr>'}</table></div><div class='card'><h2>Create Task</h2><form method='post'><input type='hidden' name='form_action' value='create_task'><input name='title' placeholder='Task title'><select name='priority'><option>normal</option><option>high</option><option>critical</option><option>low</option></select><input name='assigned_to' placeholder='Assigned admin ID optional'><input name='source_type' placeholder='Source type optional'><input name='source_id' placeholder='Source ID optional'><input name='due_at' placeholder='Due date optional'><textarea name='description' placeholder='Task details'></textarea><button>Create Task</button></form></div><div class='card'><h2>Work Queue</h2><table><tr><th>ID</th><th>Priority</th><th>Status</th><th>Title</th><th>Created</th><th>Action</th></tr>{task_rows or '<tr><td colspan=6>No tasks yet.</td></tr>'}</table></div>{cases_panel}"
     return admin_page_html(meta["title"], body, admin)
 
 
@@ -20978,6 +21671,26 @@ def init_db():
         deleted_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "chat_media_uploads", [
+        ("uploader_user_id", "INTEGER"),
+        ("context_type", "TEXT"),
+        ("context_id", "TEXT"),
+        ("message_id", "INTEGER"),
+        ("original_filename", "TEXT"),
+        ("stored_filename", "TEXT"),
+        ("media_url", "TEXT"),
+        ("thumbnail_url", "TEXT"),
+        ("media_type", "TEXT"),
+        ("mime_type", "TEXT"),
+        ("file_size_bytes", "INTEGER"),
+        ("duration_seconds", "REAL"),
+        ("width", "INTEGER"),
+        ("height", "INTEGER"),
+        ("moderation_status", "TEXT DEFAULT 'pending'"),
+        ("moderation_reason", "TEXT"),
+        ("created_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21000,6 +21713,25 @@ def init_db():
         deleted_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_posts", [
+        ("user_id", "INTEGER"),
+        ("public_player_id", "TEXT"),
+        ("post_type", "TEXT"),
+        ("body", "TEXT"),
+        ("media_ids_json", "TEXT"),
+        ("title", "TEXT"),
+        ("tags_json", "TEXT"),
+        ("visibility", "TEXT DEFAULT 'public'"),
+        ("moderation_status", "TEXT DEFAULT 'pending'"),
+        ("ai_summary", "TEXT"),
+        ("ai_tags_json", "TEXT"),
+        ("sentiment", "TEXT"),
+        ("risk_score", "INTEGER DEFAULT 0"),
+        ("engagement_score", "REAL DEFAULT 0"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21013,6 +21745,16 @@ def init_db():
         deleted_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_comments", [
+        ("post_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("parent_comment_id", "INTEGER"),
+        ("body", "TEXT"),
+        ("media_ids_json", "TEXT"),
+        ("moderation_status", "TEXT DEFAULT 'pending'"),
+        ("created_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_reactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21079,6 +21821,19 @@ def init_db():
         completed_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_jobs", [
+        ("job_type", "TEXT"),
+        ("target_type", "TEXT"),
+        ("target_id", "INTEGER"),
+        ("status", "TEXT DEFAULT 'pending'"),
+        ("attempts", "INTEGER DEFAULT 0"),
+        ("max_attempts", "INTEGER DEFAULT 3"),
+        ("error_message", "TEXT"),
+        ("run_after", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("completed_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_post_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21090,6 +21845,8 @@ def init_db():
         has_file INTEGER DEFAULT 0,
         status_code INTEGER,
         exception_message TEXT,
+        failing_table TEXT,
+        failing_field TEXT,
         created_at TEXT
     )
     """)
@@ -21098,6 +21855,8 @@ def init_db():
         ("has_file", "INTEGER DEFAULT 0"),
         ("status_code", "INTEGER"),
         ("exception_message", "TEXT"),
+        ("failing_table", "TEXT"),
+        ("failing_field", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS telegram_debug_events (
@@ -21211,6 +21970,9 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "admin_tasks", [
+        ("completed_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS moderation_cases (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21221,12 +21983,16 @@ def init_db():
         status TEXT DEFAULT 'open',
         priority TEXT DEFAULT 'medium',
         reason TEXT,
+        ai_risk_score INTEGER DEFAULT 0,
         notes TEXT,
         decision TEXT,
         created_at TEXT,
         resolved_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "moderation_cases", [
+        ("ai_risk_score", "INTEGER DEFAULT 0"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS admin_session_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21235,6 +22001,63 @@ def init_db():
         ip_hash TEXT,
         user_agent TEXT,
         created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_activity_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER,
+        department TEXT,
+        action TEXT,
+        route TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        ip_hash TEXT,
+        user_agent TEXT,
+        created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "admin_activity_logs", [
+        ("department", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        description TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE,
+        description TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_role_permissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role_name TEXT,
+        permission_key TEXT,
+        created_at TEXT,
+        UNIQUE(role_name, permission_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_user_roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER,
+        role_name TEXT,
+        department_slug TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        UNIQUE(admin_user_id, role_name, department_slug)
     )
     """)
     cur.execute("""
@@ -23316,6 +24139,7 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS departments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE,
         name TEXT UNIQUE,
         description TEXT,
         status TEXT DEFAULT 'active',
@@ -23323,6 +24147,9 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "departments", [
+        ("slug", "TEXT"),
+    ], conn=conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS employees (
@@ -23431,10 +24258,37 @@ def init_db():
     """)
 
     now_seed = datetime.now().isoformat()
+    department_seed = [
+        ("executive", "Executive Command"),
+        ("social", "Social / Pulse Feed"),
+        ("trust-safety", "Trust & Safety"),
+        ("moderation", "Moderation"),
+        ("creators", "Creator Operations"),
+        ("arena", "Arena / Roast Battle Operations"),
+        ("roast-battle", "Roast Battle Operations"),
+        ("delivery", "Alerts & Notifications"),
+        ("messaging", "Telegram / SMS / Push"),
+        ("growth", "Marketing / Growth"),
+        ("seo", "SEO / Content"),
+        ("monetization", "Monetization / Ads"),
+        ("support", "Support"),
+        ("security", "Security"),
+        ("analytics", "Analytics / Intelligence"),
+        ("engineering", "Engineering / System Health"),
+    ]
+    for slug, department in department_seed:
+        cur.execute(
+            "INSERT OR IGNORE INTO departments (slug, name, description, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+            (slug, department, f"{department} department", now_seed, now_seed),
+        )
+        cur.execute(
+            "UPDATE departments SET slug=COALESCE(slug, ?), description=COALESCE(description, ?) WHERE name=?",
+            (slug, f"{department} department", department),
+        )
     for department in ["Executive", "Engineering", "Support", "Billing", "Marketing", "Content", "Analytics", "Security", "Operations"]:
         cur.execute(
-            "INSERT OR IGNORE INTO departments (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
-            (department, f"{department} department", now_seed, now_seed),
+            "INSERT OR IGNORE INTO departments (slug, name, description, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+            (department.lower().replace(" ", "-"), department, f"{department} department", now_seed, now_seed),
         )
     for role_name in [
         "owner", "super_admin", "admin", "department_manager", "social_manager", "pulse_moderator",
@@ -23447,6 +24301,10 @@ def init_db():
             "INSERT OR IGNORE INTO roles (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
             (role_name, f"{role_name.replace('_', ' ').title()} role", now_seed, now_seed),
         )
+        cur.execute(
+            "INSERT OR IGNORE INTO admin_roles (name, description, status, created_at, updated_at) VALUES (?, ?, 'active', ?, ?)",
+            (role_name, f"{role_name.replace('_', ' ').title()} admin role", now_seed, now_seed),
+        )
     default_permissions = [
         "users.view", "users.create", "users.edit", "users.delete", "users.suspend",
         "admins.view", "admins.create", "admins.edit", "admins.delete",
@@ -23457,6 +24315,7 @@ def init_db():
         "pulse.moderate", "trust_safety.manage", "creators.manage", "arena.operate",
         "roast.operate", "alerts.operate", "growth.manage", "seo.manage",
         "monetization.manage", "security.view",
+        "command_center.view", "engineering.operate", "moderation.manage",
     ]
     for permission in default_permissions:
         cur.execute(
@@ -23464,35 +24323,51 @@ def init_db():
             (permission, permission.replace(".", " ").title(), now_seed),
         )
         cur.execute(
+            "INSERT OR IGNORE INTO admin_permissions (key, description, created_at) VALUES (?, ?, ?)",
+            (permission, permission.replace(".", " ").title(), now_seed),
+        )
+        cur.execute(
             "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES ('owner', ?, ?)",
+            (permission, now_seed),
+        )
+        cur.execute(
+            "INSERT OR IGNORE INTO admin_role_permissions (role_name, permission_key, created_at) VALUES ('owner', ?, ?)",
             (permission, now_seed),
         )
         cur.execute(
             "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES ('super_admin', ?, ?)",
             (permission, now_seed),
         )
+        cur.execute(
+            "INSERT OR IGNORE INTO admin_role_permissions (role_name, permission_key, created_at) VALUES ('super_admin', ?, ?)",
+            (permission, now_seed),
+        )
     role_permission_map = {
-        "social_manager": ["pulse.moderate", "analytics.view", "system.view"],
-        "pulse_moderator": ["pulse.moderate", "support.manage"],
-        "trust_safety_agent": ["trust_safety.manage", "support.manage", "security.view"],
-        "senior_moderator": ["trust_safety.manage", "pulse.moderate", "support.manage"],
-        "creator_manager": ["creators.manage", "analytics.view", "system.view"],
-        "arena_operator": ["arena.operate", "system.view"],
-        "roast_operator": ["roast.operate", "system.view", "support.manage"],
-        "alerts_operator": ["alerts.operate", "system.view", "telegram.view"],
-        "marketing_manager": ["growth.manage", "analytics.view"],
-        "seo_manager": ["seo.manage", "system.view"],
-        "monetization_manager": ["monetization.manage", "analytics.view"],
-        "support_agent": ["support.manage"],
-        "security_analyst": ["security.view", "audit.view", "system.view"],
-        "analytics_viewer": ["analytics.view"],
-        "developer_ops": ["system.view", "security.view", "audit.view"],
-        "department_manager": ["system.view", "analytics.view", "support.manage"],
+        "social_manager": ["command_center.view", "pulse.moderate", "analytics.view"],
+        "pulse_moderator": ["command_center.view", "pulse.moderate", "moderation.manage", "support.manage"],
+        "trust_safety_agent": ["command_center.view", "trust_safety.manage", "moderation.manage", "support.manage", "security.view"],
+        "senior_moderator": ["command_center.view", "trust_safety.manage", "moderation.manage", "pulse.moderate", "support.manage"],
+        "creator_manager": ["command_center.view", "creators.manage", "analytics.view"],
+        "arena_operator": ["command_center.view", "arena.operate"],
+        "roast_operator": ["command_center.view", "roast.operate", "support.manage"],
+        "alerts_operator": ["command_center.view", "alerts.operate", "telegram.view"],
+        "marketing_manager": ["command_center.view", "growth.manage", "analytics.view"],
+        "seo_manager": ["command_center.view", "seo.manage"],
+        "monetization_manager": ["command_center.view", "monetization.manage", "analytics.view"],
+        "support_agent": ["command_center.view", "support.manage"],
+        "security_analyst": ["command_center.view", "security.view", "audit.view"],
+        "analytics_viewer": ["command_center.view", "analytics.view"],
+        "developer_ops": ["command_center.view", "engineering.operate", "system.view", "security.view", "audit.view"],
+        "department_manager": ["command_center.view", "analytics.view", "support.manage"],
     }
     for role_name, permissions in role_permission_map.items():
         for permission in permissions:
             cur.execute(
                 "INSERT OR IGNORE INTO role_permissions (role_name, permission_key, created_at) VALUES (?, ?, ?)",
+                (role_name, permission, now_seed),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO admin_role_permissions (role_name, permission_key, created_at) VALUES (?, ?, ?)",
                 (role_name, permission, now_seed),
             )
 

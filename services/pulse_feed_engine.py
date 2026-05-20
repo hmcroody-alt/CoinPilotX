@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 from datetime import datetime, timedelta
@@ -11,7 +12,7 @@ from . import media_service, pulse_moderation_engine, user_context
 
 
 REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
-FEEDS = {"for_you", "following", "trending", "scam_alerts", "arena_highlights", "roast_clips", "questions"}
+FEEDS = {"for_you", "following", "trending", "scam_alerts", "arena_highlights", "roast_clips", "questions", "my_posts"}
 POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll"}
 POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result"}
 
@@ -195,51 +196,88 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
     now = _now()
     conn = user_context.connect()
     cur = conn.cursor()
-    cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
-    profile = _row(cur.fetchone()) or {}
-    cur.execute(
-        """
-        INSERT INTO pulse_posts
-        (user_id, public_player_id, post_type, body, media_ids_json, title, tags_json, visibility,
-         moderation_status, ai_summary, ai_tags_json, sentiment, risk_score, engagement_score, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            int(user_id),
-            profile.get("public_player_id"),
-            post_type,
-            body,
-            json.dumps(media_ids),
-            title,
-            json.dumps(all_tags),
-            visibility,
-            moderation.get("status"),
-            moderation.get("ai_summary"),
-            json.dumps(all_tags),
-            moderation.get("sentiment"),
-            int(moderation.get("risk_score") or 0),
-            0,
-            now,
-            now,
-        ),
-    )
-    post_id = int(cur.lastrowid)
-    conn.commit()
+    try:
+        cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
+        profile = _row(cur.fetchone()) or {}
+    except Exception:
+        profile = {}
+    try:
+        cur.execute(
+            """
+            INSERT INTO pulse_posts
+            (user_id, public_player_id, post_type, body, media_ids_json, title, tags_json, visibility,
+             moderation_status, ai_summary, ai_tags_json, sentiment, risk_score, engagement_score, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(user_id),
+                profile.get("public_player_id"),
+                post_type,
+                body,
+                json.dumps(media_ids),
+                title,
+                json.dumps(all_tags),
+                visibility,
+                moderation.get("status") or "approved",
+                moderation.get("ai_summary") or (body or title)[:220],
+                json.dumps(all_tags),
+                moderation.get("sentiment") or "neutral",
+                int(moderation.get("risk_score") or 0),
+                0,
+                now,
+                now,
+            ),
+        )
+        post_id = int(cur.lastrowid)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
     conn.close()
-    media_service.attach_media_to_message(user_id, post_id, media_ids or [], context_type="pulse", context_id=str(post_id))
+    try:
+        media_service.attach_media_to_message(user_id, post_id, media_ids or [], context_type="pulse", context_id=str(post_id))
+    except Exception as exc:
+        logging.warning("Pulse media attachment failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
     if enqueue_background:
         try:
             enqueue_post_jobs(post_id, post_type=post_type, has_media=bool(media_ids))
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning("Pulse job enqueue failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
     next_url = f"/pulse/post/{post_id}"
+    try:
+        post_payload = get_post(post_id, viewer_user_id=user_id)
+    except Exception as exc:
+        logging.warning("Pulse post hydration failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
+        post_payload = {
+            "id": post_id,
+            "post_type": post_type,
+            "title": title,
+            "body": body,
+            "visibility": visibility,
+            "moderation_status": moderation.get("status") or "approved",
+            "ai_summary": moderation.get("ai_summary") or (body or title)[:220],
+            "ai_tags": all_tags,
+            "tags": all_tags,
+            "sentiment": moderation.get("sentiment") or "neutral",
+            "risk_score": int(moderation.get("risk_score") or 0),
+            "engagement_score": 0,
+            "created_at": now,
+            "updated_at": now,
+            "author": {"display_name": "Pulse creator", "public_player_id": None, "avatar_url": "", "rank": "Rookie", "badges": ["Rookie"]},
+            "media": [],
+            "reaction_counts": {},
+            "comment_count": 0,
+            "viewer_reaction": None,
+            "permalink": next_url,
+        }
     return {
         "ok": moderation.get("status") != "blocked",
         "post_id": post_id,
         "next_url": next_url,
         "status": moderation.get("status"),
         "message": moderation.get("message") or "Pulse post published.",
-        "post": get_post(post_id, viewer_user_id=user_id),
+        "post": post_payload,
     }
 
 
@@ -282,10 +320,17 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
     feed = feed if feed in FEEDS else "for_you"
+    if feed == "my_posts":
+        return list_user_posts(viewer_user_id, viewer_user_id=viewer_user_id, limit=limit, offset=offset)
     limit = max(1, min(int(limit or 20), 40))
     offset = max(0, int(offset or 0))
     params = []
-    where = ["p.deleted_at IS NULL", "p.visibility='public'", "p.moderation_status='approved'"]
+    where = ["p.deleted_at IS NULL", "p.visibility='public'"]
+    if viewer_user_id:
+        where.append("(p.moderation_status='approved' OR p.user_id=?)")
+        params.append(int(viewer_user_id))
+    else:
+        where.append("p.moderation_status='approved'")
     if feed == "following" and viewer_user_id:
         where.append("p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?)")
         params.append(int(viewer_user_id))
@@ -294,9 +339,9 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     elif feed == "arena_highlights":
         where.append("(p.post_type IN ('replay','arena_result') OR p.tags_json LIKE '%alphaarena%')")
     elif feed == "roast_clips":
-        where.append("(p.tags_json LIKE '%roastbattle%' OR p.body LIKE '%Roast Battle%')")
+        where.append("(p.post_type='roast_clip' OR p.tags_json LIKE '%roastbattle%' OR p.body LIKE '%Roast Battle%')")
     elif feed == "questions":
-        where.append("(p.post_type='poll' OR p.body LIKE '%?%')")
+        where.append("(p.post_type IN ('poll','question') OR p.tags_json LIKE '%question%' OR p.body LIKE '%?%')")
     if topic:
         where.append("(p.tags_json LIKE ? OR p.body LIKE ?)")
         token = f"%{topic.strip('#').lower()}%"
@@ -333,6 +378,41 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"]))) for row in rows]
     return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": intelligence_panel(topic)}
+
+
+def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
+    if not user_id:
+        return {"ok": False, "feed": "my_posts", "topic": "", "posts": [], "next_offset": 0, "has_more": False, "intelligence": intelligence_panel("")}
+    limit = max(1, min(int(limit or 20), 40))
+    offset = max(0, int(offset or 0))
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT p.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
+               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        FROM pulse_posts p
+        LEFT JOIN users u ON u.user_id=p.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
+        WHERE p.deleted_at IS NULL AND p.user_id=?
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (int(user_id), limit, offset),
+    )
+    rows = [_row(row) for row in cur.fetchall()]
+    post_ids = [int(row["id"]) for row in rows]
+    reactions = _reaction_counts(cur, post_ids)
+    comments = _comment_counts(cur, post_ids)
+    viewer_reactions = {}
+    if viewer_user_id and post_ids:
+        placeholders = ",".join(["?"] * len(post_ids))
+        cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({placeholders})", (int(viewer_user_id), *post_ids))
+        viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    conn.close()
+    media = _media_for_posts(post_ids)
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"]))) for row in rows]
+    return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": intelligence_panel("")}
 
 
 def intelligence_panel(topic=""):
