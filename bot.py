@@ -15863,7 +15863,8 @@ def privacy_center_page():
     cards = "".join(card_parts)
     controls = ""
     if user:
-        controls = f"<section class='card'><h2>Your Controls</h2><p>{clean_html(message)}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p>Download and delete account tools are prepared for staged rollout.</p></section>"
+        retention = f"Raw analytics: {int(os.getenv('RAW_ANALYTICS_RETENTION_DAYS', '90') or 90)} days · Security logs: {int(os.getenv('SECURITY_LOG_RETENTION_DAYS', '180') or 180)} days · Aggregate analytics: {int(os.getenv('AGGREGATE_ANALYTICS_RETENTION_DAYS', '730') or 730)} days"
+        controls = f"<section class='card'><h2>Your Controls</h2><p>{clean_html(message)}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {clean_html(retention)}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
     return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{clean_html(policy['principle'])}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
 
 
@@ -15880,6 +15881,42 @@ def trust_center_page():
     </section>
     """
     return trust_public_page("Trust Center", "How CoinPilotXAI keeps growth aligned with trust.", body, "/privacy-center")
+
+
+@webhook_app.route("/community-rules", methods=["GET"])
+def community_rules_page():
+    body = """
+    <section class="grid">
+      <article class="card"><h2>Keep It Safe</h2><p>No doxxing, threats, hate speech, sexual harassment, scam promotion, malware links, or seed phrase/private key requests.</p></article>
+      <article class="card"><h2>Report Problems</h2><p>Posts, media, ads, comments, and messages can be reported for review by Trust & Safety.</p></article>
+      <article class="card"><h2>Roast Battle</h2><p>Competitive jokes are allowed. Protected-class attacks, real-world bullying, threats, and doxxing are not.</p></article>
+    </section>
+    """
+    return trust_public_page("Community Rules", "Exciting community energy without unsafe abuse.", body, "/pulse")
+
+
+@webhook_app.route("/advertising-policy", methods=["GET"])
+def advertising_policy_page():
+    body = """
+    <section class="grid">
+      <article class="card"><h2>Sponsored Label</h2><p>Every paid placement must be clearly labeled Sponsored and must never be disguised as user content.</p></article>
+      <article class="card"><h2>Contextual First</h2><p>Ads start from page topic and content context, not invasive tracking or private messages.</p></article>
+      <article class="card"><h2>Blocked Ads</h2><p>Scam tokens, guaranteed-profit claims, fake giveaways, seed phrase tools, impersonation, and pump groups are blocked.</p></article>
+    </section>
+    """
+    return trust_public_page("Advertising Policy", "Ethical sponsorships that protect user trust.", body, "/trust-center")
+
+
+@webhook_app.route("/creator-monetization-policy", methods=["GET"])
+def creator_monetization_policy_page():
+    body = """
+    <section class="grid">
+      <article class="card"><h2>Foundation Only</h2><p>Creator monetization fields are prepared, but real payouts stay disabled until compliance and policy readiness are complete.</p></article>
+      <article class="card"><h2>Creator Content</h2><p>Creator content is community-generated and educational only. It is not financial advice or an endorsement.</p></article>
+      <article class="card"><h2>Trust Score</h2><p>Verification, safety history, reports, and content quality inform creator readiness without exposing private identity data publicly.</p></article>
+    </section>
+    """
+    return trust_public_page("Creator Monetization Policy", "Creator value without unsafe or premature payouts.", body, "/trust-center")
 
 
 @webhook_app.route("/enterprise", methods=["GET", "POST"])
@@ -15914,7 +15951,7 @@ def pro_page():
 
 @webhook_app.route("/admin/monetization", methods=["GET"])
 def admin_monetization_page():
-    admin, denied = require_admin_page("system.view")
+    admin, denied = require_admin_page("monetization.manage")
     if denied:
         return denied
     init_db()
