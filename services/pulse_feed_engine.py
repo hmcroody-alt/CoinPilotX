@@ -12,9 +12,31 @@ from . import media_service, pulse_moderation_engine, user_context
 
 
 REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
-FEEDS = {"for_you", "following", "trending", "scam_alerts", "arena_highlights", "roast_clips", "questions", "my_posts"}
-POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll"}
-POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result"}
+FEEDS = {
+    "for_you",
+    "following",
+    "trending",
+    "scam_alerts",
+    "arena_highlights",
+    "roast_clips",
+    "questions",
+    "my_posts",
+    "reels",
+}
+FEED_ALIASES = {
+    "home": "for_you",
+    "for-you": "for_you",
+    "scam-alerts": "scam_alerts",
+    "scam": "scam_alerts",
+    "arena": "arena_highlights",
+    "arena-highlights": "arena_highlights",
+    "roast": "roast_clips",
+    "roast-clips": "roast_clips",
+    "clips": "roast_clips",
+    "my-posts": "my_posts",
+}
+POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll", "roast": "roast_clip", "roast_battle": "roast_clip"}
+POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result", "roast_clip"}
 
 
 def _now():
@@ -104,6 +126,9 @@ def _comment_counts(cur, post_ids):
 
 def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None):
     item = dict(row)
+    author = _public_author(item)
+    reaction_counts = reactions or {}
+    reaction_total = sum(int(v or 0) for v in reaction_counts.values())
     return {
         "id": item.get("id"),
         "post_type": item.get("post_type") or "text",
@@ -119,13 +144,24 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "engagement_score": float(item.get("engagement_score") or 0),
         "created_at": item.get("created_at"),
         "updated_at": item.get("updated_at"),
-        "author": _public_author(item),
+        "author": author,
+        "author_public_name": author.get("display_name"),
+        "author_avatar": author.get("avatar_url"),
+        "author_public_player_id": author.get("public_player_id"),
         "media": media or [],
-        "reaction_counts": reactions or {},
+        "reaction_counts": reaction_counts,
+        "reactions_count": reaction_total,
         "comment_count": comments,
+        "comments_count": comments,
         "viewer_reaction": viewer_reaction,
         "permalink": f"/pulse/post/{item.get('id')}",
     }
+
+
+def normalize_feed(feed):
+    feed = (feed or "for_you").strip().lower()
+    feed = FEED_ALIASES.get(feed, feed)
+    return feed if feed in FEEDS else "for_you"
 
 
 def _normalize_media_ids(media_ids):
@@ -319,7 +355,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
-    feed = feed if feed in FEEDS else "for_you"
+    feed = normalize_feed(feed)
     if feed == "my_posts":
         return list_user_posts(viewer_user_id, viewer_user_id=viewer_user_id, limit=limit, offset=offset)
     limit = max(1, min(int(limit or 20), 40))
@@ -337,11 +373,13 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     elif feed == "scam_alerts":
         where.append("(p.post_type='scam_report' OR p.risk_score>=50 OR p.tags_json LIKE '%scam%')")
     elif feed == "arena_highlights":
-        where.append("(p.post_type IN ('replay','arena_result') OR p.tags_json LIKE '%alphaarena%')")
+        where.append("(p.post_type IN ('replay','arena_result') OR p.tags_json LIKE '%alphaarena%' OR p.tags_json LIKE '%arena%' OR p.body LIKE '%Arena%')")
     elif feed == "roast_clips":
-        where.append("(p.post_type='roast_clip' OR p.tags_json LIKE '%roastbattle%' OR p.body LIKE '%Roast Battle%')")
+        where.append("(p.post_type='roast_clip' OR p.tags_json LIKE '%roastbattle%' OR p.tags_json LIKE '%roast%' OR p.body LIKE '%Roast Battle%')")
     elif feed == "questions":
         where.append("(p.post_type IN ('poll','question') OR p.tags_json LIKE '%question%' OR p.body LIKE '%?%')")
+    elif feed == "reels":
+        where.append("(p.post_type IN ('video','replay','roast_clip') OR COALESCE(p.media_ids_json,'[]') NOT IN ('[]',''))")
     if topic:
         where.append("(p.tags_json LIKE ? OR p.body LIKE ?)")
         token = f"%{topic.strip('#').lower()}%"
@@ -427,13 +465,71 @@ def intelligence_panel(topic=""):
     posts_today = int((_row(cur.fetchone()) or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'")
     open_reports = int((_row(cur.fetchone()) or {}).get("total") or 0)
+    cur.execute(
+        """
+        SELECT p.id, p.title, p.body, p.post_type, p.engagement_score
+        FROM pulse_posts p
+        WHERE p.deleted_at IS NULL AND p.visibility='public' AND p.moderation_status='approved'
+        ORDER BY COALESCE(p.engagement_score,0) DESC, p.created_at DESC
+        LIMIT 5
+        """
+    )
+    top_posts = [
+        {
+            "id": row["id"],
+            "title": row["title"] or (row["body"] or "Pulse post")[:80],
+            "post_type": row["post_type"] or "text",
+            "score": float(row["engagement_score"] or 0),
+            "permalink": f"/pulse/post/{row['id']}",
+        }
+        for row in cur.fetchall()
+    ]
+    cur.execute(
+        """
+        SELECT COALESCE(ap.display_name, u.roast_call_sign, u.display_name, u.username, 'Pulse Creator') AS name,
+               COUNT(*) AS total
+        FROM pulse_posts p
+        LEFT JOIN users u ON u.user_id=p.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
+        WHERE p.deleted_at IS NULL AND p.moderation_status='approved'
+        GROUP BY p.user_id
+        ORDER BY total DESC
+        LIMIT 5
+        """
+    )
+    active_creators = [{"name": row["name"], "posts": int(row["total"] or 0)} for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT id, title, body, risk_score
+        FROM pulse_posts
+        WHERE deleted_at IS NULL AND moderation_status='approved'
+          AND (post_type='scam_report' OR risk_score>=50 OR tags_json LIKE '%scam%')
+        ORDER BY created_at DESC
+        LIMIT 4
+        """
+    )
+    scam_warnings = [
+        {"id": row["id"], "title": row["title"] or (row["body"] or "Scam warning")[:80], "risk_score": int(row["risk_score"] or 0), "permalink": f"/pulse/post/{row['id']}"}
+        for row in cur.fetchall()
+    ]
     conn.close()
     trending = [{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]]
+    top_spaces = [
+        {"name": "Scam Watch", "slug": "scam-watch", "heat": counts.get("scamalert", 0) + counts.get("scam", 0)},
+        {"name": "Alpha Arena", "slug": "alpha-arena", "heat": counts.get("alphaarena", 0) + counts.get("arena", 0)},
+        {"name": "Roast Battle", "slug": "roast-battle", "heat": counts.get("roastbattle", 0) + counts.get("roast", 0)},
+        {"name": "Market Psychology", "slug": "market-psychology", "heat": counts.get("marketpsychology", 0)},
+    ]
     return {
         "trending_topics": trending,
+        "top_spaces": top_spaces,
+        "top_posts": top_posts,
+        "active_creators": active_creators,
+        "scam_warnings": scam_warnings,
         "posts_today": posts_today,
         "open_reports": open_reports,
         "community_mood": "Protective" if any(t["tag"] == "scamalert" for t in trending) else "Curious",
+        "suggested_action": "Review new Scam Alerts first." if scam_warnings else "Create the first Pulse for today's market conversation.",
         "daily_prompt": daily_prompt(),
     }
 
