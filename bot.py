@@ -15262,12 +15262,15 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 @webhook_app.route("/pulse", methods=["GET"])
 @webhook_app.route("/pulse/trending", methods=["GET"])
 @webhook_app.route("/pulse/following", methods=["GET"])
+@webhook_app.route("/pulse/questions", methods=["GET"])
 @webhook_app.route("/pulse/create", methods=["GET"])
 def pulse_page():
     if request.path.endswith("/trending"):
         feed = "trending"
     elif request.path.endswith("/following"):
         feed = "following"
+    elif request.path.endswith("/questions"):
+        feed = "questions"
     else:
         feed = request.args.get("feed") or "for_you"
     return pulse_page_html("Global Pulse Feed", feed)
@@ -15325,10 +15328,42 @@ def api_pulse_posts():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     post_type = "text"
+    content_length = int(request.content_length or 0)
+    has_file = False
+
+    def record_attempt(status_label, status_code, error_reason="", exception_message=""):
+        try:
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO pulse_post_attempts
+                (user_id, post_type, status, error_reason, content_length, has_file, status_code, exception_message, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user["user_id"],
+                    post_type,
+                    status_label,
+                    str(error_reason or "")[:500],
+                    content_length,
+                    1 if has_file else 0,
+                    int(status_code or 0),
+                    str(exception_message or "")[:1000],
+                    datetime.utcnow().isoformat(timespec="seconds"),
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            logging.debug("Pulse post attempt logging failed", exc_info=True)
+
     try:
         if request.content_type and ("multipart/form-data" in request.content_type or "application/x-www-form-urlencoded" in request.content_type):
             form = request.form
             post_type = form.get("post_type") or "text"
+            uploads = request.files.getlist("file") + request.files.getlist("files")
+            has_file = any(bool(getattr(upload, "filename", "")) for upload in uploads)
             tags_raw = form.get("tags") or ""
             try:
                 tags = json.loads(tags_raw) if tags_raw.strip().startswith("[") else [x.strip() for x in tags_raw.split(",") if x.strip()]
@@ -15342,7 +15377,9 @@ def api_pulse_posts():
                     media_ids = parsed if isinstance(parsed, list) else []
                 except Exception:
                     media_ids = [x.strip() for x in media_ids_raw.split(",") if x.strip()]
-            for upload in request.files.getlist("file") + request.files.getlist("files"):
+            for upload in uploads:
+                if not upload or not getattr(upload, "filename", ""):
+                    continue
                 result, status = media_service.save_upload(user["user_id"], upload, context_type="pulse", context_id="draft")
                 if not result.get("ok"):
                     raise ValueError(result.get("message") or "File upload failed.")
@@ -15358,6 +15395,8 @@ def api_pulse_posts():
         else:
             payload = request.get_json(silent=True)
             if payload is None:
+                record_attempt("failed", 400, "Could not read the post request. Please refresh and try again.")
+                logging.warning("PULSE_POST_FAILED user_id=%s post_type=%s content_length=%s has_file=%s status_code=400 error=%s", user["user_id"], post_type, content_length, has_file, "unreadable request")
                 return jsonify({"ok": False, "message": "Could not read the post request. Please refresh and try again."}), 400
             post_type = payload.get("post_type") or "text"
         result = pulse_feed_engine.create_post(
@@ -15370,41 +15409,26 @@ def api_pulse_posts():
             payload.get("media_ids") or [],
         )
         status = 200 if result.get("ok") else 400
-        conn = db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO pulse_post_attempts (user_id, post_type, status, error_reason, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user["user_id"], post_type, "success" if result.get("ok") else "failed", "" if result.get("ok") else result.get("message", ""), datetime.utcnow().isoformat(timespec="seconds")),
+        record_attempt("success" if result.get("ok") else "failed", status, "" if result.get("ok") else result.get("message", ""))
+        logging.info(
+            "PULSE_POST_ATTEMPT user_id=%s post_type=%s content_length=%s has_file=%s status_code=%s ok=%s",
+            user["user_id"], post_type, content_length, has_file, status, result.get("ok"),
         )
-        conn.commit()
-        conn.close()
         log_product_event(user["user_id"], "pulse_post_created", {"post_id": result.get("post_id"), "status": result.get("status"), "ok": result.get("ok")})
         return jsonify(result), status
     except ValueError as exc:
         message = str(exc) or "Server error while publishing."
-        conn = db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO pulse_post_attempts (user_id, post_type, status, error_reason, created_at) VALUES (?, ?, 'failed', ?, ?)",
-            (user["user_id"], post_type, message[:500], datetime.utcnow().isoformat(timespec="seconds")),
-        )
-        conn.commit()
-        conn.close()
+        record_attempt("failed", 400, message, str(exc))
+        logging.warning("PULSE_POST_FAILED user_id=%s post_type=%s content_length=%s has_file=%s status_code=400 error=%s", user["user_id"], post_type, content_length, has_file, message)
         return jsonify({"ok": False, "message": message}), 400
     except Exception as exc:
         logging.exception("Pulse post publish failed user_id=%s post_type=%s error=%s", user["user_id"], post_type, exc)
-        try:
-            conn = db()
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO pulse_post_attempts (user_id, post_type, status, error_reason, created_at) VALUES (?, ?, 'failed', ?, ?)",
-                (user["user_id"], post_type, str(exc)[:500], datetime.utcnow().isoformat(timespec="seconds")),
-            )
-            conn.commit()
-            conn.close()
-        except Exception:
-            pass
-        return jsonify({"ok": False, "message": "Server error while publishing. Please try again."}), 500
+        exc_text = str(exc)
+        message = "Server error while publishing. Please try again."
+        if any(token in exc_text.lower() for token in ["pulse_posts", "pulse_post", "no such table", "undefined table", "undefined column", "does not exist"]):
+            message = "Database migration missing. Please run the latest migration and try again."
+        record_attempt("failed", 500, message, exc_text)
+        return jsonify({"ok": False, "message": message}), 500
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET"])
@@ -15571,6 +15595,57 @@ def admin_pulse_worker_health_page():
     failed_html = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('job_type') or '')}</td><td>{r.get('target_id')}</td><td>{r.get('attempts')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('updated_at') or '')}</td></tr>" for r in failed)
     body = f"<h1>Pulse Worker Health</h1><p class='muted'>Railway service: coinpilotx-pulse-worker · Start command: python pulse_worker.py</p><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Jobs by Status</h2><table><tr><th>Status</th><th>Total</th></tr>{status_html or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div></div><div class='card'><h2>Jobs by Type</h2><table><tr><th>Type</th><th>Status</th><th>Total</th></tr>{type_html or '<tr><td colspan=3>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Failed Jobs</h2><form method='post'><button>Process Pending Jobs Now</button></form><table><tr><th>ID</th><th>Type</th><th>Target</th><th>Attempts</th><th>Error</th><th>Updated</th></tr>{failed_html or '<tr><td colspan=6>No failed jobs.</td></tr>'}</table></div>"
     return admin_page_html("Pulse Worker Health", body, admin)
+
+
+@webhook_app.route("/admin/pulse-post-debug", methods=["GET"])
+def admin_pulse_post_debug_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    route_registered = any(str(rule.rule) == "/api/pulse/posts" and "POST" in rule.methods for rule in webhook_app.url_map.iter_rules())
+    page_registered = any(str(rule.rule) == "/pulse/questions" for rule in webhook_app.url_map.iter_rules())
+    account_user = api_account_user()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    tables = {}
+    for table in ["pulse_posts", "pulse_comments", "pulse_reactions", "pulse_reports", "pulse_jobs", "pulse_post_attempts", "chat_media_uploads"]:
+        tables[table] = {"exists": migration_table_exists(cur, table), "columns": sorted(migration_table_columns(cur, table))}
+    try:
+        cur.execute("SELECT * FROM pulse_post_attempts ORDER BY id DESC LIMIT 20")
+        attempts = [dict(row) for row in cur.fetchall()]
+    except Exception as exc:
+        attempts = [{"status": "debug_error", "error_reason": str(exc), "created_at": datetime.utcnow().isoformat(timespec="seconds")}]
+    try:
+        cur.execute("SELECT COUNT(*) AS total FROM pulse_jobs WHERE status='pending'")
+        pending_jobs = int(dict(cur.fetchone() or {}).get("total") or 0)
+    except Exception:
+        pending_jobs = 0
+    try:
+        cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name='pulse_worker' LIMIT 1")
+        heartbeat = dict(cur.fetchone() or {})
+    except Exception:
+        heartbeat = {}
+    conn.close()
+    last_error = next((row for row in attempts if row.get("status") != "success"), {})
+    attempt_rows = "".join(
+        f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('post_type') or '')}</td><td>{int(row.get('content_length') or 0)}</td><td>{'yes' if int(row.get('has_file') or 0) else 'no'}</td><td>{int(row.get('status_code') or 0)}</td><td>{clean_html(row.get('error_reason') or '')}</td><td>{clean_html((row.get('exception_message') or '')[:180])}</td></tr>"
+        for row in attempts
+    )
+    table_rows = "".join(
+        f"<tr><td>{clean_html(name)}</td><td>{'yes' if info['exists'] else 'no'}</td><td>{clean_html(', '.join(info['columns'])[:500])}</td></tr>"
+        for name, info in tables.items()
+    )
+    status_rows = [
+        {"name": "POST /api/pulse/posts registered", "value": route_registered, "detail": "Main publish API"},
+        {"name": "/pulse/questions page registered", "value": page_registered, "detail": "Questions feed route"},
+        {"name": "Current account can post", "value": bool(account_user), "detail": f"user_id={(account_user or {}).get('user_id') or ''}"},
+        {"name": "Pending Pulse jobs", "value": pending_jobs, "detail": "Background queue"},
+        {"name": "Last request error", "value": last_error.get("error_reason") or "none", "detail": last_error.get("created_at") or ""},
+    ]
+    body = f"<h1>Pulse Post Debug</h1><p class='muted'>Production publishing diagnostics for /pulse/questions and /api/pulse/posts.</p><div class='card'>{admin_rows_table(status_rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div><div class='card'><h2>Pulse Tables</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{table_rows}</table></div><div class='card'><h2>Worker Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Last 20 Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Type</th><th>Length</th><th>File</th><th>HTTP</th><th>Error</th><th>Exception</th></tr>{attempt_rows or '<tr><td colspan=8>No publish attempts logged yet.</td></tr>'}</table></div>"
+    return admin_page_html("Pulse Post Debug", body, admin)
 
 
 def trust_public_page(title, headline, body_html, cta="/signup"):
@@ -21011,9 +21086,19 @@ def init_db():
         post_type TEXT,
         status TEXT,
         error_reason TEXT,
+        content_length INTEGER DEFAULT 0,
+        has_file INTEGER DEFAULT 0,
+        status_code INTEGER,
+        exception_message TEXT,
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_post_attempts", [
+        ("content_length", "INTEGER DEFAULT 0"),
+        ("has_file", "INTEGER DEFAULT 0"),
+        ("status_code", "INTEGER"),
+        ("exception_message", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS telegram_debug_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

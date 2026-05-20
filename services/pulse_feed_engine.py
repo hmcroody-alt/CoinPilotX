@@ -12,6 +12,8 @@ from . import media_service, pulse_moderation_engine, user_context
 
 REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
 FEEDS = {"for_you", "following", "trending", "scam_alerts", "arena_highlights", "roast_clips", "questions"}
+POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll"}
+POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result"}
 
 
 def _now():
@@ -126,6 +128,12 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
 
 
 def _normalize_media_ids(media_ids):
+    if isinstance(media_ids, str):
+        try:
+            parsed = json.loads(media_ids)
+            media_ids = parsed if isinstance(parsed, list) else []
+        except Exception:
+            media_ids = [x.strip() for x in media_ids.split(",") if x.strip()]
     normalized = []
     for item in media_ids or []:
         try:
@@ -172,7 +180,9 @@ def enqueue_post_jobs(post_id, post_type="text", has_media=False):
 
 
 def create_post(user_id, body="", post_type="text", title="", tags=None, visibility="public", media_ids=None, enqueue_background=True):
-    post_type = post_type if post_type in {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result"} else "text"
+    post_type = POST_TYPE_ALIASES.get((post_type or "").strip().lower(), (post_type or "text").strip().lower())
+    if post_type not in POST_TYPES:
+        return {"ok": False, "message": "Post type not supported.", "status": "rejected", "post_type": post_type}
     body = _clean_text(body, 5000)
     title = _clean_text(title, 160)
     visibility = visibility if visibility in {"public", "followers", "private"} else "public"
