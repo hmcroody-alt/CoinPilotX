@@ -15433,7 +15433,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}.card{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}.hero{display:flex;justify-content:space-between;gap:14px;align-items:center}.hero h1{font-size:clamp(34px,7vw,66px);line-height:.94;margin:6px 0}.muted,p{color:var(--muted);line-height:1.55}.badge{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08);font-weight:850}.live:before{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9);display:inline-block;margin-right:7px}
 textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}textarea{min-height:98px;resize:vertical}.composer{display:grid;gap:10px;margin:12px 0}.composer-tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.tabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.tabs button{white-space:nowrap}.tabs button.active{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}.feed{display:grid;gap:12px;margin-top:12px}.post{display:grid;gap:10px}.author{display:flex;align-items:center;justify-content:space-between;gap:10px}.author-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}.avatar img{width:100%;height:100%;object-fit:cover}.author-name{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-grid{display:grid;gap:8px}.media-grid img,.media-grid video{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}.tags{display:flex;gap:6px;flex-wrap:wrap}.tag{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}.side{position:sticky;top:12px;display:grid;gap:12px}.intel-list{display:grid;gap:8px}.intel-item{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04);text-decoration:none}.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}.toast.show{display:block}
 
-.pulse-shell{width:100%;max-width:100vw;overflow-x:hidden}.pulse-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}.pulse-actions{display:flex;gap:8px;flex-wrap:wrap;max-width:100%}.success-panel{display:none}.success-panel.show{display:block}.post h2,.post p,.card h1,.card h2,.card p{overflow-wrap:anywhere}.post .actions{max-width:100%;justify-content:flex-end}.post .actions .button,.post .actions button{white-space:normal}.feed,.post,.card,.composer,.side,.intel-item{min-width:0}.tabs,.pulse-nav{-webkit-overflow-scrolling:touch}.tabs button,.pulse-nav-link{flex:0 0 auto}input[type=file]{max-width:100%;font-size:14px}.composer .actions .button,.composer .actions button{flex:1 1 160px}.media-grid img,.media-grid video,img,video{max-width:100%;height:auto}.toast{pointer-events:none}.toast.show{pointer-events:auto}
+.pulse-shell{width:100%;max-width:100vw;overflow-x:hidden}.pulse-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}.pulse-actions{display:flex;gap:8px;flex-wrap:wrap;max-width:100%}.success-panel{display:none}.success-panel.show{display:block}.post h2,.post p,.card h1,.card h2,.card p{overflow-wrap:anywhere}.post .actions{max-width:100%;justify-content:flex-end}.post .actions .button,.post .actions button{white-space:normal}.feed,.post,.card,.composer,.side,.intel-item{min-width:0}.tabs,.pulse-nav{-webkit-overflow-scrolling:touch}.tabs button,.pulse-nav-link{flex:0 0 auto}input[type=file]{max-width:100%;font-size:14px}.composer .actions .button,.composer .actions button{flex:1 1 160px}.media-grid img,.media-grid video,img,video{max-width:100%;height:auto}.toast{pointer-events:none}.toast.show{pointer-events:auto}.inline-comments{display:grid;gap:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px}.comments{display:grid;gap:8px;max-height:260px;overflow:auto}.comment{border-left:3px solid var(--cyan);border-radius:10px;background:rgba(255,255,255,.04);padding:8px}.comment p{margin:4px 0}.comment-box{display:grid;grid-template-columns:1fr auto;gap:8px}.typing{min-height:20px;color:#b9f7ff;font-size:13px}.reaction-btn.active{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5)}.live-enter{animation:pulseIn .28s ease-out}@keyframes pulseIn{from{opacity:.2;transform:translateY(-8px)}to{opacity:1;transform:none}}
 @media(max-width:900px){body{padding-top:env(safe-area-inset-top)}.wrap,.pulse-shell{width:100%;max-width:100vw;padding:calc(12px + env(safe-area-inset-top)) 12px calc(112px + env(safe-area-inset-bottom));overflow-x:hidden}.top{display:grid;grid-template-columns:1fr;align-items:stretch}.top .actions,.pulse-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.top .actions .button,.pulse-actions .button,.pulse-actions button{width:100%;min-width:0}.pulse-grid,.layout{grid-template-columns:1fr!important;gap:12px}.hero,.pulse-hero{display:grid!important;gap:10px}.hero h1{font-size:clamp(30px,12vw,44px);line-height:1}.pulse-nav{margin-left:-12px;margin-right:-12px;padding:4px 12px 12px;max-width:100vw}.tabs{margin-left:-14px;margin-right:-14px;padding:0 14px 4px;max-width:calc(100vw - 24px)}.composer-tools{grid-template-columns:1fr 1fr!important}.composer .actions{display:grid;grid-template-columns:1fr;gap:8px}.composer .actions .button,.composer .actions button{width:100%;min-width:0}.author{display:grid!important;grid-template-columns:1fr;align-items:start}.author-main{max-width:100%}.author-name{white-space:normal}.post .actions{display:grid;grid-template-columns:1fr 1fr;width:100%;justify-content:stretch}.post .actions .button,.post .actions button{width:100%;min-width:0}.reactions{display:grid;grid-template-columns:1fr 1fr}.reactions button{width:100%;min-width:0}.side{position:static!important}.card{border-radius:14px;padding:13px;margin-left:0;margin-right:0}.toast{left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));transform:none;min-width:0;width:auto}textarea{min-height:118px}.grid{grid-template-columns:1fr!important}.button,button{min-height:46px}.comment-box{grid-template-columns:1fr!important}.actions .button,.actions button{white-space:normal}}
 @media(max-width:430px){.wrap,.pulse-shell{padding-left:10px;padding-right:10px}.top .actions,.pulse-actions,.post .actions,.reactions,.composer-tools{grid-template-columns:1fr!important}.badge{max-width:100%;white-space:normal}.card{padding:12px}.hero h1{font-size:34px}.button,button{padding:10px 11px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -15455,15 +15455,27 @@ const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3400)};
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaHtml(items){return (items||[]).map(m=>m.media_type==='video'?`<video src="${esc(m.media_url)}" poster="${esc(m.thumbnail_url||'')}" muted controls playsinline preload="metadata"></video>`:`<img src="${esc(m.thumbnail_url||m.media_url)}" alt="Pulse media" loading="lazy">`).join('')}
-function postHtml(p){const author=p.author||{};const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const react=Object.entries(reactions).slice(0,6).map(([k,label])=>`<button class="reaction-btn ${p.viewer_reaction===k?'active':''}" data-react="${k}" data-post="${p.id}">${label} ${(p.reaction_counts||{})[k]||''}</button>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';return `<article class="card post" data-post-id="${p.id}"><div class="author"><div class="author-main"><span class="avatar">${author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1))}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'Pulse creator')}</div><span class="badge">${esc(author.rank||'Rookie')}</span></div></div><div class="actions"><a class="button" href="${esc(p.permalink)}">Open</a><a class="button" href="${profile}">Profile</a><button data-share="${esc(p.permalink)}">Share</button><button data-report="post" data-id="${p.id}">Report</button></div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${p.media&&p.media.length?`<div class="media-grid">${mediaHtml(p.media)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${esc(p.created_at||'')} · ${esc(p.post_type||'post')} · ${Number(p.comments_count||p.comment_count||0)} comments · ${Number(p.reactions_count||0)} reactions</p><div class="reactions">${react}</div></article>`}
+function reactionHtml(p){return Object.entries(reactions).slice(0,6).map(([k,label])=>`<button class="reaction-btn ${p.viewer_reaction===k?'active':''}" data-react="${k}" data-post="${p.id}" data-count="${Number((p.reaction_counts||{})[k]||0)}">${label} <span>${Number((p.reaction_counts||{})[k]||0)}</span></button>`).join('')}
+function postHtml(p){const author=p.author||{};const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const msg=author.public_player_id?`<button data-message="${esc(author.public_player_id)}">Message</button>`:'';const del=p.can_delete?`<button data-delete-post="${p.id}">Delete</button>`:'';return `<article class="card post live-enter" data-post-id="${p.id}"><div class="author"><div class="author-main"><span class="avatar">${author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1))}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'Pulse creator')}</div><span class="badge">${esc(author.rank||'Rookie')}</span></div></div><div class="actions"><button data-follow-public="${esc(author.public_player_id||'')}">Follow</button>${msg}<a class="button" href="${esc(p.permalink)}">Open</a><a class="button" href="${profile}">Profile</a><button data-share="${esc(p.permalink)}">Share</button>${del}<button data-report="post" data-id="${p.id}">Report</button></div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${p.media&&p.media.length?`<div class="media-grid">${mediaHtml(p.media)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${esc(p.created_at||'')} · ${esc(p.post_type||'post')} · <span data-comment-count="${p.id}">${Number(p.comments_count||p.comment_count||0)}</span> comments · <span data-reaction-total="${p.id}">${Number(p.reactions_count||0)}</span> reactions</p><div class="reactions">${reactionHtml(p)}</div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><div class="comment-box"><input data-comment-input="${p.id}" placeholder="Write a live comment..."><button data-send-comment="${p.id}">Send</button></div></section></article>`}
+function commentHtml(c){const a=c.author||{};return `<div class="comment" data-comment-id="${c.id}"><strong>${esc(a.display_name||'Pulse user')}</strong><p>${esc(c.body||'')}</p><small>${esc(c.created_at||'')}</small></div>`}
+async function loadComments(postId){const box=document.querySelector(`[data-comments="${postId}"]`);if(!box||box.dataset.loaded)return;try{const d=await api(`/api/pulse/posts/${postId}/comments`);box.innerHTML=(d.comments||[]).map(commentHtml).join('')||'<p class="muted">No comments yet. Start the live thread.</p>';box.dataset.loaded='1'}catch(e){box.innerHTML='<p class="muted">Comments temporarily unavailable.</p>'}}
+async function sendComment(postId){const input=document.querySelector(`[data-comment-input="${postId}"]`);if(!input||!input.value.trim())return;const body=input.value;input.value='';try{const d=await api(`/api/pulse/posts/${postId}/comments`,{method:'POST',body:JSON.stringify({body})});applyCommentEvent({post_id:Number(postId),comment:d.comment,comments_count:d.comments_count});await api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{})}catch(e){input.value=body;toast(e.message)}}
+function applyCommentEvent(payload){if(!payload||!payload.comment)return;const postId=payload.post_id||payload.comment.post_id;const box=document.querySelector(`[data-comments="${postId}"]`);if(box&&!box.querySelector(`[data-comment-id="${payload.comment.id}"]`)){box.dataset.loaded='1';box.insertAdjacentHTML('beforeend',commentHtml(payload.comment));box.scrollTop=box.scrollHeight}const count=document.querySelector(`[data-comment-count="${postId}"]`);if(count)count.textContent=Number(payload.comments_count||Number(count.textContent||0)+1)}
+function applyReactionEvent(payload){if(!payload||!payload.post_id)return;const counts=payload.reaction_counts||{};let total=0;Object.entries(counts).forEach(([key,value])=>{total+=Number(value||0);const btn=document.querySelector(`[data-post="${payload.post_id}"][data-react="${key}"]`);if(btn){btn.dataset.count=Number(value||0);const span=btn.querySelector('span');if(span)span.textContent=Number(value||0)}});const totalEl=document.querySelector(`[data-reaction-total="${payload.post_id}"]`);if(totalEl)totalEl.textContent=total}
+function applyLiveEvents(events){(events||[]).forEach(ev=>{const p=ev.payload||{};if(ev.event_type==='new_post'&&p.post&&!document.querySelector(`[data-post-id="${p.post.id}"]`)){document.getElementById('feed').insertAdjacentHTML('afterbegin',postHtml(p.post));}if(ev.event_type==='new_comment')applyCommentEvent({post_id:ev.post_id,...p});if(ev.event_type==='reaction_added'||ev.event_type==='reaction_removed')applyReactionEvent(p);if(ev.event_type==='post_deleted'){const node=document.querySelector(`[data-post-id="${p.post_id||ev.post_id}"]`);if(node)node.remove()}if(ev.event_type==='typing_start'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t){t.textContent=`${esc(p.display_name||'Someone')} is typing...`;clearTimeout(t._timer);t._timer=setTimeout(()=>t.textContent='',3500)}}if(ev.event_type==='typing_stop'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t)t.textContent=''}if(ev.event_type==='notification_created'||ev.event_type==='friend_request'||ev.event_type==='message_received')toast(p.message||p.title||'New Pulse activity.');state.lastEventId=Math.max(state.lastEventId||0,Number(ev.id||0))})}
 function renderIntel(intel){const topics=(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${encodeURIComponent(t.tag)}">#${esc(t.tag)} · ${t.count}</a>`).join('');const spaces=(intel.top_spaces||[]).map(s=>`<a class="intel-item" href="/pulse/spaces/${encodeURIComponent(s.slug)}">${esc(s.name)} · heat ${Number(s.heat||0)}</a>`).join('');const posts=(intel.top_posts||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">${esc(p.title)}</a>`).join('');const scams=(intel.scam_warnings||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">Scam watch · ${esc(p.title)}</a>`).join('');document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';const content=`<div class="intel-item"><strong>${esc(intel.community_mood||'Curious')}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${Number(intel.posts_today||0)}</strong><br><span class="muted">Posts today</span></div><div class="intel-item">${esc(intel.suggested_action||'Pulse is warming up. Create the first post.')}</div>${topics}${spaces}${posts}${scams}`;document.getElementById('intel').innerHTML=content||'<p class="muted">Pulse is warming up. Create the first post.</p>'}
 async function load(reset=false){if(state.loading)return;state.loading=true;if(reset){state.offset=0;document.getElementById('feed').innerHTML=''}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}`);const posts=d.posts||[];document.getElementById('feed').insertAdjacentHTML('beforeend',posts.map(postHtml).join('')||(state.offset?'':'<section class="card"><p class="muted">No posts yet. Create the first Pulse.</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>'));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}catch(e){document.getElementById('feed').innerHTML='<section class="card"><p class="muted">'+esc(e.message)+'</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>';document.getElementById('intel').innerHTML='<p class="muted">Pulse intelligence temporarily unavailable.</p>';toast(e.message)}finally{state.loading=false}}
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',feedPaths[state.feed]||'/pulse');load(true)});
 document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>document.getElementById('postType').value=b.dataset.type));
 document.getElementById('aiBtn').addEventListener('click',()=>{const body=document.getElementById('postBody');if(!body.value.trim()){body.value='Question for Pulse: ';document.getElementById('postType').value='poll';body.focus();return}body.value=body.value.trim()+"\\n\\n#CoinPilotXAI #MarketPsychology";toast('AI clarity pass added tags.')});
-document.getElementById('publishBtn').addEventListener('click',async()=>{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const d=await api('/api/media/upload',{method:'POST',body:fd});mediaIds.push(d.media.id)}const d=await api('/api/pulse/posts',{method:'POST',body:JSON.stringify({body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds})});const next=d.next_url||`/pulse/post/${d.post_id}`;document.getElementById('successView').href=next;document.getElementById('publishSuccess').classList.add('show');toast('Post published.');setTimeout(()=>{window.location.href=next},350)}catch(e){toast(e.message)}finally{btn.disabled=false}});
-document.addEventListener('click',async e=>{const r=e.target.closest('[data-react]');if(r){try{await api(`/api/pulse/posts/${r.dataset.post}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});r.classList.add('active')}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'CoinPilotXAI Pulse',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
-document.getElementById('loadMore').addEventListener('click',()=>load(false));load(true);setInterval(()=>{if(!document.hidden&&state.offset===0)load(true)},45000);
+document.getElementById('publishBtn').addEventListener('click',async()=>{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const d=await api('/api/media/upload',{method:'POST',body:fd});mediaIds.push(d.media.id)}const d=await api('/api/pulse/posts',{method:'POST',body:JSON.stringify({body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds})});const next=d.next_url||`/pulse/post/${d.post_id}`;document.getElementById('successView').href=next;document.getElementById('publishSuccess').classList.add('show');document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';if(d.post)applyLiveEvents([{event_type:'new_post',id:state.lastEventId||0,post_id:d.post_id,payload:{post:d.post}}]);toast('Post published.')}catch(e){toast(e.message)}finally{btn.disabled=false}});
+document.addEventListener('click',async e=>{const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const span=r.querySelector('span');if(span)span.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(span)span.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this Pulse post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});document.querySelector(`[data-post-id="${del.dataset.deletePost}"]`)?.remove();toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/send',{method:'POST',body:JSON.stringify({receiver_public_player_id:msg.dataset.message,message:'Hi, I saw your Pulse post.'})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'CoinPilotXAI Pulse',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
+document.addEventListener('focusin',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;const postId=input.dataset.commentInput;loadComments(postId);api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{})});
+document.addEventListener('input',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;clearTimeout(input._typingTimer);const postId=input.dataset.commentInput;api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{});input._typingTimer=setTimeout(()=>api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{}),2400)});
+document.addEventListener('keydown',e=>{const input=e.target.closest('[data-comment-input]');if(input&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendComment(input.dataset.commentInput)}});
+async function pollLive(){try{const d=await api(`/api/pulse/live?since_id=${state.lastEventId||0}`);applyLiveEvents(d.events||[]);state.lastEventId=d.latest_event_id||state.lastEventId||0}catch(e){}}
+function startLive(){if(window.EventSource){try{const es=new EventSource(`/api/pulse/live/stream?since_id=${state.lastEventId||0}`);es.addEventListener('pulse',e=>{try{const d=JSON.parse(e.data);applyLiveEvents(d.events||[]);state.lastEventId=d.latest_event_id||state.lastEventId||0}catch(_){}});es.onerror=()=>{es.close();setInterval(()=>{if(!document.hidden)pollLive()},3500)};return}catch(_){}}setInterval(()=>{if(!document.hidden)pollLive()},3500)}
+document.getElementById('loadMore').addEventListener('click',()=>load(false));load(true).then(startLive);setInterval(()=>{if(!document.hidden&&state.offset===0)load(true)},45000);
 </script></body></html>"""
     return Response(
         html.replace("__TITLE__", clean_html(title))
@@ -15590,6 +15602,88 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
     default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}@media(max-width:900px){{.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.wrap{{width:min(100% - 18px,1180px)}}.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};async function pulseApi(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||'Request failed.');return d}}{script_html}</script></body></html>""")
+
+
+def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
+    try:
+        init_db()
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO pulse_live_events (event_type, actor_user_id, post_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                str(event_type or "")[:80],
+                int(actor_user_id or 0),
+                int(post_id or 0),
+                json.dumps(payload or {}, default=str)[:12000],
+                datetime.utcnow().isoformat(timespec="seconds"),
+            ),
+        )
+        conn.commit()
+        event_id = int(cur.lastrowid)
+        conn.close()
+        return event_id
+    except Exception as exc:
+        logging.warning("Pulse live event write failed type=%s error=%s", event_type, exc)
+        return 0
+
+
+def pulse_live_snapshot(cur, since_id=0, limit=80):
+    cur.execute(
+        "SELECT * FROM pulse_live_events WHERE id>? ORDER BY id ASC LIMIT ?",
+        (int(since_id or 0), max(1, min(int(limit or 80), 200))),
+    )
+    events = []
+    for row in cur.fetchall():
+        item = dict(row)
+        try:
+            payload = json.loads(item.get("payload_json") or "{}")
+        except Exception:
+            payload = {}
+        events.append({
+            "id": item.get("id"),
+            "event_type": item.get("event_type"),
+            "actor_user_id": item.get("actor_user_id"),
+            "post_id": item.get("post_id"),
+            "payload": payload,
+            "created_at": item.get("created_at"),
+        })
+    return events
+
+
+def pulse_live_metrics():
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    since = (datetime.utcnow() - timedelta(minutes=1)).isoformat(timespec="seconds")
+    metrics = {}
+    for name, query in {
+        "events_last_minute": "SELECT COUNT(*) AS total FROM pulse_live_events WHERE created_at>=?",
+        "comments_last_minute": "SELECT COUNT(*) AS total FROM pulse_live_events WHERE created_at>=? AND event_type='new_comment'",
+        "reactions_last_minute": "SELECT COUNT(*) AS total FROM pulse_live_events WHERE created_at>=? AND event_type='reaction_added'",
+        "typing_last_minute": "SELECT COUNT(*) AS total FROM pulse_live_events WHERE created_at>=? AND event_type IN ('typing_start','typing_stop')",
+        "new_posts_last_minute": "SELECT COUNT(*) AS total FROM pulse_live_events WHERE created_at>=? AND event_type='new_post'",
+        "active_users": "SELECT COUNT(DISTINCT actor_user_id) AS total FROM pulse_live_events WHERE created_at>=? AND actor_user_id>0",
+    }.items():
+        try:
+            cur.execute(query, (since,))
+            metrics[name] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            metrics[name] = 0
+    try:
+        cur.execute("SELECT MAX(id) AS total FROM pulse_live_events")
+        metrics["latest_event_id"] = int(dict(cur.fetchone() or {}).get("total") or 0)
+    except Exception:
+        metrics["latest_event_id"] = 0
+    conn.close()
+    metrics["transport"] = "sse_with_polling_fallback"
+    metrics["comments_per_sec"] = round(metrics.get("comments_last_minute", 0) / 60, 3)
+    metrics["reactions_per_sec"] = round(metrics.get("reactions_last_minute", 0) / 60, 3)
+    metrics["online_users"] = metrics.get("active_users", 0)
+    metrics["websocket_clients"] = 0
+    metrics["failed_socket_events"] = 0
+    metrics["queue_latency_ms"] = 0
+    return metrics
 
 
 @webhook_app.route("/pulse/reels", methods=["GET"])
@@ -16087,6 +16181,8 @@ def api_pulse_posts():
             user["user_id"], post_type, content_length, has_file, status, result.get("ok"),
         )
         log_product_event(user["user_id"], "pulse_post_created", {"post_id": result.get("post_id"), "status": result.get("status"), "ok": result.get("ok")})
+        if result.get("ok"):
+            pulse_emit_event("new_post", {"post": result.get("post"), "next_url": result.get("next_url")}, user["user_id"], result.get("post_id") or 0)
         return jsonify(result), status
     except ValueError as exc:
         message = str(exc) or "Server error while publishing."
@@ -16105,12 +16201,29 @@ def api_pulse_posts():
         return jsonify({"ok": False, "message": message}), 500
 
 
-@webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET"])
+@webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET", "DELETE"])
 def api_pulse_post(post_id):
     init_db()
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "DELETE":
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+        row = cur.fetchone()
+        owner_id = int(dict(row or {}).get("user_id") or 0) if row else 0
+        if not row:
+            conn.close()
+            return jsonify({"ok": False, "message": "Post not found."}), 404
+        if owner_id != int(user["user_id"]):
+            conn.close()
+            return jsonify({"ok": False, "message": "You can only delete your own Pulse posts."}), 403
+        cur.execute("UPDATE pulse_posts SET deleted_at=?, updated_at=? WHERE id=?", (datetime.utcnow().isoformat(timespec="seconds"), datetime.utcnow().isoformat(timespec="seconds"), post_id))
+        conn.commit()
+        conn.close()
+        pulse_emit_event("post_deleted", {"post_id": post_id}, user["user_id"], post_id)
+        return jsonify({"ok": True, "message": "Pulse post deleted.", "post_id": post_id})
     post = pulse_feed_engine.get_post(post_id, viewer_user_id=user["user_id"], include_private=True)
     if not post:
         return jsonify({"ok": False, "message": "Post not found."}), 404
@@ -16130,6 +16243,8 @@ def api_pulse_react(post_id):
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     result, status = pulse_feed_engine.react(user["user_id"], post_id, payload.get("reaction_type") or "")
+    if result.get("ok"):
+        pulse_emit_event("reaction_removed" if result.get("removed") else "reaction_added", result, user["user_id"], post_id)
     return jsonify(result), status
 
 
@@ -16143,6 +16258,8 @@ def api_pulse_comments(post_id):
         return jsonify(pulse_feed_engine.list_comments(post_id))
     payload = request.get_json(silent=True) or {}
     result, status = pulse_feed_engine.add_comment(user["user_id"], post_id, payload.get("body") or "", payload.get("parent_comment_id"), payload.get("media_ids") or [])
+    if result.get("ok"):
+        pulse_emit_event("new_comment", result, user["user_id"], post_id)
     if result.get("ok"):
         post = pulse_feed_engine.get_post(post_id, viewer_user_id=user["user_id"], include_private=True)
         owner_id = None
@@ -16167,7 +16284,70 @@ def api_pulse_follow():
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     result, status = pulse_feed_engine.follow(user["user_id"], payload.get("followed_user_id"), payload.get("public_player_id") or payload.get("followed_public_player_id") or "")
+    if result.get("ok"):
+        pulse_emit_event("notification_created", {"message": "Creator followed."}, user["user_id"], 0)
     return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/typing", methods=["POST"])
+def api_pulse_typing():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    post_id = int(payload.get("post_id") or 0)
+    typing = bool(payload.get("typing", True))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    ident = pulse_identity_for_user(conn.cursor(), user["user_id"])
+    conn.close()
+    pulse_emit_event("typing_start" if typing else "typing_stop", {"post_id": post_id, "display_name": ident.get("name")}, user["user_id"], post_id)
+    return jsonify({"ok": True, "typing": typing})
+
+
+@webhook_app.route("/api/pulse/live", methods=["GET"])
+def api_pulse_live():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    since_id = int(request.args.get("since_id") or 0)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    events = pulse_live_snapshot(cur, since_id, request.args.get("limit") or 80)
+    conn.close()
+    return jsonify({"ok": True, "events": events, "latest_event_id": events[-1]["id"] if events else since_id, "metrics": pulse_live_metrics()})
+
+
+@webhook_app.route("/api/pulse/live/stream", methods=["GET"])
+def api_pulse_live_stream():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return Response("event: error\ndata: {\"message\":\"Login required.\"}\n\n", mimetype="text/event-stream", status=401)
+    start_id = int(request.args.get("since_id") or 0)
+
+    def event_stream():
+        since_id = start_id
+        for _ in range(24):
+            conn = db()
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            events = pulse_live_snapshot(cur, since_id, 80)
+            conn.close()
+            if events:
+                since_id = int(events[-1]["id"])
+                yield f"event: pulse\ndata: {json.dumps({'ok': True, 'events': events, 'latest_event_id': since_id}, default=str)}\n\n"
+            else:
+                yield f"event: heartbeat\ndata: {json.dumps({'ok': True, 'latest_event_id': since_id})}\n\n"
+            time.sleep(2)
+
+    response = Response(event_stream(), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 @webhook_app.route("/api/pulse/friends/request", methods=["POST"])
@@ -16197,6 +16377,7 @@ def api_pulse_friend_request():
     )
     cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'friend_request', 'New Pulse friend request', 'Someone wants to connect with you on Pulse.', '/pulse/friends', ?)", (target_id, now))
     conn.commit(); conn.close()
+    pulse_emit_event("friend_request", {"message": "New Pulse friend request.", "target_user_id": target_id}, user["user_id"], 0)
     return jsonify({"ok": True, "message": "Friend request sent."})
 
 
@@ -16220,6 +16401,7 @@ def api_pulse_friend_accept():
     cur.execute("INSERT OR IGNORE INTO pulse_friendships (user_id, friend_user_id, created_at) VALUES (?, ?, ?)", (requester, user["user_id"], now))
     cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'friend_accept', 'Pulse friend request accepted', 'Your Pulse friend request was accepted.', '/pulse/friends', ?)", (requester, now))
     conn.commit(); conn.close()
+    pulse_emit_event("notification_created", {"message": "Pulse friend request accepted.", "target_user_id": requester}, user["user_id"], 0)
     return jsonify({"ok": True, "message": "Friend request accepted."})
 
 
@@ -16277,6 +16459,7 @@ def api_pulse_message_send():
     cur.execute("UPDATE pulse_message_threads SET updated_at=? WHERE id=?", (now, thread_id))
     cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New Pulse message', 'You received a Pulse message.', ?, ?)", (receiver_id, f"/pulse/messages/{thread_id}", now))
     conn.commit(); conn.close()
+    pulse_emit_event("message_received", {"message": "New Pulse message.", "thread_id": thread_id, "target_user_id": receiver_id}, user["user_id"], 0)
     return jsonify({"ok": True, "thread_id": thread_id, "next_url": f"/pulse/messages/{thread_id}", "message": "Message sent."})
 
 
@@ -16611,6 +16794,38 @@ def admin_pulse_worker_health_page():
     failed_html = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('job_type') or '')}</td><td>{r.get('target_id')}</td><td>{r.get('attempts')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('updated_at') or '')}</td></tr>" for r in failed)
     body = f"<h1>Pulse Worker Health</h1><p class='muted'>Railway service: coinpilotx-pulse-worker · Start command: python pulse_worker.py</p><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Jobs by Status</h2><table><tr><th>Status</th><th>Total</th></tr>{status_html or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div></div><div class='card'><h2>Jobs by Type</h2><table><tr><th>Type</th><th>Status</th><th>Total</th></tr>{type_html or '<tr><td colspan=3>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Failed Jobs</h2><form method='post'><button>Process Pending Jobs Now</button></form><table><tr><th>ID</th><th>Type</th><th>Target</th><th>Attempts</th><th>Error</th><th>Updated</th></tr>{failed_html or '<tr><td colspan=6>No failed jobs.</td></tr>'}</table></div>"
     return admin_page_html("Pulse Worker Health", body, admin)
+
+
+@webhook_app.route("/admin/pulse-live", methods=["GET"])
+def admin_pulse_live_page():
+    admin, denied = require_admin_page("analytics.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    events = pulse_live_snapshot(cur, 0, 60)
+    conn.close()
+    metrics = pulse_live_metrics()
+    metric_rows = [{"name": key.replace("_", " ").title(), "value": value} for key, value in metrics.items()]
+    event_rows = [
+        {
+            "id": event.get("id"),
+            "type": event.get("event_type"),
+            "post": event.get("post_id"),
+            "created": event.get("created_at"),
+            "payload": clean_html(json.dumps(event.get("payload") or {}, default=str)[:240]),
+        }
+        for event in reversed(events)
+    ]
+    body = (
+        "<h1>Pulse Live Monitor</h1>"
+        "<p class='muted'>Realtime transport: SSE when available, smart polling fallback when sockets fail. WebSocket client count is 0 until a dedicated SocketIO service is added.</p>"
+        f"<div class='card'><h2>Live Metrics</h2>{admin_rows_table(metric_rows, [('name','Metric'),('value','Value')])}</div>"
+        f"<div class='card'><h2>Recent Live Events</h2>{admin_rows_table(event_rows, [('id','ID'),('type','Type'),('post','Post'),('created','Created'),('payload','Payload')])}</div>"
+    )
+    return admin_page_html("Pulse Live Monitor", body, admin)
 
 
 @webhook_app.route("/admin/pulse-post-debug", methods=["GET"])
@@ -22970,6 +23185,16 @@ def init_db():
         body TEXT,
         target_url TEXT,
         is_read INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        actor_user_id INTEGER,
+        post_id INTEGER,
+        payload_json TEXT,
         created_at TEXT
     )
     """)

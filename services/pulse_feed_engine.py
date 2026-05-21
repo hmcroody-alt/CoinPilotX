@@ -129,11 +129,12 @@ def _comment_counts(cur, post_ids):
     return {int(row["post_id"]): int(row["total"] or 0) for row in cur.fetchall()}
 
 
-def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None):
+def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None):
     item = dict(row)
     author = _public_author(item)
     reaction_counts = reactions or {}
     reaction_total = sum(int(v or 0) for v in reaction_counts.values())
+    can_delete = bool(viewer_user_id and int(item.get("user_id") or 0) == int(viewer_user_id or 0))
     return {
         "id": item.get("id"),
         "post_type": item.get("post_type") or "text",
@@ -159,6 +160,7 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "comment_count": comments,
         "comments_count": comments,
         "viewer_reaction": viewer_reaction,
+        "can_delete": can_delete,
         "permalink": f"/pulse/post/{item.get('id')}",
     }
 
@@ -356,7 +358,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         viewer_reaction = (_row(cur.fetchone()) or {}).get("reaction_type")
     conn.close()
     media = _media_for_posts(post_ids)
-    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction)
+    return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id)
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
@@ -419,7 +421,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
     conn.close()
     media = _media_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"]))) for row in rows]
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
     return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel(topic)}
 
 
@@ -454,7 +456,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
     conn.close()
     media = _media_for_posts(post_ids)
-    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"]))) for row in rows]
+    posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
@@ -599,7 +601,9 @@ def add_comment(user_id, post_id, body, parent_comment_id=None, media_ids=None):
     conn.commit()
     conn.close()
     media_service.attach_media_to_message(user_id, comment_id, media_ids or [], context_type="pulse_comment", context_id=str(comment_id))
-    return {"ok": True, "comment_id": comment_id, "message": "Comment posted."}, 200
+    comments = list_comments(post_id).get("comments", [])
+    comment = next((item for item in comments if int(item.get("id") or 0) == comment_id), None)
+    return {"ok": True, "comment_id": comment_id, "comment": comment, "comments_count": len(comments), "message": "Comment posted."}, 200
 
 
 def list_comments(post_id, limit=80):
@@ -633,6 +637,35 @@ def list_comments(post_id, limit=80):
     return {"ok": True, "comments": comments}
 
 
+def get_comment(comment_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
+               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        FROM pulse_comments c
+        LEFT JOIN users u ON u.user_id=c.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=c.user_id
+        WHERE c.id=? AND c.deleted_at IS NULL AND c.moderation_status!='blocked'
+        LIMIT 1
+        """,
+        (int(comment_id),),
+    )
+    row = _row(cur.fetchone())
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "post_id": row.get("post_id"),
+        "parent_comment_id": row.get("parent_comment_id"),
+        "body": row.get("body"),
+        "created_at": row.get("created_at"),
+        "author": _public_author(row),
+    }
+
+
 def react(user_id, post_id, reaction_type):
     reaction_type = (reaction_type or "").strip().lower()
     if reaction_type not in REACTIONS:
@@ -643,6 +676,15 @@ def react(user_id, post_id, reaction_type):
     if not cur.fetchone():
         conn.close()
         return {"ok": False, "message": "Post not found."}, 404
+    cur.execute("SELECT reaction_type FROM pulse_reactions WHERE post_id=? AND user_id=? LIMIT 1", (int(post_id), int(user_id)))
+    existing = _row(cur.fetchone())
+    if existing and existing.get("reaction_type") == reaction_type:
+        cur.execute("DELETE FROM pulse_reactions WHERE post_id=? AND user_id=?", (int(post_id), int(user_id)))
+        cur.execute("UPDATE pulse_posts SET engagement_score=MAX(COALESCE(engagement_score,0)-1,0), updated_at=? WHERE id=?", (_now(), int(post_id)))
+        conn.commit()
+        reactions = _reaction_counts(cur, [int(post_id)]).get(int(post_id), {})
+        conn.close()
+        return {"ok": True, "message": "Reaction removed.", "reaction_type": reaction_type, "post_id": int(post_id), "reaction_counts": reactions, "reactions_count": sum(int(v or 0) for v in reactions.values()), "removed": True}, 200
     cur.execute(
         """
         INSERT INTO pulse_reactions (post_id, user_id, reaction_type, created_at)
@@ -653,8 +695,9 @@ def react(user_id, post_id, reaction_type):
     )
     cur.execute("UPDATE pulse_posts SET engagement_score=COALESCE(engagement_score,0)+1, updated_at=? WHERE id=?", (_now(), int(post_id)))
     conn.commit()
+    reactions = _reaction_counts(cur, [int(post_id)]).get(int(post_id), {})
     conn.close()
-    return {"ok": True, "message": "Reaction added.", "reaction_type": reaction_type}, 200
+    return {"ok": True, "message": "Reaction added.", "reaction_type": reaction_type, "post_id": int(post_id), "reaction_counts": reactions, "reactions_count": sum(int(v or 0) for v in reactions.values())}, 200
 
 
 def follow(follower_user_id, followed_user_id=None, followed_public_player_id=""):
