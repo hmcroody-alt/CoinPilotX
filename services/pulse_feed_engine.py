@@ -81,27 +81,32 @@ def _media_for_posts(post_ids):
     conn = user_context.connect()
     cur = conn.cursor()
     placeholders = ",".join(["?"] * len(post_ids))
-    cur.execute(
-        f"""
-        SELECT * FROM chat_media_uploads
-        WHERE context_type='pulse' AND context_id IN ({placeholders}) AND COALESCE(moderation_status,'approved')!='blocked'
-        ORDER BY id ASC
-        """,
-        [str(x) for x in post_ids],
-    )
-    media = {}
-    for row in cur.fetchall():
-        item = dict(row)
-        media.setdefault(int(item.get("context_id") or 0), []).append({
-            "id": item.get("id"),
-            "media_type": item.get("media_type"),
-            "media_url": item.get("media_url"),
-            "thumbnail_url": item.get("thumbnail_url") or item.get("media_url"),
-            "mime_type": item.get("mime_type"),
-            "file_size_bytes": item.get("file_size_bytes"),
-        })
-    conn.close()
-    return media
+    try:
+        cur.execute(
+            f"""
+            SELECT * FROM chat_media_uploads
+            WHERE context_type='pulse' AND context_id IN ({placeholders}) AND COALESCE(moderation_status,'approved')!='blocked'
+            ORDER BY id ASC
+            """,
+            [str(x) for x in post_ids],
+        )
+        media = {}
+        for row in cur.fetchall():
+            item = dict(row)
+            media.setdefault(int(item.get("context_id") or 0), []).append({
+                "id": item.get("id"),
+                "media_type": item.get("media_type"),
+                "media_url": item.get("media_url"),
+                "thumbnail_url": item.get("thumbnail_url") or item.get("media_url"),
+                "mime_type": item.get("mime_type"),
+                "file_size_bytes": item.get("file_size_bytes"),
+            })
+        return media
+    except Exception as exc:
+        logging.warning("Pulse media hydration skipped: %s", exc)
+        return {}
+    finally:
+        conn.close()
 
 
 def _reaction_counts(cur, post_ids):
@@ -415,12 +420,12 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     conn.close()
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"]))) for row in rows]
-    return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": intelligence_panel(topic)}
+    return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel(topic)}
 
 
 def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     if not user_id:
-        return {"ok": False, "feed": "my_posts", "topic": "", "posts": [], "next_offset": 0, "has_more": False, "intelligence": intelligence_panel("")}
+        return {"ok": False, "feed": "my_posts", "topic": "", "posts": [], "next_offset": 0, "has_more": False, "intelligence": safe_intelligence_panel("")}
     limit = max(1, min(int(limit or 20), 40))
     offset = max(0, int(offset or 0))
     conn = user_context.connect()
@@ -450,7 +455,36 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     conn.close()
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"]))) for row in rows]
-    return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": intelligence_panel("")}
+    return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
+
+
+def _empty_intelligence(topic=""):
+    return {
+        "trending_topics": [],
+        "top_spaces": [
+            {"name": "Scam Watch", "slug": "scam-watch", "heat": 0},
+            {"name": "Crypto Teachers", "slug": "crypto-teachers", "heat": 0},
+            {"name": "Alpha Arena", "slug": "alpha-arena", "heat": 0},
+            {"name": "Roast Battle", "slug": "roast-battle", "heat": 0},
+        ],
+        "top_posts": [],
+        "active_creators": [],
+        "scam_warnings": [],
+        "posts_today": 0,
+        "open_reports": 0,
+        "community_mood": "Warming up",
+        "suggested_action": "Create the first Pulse for today's crypto conversation.",
+        "daily_prompt": daily_prompt(),
+        "topic": topic or "",
+    }
+
+
+def safe_intelligence_panel(topic=""):
+    try:
+        return intelligence_panel(topic)
+    except Exception as exc:
+        logging.warning("Pulse intelligence fallback used: %s", exc)
+        return _empty_intelligence(topic)
 
 
 def intelligence_panel(topic=""):
@@ -694,7 +728,7 @@ def admin_analytics():
         counts["jobs"] = []
         counts["post_attempts"] = []
     conn.close()
-    counts["intelligence"] = intelligence_panel()
+    counts["intelligence"] = safe_intelligence_panel()
     return counts
 
 

@@ -15364,6 +15364,7 @@ PULSE_SPACES = [
     {"slug": "crypto-teachers", "name": "Crypto Teachers", "description": "Verified educators, beginner lessons, and practical crypto Q&A."},
     {"slug": "scam-watch", "name": "Scam Watch", "description": "Community scam warnings, phishing patterns, and wallet safety lessons."},
     {"slug": "beginner-crypto", "name": "Beginner Crypto", "description": "A friendly room for first steps, simple questions, and safer learning."},
+    {"slug": "wallet-safety", "name": "Wallet Safety", "description": "Seed phrase safety, approvals, cold storage, and wallet hygiene."},
     {"slug": "alpha-arena", "name": "Alpha Arena", "description": "Arena missions, wins, training moments, and leaderboard stories."},
     {"slug": "roast-battle", "name": "Roast Battle", "description": "Stage clips, call signs, crowd heat, and clean competitive comedy."},
     {"slug": "whale-watch", "name": "Whale Watch", "description": "Large moves, network alerts, and market structure discussion."},
@@ -15371,6 +15372,7 @@ PULSE_SPACES = [
     {"slug": "ai-trading-education", "name": "AI Trading Education", "description": "Educational AI analysis, risk lessons, and scenario thinking."},
     {"slug": "haiti-crypto-community", "name": "Haiti Crypto Community", "description": "A local-first space for Haitian builders, learners, and creators."},
     {"slug": "sports-edge", "name": "Sports Edge", "description": "Sports momentum, crowd sentiment, and learning-focused predictions."},
+    {"slug": "cybersecurity", "name": "Cybersecurity", "description": "Practical security habits for crypto users, creators, and builders."},
 ]
 
 
@@ -15451,7 +15453,7 @@ const feedPaths={for_you:'/pulse',following:'/pulse/friends',trending:'/pulse/tr
 const reactions={fire:'Fire',smart:'Smart',scam_alert:'Scam Alert',whale:'Whale',bullish:'Bullish',bearish:'Bearish',funny:'Funny',elite:'Elite',brutal:'Brutal',fast_signal:'Fast Signal'};
 const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3400)};
-async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Feed temporarily unavailable. Try again.'))}return d}
+async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaHtml(items){return (items||[]).map(m=>m.media_type==='video'?`<video src="${esc(m.media_url)}" poster="${esc(m.thumbnail_url||'')}" muted controls playsinline preload="metadata"></video>`:`<img src="${esc(m.thumbnail_url||m.media_url)}" alt="Pulse media" loading="lazy">`).join('')}
 function postHtml(p){const author=p.author||{};const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const react=Object.entries(reactions).slice(0,6).map(([k,label])=>`<button class="reaction-btn ${p.viewer_reaction===k?'active':''}" data-react="${k}" data-post="${p.id}">${label} ${(p.reaction_counts||{})[k]||''}</button>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';return `<article class="card post" data-post-id="${p.id}"><div class="author"><div class="author-main"><span class="avatar">${author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1))}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'Pulse creator')}</div><span class="badge">${esc(author.rank||'Rookie')}</span></div></div><div class="actions"><a class="button" href="${esc(p.permalink)}">Open</a><a class="button" href="${profile}">Profile</a><button data-share="${esc(p.permalink)}">Share</button><button data-report="post" data-id="${p.id}">Report</button></div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${p.media&&p.media.length?`<div class="media-grid">${mediaHtml(p.media)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${esc(p.created_at||'')} · ${esc(p.post_type||'post')} · ${Number(p.comments_count||p.comment_count||0)} comments · ${Number(p.reactions_count||0)} reactions</p><div class="reactions">${react}</div></article>`}
 function renderIntel(intel){const topics=(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${encodeURIComponent(t.tag)}">#${esc(t.tag)} · ${t.count}</a>`).join('');const spaces=(intel.top_spaces||[]).map(s=>`<a class="intel-item" href="/pulse/spaces/${encodeURIComponent(s.slug)}">${esc(s.name)} · heat ${Number(s.heat||0)}</a>`).join('');const posts=(intel.top_posts||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">${esc(p.title)}</a>`).join('');const scams=(intel.scam_warnings||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">Scam watch · ${esc(p.title)}</a>`).join('');document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';const content=`<div class="intel-item"><strong>${esc(intel.community_mood||'Curious')}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${Number(intel.posts_today||0)}</strong><br><span class="muted">Posts today</span></div><div class="intel-item">${esc(intel.suggested_action||'Pulse is warming up. Create the first post.')}</div>${topics}${spaces}${posts}${scams}`;document.getElementById('intel').innerHTML=content||'<p class="muted">Pulse is warming up. Create the first post.</p>'}
@@ -15499,7 +15501,7 @@ def pulse_page():
         feed = "roast_clips"
     else:
         feed = request.args.get("feed") or "for_you"
-    return pulse_page_html("My Pulse Posts" if feed == "my_posts" else "Global Pulse Feed", feed)
+    return pulse_page_html("My Pulse Posts" if feed == "my_posts" else "Global Pulse Feed", feed, topic=request.args.get("topic") or "", profile_id=request.args.get("profile") or "")
 
 
 def pulse_section_shell(title, description, cards=None, primary_href="/pulse/create", primary_label="Create Pulse"):
@@ -15516,6 +15518,80 @@ def pulse_section_shell(title, description, cards=None, primary_href="/pulse/cre
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1100px);margin:auto;padding:20px 0 calc(88px + env(safe-area-inset-bottom))}}.actions,.grid{{display:flex;gap:10px;flex-wrap:wrap}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24)}}h1{{font-size:clamp(36px,7vw,68px);line-height:.96;margin:12px 0}}p{{color:var(--muted);line-height:1.55}}a{{color:inherit}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="actions">{nav_html}</nav><section class="card"><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="grid">{card_html}</section></main></body></html>""")
 
 
+def pulse_identity_for_user(cur, user_id):
+    try:
+        cur.execute(
+            """
+            SELECT u.user_id, u.username, u.display_name AS user_display_name, u.roast_call_sign,
+                   ap.public_player_id, ap.display_name, ap.avatar_url, ap.rank
+            FROM users u
+            LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+            WHERE u.user_id=?
+            LIMIT 1
+            """,
+            (int(user_id),),
+        )
+        row = dict(cur.fetchone() or {})
+    except Exception:
+        row = {"user_id": user_id}
+    public_id = row.get("public_player_id") or f"pilot-{str(user_id)[-6:]}"
+    name = row.get("display_name") or row.get("roast_call_sign") or row.get("user_display_name") or row.get("username") or f"Arena Pilot #{str(public_id)[-4:]}"
+    return {
+        "user_id": int(user_id or 0),
+        "public_player_id": public_id,
+        "name": str(name)[:80],
+        "avatar_url": row.get("avatar_url") or "",
+        "rank": row.get("rank") or "Rookie",
+    }
+
+
+def pulse_user_id_from_public(cur, public_player_id):
+    public_player_id = str(public_player_id or "").strip()
+    if not public_player_id:
+        return None
+    try:
+        cur.execute("SELECT user_id FROM arena_profiles WHERE public_player_id=? LIMIT 1", (public_player_id,))
+        row = cur.fetchone()
+        if row:
+            return int(dict(row).get("user_id") or 0)
+    except Exception:
+        pass
+    if public_player_id.startswith("pilot-"):
+        try:
+            suffix = int(public_player_id.rsplit("-", 1)[-1])
+            cur.execute("SELECT user_id FROM users WHERE CAST(user_id AS TEXT) LIKE ? LIMIT 1", (f"%{suffix}",))
+            row = cur.fetchone()
+            if row:
+                return int(dict(row).get("user_id") or 0)
+        except Exception:
+            return None
+    return None
+
+
+def pulse_social_shell(title, description, main_html, side_html="", script_html=""):
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    nav = [
+        ("Home", "/pulse"),
+        ("Reels", "/pulse/reels"),
+        ("Spaces", "/pulse/spaces"),
+        ("Friends", "/pulse/friends"),
+        ("Marketplace", "/pulse/marketplace"),
+        ("Notifications", "/pulse/notifications"),
+        ("Messenger", "/pulse/messages"),
+        ("Profile", "/pulse/profile"),
+        ("Groups", "/pulse/groups"),
+        ("Teachers", "/pulse/teachers"),
+        ("Scam Alerts", "/pulse/scam-alerts"),
+        ("Arena Highlights", "/pulse/arena"),
+        ("Roast Clips", "/pulse/roast-clips"),
+    ]
+    nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
+    default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}@media(max-width:900px){{.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.wrap{{width:min(100% - 18px,1180px)}}.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};async function pulseApi(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||'Request failed.');return d}}{script_html}</script></body></html>""")
+
+
 @webhook_app.route("/pulse/reels", methods=["GET"])
 def pulse_reels_page():
     return pulse_page_html("Pulse Reels", "reels")
@@ -15523,13 +15599,89 @@ def pulse_reels_page():
 
 @webhook_app.route("/pulse/friends", methods=["GET"])
 def pulse_friends_page():
-    return pulse_page_html("Friends and Following", "following")
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_friend_requests WHERE receiver_user_id=? AND status='pending' ORDER BY created_at DESC", (user["user_id"],))
+    incoming = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT friend_user_id FROM pulse_friendships WHERE user_id=? ORDER BY created_at DESC LIMIT 30", (user["user_id"],))
+    friend_ids = [int(dict(row).get("friend_user_id") or 0) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT DISTINCT p.user_id
+        FROM pulse_posts p
+        WHERE p.user_id!=? AND p.deleted_at IS NULL
+        ORDER BY p.created_at DESC
+        LIMIT 12
+        """,
+        (user["user_id"],),
+    )
+    suggested_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
+    conn.close()
+
+    def person_card(person_id, mode="suggested", request_id=""):
+        conn2 = db()
+        conn2.row_factory = sqlite3.Row
+        ident = pulse_identity_for_user(conn2.cursor(), person_id)
+        conn2.close()
+        mutual = "Shared spaces: Scam Watch, Alpha Arena"
+        actions = ""
+        if mode == "incoming":
+            actions = f"<button class='primary' data-accept='{request_id}'>Accept</button><button data-decline='{request_id}'>Decline</button>"
+        else:
+            actions = f"<button class='primary' data-friend-public='{clean_html(ident['public_player_id'])}'>Add Friend</button><button data-follow-public='{clean_html(ident['public_player_id'])}'>Follow</button>"
+        actions += f"<button data-message-public='{clean_html(ident['public_player_id'])}'>Message</button>"
+        return f"<article class='card'><div class='person'><span class='avatar'>{clean_html(ident['name'][:1])}</span><div><h3>{clean_html(ident['name'])}</h3><span class='pill'>{clean_html(ident['rank'])}</span><p>{mutual}</p></div></div><div class='actions'>{actions}</div></article>"
+
+    incoming_html = "".join(person_card(int(row.get("requester_user_id") or 0), "incoming", row.get("id")) for row in incoming)
+    friends_html = "".join(person_card(fid, "friend") for fid in friend_ids)
+    suggested_html = "".join(person_card(sid, "suggested") for sid in suggested_ids if sid not in friend_ids)
+    main = f"""
+    <section class='card'><h2>Friend Requests</h2>{incoming_html or '<p>No pending friend requests. Suggested creators are below.</p>'}</section>
+    <section class='card'><h2>Your Friends</h2>{friends_html or '<p>Friends you accept will appear here with quick messaging.</p>'}</section>
+    <section class='card'><h2>Suggested Creators and Players</h2><div class='grid'>{suggested_html or '<article class="card"><p>Publish or follow Pulse posts to unlock smarter suggestions.</p></article>'}</div></section>
+    """
+    script = """
+    document.addEventListener('click', async e => {
+      const accept=e.target.closest('[data-accept]');
+      const decline=e.target.closest('[data-decline]');
+      const friend=e.target.closest('[data-friend-public]');
+      const follow=e.target.closest('[data-follow-public]');
+      const msg=e.target.closest('[data-message-public]');
+      try {
+        if (accept) { await pulseApi('/api/pulse/friends/accept',{method:'POST',body:JSON.stringify({request_id:accept.dataset.accept})}); accept.closest('.card').remove(); toast('Friend request accepted.'); }
+        if (decline) { await pulseApi('/api/pulse/friends/decline',{method:'POST',body:JSON.stringify({request_id:decline.dataset.decline})}); decline.closest('.card').remove(); toast('Friend request declined.'); }
+        if (friend) { await pulseApi('/api/pulse/friends/request',{method:'POST',body:JSON.stringify({public_player_id:friend.dataset.friendPublic})}); toast('Friend request sent.'); }
+        if (follow) { await pulseApi('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})}); toast('Followed.'); }
+        if (msg) { const d=await pulseApi('/api/pulse/messages/send',{method:'POST',body:JSON.stringify({receiver_public_player_id:msg.dataset.messagePublic,message:'Hi, I found you through Pulse.'})}); location.href=d.next_url; }
+      } catch(err) { toast(err.message); }
+    });
+    """
+    return pulse_social_shell("Friends and Following", "Build your trusted CoinPilotXAI circle, follow creators, accept requests, and message without exposing private identity data.", main, "", script)
 
 
 @webhook_app.route("/pulse/spaces", methods=["GET"])
 def pulse_spaces_page():
-    cards = [{"title": space["name"], "description": space["description"], "href": f"/pulse/spaces/{space['slug']}", "cta": "Open Space"} for space in PULSE_SPACES]
-    return pulse_section_shell("Pulse Spaces", "Focused communities for learning, safety, Arena energy, creators, and market conversation.", cards, "/pulse/create", "Create in Pulse")
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
+    counts = {dict(row).get("space_slug"): int(dict(row).get("total") or 0) for row in cur.fetchall()}
+    conn.close()
+    cards = "".join(
+        f"<article class='card'><h2>{clean_html(space['name'])}</h2><p>{clean_html(space['description'])}</p><p><span class='pill'>{counts.get(space['slug'],0)} members</span></p><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button></div></article>"
+        for space in PULSE_SPACES
+    )
+    script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-space]');if(!b)return;try{await pulseApi('/api/pulse/spaces/join',{method:'POST',body:JSON.stringify({space_slug:b.dataset.joinSpace})});toast('Joined space.')}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Pulse Spaces", "Knowledge communities for safety, teachers, Arena energy, local builders, and market learning.", f"<section class='grid'>{cards}</section>", "", script)
 
 
 @webhook_app.route("/pulse/spaces/<slug>", methods=["GET"])
@@ -15537,57 +15689,123 @@ def pulse_space_detail_page(slug):
     space = next((item for item in PULSE_SPACES if item["slug"] == slug), None)
     if not space:
         return pulse_section_shell("Pulse Space", "This space is being prepared.", [{"title": "Explore Spaces", "description": "Find active CoinPilotXAI communities.", "href": "/pulse/spaces", "cta": "Browse Spaces"}])
-    return pulse_page_html(space["name"], request.args.get("feed") or "for_you", topic=slug)
+    main = f"""
+    <section class='card'><h2>Pinned Knowledge</h2><p>{clean_html(space['description'])}</p><p>Discussion prompt: What is one useful lesson, warning, question, or resource you can share with this space today?</p><div class='actions'><button class='primary' data-join-space='{clean_html(slug)}'>Join Space</button><a class='button' href='/pulse/create'>Create Full Post</a></div></section>
+    <section class='card'><h2>Create in {clean_html(space['name'])}</h2><textarea id='spacePostBody' placeholder='Share a lesson, warning, question, or update for this space.'></textarea><button class='primary' id='spacePostBtn'>Post to Space</button></section>
+    <section class='card'><h2>Space Feed</h2><p>Posts tagged for this space appear below.</p></section>
+    <iframe title='Space feed' src='/pulse?topic={clean_html(slug)}' style='width:100%;min-height:760px;border:0;border-radius:16px;background:#071321'></iframe>
+    """
+    script = f"""
+    document.addEventListener('click',async e=>{{const b=e.target.closest('[data-join-space]');if(!b)return;try{{await pulseApi('/api/pulse/spaces/join',{{method:'POST',body:JSON.stringify({{space_slug:b.dataset.joinSpace}})}});toast('Joined {clean_html(space['name'])}.')}}catch(err){{toast(err.message)}}}});
+    document.getElementById('spacePostBtn').addEventListener('click',async()=>{{const body=document.getElementById('spacePostBody').value;try{{const d=await pulseApi('/api/pulse/spaces/post',{{method:'POST',body:JSON.stringify({{space_slug:'{clean_html(slug)}',body}})}});location.href=d.next_url;}}catch(err){{toast(err.message)}}}});
+    """
+    return pulse_social_shell(space["name"], "A focused Pulse Space with resources, contributors, and live discussion.", main, "", script)
 
 
 @webhook_app.route("/pulse/marketplace", methods=["GET"])
 def pulse_marketplace_page():
-    cards = [
-        {"title": "Creator Services", "description": "A staged foundation for safe educational creator services.", "href": "/pulse/teachers", "cta": "Find Teachers"},
-        {"title": "Premium Rooms", "description": "Future premium rooms will stay labeled, moderated, and compliance-ready.", "href": "/trust-center", "cta": "View Trust Rules"},
-        {"title": "Sponsored Education", "description": "Only reviewed, clearly labeled educational placements belong here.", "href": "/advertising-policy", "cta": "Ad Policy"},
-    ]
-    return pulse_section_shell("Pulse Marketplace", "A trust-first marketplace foundation for education and creator value. No risky financial products.", cards)
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+    seller = dict(cur.fetchone() or {})
+    cur.execute("SELECT l.*, COALESCE(ap.display_name,u.roast_call_sign,u.display_name,u.username,'Pulse Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id LEFT JOIN arena_profiles ap ON ap.user_id=l.seller_user_id WHERE l.status='active' ORDER BY l.id DESC LIMIT 40")
+    listings = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    listing_html = "".join(f"<article class='card'><h2>{clean_html(row.get('title'))}</h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span></p><p>Seller: {clean_html(row.get('seller_name'))}</p><p>Safety notice: educational products only. Payments are staged for compliance.</p><div class='actions'><button data-contact-seller='{int(row.get('seller_user_id') or 0)}'>Contact Seller</button><button data-report-listing='{int(row.get('id') or 0)}'>Report</button></div></article>" for row in listings)
+    seller_form = "<section class='card'><h2>Apply to Sell</h2><input id='sellerName' placeholder='Seller display name'><textarea id='sellerBio' placeholder='What educational value will you offer?'></textarea><button class='primary' id='sellerApply'>Apply to Sell</button></section>"
+    listing_form = ""
+    if seller:
+        listing_form = "<section class='card'><h2>Create Listing</h2><input id='listingTitle' placeholder='Training video, guide, coaching session...'><select id='listingCategory'><option>Scam Prevention</option><option>Wallet Safety</option><option>Market Psychology</option><option>AI Learning</option><option>Alpha Arena Training</option></select><textarea id='listingDescription' placeholder='Describe the educational product or creator service.'></textarea><input id='listingPrice' placeholder='Free, Request access, Paid later'><button class='primary' id='listingCreate'>Create Listing</button></section>"
+    script = """
+    document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
+    document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
+    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/send',{method:'POST',body:JSON.stringify({receiver_user_id:c.dataset.contactSeller,message:'Hi, I found your Marketplace listing on Pulse.'})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')}}catch(err){toast(err.message)}})
+    """
+    main = f"{seller_form}{listing_form}<section class='grid'>{listing_html or '<article class=\"card\"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'}</section>"
+    return pulse_social_shell("Pulse Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
 
 
 @webhook_app.route("/pulse/notifications", methods=["GET"])
 def pulse_notifications_page():
-    cards = [
-        {"title": "Reactions", "description": "Milestones and reaction bursts from your posts will appear here.", "href": "/pulse/my-posts", "cta": "My Posts"},
-        {"title": "Replies", "description": "Comments, replies, and mentions are grouped for fast follow-up.", "href": "/pulse", "cta": "Open Feed"},
-        {"title": "Creator Alerts", "description": "Followed creators, Arena players, and teachers will notify you here.", "href": "/pulse/friends", "cta": "Following"},
-    ]
-    return pulse_section_shell("Pulse Notifications", "Your Pulse reactions, comments, follows, mentions, trends, and moderation notices.", cards)
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50", (user["user_id"],))
+    notes = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM pulse_friend_requests WHERE receiver_user_id=? AND status='pending' ORDER BY created_at DESC", (user["user_id"],))
+    requests = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    request_html = "".join(f"<article class='card'><h3>Friend request</h3><p>A Pulse member wants to connect.</p><div class='actions'><button class='primary' data-accept='{r.get('id')}'>Accept</button><button data-decline='{r.get('id')}'>Decline</button></div></article>" for r in requests)
+    note_html = "".join(f"<article class='card'><h2>{clean_html(n.get('title') or 'Pulse update')}</h2><p>{clean_html(n.get('body') or '')}</p><a class='button' href='{clean_html(n.get('target_url') or '/pulse')}'>Open</a></article>" for n in notes)
+    script = "document.addEventListener('click',async e=>{const a=e.target.closest('[data-accept]'),d=e.target.closest('[data-decline]');try{if(a){await pulseApi('/api/pulse/friends/accept',{method:'POST',body:JSON.stringify({request_id:a.dataset.accept})});a.closest('.card').remove();toast('Accepted.')} if(d){await pulseApi('/api/pulse/friends/decline',{method:'POST',body:JSON.stringify({request_id:d.dataset.decline})});d.closest('.card').remove();toast('Declined.')}}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Pulse Notifications", "Friend requests, reactions, comments, follows, group invites, and creator updates.", f"{request_html}{note_html or '<section class=\"card\"><p>No notifications yet. Follow creators, join spaces, or publish a Pulse to start the loop.</p></section>'}", "", script)
 
 
 @webhook_app.route("/pulse/messages", methods=["GET"])
 def pulse_messages_page():
-    cards = [
-        {"title": "Fan Messages", "description": "Read and reply to fan messages without exposing private identity data.", "href": "/chat/fan-messages", "cta": "Open Fan Messages"},
-        {"title": "Private Chats", "description": "Continue existing CoinPilotXAI conversations.", "href": "/chat", "cta": "Open Chat"},
-        {"title": "Message Requests", "description": "First-contact messages stay reviewable and safer by default.", "href": "/chat", "cta": "Review Requests"},
-    ]
-    return pulse_section_shell("Pulse Messenger", "Recent chats, fan messages, message requests, and safer replies.", cards)
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_message_threads WHERE user_one_id=? OR user_two_id=? ORDER BY updated_at DESC LIMIT 40", (user["user_id"], user["user_id"]))
+    threads = [dict(row) for row in cur.fetchall()]
+    cards = []
+    for thread in threads:
+        other_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
+        ident = pulse_identity_for_user(cur, other_id)
+        cur.execute("SELECT body, created_at FROM pulse_messages WHERE thread_id=? ORDER BY id DESC LIMIT 1", (thread.get("id"),))
+        last = dict(cur.fetchone() or {})
+        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{clean_html(ident['name'][:1])}</span><div><h2>{clean_html(ident['name'])}</h2><p>{clean_html((last.get('body') or 'No messages yet.')[:140])}</p></div></div><a class='button primary' href='/pulse/messages/{thread.get('id')}'>Open Thread</a></article>")
+    conn.close()
+    main = f"<section class='card'><h2>Pulse-only Messenger</h2><p>Message friends, creators, teachers, and sellers using public identities only.</p></section><section>{''.join(cards) or '<article class=\"card\"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, or Teacher pages to start a safe Pulse conversation.</p></article>'}</section>"
+    return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, friend messages, and request-friendly replies.", main)
 
 
 @webhook_app.route("/pulse/profile", methods=["GET"])
 def pulse_my_profile_page():
-    return pulse_page_html("My Pulse Profile", "my_posts")
+    return pulse_profile_page_for_user((require_account() or {}).get("user_id"))
 
 
 @webhook_app.route("/pulse/groups", methods=["GET"])
 def pulse_groups_page():
-    return pulse_spaces_page()
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT g.*, COUNT(m.user_id) AS members FROM pulse_groups g LEFT JOIN pulse_group_members m ON m.group_id=g.id GROUP BY g.id ORDER BY g.id DESC LIMIT 40")
+    groups = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    group_html = "".join(f"<article class='card'><h2>{clean_html(g.get('name'))}</h2><p>{clean_html(g.get('description') or '')}</p><p><span class='pill'>{clean_html(g.get('group_type') or 'public')}</span> <span class='pill'>{int(g.get('members') or 0)} members</span></p><div class='actions'><button class='primary' data-join-group='{int(g.get('id') or 0)}'>Join</button><a class='button' href='/pulse/groups/{int(g.get('id') or 0)}'>Open</a></div></article>" for g in groups)
+    main = f"""<section class='card'><h2>Create Group</h2><input id='groupName' placeholder='Group name'><textarea id='groupDescription' placeholder='Group purpose and rules'></textarea><select id='groupType'><option value='public'>Public</option><option value='private'>Private</option><option value='invite-only'>Invite-only</option></select><button class='primary' id='groupCreate'>Create Group</button></section><section class='grid'>{group_html or '<article class="card"><h2>No groups yet.</h2><p>Create the first Pulse group for your community.</p></article>'}</section>"""
+    script = "document.getElementById('groupCreate').addEventListener('click',async()=>{try{await pulseApi('/api/pulse/groups/create',{method:'POST',body:JSON.stringify({name:document.getElementById('groupName').value,description:document.getElementById('groupDescription').value,group_type:document.getElementById('groupType').value})});toast('Group created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-group]');if(!b)return;try{await pulseApi('/api/pulse/groups/join',{method:'POST',body:JSON.stringify({group_id:b.dataset.joinGroup})});toast('Joined group.')}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Pulse Groups", "Create focused communities, invite friends, post updates, and grow safe discussion spaces.", main, "", script)
 
 
 @webhook_app.route("/pulse/teachers", methods=["GET"])
 def pulse_teachers_page():
-    cards = [
-        {"title": "Beginner Guides", "description": "Wallet safety, scam defense, and market basics for new users.", "href": "/learn/crypto-scams", "cta": "Start Learning"},
-        {"title": "Live Q&A Prompts", "description": "Ask teachers and AI helpers clear crypto safety questions.", "href": "/pulse/create", "cta": "Ask a Question"},
-        {"title": "Scam Shield Lessons", "description": "Turn real scam patterns into safer user habits.", "href": "/scam-shield/scan", "cta": "Run Scanner"},
-    ]
-    return pulse_section_shell("Crypto Teachers", "Educators, AI teachers, lessons, live Q&A prompts, and beginner-friendly safety paths.", cards)
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM teacher_profiles ORDER BY id DESC LIMIT 30")
+    teachers = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    cats = ["Beginner Crypto", "Scam Prevention", "Wallet Safety", "Market Psychology", "Technical Analysis Basics", "AI Tools", "Alpha Arena Training", "Roast Battle Performance", "Cybersecurity Basics"]
+    cat_options = "".join(f"<option>{clean_html(c)}</option>" for c in cats)
+    teacher_html = "".join(f"<article class='card'><h2>{clean_html(t.get('display_name') or 'Pulse Teacher')}</h2><p>{clean_html(t.get('bio') or '')}</p><p><span class='pill'>{clean_html(t.get('category') or 'Education')}</span> <span class='pill'>{clean_html(t.get('verification_status') or 'pending')}</span></p><button data-teacher-message='{int(t.get('user_id') or 0)}'>Message Teacher</button></article>" for t in teachers)
+    main = f"""<section class='card'><h2>Apply to Teach</h2><input id='teacherName' placeholder='Teacher display name'><select id='teacherCategory'>{cat_options}</select><textarea id='teacherPitch' placeholder='What will you teach, and how will you keep learners safe?'></textarea><button class='primary' id='teacherApply'>Apply as Teacher</button></section><section class='grid'>{teacher_html or '<article class="card"><h2>Teachers are warming up.</h2><p>Apply to teach wallet safety, scam prevention, AI tools, or Arena training.</p></article>'}</section>"""
+    script = "document.getElementById('teacherApply').addEventListener('click',async()=>{try{await pulseApi('/api/pulse/teachers/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('teacherName').value,category:document.getElementById('teacherCategory').value,pitch:document.getElementById('teacherPitch').value})});toast('Teacher application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-teacher-message]');if(!b)return;try{const d=await pulseApi('/api/pulse/messages/send',{method:'POST',body:JSON.stringify({receiver_user_id:b.dataset.teacherMessage,message:'Hi, I found your teacher profile on Pulse.'})});location.href=d.next_url}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Crypto Teachers", "Teacher signup, learning paths, free lessons, and paid-course-ready architecture for safe crypto education.", main, "", script)
 
 
 @webhook_app.route("/pulse/topic/<topic>", methods=["GET"])
@@ -15595,9 +15813,97 @@ def pulse_topic_page(topic):
     return pulse_page_html(f"Pulse Topic #{topic}", request.args.get("feed") or "for_you", topic=topic)
 
 
+@webhook_app.route("/pulse/messages/<int:thread_id>", methods=["GET"])
+def pulse_message_thread_page(thread_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
+    thread = dict(cur.fetchone() or {})
+    if not thread:
+        conn.close()
+        return pulse_social_shell("Pulse Message", "This thread was not found or is not available to your account.", "<section class='card'><a class='button primary' href='/pulse/messages'>Back to Messenger</a></section>")
+    other_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
+    other = pulse_identity_for_user(cur, other_id)
+    cur.execute("SELECT * FROM pulse_messages WHERE thread_id=? ORDER BY id ASC LIMIT 200", (thread_id,))
+    messages = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    message_html = "".join(f"<article class='card'><p><strong>{'You' if int(m.get('sender_user_id') or 0)==int(user['user_id']) else clean_html(other['name'])}</strong></p><p>{clean_html(m.get('body') or '')}</p><small>{clean_html(m.get('created_at') or '')}</small></article>" for m in messages)
+    main = f"<section class='card'><h2>{clean_html(other['name'])}</h2><p>Pulse thread uses public identity only.</p></section><section id='messages'>{message_html or '<article class=\"card\"><p>No messages yet.</p></article>'}</section><section class='card'><textarea id='replyBody' placeholder='Reply...'></textarea><button class='primary' id='replyBtn'>Send Reply</button></section>"
+    script = f"document.getElementById('replyBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{thread_id:{thread_id},message:document.getElementById('replyBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
+    return pulse_social_shell("Pulse Messenger", "Reply quickly and safely inside the Pulse social layer.", main, "", script)
+
+
+@webhook_app.route("/pulse/groups/<int:group_id>", methods=["GET"])
+def pulse_group_detail_page(group_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    group = dict(cur.fetchone() or {})
+    if not group:
+        conn.close()
+        return pulse_social_shell("Pulse Group", "This group was not found.", "<section class='card'><a class='button primary' href='/pulse/groups'>Back to Groups</a></section>")
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
+    members = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT gp.*, COALESCE(ap.display_name,u.roast_call_sign,u.display_name,u.username,'Pulse Member') AS author FROM pulse_group_posts gp LEFT JOIN users u ON u.user_id=gp.user_id LEFT JOIN arena_profiles ap ON ap.user_id=gp.user_id WHERE gp.group_id=? ORDER BY gp.id DESC LIMIT 50", (group_id,))
+    posts = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    post_html = "".join(f"<article class='card'><strong>{clean_html(p.get('author'))}</strong><p>{clean_html(p.get('body') or '')}</p><small>{clean_html(p.get('created_at') or '')}</small></article>" for p in posts)
+    main = f"<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span></p><div class='actions'><button class='primary' data-join-group='{group_id}'>Join Group</button></div></section><section class='card'><h2>Post in Group</h2><textarea id='groupPostBody'></textarea><button class='primary' id='groupPostBtn'>Post</button></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
+    script = f"document.addEventListener('click',async e=>{{const b=e.target.closest('[data-join-group]');if(!b)return;try{{await pulseApi('/api/pulse/groups/join',{{method:'POST',body:JSON.stringify({{group_id:b.dataset.joinGroup}})}});toast('Joined group.')}}catch(err){{toast(err.message)}}}});document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/groups/post',{{method:'POST',body:JSON.stringify({{group_id:{group_id},body:document.getElementById('groupPostBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
+    return pulse_social_shell(group.get("name") or "Pulse Group", "A user-created community with posts, members, rules, and safety reporting.", main, "", script)
+
+
 @webhook_app.route("/pulse/profile/<public_player_id>", methods=["GET"])
 def pulse_profile_page(public_player_id):
-    return pulse_page_html("Pulse Creator Profile", "for_you", profile_id=public_player_id)
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    target_user_id = pulse_user_id_from_public(cur, public_player_id) or user["user_id"]
+    conn.close()
+    return pulse_profile_page_for_user(target_user_id)
+
+
+def pulse_profile_page_for_user(target_user_id):
+    init_db()
+    viewer = require_account()
+    if not viewer:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    ident = pulse_identity_for_user(cur, target_user_id)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL", (target_user_id,))
+    post_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE followed_user_id=?", (target_user_id,))
+    follower_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE user_id=?", (target_user_id,))
+    group_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? AND status='active' ORDER BY id DESC LIMIT 6", (target_user_id,))
+    listings = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (target_user_id,))
+    teacher = dict(cur.fetchone() or {})
+    conn.close()
+    listing_html = "".join(f"<article class='card'><h3>{clean_html(l.get('title'))}</h3><p>{clean_html(l.get('description') or '')}</p></article>" for l in listings)
+    edit_html = ""
+    if int(target_user_id or 0) == int(viewer["user_id"]):
+        edit_html = "<section class='card'><h2>Profile Controls</h2><div class='actions'><a class='button' href='/account'>Edit Account</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/privacy-center'>Privacy</a></div></section>"
+    main = f"""
+    <section class='card'><div class='person'><span class='avatar'>{clean_html(ident['name'][:1])}</span><div><h2>{clean_html(ident['name'])}</h2><p><span class='pill'>{clean_html(ident['rank'])}</span> <span class='pill'>{clean_html(ident['public_player_id'])}</span></p></div></div><p>Posts: {post_count} · Followers: {follower_count} · Groups: {group_count}</p><div class='actions'><button data-follow-public='{clean_html(ident['public_player_id'])}'>Follow</button><button data-friend-public='{clean_html(ident['public_player_id'])}'>Add Friend</button><button data-message-public='{clean_html(ident['public_player_id'])}'>Message</button></div></section>
+    {edit_html}
+    <section class='card'><h2>Teacher Status</h2><p>{clean_html((teacher.get('category') or 'No teacher profile yet'))} · {clean_html((teacher.get('verification_status') or 'Apply to teach'))}</p><a class='button' href='/pulse/teachers'>Open Teachers</a></section>
+    <section class='card'><h2>Marketplace Listings</h2>{listing_html or '<p>No active educational listings yet.</p>'}</section>
+    <section class='card'><h2>Posts</h2><iframe title='Profile posts' src='/pulse?profile={clean_html(ident['public_player_id'])}' style='width:100%;min-height:720px;border:0;border-radius:16px;background:#071321'></iframe></section>
+    """
+    script = """
+    document.addEventListener('click',async e=>{const follow=e.target.closest('[data-follow-public]'),friend=e.target.closest('[data-friend-public]'),msg=e.target.closest('[data-message-public]');try{if(follow){await pulseApi('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')} if(friend){await pulseApi('/api/pulse/friends/request',{method:'POST',body:JSON.stringify({public_player_id:friend.dataset.friendPublic})});toast('Friend request sent.')} if(msg){const d=await pulseApi('/api/pulse/messages/send',{method:'POST',body:JSON.stringify({receiver_public_player_id:msg.dataset.messagePublic,message:'Hi, I found your Pulse profile.'})});location.href=d.next_url}}catch(err){toast(err.message)}})
+    """
+    return pulse_social_shell(f"{ident['name']} Profile", "Pulse identity hub with posts, followers, groups, marketplace, teacher status, and safe messaging.", main, "", script)
 
 
 @webhook_app.route("/pulse/post/<int:post_id>", methods=["GET"])
@@ -15639,7 +15945,20 @@ def api_pulse_feed():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     feed = request.args.get("tab") or request.args.get("feed") or "for_you"
-    result = pulse_feed_engine.list_feed(user["user_id"], feed, request.args.get("topic") or "", request.args.get("profile") or "", request.args.get("limit") or 20, request.args.get("offset") or 0)
+    try:
+        result = pulse_feed_engine.list_feed(user["user_id"], feed, request.args.get("topic") or "", request.args.get("profile") or "", request.args.get("limit") or 20, request.args.get("offset") or 0)
+    except Exception as exc:
+        logging.exception("PULSE_FEED_FAILED user_id=%s feed=%s error=%s", user["user_id"], feed, exc)
+        result = {
+            "ok": True,
+            "feed": pulse_feed_engine.normalize_feed(feed),
+            "topic": request.args.get("topic") or "",
+            "posts": [],
+            "next_offset": 0,
+            "has_more": False,
+            "message": "Pulse is warming up. Create the first post.",
+            "intelligence": pulse_feed_engine.safe_intelligence_panel(request.args.get("topic") or ""),
+        }
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
@@ -15851,6 +16170,326 @@ def api_pulse_follow():
     return jsonify(result), status
 
 
+@webhook_app.route("/api/pulse/friends/request", methods=["POST"])
+def api_pulse_friend_request():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    target_id = payload.get("receiver_user_id") or payload.get("user_id") or pulse_user_id_from_public(cur, payload.get("public_player_id") or "")
+    if not target_id:
+        conn.close()
+        return jsonify({"ok": False, "message": "Choose a valid Pulse member."}), 400
+    target_id = int(target_id)
+    if target_id == int(user["user_id"]):
+        conn.close()
+        return jsonify({"ok": False, "message": "You cannot send a friend request to yourself."}), 400
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        INSERT INTO pulse_friend_requests (requester_user_id, receiver_user_id, status, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?)
+        ON CONFLICT(requester_user_id, receiver_user_id) DO UPDATE SET status='pending', updated_at=excluded.updated_at
+        """,
+        (user["user_id"], target_id, now, now),
+    )
+    cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'friend_request', 'New Pulse friend request', 'Someone wants to connect with you on Pulse.', '/pulse/friends', ?)", (target_id, now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Friend request sent."})
+
+
+@webhook_app.route("/api/pulse/friends/accept", methods=["POST"])
+def api_pulse_friend_accept():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    request_id = int((request.get_json(silent=True) or {}).get("request_id") or 0)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_friend_requests WHERE id=? AND receiver_user_id=? AND status='pending' LIMIT 1", (request_id, user["user_id"]))
+    row = dict(cur.fetchone() or {})
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "message": "Friend request not found."}), 404
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    requester = int(row.get("requester_user_id") or 0)
+    cur.execute("UPDATE pulse_friend_requests SET status='accepted', updated_at=? WHERE id=?", (now, request_id))
+    cur.execute("INSERT OR IGNORE INTO pulse_friendships (user_id, friend_user_id, created_at) VALUES (?, ?, ?)", (user["user_id"], requester, now))
+    cur.execute("INSERT OR IGNORE INTO pulse_friendships (user_id, friend_user_id, created_at) VALUES (?, ?, ?)", (requester, user["user_id"], now))
+    cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'friend_accept', 'Pulse friend request accepted', 'Your Pulse friend request was accepted.', '/pulse/friends', ?)", (requester, now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Friend request accepted."})
+
+
+@webhook_app.route("/api/pulse/friends/decline", methods=["POST"])
+def api_pulse_friend_decline():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    request_id = int((request.get_json(silent=True) or {}).get("request_id") or 0)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("UPDATE pulse_friend_requests SET status='declined', updated_at=? WHERE id=? AND receiver_user_id=?", (datetime.utcnow().isoformat(timespec="seconds"), request_id, user["user_id"]))
+    changed = cur.rowcount
+    conn.commit(); conn.close()
+    return jsonify({"ok": bool(changed), "message": "Friend request declined." if changed else "Friend request not found."}), (200 if changed else 404)
+
+
+@webhook_app.route("/api/pulse/messages/send", methods=["POST"])
+def api_pulse_message_send():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    message = clean_html(payload.get("message") or payload.get("body") or "")[:1200].strip()
+    if not message:
+        return jsonify({"ok": False, "message": "Write a message before sending."}), 400
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    thread_id = int(payload.get("thread_id") or 0)
+    if thread_id:
+        cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
+        thread = dict(cur.fetchone() or {})
+        if not thread:
+            conn.close()
+            return jsonify({"ok": False, "message": "Thread not found."}), 404
+        receiver_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
+    else:
+        receiver_id = payload.get("receiver_user_id") or pulse_user_id_from_public(cur, payload.get("receiver_public_player_id") or "")
+        if not receiver_id:
+            conn.close()
+            return jsonify({"ok": False, "message": "Choose a valid Pulse recipient."}), 400
+        receiver_id = int(receiver_id)
+        low, high = sorted([int(user["user_id"]), receiver_id])
+        cur.execute("SELECT * FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? LIMIT 1", (low, high))
+        thread = dict(cur.fetchone() or {})
+        if thread:
+            thread_id = int(thread.get("id"))
+        else:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            cur.execute("INSERT INTO pulse_message_threads (user_one_id, user_two_id, source_context, status, created_at, updated_at) VALUES (?, ?, 'pulse', 'active', ?, ?)", (low, high, now, now))
+            thread_id = int(cur.lastrowid)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("INSERT INTO pulse_messages (thread_id, sender_user_id, receiver_user_id, body, created_at) VALUES (?, ?, ?, ?, ?)", (thread_id, user["user_id"], receiver_id, message, now))
+    cur.execute("UPDATE pulse_message_threads SET updated_at=? WHERE id=?", (now, thread_id))
+    cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New Pulse message', 'You received a Pulse message.', ?, ?)", (receiver_id, f"/pulse/messages/{thread_id}", now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "thread_id": thread_id, "next_url": f"/pulse/messages/{thread_id}", "message": "Message sent."})
+
+
+@webhook_app.route("/api/pulse/messages/thread/<int:thread_id>", methods=["GET"])
+def api_pulse_message_thread(thread_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
+    thread = dict(cur.fetchone() or {})
+    if not thread:
+        conn.close()
+        return jsonify({"ok": False, "message": "Thread not found."}), 404
+    cur.execute("SELECT * FROM pulse_messages WHERE thread_id=? ORDER BY id ASC LIMIT 200", (thread_id,))
+    messages = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "thread": thread, "messages": messages})
+
+
+@webhook_app.route("/api/pulse/spaces/join", methods=["POST"])
+def api_pulse_space_join():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    slug = clean_html((request.get_json(silent=True) or {}).get("space_slug") or "")
+    if slug not in {space["slug"] for space in PULSE_SPACES}:
+        return jsonify({"ok": False, "message": "Space not found."}), 404
+    conn = db(); cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO pulse_space_members (user_id, space_slug, role, created_at) VALUES (?, ?, 'member', ?)", (user["user_id"], slug, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Space joined."})
+
+
+@webhook_app.route("/api/pulse/spaces/post", methods=["POST"])
+def api_pulse_space_post():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    slug = clean_html(payload.get("space_slug") or "")
+    if slug not in {space["slug"] for space in PULSE_SPACES}:
+        return jsonify({"ok": False, "message": "Space not found."}), 404
+    body = payload.get("body") or ""
+    result = pulse_feed_engine.create_post(user["user_id"], body, payload.get("post_type") or "text", payload.get("title") or "", tags=[slug], visibility="public", media_ids=payload.get("media_ids") or [])
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/pulse/marketplace/seller/apply", methods=["POST"])
+def api_pulse_marketplace_seller_apply():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    name = clean_html(payload.get("display_name") or "")[:80]
+    bio = clean_html(payload.get("bio") or "")[:1000]
+    if not name or not bio:
+        return jsonify({"ok": False, "message": "Add a seller name and educational value description."}), 400
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO marketplace_sellers (user_id, display_name, bio, status, created_at, updated_at)
+        VALUES (?, ?, ?, 'pending', ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, updated_at=excluded.updated_at
+        """,
+        (user["user_id"], name, bio, now, now),
+    )
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Seller application saved."})
+
+
+@webhook_app.route("/api/pulse/marketplace/listings/create", methods=["POST"])
+def api_pulse_marketplace_listing_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    title = clean_html(payload.get("title") or "")[:140]
+    description = clean_html(payload.get("description") or "")[:1400]
+    category = clean_html(payload.get("category") or "Education")[:80]
+    price = clean_html(payload.get("price_label") or "Request access")[:80]
+    if not title or not description:
+        return jsonify({"ok": False, "message": "Add a title and description for the listing."}), 400
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+    if not cur.fetchone():
+        conn.close()
+        return jsonify({"ok": False, "message": "Apply as a seller before creating listings."}), 400
+    cur.execute("INSERT INTO marketplace_listings (seller_user_id, title, description, category, price_label, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)", (user["user_id"], title, description, category, price, now, now))
+    listing_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "listing_id": listing_id, "message": "Listing created."})
+
+
+@webhook_app.route("/api/pulse/marketplace/listings/report", methods=["POST"])
+def api_pulse_marketplace_listing_report():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    listing_id = int(payload.get("listing_id") or 0)
+    reason = clean_html(payload.get("reason") or "Needs review")[:500]
+    conn = db(); cur = conn.cursor()
+    cur.execute("INSERT INTO marketplace_reports (reporter_user_id, listing_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (user["user_id"], listing_id, reason, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Listing report sent."})
+
+
+@webhook_app.route("/api/pulse/teachers/apply", methods=["POST"])
+def api_pulse_teacher_apply():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    display = clean_html(payload.get("display_name") or "")[:80]
+    category = clean_html(payload.get("category") or "")[:100]
+    pitch = clean_html(payload.get("pitch") or "")[:1500]
+    if not display or not category or not pitch:
+        return jsonify({"ok": False, "message": "Add your teacher name, category, and teaching pitch."}), 400
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); cur = conn.cursor()
+    cur.execute("INSERT INTO teacher_applications (user_id, category, pitch, status, created_at, updated_at) VALUES (?, ?, ?, 'submitted', ?, ?)", (user["user_id"], category, pitch, now, now))
+    cur.execute(
+        """
+        INSERT INTO teacher_profiles (user_id, display_name, category, bio, verification_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, category=excluded.category, bio=excluded.bio, updated_at=excluded.updated_at
+        """,
+        (user["user_id"], display, category, pitch, now, now),
+    )
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Teacher application saved."})
+
+
+@webhook_app.route("/api/pulse/groups/create", methods=["POST"])
+def api_pulse_group_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    name = clean_html(payload.get("name") or "")[:100]
+    description = clean_html(payload.get("description") or "")[:1000]
+    group_type = payload.get("group_type") if payload.get("group_type") in {"public", "private", "invite-only"} else "public"
+    if not name:
+        return jsonify({"ok": False, "message": "Name the group before creating it."}), 400
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80] or f"group-{int(time.time())}"
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); cur = conn.cursor()
+    suffix = 1
+    final_slug = slug
+    while True:
+        try:
+            cur.execute("INSERT INTO pulse_groups (owner_user_id, slug, name, description, group_type, rules, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (user["user_id"], final_slug, name, description, group_type, "Keep it safe, educational, and scam-free.", now, now))
+            break
+        except Exception:
+            suffix += 1
+            final_slug = f"{slug}-{suffix}"
+    group_id = int(cur.lastrowid)
+    cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)", (group_id, user["user_id"], now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "group_id": group_id, "next_url": f"/pulse/groups/{group_id}", "message": "Group created."})
+
+
+@webhook_app.route("/api/pulse/groups/join", methods=["POST"])
+def api_pulse_group_join():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    group_id = int((request.get_json(silent=True) or {}).get("group_id") or 0)
+    conn = db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    if not cur.fetchone():
+        conn.close()
+        return jsonify({"ok": False, "message": "Group not found."}), 404
+    cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Joined group."})
+
+
+@webhook_app.route("/api/pulse/groups/post", methods=["POST"])
+def api_pulse_group_post():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    group_id = int(payload.get("group_id") or 0)
+    body = clean_html(payload.get("body") or "")[:3000]
+    if not body:
+        return jsonify({"ok": False, "message": "Write something before posting to the group."}), 400
+    conn = db(); cur = conn.cursor()
+    cur.execute("SELECT slug FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    group = cur.fetchone()
+    if not group:
+        conn.close()
+        return jsonify({"ok": False, "message": "Group not found."}), 404
+    cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], datetime.utcnow().isoformat(timespec="seconds")))
+    cur.execute("INSERT INTO pulse_group_posts (group_id, user_id, body, created_at) VALUES (?, ?, ?, ?)", (group_id, user["user_id"], body, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Group post published."})
+
+
 @webhook_app.route("/api/pulse/report", methods=["POST"])
 def api_pulse_report():
     init_db()
@@ -15917,11 +16556,28 @@ def admin_pulse_analytics_page():
         return denied
     init_db()
     data = pulse_feed_engine.admin_analytics()
+    social_counts = {}
+    try:
+        conn = db()
+        cur = conn.cursor()
+        for key, query in {
+            "spaces joined": "SELECT COUNT(*) AS total FROM pulse_space_members",
+            "groups": "SELECT COUNT(*) AS total FROM pulse_groups",
+            "teachers": "SELECT COUNT(*) AS total FROM teacher_profiles",
+            "marketplace listings": "SELECT COUNT(*) AS total FROM marketplace_listings",
+            "message threads": "SELECT COUNT(*) AS total FROM pulse_message_threads",
+        }.items():
+            cur.execute(query)
+            social_counts[key] = int((cur.fetchone() or {}).get("total") or 0)
+        conn.close()
+    except Exception:
+        social_counts = {}
     topics = "".join(f"<li>#{clean_html(t.get('tag'))}: {int(t.get('count') or 0)}</li>" for t in data.get("intelligence", {}).get("trending_topics", []))
     moderation = "".join(f"<tr><td>{clean_html(row.get('moderation_status') or '')}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("moderation", []))
     jobs = "".join(f"<tr><td>{clean_html(row.get('status') or '')}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("jobs", []))
     attempts = "".join(f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('error_reason') or '')}</td></tr>" for row in data.get("post_attempts", []))
-    body = f"<h1>Pulse Analytics</h1><div class='grid'><div class='card'><h2>Posts Today</h2><p style='font-size:34px;font-weight:900'>{data.get('posts_today')}</p></div><div class='card'><h2>Comments Today</h2><p style='font-size:34px;font-weight:900'>{data.get('comments_today')}</p></div><div class='card'><h2>Reactions Today</h2><p style='font-size:34px;font-weight:900'>{data.get('reactions_today')}</p></div><div class='card'><h2>Open Reports</h2><p style='font-size:34px;font-weight:900'>{data.get('reports_open')}</p></div></div><div class='card'><h2>Trending Topics</h2><ul>{topics}</ul></div><div class='card'><h2>Moderation</h2><table><tr><th>Status</th><th>Total</th></tr>{moderation}</table></div><div class='card'><h2>Pulse Worker Jobs</h2><table><tr><th>Status</th><th>Total</th></tr>{jobs or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Recent Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Error</th></tr>{attempts or '<tr><td colspan=3>No publish failures logged.</td></tr>'}</table></div>"
+    social_html = "".join(f"<li>{clean_html(k)}: {int(v or 0)}</li>" for k, v in social_counts.items())
+    body = f"<h1>Pulse Analytics</h1><div class='grid'><div class='card'><h2>Posts Today</h2><p style='font-size:34px;font-weight:900'>{data.get('posts_today')}</p></div><div class='card'><h2>Comments Today</h2><p style='font-size:34px;font-weight:900'>{data.get('comments_today')}</p></div><div class='card'><h2>Reactions Today</h2><p style='font-size:34px;font-weight:900'>{data.get('reactions_today')}</p></div><div class='card'><h2>Open Reports</h2><p style='font-size:34px;font-weight:900'>{data.get('reports_open')}</p></div></div><div class='card'><h2>Social System Counts</h2><ul>{social_html or '<li>No social counts yet.</li>'}</ul></div><div class='card'><h2>Trending Topics</h2><ul>{topics}</ul></div><div class='card'><h2>Moderation</h2><table><tr><th>Status</th><th>Total</th></tr>{moderation}</table></div><div class='card'><h2>Pulse Worker Jobs</h2><table><tr><th>Status</th><th>Total</th></tr>{jobs or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Recent Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Error</th></tr>{attempts or '<tr><td colspan=3>No publish failures logged.</td></tr>'}</table></div>"
     return admin_page_html("Pulse Analytics", body, admin)
 
 
@@ -15970,7 +16626,7 @@ def admin_pulse_post_debug_page():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     tables = {}
-    for table in ["pulse_posts", "pulse_comments", "pulse_reactions", "pulse_reports", "pulse_jobs", "pulse_post_attempts", "chat_media_uploads"]:
+    for table in ["pulse_posts", "pulse_comments", "pulse_reactions", "pulse_reports", "pulse_jobs", "pulse_post_attempts", "pulse_friend_requests", "pulse_message_threads", "marketplace_listings", "teacher_profiles", "pulse_groups", "pulse_space_members", "chat_media_uploads"]:
         tables[table] = {"exists": migration_table_exists(cur, table), "columns": sorted(migration_table_columns(cur, table))}
     try:
         cur.execute("SELECT * FROM pulse_post_attempts ORDER BY id DESC LIMIT 20")
@@ -15982,6 +16638,19 @@ def admin_pulse_post_debug_page():
         pending_jobs = int(dict(cur.fetchone() or {}).get("total") or 0)
     except Exception:
         pending_jobs = 0
+    social_counts = {}
+    for key, query in {
+        "spaces_joined": "SELECT COUNT(*) AS total FROM pulse_space_members",
+        "groups": "SELECT COUNT(*) AS total FROM pulse_groups",
+        "teachers": "SELECT COUNT(*) AS total FROM teacher_profiles",
+        "marketplace_listings": "SELECT COUNT(*) AS total FROM marketplace_listings",
+        "message_threads": "SELECT COUNT(*) AS total FROM pulse_message_threads",
+    }.items():
+        try:
+            cur.execute(query)
+            social_counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            social_counts[key] = 0
     try:
         cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name='pulse_worker' LIMIT 1")
         heartbeat = dict(cur.fetchone() or {})
@@ -16032,6 +16701,7 @@ def admin_pulse_post_debug_page():
         {"name": "Current account can post", "value": bool(account_user), "detail": f"user_id={(account_user or {}).get('user_id') or ''}"},
         {"name": "Current request user agent", "value": clean_html(request.user_agent.string or ""), "detail": "Mobile debugging context"},
         {"name": "Pending Pulse jobs", "value": pending_jobs, "detail": "Background queue"},
+        {"name": "Pulse social route health", "value": ", ".join(f"{k}={v}" for k, v in social_counts.items()), "detail": "Spaces, groups, teachers, marketplace, messenger"},
         {"name": "Last request error", "value": last_error.get("error_reason") or "none", "detail": last_error.get("created_at") or ""},
     ]
     latest_row_parts = []
@@ -22131,6 +22801,178 @@ def init_db():
         ("failing_table", "TEXT"),
         ("failing_field", "TEXT"),
     ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_friend_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requester_user_id INTEGER,
+        receiver_user_id INTEGER,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(requester_user_id, receiver_user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_friendships (
+        user_id INTEGER,
+        friend_user_id INTEGER,
+        created_at TEXT,
+        PRIMARY KEY(user_id, friend_user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_threads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_one_id INTEGER,
+        user_two_id INTEGER,
+        source_context TEXT DEFAULT 'pulse',
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER,
+        sender_user_id INTEGER,
+        receiver_user_id INTEGER,
+        body TEXT,
+        read_at TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_space_members (
+        user_id INTEGER,
+        space_slug TEXT,
+        role TEXT DEFAULT 'member',
+        created_at TEXT,
+        PRIMARY KEY(user_id, space_slug)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_sellers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        display_name TEXT,
+        bio TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_listings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_user_id INTEGER,
+        title TEXT,
+        description TEXT,
+        category TEXT,
+        price_label TEXT DEFAULT 'Request access',
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_orders_placeholder (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        listing_id INTEGER,
+        status TEXT DEFAULT 'interest',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_user_id INTEGER,
+        listing_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS teacher_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        display_name TEXT,
+        category TEXT,
+        bio TEXT,
+        verification_status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS teacher_applications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        category TEXT,
+        pitch TEXT,
+        status TEXT DEFAULT 'submitted',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS teacher_lessons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_user_id INTEGER,
+        title TEXT,
+        description TEXT,
+        category TEXT,
+        visibility TEXT DEFAULT 'public',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_user_id INTEGER,
+        slug TEXT UNIQUE,
+        name TEXT,
+        description TEXT,
+        group_type TEXT DEFAULT 'public',
+        rules TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_members (
+        group_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        created_at TEXT,
+        PRIMARY KEY(group_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER,
+        user_id INTEGER,
+        body TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        type TEXT,
+        title TEXT,
+        body TEXT,
+        target_url TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS telegram_debug_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
