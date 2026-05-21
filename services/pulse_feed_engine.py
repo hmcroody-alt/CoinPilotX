@@ -64,14 +64,19 @@ def _clean_text(value, limit=4000):
 
 def _public_author(row):
     public_player_id = row.get("public_player_id") or row.get("author_public_player_id") or ""
-    call_sign = row.get("roast_call_sign") or row.get("display_name") or row.get("username") or ""
-    display = call_sign or (f"Arena Pilot #{str(public_player_id or row.get('user_id') or '000')[-4:]}")
+    display = (
+        row.get("user_display_name")
+        or row.get("display_name")
+        or row.get("username")
+        or f"Pulse Member #{str(public_player_id or row.get('user_id') or '000')[-4:]}"
+    )
+    avatar_url = row.get("user_avatar_url") or row.get("avatar_url") or ""
     return {
         "public_player_id": public_player_id or None,
         "display_name": display[:80],
-        "avatar_url": row.get("avatar_url") or "",
-        "rank": row.get("rank") or "Rookie",
-        "badges": [row.get("rank") or "Rookie"],
+        "avatar_url": avatar_url,
+        "rank": "Member",
+        "badges": ["Member"],
     }
 
 
@@ -307,7 +312,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             "engagement_score": 0,
             "created_at": now,
             "updated_at": now,
-            "author": {"display_name": "Pulse creator", "public_player_id": None, "avatar_url": "", "rank": "Rookie", "badges": ["Rookie"]},
+            "author": {"display_name": "Pulse creator", "public_player_id": None, "avatar_url": "", "rank": "Member", "badges": ["Member"]},
             "media": [],
             "reaction_counts": {},
             "comment_count": 0,
@@ -329,8 +334,8 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT p.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
-               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        SELECT p.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
@@ -399,8 +404,8 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT p.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
-               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        SELECT p.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
@@ -434,8 +439,8 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT p.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
-               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        SELECT p.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
@@ -522,11 +527,10 @@ def intelligence_panel(topic=""):
     ]
     cur.execute(
         """
-        SELECT COALESCE(ap.display_name, u.roast_call_sign, u.display_name, u.username, 'Pulse Creator') AS name,
+        SELECT COALESCE(u.display_name, u.username, 'Pulse Creator') AS name,
                COUNT(*) AS total
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
-        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
         WHERE p.deleted_at IS NULL AND p.moderation_status='approved'
         GROUP BY p.user_id
         ORDER BY total DESC
@@ -611,8 +615,8 @@ def list_comments(post_id, limit=80):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
-               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        SELECT c.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_comments c
         LEFT JOIN users u ON u.user_id=c.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=c.user_id
@@ -642,8 +646,8 @@ def get_comment(comment_id):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, u.username, u.display_name AS user_display_name, u.roast_call_sign,
-               ap.display_name, ap.avatar_url, ap.rank, ap.public_player_id AS author_public_player_id
+        SELECT c.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_comments c
         LEFT JOIN users u ON u.user_id=c.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=c.user_id
