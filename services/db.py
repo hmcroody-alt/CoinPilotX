@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import time
+import traceback
 from collections.abc import Mapping
 from contextlib import contextmanager
 from urllib.parse import urlparse
@@ -318,8 +319,9 @@ def _has_conflict_clause(sql):
 
 
 class CompatCursor:
-    def __init__(self, cursor):
+    def __init__(self, cursor, owner=None):
         self._cursor = cursor
+        self._owner = owner
         self.lastrowid = None
         self._pending_rows = []
         self.description = None
@@ -339,7 +341,30 @@ class CompatCursor:
             translated = f"{translated.rstrip().rstrip(';')} RETURNING {returning_pk}"
         if append_do_nothing:
             translated = f"{translated.rstrip().rstrip(';')} ON CONFLICT DO NOTHING"
-        self._cursor.execute(translated, params)
+        try:
+            self._cursor.execute(translated, params)
+        except Exception as exc:
+            tb = traceback.format_exc()
+            message = (
+                "SQL_EXECUTE_FAILED\n"
+                f"engine={ENGINE_NAME}\n"
+                f"original_sql={str(sql).strip()}\n"
+                f"translated_sql={translated.strip()}\n"
+                f"params={params!r}\n"
+                f"error={exc!r}\n"
+                f"traceback={tb}"
+            )
+            print(message, flush=True)
+            logging.error(message)
+            if self._owner is not None:
+                try:
+                    self._owner.rollback()
+                    print("SQL_EXECUTE_ROLLBACK_OK", flush=True)
+                    logging.error("SQL_EXECUTE_ROLLBACK_OK")
+                except Exception as rollback_exc:
+                    print(f"SQL_EXECUTE_ROLLBACK_FAILED error={rollback_exc!r}", flush=True)
+                    logging.exception("SQL_EXECUTE_ROLLBACK_FAILED error=%s", rollback_exc)
+            raise
         self.description = self._cursor.description
         self.lastrowid = None
         self._pending_rows = []
@@ -376,7 +401,7 @@ class CompatConnection:
         self._conn = raw_connection
 
     def cursor(self):
-        return CompatCursor(self._conn.cursor())
+        return CompatCursor(self._conn.cursor(), owner=self)
 
     def execute(self, sql, params=None):
         cur = self.cursor()

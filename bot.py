@@ -17622,11 +17622,11 @@ def pulse_admin_grant_all(conn, user_id, admin_id=0):
         (int(user_id), int(admin_id or 0), now, now),
     )
     cur.execute(
-        "INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), approved_by=excluded.approved_by, suspended_reason='', updated_at=excluded.updated_at",
+        "INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, approved_by=excluded.approved_by, suspended_reason='', updated_at=excluded.updated_at",
         (int(user_id), int(admin_id or 0), now, now),
     )
     cur.execute(
-        "INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), approved_by=excluded.approved_by, suspended_reason='', updated_at=excluded.updated_at",
+        "INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, approved_by=excluded.approved_by, suspended_reason='', updated_at=excluded.updated_at",
         (int(user_id), int(admin_id or 0), now, now),
     )
     for row in cur.execute("SELECT badge_key FROM pulse_badges WHERE COALESCE(active,1)=1").fetchall():
@@ -17672,7 +17672,11 @@ def admin_pulse_users_page():
         return denied
     q = (request.args.get("q") or "").strip()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    user_columns = {str(r[1]) for r in cur.execute("PRAGMA table_info(users)").fetchall()}
+    if db_service.IS_POSTGRES:
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='users'")
+        user_columns = {str(_migration_row_value(r, "column_name", 0)) for r in cur.fetchall()}
+    else:
+        user_columns = {str(r[1]) for r in cur.execute("PRAGMA table_info(users)").fetchall()}
     status_expr = "u.status" if "status" in user_columns else "'active'"
     last_active_expr = "u.last_login" if "last_login" in user_columns else ("u.last_seen_at" if "last_seen_at" in user_columns else "u.created_at")
     params = []
@@ -17901,8 +17905,12 @@ def admin_monetization_health_page():
     table_rows = []
     for table in tables:
         try:
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-            exists = bool(cur.fetchone())
+            if db_service.IS_POSTGRES:
+                cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=?", (table,))
+                exists = bool(cur.fetchone())
+            else:
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                exists = bool(cur.fetchone())
             count = 0
             if exists:
                 cur.execute(f"SELECT COUNT(*) AS total FROM {table}")
@@ -23050,8 +23058,9 @@ def init_db():
     if db_service.IS_POSTGRES and hasattr(conn, "set_autocommit"):
         conn.set_autocommit(True)
     cur = conn.cursor()
+    print("DB init started", flush=True)
     logging.info(
-        "MIGRATION_START engine=%s database_url_loaded=%s",
+        "DB init started; MIGRATION_START engine=%s database_url_loaded=%s",
         db_service.ENGINE_NAME,
         db_service.DATABASE_URL_LOADED,
     )
@@ -25540,11 +25549,11 @@ def init_db():
                 (owner_user_id, now_owner, now_owner),
             )
             cur.execute(
-                "INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, 0, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), suspended_reason='', updated_at=excluded.updated_at",
+                "INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, 0, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, suspended_reason='', updated_at=excluded.updated_at",
                 (owner_user_id, now_owner, now_owner),
             )
             cur.execute(
-                "INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, 0, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), suspended_reason='', updated_at=excluded.updated_at",
+                "INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, 0, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, suspended_reason='', updated_at=excluded.updated_at",
                 (owner_user_id, now_owner, now_owner),
             )
             for row in cur.execute("SELECT badge_key FROM pulse_badges WHERE COALESCE(active,1)=1").fetchall():
@@ -27105,7 +27114,8 @@ def init_db():
 
     conn.commit()
     conn.close()
-    logging.info("MIGRATION_COMPLETE engine=%s tables_checked=production_saas", db_service.ENGINE_NAME)
+    print("DB init complete", flush=True)
+    logging.info("DB init complete; MIGRATION_COMPLETE engine=%s tables_checked=production_saas", db_service.ENGINE_NAME)
 
 
 def help_message():
