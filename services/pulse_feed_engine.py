@@ -8,7 +8,7 @@ import math
 import re
 from datetime import datetime, timedelta
 
-from . import media_service, pulse_moderation_engine, user_context
+from . import media_service, premium_identity_engine, pulse_moderation_engine, user_context
 
 
 REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
@@ -73,12 +73,13 @@ def _public_author(row):
     )
     avatar_url = row.get("user_avatar_url") or row.get("avatar_url") or ""
     badges = ["Member"]
+    badge_keys = []
     try:
         conn = user_context.connect()
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT b.label
+            SELECT b.badge_key, b.label
             FROM pulse_user_badges ub
             JOIN pulse_badges b ON b.badge_key=ub.badge_key
             WHERE ub.user_id=? AND COALESCE(b.active,1)=1
@@ -87,18 +88,24 @@ def _public_author(row):
             """,
             (user_id,),
         )
-        loaded = [str(dict(row).get("label") or "") for row in cur.fetchall() if str(dict(row).get("label") or "")]
+        loaded_rows = [dict(row) for row in cur.fetchall()]
+        loaded = [str(row.get("label") or "") for row in loaded_rows if str(row.get("label") or "")]
+        badge_keys = [str(row.get("badge_key") or "") for row in loaded_rows if str(row.get("badge_key") or "")]
         if loaded:
             badges = loaded
         conn.close()
     except Exception:
         pass
+    premium_mark = premium_identity_engine.identity_mark(item, badge_keys)
     return {
         "public_player_id": public_player_id or None,
         "display_name": display[:80],
         "avatar_url": avatar_url,
         "rank": "Member",
         "badges": badges,
+        "badge_keys": badge_keys,
+        "premium_verified": bool(premium_mark),
+        "premium_mark": premium_mark,
     }
 
 
@@ -356,7 +363,8 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT p.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+        SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
@@ -426,7 +434,8 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     cur = conn.cursor()
     cur.execute(
         f"""
-        SELECT p.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+        SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
@@ -461,7 +470,8 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT p.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+        SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
@@ -637,7 +647,8 @@ def list_comments(post_id, limit=80):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+        SELECT c.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_comments c
         LEFT JOIN users u ON u.user_id=c.user_id
@@ -668,7 +679,8 @@ def get_comment(comment_id):
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, u.username, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+        SELECT c.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_comments c
         LEFT JOIN users u ON u.user_id=c.user_id
