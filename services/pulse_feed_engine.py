@@ -64,6 +64,7 @@ def _clean_text(value, limit=4000):
 
 def _public_author(row):
     public_player_id = row.get("public_player_id") or row.get("author_public_player_id") or ""
+    user_id = int(row.get("user_id") or 0)
     display = (
         row.get("user_display_name")
         or row.get("display_name")
@@ -71,12 +72,33 @@ def _public_author(row):
         or f"Pulse Member #{str(public_player_id or row.get('user_id') or '000')[-4:]}"
     )
     avatar_url = row.get("user_avatar_url") or row.get("avatar_url") or ""
+    badges = ["Member"]
+    try:
+        conn = user_context.connect()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT b.label
+            FROM pulse_user_badges ub
+            JOIN pulse_badges b ON b.badge_key=ub.badge_key
+            WHERE ub.user_id=? AND COALESCE(b.active,1)=1
+            ORDER BY ub.id ASC
+            LIMIT 6
+            """,
+            (user_id,),
+        )
+        loaded = [str(dict(row).get("label") or "") for row in cur.fetchall() if str(dict(row).get("label") or "")]
+        if loaded:
+            badges = loaded
+        conn.close()
+    except Exception:
+        pass
     return {
         "public_player_id": public_player_id or None,
         "display_name": display[:80],
         "avatar_url": avatar_url,
         "rank": "Member",
-        "badges": ["Member"],
+        "badges": badges,
     }
 
 

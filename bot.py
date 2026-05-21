@@ -74,6 +74,7 @@ from services import (
     media_service,
     news_service,
     notification_service,
+    notification_health_engine,
     notification_orchestrator as notification_orchestrator_service,
     portfolio_service,
     predictions_service,
@@ -81,6 +82,7 @@ from services import (
     pulse_feed_engine,
     pulse_moderation_engine,
     privilege_engine,
+    push_service,
     retention_analytics,
     roast_battle_engine,
     roast_live_engine,
@@ -5795,6 +5797,17 @@ def require_owner_api():
     return admin, None
 
 
+def require_owner_admin_page():
+    init_db()
+    admin = admin_login_required()
+    if not admin:
+        return None, redirect(url_for("admin_login_page"))
+    if not admin_is_owner_level(admin):
+        log_admin_audit(admin.get("id"), "owner_permission_denied", "admin_user", str(admin.get("id")), {"path": request.path})
+        return None, Response("Forbidden", status=403)
+    return admin, None
+
+
 def require_admin_api(permission="users.view"):
     init_db()
     admin = admin_login_required()
@@ -6934,9 +6947,33 @@ def admin_notifications_page():
     stats = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT channel, status, COUNT(*) AS total FROM notification_delivery_logs GROUP BY channel, status ORDER BY total DESC LIMIT 80")
     delivery = [dict(row) for row in cur.fetchall()]
+    health = notification_health_engine.health_snapshot(conn)
     conn.close()
-    body = f"<h1>Notifications</h1><h2>Notification Stats</h2><div class='card'>{admin_rows_table(stats, [('notification_type','Type'),('status','Status'),('total','Total')])}</div><h2>Delivery Logs</h2><div class='card'>{admin_rows_table(delivery, [('channel','Channel'),('status','Status'),('total','Total')])}</div>"
+    provider_cards = "".join(f"<div class='card'><h2>{clean_html(name.title())}</h2><p><span class='pill'>{clean_html((info or {}).get('status') or '')}</span></p><pre>{clean_html(json.dumps(info, indent=2, default=str))}</pre></div>" for name, info in (health.get("providers") or {}).items())
+    body = f"<h1>Notifications</h1><p class='muted'>Live provider health, delivery status, and queue controls.</p><div class='grid'><div class='card'><h2>Health Score</h2><div class='metric'>{health.get('health_score')}</div></div><div class='card'><h2>Success 24h</h2><div class='metric'>{health.get('success_rate_24h')}%</div></div><div class='card'><h2>Failed Jobs</h2><div class='metric'>{health.get('alert_failed_jobs')}</div></div></div><p><a class='button' href='/admin/notifications/email'>Email Health</a> <a class='button' href='/admin/notification-delivery'>Delivery Logs</a></p><section class='grid'>{provider_cards}</section><h2>Notification Stats</h2><div class='card'>{admin_rows_table(stats, [('notification_type','Type'),('status','Status'),('total','Total')])}</div><h2>Delivery Logs</h2><div class='card'>{admin_rows_table(delivery, [('channel','Channel'),('status','Status'),('total','Total')])}</div>"
     return admin_page_html("Notifications", body, admin)
+
+
+@webhook_app.route("/admin/notifications/email", methods=["GET"])
+def admin_notifications_email_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    status = email_service_service.provider_status()
+    body = f"<h1>Email Notification Health</h1><p class='muted'>Brevo transactional email status. Missing config is reported honestly.</p><div class='card'><pre>{clean_html(json.dumps(status, indent=2, default=str))}</pre></div><form class='card' method='post' action='/admin/notifications/test-email'><h2>Send Test Email</h2><input name='recipient' placeholder='Recipient email'><button class='button primary'>Send Test Email</button></form>"
+    return admin_page_html("Email Notifications", body, admin)
+
+
+@webhook_app.route("/admin/notifications/test-email", methods=["POST"])
+def admin_notifications_test_email_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    recipient = (request.form.get("recipient") or admin.get("email") or "").strip()
+    result = email_service_service.send_email(recipient, "CoinPilotXAI notification test", "<p>CoinPilotXAI email notifications are connected.</p>", "CoinPilotXAI email notifications are connected.")
+    log_admin_audit(admin.get("id"), "notification_test_email", "email", mask_email(recipient), {"ok": result.get("ok"), "error": result.get("error")})
+    body = f"<h1>Test Email Result</h1><div class='card'><pre>{clean_html(json.dumps(result, indent=2, default=str))}</pre></div><p><a class='button' href='/admin/notifications/email'>Back to Email Health</a></p>"
+    return admin_page_html("Test Email", body, admin)
 
 
 @webhook_app.route("/admin/alerts", methods=["GET"])
@@ -15119,8 +15156,36 @@ def admin_notification_delivery_page():
         f"<tr><td>{r.get('user_id')}</td><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>"
         for r in rows
     )
-    body = f"<h1>Notification Delivery</h1><p class='muted'>In-app, email, SMS, push, and optional companion alert attempts.</p><div class='card'><table><tr><th>User</th><th>Channel</th><th>Status</th><th>Error</th><th>Created</th></tr>{table}</table></div>"
+    body = f"<h1>Notification Delivery</h1><p class='muted'>In-app, email, SMS, push, and optional companion alert attempts.</p><form class='card actions' method='post' action='/admin/notifications/queue-action'><button name='action' value='retry_failed'>Retry Failed Jobs</button><button name='action' value='quarantine_failed'>Quarantine Broken Jobs</button><button name='action' value='purge_dead'>Purge Dead Jobs</button><button name='action' value='rebuild_subscriptions'>Rebuild Subscriptions</button></form><div class='card'><table><tr><th>User</th><th>Channel</th><th>Status</th><th>Error</th><th>Created</th></tr>{table}</table></div>"
     return admin_page_html("Notification Delivery", body, admin)
+
+
+@webhook_app.route("/admin/notifications/queue-action", methods=["POST"])
+def admin_notifications_queue_action():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    action = request.form.get("action") or ""
+    conn = db()
+    cur = conn.cursor()
+    result = {"ok": True, "action": action}
+    if action == "quarantine_failed":
+        result = notification_health_engine.quarantine_failed_jobs(conn, limit=1000)
+    elif action == "purge_dead":
+        cur.execute("DELETE FROM alert_delivery_jobs WHERE status IN ('failed','not_configured','skipped') AND COALESCE(attempts,0)>=5")
+        result["purged"] = cur.rowcount
+        conn.commit()
+    elif action == "retry_failed":
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute("UPDATE alert_delivery_jobs SET status='pending', next_retry_at=?, error_message='' WHERE status='failed' AND COALESCE(attempts,0)<5", (now,))
+        result["queued"] = cur.rowcount
+        conn.commit()
+    elif action == "rebuild_subscriptions":
+        result = push_service.cleanup_invalid_subscriptions()
+    conn.close()
+    log_admin_audit(admin.get("id"), "notification_queue_action", "notifications", action, result)
+    body = f"<h1>Notification Queue Action</h1><div class='card'><pre>{clean_html(json.dumps(result, indent=2, default=str))}</pre></div><p><a class='button' href='/admin/notification-delivery'>Back to Delivery</a></p>"
+    return admin_page_html("Notification Queue Action", body, admin)
 
 
 @webhook_app.route("/admin/alert-delivery", methods=["GET"])
@@ -16297,14 +16362,26 @@ def pulse_profile_page_for_user(target_user_id):
     listings = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (target_user_id,))
     teacher = dict(cur.fetchone() or {})
+    cur.execute(
+        """
+        SELECT b.label
+        FROM pulse_user_badges ub
+        JOIN pulse_badges b ON b.badge_key=ub.badge_key
+        WHERE ub.user_id=? AND COALESCE(b.active,1)=1
+        ORDER BY ub.id ASC
+        """,
+        (target_user_id,),
+    )
+    badge_labels = [dict(row).get("label") for row in cur.fetchall()]
     conn.close()
     listing_html = "".join(f"<article class='card'><h3>{clean_html(l.get('title'))}</h3><p>{clean_html(l.get('description') or '')}</p></article>" for l in listings)
+    badge_html = " ".join(f"<span class='pill'>{clean_html(label)}</span>" for label in badge_labels if label)
     edit_html = ""
     if int(target_user_id or 0) == int(viewer["user_id"]):
         edit_html = "<section class='card'><h2>Profile Controls</h2><div class='actions'><a class='button primary' href='/pulse/profile/edit'>Edit Pulse Profile</a><a class='button' href='/account'>Account</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/privacy-center'>Privacy</a></div></section>"
     avatar_html = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
     main = f"""
-    <section class='card'><div class='person'><span class='avatar'>{avatar_html}</span><div><h2>{clean_html(ident['name'])}</h2><p><span class='pill'>Pulse Profile</span> <span class='pill'>{clean_html(ident['public_player_id'])}</span></p><p>{clean_html(ident.get('bio') or 'No bio yet.')}</p></div></div><p>Posts: {post_count} · Followers: {follower_count} · Groups: {group_count}</p><div class='actions'><button data-follow-public='{clean_html(ident['public_player_id'])}'>Follow</button><button data-friend-public='{clean_html(ident['public_player_id'])}'>Add Friend</button><button data-message-public='{clean_html(ident['public_player_id'])}'>Message</button></div></section>
+	    <section class='card'><div class='person'><span class='avatar'>{avatar_html}</span><div><h2>{clean_html(ident['name'])}</h2><p><span class='pill'>Pulse Profile</span> <span class='pill'>{clean_html(ident['public_player_id'])}</span></p><p>{badge_html or '<span class="pill">Member</span>'}</p><p>{clean_html(ident.get('bio') or 'No bio yet.')}</p></div></div><p>Posts: {post_count} · Followers: {follower_count} · Groups: {group_count}</p><div class='actions'><button data-follow-public='{clean_html(ident['public_player_id'])}'>Follow</button><button data-friend-public='{clean_html(ident['public_player_id'])}'>Add Friend</button><button data-message-public='{clean_html(ident['public_player_id'])}'>Message</button></div></section>
     {edit_html}
     <section class='card'><h2>Teacher Status</h2><p>{clean_html((teacher.get('category') or 'No teacher profile yet'))} · {clean_html((teacher.get('verification_status') or 'Apply to teach'))}</p><a class='button' href='/pulse/teachers'>Open Teachers</a></section>
     <section class='card'><h2>Marketplace Listings</h2>{listing_html or '<p>No active educational listings yet.</p>'}</section>
@@ -17486,27 +17563,363 @@ def pro_page():
     return trust_public_page("CoinPilotXAI Pro", "Upgrade to advanced alerts, Auto Signals, Scam Shield, and creator tools.", body, "/upgrade")
 
 
+def pulse_admin_user_row(cur, user_id):
+    cur.execute(
+        """
+        SELECT u.*, upp.trust_score, upp.current_level, upp.can_go_live, upp.can_sell, upp.can_teach,
+               upp.can_create_groups, upp.can_upload_video, upp.max_video_duration, upp.max_upload_mb,
+               upp.posting_limit_per_day, upp.messaging_restricted, upp.posting_restricted, upp.moderation_status,
+               la.status AS livestream_status
+        FROM users u
+        LEFT JOIN user_privilege_profiles upp ON upp.user_id=u.user_id
+        LEFT JOIN livestream_access la ON la.user_id=u.user_id
+        WHERE u.user_id=?
+        LIMIT 1
+        """,
+        (int(user_id or 0),),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def pulse_admin_all_badges(cur):
+    cur.execute("SELECT badge_key, label FROM pulse_badges WHERE COALESCE(active,1)=1 ORDER BY label")
+    return [dict(row) for row in cur.fetchall()]
+
+
+def pulse_admin_all_privileges(cur):
+    cur.execute("SELECT privilege_key, label FROM pulse_privileges WHERE COALESCE(active,1)=1 ORDER BY label")
+    return [dict(row) for row in cur.fetchall()]
+
+
+def pulse_admin_user_badges(cur, user_id):
+    cur.execute("SELECT badge_key FROM pulse_user_badges WHERE user_id=?", (int(user_id or 0),))
+    return {str(dict(row).get("badge_key") or "") for row in cur.fetchall()}
+
+
+def pulse_admin_user_privileges(cur, user_id):
+    cur.execute("SELECT privilege_key FROM pulse_user_privileges WHERE user_id=? AND COALESCE(enabled,1)=1", (int(user_id or 0),))
+    return {str(dict(row).get("privilege_key") or "") for row in cur.fetchall()}
+
+
+def pulse_admin_grant_all(conn, user_id, admin_id=0):
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        INSERT INTO user_privilege_profiles
+        (user_id, trust_score, current_level, can_go_live, can_sell, can_teach, can_create_groups, can_upload_video,
+         can_create_space, can_host_room, can_use_creator_filters, max_video_duration, max_upload_mb,
+         posting_limit_per_day, messaging_restricted, posting_restricted, moderation_status, manual_override, updated_by, created_at, updated_at)
+        VALUES (?, 100, 'Platform Ambassador', 1, 1, 1, 1, 1, 1, 1, 1, 3600, 1024, 9999, 0, 0, 'clear', 1, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            trust_score=100, current_level='Platform Ambassador', can_go_live=1, can_sell=1, can_teach=1,
+            can_create_groups=1, can_upload_video=1, can_create_space=1, can_host_room=1,
+            can_use_creator_filters=1, max_video_duration=3600, max_upload_mb=1024,
+            posting_limit_per_day=9999, messaging_restricted=0, posting_restricted=0,
+            moderation_status='clear', manual_override=1, updated_by=excluded.updated_by, updated_at=excluded.updated_at
+        """,
+        (int(user_id), int(admin_id or 0), now, now),
+    )
+    cur.execute(
+        "INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), approved_by=excluded.approved_by, suspended_reason='', updated_at=excluded.updated_at",
+        (int(user_id), int(admin_id or 0), now, now),
+    )
+    cur.execute(
+        "INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), approved_by=excluded.approved_by, suspended_reason='', updated_at=excluded.updated_at",
+        (int(user_id), int(admin_id or 0), now, now),
+    )
+    for row in cur.execute("SELECT badge_key FROM pulse_badges WHERE COALESCE(active,1)=1").fetchall():
+        cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, ?, ?, ?)", (int(user_id), row[0], int(admin_id or 0), now))
+    for row in cur.execute("SELECT privilege_key FROM pulse_privileges WHERE COALESCE(active,1)=1").fetchall():
+        cur.execute("INSERT INTO pulse_user_privileges (user_id, privilege_key, enabled, granted_by, created_at, updated_at) VALUES (?, ?, 1, ?, ?, ?) ON CONFLICT(user_id, privilege_key) DO UPDATE SET enabled=1, granted_by=excluded.granted_by, updated_at=excluded.updated_at", (int(user_id), row[0], int(admin_id or 0), now, now))
+    for vtype in ["identity_verified", "creator_verified", "teacher_verified", "seller_verified", "community_verified", "arena_verified", "safety_verified"]:
+        cur.execute(
+            "INSERT INTO verification_requests (user_id, verification_type, status, notes, reviewed_by, created_at, reviewed_at) VALUES (?, ?, 'approved', 'Manual Pulse control center grant', ?, ?, ?)",
+            (int(user_id), vtype, int(admin_id or 0), now, now),
+        )
+    conn.commit()
+
+
+def pulse_admin_remove_all(conn, user_id, admin_id=0):
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("DELETE FROM pulse_user_badges WHERE user_id=?", (int(user_id),))
+    cur.execute("UPDATE pulse_user_privileges SET enabled=0, updated_at=?, granted_by=? WHERE user_id=?", (now, int(admin_id or 0), int(user_id)))
+    cur.execute(
+        """
+        INSERT INTO user_privilege_profiles
+        (user_id, trust_score, current_level, can_go_live, can_sell, can_teach, can_create_groups, can_upload_video,
+         can_create_space, can_host_room, can_use_creator_filters, max_video_duration, max_upload_mb,
+         posting_limit_per_day, messaging_restricted, posting_restricted, moderation_status, manual_override, updated_by, created_at, updated_at)
+        VALUES (?, 0, 'New User', 0, 0, 0, 0, 0, 0, 0, 0, 45, 25, 5, 1, 1, 'restricted', 1, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            trust_score=0, current_level='New User', can_go_live=0, can_sell=0, can_teach=0,
+            can_create_groups=0, can_upload_video=0, can_create_space=0, can_host_room=0,
+            can_use_creator_filters=0, max_video_duration=45, max_upload_mb=25, posting_limit_per_day=5,
+            messaging_restricted=1, posting_restricted=1, moderation_status='restricted',
+            manual_override=1, updated_by=excluded.updated_by, updated_at=excluded.updated_at
+        """,
+        (int(user_id), int(admin_id or 0), now, now),
+    )
+    conn.commit()
+
+
+@webhook_app.route("/admin/pulse-users", methods=["GET"])
+def admin_pulse_users_page():
+    admin, denied = require_owner_admin_page()
+    if denied:
+        return denied
+    q = (request.args.get("q") or "").strip()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    user_columns = {str(r[1]) for r in cur.execute("PRAGMA table_info(users)").fetchall()}
+    status_expr = "u.status" if "status" in user_columns else "'active'"
+    last_active_expr = "u.last_login" if "last_login" in user_columns else ("u.last_seen_at" if "last_seen_at" in user_columns else "u.created_at")
+    params = []
+    where = ""
+    if q:
+        like = f"%{q.lower()}%"
+        where = """
+        WHERE lower(COALESCE(u.display_name,'')) LIKE ? OR lower(COALESCE(u.username,'')) LIKE ?
+           OR lower(COALESCE(u.email,'')) LIKE ? OR CAST(u.user_id AS TEXT)=?
+           OR lower(COALESCE(ap.public_player_id,'')) LIKE ?
+        """
+        params = [like, like, like, q, like]
+    cur.execute(
+        f"""
+        SELECT u.user_id, u.email, u.username, u.display_name, u.avatar_url, {status_expr} AS status, u.created_at, {last_active_expr} AS last_active,
+               ap.public_player_id, COALESCE(upp.trust_score,0) AS trust_score, COALESCE(upp.current_level,'New User') AS current_level,
+               COALESCE(la.status,'locked') AS live_status,
+               (SELECT GROUP_CONCAT(b.label, ', ') FROM pulse_user_badges ub JOIN pulse_badges b ON b.badge_key=ub.badge_key WHERE ub.user_id=u.user_id) AS badges
+        FROM users u
+        LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+        LEFT JOIN user_privilege_profiles upp ON upp.user_id=u.user_id
+        LEFT JOIN livestream_access la ON la.user_id=u.user_id
+        {where}
+        ORDER BY COALESCE(upp.trust_score,0) DESC, u.user_id DESC
+        LIMIT 120
+        """,
+        params,
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    table = "".join(
+        f"<tr><td>{('<img src=\"'+clean_html(r.get('avatar_url') or '')+'\" style=\"width:34px;height:34px;border-radius:999px;object-fit:cover\">') if r.get('avatar_url') else '•'}</td><td><strong>{clean_html(r.get('display_name') or 'User')}</strong><br><small>{clean_html(r.get('email') or '')}</small></td><td>{clean_html(r.get('username') or '')}</td><td>{clean_html(r.get('status') or 'active')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{clean_html(r.get('live_status') or '')}</td><td>{clean_html(r.get('badges') or 'No badges')}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
+        for r in rows
+    )
+    body = f"""
+    <h1>Pulse Users</h1>
+    <p class='muted'>Owner-only manual control for Pulse privileges, badges, roles, verification, livestream, marketplace, teacher, posting, and trust status.</p>
+    <form class='card' method='get'><input name='q' value='{clean_html(q)}' placeholder='Search display name, username, email, user ID, or Pulse profile ID'><button class='button'>Search</button></form>
+    <div class='card'><table><tr><th>Avatar</th><th>User</th><th>Username</th><th>Status</th><th>Trust</th><th>Level</th><th>Live</th><th>Badges</th><th>Action</th></tr>{table or '<tr><td colspan=9>No Pulse users found.</td></tr>'}</table></div>
+    """
+    return admin_page_html("Pulse Users", body, admin)
+
+
+@webhook_app.route("/admin/pulse-users/<int:user_id>", methods=["GET", "POST"])
+def admin_pulse_user_detail_page(user_id):
+    admin, denied = require_owner_admin_page()
+    if denied:
+        return denied
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    message = ""
+    before = pulse_admin_user_row(cur, user_id) or {}
+    if request.method == "POST":
+        action = request.form.get("action") or "save"
+        if action == "grant_all":
+            pulse_admin_grant_all(conn, user_id, admin.get("id"))
+            message = "All Pulse privileges and badges granted."
+        elif action == "remove_all":
+            pulse_admin_remove_all(conn, user_id, admin.get("id"))
+            message = "All Pulse privileges and badges removed."
+        elif action in {"grant_all_badges", "remove_all_badges", "grant_all_privileges", "remove_all_privileges"}:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            if action == "grant_all_badges":
+                for row in cur.execute("SELECT badge_key FROM pulse_badges WHERE COALESCE(active,1)=1").fetchall():
+                    cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, ?, ?, ?)", (user_id, row[0], admin.get("id"), now))
+            elif action == "remove_all_badges":
+                cur.execute("DELETE FROM pulse_user_badges WHERE user_id=?", (user_id,))
+            elif action == "grant_all_privileges":
+                for row in cur.execute("SELECT privilege_key FROM pulse_privileges WHERE COALESCE(active,1)=1").fetchall():
+                    cur.execute("INSERT INTO pulse_user_privileges (user_id, privilege_key, enabled, granted_by, created_at, updated_at) VALUES (?, ?, 1, ?, ?, ?) ON CONFLICT(user_id, privilege_key) DO UPDATE SET enabled=1, granted_by=excluded.granted_by, updated_at=excluded.updated_at", (user_id, row[0], admin.get("id"), now, now))
+            else:
+                cur.execute("UPDATE pulse_user_privileges SET enabled=0, granted_by=?, updated_at=? WHERE user_id=?", (admin.get("id"), now, user_id))
+            conn.commit()
+            message = action.replace("_", " ").title() + " complete."
+        elif action in {"verify", "make_creator", "make_teacher", "make_seller", "unlock_livestream", "suspend_pulse", "restore_pulse", "reset_trust", "trust_100"}:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            if action == "verify":
+                cur.execute("INSERT INTO verification_requests (user_id, verification_type, status, notes, reviewed_by, created_at, reviewed_at) VALUES (?, 'identity_verified', 'approved', 'Manual verification', ?, ?, ?)", (user_id, admin.get("id"), now, now))
+                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, 'verified', ?, ?)", (user_id, admin.get("id"), now))
+            elif action == "make_creator":
+                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, 'creator', ?, ?)", (user_id, admin.get("id"), now))
+                cur.execute("INSERT INTO pulse_user_privileges (user_id, privilege_key, enabled, granted_by, created_at, updated_at) VALUES (?, 'can_use_creator_filters', 1, ?, ?, ?) ON CONFLICT(user_id, privilege_key) DO UPDATE SET enabled=1, updated_at=excluded.updated_at", (user_id, admin.get("id"), now, now))
+            elif action == "make_teacher":
+                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, 'teacher', ?, ?)", (user_id, admin.get("id"), now))
+                cur.execute("INSERT INTO pulse_user_privileges (user_id, privilege_key, enabled, granted_by, created_at, updated_at) VALUES (?, 'can_teach', 1, ?, ?, ?) ON CONFLICT(user_id, privilege_key) DO UPDATE SET enabled=1, updated_at=excluded.updated_at", (user_id, admin.get("id"), now, now))
+            elif action == "make_seller":
+                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, 'marketplace_seller', ?, ?)", (user_id, admin.get("id"), now))
+                cur.execute("INSERT INTO pulse_user_privileges (user_id, privilege_key, enabled, granted_by, created_at, updated_at) VALUES (?, 'can_sell_marketplace', 1, ?, ?, ?) ON CONFLICT(user_id, privilege_key) DO UPDATE SET enabled=1, updated_at=excluded.updated_at", (user_id, admin.get("id"), now, now))
+            elif action == "unlock_livestream":
+                cur.execute("INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, suspended_reason='', updated_at=excluded.updated_at", (user_id, admin.get("id"), now, now))
+            elif action == "suspend_pulse":
+                cur.execute("UPDATE user_privilege_profiles SET posting_restricted=1, messaging_restricted=1, moderation_status='suspended', updated_at=? WHERE user_id=?", (now, user_id))
+            elif action == "restore_pulse":
+                cur.execute("UPDATE user_privilege_profiles SET posting_restricted=0, messaging_restricted=0, moderation_status='clear', updated_at=? WHERE user_id=?", (now, user_id))
+            elif action == "reset_trust":
+                cur.execute("UPDATE user_privilege_profiles SET trust_score=0, current_level='New User', updated_at=? WHERE user_id=?", (now, user_id))
+            elif action == "trust_100":
+                cur.execute("UPDATE user_privilege_profiles SET trust_score=100, current_level='Platform Ambassador', updated_at=? WHERE user_id=?", (now, user_id))
+            conn.commit()
+            message = action.replace("_", " ").title() + " complete."
+        else:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            display_name = clean_html(request.form.get("display_name") or "")[:120]
+            username = clean_html(request.form.get("username") or "")[:80]
+            avatar_url = clean_html(request.form.get("avatar_url") or "")[:600]
+            bio = clean_html(request.form.get("bio") or "")[:1000]
+            trust_score = max(0, min(100, int(request.form.get("trust_score") or 0)))
+            level = clean_html(request.form.get("current_level") or "New User")[:80]
+            live_status = clean_html(request.form.get("livestream_status") or "locked")[:40]
+            cur.execute("UPDATE users SET display_name=?, username=?, avatar_url=?, bio=? WHERE user_id=?", (display_name, username, avatar_url, bio, user_id))
+            cur.execute(
+                "INSERT INTO user_privilege_profiles (user_id, trust_score, current_level, created_at, updated_at, manual_override, updated_by) VALUES (?, ?, ?, ?, ?, 1, ?) ON CONFLICT(user_id) DO UPDATE SET trust_score=excluded.trust_score, current_level=excluded.current_level, updated_at=excluded.updated_at, manual_override=1, updated_by=excluded.updated_by",
+                (user_id, trust_score, level, now, now, admin.get("id")),
+            )
+            cur.execute("INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, ?, 0, ?, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at", (user_id, live_status, admin.get("id"), now, now))
+            conn.commit()
+            message = "Pulse user profile saved."
+        after = pulse_admin_user_row(cur, user_id) or {}
+        log_admin_audit(admin.get("id"), f"pulse_user_{action}", "user", str(user_id), {"before": before, "after": after})
+    row = pulse_admin_user_row(cur, user_id)
+    if not row:
+        conn.close()
+        return admin_page_html("Pulse User Not Found", "<h1>User not found</h1><p class='muted'>No matching user exists.</p>", admin), 404
+    badges = pulse_admin_all_badges(cur)
+    privileges = pulse_admin_all_privileges(cur)
+    user_badges = pulse_admin_user_badges(cur, user_id)
+    user_privileges = pulse_admin_user_privileges(cur, user_id)
+    cur.execute("SELECT action, metadata, created_at FROM admin_audit_logs WHERE target_type='user' AND target_id=? ORDER BY id DESC LIMIT 30", (str(user_id),))
+    audit = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    badge_grid = "".join(f"<span class='pill'>{'✓ ' if b['badge_key'] in user_badges else ''}{clean_html(b['label'])}</span>" for b in badges)
+    privilege_grid = "".join(f"<span class='pill'>{'✓ ' if p['privilege_key'] in user_privileges else ''}{clean_html(p['label'])}</span>" for p in privileges)
+    quick_actions = "".join(f"<button name='action' value='{key}'>{label}</button>" for key, label in [
+        ("grant_all", "Grant All Privileges"), ("remove_all", "Remove All Privileges"), ("grant_all_badges", "Grant All Badges"),
+        ("remove_all_badges", "Remove All Badges"), ("grant_all_privileges", "Grant All Privileges Only"),
+        ("remove_all_privileges", "Remove All Privileges Only"), ("verify", "Verify User"), ("make_creator", "Make Creator"),
+        ("make_teacher", "Make Teacher"), ("make_seller", "Make Seller"), ("unlock_livestream", "Unlock Livestream"),
+        ("suspend_pulse", "Suspend Pulse Access"), ("restore_pulse", "Restore Pulse Access"), ("reset_trust", "Reset Trust Score"),
+        ("trust_100", "Set Trust Score to 100"),
+    ])
+    audit_rows = "".join(f"<tr><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td><td><pre>{clean_html(a.get('metadata') or '')}</pre></td></tr>" for a in audit)
+    body = f"""
+    <h1>Pulse User Control: {clean_html(row.get('display_name') or row.get('email') or str(user_id))}</h1>
+    <p class='muted'>{clean_html(message)}</p>
+    <div class='grid'>
+      <section class='card'><h2>Status</h2><p><span class='pill'>Trust {int(row.get('trust_score') or 0)}</span> <span class='pill'>{clean_html(row.get('current_level') or 'New User')}</span> <span class='pill'>Live {clean_html(row.get('livestream_status') or 'locked')}</span></p><p><a class='button' href='/pulse/profile'>View User Profile</a> <a class='button' href='/pulse?profile={user_id}'>View User Posts</a> <a class='button' href='/pulse/messages'>View User Messages</a> <a class='button' href='/admin/audit-logs'>View Audit Log</a></p></section>
+      <section class='card'><h2>Badges</h2>{badge_grid}</section>
+      <section class='card'><h2>Privileges</h2>{privilege_grid}</section>
+    </div>
+    <form class='card' method='post'><h2>Edit Profile And Limits</h2>
+      <input name='display_name' value='{clean_html(row.get('display_name') or '')}' placeholder='Display name'>
+      <input name='username' value='{clean_html(row.get('username') or '')}' placeholder='Username'>
+      <input name='avatar_url' value='{clean_html(row.get('avatar_url') or '')}' placeholder='Avatar URL'>
+      <textarea name='bio' placeholder='Bio'>{clean_html(row.get('bio') or '')}</textarea>
+      <input name='trust_score' value='{int(row.get('trust_score') or 0)}' placeholder='Trust score'>
+      <input name='current_level' value='{clean_html(row.get('current_level') or 'New User')}' placeholder='Level'>
+      <select name='livestream_status'><option>{clean_html(row.get('livestream_status') or 'locked')}</option><option>locked</option><option>progress</option><option>eligible</option><option>approved</option><option>suspended</option></select>
+      <button class='button primary' name='action' value='save'>Save Manual Changes</button>
+    </form>
+    <form class='card' method='post'><h2>Owner Quick Actions</h2><div class='actions'>{quick_actions}</div></form>
+    <section class='card'><h2>Audit History</h2><table><tr><th>Action</th><th>Time</th><th>Metadata</th></tr>{audit_rows or '<tr><td colspan=3>No audit entries yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("Pulse User Control", body, admin)
+
+
 @webhook_app.route("/admin/monetization", methods=["GET"])
 def admin_monetization_page():
     admin, denied = require_admin_page("monetization.manage")
     if denied:
         return denied
     init_db()
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    summary = monetization_engine.admin_summary(conn)
-    candidates = creator_monetization_engine.creator_candidates(12)
-    slot = ad_policy_engine.contextual_slot("pulse")
-    conn.close()
-    layer_parts = []
-    for layer in summary.get("revenue_layers", []):
-        layer_items = "".join("<li>{}</li>".format(clean_html(i)) for i in layer.get("items", []))
-        layer_parts.append(f"<article class='card'><h2>{clean_html(layer.get('layer') or '')}</h2><ul>{layer_items}</ul></article>")
-    layers = "".join(layer_parts)
-    creator_rows = "".join(f"<tr><td>{c.get('user_id')}</td><td>{clean_html(c.get('display_name') or '')}</td><td>{int(c.get('posts') or 0)}</td><td>{clean_html(c.get('verification_status') or '')}</td></tr>" for c in candidates)
-    cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p style='font-size:32px;font-weight:900'>{v}</p></div>" for k, v in summary.items() if isinstance(v, int))
-    body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Pro, creator economy, ethical ads, and aggregate-only intelligence.</p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        summary = monetization_engine.admin_summary(conn)
+        try:
+            candidates = creator_monetization_engine.creator_candidates(12)
+        except Exception as exc:
+            logging.exception("ADMIN_MONETIZATION_CREATOR_CANDIDATES_FAILED error=%s", exc)
+            candidates = []
+        slot = ad_policy_engine.contextual_slot("pulse")
+        cur = conn.cursor()
+        safe_counts = {}
+        for key, query in {
+            "revenue_events": "SELECT COUNT(*) AS total FROM monetization_events",
+            "sponsor_slots": "SELECT COUNT(*) AS total FROM sponsor_slots",
+            "ad_reviews": "SELECT COUNT(*) AS total FROM ad_reviews WHERE status='pending'",
+            "creator_payouts": "SELECT COUNT(*) AS total FROM creator_payouts_placeholder",
+            "marketplace_orders": "SELECT COUNT(*) AS total FROM marketplace_orders_placeholder",
+            "teacher_earnings": "SELECT COUNT(*) AS total FROM teacher_earnings_placeholder",
+        }.items():
+            try:
+                cur.execute(query)
+                safe_counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
+            except Exception:
+                safe_counts[key] = 0
+        conn.close()
+        layer_parts = []
+        for layer in summary.get("revenue_layers", []):
+            layer_items = "".join("<li>{}</li>".format(clean_html(i)) for i in layer.get("items", []))
+            layer_parts.append(f"<article class='card'><h2>{clean_html(layer.get('layer') or '')}</h2><ul>{layer_items}</ul></article>")
+        layers = "".join(layer_parts)
+        creator_rows = "".join(f"<tr><td>{c.get('user_id')}</td><td>{clean_html(c.get('display_name') or '')}</td><td>{int(c.get('posts') or 0)}</td><td>{clean_html(c.get('verification_status') or '')}</td></tr>" for c in candidates)
+        all_counts = {**{k: v for k, v in summary.items() if isinstance(v, int)}, **safe_counts}
+        cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p style='font-size:32px;font-weight:900'>{v}</p></div>" for k, v in all_counts.items())
+        config = {
+            "stripe": "Configured" if STRIPE_SECRET_KEY else "Not configured yet",
+            "google_ads": "Configured" if os.getenv("GOOGLE_ADS_CONVERSION_ID") or os.getenv("GOOGLE_ADS_ID") else "Not configured yet",
+            "marketplace": "Payments coming soon",
+            "teacher_earnings": "Payments coming soon",
+        }
+        body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Pro, creator economy, ethical ads, and aggregate-only intelligence.</p><p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a></p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Provider Setup</h2><pre>{clean_html(json.dumps(config, indent=2))}</pre></div><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
+    except Exception as exc:
+        logging.exception("ADMIN_MONETIZATION_PAGE_FAILED error=%s", exc)
+        body = f"<h1>Monetization Control</h1><div class='card'><h2>Monetization diagnostics needed</h2><p class='muted'>The page recovered safely instead of showing a raw error.</p><p>{clean_html(str(exc))}</p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a></div>"
     return admin_page_html("Monetization", body, admin)
+
+
+@webhook_app.route("/admin/monetization-health", methods=["GET"])
+def admin_monetization_health_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    tables = ["monetization_events", "sponsor_slots", "ad_reviews", "enterprise_leads", "creator_payouts_placeholder", "marketplace_orders_placeholder", "teacher_earnings_placeholder", "creator_profiles", "creator_revenue_events"]
+    table_rows = []
+    for table in tables:
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+            exists = bool(cur.fetchone())
+            count = 0
+            if exists:
+                cur.execute(f"SELECT COUNT(*) AS total FROM {table}")
+                count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            table_rows.append({"table": table, "exists": exists, "rows": count})
+        except Exception as exc:
+            table_rows.append({"table": table, "exists": False, "rows": 0, "error": str(exc)})
+    diagnostics = {
+        "stripe_key_configured": bool(STRIPE_SECRET_KEY),
+        "stripe_webhook_configured": bool(STRIPE_WEBHOOK_SECRET),
+        "stripe_price_ids_configured": bool(os.getenv("STRIPE_PRO_PRICE_ID") or os.getenv("STRIPE_PRICE_ID")),
+        "google_ads_configured": bool(os.getenv("GOOGLE_ADS_CONVERSION_ID") or os.getenv("GOOGLE_ADS_ID")),
+        "tables": table_rows,
+    }
+    conn.close()
+    body = f"<h1>Monetization Health</h1><p class='muted'>No secrets are shown here. Missing providers display setup states instead of crashing admin.</p><div class='card'><pre>{clean_html(json.dumps(diagnostics, indent=2, default=str))}</pre></div>"
+    return admin_page_html("Monetization Health", body, admin)
 
 
 @webhook_app.route("/admin/privileges", methods=["GET"])
@@ -18106,7 +18519,8 @@ def admin_command_center_page():
             f"<div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div>"
             f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span> <span class='pill'>Today {counts['today']}</span></p></a>"
         )
-    body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited. Only departments allowed for your role appear here.</p><div class='grid'>{''.join(cards) or '<div class=\"card\">No department rooms assigned to this role yet.</div>'}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a></p>"
+    owner_links = " <a class='button primary' href='/admin/pulse-users'>Pulse Users</a>" if admin_is_owner_level(admin) else ""
+    body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited. Only departments allowed for your role appear here.</p><div class='grid'>{''.join(cards) or '<div class=\"card\">No department rooms assigned to this role yet.</div>'}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a>{owner_links}</p>"
     return admin_page_html("Department Command Center", body, admin)
 
 
@@ -24791,6 +25205,61 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "user_privilege_profiles", [
+        ("can_create_space", "INTEGER DEFAULT 0"),
+        ("can_host_room", "INTEGER DEFAULT 0"),
+        ("can_use_creator_filters", "INTEGER DEFAULT 0"),
+        ("max_video_duration", "INTEGER DEFAULT 45"),
+        ("max_upload_mb", "INTEGER DEFAULT 25"),
+        ("posting_limit_per_day", "INTEGER DEFAULT 20"),
+        ("messaging_restricted", "INTEGER DEFAULT 0"),
+        ("posting_restricted", "INTEGER DEFAULT 0"),
+        ("moderation_status", "TEXT DEFAULT 'clear'"),
+        ("manual_override", "INTEGER DEFAULT 0"),
+        ("updated_by", "INTEGER"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        badge_key TEXT UNIQUE,
+        label TEXT,
+        description TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_user_badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        badge_key TEXT,
+        granted_by INTEGER,
+        created_at TEXT,
+        UNIQUE(user_id, badge_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_privileges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        privilege_key TEXT UNIQUE,
+        label TEXT,
+        description TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_user_privileges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        privilege_key TEXT,
+        enabled INTEGER DEFAULT 1,
+        granted_by INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, privilege_key)
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS referral_invites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24898,6 +25367,196 @@ def init_db():
         cur.execute("SELECT 1 FROM pulse_filters WHERE filter_name=? LIMIT 1", (name,))
         if not cur.fetchone():
             cur.execute("INSERT INTO pulse_filters (filter_name, filter_type, privilege_required, active) VALUES (?, ?, ?, 1)", (name, ftype, required))
+    now_seed = datetime.utcnow().isoformat(timespec="seconds")
+    for badge_key, label in [
+        ("owner", "Owner"), ("founder", "Founder"), ("verified", "Verified"), ("trusted_member", "Trusted Member"),
+        ("creator", "Creator"), ("teacher", "Teacher"), ("marketplace_seller", "Marketplace Seller"),
+        ("livestream_eligible", "Livestream Eligible"), ("partner_creator", "Partner Creator"),
+        ("platform_ambassador", "Platform Ambassador"), ("top_contributor", "Top Contributor"),
+        ("scam_hunter", "Scam Hunter"), ("arena_elite", "Arena Elite"), ("roast_champion", "Roast Champion"),
+        ("early_supporter", "Early Supporter"), ("vip", "VIP"), ("moderator", "Moderator"),
+        ("safety_verified", "Safety Verified"), ("community_builder", "Community Builder"),
+        ("knowledge_leader", "Knowledge Leader"),
+    ]:
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_badges (badge_key, label, description, active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (badge_key, label, f"{label} Pulse badge", now_seed),
+        )
+    for privilege_key, label in [
+        ("can_post", "Can post"), ("can_comment", "Can comment"), ("can_react", "Can react"),
+        ("can_message", "Can message"), ("can_follow", "Can follow"), ("can_create_groups", "Can create groups"),
+        ("can_create_spaces", "Can create spaces"), ("can_sell_marketplace", "Can sell in marketplace"),
+        ("can_teach", "Can teach"), ("can_upload_images", "Can upload images"), ("can_upload_videos", "Can upload videos"),
+        ("can_go_live", "Can go live"), ("can_use_creator_filters", "Can use creator filters"),
+        ("can_create_reels", "Can create reels"), ("can_pin_posts", "Can pin posts"), ("can_feature_posts", "Can feature posts"),
+        ("can_host_live_rooms", "Can host live rooms"), ("can_receive_fan_messages", "Can receive fan messages"),
+        ("can_access_creator_analytics", "Can access creator analytics"),
+        ("can_access_teacher_tools", "Can access teacher tools"),
+        ("can_access_marketplace_tools", "Can access marketplace tools"),
+    ]:
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_privileges (privilege_key, label, description, active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (privilege_key, label, f"{label} privilege", now_seed),
+        )
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS monetization_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS sponsor_slots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slot_key TEXT UNIQUE,
+        label TEXT,
+        status TEXT DEFAULT 'draft',
+        sponsor_name TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ad_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sponsor_name TEXT,
+        category TEXT,
+        status TEXT DEFAULT 'pending',
+        risk_score INTEGER DEFAULT 0,
+        notes TEXT,
+        created_at TEXT,
+        reviewed_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_payouts_placeholder (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        creator_user_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'not_active',
+        notes TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_orders_placeholder (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        listing_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'payments_coming_soon',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS teacher_earnings_placeholder (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_user_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'payments_coming_soon',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS notification_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        provider TEXT,
+        channel TEXT,
+        priority TEXT DEFAULT 'standard',
+        payload_json TEXT,
+        status TEXT DEFAULT 'pending',
+        attempts INTEGER DEFAULT 0,
+        next_retry_at TEXT,
+        error_message TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        sent_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS notification_failures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_table TEXT,
+        source_id INTEGER,
+        provider TEXT,
+        channel TEXT,
+        error_message TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT,
+        resolved_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS provider_health (
+        provider TEXT PRIMARY KEY,
+        status TEXT,
+        uptime_score REAL DEFAULT 100,
+        success_rate REAL DEFAULT 100,
+        avg_latency_ms INTEGER DEFAULT 0,
+        last_success_at TEXT,
+        last_error TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS delivery_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        provider TEXT,
+        channel TEXT,
+        status TEXT,
+        latency_ms INTEGER DEFAULT 0,
+        error_message TEXT,
+        created_at TEXT
+    )
+    """)
+    try:
+        cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) OR lower(display_name)=lower(?) ORDER BY CASE WHEN lower(email)=lower(?) THEN 0 ELSE 1 END, user_id ASC LIMIT 1", (OWNER_ADMIN_EMAIL, OWNER_ADMIN_FULL_NAME, OWNER_ADMIN_EMAIL))
+        owner_row = cur.fetchone()
+        owner_user_id = int((owner_row[0] if owner_row else 0) or 0)
+        if owner_user_id:
+            now_owner = datetime.utcnow().isoformat(timespec="seconds")
+            cur.execute(
+                """
+                INSERT INTO user_privilege_profiles
+                (user_id, trust_score, current_level, can_go_live, can_sell, can_teach, can_create_groups, can_upload_video,
+                 can_create_space, can_host_room, can_use_creator_filters, max_video_duration, max_upload_mb,
+                 posting_limit_per_day, messaging_restricted, posting_restricted, moderation_status, manual_override, updated_by, created_at, updated_at)
+                VALUES (?, 100, 'Platform Ambassador', 1, 1, 1, 1, 1, 1, 1, 1, 3600, 1024, 9999, 0, 0, 'clear', 1, 0, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    trust_score=100, current_level='Platform Ambassador', can_go_live=1, can_sell=1, can_teach=1,
+                    can_create_groups=1, can_upload_video=1, can_create_space=1, can_host_room=1,
+                    can_use_creator_filters=1, max_video_duration=3600, max_upload_mb=1024,
+                    posting_limit_per_day=9999, messaging_restricted=0, posting_restricted=0,
+                    moderation_status='clear', manual_override=1, updated_at=excluded.updated_at
+                """,
+                (owner_user_id, now_owner, now_owner),
+            )
+            cur.execute(
+                "INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, 0, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), suspended_reason='', updated_at=excluded.updated_at",
+                (owner_user_id, now_owner, now_owner),
+            )
+            cur.execute(
+                "INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at) VALUES (?, 'approved', 30, 0, '', ?, ?) ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=MAX(COALESCE(referral_count,0),30), suspended_reason='', updated_at=excluded.updated_at",
+                (owner_user_id, now_owner, now_owner),
+            )
+            for row in cur.execute("SELECT badge_key FROM pulse_badges WHERE COALESCE(active,1)=1").fetchall():
+                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, ?, 0, ?)", (owner_user_id, row[0], now_owner))
+            for row in cur.execute("SELECT privilege_key FROM pulse_privileges WHERE COALESCE(active,1)=1").fetchall():
+                cur.execute("INSERT INTO pulse_user_privileges (user_id, privilege_key, enabled, granted_by, created_at, updated_at) VALUES (?, ?, 1, 0, ?, ?) ON CONFLICT(user_id, privilege_key) DO UPDATE SET enabled=1, updated_at=excluded.updated_at", (owner_user_id, row[0], now_owner, now_owner))
+            cur.execute(
+                "INSERT INTO verification_requests (user_id, verification_type, status, notes, reviewed_by, created_at, reviewed_at) VALUES (?, 'identity_verified', 'approved', 'Owner bootstrap verification', 0, ?, ?)",
+                (owner_user_id, now_owner, now_owner),
+            )
+    except Exception as exc:
+        logging.info("OWNER_PULSE_PRIVILEGE_BOOTSTRAP_SKIPPED error=%s", exc)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS subscriptions (
@@ -26092,10 +26751,19 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_worker_heartbeats_seen ON worker_heartbeats(worker_name, last_seen_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_events_user_created ON alert_events(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_notification_delivery_user_created ON notification_delivery_logs(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notification_delivery_status ON notification_delivery_logs(status, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_alert ON alert_delivery_jobs(alert_id)",
         "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_user_created ON alert_delivery_jobs(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_status ON alert_delivery_jobs(status)",
         "CREATE INDEX IF NOT EXISTS idx_alert_delivery_jobs_next_retry ON alert_delivery_jobs(next_retry_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notification_jobs_status ON notification_jobs(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notification_jobs_user ON notification_jobs(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notification_failures_status ON notification_failures(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_active ON push_subscriptions(user_id, active)",
+        "CREATE INDEX IF NOT EXISTS idx_provider_health_status ON provider_health(status, updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_delivery_logs_provider ON delivery_logs(provider, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_user_badges_user ON pulse_user_badges(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_user_privileges_user ON pulse_user_privileges(user_id, enabled)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code ON telegram_link_codes(code)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_user_id ON telegram_link_codes(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_status ON telegram_link_codes(status)",
