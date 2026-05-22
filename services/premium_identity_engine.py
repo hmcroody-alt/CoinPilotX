@@ -39,9 +39,9 @@ def is_owner(row):
 
 def has_active_premium(row):
     row = row or {}
-    if int(row.get("lifetime_premium") or 0):
+    if is_owner(row):
         return True
-    if int(row.get("premium_glow_manual_grant") or 0):
+    if int(row.get("premium_mark_override") or row.get("premium_glow_manual_grant") or 0):
         return True
     plan = str(row.get("plan") or row.get("subscription_plan") or "").lower()
     status = str(row.get("premium_status") or row.get("subscription_status") or "").lower()

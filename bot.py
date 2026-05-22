@@ -15549,7 +15549,7 @@ function premiumMarkHtml(author){const mark=author&&author.premium_mark;if(!mark
 async function sendComment(postId){const input=document.querySelector(`[data-comment-input="${postId}"]`);if(!input||!input.value.trim())return;const body=input.value;input.value='';try{const d=await api(`/api/pulse/posts/${postId}/comments`,{method:'POST',body:JSON.stringify({body})});applyCommentEvent({post_id:Number(postId),comment:d.comment,comments_count:d.comments_count});await api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{})}catch(e){input.value=body;toast(e.message)}}
 	function applyCommentEvent(payload){if(!payload||!payload.comment)return;const postId=payload.post_id||payload.comment.post_id;const box=document.querySelector(`[data-comments="${postId}"]`);if(box&&!box.querySelector(`[data-comment-id="${payload.comment.id}"]`)){box.dataset.loaded='1';box.insertAdjacentHTML('beforeend',commentHtml(payload.comment));box.scrollTop=box.scrollHeight}const count=document.querySelector(`[data-comment-count="${postId}"]`);if(count)count.textContent=Number(payload.comments_count||Number(count.textContent||0)+1)}
 	function applyReactionEvent(payload){if(!payload||!payload.post_id)return;const counts=payload.reaction_counts||{};let total=0;Object.entries(counts).forEach(([key,value])=>{total+=Number(value||0);const btn=document.querySelector(`[data-post="${payload.post_id}"][data-react="${key}"]`);if(btn){btn.dataset.count=Number(value||0);const countEl=btn.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=Number(value||0)}});const totalEl=document.querySelector(`[data-reaction-total="${payload.post_id}"]`);if(totalEl)totalEl.textContent=total}
-function applyLiveEvents(events){(events||[]).forEach(ev=>{const p=ev.payload||{};if(ev.event_type==='new_post'&&p.post&&!document.querySelector(`[data-post-id="${p.post.id}"]`)){document.getElementById('feed').insertAdjacentHTML('afterbegin',postHtml(p.post));}if(ev.event_type==='new_comment')applyCommentEvent({post_id:ev.post_id,...p});if(ev.event_type==='reaction_added'||ev.event_type==='reaction_removed')applyReactionEvent(p);if(ev.event_type==='post_deleted'){const node=document.querySelector(`[data-post-id="${p.post_id||ev.post_id}"]`);if(node)node.remove()}if(ev.event_type==='typing_start'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t){t.textContent=`${esc(p.display_name||'Someone')} is typing...`;clearTimeout(t._timer);t._timer=setTimeout(()=>t.textContent='',3500)}}if(ev.event_type==='typing_stop'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t)t.textContent=''}if(ev.event_type==='notification_created'||ev.event_type==='friend_request'||ev.event_type==='message_received')toast(p.message||p.title||'New Pulse activity.');state.lastEventId=Math.max(state.lastEventId||0,Number(ev.id||0))})}
+function applyLiveEvents(events){(events||[]).forEach(ev=>{const p=ev.payload||{};const livePost=p.post||null;if((ev.event_type==='new_post'||ev.event_type==='pulse_post_created')&&livePost&&!document.querySelector(`[data-post-id="${livePost.id}"]`)){const feed=document.getElementById('feed');const nearTop=window.scrollY<260;if(feed){feed.insertAdjacentHTML('afterbegin',postHtml(livePost));if(!nearTop)toast(`${esc((livePost.author||{}).display_name||'Someone')} posted a new update`);else feed.firstElementChild?.scrollIntoView({block:'nearest'});}}if(ev.event_type==='new_comment')applyCommentEvent({post_id:ev.post_id,...p});if(ev.event_type==='reaction_added'||ev.event_type==='reaction_removed')applyReactionEvent(p);if(ev.event_type==='post_deleted'){const node=document.querySelector(`[data-post-id="${p.post_id||ev.post_id}"]`);if(node)node.remove()}if(ev.event_type==='typing_start'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t){t.textContent=`${esc(p.display_name||'Someone')} is typing...`;clearTimeout(t._timer);t._timer=setTimeout(()=>t.textContent='',3500)}}if(ev.event_type==='typing_stop'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t)t.textContent=''}if(ev.event_type==='notification_created'||ev.event_type==='friend_request'||ev.event_type==='message_received'||ev.event_type==='livestream_started')toast(p.message||p.title||'New Pulse activity.');state.lastEventId=Math.max(state.lastEventId||0,Number(ev.id||0))})}
 function renderIntel(intel){const topics=(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${encodeURIComponent(t.tag)}">#${esc(t.tag)} · ${t.count}</a>`).join('');const spaces=(intel.top_spaces||[]).map(s=>`<a class="intel-item" href="/pulse/spaces/${encodeURIComponent(s.slug)}">${esc(s.name)} · heat ${Number(s.heat||0)}</a>`).join('');const posts=(intel.top_posts||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">${esc(p.title)}</a>`).join('');const scams=(intel.scam_warnings||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">Scam watch · ${esc(p.title)}</a>`).join('');document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';const content=`<div class="intel-item"><strong>${esc(intel.community_mood||'Curious')}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${Number(intel.posts_today||0)}</strong><br><span class="muted">Posts today</span></div><div class="intel-item">${esc(intel.suggested_action||'Pulse is warming up. Create the first post.')}</div>${topics}${spaces}${posts}${scams}`;document.getElementById('intel').innerHTML=content||'<p class="muted">Pulse is warming up. Create the first post.</p>'}
 	async function load(reset=false){if(state.loading)return;state.loading=true;if(reset){state.offset=0;document.getElementById('feed').innerHTML=''}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}`);const posts=d.posts||[];document.getElementById('feed').insertAdjacentHTML('beforeend',posts.map(postHtml).join('')||(state.offset?'':'<section class="card"><p class="muted">No posts yet. Create the first Pulse.</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>'));posts.slice(0,8).forEach(p=>loadComments(p.id,false));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}catch(e){document.getElementById('feed').innerHTML='<section class="card"><p class="muted">'+esc(e.message)+'</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>';document.getElementById('intel').innerHTML='<p class="muted">Pulse intelligence temporarily unavailable.</p>';toast(e.message)}finally{state.loading=false}}
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',feedPaths[state.feed]||'/pulse');load(true)});
@@ -15562,7 +15562,7 @@ document.addEventListener('input',e=>{const input=e.target.closest('[data-commen
 document.addEventListener('keydown',e=>{const input=e.target.closest('[data-comment-input]');if(input&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendComment(input.dataset.commentInput)}});
 async function pollLive(){try{const d=await api(`/api/pulse/live?since_id=${state.lastEventId||0}`);applyLiveEvents(d.events||[]);state.lastEventId=d.latest_event_id||state.lastEventId||0}catch(e){}}
 function startLive(){if(window.EventSource){try{const es=new EventSource(`/api/pulse/live/stream?since_id=${state.lastEventId||0}`);es.addEventListener('pulse',e=>{try{const d=JSON.parse(e.data);applyLiveEvents(d.events||[]);state.lastEventId=d.latest_event_id||state.lastEventId||0}catch(_){}});es.onerror=()=>{es.close();setInterval(()=>{if(!document.hidden)pollLive()},3500)};return}catch(_){}}setInterval(()=>{if(!document.hidden)pollLive()},3500)}
-	document.getElementById('loadMore').addEventListener('click',()=>load(false));load(true).then(startLive);setInterval(()=>{if(!document.hidden&&state.offset===0)load(true)},45000);
+	document.getElementById('loadMore').addEventListener('click',()=>load(false));load(true).then(startLive);setInterval(()=>{if(!document.hidden&&state.offset===0)load(true)},45000);setInterval(()=>{if(!document.hidden)api('/api/pulse/heartbeat',{method:'POST',body:JSON.stringify({path:location.pathname})}).catch(()=>{})},25000);
 let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)return;const remaining=document.documentElement.scrollHeight-(window.scrollY+window.innerHeight);if(remaining<420&&!nearBottom){nearBottom=true;load(false).finally(()=>setTimeout(()=>nearBottom=false,900))}},{passive:true});
 	</script></body></html>"""
     return Response(
@@ -15660,7 +15660,7 @@ def get_pulse_identity_display(user_id, cur=None):
                    u.display_name, u.avatar_url AS user_avatar_url, u.avatar_url, u.bio, u.banner_url,
                    u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active,
                    u.pro_expires_at, u.subscription_expires_at, u.premium_status, u.premium_expires_at,
-                   u.lifetime_premium, u.premium_glow_manual_grant, u.premium_mark_type,
+                   u.lifetime_premium, u.premium_glow_manual_grant, u.premium_mark_override, u.premium_mark_type,
                    COALESCE(upp.trust_score,0) AS trust_score, COALESCE(upp.current_level,'New User') AS current_level,
                    la.status AS livestream_status, ap.public_player_id, ap.avatar_url AS arena_avatar_url
             FROM users u
@@ -15733,6 +15733,13 @@ def get_pulse_identity_display(user_id, cur=None):
     return identity
 
 
+def user_has_premium_mark(user_id, cur=None):
+    try:
+        return bool((get_pulse_identity_display(user_id, cur) or {}).get("premium_mark"))
+    except Exception:
+        return False
+
+
 def pulse_identity_for_user(cur, user_id):
     try:
         return get_pulse_identity_display(user_id, cur)
@@ -15787,6 +15794,84 @@ def pulse_start_thread(cur, current_user_id, target_user_id=None, public_player_
         )
         thread_id = int(cur.lastrowid)
     return {"ok": True, "thread_id": thread_id, "target_user_id": target_user_id, "next_url": f"/pulse/messages/{thread_id}"}, 200
+
+
+def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_player_id=""):
+    current_user_id = int(current_user_id or 0)
+    if not target_user_id and public_player_id:
+        target_user_id = pulse_user_id_from_public(cur, public_player_id)
+    target_user_id = int(target_user_id or 0)
+    if not target_user_id:
+        return {"ok": False, "message": "Choose a valid Pulse recipient."}, 400
+    if target_user_id == current_user_id:
+        return {"ok": False, "message": "You cannot message yourself."}, 400
+    cur.execute("SELECT user_id, account_status FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+    target = dict(cur.fetchone() or {})
+    if not target:
+        return {"ok": False, "message": "Pulse user not found."}, 404
+    if str(target.get("account_status") or "active").lower() in {"suspended", "banned", "deleted"}:
+        return {"ok": False, "message": "This user cannot receive messages right now."}, 403
+    try:
+        cur.execute(
+            "SELECT 1 FROM private_chat_blocks WHERE blocker_user_id=? AND blocked_user_id=? LIMIT 1",
+            (target_user_id, current_user_id),
+        )
+        if cur.fetchone():
+            return {"ok": False, "message": "This user cannot receive messages right now."}, 403
+    except Exception:
+        pass
+    low, high = sorted([current_user_id, target_user_id])
+    cur.execute("SELECT * FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? LIMIT 1", (low, high))
+    thread = dict(cur.fetchone() or {})
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    if thread:
+        thread_id = int(thread.get("id"))
+    else:
+        cur.execute(
+            "INSERT INTO pulse_message_threads (user_one_id, user_two_id, source_context, status, created_at, updated_at) VALUES (?, ?, 'pulse', 'active', ?, ?)",
+            (low, high, now, now),
+        )
+        thread_id = int(cur.lastrowid)
+    existing_conversation_id = int(thread.get("conversation_id") or 0) if thread else 0
+    conversation_id = existing_conversation_id
+    if not conversation_id:
+        cur.execute(
+            """
+            SELECT c.id
+            FROM pulse_conversations c
+            JOIN pulse_conversation_participants a ON a.conversation_id=c.id AND a.user_id=?
+            JOIN pulse_conversation_participants b ON b.conversation_id=c.id AND b.user_id=?
+            WHERE c.conversation_type='direct'
+            ORDER BY c.id DESC
+            LIMIT 1
+            """,
+            (current_user_id, target_user_id),
+        )
+        existing = dict(cur.fetchone() or {})
+        conversation_id = int(existing.get("id") or 0)
+    if not conversation_id:
+        cur.execute(
+            "INSERT INTO pulse_conversations (conversation_type, created_by_user_id, created_at, updated_at, last_message_at) VALUES ('direct', ?, ?, ?, ?)",
+            (current_user_id, now, now, now),
+        )
+        conversation_id = int(cur.lastrowid)
+        for uid, role in [(current_user_id, "owner"), (target_user_id, "member")]:
+            cur.execute(
+                "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, created_at) VALUES (?, ?, ?, 0, 0, ?)",
+                (conversation_id, uid, role, now),
+            )
+    try:
+        cur.execute("UPDATE pulse_message_threads SET conversation_id=?, updated_at=? WHERE id=?", (conversation_id, now, thread_id))
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "conversation_id": conversation_id,
+        "thread_id": thread_id,
+        "target_user_id": target_user_id,
+        "redirect_url": f"/pulse/messages/{conversation_id}",
+        "next_url": f"/pulse/messages/{conversation_id}",
+    }, 200
 
 
 def pulse_user_id_from_public(cur, public_player_id):
@@ -16005,7 +16090,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/create/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
     mobile_bottom_html = "".join(f"<a href='{href}'>{label}</a>" for label, href in [("Home", "/pulse"), ("Reels", "/pulse/reels"), ("Spaces", "/pulse/spaces"), ("Market", "/pulse/marketplace"), ("Alerts", "/pulse/notifications"), ("Messages", "/pulse/messages"), ("Profile", "/pulse/profile")])
     default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden}}.profile-cover{{height:150px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:116px minmax(0,1fr);gap:14px;align-items:end;padding:0 16px 16px;margin-top:-54px}}.profile-avatar{{width:108px;height:108px;border-radius:26px;border:3px solid rgba(5,11,20,.95);box-shadow:0 16px 45px rgba(0,0,0,.35),0 0 34px rgba(110,223,246,.18)}}.profile-title h2{{font-size:clamp(28px,6vw,44px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-48px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:96px;height:96px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}}.mobile-bottom-nav a{{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}}.pulse-fab{{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(132px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||'Request failed.');return d}}{script_html}</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden}}.profile-cover{{height:150px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:116px minmax(0,1fr);gap:14px;align-items:end;padding:0 16px 16px;margin-top:-54px}}.profile-avatar{{width:108px;height:108px;border-radius:26px;border:3px solid rgba(5,11,20,.95);box-shadow:0 16px 45px rgba(0,0,0,.35),0 0 34px rgba(110,223,246,.18)}}.profile-title h2{{font-size:clamp(28px,6vw,44px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-48px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:96px;height:96px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}}.mobile-bottom-nav a{{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}}.pulse-fab{{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(132px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}{script_html}</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -16030,6 +16115,39 @@ def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
     except Exception as exc:
         logging.warning("Pulse live event write failed type=%s error=%s", event_type, exc)
         return 0
+
+
+def pulse_mark_online(user_id, connection_type="http", current_path=""):
+    try:
+        user_id = int(user_id or 0)
+        if not user_id:
+            return
+        sid = session.get("visitor_session_id") or session.get("csrf_token") or request.cookies.get("session") or "pulse"
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db()
+        cur = conn.cursor()
+        session_id = str(sid)[:160]
+        cur.execute(
+            """
+            UPDATE pulse_online_sessions
+            SET connection_type=?, current_path=?, last_seen_at=?, online_status='online'
+            WHERE user_id=? AND session_id=?
+            """,
+            (str(connection_type)[:40], str(current_path or request.path)[:260], now, user_id, session_id),
+        )
+        if cur.rowcount == 0:
+            cur.execute(
+                """
+                INSERT INTO pulse_online_sessions (user_id, session_id, connection_type, current_path, last_seen_at, online_status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'online', ?)
+                """,
+                (user_id, session_id, str(connection_type)[:40], str(current_path or request.path)[:260], now, now),
+            )
+        cur.execute("UPDATE users SET last_seen_at=? WHERE user_id=?", (now, user_id))
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.debug("PULSE_ONLINE_MARK_SKIPPED user_id=%s error=%s", user_id, exc)
 
 
 def pulse_live_snapshot(cur, since_id=0, limit=80):
@@ -16218,8 +16336,11 @@ def pulse_live_page():
         toast('Livestream started.');
         window.location.href = data.live_url || ('/pulse/live/' + data.live_id);
       } catch (err) {
-        if (status) status.textContent = err.message || 'Could not start Live.';
-        toast(err.message || 'Could not start Live.');
+        console.error('Pulse livestream start failed', err);
+        const message = err.message || 'Could not start Live.';
+        if (status) status.textContent = message;
+        alert(message);
+        toast(message);
         btn.textContent = 'Start Live';
       } finally {
         btn.disabled = false;
@@ -16289,17 +16410,21 @@ def api_pulse_live_start():
             (int(user["user_id"]), title, category, thumbnail_url, stream_key, channel, chat_room, now, now),
         )
         live_id = int(cur.lastrowid)
-        pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}"}, int(user["user_id"]), None)
         conn.commit(); conn.close()
+        pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}"}, int(user["user_id"]), None)
         logging.info("PULSE_LIVE_START_OK user_id=%s live_id=%s", user.get("user_id"), live_id)
         return jsonify({"ok": True, "live_id": live_id, "stream_key": stream_key, "live_url": f"/pulse/live/{live_id}", "websocket_channel": channel, "chat_room_id": chat_room})
     except Exception as exc:
-        logging.exception("PULSE_LIVE_START_FAILED user_id=%s error=%s", user.get("user_id"), exc)
+        trace_id = secrets.token_hex(6)
+        logging.exception(
+            "LIVESTREAM_START_FAILED trace_id=%s user_id=%s title=%s category=%s thumbnail=%s auth=%s db_connected=%s error=%s",
+            trace_id, user.get("user_id"), payload.get("title"), payload.get("category"), payload.get("thumbnail_url"), bool(user), bool(conn), exc,
+        )
         try:
             conn.rollback(); conn.close()
         except Exception:
             pass
-        return jsonify({"ok": False, "message": "Livestream could not start. Please try again."}), 500
+        return jsonify({"ok": False, "message": f"Livestream failed: {exc}", "error": str(exc), "type": exc.__class__.__name__, "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -16432,17 +16557,27 @@ def pulse_messages_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_message_threads WHERE user_one_id=? OR user_two_id=? ORDER BY updated_at DESC LIMIT 40", (user["user_id"], user["user_id"]))
-    threads = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT c.*, p.user_id AS other_user_id
+        FROM pulse_conversations c
+        JOIN pulse_conversation_participants mine ON mine.conversation_id=c.id AND mine.user_id=?
+        LEFT JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id!=?
+        ORDER BY COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
+        LIMIT 40
+        """,
+        (user["user_id"], user["user_id"]),
+    )
+    conversations = [dict(row) for row in cur.fetchall()]
     cards = []
-    for thread in threads:
-        other_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
+    for convo in conversations:
+        other_id = int(convo.get("other_user_id") or 0)
         ident = pulse_identity_for_user(cur, other_id)
-        cur.execute("SELECT body, created_at FROM pulse_messages WHERE thread_id=? ORDER BY id DESC LIMIT 1", (thread.get("id"),))
+        cur.execute("SELECT body, created_at FROM pulse_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1", (convo.get("id"),))
         last = dict(cur.fetchone() or {})
-        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{clean_html(ident['name'][:1])}</span><div><h2>{clean_html(ident['name'])}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html((last.get('body') or 'No messages yet.')[:140])}</p></div></div><a class='button primary' href='/pulse/messages/{thread.get('id')}'>Open Thread</a></article>")
+        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{clean_html((ident.get('name') or 'P')[:1])}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html((last.get('body') or 'No messages yet.')[:140])}</p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>")
     conn.close()
-    main = f"<section class='card'><h2>Pulse-only Messenger</h2><p>Message friends, creators, teachers, and sellers using public identities only.</p></section><section>{''.join(cards) or '<article class=\"card\"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, or Teacher pages to start a safe Pulse conversation.</p></article>'}</section>"
+    main = f"<section class='card'><h2>Pulse-only Messenger</h2><p>Message friends, creators, teachers, and sellers using public identities only.</p></section><section>{''.join(cards) or '<article class="card"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, or Teacher pages to start a safe Pulse conversation.</p></article>'}</section>"
     return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, friend messages, and request-friendly replies.", main)
 
 
@@ -16532,36 +16667,36 @@ def pulse_topic_page(topic):
     return pulse_page_html(f"Pulse Topic #{topic}", request.args.get("feed") or "for_you", topic=topic)
 
 
-@webhook_app.route("/pulse/messages/<int:thread_id>", methods=["GET"])
-def pulse_message_thread_page(thread_id):
+@webhook_app.route("/pulse/messages/<int:conversation_id>", methods=["GET"])
+def pulse_message_thread_page(conversation_id):
     init_db()
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
-    thread = dict(cur.fetchone() or {})
-    if not thread:
-        target_user_id = int(thread_id or 0)
+    cur.execute("SELECT * FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+    participant = dict(cur.fetchone() or {})
+    if not participant:
+        target_user_id = int(conversation_id or 0)
         if target_user_id and target_user_id != int(user["user_id"]):
-            result, status = pulse_start_thread(cur, user["user_id"], target_user_id=target_user_id)
+            result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id)
             if result.get("ok"):
-                conn.commit()
-                conn.close()
+                conn.commit(); conn.close()
                 return redirect(result["next_url"])
             conn.close()
             return pulse_social_shell("Pulse Message", result.get("message") or "This Pulse member is not available for messaging.", "<section class='card'><a class='button primary' href='/pulse/messages'>Back to Messenger</a></section>"), status
         conn.close()
-        return pulse_social_shell("Pulse Message", "This thread was not found or is not available to your account.", "<section class='card'><a class='button primary' href='/pulse/messages'>Back to Messenger</a></section>")
-    other_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
+        return pulse_social_shell("Pulse Message", "This conversation was not found or is not available to your account.", "<section class='card'><a class='button primary' href='/pulse/messages'>Back to Messenger</a></section>")
+    cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
+    other_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
     other = pulse_identity_for_user(cur, other_id)
-    cur.execute("SELECT * FROM pulse_messages WHERE thread_id=? ORDER BY id ASC LIMIT 200", (thread_id,))
+    cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 200", (conversation_id,))
     messages = [dict(row) for row in cur.fetchall()]
     conn.close()
-    other_name = clean_html(other["name"]) + pulse_premium_mark_html(other.get("premium_mark"))
+    other_name = clean_html(other.get("name") or "Pulse user") + pulse_premium_mark_html(other.get("premium_mark"))
     message_html = "".join(f"<article class='card'><p><strong>{'You' if int(m.get('sender_user_id') or 0)==int(user['user_id']) else other_name}</strong></p><p>{clean_html(m.get('body') or '')}</p><small>{clean_html(m.get('created_at') or '')}</small></article>" for m in messages)
-    main = f"<section class='card'><h2>{other_name}</h2><p>Pulse thread uses public identity only.</p></section><section id='messages'>{message_html or '<article class=\"card\"><p>No messages yet.</p></article>'}</section><section class='card'><textarea id='replyBody' placeholder='Reply...'></textarea><button class='primary' id='replyBtn'>Send Reply</button></section>"
-    script = f"document.getElementById('replyBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{thread_id:{thread_id},message:document.getElementById('replyBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
+    main = f"<section class='card'><h2>{other_name}</h2><p>Pulse thread uses public identity only.</p></section><section id='messages'>{message_html or '<article class="card"><p>No messages yet.</p></article>'}</section><section class='card'><textarea id='replyBody' placeholder='Reply...'></textarea><button class='primary' id='replyBtn'>Send Reply</button></section>"
+    script = f"document.getElementById('replyBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},body:document.getElementById('replyBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
     return pulse_social_shell("Pulse Messenger", "Reply quickly and safely inside the Pulse social layer.", main, "", script)
 
 
@@ -16711,7 +16846,7 @@ def pulse_post_page(post_id):
     author = post.get("author") or {}
     author_label = author.get("primary_label") or author.get("rank") or (author.get("badges") or ["Member"])[0]
     author_mark = pulse_premium_mark_html(author.get("premium_mark"))
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{clean_html(title)} | CoinPilotXAI Pulse</title><meta name='description' content='{clean_html(description)}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://coinpilotx.app/pulse/post/{post_id}'><meta property='og:title' content='{clean_html(title)}'><meta property='og:description' content='{clean_html(description)}'><meta property='og:image' content='{clean_html(image)}'><meta name='twitter:card' content='summary_large_image'><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:20px 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:620px;object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:12px 10px calc(112px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'><a class='button' href='/pulse'>Back to Pulse</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse/create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{clean_html(author.get('display_name') or 'Pulse creator')}{author_mark}</strong><br><span class='badge'>{clean_html(author_label or 'Member')}</span><br><small>{clean_html(post.get('created_at') or '')}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{clean_html(title)}</h1><p>{clean_html(post.get('body') or '')}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {clean_html(post.get('post_type') or 'post')} · Status: {clean_html(post.get('moderation_status') or 'approved')} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{clean_html(title)} | CoinPilotXAI Pulse</title><meta name='description' content='{clean_html(description)}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://coinpilotx.app/pulse/post/{post_id}'><meta property='og:title' content='{clean_html(title)}'><meta property='og:description' content='{clean_html(description)}'><meta property='og:image' content='{clean_html(image)}'><meta name='twitter:card' content='summary_large_image'><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:20px 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:620px;object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:12px 10px calc(112px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'><a class='button' href='/pulse'>Back to Pulse</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse/create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{clean_html(author.get('display_name') or 'Pulse creator')}{author_mark}</strong><br><span class='badge'>{clean_html(author_label or 'Member')}</span><br><small>{clean_html(post.get('created_at') or '')}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{clean_html(title)}</h1><p>{clean_html(post.get('body') or '')}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {clean_html(post.get('post_type') or 'post')} · Status: {clean_html(post.get('moderation_status') or 'approved')} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});</script></body></html>""")
 
 
 @webhook_app.route("/api/pulse/feed", methods=["GET"])
@@ -16720,6 +16855,7 @@ def api_pulse_feed():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    pulse_mark_online(user["user_id"], "feed_poll", "/pulse")
     feed = request.args.get("tab") or request.args.get("feed") or "for_you"
     try:
         result = pulse_feed_engine.list_feed(user["user_id"], feed, request.args.get("topic") or "", request.args.get("profile") or "", request.args.get("limit") or 20, request.args.get("offset") or 0)
@@ -16863,8 +16999,25 @@ def api_pulse_posts():
             user["user_id"], post_type, content_length, has_file, status, result.get("ok"),
         )
         log_product_event(user["user_id"], "pulse_post_created", {"post_id": result.get("post_id"), "status": result.get("status"), "ok": result.get("ok")})
-        if result.get("ok"):
-            pulse_emit_event("new_post", {"post": result.get("post"), "next_url": result.get("next_url")}, user["user_id"], result.get("post_id") or 0)
+        if result.get("ok") and (result.get("post") or {}).get("moderation_status") == "approved":
+            post_payload = result.get("post") or {}
+            author = post_payload.get("author") or {}
+            event_payload = {
+                "event": "pulse_post_created",
+                "post_id": result.get("post_id"),
+                "user_id": user["user_id"],
+                "username": author.get("display_name") or user.get("display_name") or user.get("username") or "",
+                "display_role": author.get("primary_label") or author.get("rank") or "Member",
+                "premium_mark": bool(author.get("premium_mark")),
+                "post_type": post_payload.get("post_type"),
+                "body": post_payload.get("body"),
+                "media_url": ((post_payload.get("media") or [{}])[0] or {}).get("media_url") or "",
+                "created_at": post_payload.get("created_at"),
+                "post": post_payload,
+                "next_url": result.get("next_url"),
+            }
+            pulse_emit_event("pulse_post_created", event_payload, user["user_id"], result.get("post_id") or 0)
+            pulse_emit_event("new_post", {"post": post_payload, "next_url": result.get("next_url")}, user["user_id"], result.get("post_id") or 0)
         return jsonify(result), status
     except ValueError as exc:
         message = str(exc) or "Server error while publishing."
@@ -17026,6 +17179,7 @@ def api_pulse_live():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    pulse_mark_online(user["user_id"], "live_poll", "/pulse")
     since_id = int(request.args.get("since_id") or 0)
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -17035,12 +17189,24 @@ def api_pulse_live():
     return jsonify({"ok": True, "events": events, "latest_event_id": events[-1]["id"] if events else since_id, "metrics": pulse_live_metrics()})
 
 
+@webhook_app.route("/api/pulse/heartbeat", methods=["POST"])
+def api_pulse_heartbeat():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    pulse_mark_online(user["user_id"], "heartbeat", payload.get("path") or request.path)
+    return jsonify({"ok": True, "online": True})
+
+
 @webhook_app.route("/api/pulse/live/stream", methods=["GET"])
 def api_pulse_live_stream():
     init_db()
     user = api_account_user()
     if not user:
         return Response("event: error\ndata: {\"message\":\"Login required.\"}\n\n", mimetype="text/event-stream", status=401)
+    pulse_mark_online(user["user_id"], "sse", "/pulse")
     start_id = int(request.args.get("since_id") or 0)
 
     def event_stream():
@@ -17213,7 +17379,17 @@ def api_pulse_message_send():
     if not message:
         return jsonify({"ok": False, "message": "Write a message before sending."}), 400
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    conversation_id = int(payload.get("conversation_id") or 0)
     thread_id = int(payload.get("thread_id") or 0)
+    if conversation_id and not thread_id:
+        cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"ok": False, "message": "Conversation not found."}), 404
+        cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
+        receiver_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
+        cur.execute("SELECT id FROM pulse_message_threads WHERE conversation_id=? LIMIT 1", (conversation_id,))
+        thread_id = int(dict(cur.fetchone() or {}).get("id") or 0)
     if thread_id:
         cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
         thread = dict(cur.fetchone() or {})
@@ -17221,21 +17397,41 @@ def api_pulse_message_send():
             conn.close()
             return jsonify({"ok": False, "message": "Thread not found."}), 404
         receiver_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
+        conversation_id = conversation_id or int(thread.get("conversation_id") or 0)
     else:
         receiver_id = payload.get("receiver_user_id") or pulse_user_id_from_public(cur, payload.get("receiver_public_player_id") or "")
-        result, status = pulse_start_thread(cur, user["user_id"], target_user_id=receiver_id)
+        result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=receiver_id)
         if not result.get("ok"):
             conn.close()
             return jsonify(result), status
         receiver_id = int(result["target_user_id"])
         thread_id = int(result["thread_id"])
+        conversation_id = int(result["conversation_id"])
     now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute("INSERT INTO pulse_messages (thread_id, sender_user_id, receiver_user_id, body, created_at) VALUES (?, ?, ?, ?, ?)", (thread_id, user["user_id"], receiver_id, message, now))
+    cur.execute("INSERT INTO pulse_messages (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, status, created_at) VALUES (?, ?, ?, ?, ?, 'text', 'sent', ?)", (thread_id, conversation_id, user["user_id"], receiver_id, message, now))
+    message_id = int(cur.lastrowid)
     cur.execute("UPDATE pulse_message_threads SET updated_at=? WHERE id=?", (now, thread_id))
-    cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New Pulse message', 'You received a Pulse message.', ?, ?)", (receiver_id, f"/pulse/messages/{thread_id}", now))
+    cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=? WHERE id=?", (now, now, conversation_id))
+    cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New Pulse message', 'You received a Pulse message.', ?, ?)", (receiver_id, f"/pulse/messages/{conversation_id}", now))
     conn.commit(); conn.close()
-    pulse_emit_event("message_received", {"message": "New Pulse message.", "thread_id": thread_id, "target_user_id": receiver_id}, user["user_id"], 0)
-    return jsonify({"ok": True, "thread_id": thread_id, "next_url": f"/pulse/messages/{thread_id}", "message": "Message sent."})
+    event = {"message": "New Pulse message.", "thread_id": thread_id, "conversation_id": conversation_id, "target_user_id": receiver_id, "message_id": message_id}
+    pulse_emit_event("message_received", event, user["user_id"], 0)
+    return jsonify({"ok": True, "thread_id": thread_id, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id})
+
+
+def _pulse_message_payload(row, current_user_id=0):
+    item = dict(row or {})
+    return {
+        "id": int(item.get("id") or 0),
+        "conversation_id": int(item.get("conversation_id") or item.get("thread_id") or 0),
+        "sender_user_id": int(item.get("sender_user_id") or 0),
+        "body": item.get("body") or "",
+        "media_url": item.get("media_url") or "",
+        "message_type": item.get("message_type") or "text",
+        "status": item.get("status") or "sent",
+        "created_at": item.get("created_at") or "",
+        "is_mine": int(item.get("sender_user_id") or 0) == int(current_user_id or 0),
+    }
 
 
 @webhook_app.route("/api/pulse/messages/start", methods=["POST"])
@@ -17246,10 +17442,10 @@ def api_pulse_message_start():
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    result, status = pulse_start_thread(
+    result, status = pulse_start_conversation(
         cur,
         user["user_id"],
-        target_user_id=payload.get("receiver_user_id") or payload.get("user_id"),
+        target_user_id=payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"),
         public_player_id=payload.get("receiver_public_player_id") or payload.get("public_player_id") or "",
     )
     if result.get("ok"):
@@ -17257,6 +17453,61 @@ def api_pulse_message_start():
         log_product_event(user["user_id"], "pulse_message_thread_started", {"thread_id": result.get("thread_id"), "target_user_id": result.get("target_user_id")})
     conn.close()
     return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/messages/conversations", methods=["GET"])
+def api_pulse_message_conversations():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.*, p.user_id AS participant_user_id
+        FROM pulse_conversations c
+        JOIN pulse_conversation_participants mine ON mine.conversation_id=c.id AND mine.user_id=?
+        LEFT JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id!=?
+        ORDER BY COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
+        LIMIT 80
+        """,
+        (user["user_id"], user["user_id"]),
+    )
+    conversations = []
+    for row in cur.fetchall():
+        item = dict(row)
+        other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0)
+        conversations.append({
+            "id": int(item.get("id") or 0),
+            "conversation_id": int(item.get("id") or 0),
+            "conversation_type": item.get("conversation_type") or "direct",
+            "other_user_id": int(item.get("participant_user_id") or 0),
+            "title": other.get("name") or "Pulse user",
+            "avatar_url": other.get("avatar_url") or "",
+            "premium_mark": other.get("premium_mark"),
+            "updated_at": item.get("updated_at") or item.get("created_at") or "",
+            "last_message_at": item.get("last_message_at") or item.get("updated_at") or "",
+            "unread_count": 0,
+        })
+    conn.close()
+    return jsonify({"ok": True, "conversations": conversations})
+
+
+@webhook_app.route("/api/pulse/messages/<int:conversation_id>/messages", methods=["GET"])
+def api_pulse_conversation_messages(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+    if not cur.fetchone():
+        conn.close()
+        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+    cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 300", (conversation_id,))
+    messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "conversation_id": conversation_id, "messages": messages})
 
 
 @webhook_app.route("/api/pulse/messages/thread/<int:thread_id>", methods=["GET"])
@@ -17910,7 +18161,7 @@ def pulse_admin_user_row(cur, user_id):
                upp.can_create_groups, upp.can_upload_video, upp.max_video_duration, upp.max_upload_mb,
                upp.posting_limit_per_day, upp.messaging_restricted, upp.posting_restricted, upp.moderation_status,
                la.status AS livestream_status, u.premium_status, u.premium_expires_at, u.lifetime_premium,
-               u.premium_glow_manual_grant, u.premium_mark_type
+               u.premium_glow_manual_grant, u.premium_mark_override, u.premium_mark_type
         FROM users u
         LEFT JOIN user_privilege_profiles upp ON upp.user_id=u.user_id
         LEFT JOIN livestream_access la ON la.user_id=u.user_id
@@ -17947,7 +18198,7 @@ def pulse_admin_grant_all(conn, user_id, admin_id=0):
     cur = conn.cursor()
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
-        "UPDATE users SET lifetime_premium=1, premium_glow_manual_grant=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?",
+        "UPDATE users SET lifetime_premium=1, premium_glow_manual_grant=1, premium_mark_override=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?",
         (now, int(user_id)),
     )
     cur.execute(
@@ -17990,7 +18241,7 @@ def pulse_admin_remove_all(conn, user_id, admin_id=0):
     cur = conn.cursor()
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
-        "UPDATE users SET lifetime_premium=0, premium_glow_manual_grant=0, premium_status=CASE WHEN lower(COALESCE(subscription_status,'')) IN ('active','trialing') THEN subscription_status ELSE 'inactive' END, updated_at=? WHERE user_id=?",
+        "UPDATE users SET lifetime_premium=0, premium_glow_manual_grant=0, premium_mark_override=0, premium_status=CASE WHEN lower(COALESCE(subscription_status,'')) IN ('active','trialing') THEN subscription_status ELSE 'inactive' END, updated_at=? WHERE user_id=?",
         (now, int(user_id)),
     )
     cur.execute("DELETE FROM pulse_user_badges WHERE user_id=?", (int(user_id),))
@@ -18148,7 +18399,7 @@ def admin_pulse_users_health_page():
         for a in latest_actions
     )
     premium_columns = sorted(migration_table_columns(cur, "users")) if migration_table_exists(cur, "users") else []
-    required_premium_columns = {"premium_status", "premium_expires_at", "lifetime_premium", "premium_glow_manual_grant", "premium_mark_type"}
+    required_premium_columns = {"premium_status", "premium_expires_at", "lifetime_premium", "premium_glow_manual_grant", "premium_mark_override", "premium_mark_type"}
     conn.close()
     body = f"""
     <h1>Pulse Users Health</h1>
@@ -18190,13 +18441,13 @@ def admin_pulse_user_detail_page(user_id):
                 cur.execute("UPDATE users SET lifetime_premium=0, premium_status=CASE WHEN lower(COALESCE(subscription_status,'')) IN ('active','trialing') THEN subscription_status ELSE 'inactive' END, updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Lifetime Premium revoked."
             elif action in {"grant_premium_glow", "premium_glow_star"}:
-                cur.execute("UPDATE users SET premium_glow_manual_grant=1, premium_mark_type='star', updated_at=? WHERE user_id=?", (now, user_id))
+                cur.execute("UPDATE users SET premium_glow_manual_grant=1, premium_mark_override=1, premium_mark_type='star', updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Premium Glow Star granted."
             elif action == "premium_glow_check":
-                cur.execute("UPDATE users SET premium_glow_manual_grant=1, premium_mark_type='check', updated_at=? WHERE user_id=?", (now, user_id))
+                cur.execute("UPDATE users SET premium_glow_manual_grant=1, premium_mark_override=1, premium_mark_type='check', updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Premium Glow Check granted."
             else:
-                cur.execute("UPDATE users SET premium_glow_manual_grant=0, updated_at=? WHERE user_id=?", (now, user_id))
+                cur.execute("UPDATE users SET premium_glow_manual_grant=0, premium_mark_override=0, updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Premium Glow removed."
             conn.commit()
         elif action in {"grant_all_badges", "remove_all_badges", "grant_all_privileges", "remove_all_privileges"}:
@@ -23613,6 +23864,7 @@ def init_db():
         ("premium_expires_at", "TEXT"),
         ("lifetime_premium", "INTEGER DEFAULT 0"),
         ("premium_glow_manual_grant", "INTEGER DEFAULT 0"),
+        ("premium_mark_override", "INTEGER DEFAULT 0"),
         ("premium_mark_type", "TEXT DEFAULT 'star'"),
         ("social_links_json", "TEXT"),
         ("expertise_tags_json", "TEXT"),
@@ -23920,6 +24172,9 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_message_threads", [
+        ("conversation_id", "INTEGER"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS payment_email_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24550,6 +24805,41 @@ def init_db():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_messages", [
+        ("conversation_id", "INTEGER"),
+        ("media_url", "TEXT"),
+        ("message_type", "TEXT DEFAULT 'text'"),
+        ("status", "TEXT DEFAULT 'sent'"),
+        ("edited_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_type TEXT DEFAULT 'direct',
+        created_by_user_id INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        last_message_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_conversation_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        muted INTEGER DEFAULT 0,
+        archived INTEGER DEFAULT 0,
+        last_read_at TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_created_at ON pulse_posts(created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_user_created ON pulse_posts(user_id, created_at)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_space_members (
         user_id INTEGER,
@@ -24740,6 +25030,20 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_online_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        session_id TEXT,
+        connection_type TEXT,
+        current_path TEXT,
+        last_seen_at TEXT,
+        online_status TEXT DEFAULT 'online',
+        created_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_online_sessions_seen ON pulse_online_sessions(last_seen_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_online_sessions_user ON pulse_online_sessions(user_id, session_id)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS telegram_debug_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26054,7 +26358,7 @@ def init_db():
         if owner_user_id:
             now_owner = datetime.utcnow().isoformat(timespec="seconds")
             cur.execute(
-                "UPDATE users SET lifetime_premium=1, premium_glow_manual_grant=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?",
+                "UPDATE users SET lifetime_premium=1, premium_glow_manual_grant=1, premium_mark_override=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?",
                 (now_owner, owner_user_id),
             )
             cur.execute(

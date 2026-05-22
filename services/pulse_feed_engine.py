@@ -447,13 +447,23 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     if profile_public_player_id:
         where.append("p.public_player_id=?")
         params.append(str(profile_public_player_id)[:120])
-    order = "p.engagement_score DESC, p.created_at DESC" if feed == "trending" else "(p.engagement_score + (CASE WHEN p.risk_score>=70 THEN 8 ELSE 0 END)) DESC, p.created_at DESC"
+    order = (
+        "p.engagement_score DESC, p.created_at DESC"
+        if feed == "trending"
+        else "((CASE WHEN p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?) THEN 18 ELSE 0 END) + "
+             "(CASE WHEN p.user_id IN (SELECT friend_user_id FROM pulse_friends WHERE user_id=? AND COALESCE(status,'active')='active') THEN 14 ELSE 0 END) + "
+             "p.engagement_score + (CASE WHEN p.risk_score>=70 THEN 8 ELSE 0 END) + "
+             "(CASE WHEN p.post_type IN ('scam_report','arena_result','roast_clip') THEN 3 ELSE 0 END)) DESC, p.created_at DESC"
+    )
+    if feed != "trending":
+        params.extend([int(viewer_user_id or 0), int(viewer_user_id or 0)])
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
         f"""
         SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
                u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
+               u.premium_status, u.premium_expires_at, u.lifetime_premium, u.premium_glow_manual_grant, u.premium_mark_override, u.premium_mark_type,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
