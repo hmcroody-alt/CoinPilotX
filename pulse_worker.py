@@ -7,7 +7,7 @@ import os
 import time
 
 import bot
-from services import pulse_feed_engine
+from services import pulse_ai, pulse_feed_engine
 
 
 WORKER_NAME = "pulse_worker"
@@ -27,12 +27,29 @@ def main():
     while True:
         try:
             result = pulse_feed_engine.process_pending_jobs(BATCH_SIZE)
+            conn = None
+            try:
+                conn = bot.db()
+                conn.row_factory = bot.sqlite3.Row
+                cur = conn.cursor()
+                space_ai_result = pulse_ai.run_due_space_ai_posts(
+                    cur,
+                    bot.PULSE_SPACES,
+                    pulse_create_post=pulse_feed_engine.create_post,
+                    force=False,
+                    limit=24,
+                )
+                conn.commit()
+            finally:
+                if conn:
+                    conn.close()
             bot.record_worker_heartbeat(
                 WORKER_NAME,
                 "healthy",
                 metadata={
                     "processed": result.get("processed", 0),
                     "failed": result.get("failed", 0),
+                    "space_ai_posts": space_ai_result.get("ran", 0),
                     "batch_size": BATCH_SIZE,
                     "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
                 },

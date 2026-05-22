@@ -145,6 +145,7 @@ from services import (
     social_energy_engine,
     social_loop_engine,
     space_discovery_engine,
+    pulse_ai,
     sports_data as sports_data_service,
     stability_engine,
     self_healing_engine,
@@ -17733,11 +17734,18 @@ def pulse_spaces_page():
 
 @webhook_app.route("/pulse/spaces/<slug>", methods=["GET"])
 def pulse_space_detail_page(slug):
+    init_db()
     space = next((item for item in PULSE_SPACES if item["slug"] == slug), None)
     if not space:
         return pulse_section_shell("Pulse Space", "This space is being prepared.", [{"title": "Explore Spaces", "description": "Find active CoinPilotXAI communities.", "href": "/pulse/spaces", "cta": "Browse Spaces"}])
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT title, body, post_type, topic, quality_score, energy_score, created_at FROM pulse_ai_posts WHERE space_slug=? AND status IN ('published','queued','pending_approval') ORDER BY id DESC LIMIT 3", (slug,))
+    ai_posts = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    ai_html = "".join(f"<article class='card'><span class='pill'>AI {clean_html(row.get('post_type') or 'insight')}</span><h3>{clean_html(row.get('title') or 'Space intelligence')}</h3><p>{clean_html((row.get('body') or '')[:420])}{'...' if len(row.get('body') or '') > 420 else ''}</p><p><span class='pill'>Quality {int(row.get('quality_score') or 0)}%</span> <span class='pill'>Energy {int(row.get('energy_score') or 0)}%</span> <span class='pill'>{clean_html(row.get('topic') or 'topic')}</span></p></article>" for row in ai_posts)
     main = f"""
     <section class='card'><h2>Pinned Knowledge</h2><p>{clean_html(space['description'])}</p><p>Discussion prompt: What is one useful lesson, warning, question, or resource you can share with this space today?</p><div class='actions'><button class='primary' data-join-space='{clean_html(slug)}'>Join Space</button><a class='button' href='/pulse/create'>Create Full Post</a></div></section>
+    <section class='card'><h2>AI Intelligence Drops</h2><p class='muted'>This space receives morning and evening educational prompts designed to spark safer, smarter discussion.</p>{ai_html or '<p class="muted">The first AI intelligence drops are scheduled.</p>'}</section>
     <section class='card'><h2>Create in {clean_html(space['name'])}</h2><textarea id='spacePostBody' placeholder='Share a lesson, warning, question, or update for this space.'></textarea><button class='primary' id='spacePostBtn'>Post to Space</button></section>
     <section class='card'><h2>Space Feed</h2><p>Posts tagged for this space appear below.</p></section>
     <iframe title='Space feed' src='/pulse?topic={clean_html(slug)}' style='width:100%;min-height:760px;border:0;border-radius:16px;background:#071321'></iframe>
@@ -23449,7 +23457,7 @@ def admin_spaces_command_page():
     if request.method == "POST":
         action = request.form.get("action") or ""
         slug = clean_html(request.form.get("slug") or "")[:120]
-        conn = db(); cur = conn.cursor()
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if action in {"feature", "freeze"} and slug:
             # Default static spaces are virtual. Persist a matching Pulse group shell
             # so admins can start moderating/freeze/feature without duplicate spaces.
@@ -23466,16 +23474,33 @@ def admin_spaces_command_page():
                 )
                 conn.commit()
                 message = "Space command updated."
+        elif action in {"pause_ai", "resume_ai"} and slug:
+            cur.execute("UPDATE pulse_ai_schedules SET enabled=?, updated_at=? WHERE space_slug=?", (0 if action == "pause_ai" else 1, datetime.utcnow().isoformat(timespec="seconds"), slug))
+            conn.commit()
+            message = "Space AI schedule updated."
+        elif action == "run_ai":
+            result = pulse_ai.run_due_space_ai_posts(cur, PULSE_SPACES, pulse_create_post=pulse_feed_engine.create_post, force=True, limit=16)
+            conn.commit()
+            message = f"Space AI generated {int(result.get('ran') or 0)} posts."
         conn.close()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
     counts = {dict(row).get("space_slug"): int(dict(row).get("total") or 0) for row in cur.fetchall()}
+    cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_ai_posts WHERE status IN ('published','queued','pending_approval') GROUP BY space_slug")
+    ai_counts = {dict(row).get("space_slug"): int(dict(row).get("total") or 0) for row in cur.fetchall()}
+    cur.execute("SELECT space_slug, SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) AS enabled, MIN(next_run_at) AS next_run FROM pulse_ai_schedules GROUP BY space_slug")
+    ai_schedules = {dict(row).get("space_slug"): dict(row) for row in cur.fetchall()}
+    cur.execute("SELECT title, space_slug, quality_score, energy_score, status, created_at FROM pulse_ai_posts ORDER BY id DESC LIMIT 12")
+    latest_ai_rows = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = ""
     for space in PULSE_SPACES:
         metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
-        rows += f"<tr><td>{clean_html(space['name'])}</td><td>{clean_html(space.get('category') or '')}</td><td>{clean_html(space.get('region') or '')}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td><form method='post'><input type='hidden' name='slug' value='{clean_html(space['slug'])}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button></form></td></tr>"
-    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global Pulse Spaces network.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>Actions</th></tr>{rows}</table></section>"
+        schedule = ai_schedules.get(space["slug"], {})
+        ai_enabled = int(schedule.get("enabled") or 0)
+        rows += f"<tr><td>{clean_html(space['name'])}</td><td>{clean_html(space.get('category') or '')}</td><td>{clean_html(space.get('region') or '')}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {clean_html(schedule.get('next_run') or 'scheduled')}</span></td><td><form method='post'><input type='hidden' name='slug' value='{clean_html(space['slug'])}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
+    latest_ai = "".join(f"<tr><td>{clean_html(row.get('space_slug') or '')}</td><td>{clean_html(row.get('title') or '')}</td><td>{int(row.get('quality_score') or 0)}%</td><td>{int(row.get('energy_score') or 0)}%</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>" for row in latest_ai_rows)
+    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global Pulse Spaces network.</p><p>{clean_html(message)}</p><section class='card'><form method='post'><button class='button primary' name='action' value='run_ai'>Run due AI posts now</button></form></section><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>AI</th><th>Actions</th></tr>{rows}</table></section><section class='card'><h2>Latest AI Posts</h2><table class='table'><tr><th>Space</th><th>Title</th><th>Quality</th><th>Energy</th><th>Status</th><th>Created</th></tr>{latest_ai}</table></section>"
     return admin_page_html("Spaces Command", body, admin)
 
 
@@ -31202,6 +31227,110 @@ def init_db():
         PRIMARY KEY(user_id, space_slug)
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ai_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        space_slug TEXT,
+        pulse_post_id INTEGER DEFAULT 0,
+        title TEXT,
+        body TEXT,
+        post_type TEXT,
+        topic TEXT,
+        tags_json TEXT,
+        quality_score INTEGER DEFAULT 0,
+        topic_score INTEGER DEFAULT 0,
+        trust_score INTEGER DEFAULT 0,
+        energy_score INTEGER DEFAULT 0,
+        sentiment_score INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'published',
+        metadata_json TEXT,
+        schedule_slot TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_ai_posts", [
+        ("space_slug", "TEXT"),
+        ("pulse_post_id", "INTEGER DEFAULT 0"),
+        ("title", "TEXT"),
+        ("body", "TEXT"),
+        ("post_type", "TEXT"),
+        ("topic", "TEXT"),
+        ("tags_json", "TEXT"),
+        ("quality_score", "INTEGER DEFAULT 0"),
+        ("topic_score", "INTEGER DEFAULT 0"),
+        ("trust_score", "INTEGER DEFAULT 0"),
+        ("energy_score", "INTEGER DEFAULT 0"),
+        ("sentiment_score", "INTEGER DEFAULT 0"),
+        ("status", "TEXT DEFAULT 'published'"),
+        ("metadata_json", "TEXT"),
+        ("schedule_slot", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ai_topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        space_slug TEXT,
+        topic TEXT,
+        category TEXT,
+        trend_score INTEGER DEFAULT 0,
+        trust_score INTEGER DEFAULT 0,
+        last_used_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(space_slug, topic)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ai_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        space_slug TEXT UNIQUE,
+        memory_json TEXT,
+        recent_topics_json TEXT,
+        recent_hooks_json TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ai_engagement (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ai_post_id INTEGER,
+        pulse_post_id INTEGER DEFAULT 0,
+        space_slug TEXT,
+        comments INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        saves INTEGER DEFAULT 0,
+        read_time_seconds REAL DEFAULT 0,
+        open_rate REAL DEFAULT 0,
+        engagement_score INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_ai_schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        space_slug TEXT,
+        schedule_type TEXT DEFAULT 'daily',
+        slot TEXT,
+        local_time TEXT,
+        enabled INTEGER DEFAULT 1,
+        approve_only INTEGER DEFAULT 0,
+        last_run_at TEXT,
+        next_run_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(space_slug, slot)
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_posts_space_created ON pulse_ai_posts(space_slug, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_ai_schedules_due ON pulse_ai_schedules(enabled, next_run_at)")
+    try:
+        pulse_ai.seed_space_ai_schedules(cur, PULSE_SPACES)
+    except Exception as exc:
+        logging.warning("Pulse space AI schedule seed skipped safely: %s", exc)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_sellers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
