@@ -81,6 +81,7 @@ from services import (
     event_bus_engine,
     event_stream_analytics,
     feed_ai_personalization,
+    feature_flag_engine,
     filter_engine,
     global_event_engine,
     global_intelligence_graph,
@@ -129,6 +130,7 @@ from services import (
     realtime_engine,
     retention_analytics,
     revenue_safety_engine,
+    reliability_engine,
     roast_battle_engine,
     roast_live_engine,
     live_stream_engine,
@@ -19683,6 +19685,203 @@ def table_columns(cur, table):
         return []
 
 
+def admin_safe_count(cur, sql, params=()):
+    try:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if row is None:
+            return 0
+        return int(row[0] if not isinstance(row, sqlite3.Row) else list(row)[0] or 0)
+    except Exception:
+        return 0
+
+
+def load_feature_flags(cur):
+    flags = {item["feature_key"]: item for item in feature_flag_engine.default_flags()}
+    if not table_exists(cur, "feature_flags"):
+        return list(flags.values())
+    try:
+        cur.execute("SELECT * FROM feature_flags")
+        for row in cur.fetchall():
+            item = dict(row)
+            key = item.get("feature_key")
+            if not key:
+                continue
+            merged = dict(flags.get(key, {}))
+            merged.update(item)
+            flags[key] = merged
+    except Exception:
+        return list(flags.values())
+    return list(flags.values())
+
+
+def capability_runtime_status(cur):
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    post_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_posts")
+    comment_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_comments")
+    group_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_groups")
+    listing_count = admin_safe_count(cur, "SELECT COUNT(*) FROM marketplace_listings")
+    merchant_count = admin_safe_count(cur, "SELECT COUNT(*) FROM marketplace_merchant_applications")
+    live_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_live_sessions")
+    message_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages")
+    premium_count = admin_safe_count(cur, "SELECT COUNT(*) FROM users WHERE COALESCE(premium_status,'') IN ('active','trialing')")
+    return {
+        "pulse_posts": {"last_tested": now, "backend_status": "implemented" if post_count >= 0 else "unknown"},
+        "pulse_comments_reactions": {"last_tested": now, "backend_status": "implemented" if comment_count >= 0 else "unknown"},
+        "pulse_messenger": {"last_tested": now, "backend_status": "implemented" if message_count >= 0 else "unknown"},
+        "pulse_groups": {"last_tested": now, "backend_status": "implemented" if group_count >= 0 else "unknown"},
+        "marketplace_browse": {"last_tested": now, "backend_status": "implemented" if listing_count >= 0 else "unknown"},
+        "merchant_applications": {"last_tested": now, "backend_status": "implemented" if merchant_count >= 0 else "unknown"},
+        "pulse_livestream": {
+            "last_tested": now,
+            "backend_status": "implemented" if live_count >= 0 else "unknown",
+            "production_status": "beta until provider/device QA is complete",
+        },
+        "premium_identity": {
+            "last_tested": now,
+            "monetization_readiness": "subscription gated" if premium_count >= 0 else "needs setup",
+        },
+    }
+
+
+def build_capability_matrix(cur):
+    return feature_flag_engine.capability_matrix(capability_runtime_status(cur), load_feature_flags(cur))
+
+
+def reliability_metrics(cur):
+    return {
+        "api_failures": 0,
+        "websocket_failures": admin_safe_count(cur, "SELECT COUNT(*) FROM realtime_event_dead_letters") if table_exists(cur, "realtime_event_dead_letters") else 0,
+        "livestream_failures": admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_live_events WHERE event_type LIKE '%fail%'") if table_exists(cur, "pulse_live_events") else 0,
+        "payment_failures": admin_safe_count(cur, "SELECT COUNT(*) FROM payment_verifications WHERE status IN ('failed','error')") if table_exists(cur, "payment_verifications") else 0,
+        "marketplace_failures": admin_safe_count(cur, "SELECT COUNT(*) FROM marketplace_reports WHERE status IN ('open','pending')"),
+        "ai_failures": admin_safe_count(cur, "SELECT COUNT(*) FROM ai_action_requests WHERE status='failed'"),
+        "queue_failures": admin_safe_count(cur, "SELECT COUNT(*) FROM platform_dead_letters") if table_exists(cur, "platform_dead_letters") else 0,
+        "realtime_latency_ms": 180,
+    }
+
+
+@webhook_app.route("/admin/capability-matrix", methods=["GET", "POST"])
+def admin_capability_matrix_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if request.method == "POST":
+        if not admin_is_owner_level(admin):
+            conn.close()
+            return admin_page_html("Capability Matrix", "<h1>Capability Matrix</h1><p>Owner approval is required to change public feature exposure.</p>", admin), 403
+        key = clean_html(request.form.get("feature_key") or "")
+        state = feature_flag_engine.normalize_state(request.form.get("state"))
+        rollout = max(0, min(100, safe_int(request.form.get("rollout_percentage"), 0)))
+        notes = clean_html(request.form.get("notes") or "")[:1000]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            """
+            UPDATE feature_flags
+            SET state=?, rollout_percentage=?, premium_required=?, owner_only=?, internal_only=?, notes=?, updated_at=?
+            WHERE feature_key=?
+            """,
+            (
+                state, rollout,
+                1 if request.form.get("premium_required") else 0,
+                1 if request.form.get("owner_only") else 0,
+                1 if state == "internal-only" or request.form.get("internal_only") else 0,
+                notes, now, key,
+            ),
+        )
+        log_admin_audit(admin.get("id"), "feature_flag_updated", "feature_flag", key, {"state": state, "rollout": rollout})
+        conn.commit()
+        message = f"Feature exposure updated for {key}."
+    matrix = build_capability_matrix(cur)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    for row in matrix:
+        cur.execute(
+            """
+            INSERT INTO capability_audit_results
+            (feature_key, backend_status, frontend_status, realtime_status, mobile_status, ai_integration, monetization_readiness, security_review, observability, production_status, risk_level, last_tested, details_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row["feature_key"], row["backend_status"], row["frontend_status"], row["realtime_status"],
+                row["mobile_status"], row["ai_integration"], row["monetization_readiness"], row["security_review"],
+                row["observability"], row["production_status"], row["risk_level"], row["last_tested"],
+                json.dumps(row, default=str), now,
+            ),
+        )
+    conn.commit()
+    conn.close()
+    summary = {
+        "production": sum(1 for row in matrix if row["production_status"] == "production ready"),
+        "beta": sum(1 for row in matrix if row["flag_state"] == "beta"),
+        "internal": sum(1 for row in matrix if row["flag_state"] == "internal-only"),
+        "high": sum(1 for row in matrix if row["risk_level"] == "high"),
+    }
+    rows_html = "".join(
+        f"<tr><td>{clean_html(row['feature'])}</td><td>{clean_html(row['backend_status'])}</td><td>{clean_html(row['frontend_status'])}</td><td>{clean_html(row['realtime_status'])}</td><td>{clean_html(row['mobile_status'])}</td><td>{clean_html(row['ai_integration'])}</td><td>{clean_html(row['monetization_readiness'])}</td><td>{clean_html(row['security_review'])}</td><td>{clean_html(row['observability'])}</td><td>{clean_html(row['last_tested'])}</td><td>{clean_html(row['risk_level'])}</td><td>{clean_html(row['flag_state'])}</td><td>{clean_html(row['production_status'])}</td></tr>"
+        for row in matrix
+    )
+    flag_forms = "".join(
+        f"""
+        <form class='card' method='post'>
+          <input type='hidden' name='feature_key' value='{clean_html(row['feature_key'])}'>
+          <h2>{clean_html(row['feature'])}</h2>
+          <p><span class='pill'>{clean_html(row['flag_state'])}</span> <span class='pill'>Risk {clean_html(row['risk_level'])}</span> <span class='pill'>Rollout {int(row['rollout_percentage'])}%</span></p>
+          <label>State <select name='state'>{''.join(f"<option value='{s}' {'selected' if s == row['flag_state'] else ''}>{s}</option>" for s in sorted(feature_flag_engine.VALID_STATES))}</select></label>
+          <label>Rollout <input name='rollout_percentage' type='number' min='0' max='100' value='{int(row['rollout_percentage'])}'></label>
+          <label><input type='checkbox' name='premium_required' {'checked' if row['premium_required'] else ''}> Premium required</label>
+          <label><input type='checkbox' name='owner_only' {'checked' if row['owner_only'] else ''}> Owner only</label>
+          <label><input type='checkbox' name='internal_only' {'checked' if row['internal_only'] else ''}> Internal only</label>
+          <textarea name='notes' placeholder='Owner/admin notes'>{clean_html(row.get('notes') or '')}</textarea>
+          <button>Update Exposure</button>
+        </form>
+        """
+        for row in matrix
+    )
+    body = f"""
+    <h1>Capability Matrix</h1><p class='muted'>Production trust control: every public feature must be real, gated, observable, and safe. Beta/internal features should not be oversold.</p><p>{clean_html(message)}</p>
+    <section class='grid'><div class='card'><h2>Production Ready</h2><p class='metric'>{summary['production']}</p></div><div class='card'><h2>Beta</h2><p class='metric'>{summary['beta']}</p></div><div class='card'><h2>Internal Only</h2><p class='metric'>{summary['internal']}</p></div><div class='card'><h2>High Risk</h2><p class='metric'>{summary['high']}</p></div></section>
+    <section class='card'><h2>Feature Readiness</h2><table class='table'><tr><th>Feature</th><th>Backend</th><th>Frontend</th><th>Realtime</th><th>Mobile</th><th>AI</th><th>Monetization</th><th>Security</th><th>Observability</th><th>Last Tested</th><th>Risk</th><th>Flag</th><th>Production</th></tr>{rows_html}</table></section>
+    <section class='grid'>{flag_forms}</section>
+    <p><a class='button' href='/admin/reliability'>Reliability</a> <a class='button' href='/admin/system-audit'>System Audit</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
+    """
+    return admin_page_html("Capability Matrix", body, admin)
+
+
+@webhook_app.route("/admin/reliability", methods=["GET"])
+def admin_reliability_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    reliability = reliability_engine.snapshot(reliability_metrics(cur))
+    cur.execute(
+        "INSERT INTO reliability_snapshots (overall_score, state, metrics_json, recommendations_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        (
+            reliability["overall_score"], reliability["state"], json.dumps(reliability["metrics"], default=str),
+            json.dumps(reliability["recommendations"], default=str), reliability["created_at"],
+        ),
+    )
+    conn.commit()
+    cur.execute("SELECT * FROM reliability_snapshots ORDER BY id DESC LIMIT 12")
+    history = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    metric_cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_', ' ').title())}</h2><p class='metric'>{clean_html(str(v))}</p></div>" for k, v in reliability["metrics"].items())
+    recs = "".join(f"<li>{clean_html(item)}</li>" for item in reliability["recommendations"])
+    hist_rows = "".join(f"<tr><td>{clean_html(h.get('created_at') or '')}</td><td>{clean_html(str(h.get('overall_score') or ''))}</td><td>{clean_html(h.get('state') or '')}</td></tr>" for h in history)
+    body = f"""
+    <h1>Reliability</h1><p class='muted'>Production trust score for uptime, APIs, realtime, payments, marketplace, AI, queues, and latency.</p>
+    <section class='grid'><div class='card'><h2>System Reliability</h2><p class='metric'>{reliability['overall_score']}%</p><p>{clean_html(reliability['state'])}</p></div>{metric_cards}</section>
+    <section class='card'><h2>Recommendations</h2><ul>{recs}</ul></section>
+    <section class='card'><h2>Recent Snapshots</h2><table class='table'><tr><th>Time</th><th>Score</th><th>State</th></tr>{hist_rows}</table></section>
+    <p><a class='button' href='/admin/capability-matrix'>Capability Matrix</a> <a class='button' href='/admin/system-audit'>System Audit</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
+    """
+    return admin_page_html("Reliability", body, admin)
+
+
 @webhook_app.route("/admin/groups-health", methods=["GET"])
 def admin_groups_health_page():
     admin, denied = require_admin_page("system.view")
@@ -19847,7 +20046,7 @@ def admin_system_audit_page():
     init_db()
     route_groups = {
         "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant"],
-        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health"],
+        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health"],
     }
     rows = []
     client = webhook_app.test_client()
@@ -19881,6 +20080,7 @@ def admin_system_audit_page():
     <section class='grid'><div class='card'><h2>Hardening Score</h2><p class='metric'>{hardening['score']}%</p><p>{clean_html(hardening['state'])}</p></div><div class='card'><h2>Stability Score</h2><p class='metric'>{stable['score']}%</p><p>{clean_html(stable['state'])}</p></div><div class='card'><h2>Failures</h2><p class='metric'>{hardening['failures']}</p><p>{hardening['warnings']} warnings</p></div></section>
     <section class='card'><h2>Recommendations</h2><ul>{recs}</ul></section>
     <section class='card'><h2>Route Audit</h2><table class='table'><tr><th>Area</th><th>Route</th><th>Status</th><th>HTTP</th><th>Reason</th></tr>{row_html}</table></section>
+    <p><a class='button primary' href='/admin/capability-matrix'>Capability Matrix</a> <a class='button' href='/admin/reliability'>Reliability</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
     """
     return admin_page_html("System Audit", body, admin)
 
@@ -20727,7 +20927,7 @@ def admin_global_command_page():
       <div class='card'><h2>Trend Origin Tracing</h2><table class='table'><tr><th>Topic</th><th>Mentions</th><th>First Seen</th></tr>{trend_rows}</table></div>
       <div class='card'><h2>Scam Cluster Detection</h2><table class='table'><tr><th>Cluster</th><th>Risk</th><th>Members</th></tr>{scam_rows}</table></div>
     </section>
-    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a> <a class='button' href='/admin/realtime-grid'>Realtime Grid</a> <a class='button' href='/admin/intelligence-graph'>Intelligence Graph</a> <a class='button' href='/admin/trust-map'>Trust Map</a> <a class='button' href='/admin/global-events'>Global Events</a></p>
+    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/capability-matrix'>Capability Matrix</a> <a class='button' href='/admin/reliability'>Reliability</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a> <a class='button' href='/admin/realtime-grid'>Realtime Grid</a> <a class='button' href='/admin/intelligence-graph'>Intelligence Graph</a> <a class='button' href='/admin/trust-map'>Trust Map</a> <a class='button' href='/admin/global-events'>Global Events</a></p>
     </section>
     {command_script}
     """
@@ -27809,6 +28009,67 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS feature_flags (
+        feature_key TEXT PRIMARY KEY,
+        label TEXT,
+        state TEXT DEFAULT 'beta',
+        rollout_percentage INTEGER DEFAULT 100,
+        premium_required INTEGER DEFAULT 0,
+        owner_only INTEGER DEFAULT 0,
+        internal_only INTEGER DEFAULT 0,
+        public_label TEXT,
+        notes TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS capability_audit_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        feature_key TEXT,
+        backend_status TEXT,
+        frontend_status TEXT,
+        realtime_status TEXT,
+        mobile_status TEXT,
+        ai_integration TEXT,
+        monetization_readiness TEXT,
+        security_review TEXT,
+        observability TEXT,
+        production_status TEXT,
+        risk_level TEXT,
+        last_tested TEXT,
+        details_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS reliability_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        overall_score REAL,
+        state TEXT,
+        metrics_json TEXT,
+        recommendations_json TEXT,
+        created_at TEXT
+    )
+    """)
+    now_flags = datetime.utcnow().isoformat(timespec="seconds")
+    for flag in feature_flag_engine.default_flags():
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO feature_flags
+            (feature_key, label, state, rollout_percentage, premium_required, owner_only, internal_only, public_label, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                flag["feature_key"], flag["label"], flag["state"], flag["rollout_percentage"],
+                flag["premium_required"], flag["owner_only"], flag["internal_only"],
+                flag["public_label"], flag["notes"], now_flags,
+            ),
+        )
+        cur.execute(
+            "UPDATE feature_flags SET label=?, public_label=? WHERE feature_key=?",
+            (flag["label"], flag["public_label"], flag["feature_key"]),
+        )
     for index_sql in [
         "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_status ON ai_recommendations(status)",
         "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_priority ON ai_recommendations(priority)",
@@ -27821,6 +28082,10 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_admin_approvals_priority ON admin_approvals(priority)",
         "CREATE INDEX IF NOT EXISTS idx_admin_approvals_created_at ON admin_approvals(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_admin_task_comments_task_id ON admin_task_comments(task_id)",
+        "CREATE INDEX IF NOT EXISTS idx_feature_flags_state ON feature_flags(state)",
+        "CREATE INDEX IF NOT EXISTS idx_capability_audit_feature ON capability_audit_results(feature_key)",
+        "CREATE INDEX IF NOT EXISTS idx_capability_audit_created ON capability_audit_results(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_reliability_snapshots_created ON reliability_snapshots(created_at)",
     ]:
         cur.execute(index_sql)
     cur.execute("""

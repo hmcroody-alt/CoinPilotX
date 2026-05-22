@@ -214,6 +214,8 @@ AUTO_PK_TABLES = {
     "ai_action_results": "id",
     "admin_approvals": "id",
     "admin_task_comments": "id",
+    "capability_audit_results": "id",
+    "reliability_snapshots": "id",
     "marketplace_sellers": "id",
     "marketplace_merchant_applications": "id",
     "marketplace_listings": "id",

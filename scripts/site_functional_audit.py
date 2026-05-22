@@ -84,6 +84,8 @@ def main():
         "/pulse/assistant",
         "/admin/command-center",
         "/admin/global-command",
+        "/admin/capability-matrix",
+        "/admin/reliability",
         "/admin/pulse-users",
         "/admin/realtime-grid",
         "/admin/intelligence-graph",
@@ -92,6 +94,7 @@ def main():
         "/admin/monetization",
         "/admin/merchant-applications",
         "/admin/marketplace-command",
+        "/admin/spaces-command",
         "/admin/groups-health",
         "/admin/system-audit",
     ]
@@ -117,6 +120,7 @@ def main():
     api_checks = [
         ("POST", "/api/pulse/groups/create", {"name": "Audit Group", "description": "Safe audit group", "group_type": "public", "category": "Community"}),
         ("POST", "/api/pulse/groups/join", {"group_slug": "audit-group"}),
+        ("POST", "/api/pulse/marketplace/listings/create", {"title": "Audit Listing", "short_description": "Audit only", "category": "Education", "price": "10"}),
     ]
     for method, route, payload in api_checks:
         res = client.open(route, method=method, json=payload)
