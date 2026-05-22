@@ -63,6 +63,7 @@ def _clean_text(value, limit=4000):
 
 
 def _public_author(row):
+    item = dict(row or {})
     public_player_id = row.get("public_player_id") or row.get("author_public_player_id") or ""
     user_id = int(row.get("user_id") or 0)
     display = (
@@ -97,11 +98,28 @@ def _public_author(row):
     except Exception:
         pass
     premium_mark = premium_identity_engine.identity_mark(item, badge_keys)
+    badge_key_set = {str(key) for key in badge_keys}
+    label_set = {str(label).strip().lower() for label in badges}
+    if premium_identity_engine.is_owner(item) or {"owner", "founder"} & badge_key_set:
+        primary_label = "Founder · CoinPilotXAI Pulse"
+    elif {"creator", "verified", "partner_creator"} & badge_key_set or "creator" in label_set:
+        primary_label = "Verified Creator"
+    elif "teacher" in badge_key_set or "teacher" in label_set:
+        primary_label = "Teacher"
+    elif "marketplace_seller" in badge_key_set or "marketplace seller" in label_set:
+        primary_label = "Marketplace Seller"
+    elif "livestream_eligible" in badge_key_set or "livestream eligible" in label_set:
+        primary_label = "Livestream Eligible"
+    elif "trusted_member" in badge_key_set or "trusted member" in label_set:
+        primary_label = "Trusted Member"
+    else:
+        primary_label = "Member"
     return {
         "public_player_id": public_player_id or None,
         "display_name": display[:80],
         "avatar_url": avatar_url,
-        "rank": "Member",
+        "rank": primary_label,
+        "primary_label": primary_label,
         "badges": badges,
         "badge_keys": badge_keys,
         "premium_verified": bool(premium_mark),
