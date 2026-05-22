@@ -726,6 +726,15 @@
       }
     }
 
+    async function openPulseRoom() {
+      try {
+        const result = await postJson("/api/pulse/messages/room/open", { room_key: "pulse-general" });
+        location.href = result.next_url || ("/pulse/messages/" + result.conversation_id);
+      } catch (error) {
+        text("[data-chat-start-message]", error.message || "Chat room could not be opened.");
+      }
+    }
+
     function render(data) {
       text("[data-user-name]", "Welcome back, " + (data.user.name || "CoinPilotX user"));
       text("[data-plan]", data.user.plan || "Free");
@@ -1118,7 +1127,13 @@
         setChatMenu(false);
       }
       const chatTab = event.target.closest("[data-chat-tab]");
-      if (chatTab) setChatTab(chatTab.dataset.chatTab);
+      if (chatTab) {
+        if (chatTab.dataset.chatTab === "thread" && !chatState.activeConversationId) {
+          await openPulseRoom();
+          return;
+        }
+        setChatTab(chatTab.dataset.chatTab);
+      }
       const conversation = event.target.closest("[data-open-conversation]");
       if (conversation) await openConversation(conversation.dataset.openConversation, conversation.dataset.otherUserId);
       const pulseConversation = event.target.closest("[data-open-pulse-conversation]");

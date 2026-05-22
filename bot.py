@@ -16141,6 +16141,61 @@ def pulse_get_or_create_group_conversation(cur, current_user_id, group=None, tit
     }, 200
 
 
+def pulse_get_or_create_room_conversation(cur, current_user_id, room_key="pulse-general"):
+    current_user_id = int(current_user_id or 0)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    room_key = clean_html(room_key or "pulse-general")[:80]
+    title = "Pulse Global Chat Room" if room_key == "pulse-general" else clean_html(room_key.replace("-", " ").title())[:140]
+    cur.execute(
+        """
+        SELECT * FROM pulse_conversations
+        WHERE conversation_type='room' AND linked_space_id=? AND COALESCE(status,'active')='active'
+        ORDER BY id ASC LIMIT 1
+        """,
+        (room_key,),
+    )
+    convo = dict(cur.fetchone() or {})
+    if convo:
+        conversation_id = int(convo.get("id") or 0)
+    else:
+        cur.execute(
+            """
+            INSERT INTO pulse_conversations
+            (conversation_type, linked_space_id, title, owner_user_id, created_by_user_id, privacy, is_public, participant_limit, status, created_at, updated_at, last_activity_at)
+            VALUES ('room', ?, ?, ?, ?, 'public', 1, 5000, 'active', ?, ?, ?)
+            """,
+            (room_key, title, current_user_id, current_user_id, now, now, now),
+        )
+        conversation_id = int(cur.lastrowid)
+    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, current_user_id))
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, joined_at, created_at) VALUES (?, ?, 'member', 0, 0, ?, ?)",
+            (conversation_id, current_user_id, now, now),
+        )
+    else:
+        cur.execute("UPDATE pulse_conversation_participants SET left_at=NULL WHERE conversation_id=? AND user_id=?", (conversation_id, current_user_id))
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+    member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("UPDATE pulse_conversations SET member_count=?, updated_at=?, last_activity_at=? WHERE id=?", (member_count, now, now, conversation_id))
+    return {
+        "ok": True,
+        "conversation_id": conversation_id,
+        "message": "Chat room ready.",
+        "next_url": f"/pulse/messages/{conversation_id}",
+        "conversation": {
+            "id": conversation_id,
+            "conversation_id": conversation_id,
+            "conversation_type": "room",
+            "title": title,
+            "member_count": member_count,
+            "last_message": "",
+            "last_activity_at": now,
+            "updated_at": now,
+        },
+    }, 200
+
+
 GROUP_REACTION_TYPES = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish"}
 
 
@@ -17776,6 +17831,7 @@ def pulse_messages_page():
     )
     conversations = [dict(row) for row in cur.fetchall()]
     direct_cards = []
+    room_cards = []
     group_cards = []
     community_cards = []
     for convo in conversations:
@@ -17793,6 +17849,8 @@ def pulse_messages_page():
         card = f"<article class='card messenger-convo-card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p><p><span class='pill'>{chat_type}</span> <span class='pill'>{int(convo.get('member_count') or 0) or (2 if convo_type == 'direct' else 1)} members</span></p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>"
         if convo_type == "direct":
             direct_cards.append(card)
+        elif convo_type == "room":
+            room_cards.append(card)
         elif "community" in convo_type:
             community_cards.append(card)
         else:
@@ -17804,7 +17862,7 @@ def pulse_messages_page():
     <section class='card'><div class='person'><div><h2>Pulse Messenger</h2><p>Conversations, open rooms, and group/community chats in one place.</p></div><button class='button' type='button' data-messenger-options-toggle aria-haspopup='dialog' aria-expanded='false'>...</button></div><div class='messenger-tabs-main'><button class='active' data-msg-tab='direct' data-full-label='Conversations' data-short-label='Chats'>Conversations</button><button data-msg-tab='room' data-full-label='Chat Room' data-short-label='Rooms'>Chat Room</button><button data-msg-tab='group' data-full-label='Group Chat' data-short-label='Groups'>Group Chat</button></div></section>
     <section class='card' id='privateSearchCard'><h2>Start a Conversation</h2><form id='pulseUserSearch'><input name='q' placeholder='Search by name or public Pulse ID' autocomplete='off'><button class='primary'>Search</button></form><div class='messenger-search-results' id='pulseUserResults'></div></section>
     <section class='messenger-tab-panel' data-msg-panel='direct'>{''.join(direct_cards) or '<article class="card"><h2>No conversations yet.</h2><p>Search by display name or public Pulse ID to start a private Pulse chat.</p></article>'}</section>
-    <section class='messenger-tab-panel' data-msg-panel='room' hidden><article class='card'><h2>Chat Room</h2><p>Open community rooms are being unified with Pulse Groups and Spaces. Use Groups for live community chat today.</p><a class='button primary' href='/pulse/groups'>Browse Groups</a></article></section>
+    <section class='messenger-tab-panel' data-msg-panel='room' hidden>{''.join(room_cards) or "<article class='card'><h2>Pulse Global Chat Room</h2><p>Join the always-on public Pulse room for community questions, creator updates, and live social energy.</p><button class='primary' data-open-pulse-room>Open Chat Room</button></article>"}</section>
     <section class='messenger-tab-panel' data-msg-panel='group' hidden>{''.join(group_cards + community_cards) or empty_group}</section>
     <section class='messenger-modal' id='groupChatModal'><div class='messenger-sheet'><h2>Create Group Chat</h2><input id='groupChatTitle' placeholder='Group chat name'><textarea id='groupChatDescription' placeholder='Description optional'></textarea><select id='groupChatPrivacy'><option value='private'>Private</option><option value='invite_only'>Invite Only</option><option value='community'>Community</option></select><label>Optional group image<input id='groupChatPhoto' type='file' accept='image/jpeg,image/png,image/webp'></label><form id='groupChatSearch'><input name='q' placeholder='Add people by name or public Pulse ID'><button>Search</button></form><div class='messenger-search-results' id='groupChatResults'></div><div class='selected-users' id='selectedUsers'></div><div class='actions'><button type='button' id='cancelGroupChat'>Cancel</button><button class='primary' id='createGroupChat' type='button'>Create Group Chat</button></div></div></section>
     <section class='messenger-options' id='messengerOptions' aria-hidden='true'><div class='messenger-options-sheet' role='dialog' aria-modal='true' aria-label='Messenger Options'><div class='messenger-options-title'>Messenger Options</div><div class='messenger-options-section'><button type='button' data-open-group-create>Create Group Chat</button><button type='button' data-focus-private>New Private Message</button><button type='button'>Message Requests</button><button type='button'>Muted Chats</button><button type='button'>Report a Problem</button></div><small>Safety & Privacy</small><div class='messenger-options-section'><button type='button'>Blocked Users</button><button type='button'>Restricted Users</button></div></div></section>
@@ -17818,7 +17876,7 @@ def pulse_messages_page():
     function closeMessengerOptions(){const sheet=document.getElementById('messengerOptions');sheet?.classList.remove('open');sheet?.setAttribute('aria-hidden','true');document.querySelector('[data-messenger-options-toggle]')?.setAttribute('aria-expanded','false')}
     function openMessengerOptions(){const sheet=document.getElementById('messengerOptions');sheet?.classList.add('open');sheet?.setAttribute('aria-hidden','false');document.querySelector('[data-messenger-options-toggle]')?.setAttribute('aria-expanded','true')}
     document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMessengerOptions();document.getElementById('groupChatModal')?.classList.remove('open')}});
-    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-msg-tab]');if(tab){document.querySelectorAll('[data-msg-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('[data-msg-panel]').forEach(p=>p.hidden=p.dataset.msgPanel!==tab.dataset.msgTab);return}if(e.target.closest('[data-messenger-options-toggle]')){openMessengerOptions();return}if(e.target.id==='messengerOptions'){closeMessengerOptions();return}if(e.target.closest('[data-open-group-create]')){closeMessengerOptions();document.getElementById('groupChatModal').classList.add('open');return}if(e.target.closest('#cancelGroupChat')||e.target.id==='groupChatModal'){document.getElementById('groupChatModal').classList.remove('open');return}if(e.target.closest('[data-focus-private]')){closeMessengerOptions();document.getElementById('privateSearchCard')?.scrollIntoView({behavior:'smooth'});document.querySelector('#pulseUserSearch input')?.focus();return}const msg=e.target.closest('[data-message-user]');if(msg){try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({target_user_id:msg.dataset.messageUser})});location.href=d.next_url}catch(err){toast(err.message)}return}const sel=e.target.closest('[data-select-user]');if(sel){const card=sel.closest('[data-user-result]');const id=String(sel.dataset.selectUser);if(selectedMembers.has(id))selectedMembers.delete(id);else selectedMembers.set(id,{id:Number(id),display_name:card.querySelector('strong')?.textContent?.replace(' ✦','')||'Pulse user'});renderSelected();sel.textContent=selectedMembers.has(id)?'Remove':'Add';return}const rem=e.target.closest('[data-remove-selected]');if(rem){selectedMembers.delete(String(rem.dataset.removeSelected));renderSelected();return}});
+    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-msg-tab]');if(tab){document.querySelectorAll('[data-msg-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('[data-msg-panel]').forEach(p=>p.hidden=p.dataset.msgPanel!==tab.dataset.msgTab);return}if(e.target.closest('[data-open-pulse-room]')){try{const d=await pulseApi('/api/pulse/messages/room/open',{method:'POST',body:JSON.stringify({room_key:'pulse-general'})});location.href=d.next_url}catch(err){toast(err.message)}return}if(e.target.closest('[data-messenger-options-toggle]')){openMessengerOptions();return}if(e.target.id==='messengerOptions'){closeMessengerOptions();return}if(e.target.closest('[data-open-group-create]')){closeMessengerOptions();document.getElementById('groupChatModal').classList.add('open');return}if(e.target.closest('#cancelGroupChat')||e.target.id==='groupChatModal'){document.getElementById('groupChatModal').classList.remove('open');return}if(e.target.closest('[data-focus-private]')){closeMessengerOptions();document.getElementById('privateSearchCard')?.scrollIntoView({behavior:'smooth'});document.querySelector('#pulseUserSearch input')?.focus();return}const msg=e.target.closest('[data-message-user]');if(msg){try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({target_user_id:msg.dataset.messageUser})});location.href=d.next_url}catch(err){toast(err.message)}return}const sel=e.target.closest('[data-select-user]');if(sel){const card=sel.closest('[data-user-result]');const id=String(sel.dataset.selectUser);if(selectedMembers.has(id))selectedMembers.delete(id);else selectedMembers.set(id,{id:Number(id),display_name:card.querySelector('strong')?.textContent?.replace(' ✦','')||'Pulse user'});renderSelected();sel.textContent=selectedMembers.has(id)?'Remove':'Add';return}const rem=e.target.closest('[data-remove-selected]');if(rem){selectedMembers.delete(String(rem.dataset.removeSelected));renderSelected();return}});
     document.getElementById('pulseUserSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('pulseUserResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,false)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
     document.getElementById('groupChatSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupChatResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,true)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
     document.getElementById('createGroupChat').addEventListener('click',async()=>{try{const ids=[...selectedMembers.keys()].map(Number);const title=document.getElementById('groupChatTitle').value.trim();if(!title)throw new Error('Add a group chat name.');const d=await pulseApi('/api/pulse/messages/group/create',{method:'POST',body:JSON.stringify({title,description:document.getElementById('groupChatDescription').value,privacy:document.getElementById('groupChatPrivacy').value,participant_ids:ids})});location.href='/pulse/messages/'+d.conversation_id}catch(err){toast(err.message)}});
@@ -19329,6 +19387,30 @@ def api_pulse_message_group_create():
         conn.rollback(); conn.close()
         logging.exception("PULSE_GROUP_CHAT_CREATE_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
         return api_error("Group chat could not be created. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/messages/room/open", methods=["POST"])
+def api_pulse_message_room_open():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    room_key = clean_html(payload.get("room_key") or "pulse-general")[:80]
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room_key)
+        if result.get("ok"):
+            conn.commit()
+        conn.close()
+        if result.get("ok"):
+            pulse_emit_event("chat_room_joined", {"conversation_id": result.get("conversation_id"), "room_key": room_key}, user["user_id"], 0)
+        return jsonify(result), status
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_ROOM_OPEN_FAILED trace_id=%s user_id=%s room_key=%s", trace_id, user.get("user_id"), room_key)
+        return api_error("Chat room could not be opened. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
 @webhook_app.route("/api/pulse/messages/group/<int:conversation_id>/update", methods=["POST", "PATCH"])
