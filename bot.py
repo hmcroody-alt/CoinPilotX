@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import quote, urlparse
-from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for, has_request_context
+from flask import Flask, request, render_template, send_from_directory, send_file, jsonify, Response, session, redirect, url_for, has_request_context, abort
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -2107,13 +2107,13 @@ def groups_advanced_disabled_response():
 
 
 def save_private_verification_document(user_id, file_storage, document_type):
-    allowed = {"jpg", "jpeg", "png", "pdf"}
+    allowed = {"jpg", "jpeg", "png", "pdf", "webp"}
     if not file_storage or not file_storage.filename:
         return None
     original = secure_filename(file_storage.filename)
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
     if ext not in allowed:
-        raise ValueError("Verification documents must be JPG, PNG, or PDF.")
+        raise ValueError("Verification documents must be JPG, PNG, WEBP, or PDF.")
     file_storage.stream.seek(0, os.SEEK_END)
     size = file_storage.stream.tell()
     file_storage.stream.seek(0)
@@ -17942,7 +17942,7 @@ def pulse_merchant_apply_page():
       <section><h3>Identity</h3><input name='full_name' required placeholder='Full name'><input name='display_name' required placeholder='Seller display name'><input name='country' required placeholder='Country'><input name='state_region' placeholder='State / Region'><input name='email' type='email' required placeholder='Email'><input name='phone' placeholder='Phone number'><input name='pulse_username' placeholder='Pulse username'></section>
       <section><h3>Business Details</h3><input name='business_name' placeholder='Business name'><select name='seller_type' required><option>Individual</option><option>Creator</option><option>Teacher</option><option>Brand</option><option>Digital Seller</option><option>Physical Seller</option><option>Agency</option></select><input name='website' placeholder='Website'><textarea name='social_links' placeholder='Social links'></textarea><input name='years_experience' placeholder='Years experience'><textarea name='business_description' required placeholder='Describe what you sell, who it helps, and how you keep buyers safe.'></textarea></section>
       <section><h3>Selling Intent</h3><div class='grid check-grid'>{intent_checks}</div></section>
-      <section><h3>Verification Documents</h3><label class='doc-upload'>Upload Government ID - Front<input type='file' name='id_front' accept='.jpg,.jpeg,.png,.pdf' required></label><label class='doc-upload'>Upload Government ID - Back<input type='file' name='id_back' accept='.jpg,.jpeg,.png,.pdf' required></label><label class='doc-upload'>Upload Selfie Verification<input type='file' name='selfie' accept='.jpg,.jpeg,.png,image/*' capture='user' required></label><label class='doc-upload'>Upload Business Document<input type='file' name='business_registration' accept='.jpg,.jpeg,.png,.pdf'></label><label class='doc-upload'>Upload Tax or Resale Certificate<input type='file' name='tax_certificate' accept='.jpg,.jpeg,.png,.pdf'></label><label class='doc-upload'>Upload Proof of Ownership<input type='file' name='ownership_proof' accept='.jpg,.jpeg,.png,.pdf'></label></section>
+      <section><h3>Verification Documents</h3><label class='doc-upload'>Upload Government ID - Front<input type='file' name='id_front' accept='.jpg,.jpeg,.png,.webp,.pdf' required></label><label class='doc-upload'>Upload Government ID - Back<input type='file' name='id_back' accept='.jpg,.jpeg,.png,.webp,.pdf' required></label><label class='doc-upload'>Upload Selfie Verification<input type='file' name='selfie' accept='.jpg,.jpeg,.png,.webp,image/*' capture='user' required></label><label class='doc-upload'>Upload Business Document<input type='file' name='business_registration' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label class='doc-upload'>Upload Tax or Resale Certificate<input type='file' name='tax_certificate' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label class='doc-upload'>Upload Proof of Ownership<input type='file' name='ownership_proof' accept='.jpg,.jpeg,.png,.webp,.pdf'></label></section>
       <section><h3>Trust & Safety</h3><select name='sold_online_before'><option value='yes'>I have sold online before</option><option value='no'>I have not sold online before</option></select><select name='banned_elsewhere'><option value='no'>I have not been banned from another marketplace</option><option value='yes'>I have been banned elsewhere</option></select><select name='guaranteed_profits'><option value='no'>I will not promise guaranteed profits</option><option value='yes'>I am promising guaranteed profits</option></select><select name='comply_rules'><option value='yes'>I will comply with anti-scam rules</option><option value='no'>I will not comply</option></select><select name='understand_claims'><option value='yes'>I understand misleading financial claims are prohibited</option><option value='no'>I do not understand</option></select><label><input type='checkbox' name='marketplace_rules' required> I acknowledge marketplace rules and safety review.</label><label><input type='checkbox' name='anti_scam_agreement' required> I agree not to sell scams, impersonations, or misleading products.</label><label><input type='checkbox' name='no_profit_guarantees' required> I understand guaranteed-profit claims are prohibited.</label></section>
       <section><h3>Review & Submit</h3><p class='muted'>Complete applications are sent to admin review. Product creation remains locked until approval.</p><button class='primary'>Submit For Review</button></section>
     </form>
@@ -23391,7 +23391,7 @@ def admin_merchant_applications_page():
     docs_by_app = {}
     if app_ids:
         placeholders = ",".join(["?"] * len(app_ids))
-        cur.execute(f"SELECT application_id, document_type, original_filename, file_size, scan_status FROM marketplace_merchant_documents WHERE application_id IN ({placeholders}) ORDER BY id ASC", app_ids)
+        cur.execute(f"SELECT * FROM marketplace_merchant_documents WHERE application_id IN ({placeholders}) ORDER BY id ASC", app_ids)
         for row in cur.fetchall():
             doc = dict(row)
             docs_by_app.setdefault(int(doc.get("application_id") or 0), []).append(doc)
@@ -23399,10 +23399,135 @@ def admin_merchant_applications_page():
     rows = ""
     for a in apps:
         docs = docs_by_app.get(int(a.get("id") or 0), [])
-        doc_html = "<br>".join(f"{clean_html(d.get('document_type') or '')}: {clean_html(d.get('original_filename') or '')} ({clean_html(d.get('scan_status') or '')})" for d in docs) or "No documents uploaded"
+        front_doc = next((d for d in docs if d.get("document_type") == "id_front"), None)
+        selfie_doc = next((d for d in docs if d.get("document_type") == "selfie"), None)
+        compare_btn = f"<button type='button' class='doc-card compare' data-compare-left='{front_doc.get('id')}' data-compare-right='{selfie_doc.get('id')}' data-compare-left-title='Front ID' data-compare-right-title='Selfie'>Compare ID + Selfie</button>" if front_doc and selfie_doc else ""
+        doc_cards = ""
+        for d in docs:
+            doc_id = int(d.get("id") or 0)
+            status = clean_html(d.get("review_status") or d.get("scan_status") or "pending")
+            label = clean_html(merchant_doc_label(d.get("document_type")))
+            view_url = merchant_doc_review_url(doc_id)
+            download_url = merchant_doc_review_url(doc_id, download=True)
+            thumb = f"<img src='{view_url}' alt='{label} preview' loading='lazy'>" if merchant_doc_is_image(d) else "<div class='pdf-thumb'>PDF</div>" if merchant_doc_is_pdf(d) else "<div class='pdf-thumb'>DOC</div>"
+            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{clean_html(d.get('original_filename') or '')}</small><small>{int(d.get('file_size') or 0)//1024} KB · {clean_html(d.get('created_at') or '')}</small><em class='doc-status {status}'>{status}</em></span></button>"
+        doc_html = f"<div class='doc-grid'>{doc_cards}{compare_btn}</div>" if doc_cards else "<span class='muted'>No documents uploaded</span>"
         rows += f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('display_name') or a.get('account_name') or '')}<br><small>{clean_html(a.get('email') or '')}</small></td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{int(a.get('completeness') or 0)}%</td><td>{int(a.get('risk_score') or 0)}</td><td>{doc_html}</td><td><form method='post'><input type='hidden' name='application_id' value='{a.get('id')}'><input name='note' placeholder='Internal note'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='more_info'>Request Info</button><button name='action' value='suspend'>Suspend</button><button name='action' value='verify'>Verify</button></form></td></tr>"
-    body = f"<h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, Pulse reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Actions</th></tr>{rows or '<tr><td colspan=8>No merchant applications yet.</td></tr>'}</table></section><p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></p>"
+    body = f"""
+    <style>
+    .merchant-review-shell{{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}}
+    .review-sidebar{{position:sticky;top:92px;border:1px solid rgba(110,223,246,.18);border-radius:16px;background:rgba(7,19,33,.92);padding:14px}}
+    .doc-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;min-width:260px}}
+    .doc-card{{text-align:left;display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;align-items:center;border:1px solid rgba(110,223,246,.22);border-radius:14px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));color:#f2fbff;padding:9px;cursor:pointer;min-height:82px;width:100%}}
+    .doc-card:hover{{border-color:rgba(54,229,143,.58);box-shadow:0 0 28px rgba(54,229,143,.12)}}
+    .doc-card.compare{{grid-template-columns:1fr;background:linear-gradient(135deg,rgba(54,229,143,.18),rgba(110,223,246,.12));font-weight:950;justify-content:center;text-align:center}}
+    .doc-thumb{{width:54px;height:64px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:#020817;display:flex;align-items:center;justify-content:center}}
+    .doc-thumb img{{width:100%;height:100%;object-fit:cover}}
+    .pdf-thumb{{font-weight:950;color:#06101b;background:linear-gradient(135deg,#ffd166,#6edff6);width:100%;height:100%;display:flex;align-items:center;justify-content:center}}
+    .doc-card small,.doc-card em{{display:block;color:#9fb5c0;font-size:12px;white-space:normal;overflow-wrap:anywhere}}
+    .doc-status{{width:max-content;margin-top:3px;border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:3px 7px;font-style:normal;text-transform:capitalize}}
+    .doc-status.verified{{color:#36e58f;border-color:rgba(54,229,143,.45)}}.doc-status.rejected{{color:#ff7a88;border-color:rgba(255,122,136,.45)}}.doc-status.suspicious{{color:#ffd166;border-color:rgba(255,209,102,.45)}}
+    .doc-modal{{position:fixed;inset:0;z-index:9999;display:none;background:rgba(0,0,0,.82);backdrop-filter:blur(18px);padding:max(18px,env(safe-area-inset-top)) 16px max(18px,env(safe-area-inset-bottom))}}
+    .doc-modal.open{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px}}
+    .doc-viewer{{min-height:0;border:1px solid rgba(110,223,246,.22);border-radius:20px;background:#020817;overflow:auto;display:flex;align-items:center;justify-content:center;position:relative}}
+    .doc-viewer img{{max-width:100%;max-height:82dvh;transform:scale(var(--zoom,1)) rotate(var(--rot,0deg));transition:transform .18s ease;transform-origin:center}}
+    .doc-viewer iframe{{width:100%;height:82dvh;border:0;background:#fff;border-radius:16px}}
+    .compare-view{{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;padding:12px}}
+    .compare-pane{{min-height:70dvh;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:#050b14;display:flex;align-items:center;justify-content:center;overflow:auto;position:relative}}
+    .doc-panel{{border:1px solid rgba(110,223,246,.22);border-radius:20px;background:#071321;padding:14px;display:grid;gap:10px;align-content:start}}
+    .doc-panel button,.doc-panel a{{width:100%;justify-content:center}}
+    @media(max-width:860px){{.merchant-review-shell{{grid-template-columns:1fr}}.review-sidebar{{position:static}}.doc-modal.open{{grid-template-columns:1fr;overflow:auto}}.compare-view{{grid-template-columns:1fr}}}}
+    </style>
+    <h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, Pulse reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p>
+    <section class='merchant-review-shell'><div class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Actions</th></tr>{rows or '<tr><td colspan=8>No merchant applications yet.</td></tr>'}</table></div><aside class='review-sidebar'><h2>Review Standard</h2><p class='muted'>Open documents in the protected viewer, compare selfie against ID, mark each file verified/rejected/suspicious, then decide the merchant application.</p><p><span class='doc-status verified'>verified</span> <span class='doc-status suspicious'>suspicious</span> <span class='doc-status rejected'>rejected</span></p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></aside></section>
+    <section class='doc-modal' id='merchantDocModal' aria-hidden='true'><div class='doc-viewer' id='merchantDocViewer'></div><aside class='doc-panel'><h2 id='merchantDocTitle'>Document</h2><p class='muted'>Protected admin-only merchant verification viewer.</p><div class='actions'><button type='button' id='docZoomIn'>Zoom In</button><button type='button' id='docZoomOut'>Zoom Out</button><button type='button' id='docRotate'>Rotate</button></div><a class='button' id='docDownload' href='#'>Download Original</a><textarea id='docNote' placeholder='Internal review note, mismatch detail, or fraud observation'></textarea><button type='button' data-doc-review='verify' class='primary'>Verify</button><button type='button' data-doc-review='flag'>Flag Suspicious</button><button type='button' data-doc-review='reject'>Reject</button><button type='button' id='docClose'>Close</button></aside></section>
+    <script>
+    (()=>{{let activeDoc=0,zoom=1,rot=0;const modal=document.getElementById('merchantDocModal'),viewer=document.getElementById('merchantDocViewer'),title=document.getElementById('merchantDocTitle'),download=document.getElementById('docDownload'),note=document.getElementById('docNote');function esc(v){{return String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}function apply(){{viewer.style.setProperty('--zoom',zoom);viewer.style.setProperty('--rot',rot+'deg')}}function openDoc(btn){{activeDoc=Number(btn.dataset.docId||0);zoom=1;rot=0;title.textContent=btn.dataset.docTitle||'Document';download.href=btn.dataset.downloadUrl||'#';const url=btn.dataset.docUrl;viewer.innerHTML=btn.dataset.docKind==='pdf'?`<iframe src="${{esc(url)}}"></iframe>`:`<img src="${{esc(url)}}" alt="${{esc(btn.dataset.docTitle||'Document')}}">`;modal.classList.add('open');modal.setAttribute('aria-hidden','false');apply()}}function openCompare(btn){{activeDoc=Number(btn.dataset.compareRight||0);zoom=1;rot=0;title.textContent='Selfie Match Review';download.href='/admin/merchant-document/'+activeDoc+'?download=1';viewer.innerHTML=`<div class="compare-view"><div><h3>${{esc(btn.dataset.compareLeftTitle)}}</h3><div class="compare-pane"><img src="/admin/merchant-document/${{Number(btn.dataset.compareLeft||0)}}" alt="ID document"></div></div><div><h3>${{esc(btn.dataset.compareRightTitle)}}</h3><div class="compare-pane"><img src="/admin/merchant-document/${{Number(btn.dataset.compareRight||0)}}" alt="Selfie document"></div></div></div>`;modal.classList.add('open');modal.setAttribute('aria-hidden','false');apply()}}document.addEventListener('click',e=>{{const card=e.target.closest('.doc-card[data-doc-id]');if(card){{openDoc(card);return}}const cmp=e.target.closest('[data-compare-left]');if(cmp)openCompare(cmp)}});document.getElementById('docClose').onclick=()=>{{modal.classList.remove('open');modal.setAttribute('aria-hidden','true')}};document.getElementById('docZoomIn').onclick=()=>{{zoom=Math.min(3,zoom+.18);apply()}};document.getElementById('docZoomOut').onclick=()=>{{zoom=Math.max(.5,zoom-.18);apply()}};document.getElementById('docRotate').onclick=()=>{{rot=(rot+90)%360;apply()}};document.querySelectorAll('[data-doc-review]').forEach(b=>b.addEventListener('click',async()=>{{if(!activeDoc)return;try{{const r=await fetch(`/admin/merchant-document/${{activeDoc}}/review`,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action:b.dataset.docReview,note:note.value}})}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Review failed.');alert(d.message);location.reload()}}catch(err){{alert(err.message)}}}}));modal.addEventListener('click',e=>{{if(e.target===modal)document.getElementById('docClose').click()}});document.addEventListener('keydown',e=>{{if(e.key==='Escape'&&modal.classList.contains('open'))document.getElementById('docClose').click()}})}})();
+    </script>
+    """
     return admin_page_html("Merchant Applications", body, admin)
+
+
+def merchant_doc_label(document_type):
+    return {
+        "id_front": "Front ID",
+        "id_back": "Back ID",
+        "selfie": "Selfie",
+        "business_registration": "Business Registration",
+        "tax_certificate": "Tax Certificate",
+        "ownership_proof": "Ownership Proof",
+    }.get(document_type or "", (document_type or "Document").replace("_", " ").title())
+
+
+def merchant_doc_is_image(doc):
+    mime = (doc.get("mime_type") or "").lower()
+    name = (doc.get("original_filename") or "").lower()
+    return mime.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".webp"))
+
+
+def merchant_doc_is_pdf(doc):
+    mime = (doc.get("mime_type") or "").lower()
+    name = (doc.get("original_filename") or "").lower()
+    return mime == "application/pdf" or name.endswith(".pdf")
+
+
+def merchant_doc_review_url(doc_id, download=False):
+    return f"/admin/merchant-document/{int(doc_id)}{'?download=1' if download else ''}"
+
+
+@webhook_app.route("/admin/merchant-document/<int:doc_id>", methods=["GET"])
+def admin_merchant_document_file(doc_id):
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        abort(403)
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace_merchant_documents WHERE id=? LIMIT 1", (doc_id,))
+    doc = dict(cur.fetchone() or {})
+    conn.close()
+    if not doc:
+        abort(404)
+    stored_path = doc.get("stored_path") or ""
+    root = os.path.abspath(os.path.join("instance", "private_uploads", "merchant_verification"))
+    full_path = os.path.abspath(stored_path)
+    if not full_path.startswith(root + os.sep) or not os.path.exists(full_path):
+        logging.warning("MERCHANT_DOCUMENT_MISSING doc_id=%s path=%s", doc_id, stored_path)
+        abort(404)
+    return send_file(
+        full_path,
+        mimetype=doc.get("mime_type") or None,
+        as_attachment=bool(request.args.get("download")),
+        download_name=doc.get("original_filename") or f"merchant-document-{doc_id}",
+        max_age=0,
+    )
+
+
+@webhook_app.route("/admin/merchant-document/<int:doc_id>/review", methods=["POST"])
+def admin_merchant_document_review(doc_id):
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return api_error("Admin access required.", 403)
+    init_db()
+    payload = request.get_json(silent=True) or request.form
+    action = clean_html(payload.get("action") or "")[:40]
+    note = clean_html(payload.get("note") or "")[:1200]
+    allowed = {"verify": "verified", "reject": "rejected", "flag": "suspicious", "pending": "pending"}
+    if action not in allowed:
+        return api_error("Choose a valid document action.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace_merchant_documents WHERE id=? LIMIT 1", (doc_id,))
+    doc = dict(cur.fetchone() or {})
+    if not doc:
+        conn.close()
+        return api_error("Document not found.", 404)
+    cur.execute(
+        "UPDATE marketplace_merchant_documents SET review_status=?, review_notes=?, reviewed_by=?, reviewed_at=?, updated_at=? WHERE id=?",
+        (allowed[action], note, admin.get("id"), now, now, doc_id),
+    )
+    conn.commit(); conn.close()
+    log_admin_audit(admin.get("id"), "merchant_document_reviewed", "merchant_document", str(doc_id), {"action": action, "status": allowed[action]})
+    return jsonify({"ok": True, "message": f"Document marked {allowed[action]}.", "document_id": doc_id, "status": allowed[action]})
 
 
 @webhook_app.route("/admin/marketplace-command", methods=["GET", "POST"])
@@ -31424,6 +31549,14 @@ def init_db():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "marketplace_merchant_documents", [
+        ("review_status", "TEXT DEFAULT 'pending'"),
+        ("review_notes", "TEXT"),
+        ("reviewed_by", "INTEGER"),
+        ("reviewed_at", "TEXT"),
+        ("rotation_degrees", "INTEGER DEFAULT 0"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_listings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
