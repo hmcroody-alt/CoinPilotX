@@ -25,6 +25,7 @@ from urllib.parse import quote, urlparse
 from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for, has_request_context
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -67,6 +68,7 @@ from services import (
     admin_ai_assistant,
     audio_intelligence_engine,
     civilization_ai_engine,
+    camera_filter_engine,
     chat_realtime_service,
     community_governance_engine,
     conversion_funnel_engine,
@@ -2099,6 +2101,36 @@ def api_error(message, status=400, trace_id=None, **extra):
     payload = {"ok": False, "message": message, "trace_id": trace_id}
     payload.update(extra)
     return jsonify(payload), status
+
+
+def save_private_verification_document(user_id, file_storage, document_type):
+    allowed = {"jpg", "jpeg", "png", "pdf"}
+    if not file_storage or not file_storage.filename:
+        return None
+    original = secure_filename(file_storage.filename)
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in allowed:
+        raise ValueError("Verification documents must be JPG, PNG, or PDF.")
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size > 8 * 1024 * 1024:
+        raise ValueError("Verification documents must be under 8 MB.")
+    root = os.path.join("instance", "private_uploads", "merchant_verification", str(int(user_id or 0)))
+    os.makedirs(root, exist_ok=True)
+    stored = f"{datetime.utcnow().strftime('%Y%m%d')}_{document_type}_{secrets.token_urlsafe(12)}.{ext}"
+    path = os.path.join(root, stored)
+    file_storage.save(path)
+    return {
+        "document_type": document_type,
+        "original_filename": original,
+        "stored_path": path,
+        "mime_type": file_storage.mimetype or "application/octet-stream",
+        "file_size": int(size),
+        "private": True,
+        "admin_only": True,
+        "scanner_status": "queued_for_internal_review",
+    }
 
 
 def load_account_by_id(user_id):
@@ -16199,7 +16231,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Roast Clips", "/pulse/roast-clips"),
     ]
     nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
-    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/create/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
+    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
     mobile_bottom_html = "".join(f"<a href='{href}'>{label}</a>" for label, href in [("Home", "/pulse"), ("Reels", "/pulse/reels"), ("Spaces", "/pulse/spaces"), ("Market", "/pulse/marketplace"), ("Alerts", "/pulse/notifications"), ("Messages", "/pulse/messages"), ("Profile", "/pulse/profile")])
     default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden}}.profile-cover{{height:150px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:116px minmax(0,1fr);gap:14px;align-items:end;padding:0 16px 16px;margin-top:-54px}}.profile-avatar{{width:108px;height:108px;border-radius:26px;border:3px solid rgba(5,11,20,.95);box-shadow:0 16px 45px rgba(0,0,0,.35),0 0 34px rgba(110,223,246,.18)}}.profile-title h2{{font-size:clamp(28px,6vw,44px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-48px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:96px;height:96px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}}.mobile-bottom-nav a{{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}}.pulse-fab{{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(132px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html}</script></body></html>""")
@@ -16878,6 +16910,41 @@ def pulse_space_detail_page(slug):
     return pulse_social_shell(space["name"], "A focused Pulse Space with resources, contributors, and live discussion.", main, "", script)
 
 
+@webhook_app.route("/pulse/camera", methods=["GET"])
+@webhook_app.route("/pulse/camera/photo", methods=["GET"])
+@webhook_app.route("/pulse/camera/video", methods=["GET"])
+@webhook_app.route("/pulse/camera/reel", methods=["GET"])
+def pulse_camera_studio_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    is_premium = premium_identity_engine.user_has_premium_mark(user)
+    catalog = camera_filter_engine.filter_catalog(is_premium)
+    mode = "video" if request.path.endswith("/video") else "reel" if request.path.endswith("/reel") else "photo"
+    target = clean_html(request.args.get("target") or "post")
+    group = clean_html(request.args.get("group") or "")
+    filters = "".join(f"<button class='filter-chip' data-filter='{clean_html(f['key'])}' data-css='{clean_html(f['css'])}' {'disabled' if f['locked'] else ''}>{clean_html(f['label'])}{' · Premium' if f['locked'] else ''}</button>" for f in catalog)
+    main = f"""
+    <style>.camera-stage{{position:relative;overflow:hidden;border-radius:24px;min-height:72dvh;background:#030914;display:grid;grid-template-rows:1fr auto}}.camera-preview{{width:100%;height:100%;min-height:58dvh;object-fit:cover;filter:var(--camera-filter,none);background:#06101b}}.camera-controls{{position:absolute;left:0;right:0;bottom:0;padding:16px calc(16px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom));display:grid;gap:12px;background:linear-gradient(transparent,rgba(0,0,0,.72))}}.capture-row{{display:flex;justify-content:center;gap:12px;align-items:center}}.capture{{width:72px;height:72px;border-radius:50%;border:5px solid rgba(255,255,255,.82);background:linear-gradient(135deg,#36e58f,#6edff6);box-shadow:0 0 34px rgba(110,223,246,.35)}}.filter-row{{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}}.filter-chip{{min-width:max-content}}.camera-note{{position:absolute;top:14px;left:14px;right:14px;padding:10px 12px;border-radius:16px;background:rgba(5,11,20,.62);backdrop-filter:blur(14px)}}@media(max-width:900px){{.layout{{display:block}}aside{{display:none}}.camera-stage{{min-height:78dvh;border-radius:0;margin:0 -12px}}}}</style>
+    <section class='camera-stage'>
+      <video class='camera-preview' id='cameraPreview' autoplay muted playsinline></video>
+      <div class='camera-note'><strong>Camera Creator Studio</strong><p class='muted'>Camera and microphone access are required to capture photos or videos. You can use upload fallback if permissions are unavailable.</p></div>
+      <div class='camera-controls'>
+        <div class='filter-row'>{filters}</div>
+        <div class='capture-row'><button id='switchCamera' type='button'>Switch</button><button class='capture' id='captureBtn' type='button' aria-label='Capture'></button><button id='micToggle' type='button'>Mic</button></div>
+        <div class='actions'><input id='fallbackUpload' type='file' accept='image/*,video/*'><button class='primary' id='uploadCapture' type='button'>Use Media</button><a class='button' href='/pulse/create'>Cancel</a></div>
+        <p class='muted' id='cameraStatus'></p>
+      </div>
+    </section>
+    <canvas id='cameraCanvas' hidden></canvas>
+    """
+    script = f"""
+    let stream=null,facing='user',capturedBlob=null,activeFilter='';const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas');async function startCamera(){{try{{if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}}}},audio:{str(mode != 'photo').lower()}}});video.srcObject=stream;status.textContent='Camera ready.';}}catch(e){{status.textContent='Permission denied or camera unavailable. Use the upload picker instead.';}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);status.textContent='Microphone toggled.'}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{activeFilter=b.dataset.filter;document.documentElement.style.setProperty('--camera-filter',b.dataset.css||'none');}});document.getElementById('captureBtn').onclick=async()=>{{if(!stream){{await startCamera();return}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;canvas.getContext('2d').filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.9));status.textContent='Photo captured. Tap Use Media to continue.';}};document.getElementById('uploadCapture').onclick=async()=>{{try{{const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';}}else{{toast('Media uploaded.');location.href='/pulse/create';}}}}catch(e){{status.textContent=e.message}}}};startCamera();
+    """
+    return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across Pulse.", main, "", script)
+
+
 @webhook_app.route("/pulse/marketplace", methods=["GET"])
 def pulse_marketplace_page():
     init_db()
@@ -16937,55 +17004,89 @@ def pulse_merchant_apply_page():
         fields = {key: clean_html(request.form.get(key, ""))[:1200] for key in [
             "full_name", "display_name", "country", "state_region", "email", "phone", "pulse_username",
             "business_name", "seller_type", "website", "social_links", "years_experience", "business_description",
-            "government_id_placeholder", "selfie_placeholder", "business_document_placeholder",
             "sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims",
         ]}
         intents = request.form.getlist("intent")
+        acknowledgement_ok = request.form.get("marketplace_rules") and request.form.get("anti_scam_agreement") and request.form.get("no_profit_guarantees")
         required = ["full_name", "display_name", "country", "email", "business_description", "seller_type"]
+        documents = []
+        try:
+            for doc_type in ["id_front", "id_back", "selfie", "business_registration", "tax_certificate", "ownership_proof"]:
+                saved = save_private_verification_document(user["user_id"], request.files.get(doc_type), doc_type)
+                if saved:
+                    documents.append(saved)
+        except ValueError as exc:
+            message = str(exc)
+            documents = []
         complete_count = sum(1 for key in required if fields.get(key)) + len(intents)
-        completeness = min(100, int(complete_count / (len(required) + 5) * 100))
+        complete_count += 2 if any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) else 0
+        complete_count += 1 if any(d["document_type"] == "selfie" for d in documents) else 0
+        complete_count += 2 if acknowledgement_ok else 0
+        completeness = min(100, int(complete_count / (len(required) + 10) * 100))
         risk = 0
         if fields.get("guaranteed_profits") == "yes":
             risk += 45
         if fields.get("banned_elsewhere") == "yes":
             risk += 25
-        if fields.get("understand_claims") != "yes" or fields.get("comply_rules") != "yes":
+        if fields.get("understand_claims") != "yes" or fields.get("comply_rules") != "yes" or not acknowledgement_ok:
             risk += 30
-        status = "pending_review" if completeness >= 65 else "draft"
+        has_required_docs = any(d["document_type"] == "id_front" for d in documents) and any(d["document_type"] == "id_back" for d in documents) and any(d["document_type"] == "selfie" for d in documents)
+        status = "pending_review" if completeness >= 70 and has_required_docs and acknowledgement_ok else "draft"
         conn = db(); cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO marketplace_merchant_applications
-            (user_id, full_name, display_name, country, state_region, email, phone, pulse_username, business_name,
-             seller_type, website, social_links, years_experience, business_description, seller_intent_json,
-             verification_json, safety_answers_json, completeness, risk_score, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user["user_id"], fields["full_name"], fields["display_name"], fields["country"], fields["state_region"],
-                fields["email"], fields["phone"], fields["pulse_username"], fields["business_name"], fields["seller_type"],
-                fields["website"], fields["social_links"], fields["years_experience"], fields["business_description"],
-                json.dumps(intents, default=str),
-                json.dumps({"government_id_placeholder": bool(fields["government_id_placeholder"]), "selfie_placeholder": bool(fields["selfie_placeholder"]), "business_document_placeholder": bool(fields["business_document_placeholder"])}, default=str),
-                json.dumps({k: fields[k] for k in ["sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims"]}, default=str),
-                completeness, risk, status, now, now,
-            ),
-        )
-        cur.execute(
-            """
-            INSERT INTO marketplace_sellers
-            (user_id, display_name, bio, status, seller_type, business_name, website, country, state_region, phone, seller_intent_json, verification_status, risk_score, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, status=excluded.status, seller_type=excluded.seller_type, business_name=excluded.business_name, website=excluded.website, country=excluded.country, state_region=excluded.state_region, phone=excluded.phone, seller_intent_json=excluded.seller_intent_json, risk_score=excluded.risk_score, updated_at=excluded.updated_at
-            """,
-            (user["user_id"], fields["display_name"], fields["business_description"], status, fields["seller_type"], fields["business_name"], fields["website"], fields["country"], fields["state_region"], fields["phone"], json.dumps(intents, default=str), risk, now, now),
-        )
-        conn.commit(); conn.close()
-        message = "Merchant application submitted for review." if status == "pending_review" else "Draft saved. Complete more fields before review."
+        if not message:
+            cur.execute(
+                """
+                INSERT INTO marketplace_merchant_applications
+                (user_id, full_name, display_name, country, state_region, email, phone, pulse_username, business_name,
+                 seller_type, website, social_links, years_experience, business_description, seller_intent_json,
+                 verification_json, safety_answers_json, completeness, risk_score, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user["user_id"], fields["full_name"], fields["display_name"], fields["country"], fields["state_region"],
+                    fields["email"], fields["phone"], fields["pulse_username"], fields["business_name"], fields["seller_type"],
+                    fields["website"], fields["social_links"], fields["years_experience"], fields["business_description"],
+                    json.dumps(intents, default=str),
+                    json.dumps({"documents": [{"type": d["document_type"], "filename": d["original_filename"], "private": True, "admin_only": True, "scanner_status": d["scanner_status"]} for d in documents]}, default=str),
+                    json.dumps({k: fields[k] for k in ["sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims"]}, default=str),
+                    completeness, risk, status, now, now,
+                ),
+            )
+            application_id = int(cur.lastrowid)
+            for doc in documents:
+                cur.execute(
+                    """
+                    INSERT INTO marketplace_merchant_documents
+                    (application_id, user_id, document_type, original_filename, stored_path, mime_type, file_size, private_access, scan_status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (application_id, user["user_id"], doc["document_type"], doc["original_filename"], doc["stored_path"], doc["mime_type"], doc["file_size"], doc["scanner_status"], now),
+                )
+            cur.execute(
+                """
+                INSERT INTO marketplace_sellers
+                (user_id, display_name, bio, status, seller_type, business_name, website, country, state_region, phone, seller_intent_json, verification_status, risk_score, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, status=excluded.status, seller_type=excluded.seller_type, business_name=excluded.business_name, website=excluded.website, country=excluded.country, state_region=excluded.state_region, phone=excluded.phone, seller_intent_json=excluded.seller_intent_json, risk_score=excluded.risk_score, updated_at=excluded.updated_at
+                """,
+                (user["user_id"], fields["display_name"], fields["business_description"], status, fields["seller_type"], fields["business_name"], fields["website"], fields["country"], fields["state_region"], fields["phone"], json.dumps(intents, default=str), risk, now, now),
+            )
+            conn.commit()
+            message = "Application submitted for review. You’ll be notified after approval." if status == "pending_review" else "Draft saved. Add the required ID and selfie verification before review."
+        conn.close()
     intents = ["Digital Products", "Courses", "Coaching", "Ebooks", "Trading Education", "Templates", "AI Tools", "Physical Products", "Livestream Selling", "Services"]
     intent_checks = "".join(f"<label><input type='checkbox' name='intent' value='{clean_html(item)}'> {clean_html(item)}</label>" for item in intents)
     main = f"""
-    <form method='post' class='card'><h2>Merchant Application</h2><p>{clean_html(message)}</p><h3>Identity</h3><input name='full_name' placeholder='Full name'><input name='display_name' placeholder='Display name'><input name='country' placeholder='Country'><input name='state_region' placeholder='State / Region'><input name='email' placeholder='Email'><input name='phone' placeholder='Phone number'><input name='pulse_username' placeholder='Pulse username'><h3>Business Information</h3><input name='business_name' placeholder='Business name'><select name='seller_type'><option>Individual</option><option>Creator</option><option>Teacher</option><option>Brand</option><option>Digital Seller</option><option>Physical Seller</option><option>Agency</option></select><input name='website' placeholder='Website'><textarea name='social_links' placeholder='Social links'></textarea><input name='years_experience' placeholder='Years experience'><textarea name='business_description' placeholder='Business description'></textarea><h3>Seller Intent</h3><div class='grid'>{intent_checks}</div><h3>Verification</h3><input name='government_id_placeholder' placeholder='Government ID upload placeholder'><input name='selfie_placeholder' placeholder='Selfie placeholder'><input name='business_document_placeholder' placeholder='Optional business document placeholder'><label><input type='checkbox' required> I acknowledge marketplace rules and safety review.</label><h3>Trust & Safety</h3><select name='sold_online_before'><option value='yes'>Sold online before</option><option value='no'>Never sold online</option></select><select name='banned_elsewhere'><option value='no'>Not banned elsewhere</option><option value='yes'>Previously banned elsewhere</option></select><select name='guaranteed_profits'><option value='no'>No guaranteed profits</option><option value='yes'>Promises guaranteed profits</option></select><select name='comply_rules'><option value='yes'>Will comply with anti-scam rules</option><option value='no'>Will not comply</option></select><select name='understand_claims'><option value='yes'>I understand misleading financial claims are prohibited</option><option value='no'>I do not understand</option></select><button class='primary'>Submit For Review</button></form>
+    <style>.merchant-steps{{display:grid;gap:14px}}.merchant-steps section{{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px;background:rgba(255,255,255,.035)}}.check-grid label{{display:flex;gap:9px;align-items:flex-start;white-space:normal}}.doc-upload{{display:grid;gap:7px;margin:10px 0}}.doc-upload input{{padding:12px;background:rgba(255,255,255,.045)}}@media(max-width:620px){{.check-grid{{grid-template-columns:1fr!important}}}}</style>
+    <form method='post' enctype='multipart/form-data' class='card merchant-steps'>
+      <h2>Merchant Application</h2><p>{clean_html(message)}</p><p class='muted'>Applications are reviewed before product listings unlock. Verification documents are private and visible only to authorized admins.</p>
+      <section><h3>Identity</h3><input name='full_name' required placeholder='Full name'><input name='display_name' required placeholder='Seller display name'><input name='country' required placeholder='Country'><input name='state_region' placeholder='State / Region'><input name='email' type='email' required placeholder='Email'><input name='phone' placeholder='Phone number'><input name='pulse_username' placeholder='Pulse username'></section>
+      <section><h3>Business Details</h3><input name='business_name' placeholder='Business name'><select name='seller_type' required><option>Individual</option><option>Creator</option><option>Teacher</option><option>Brand</option><option>Digital Seller</option><option>Physical Seller</option><option>Agency</option></select><input name='website' placeholder='Website'><textarea name='social_links' placeholder='Social links'></textarea><input name='years_experience' placeholder='Years experience'><textarea name='business_description' required placeholder='Describe what you sell, who it helps, and how you keep buyers safe.'></textarea></section>
+      <section><h3>Selling Intent</h3><div class='grid check-grid'>{intent_checks}</div></section>
+      <section><h3>Verification Documents</h3><label class='doc-upload'>Upload Government ID - Front<input type='file' name='id_front' accept='.jpg,.jpeg,.png,.pdf' required></label><label class='doc-upload'>Upload Government ID - Back<input type='file' name='id_back' accept='.jpg,.jpeg,.png,.pdf' required></label><label class='doc-upload'>Upload Selfie Verification<input type='file' name='selfie' accept='.jpg,.jpeg,.png,image/*' capture='user' required></label><label class='doc-upload'>Upload Business Document<input type='file' name='business_registration' accept='.jpg,.jpeg,.png,.pdf'></label><label class='doc-upload'>Upload Tax or Resale Certificate<input type='file' name='tax_certificate' accept='.jpg,.jpeg,.png,.pdf'></label><label class='doc-upload'>Upload Proof of Ownership<input type='file' name='ownership_proof' accept='.jpg,.jpeg,.png,.pdf'></label></section>
+      <section><h3>Trust & Safety</h3><select name='sold_online_before'><option value='yes'>I have sold online before</option><option value='no'>I have not sold online before</option></select><select name='banned_elsewhere'><option value='no'>I have not been banned from another marketplace</option><option value='yes'>I have been banned elsewhere</option></select><select name='guaranteed_profits'><option value='no'>I will not promise guaranteed profits</option><option value='yes'>I am promising guaranteed profits</option></select><select name='comply_rules'><option value='yes'>I will comply with anti-scam rules</option><option value='no'>I will not comply</option></select><select name='understand_claims'><option value='yes'>I understand misleading financial claims are prohibited</option><option value='no'>I do not understand</option></select><label><input type='checkbox' name='marketplace_rules' required> I acknowledge marketplace rules and safety review.</label><label><input type='checkbox' name='anti_scam_agreement' required> I agree not to sell scams, impersonations, or misleading products.</label><label><input type='checkbox' name='no_profit_guarantees' required> I understand guaranteed-profit claims are prohibited.</label></section>
+      <section><h3>Review & Submit</h3><p class='muted'>Complete applications are sent to admin review. Product creation remains locked until approval.</p><button class='primary'>Submit For Review</button></section>
+    </form>
     """
     return pulse_social_shell("Merchant Application", "A serious, trust-first application before marketplace selling unlocks.", main)
 
@@ -17002,6 +17103,15 @@ def pulse_merchant_dashboard_page():
     cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? ORDER BY id DESC LIMIT 80", (user["user_id"],))
     listings = [dict(row) for row in cur.fetchall()]
     conn.close()
+    if seller.get("status") != "approved":
+        status_text = clean_html(seller.get("status") or "not applied")
+        if seller.get("status") == "rejected":
+            msg = "Your merchant application was not approved. You may update and resubmit."
+        elif seller.get("status"):
+            msg = "Your merchant application is still under review."
+        else:
+            msg = "Apply and complete verification before merchant tools unlock."
+        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{clean_html(msg)}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
     main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Safety</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
@@ -17042,7 +17152,7 @@ def pulse_marketplace_create_page():
         return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", "<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a></section>")
     categories = ["AI Tools","Cybersecurity","Crypto Education","Trading Education","Coding","Business","Marketing","Design","Ebooks","Courses","Templates","Coaching","Livestream Access","Premium Communities","Creator Resources","Productivity","Investing Education","Scam Prevention"]
     opts = "".join(f"<option>{clean_html(c)}</option>" for c in categories)
-    main = f"<section class='card'><h2>Create Product</h2><input id='listingTitle' placeholder='Product title'><input id='listingShort' placeholder='Short description'><textarea id='listingDescription' placeholder='Full description'></textarea><select id='listingCategory'>{opts}</select><input id='listingSubcategory' placeholder='Subcategory'><input id='listingTags' placeholder='Tags'><input id='listingCover' placeholder='Cover image URL placeholder'><input id='listingGallery' placeholder='Gallery URLs placeholder'><input id='listingVideo' placeholder='Optional video URL'><input id='listingPrice' placeholder='Price'><input id='listingCurrency' value='USD'><input id='listingQuantity' placeholder='Quantity'><select id='listingProductType'><option value='digital'>Digital</option><option value='physical'>Physical</option><option value='course'>Course</option><option value='service'>Service</option></select><input id='listingRefund' placeholder='Refund policy'><input id='listingDelivery' placeholder='Estimated delivery'><textarea id='listingNotes' placeholder='Seller notes'></textarea><button class='primary' id='listingCreate'>Submit For Review</button></section>"
+    main = f"<section class='card'><h2>Create Product</h2><input id='listingTitle' placeholder='Product title'><input id='listingShort' placeholder='Short description'><textarea id='listingDescription' placeholder='Full description'></textarea><select id='listingCategory'>{opts}</select><input id='listingSubcategory' placeholder='Subcategory'><input id='listingTags' placeholder='Tags'><input id='listingCover' placeholder='Cover image URL'><input id='listingGallery' placeholder='Gallery image URLs'><input id='listingVideo' placeholder='Optional video URL'><input id='listingPrice' placeholder='Price'><input id='listingCurrency' value='USD'><input id='listingQuantity' placeholder='Quantity'><select id='listingProductType'><option value='digital'>Digital</option><option value='physical'>Physical</option><option value='course'>Course</option><option value='service'>Service</option></select><input id='listingRefund' placeholder='Refund policy'><input id='listingDelivery' placeholder='Estimated delivery'><textarea id='listingNotes' placeholder='Seller notes'></textarea><div class='actions'><a class='button' href='/pulse/camera/photo?target=marketplace'>Take Photo</a><a class='button' href='/pulse/camera/video?target=marketplace'>Record Video</a><button class='primary' id='listingCreate'>Submit For Review</button></div></section>"
     script = "document.getElementById('listingCreate').addEventListener('click',async()=>{try{const d=await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,short_description:document.getElementById('listingShort').value,description:document.getElementById('listingDescription').value,category:document.getElementById('listingCategory').value,subcategory:document.getElementById('listingSubcategory').value,tags:document.getElementById('listingTags').value,cover_image_url:document.getElementById('listingCover').value,gallery:document.getElementById('listingGallery').value,video_url:document.getElementById('listingVideo').value,price_label:document.getElementById('listingPrice').value,currency:document.getElementById('listingCurrency').value,quantity:document.getElementById('listingQuantity').value,product_type:document.getElementById('listingProductType').value,refund_policy:document.getElementById('listingRefund').value,estimated_delivery:document.getElementById('listingDelivery').value,seller_notes:document.getElementById('listingNotes').value})});toast(d.message||'Submitted.');location.href='/pulse/merchant/dashboard'}catch(err){toast(err.message)}});"
     return pulse_social_shell("Create Product", "Advanced product creation with safety scanning before marketplace visibility.", main, "", script)
 
@@ -17129,7 +17239,7 @@ def pulse_course_detail_page(course_id):
     if not course:
         return pulse_social_shell("Course", "This course is not available.", "<section class='card'><a class='button' href='/pulse/courses'>Back to Courses</a></section>")
     lesson_html = "".join(f"<article class='card'><h2>{clean_html(l.get('title'))}</h2><p>{clean_html(l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('access_level') or 'free')}</span></article>" for l in lessons)
-    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or '<article class=\"card\"><h2>Lessons coming soon.</h2><p>This course is being prepared.</p></article>'}</section>"
+    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or '<article class=\"card\"><h2>No lessons published yet.</h2><p>The teacher can add reviewed lessons from the dashboard.</p></article>'}</section>"
     return pulse_social_shell(course.get("title") or "Course", "Teacher course detail and lesson foundation.", main)
 
 
@@ -17362,15 +17472,22 @@ def pulse_group_detail_page(group_slug):
     post_cards = []
     for p in posts:
         ident = pulse_identity_for_user(cur, p.get("user_id"))
+        media_html = ""
+        media_url = clean_html(p.get("media_url") or "")
+        media_type = clean_html(p.get("media_type") or "")
+        if media_url and media_type == "video":
+            media_html = f"<video controls playsinline preload='metadata' poster='{clean_html(p.get('thumbnail_url') or '')}' style='width:100%;border-radius:16px;margin-top:10px;background:#050b14'><source src='{media_url}'></video>"
+        elif media_url:
+            media_html = f"<img src='{media_url}' alt='Group post media' loading='lazy' style='width:100%;max-height:520px;object-fit:cover;border-radius:16px;margin-top:10px;background:#050b14'>"
         post_cards.append(
             f"<article class='card'><strong>{clean_html(ident.get('name') or p.get('author') or 'Pulse Member')}{pulse_premium_mark_html(ident.get('premium_mark'))}</strong> "
-            f"<span class='pill'>{clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')}</span><p>{clean_html(p.get('body') or '')}</p><small>{clean_html(p.get('created_at') or '')}</small></article>"
+            f"<span class='pill'>{clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')}</span><p>{clean_html(p.get('body') or p.get('content') or '')}</p>{media_html}<p><span class='pill'>{clean_html(p.get('post_type') or 'text')}</span> <span class='pill'>{clean_html(p.get('moderation_status') or 'approved')}</span></p><small>{clean_html(p.get('created_at') or '')}</small><div class='actions'><button data-group-react='{int(p.get('id') or 0)}' data-reaction='fire'>🔥</button><button data-group-react='{int(p.get('id') or 0)}' data-reaction='smart'>🧠</button><button data-group-report-post='{int(p.get('id') or 0)}'>Report</button></div></article>"
         )
     post_html = "".join(post_cards)
     conn.close()
     slug = clean_html(group.get("slug") or str(group_id))
-    main = f"<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='actions'><button class='primary' data-join-group='{slug}'>Join Group</button><button data-leave-group='{slug}'>Leave</button><button data-report-group='{slug}'>Report</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Post in Group</h2><textarea id='groupPostBody'></textarea><button class='primary' id='groupPostBtn'>Post</button></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
-    script = f"document.addEventListener('click',async e=>{{const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]');try{{if(j){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});toast('Joined group.')}} if(l){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});toast('Left group.')}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}}}}catch(err){{toast(err.message)}}}});document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/groups/post',{{method:'POST',body:JSON.stringify({{group_id:{group_id},body:document.getElementById('groupPostBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
+    main = f"<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='actions'><button class='primary' data-join-group='{slug}'>Join Group</button><button data-leave-group='{slug}'>Leave</button><button data-report-group='{slug}'>Report</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
+    script = f"document.addEventListener('click',async e=>{{const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]');try{{if(j){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});toast('Joined group.')}} if(l){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});toast('Left group.')}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{await pulseApi('/api/pulse/groups/posts/react',{{method:'POST',body:JSON.stringify({{group_post_id:gr.dataset.groupReact,reaction_type:gr.dataset.reaction}})}});toast('Reaction saved.')}} if(rp){{await pulseApi('/api/pulse/groups/posts/report',{{method:'POST',body:JSON.stringify({{group_post_id:rp.dataset.groupReportPost,reason:'Needs review'}})}});toast('Post report sent.')}}}}catch(err){{toast(err.message)}}}});document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{const fd=new FormData();fd.append('body',document.getElementById('groupPostBody').value);const file=document.getElementById('groupMediaFile').files[0];if(file)fd.append('media',file);const r=await fetch('/api/pulse/groups/{slug}/posts',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Could not post.');location.reload()}}catch(err){{toast(err.message)}}}});"
     return pulse_social_shell(group.get("name") or "Pulse Group", "A user-created community with posts, members, rules, and safety reporting.", main, "", script)
 
 
@@ -18642,6 +18759,106 @@ def api_pulse_group_post():
     return jsonify({"ok": True, "message": "Group post published."})
 
 
+@webhook_app.route("/api/pulse/groups/<group_slug>/posts", methods=["POST"])
+def api_pulse_group_post_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    try:
+        is_form = bool(request.files) or request.form
+        payload = request.form if is_form else (request.get_json(silent=True) or {})
+        body = clean_html(payload.get("body") or payload.get("content") or "")[:3000]
+        title = clean_html(payload.get("title") or "")[:160]
+        media_url = clean_html(payload.get("media_url") or "")[:1000]
+        thumbnail_url = clean_html(payload.get("thumbnail_url") or media_url)[:1000]
+        media_type = clean_html(payload.get("media_type") or "")[:40]
+        filter_name = clean_html(payload.get("filter_name") or "")[:80]
+        uploaded = None
+        if request.files.get("media"):
+            result, status = media_service.save_upload(user["user_id"], request.files.get("media"), context_type="pulse_group", context_id=group_slug)
+            if status >= 400 or not result.get("ok"):
+                return api_error(result.get("message") or "Media could not be uploaded.", status, trace_id)
+            uploaded = result.get("media") or {}
+            media_url = clean_html(uploaded.get("media_url") or "")[:1000]
+            thumbnail_url = clean_html(uploaded.get("thumbnail_url") or media_url)[:1000]
+            media_type = clean_html(uploaded.get("media_type") or "")[:40]
+        if not body and not media_url:
+            return api_error("Add text, a photo, or a video before posting.", 400, trace_id)
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT * FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+        group = dict(cur.fetchone() or {})
+        if not group:
+            conn.close()
+            return api_error("Group not found.", 404, trace_id)
+        if group.get("status") == "frozen":
+            conn.close()
+            return api_error("This group is paused for review.", 403, trace_id)
+        group_id = int(group.get("id") or 0)
+        cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+        member = cur.fetchone()
+        if not member and group.get("group_type") != "public":
+            conn.close()
+            return api_error("Join this group before posting.", 403, trace_id)
+        if not member:
+            cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], datetime.utcnow().isoformat(timespec="seconds")))
+        post_type = "video" if media_type == "video" else "image" if media_url else "text"
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        metadata = {"uploaded": uploaded or {}, "filter_name": filter_name, "trace_id": trace_id}
+        cur.execute(
+            """
+            INSERT INTO pulse_group_posts
+            (group_id, user_id, body, content, title, post_type, media_url, thumbnail_url, media_type, media_metadata, moderation_status, visibility, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', 'group', 'published', ?, ?)
+            """,
+            (group_id, user["user_id"], body, body, title, post_type, media_url, thumbnail_url, media_type, json.dumps(metadata, default=str), now, now),
+        )
+        post_id = int(cur.lastrowid)
+        if media_url:
+            cur.execute(
+                "INSERT INTO pulse_group_post_media (group_post_id, media_url, thumbnail_url, media_type, file_size, filter_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (post_id, media_url, thumbnail_url, media_type, int((uploaded or {}).get("file_size_bytes") or 0), filter_name, now),
+            )
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "message": "Posted to group.", "post": {"id": post_id, "post_type": post_type, "media_url": media_url, "thumbnail_url": thumbnail_url}})
+    except Exception as exc:
+        logging.exception("GROUP_MEDIA_POST_FAILED trace_id=%s group=%s", trace_id, group_slug)
+        return api_error("Group post could not be created. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/groups/posts/react", methods=["POST"])
+def api_pulse_group_post_react():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    post_id = safe_int(payload.get("group_post_id"), 0)
+    reaction = clean_html(payload.get("reaction_type") or "fire")[:40]
+    if reaction not in {"fire", "smart", "scam_alert", "whale", "bullish", "bearish"}:
+        reaction = "fire"
+    conn = db(); cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO pulse_group_post_reactions (group_post_id, user_id, reaction_type, created_at) VALUES (?, ?, ?, ?)", (post_id, user["user_id"], reaction, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Reaction saved."})
+
+
+@webhook_app.route("/api/pulse/groups/posts/report", methods=["POST"])
+def api_pulse_group_post_report():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    post_id = safe_int(payload.get("group_post_id"), 0)
+    reason = clean_html(payload.get("reason") or "Needs review")[:500]
+    conn = db(); cur = conn.cursor()
+    cur.execute("INSERT INTO pulse_group_post_reports (group_post_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (post_id, user["user_id"], reason, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Post report sent."})
+
+
 @webhook_app.route("/api/pulse/report", methods=["POST"])
 def api_pulse_report():
     init_db()
@@ -19538,8 +19755,8 @@ def admin_monetization_page():
         config = {
             "stripe": "Configured" if STRIPE_SECRET_KEY else "Not configured yet",
             "google_ads": "Configured" if os.getenv("GOOGLE_ADS_CONVERSION_ID") or os.getenv("GOOGLE_ADS_ID") else "Not configured yet",
-            "marketplace": "Payments coming soon",
-            "teacher_earnings": "Payments coming soon",
+            "marketplace": "Payment release locked until compliance review",
+            "teacher_earnings": "Earnings release locked until compliance review",
         }
         body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Premium, creator tools, courses, marketplace products, sponsorship controls, and enterprise leads. Empty providers show setup states instead of crashing.</p><p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a> <a class='button' href='/admin/payments-health'>Payments Health</a> <a class='button' href='/admin/sponsorships'>Sponsorships</a></p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Provider Setup</h2><pre>{clean_html(json.dumps(config, indent=2))}</pre></div><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
     except Exception as exc:
@@ -19896,6 +20113,10 @@ def admin_groups_health_page():
         "pulse_group_invites": ["id", "group_id", "inviter_user_id", "invited_user_id", "status"],
         "pulse_group_reports": ["id", "group_id", "reporter_user_id", "reason", "status"],
         "pulse_group_roles": ["id", "group_id", "user_id", "role"],
+        "pulse_group_post_media": ["id", "group_post_id", "media_url", "media_type", "created_at"],
+        "pulse_group_post_comments": ["id", "group_post_id", "user_id", "body", "created_at"],
+        "pulse_group_post_reactions": ["id", "group_post_id", "user_id", "reaction_type", "created_at"],
+        "pulse_group_post_reports": ["id", "group_post_id", "reporter_user_id", "reason", "status"],
     }
     table_rows = []
     for table, cols in required.items():
@@ -19905,10 +20126,14 @@ def admin_groups_health_page():
         table_rows.append(f"<tr><td>{clean_html(table)}</td><td>{'yes' if exists else 'no'}</td><td>{clean_html(', '.join(missing) or 'none')}</td></tr>")
     cur.execute("SELECT * FROM pulse_group_creation_attempts ORDER BY id DESC LIMIT 20")
     attempts = [dict(row) for row in cur.fetchall()]
+    media_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_media")
+    media_reports = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_reports WHERE status='open'")
+    missing_media_cols = [c for c in ["post_type", "media_url", "thumbnail_url", "media_type", "media_metadata", "moderation_status"] if c not in set(table_columns(cur, "pulse_group_posts"))]
     attempt_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('payload_summary') or '')}</td><td>{clean_html(a.get('error_message') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in attempts)
     conn.close()
     body = f"""
     <h1>Groups Health</h1><p class='muted'>Debug surface for Pulse group creation, schema health, and recent traceable failures.</p>
+    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Open Media Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{clean_html(', '.join(missing_media_cols) or 'none')}</p></div></section>
     <section class='card'><h2>Schema</h2><table class='table'><tr><th>Table</th><th>Exists</th><th>Missing Columns</th></tr>{''.join(table_rows)}</table></section>
     <section class='card'><h2>Latest Group Creation Attempts</h2><table class='table'><tr><th>ID</th><th>Status</th><th>Trace</th><th>Payload</th><th>Error</th><th>Time</th></tr>{attempt_rows or '<tr><td colspan=6>No attempts logged yet.</td></tr>'}</table></section>
     <p><a class='button' href='/pulse/groups'>Open Groups</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
@@ -19950,9 +20175,21 @@ def admin_merchant_applications_page():
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT ma.*, u.username, u.display_name AS account_name FROM marketplace_merchant_applications ma LEFT JOIN users u ON u.user_id=ma.user_id ORDER BY CASE ma.status WHEN 'pending_review' THEN 0 WHEN 'under_review' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END, ma.id DESC LIMIT 120")
     apps = [dict(row) for row in cur.fetchall()]
+    app_ids = [int(a.get("id") or 0) for a in apps]
+    docs_by_app = {}
+    if app_ids:
+        placeholders = ",".join(["?"] * len(app_ids))
+        cur.execute(f"SELECT application_id, document_type, original_filename, file_size, scan_status FROM marketplace_merchant_documents WHERE application_id IN ({placeholders}) ORDER BY id ASC", app_ids)
+        for row in cur.fetchall():
+            doc = dict(row)
+            docs_by_app.setdefault(int(doc.get("application_id") or 0), []).append(doc)
     conn.close()
-    rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('display_name') or a.get('account_name') or '')}</td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{int(a.get('completeness') or 0)}%</td><td>{int(a.get('risk_score') or 0)}</td><td><form method='post'><input type='hidden' name='application_id' value='{a.get('id')}'><input name='note' placeholder='Internal note'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='more_info'>More Info</button><button name='action' value='suspend'>Suspend</button><button name='action' value='verify'>Verify</button></form></td></tr>" for a in apps)
-    body = f"<h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, verification placeholders, safety answers, Pulse reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No merchant applications yet.</td></tr>'}</table></section><p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></p>"
+    rows = ""
+    for a in apps:
+        docs = docs_by_app.get(int(a.get("id") or 0), [])
+        doc_html = "<br>".join(f"{clean_html(d.get('document_type') or '')}: {clean_html(d.get('original_filename') or '')} ({clean_html(d.get('scan_status') or '')})" for d in docs) or "No documents uploaded"
+        rows += f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('display_name') or a.get('account_name') or '')}<br><small>{clean_html(a.get('email') or '')}</small></td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{int(a.get('completeness') or 0)}%</td><td>{int(a.get('risk_score') or 0)}</td><td>{doc_html}</td><td><form method='post'><input type='hidden' name='application_id' value='{a.get('id')}'><input name='note' placeholder='Internal note'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='more_info'>Request Info</button><button name='action' value='suspend'>Suspend</button><button name='action' value='verify'>Verify</button></form></td></tr>"
+    body = f"<h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, Pulse reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Verification Documents</th><th>Actions</th></tr>{rows or '<tr><td colspan=8>No merchant applications yet.</td></tr>'}</table></section><p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></p>"
     return admin_page_html("Merchant Applications", body, admin)
 
 
@@ -20038,6 +20275,28 @@ def admin_spaces_command_page():
     return admin_page_html("Spaces Command", body, admin)
 
 
+@webhook_app.route("/admin/media-studio", methods=["GET"])
+def admin_media_studio_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    uploads = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads")
+    group_media = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_media")
+    pending = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE moderation_status IN ('pending','needs_review')")
+    conn.close()
+    filters = camera_filter_engine.filter_catalog(True)
+    rows = "".join(f"<tr><td>{clean_html(f['label'])}</td><td>{'Premium' if f['premium'] else 'Free'}</td><td>{clean_html(f['css'])}</td></tr>" for f in filters)
+    body = f"""
+    <h1>Media Studio</h1><p class='muted'>Camera capture, upload safety, filter catalog, group media, and processing health.</p>
+    <section class='grid'><div class='card'><h2>Total Uploads</h2><p class='metric'>{uploads}</p></div><div class='card'><h2>Group Media</h2><p class='metric'>{group_media}</p></div><div class='card'><h2>Needs Review</h2><p class='metric'>{pending}</p></div></section>
+    <section class='card'><h2>Filter Catalog</h2><table class='table'><tr><th>Filter</th><th>Access</th><th>Preview Rule</th></tr>{rows}</table></section>
+    <p><a class='button' href='/pulse/camera'>Open Camera Studio</a> <a class='button' href='/admin/groups-health'>Groups Health</a></p>
+    """
+    return admin_page_html("Media Studio", body, admin)
+
+
 @webhook_app.route("/admin/system-audit", methods=["GET"])
 def admin_system_audit_page():
     admin, denied = require_admin_page("system.view")
@@ -20045,8 +20304,8 @@ def admin_system_audit_page():
         return denied
     init_db()
     route_groups = {
-        "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant"],
-        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health"],
+        "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant", "/pulse/camera"],
+        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/media-studio"],
     }
     rows = []
     client = webhook_app.test_client()
@@ -21794,6 +22053,92 @@ def api_media_upload():
     )
     log_product_event(user["user_id"], "media_upload", {"ok": result.get("ok"), "context_type": request.form.get("context_type") or "private_chat"})
     return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/upload", methods=["POST"])
+def api_pulse_media_upload():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    file = request.files.get("file")
+    if file:
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+        check = camera_filter_engine.validate_media(file.filename or "", file.mimetype or "", size)
+        if not check.get("ok"):
+            return api_error(check.get("message") or "Media could not be validated.", 400)
+    result, status = media_service.save_upload(
+        user["user_id"],
+        file,
+        context_type=request.form.get("context_type") or "pulse_camera",
+        context_id=request.form.get("group") or request.form.get("target") or "",
+    )
+    if result.get("ok") and result.get("media"):
+        result["media"]["filter_name"] = clean_html(request.form.get("filter_name") or "")[:80]
+    log_product_event(user["user_id"], "pulse_media_upload", {"ok": result.get("ok"), "target": request.form.get("target") or ""})
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/media/filter-preview", methods=["POST"])
+def api_pulse_media_filter_preview():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    is_premium = premium_identity_engine.user_has_premium_mark(user)
+    catalog = {item["key"]: item for item in camera_filter_engine.filter_catalog(is_premium)}
+    filter_key = clean_html(payload.get("filter_name") or "pulse_neon")
+    item = catalog.get(filter_key) or catalog.get("pulse_neon")
+    if item and item.get("locked"):
+        return api_error("That filter is a Premium creator filter.", 403)
+    return jsonify({"ok": True, "filter": item})
+
+
+@webhook_app.route("/api/pulse/media/process", methods=["POST"])
+def api_pulse_media_process():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    return jsonify({"ok": True, "message": "Media accepted for safe processing.", "status": "queued"})
+
+
+@webhook_app.route("/api/pulse/posts/create-from-camera", methods=["POST"])
+def api_pulse_post_from_camera():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    media_url = clean_html(payload.get("media_url") or "")[:1000]
+    body = clean_html(payload.get("body") or "Created with CoinPilotXAI Camera Studio")[:3000]
+    if not media_url:
+        return api_error("Upload media before creating a camera post.", 400)
+    media_ids = [safe_int(payload.get("media_id"), 0)] if safe_int(payload.get("media_id"), 0) else []
+    result = pulse_feed_engine.create_post(user["user_id"], body, payload.get("post_type") or "image", payload.get("title") or "", tags=["camera"], visibility="public", media_ids=media_ids)
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@webhook_app.route("/api/pulse/reels/create-from-camera", methods=["POST"])
+def api_pulse_reel_from_camera():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    media_url = clean_html(payload.get("media_url") or "")[:1000]
+    if not media_url:
+        return api_error("Upload a video before creating a Reel.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO pulse_reels (user_id, category, caption, video_url, poster_url, status, created_at, updated_at) VALUES (?, 'Community', ?, ?, ?, 'active', ?, ?)",
+        (user["user_id"], clean_html(payload.get("caption") or payload.get("title") or "")[:1000], media_url, clean_html(payload.get("thumbnail_url") or media_url)[:1000], now, now),
+    )
+    reel_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "reel_id": reel_id, "next_url": f"/pulse/reels/{reel_id}", "message": "Reel created."})
 
 
 @webhook_app.route("/api/pulse/profile/update", methods=["POST"])
@@ -27482,6 +27827,21 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_merchant_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        application_id INTEGER,
+        user_id INTEGER,
+        document_type TEXT,
+        original_filename TEXT,
+        stored_path TEXT,
+        mime_type TEXT,
+        file_size INTEGER DEFAULT 0,
+        private_access INTEGER DEFAULT 1,
+        scan_status TEXT DEFAULT 'queued_for_internal_review',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_listings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         seller_user_id INTEGER,
@@ -27657,6 +28017,65 @@ def init_db():
         group_id INTEGER,
         user_id INTEGER,
         body TEXT,
+        created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_group_posts", [
+        ("post_type", "TEXT DEFAULT 'text'"),
+        ("title", "TEXT"),
+        ("content", "TEXT"),
+        ("media_url", "TEXT"),
+        ("thumbnail_url", "TEXT"),
+        ("media_type", "TEXT"),
+        ("media_metadata", "TEXT"),
+        ("moderation_status", "TEXT DEFAULT 'approved'"),
+        ("visibility", "TEXT DEFAULT 'group'"),
+        ("status", "TEXT DEFAULT 'published'"),
+        ("updated_at", "TEXT"),
+        ("edited_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_post_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_post_id INTEGER,
+        media_url TEXT,
+        thumbnail_url TEXT,
+        media_type TEXT,
+        file_size INTEGER DEFAULT 0,
+        width INTEGER DEFAULT 0,
+        height INTEGER DEFAULT 0,
+        duration_seconds REAL DEFAULT 0,
+        filter_name TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_post_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_post_id INTEGER,
+        user_id INTEGER,
+        reaction_type TEXT,
+        created_at TEXT,
+        UNIQUE(group_post_id, user_id, reaction_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_post_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_post_id INTEGER,
+        user_id INTEGER,
+        body TEXT,
+        created_at TEXT,
+        deleted_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_post_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_post_id INTEGER,
+        reporter_user_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
         created_at TEXT
     )
     """)

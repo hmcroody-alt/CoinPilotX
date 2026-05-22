@@ -82,6 +82,7 @@ def main():
         "/pulse/creator-monetization",
         "/pulse/live",
         "/pulse/assistant",
+        "/pulse/camera",
         "/admin/command-center",
         "/admin/global-command",
         "/admin/capability-matrix",
@@ -95,6 +96,7 @@ def main():
         "/admin/merchant-applications",
         "/admin/marketplace-command",
         "/admin/spaces-command",
+        "/admin/media-studio",
         "/admin/groups-health",
         "/admin/system-audit",
     ]

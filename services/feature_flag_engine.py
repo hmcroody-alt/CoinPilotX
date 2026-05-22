@@ -144,7 +144,7 @@ FEATURE_DEFINITIONS = [
         "feature_key": "marketplace_checkout",
         "feature": "Marketplace checkout and payouts",
         "state": "internal-only",
-        "backend_status": "placeholder",
+        "backend_status": "internal design only",
         "frontend_status": "hidden from public",
         "realtime_status": "not required",
         "mobile_status": "not exposed",
@@ -311,4 +311,3 @@ def capability_matrix(runtime_status: dict | None = None, flags: list[dict] | No
             }
         )
     return rows
-
