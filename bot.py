@@ -56,6 +56,7 @@ from services import (
     arena_victory_engine,
     arena_world_engine,
     ai_agent_engine,
+    ai_action_pipeline,
     ai_economy_engine,
     ai_human_collaboration_engine,
     auto_signals_service,
@@ -138,6 +139,7 @@ from services import (
     social_loop_engine,
     sports_data as sports_data_service,
     self_healing_engine,
+    safe_execution_engine,
     system_health_engine,
     ui_state_engine,
     universal_intelligence_fabric,
@@ -147,6 +149,7 @@ from services import (
     websocket_orchestrator,
     world_simulation_engine,
     world_presence_engine,
+    action_result_tracker,
 )
 from seo import schema as seo_schema
 from seo.content import (
@@ -19762,6 +19765,11 @@ def global_command_snapshot(persist=True):
     })
     meta_coordination = meta_intelligence_engine.coordinate(fabric_reasoning, system_health, bus_metrics)
     try:
+        action_summary = ai_command_action_summary(limit=5)
+    except Exception as exc:
+        logging.info("GLOBAL_COMMAND_AI_ACTIONS_SKIPPED error=%s", exc)
+        action_summary = {"pending_approvals": 0, "open_recommendations": 0, "critical_actions": [], "top_recommendations": [], "recent_results": [], "failed_actions": []}
+    try:
         if not persist:
             raise RuntimeError("snapshot persistence skipped for live refresh")
         cur.execute(
@@ -19796,7 +19804,7 @@ def global_command_snapshot(persist=True):
             logging.info("GLOBAL_COMMAND_SNAPSHOT_WRITE_SKIPPED error=%s", exc)
     finally:
         conn.close()
-    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "distributed_realtime": distributed_health, "websocket": websocket_health, "stream": stream_analytics, "fabric": fabric_reasoning, "meta": meta_coordination, "nodes": nodes, "edges": edges, "signals": signals}
+    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "distributed_realtime": distributed_health, "websocket": websocket_health, "stream": stream_analytics, "fabric": fabric_reasoning, "meta": meta_coordination, "actions": action_summary, "nodes": nodes, "edges": edges, "signals": signals}
 
 
 @webhook_app.route("/admin/global-command", methods=["GET"])
@@ -19816,6 +19824,7 @@ def admin_global_command_page():
     stream = snapshot["stream"]
     fabric = snapshot["fabric"]
     meta = snapshot["meta"]
+    actions = snapshot.get("actions") or {}
     cards = "".join(
         f"<div class='card live-card'><h2>{clean_html(label)}</h2><p class='metric' data-live-key='{clean_html(key)}'>{value}</p><div class='spark'><span style='width:{max(8, min(100, int(value or 0) % 100))}%'></span></div></div>"
         for label, value, key in [
@@ -19853,6 +19862,14 @@ def admin_global_command_page():
         for item in meta_intelligence_engine.command_questions(meta)
     )
     meta_decision = meta.get("decision") or {}
+    action_rows = "".join(
+        f"<li><strong>{clean_html(str(item.get('priority') or ''))}</strong> · {clean_html(str(item.get('title') or ''))}<br><span class='muted'>{clean_html(str(item.get('recommended_action') or ''))}</span></li>"
+        for item in (actions.get("top_recommendations") or [])[:5]
+    ) or "<li>No saved AI action recommendations yet.</li>"
+    failed_action_rows = "".join(
+        f"<li>#{item.get('id')} {clean_html(str(item.get('action_type') or ''))}: {clean_html(str(item.get('status') or ''))}</li>"
+        for item in (actions.get("failed_actions") or [])[:5]
+    ) or "<li>No failed AI actions.</li>"
     command_css = """
     <style>
     .global-command-stage{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:22px;padding:18px;background:radial-gradient(circle at 20% 10%,rgba(110,223,246,.16),transparent 28rem),radial-gradient(circle at 82% 18%,rgba(54,229,143,.12),transparent 20rem),linear-gradient(145deg,rgba(4,12,24,.96),rgba(8,18,34,.94));box-shadow:0 30px 100px rgba(0,0,0,.38)}
@@ -19887,6 +19904,10 @@ def admin_global_command_page():
     <section class='grid'>
       <div class='card brainstem'><h2>Universal Intelligence Fabric</h2><p class='metric'>{fabric.get('correlation', {}).get('correlation_strength', 0)}%</p><p>{clean_html(str(fabric.get('recommendation') or ''))}</p><p><span class='pill'>Priority {clean_html(str(fabric.get('priority') or ''))}</span> <span class='pill'>Confidence {clean_html(str(fabric.get('confidence') or ''))}</span> <span class='pill'>Domains {len(fabric.get('domains') or [])}</span></p><ul class='brain-list'>{fabric_factors}</ul></div>
       <div class='card brainstem'><h2>Meta-Intelligence Coordination</h2><p class='metric'>{meta.get('coordination_score', 0)}%</p><p>{clean_html(str(meta_decision.get('decision') or ''))}</p><p><span class='pill'>Priority {clean_html(str(meta_decision.get('priority') or ''))}</span> <span class='pill'>Owner approval {'required' if meta_decision.get('requires_owner_approval') else 'not required'}</span></p><ul class='brain-list'>{meta_questions}</ul></div>
+    </section>
+    <section class='grid'>
+      <div class='card brainstem'><h2>Actionable Command Queue</h2><p class='metric'>{actions.get('pending_approvals', 0)}</p><p>pending owner approvals</p><p><span class='pill'>Open recommendations {actions.get('open_recommendations', 0)}</span> <span class='pill'>Queued actions {len(actions.get('critical_actions') or [])}</span></p><ul class='brain-list'>{action_rows}</ul><p><a class='button primary' href='/admin/approvals'>Review Approvals</a> <a class='button' href='/admin/ai-actions'>AI Actions</a></p></div>
+      <div class='card brainstem'><h2>Execution Results</h2><p class='metric'>{len(actions.get('recent_results') or [])}</p><p>recent tracked outcomes</p><ul class='brain-list'>{failed_action_rows}</ul><p><a class='button' href='/admin/tasks'>Admin Tasks</a></p></div>
     </section>
     <section class='grid'>
       <div class='card'><h2>Distributed Realtime Nervous System</h2><p class='metric'>{distributed.get('score', 0)}%</p><p><span class='pill'>Status {clean_html(str(distributed.get('status') or ''))}</span> <span class='pill'>Success {clean_html(str((distributed.get('metrics') or {}).get('delivery_success_rate') or 0))}%</span> <span class='pill'>Replay {sum(((distributed.get('metrics') or {}).get('replay_depths') or {}).values())}</span></p></div>
@@ -19946,6 +19967,7 @@ def api_admin_global_command_live():
             "correlation": snapshot["fabric"].get("correlation"),
         },
         "meta": snapshot["meta"],
+        "actions": snapshot.get("actions", {}),
         "distributed_realtime": snapshot["distributed_realtime"],
         "websocket": snapshot["websocket"],
         "stream": snapshot["stream"],
@@ -20211,12 +20233,536 @@ def admin_department_page(slug):
     return admin_page_html(meta["title"], body, admin)
 
 
+def ai_command_seed_recommendation(admin_id=0):
+    snapshot = global_command_snapshot(persist=False)
+    rec = ai_action_pipeline.from_meta_coordination(snapshot.get("meta"), snapshot.get("fabric"))
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM ai_recommendations WHERE external_id=? LIMIT 1", (rec["external_id"],))
+    existing = cur.fetchone()
+    if existing:
+        cur.execute(
+            """
+            UPDATE ai_recommendations
+            SET source_engine=?, recommendation_type=?, title=?, description=?, priority=?, confidence=?,
+                risk_level=?, recommended_action=?, owner_approval_required=?, estimated_impact=?,
+                affected_area=?, status=CASE WHEN status='closed' THEN status ELSE ? END, updated_at=?
+            WHERE external_id=?
+            """,
+            (
+                rec["source_engine"], rec["recommendation_type"], rec["title"], rec["description"], rec["priority"],
+                rec["confidence"], rec["risk_level"], rec["recommended_action"], 1 if rec["owner_approval_required"] else 0,
+                rec["estimated_impact"], rec["affected_area"], rec["status"], now, rec["external_id"],
+            ),
+        )
+        rec_id = int(existing["id"])
+    else:
+        cur.execute(
+            """
+            INSERT INTO ai_recommendations
+            (external_id, source_engine, recommendation_type, title, description, priority, confidence, risk_level,
+             recommended_action, owner_approval_required, estimated_impact, affected_area, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rec["external_id"], rec["source_engine"], rec["recommendation_type"], rec["title"], rec["description"],
+                rec["priority"], rec["confidence"], rec["risk_level"], rec["recommended_action"],
+                1 if rec["owner_approval_required"] else 0, rec["estimated_impact"], rec["affected_area"],
+                rec["status"], rec["created_at"], now,
+            ),
+        )
+        rec_id = int(cur.lastrowid or 0)
+    conn.commit()
+    conn.close()
+    log_admin_audit(admin_id, "ai_recommendation_seeded", "ai_recommendation", str(rec_id), {"external_id": rec["external_id"]})
+    return rec_id
+
+
+def ai_command_fetch_recommendation(rec_id):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM ai_recommendations WHERE id=? LIMIT 1", (int(rec_id or 0),))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def ai_command_create_task_from_recommendation(rec_id, admin):
+    rec = ai_command_fetch_recommendation(rec_id)
+    if not rec:
+        return None, "Recommendation not found."
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    department = ai_action_pipeline.department_for_recommendation(rec)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO admin_tasks
+        (department, title, description, priority, assigned_to, status, source_type, source_id,
+         source_recommendation_id, approval_required, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'open', 'ai_recommendation', ?, ?, ?, ?, ?)
+        """,
+        (
+            department,
+            rec.get("title") or "AI recommended task",
+            rec.get("description") or rec.get("recommended_action") or "",
+            rec.get("priority") or "normal",
+            (admin or {}).get("id"),
+            str(rec.get("id")),
+            rec.get("external_id") or str(rec.get("id")),
+            1 if rec.get("owner_approval_required") else 0,
+            now,
+            now,
+        ),
+    )
+    task_id = int(cur.lastrowid or 0)
+    if rec.get("owner_approval_required"):
+        cur.execute(
+            """
+            INSERT INTO admin_approvals
+            (approval_type, target_type, target_id, title, description, status, priority, risk_level, confidence,
+             requested_by, created_at, updated_at)
+            VALUES ('admin_task', 'admin_task', ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(task_id), rec.get("title") or "Approval required", rec.get("recommended_action") or rec.get("description") or "",
+                rec.get("priority") or "normal", rec.get("risk_level") or "normal", float(rec.get("confidence") or 0),
+                (admin or {}).get("id"), now, now,
+            ),
+        )
+    cur.execute("UPDATE ai_recommendations SET status='task_created', updated_at=? WHERE id=?", (now, rec_id))
+    conn.commit()
+    conn.close()
+    log_admin_audit((admin or {}).get("id"), "ai_recommendation_task_created", "ai_recommendation", str(rec_id), {"task_id": task_id, "department": department})
+    return task_id, "Admin task created."
+
+
+def ai_command_create_action_request(rec_id, action_type, admin):
+    rec = ai_command_fetch_recommendation(rec_id)
+    if not rec:
+        return None, "Recommendation not found."
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    action_info = safe_execution_engine.classify_action(action_type)
+    approval_required = bool(rec.get("owner_approval_required")) or action_info.get("owner_approval_required")
+    payload = {
+        "recommendation_id": rec.get("id"),
+        "title": rec.get("title"),
+        "recommended_action": rec.get("recommended_action"),
+        "affected_area": rec.get("affected_area"),
+        "risk_level": rec.get("risk_level"),
+    }
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO ai_action_requests
+        (recommendation_id, action_type, target_type, target_id, payload_json, status, approval_required,
+         requested_by, created_at, updated_at)
+        VALUES (?, ?, 'ai_recommendation', ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            rec.get("id"),
+            action_info["action_type"],
+            str(rec.get("id")),
+            json.dumps(payload, default=str),
+            "pending_approval" if approval_required else "approved",
+            1 if approval_required else 0,
+            (admin or {}).get("id"),
+            now,
+            now,
+        ),
+    )
+    request_id = int(cur.lastrowid or 0)
+    if approval_required:
+        cur.execute(
+            """
+            INSERT INTO admin_approvals
+            (approval_type, target_type, target_id, title, description, status, priority, risk_level, confidence,
+             requested_by, created_at, updated_at)
+            VALUES ('ai_action', 'ai_action_request', ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(request_id),
+                rec.get("title") or "AI action approval",
+                f"{action_info['action_type']}: {rec.get('recommended_action') or ''}",
+                rec.get("priority") or "normal",
+                rec.get("risk_level") or "normal",
+                float(rec.get("confidence") or 0),
+                (admin or {}).get("id"),
+                now,
+                now,
+            ),
+        )
+    conn.commit()
+    conn.close()
+    log_admin_audit((admin or {}).get("id"), "ai_action_request_created", "ai_action_request", str(request_id), {"action_type": action_info["action_type"], "approval_required": approval_required})
+    return request_id, "Action request created."
+
+
+def ai_command_audit_action(conn, recommendation_id, action_type, target_type, target_id, requested_by=0, approved_by=0, executed_by=0, before=None, after=None, status="", error_message=""):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO ai_action_audit_logs
+        (recommendation_id, action_type, target_type, target_id, requested_by, approved_by, executed_by,
+         before_json, after_json, status, error_message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(recommendation_id or 0), action_type, target_type, target_id, int(requested_by or 0),
+            int(approved_by or 0), int(executed_by or 0), json.dumps(before or {}, default=str)[:4000],
+            json.dumps(after or {}, default=str)[:4000], status, (error_message or "")[:1200],
+            datetime.utcnow().isoformat(timespec="seconds"),
+        ),
+    )
+
+
+def ai_command_execute_request(request_id, admin):
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM ai_action_requests WHERE id=? LIMIT 1", (int(request_id or 0),))
+    action_row = cur.fetchone()
+    if not action_row:
+        conn.close()
+        return {"status": "failed", "message": "Action request not found."}
+    action = dict(action_row)
+    if int(action.get("approval_required") or 0) and not action.get("approved_by"):
+        conn.close()
+        return {"status": "skipped", "message": "Owner approval is required before execution."}
+    before = {"action_request": action}
+    payload = json.loads(action.get("payload_json") or "{}")
+    result = safe_execution_engine.execute(action.get("action_type"), payload, approved=bool(action.get("approved_by") or not action.get("approval_required")))
+    try:
+        if result.get("status") == "success" and action.get("action_type") == "create_admin_task":
+            rec_id = int(action.get("recommendation_id") or 0)
+            rec = ai_command_fetch_recommendation(rec_id)
+            if rec:
+                task_id, _ = ai_command_create_task_from_recommendation(rec_id, admin)
+                result.setdefault("result", {})["task_id"] = task_id
+        cur.execute(
+            """
+            UPDATE ai_action_requests
+            SET status=?, executed_by=?, executed_at=?, result_json=?, error_message=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                result.get("status"),
+                (admin or {}).get("id"),
+                now,
+                json.dumps(result, default=str)[:4000],
+                result.get("message") if result.get("status") in {"failed", "needs_manual_review", "skipped"} else "",
+                now,
+                action.get("id"),
+            ),
+        )
+        ai_command_audit_action(
+            conn,
+            action.get("recommendation_id"),
+            action.get("action_type"),
+            action.get("target_type"),
+            action.get("target_id"),
+            action.get("requested_by"),
+            action.get("approved_by"),
+            (admin or {}).get("id"),
+            before,
+            result,
+            result.get("status"),
+            result.get("message") if result.get("status") != "success" else "",
+        )
+        score_payload = action_result_tracker.result_payload(
+            action.get("recommendation_id"),
+            action.get("id"),
+            status=result.get("status"),
+            useful=True if result.get("status") == "success" else None,
+            metrics={"action_type": action.get("action_type")},
+        )
+        cur.execute(
+            """
+            INSERT INTO ai_action_results
+            (recommendation_id, action_request_id, status, useful, owner_feedback, metrics_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                score_payload["recommendation_id"], score_payload["action_request_id"], score_payload["status"],
+                1 if score_payload["useful"] is True else 0 if score_payload["useful"] is False else None,
+                score_payload["owner_feedback"], json.dumps(score_payload["metrics"], default=str), score_payload["created_at"],
+            ),
+        )
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        result = {"status": "failed", "message": str(exc)}
+    finally:
+        conn.close()
+    log_admin_audit((admin or {}).get("id"), "ai_action_request_executed", "ai_action_request", str(request_id), result)
+    return result
+
+
+def ai_command_action_summary(limit=5):
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    summary = {
+        "pending_approvals": 0,
+        "open_recommendations": 0,
+        "critical_actions": [],
+        "top_recommendations": [],
+        "recent_results": [],
+        "failed_actions": [],
+    }
+    try:
+        cur.execute("SELECT COUNT(*) AS c FROM admin_approvals WHERE status='pending'")
+        row = cur.fetchone()
+        summary["pending_approvals"] = int(row["c"] if row else 0)
+        cur.execute("SELECT COUNT(*) AS c FROM ai_recommendations WHERE status NOT IN ('closed','rejected')")
+        row = cur.fetchone()
+        summary["open_recommendations"] = int(row["c"] if row else 0)
+        cur.execute("SELECT * FROM ai_recommendations WHERE status NOT IN ('closed','rejected') ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, id DESC LIMIT ?", (limit,))
+        summary["top_recommendations"] = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT * FROM ai_action_requests WHERE status IN ('pending_approval','pending','approved') ORDER BY CASE approval_required WHEN 1 THEN 0 ELSE 1 END, id DESC LIMIT ?", (limit,))
+        summary["critical_actions"] = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT * FROM ai_action_results ORDER BY id DESC LIMIT ?", (limit,))
+        summary["recent_results"] = [dict(row) for row in cur.fetchall()]
+        cur.execute("SELECT * FROM ai_action_requests WHERE status IN ('failed','needs_manual_review') ORDER BY id DESC LIMIT ?", (limit,))
+        summary["failed_actions"] = [dict(row) for row in cur.fetchall()]
+    except Exception as exc:
+        logging.info("AI_COMMAND_SUMMARY_SKIPPED error=%s", exc)
+    conn.close()
+    return summary
+
+
+@webhook_app.route("/admin/ai-actions", methods=["GET", "POST"])
+def admin_ai_actions_page():
+    admin, denied = require_owner_admin_page()
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        form_action = request.form.get("form_action") or ""
+        if form_action == "seed":
+            rec_id = ai_command_seed_recommendation(admin.get("id"))
+            message = f"AI recommendation refreshed as #{rec_id}."
+        elif form_action == "create_task":
+            _, message = ai_command_create_task_from_recommendation(int(request.form.get("rec_id") or 0), admin)
+        elif form_action == "request_action":
+            req_id, message = ai_command_create_action_request(int(request.form.get("rec_id") or 0), request.form.get("action_type") or "create_admin_task", admin)
+            if req_id and request.form.get("execute_now") == "1":
+                result = ai_command_execute_request(req_id, admin)
+                message = result.get("message") or message
+        elif form_action == "execute_request":
+            result = ai_command_execute_request(int(request.form.get("request_id") or 0), admin)
+            message = result.get("message") or result.get("status") or "Action processed."
+    summary = ai_command_action_summary(limit=12)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM ai_recommendations ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, id DESC LIMIT 80")
+    recommendations = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM ai_action_requests ORDER BY id DESC LIMIT 60")
+    requests = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rec_rows = "".join(
+        f"<tr><td><a href='/admin/ai-actions/{r.get('id')}'>#{r.get('id')}</a></td><td>{clean_html(r.get('priority') or '')}</td><td>{clean_html(r.get('risk_level') or '')}</td><td>{clean_html(r.get('title') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td><form method='post'><input type='hidden' name='rec_id' value='{r.get('id')}'><button name='form_action' value='create_task'>Create Task</button><select name='action_type'><option value='create_admin_task'>Create Task</option><option value='send_admin_alert'>Admin Alert</option><option value='mark_content_for_review'>Review Content</option><option value='retry_failed_queue'>Retry Queue</option></select><button name='form_action' value='request_action'>Request Action</button></form></td></tr>"
+        for r in recommendations
+    )
+    req_rows = "".join(
+        f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('action_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{'Yes' if r.get('approval_required') else 'No'}</td><td>{clean_html(r.get('created_at') or '')}</td><td><form method='post'><input type='hidden' name='request_id' value='{r.get('id')}'><button name='form_action' value='execute_request'>Execute</button></form></td></tr>"
+        for r in requests
+    )
+    body = f"""
+    <h1>AI Action Pipeline</h1><p class='muted'>AI Insight → Admin Task → Owner Approval → Safe Execution → Audit Log → Result Tracking.</p>
+    <p>{clean_html(message)}</p>
+    <section class='grid'><div class='card'><h2>Pending Approvals</h2><p class='metric'>{summary['pending_approvals']}</p></div><div class='card'><h2>Open Recommendations</h2><p class='metric'>{summary['open_recommendations']}</p></div><div class='card'><h2>Action Queue</h2><p class='metric'>{len(summary['critical_actions'])}</p></div></section>
+    <form method='post' class='card'><h2>Refresh From Global Command</h2><p class='muted'>Creates or updates a deduplicated recommendation from the live Meta-Intelligence layer.</p><button name='form_action' value='seed'>Create Recommendation</button></form>
+    <section class='card'><h2>Recommendations</h2><table class='table'><tr><th>ID</th><th>Priority</th><th>Risk</th><th>Title</th><th>Status</th><th>Action</th></tr>{rec_rows or '<tr><td colspan=6>No AI recommendations yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Action Requests</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Approval</th><th>Created</th><th>Run</th></tr>{req_rows or '<tr><td colspan=6>No action requests yet.</td></tr>'}</table></section>
+    <p><a class='button' href='/admin/approvals'>Approvals</a> <a class='button' href='/admin/tasks'>Tasks</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
+    """
+    return admin_page_html("AI Action Pipeline", body, admin)
+
+
+@webhook_app.route("/admin/ai-actions/<int:rec_id>", methods=["GET", "POST"])
+def admin_ai_action_detail_page(rec_id):
+    admin, denied = require_owner_admin_page()
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        form_action = request.form.get("form_action") or ""
+        if form_action == "create_task":
+            _, message = ai_command_create_task_from_recommendation(rec_id, admin)
+        elif form_action == "request_action":
+            _, message = ai_command_create_action_request(rec_id, request.form.get("action_type") or "create_admin_task", admin)
+    rec = ai_command_fetch_recommendation(rec_id)
+    if not rec:
+        return admin_page_html("AI Action", "<h1>AI Action</h1><div class='card'>Recommendation not found.</div>", admin)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM ai_action_requests WHERE recommendation_id=? ORDER BY id DESC", (rec_id,))
+    requests = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM ai_action_audit_logs WHERE recommendation_id=? ORDER BY id DESC LIMIT 40", (rec_id,))
+    audits = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM ai_action_results WHERE recommendation_id=? ORDER BY id DESC LIMIT 20", (rec_id,))
+    results = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    req_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('action_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in requests)
+    audit_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('action_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in audits)
+    result_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in results)
+    body = f"""
+    <h1>{clean_html(rec.get('title') or 'AI Recommendation')}</h1><p>{clean_html(message)}</p>
+    <section class='grid'><div class='card'><h2>Priority</h2><p class='metric'>{clean_html(rec.get('priority') or '')}</p></div><div class='card'><h2>Risk</h2><p class='metric'>{clean_html(rec.get('risk_level') or '')}</p></div><div class='card'><h2>Confidence</h2><p class='metric'>{clean_html(str(rec.get('confidence') or 0))}</p></div></section>
+    <section class='card'><h2>Recommendation</h2><p>{clean_html(rec.get('description') or '')}</p><p><strong>Suggested action:</strong> {clean_html(rec.get('recommended_action') or '')}</p><p><span class='pill'>{clean_html(rec.get('source_engine') or '')}</span> <span class='pill'>{clean_html(rec.get('affected_area') or '')}</span> <span class='pill'>Owner approval {'required' if rec.get('owner_approval_required') else 'not required'}</span></p></section>
+    <section class='grid'><form method='post' class='card'><h2>Create Admin Task</h2><button name='form_action' value='create_task'>Create Task</button></form><form method='post' class='card'><h2>Request Safe Action</h2><select name='action_type'><option value='create_admin_task'>Create Task</option><option value='send_admin_alert'>Send Admin Alert</option><option value='mark_content_for_review'>Mark Content For Review</option><option value='retry_failed_queue'>Retry Failed Queue</option><option value='request_user_verification'>Request Verification</option></select><button name='form_action' value='request_action'>Request Action</button></form></section>
+    <section class='card'><h2>Action Requests</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Created</th></tr>{req_rows or '<tr><td colspan=4>No requests yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Audit Log</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Time</th></tr>{audit_rows or '<tr><td colspan=4>No audit entries yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Results</h2><table class='table'><tr><th>ID</th><th>Status</th><th>Time</th></tr>{result_rows or '<tr><td colspan=3>No results yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("AI Action Detail", body, admin)
+
+
+@webhook_app.route("/admin/approvals", methods=["GET", "POST"])
+def admin_approvals_page():
+    admin, denied = require_owner_admin_page()
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        approval_id = int(request.form.get("approval_id") or 0)
+        decision = request.form.get("decision") or ""
+        note = clean_html(request.form.get("decision_note") or "")[:1000]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM admin_approvals WHERE id=? LIMIT 1", (approval_id,))
+        approval = dict(cur.fetchone() or {})
+        if approval and decision in {"approve", "reject", "more_info"}:
+            status = "approved" if decision == "approve" else "rejected" if decision == "reject" else "needs_more_info"
+            if decision == "approve":
+                cur.execute("UPDATE admin_approvals SET status=?, approved_by=?, approved_at=?, decision_note=?, updated_at=? WHERE id=?", (status, admin.get("id"), now, note, now, approval_id))
+                if approval.get("target_type") == "ai_action_request":
+                    cur.execute("UPDATE ai_action_requests SET status='approved', approved_by=?, approved_at=?, updated_at=? WHERE id=?", (admin.get("id"), now, now, int(approval.get("target_id") or 0)))
+                elif approval.get("target_type") == "admin_task":
+                    cur.execute("UPDATE admin_tasks SET approved_by=?, approved_at=?, updated_at=? WHERE id=?", (admin.get("id"), now, now, int(approval.get("target_id") or 0)))
+                message = "Approval granted."
+            else:
+                cur.execute("UPDATE admin_approvals SET status=?, rejected_by=?, rejected_at=?, decision_note=?, updated_at=? WHERE id=?", (status, admin.get("id"), now, note, now, approval_id))
+                if approval.get("target_type") == "ai_action_request":
+                    cur.execute("UPDATE ai_action_requests SET status=?, updated_at=? WHERE id=?", ("rejected" if decision == "reject" else "needs_more_info", now, int(approval.get("target_id") or 0)))
+                message = "Approval updated."
+            conn.commit()
+            log_admin_audit(admin.get("id"), f"admin_approval_{status}", approval.get("target_type") or "approval", approval.get("target_id") or "", {"approval_id": approval_id, "note": note})
+        conn.close()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_approvals ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'needs_more_info' THEN 1 ELSE 2 END, id DESC LIMIT 100")
+    approvals = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(
+        f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('priority') or '')}</td><td>{clean_html(a.get('risk_level') or '')}</td><td>{clean_html(a.get('title') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td><form method='post'><input type='hidden' name='approval_id' value='{a.get('id')}'><input name='decision_note' placeholder='Decision note'><button name='decision' value='approve'>Approve</button><button name='decision' value='reject'>Reject</button><button name='decision' value='more_info'>More Info</button></form></td></tr>"
+        for a in approvals
+    )
+    body = f"<h1>Owner Approvals</h1><p class='muted'>Risky AI actions, privilege changes, monetization experiments, and safety interventions wait here for owner approval.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Priority</th><th>Risk</th><th>Title</th><th>Status</th><th>Decision</th></tr>{rows or '<tr><td colspan=6>No approvals yet.</td></tr>'}</table></section><p><a class='button' href='/admin/ai-actions'>AI Actions</a> <a class='button' href='/admin/global-command'>Global Command</a></p>"
+    return admin_page_html("Owner Approvals", body, admin)
+
+
+@webhook_app.route("/admin/tasks", methods=["GET", "POST"])
+def admin_tasks_page():
+    admin, denied = require_admin_page("command_center.view")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        task_id = int(request.form.get("task_id") or 0)
+        status = request.form.get("status") or "open"
+        comment = clean_html(request.form.get("comment") or "")[:1200]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db()
+        cur = conn.cursor()
+        if task_id and status in {"open", "in_progress", "blocked", "done", "escalated"}:
+            completed_at = now if status == "done" else None
+            cur.execute("UPDATE admin_tasks SET status=?, completed_at=COALESCE(?, completed_at), updated_at=? WHERE id=?", (status, completed_at, now, task_id))
+            if comment:
+                cur.execute("INSERT INTO admin_task_comments (task_id, admin_user_id, comment, created_at) VALUES (?, ?, ?, ?)", (task_id, admin.get("id"), comment, now))
+            conn.commit()
+            log_admin_audit(admin.get("id"), "admin_task_updated", "admin_task", str(task_id), {"status": status, "comment": comment})
+            message = "Task updated."
+        conn.close()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_tasks ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'blocked' THEN 2 ELSE 3 END, CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, id DESC LIMIT 140")
+    tasks = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(
+        f"<tr><td><a href='/admin/tasks/{t.get('id')}'>#{t.get('id')}</a></td><td>{clean_html(t.get('department') or '')}</td><td>{clean_html(t.get('priority') or '')}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('title') or '')}</td><td><form method='post'><input type='hidden' name='task_id' value='{t.get('id')}'><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option><option>escalated</option></select><input name='comment' placeholder='Optional note'><button>Update</button></form></td></tr>"
+        for t in tasks
+    )
+    body = f"<h1>Admin Tasks</h1><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Department</th><th>Priority</th><th>Status</th><th>Title</th><th>Update</th></tr>{rows or '<tr><td colspan=6>No tasks yet.</td></tr>'}</table></section>"
+    return admin_page_html("Admin Tasks", body, admin)
+
+
+@webhook_app.route("/admin/tasks/<int:task_id>", methods=["GET", "POST"])
+def admin_task_detail_page(task_id):
+    admin, denied = require_admin_page("command_center.view")
+    if denied:
+        return denied
+    init_db()
+    if request.method == "POST":
+        status = request.form.get("status") or "open"
+        comment = clean_html(request.form.get("comment") or "")[:1200]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db()
+        cur = conn.cursor()
+        if status in {"open", "in_progress", "blocked", "done", "escalated"}:
+            cur.execute("UPDATE admin_tasks SET status=?, completed_at=COALESCE(?, completed_at), updated_at=? WHERE id=?", (status, now if status == "done" else None, now, task_id))
+        if comment:
+            cur.execute("INSERT INTO admin_task_comments (task_id, admin_user_id, comment, created_at) VALUES (?, ?, ?, ?)", (task_id, admin.get("id"), comment, now))
+        conn.commit()
+        conn.close()
+        log_admin_audit(admin.get("id"), "admin_task_detail_updated", "admin_task", str(task_id), {"status": status})
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admin_tasks WHERE id=? LIMIT 1", (task_id,))
+    task = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM admin_task_comments WHERE task_id=? ORDER BY id DESC LIMIT 80", (task_id,))
+    comments = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    if not task:
+        return admin_page_html("Admin Task", "<h1>Admin Task</h1><div class='card'>Task not found.</div>", admin)
+    comment_rows = "".join(f"<li><strong>Admin {c.get('admin_user_id')}</strong>: {clean_html(c.get('comment') or '')}<br><small>{clean_html(c.get('created_at') or '')}</small></li>" for c in comments)
+    body = f"""
+    <h1>{clean_html(task.get('title') or 'Admin Task')}</h1>
+    <section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(task.get('status') or '')}</p></div><div class='card'><h2>Priority</h2><p class='metric'>{clean_html(task.get('priority') or '')}</p></div><div class='card'><h2>Department</h2><p class='metric'>{clean_html(task.get('department') or '')}</p></div></section>
+    <section class='card'><h2>Details</h2><p>{clean_html(task.get('description') or '')}</p><p><span class='pill'>Source {clean_html(task.get('source_type') or '')}:{clean_html(task.get('source_id') or '')}</span> <span class='pill'>Approval {'required' if task.get('approval_required') else 'not required'}</span></p></section>
+    <form method='post' class='card'><h2>Update Task</h2><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option><option>escalated</option></select><textarea name='comment' placeholder='Add progress note'></textarea><button>Save Update</button></form>
+    <section class='card'><h2>Comments</h2><ul>{comment_rows or '<li>No comments yet.</li>'}</ul></section>
+    """
+    return admin_page_html("Admin Task", body, admin)
+
+
 @webhook_app.route("/admin/ai-command", methods=["GET"])
 def admin_ai_command_page():
     admin, denied = require_admin_page("system.view")
     if denied:
         return denied
     init_db()
+    snapshot = global_command_snapshot(persist=False)
+    rec = ai_action_pipeline.from_meta_coordination(snapshot.get("meta"), snapshot.get("fabric"))
+    action_summary = ai_command_action_summary(limit=5)
     summaries = []
     for slug, meta in ADMIN_DEPARTMENTS.items():
         counts = department_counts(slug)
@@ -20224,7 +20770,15 @@ def admin_ai_command_page():
             summaries.append(f"{meta['title']}: {counts['warnings']} warnings, {counts['pending_tasks']} open tasks.")
     if not summaries:
         summaries.append("No urgent department warnings detected from local diagnostics.")
-    body = f"<h1>AI Admin Command</h1><p class='muted'>Secrets and private messages are excluded from this operational summary.</p><div class='card'><h2>What needs attention today?</h2><ul>{''.join(f'<li>{clean_html(s)}</li>' for s in summaries)}</ul></div><div class='card'><h2>Suggested Order</h2><ol><li>Silent Telegram failures and alert delivery</li><li>Pulse post publishing and moderation queues</li><li>Security warnings and admin audit logs</li><li>Growth/SEO checks after reliability is clean</li></ol></div>"
+    top_actions = "".join(f"<li><strong>{clean_html(r.get('priority') or '')}</strong> · {clean_html(r.get('title') or '')}<br><span class='muted'>{clean_html(r.get('recommended_action') or '')}</span></li>" for r in action_summary["top_recommendations"])
+    body = f"""
+    <h1>AI Admin Command</h1><p class='muted'>Secrets and private messages are excluded. Recommendations become tasks only after admin/owner action.</p>
+    <section class='grid'><div class='card'><h2>What Should I Fix First?</h2><p class='metric'>{clean_html(rec.get('priority') or 'normal')}</p><p>{clean_html(rec.get('recommended_action') or '')}</p><p><span class='pill'>Confidence {clean_html(str(rec.get('confidence') or 0))}</span> <span class='pill'>Risk {clean_html(rec.get('risk_level') or '')}</span> <span class='pill'>Owner approval {'required' if rec.get('owner_approval_required') else 'not required'}</span></p></div><div class='card'><h2>Command Queue</h2><p class='metric'>{action_summary['pending_approvals']}</p><p>pending owner approvals</p><p><span class='pill'>Open recommendations {action_summary['open_recommendations']}</span></p></div></section>
+    <div class='card'><h2>Evidence</h2><ul>{''.join(f'<li>{clean_html(s)}</li>' for s in summaries)}</ul></div>
+    <div class='card'><h2>Recommended Actions</h2><ul>{top_actions or '<li>No saved AI actions yet. Refresh from Global Command to create one.</li>'}</ul></div>
+    <form method='post' action='/admin/ai-actions' class='card'><h2>Create Actionable Recommendation</h2><p class='muted'>Copies the current Meta-Intelligence recommendation into the auditable action pipeline.</p><button name='form_action' value='seed'>Create Recommendation</button></form>
+    <p><a class='button primary' href='/admin/ai-actions'>AI Actions</a> <a class='button' href='/admin/approvals'>Approvals</a> <a class='button' href='/admin/tasks'>Tasks</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
+    """
     return admin_page_html("AI Admin Command", body, admin)
 
 
@@ -26183,7 +26737,127 @@ def init_db():
     """)
     add_columns_if_missing(cur, "admin_tasks", [
         ("completed_at", "TEXT"),
+        ("source_recommendation_id", "TEXT"),
+        ("approval_required", "INTEGER DEFAULT 0"),
+        ("approved_by", "INTEGER"),
+        ("approved_at", "TEXT"),
+        ("result_summary", "TEXT"),
     ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_recommendations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        external_id TEXT UNIQUE,
+        source_engine TEXT,
+        recommendation_type TEXT,
+        title TEXT,
+        description TEXT,
+        priority TEXT DEFAULT 'normal',
+        confidence REAL DEFAULT 0,
+        risk_level TEXT DEFAULT 'normal',
+        recommended_action TEXT,
+        owner_approval_required INTEGER DEFAULT 0,
+        estimated_impact TEXT,
+        affected_area TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_action_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recommendation_id INTEGER,
+        action_type TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        payload_json TEXT,
+        status TEXT DEFAULT 'pending',
+        approval_required INTEGER DEFAULT 0,
+        approved_by INTEGER,
+        approved_at TEXT,
+        requested_by INTEGER,
+        executed_by INTEGER,
+        executed_at TEXT,
+        result_json TEXT,
+        error_message TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_action_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recommendation_id INTEGER,
+        action_type TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        requested_by INTEGER,
+        approved_by INTEGER,
+        executed_by INTEGER,
+        before_json TEXT,
+        after_json TEXT,
+        status TEXT,
+        error_message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_action_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recommendation_id INTEGER,
+        action_request_id INTEGER,
+        status TEXT,
+        useful INTEGER,
+        owner_feedback TEXT,
+        metrics_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_approvals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        approval_type TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        title TEXT,
+        description TEXT,
+        status TEXT DEFAULT 'pending',
+        priority TEXT DEFAULT 'normal',
+        risk_level TEXT DEFAULT 'normal',
+        confidence REAL DEFAULT 0,
+        requested_by INTEGER,
+        approved_by INTEGER,
+        approved_at TEXT,
+        rejected_by INTEGER,
+        rejected_at TEXT,
+        decision_note TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS admin_task_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        admin_user_id INTEGER,
+        comment TEXT,
+        created_at TEXT
+    )
+    """)
+    for index_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_status ON ai_recommendations(status)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_priority ON ai_recommendations(priority)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_created_at ON ai_recommendations(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_source_engine ON ai_recommendations(source_engine)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_risk_level ON ai_recommendations(risk_level)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_action_requests_status ON ai_action_requests(status)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_action_requests_approval_required ON ai_action_requests(approval_required)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_approvals_status ON admin_approvals(status)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_approvals_priority ON admin_approvals(priority)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_approvals_created_at ON admin_approvals(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_admin_task_comments_task_id ON admin_task_comments(task_id)",
+    ]:
+        cur.execute(index_sql)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS moderation_cases (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
