@@ -197,6 +197,7 @@ AUTO_PK_TABLES = {
     "pulse_group_invites": "id",
     "pulse_group_reports": "id",
     "pulse_group_roles": "id",
+    "pulse_group_bans": "id",
     "pulse_group_creation_attempts": "id",
     "pulse_group_action_logs": "id",
     "pulse_group_post_media": "id",
