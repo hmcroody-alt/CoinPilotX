@@ -16785,18 +16785,42 @@ def pulse_live_metrics():
 @webhook_app.route("/pulse/reels", methods=["GET"])
 def pulse_reels_page():
     main = """
-    <section class='card'><h2>Pulse Reels</h2><p>Swipe-ready short clips for crypto education, Scam Shield warnings, teacher lessons, livestream highlights, Arena moments, and Founder picks.</p><div class='actions'><a class='button primary' href='/pulse/create'>Create Reel</a><button class='button' id='muteReelsBtn' type='button'>Mute</button></div></section>
-    <section id='reelsFeed' style='display:grid;gap:14px;scroll-snap-type:y mandatory'></section>
-    <section class='card' id='reelsEmpty' style='display:none'><h2>Reels are warming up.</h2><p>Post the first short clip or turn a livestream highlight into a Reel.</p><a class='button primary' href='/pulse/create'>Create Reel</a></section>
+    <style>
+    body:has(.reels-immersive){background:#02050b}.reels-shell{position:relative;min-height:84dvh;border-radius:28px;overflow:hidden;border:1px solid rgba(110,223,246,.18);background:#02050b;box-shadow:0 32px 100px rgba(0,0,0,.42)}
+    .reels-immersive{height:min(86dvh,880px);overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;background:#02050b;scrollbar-width:none}.reels-immersive::-webkit-scrollbar{display:none}
+    .reel-card{position:relative;height:min(86dvh,880px);min-height:620px;scroll-snap-align:start;overflow:hidden;background:#030814;color:#f8fcff;isolation:isolate}
+    .reel-media,.reel-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#02050b}.reel-media{z-index:0}.reel-fallback{display:grid;place-items:center;background:radial-gradient(circle at 30% 18%,rgba(110,223,246,.26),transparent 30%),radial-gradient(circle at 80% 35%,rgba(255,209,102,.18),transparent 24%),linear-gradient(145deg,#071220,#02050b)}
+    .reel-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.72),transparent 22%,transparent 58%,rgba(0,0,0,.88))}
+    .reel-top{position:absolute;z-index:3;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(14px + env(safe-area-inset-top)) 14px 10px}.reel-creator{display:flex;align-items:center;gap:10px;min-width:0}.reel-creator strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.reel-avatar{width:46px;height:46px;border-radius:16px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,var(--cyan),var(--green));color:#06101b;font-weight:950;box-shadow:0 0 28px rgba(110,223,246,.24)}.reel-avatar img{width:100%;height:100%;object-fit:cover}.reel-follow{min-height:34px;border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.14);backdrop-filter:blur(14px)}
+    .reel-actions{position:absolute;z-index:4;right:10px;bottom:112px;display:grid;gap:12px}.reel-action{width:50px;height:50px;min-height:50px;padding:0;border-radius:18px;background:rgba(8,15,28,.52);backdrop-filter:blur(16px);border-color:rgba(255,255,255,.16);box-shadow:0 12px 38px rgba(0,0,0,.28);display:grid;place-items:center;font-size:20px}.reel-action small{display:block;font-size:10px;color:#fff;line-height:1;margin-top:-8px}.reel-action.active{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b}
+    .reel-caption{position:absolute;z-index:3;left:14px;right:78px;bottom:24px;display:grid;gap:7px}.reel-caption h2{font-size:clamp(24px,5vw,42px);line-height:1.02;margin:0;text-shadow:0 12px 40px rgba(0,0,0,.5)}.reel-caption p{margin:0;color:#edfaff}.reel-tags{display:flex;gap:6px;flex-wrap:wrap}.reel-tags span,.reel-chip{display:inline-flex;border:1px solid rgba(255,255,255,.16);background:rgba(8,15,28,.38);backdrop-filter:blur(12px);border-radius:999px;padding:5px 8px;font-size:12px;color:#e9fbff}.reel-music{display:flex;align-items:center;gap:7px;min-width:0;color:#d9f6ff;font-size:13px}.reel-music span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .reels-rail{position:absolute;z-index:6;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;max-width:min(780px,calc(100% - 24px));overflow-x:auto;padding:4px;background:rgba(3,8,17,.38);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:999px;scrollbar-width:none}.reels-rail::-webkit-scrollbar{display:none}.reels-rail button{min-height:34px;border-radius:999px;padding:6px 10px;font-size:12px;background:transparent;border-color:transparent}.reels-rail button.active{background:rgba(110,223,246,.18);border-color:rgba(110,223,246,.24)}
+    .reels-toolbar{position:absolute;z-index:7;left:12px;bottom:12px;display:flex;gap:8px}.reels-toolbar a,.reels-toolbar button{min-height:40px;border-radius:999px;background:rgba(8,15,28,.54);backdrop-filter:blur(14px)}
+    .reels-empty{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:20px;z-index:3}.reels-empty .card{max-width:520px;background:rgba(8,15,28,.7);backdrop-filter:blur(18px)}
+    .reel-comments{position:fixed;inset:auto 0 0 0;z-index:9999;display:none;min-height:320px;max-height:78dvh;padding:12px 14px calc(14px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid rgba(110,223,246,.2);background:rgba(5,11,20,.98);box-shadow:0 -24px 90px rgba(0,0,0,.5)}.reel-comments.open{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px}.reel-comments::before{content:'';width:46px;height:5px;border-radius:999px;background:rgba(255,255,255,.32);justify-self:center}.reel-comments-list{overflow:auto;display:grid;gap:8px}.reel-comment{padding:10px;border-radius:14px;background:rgba(255,255,255,.06)}.reel-comment-form{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px}.reel-comment-form input{border-radius:999px}.reel-comment-form button{width:48px;padding:0;border-radius:50%}
+    @media(max-width:900px){body:has(.reels-immersive){overflow:hidden}body:has(.reels-immersive) .wrap{width:100%;max-width:100vw;margin:0;padding:0}body:has(.reels-immersive) .wrap>section.card,body:has(.reels-immersive) .layout>aside,body:has(.reels-immersive) .nav,body:has(.reels-immersive) .mobile-topbar,body:has(.reels-immersive) .mobile-bottom-nav,body:has(.reels-immersive) .pulse-fab{display:none!important}body:has(.reels-immersive) .layout{display:block}.reels-shell,.reels-immersive,.reel-card{height:100dvh;min-height:100dvh;border-radius:0;border:0}.reels-rail{top:calc(8px + env(safe-area-inset-top));max-width:calc(100% - 18px)}.reel-top{top:42px}.reel-actions{right:8px;bottom:104px}.reel-action{width:48px;height:48px;min-height:48px}.reel-caption{left:12px;right:72px;bottom:28px}.reels-toolbar{bottom:calc(12px + env(safe-area-inset-bottom))}.reels-toolbar a,.reels-toolbar button{font-size:12px;padding:8px 10px}.reel-follow{font-size:12px;padding:6px 10px}.reel-card{scroll-snap-stop:always}}
+    </style>
+    <section class='reels-shell'>
+      <nav class='reels-rail' id='reelsRail' aria-label='Reel discovery tabs'></nav>
+      <section class='reels-immersive' id='reelsFeed' aria-live='polite'></section>
+      <section class='reels-empty' id='reelsEmpty'><div class='card'><h2>Reels are warming up.</h2><p>Post the first short clip, add a sound, or turn a livestream highlight into a Reel.</p><div class='actions'><a class='button primary' href='/pulse/camera/reel'>Open Camera</a><a class='button' href='/pulse/create'>Upload Reel</a></div></div></section>
+      <div class='reels-toolbar'><a class='button primary' href='/pulse/camera/reel'>Camera</a><a class='button' href='/pulse/create'>Upload</a><button class='button' id='muteReelsBtn' type='button'>Muted</button></div>
+    </section>
+    <section class='reel-comments' id='reelComments' aria-label='Reel comments'><header><h2>Comments</h2><p class='muted'>Creator-safe replies with moderation and realtime-ready updates.</p></header><div class='reel-comments-list' id='reelCommentsList'></div><form class='reel-comment-form' id='reelCommentForm'><input id='reelCommentBody' placeholder='Add a comment...'><button class='primary'>➤</button></form></section>
     """
-    side = "<article class='card'><h2>Reel Categories</h2><p>AI Picks · Trending · Crypto Education · Scam Alerts · Market Pulse · Teachers · Livestream Highlights · Founder Picks · Community · Arena</p></article>"
+    side = "<article class='card'><h2>Reel Intelligence</h2><p>Ranking blends retention, trust, originality, educational value, report history, and creator loyalty. Ragebait stays below quality.</p></article><article class='card'><h2>Creator Tools</h2><p>Camera, filters, sound reuse, caption AI, hook ideas, and thumbnail selection are wired into the Reels creation flow.</p></article>"
     script = """
-    const reelsFeed=document.getElementById('reelsFeed');const reelsEmpty=document.getElementById('reelsEmpty');let reelsMuted=true;
-    function reelHtml(reel){const author=reel.author||{};const media=(reel.media||[])[0]||{};const video=media.media_url||reel.video_url||'';const poster=media.thumbnail_url||reel.poster_url||'';return `<article class="card" data-reel-id="${reel.reel_id||reel.id}" style="min-height:min(78dvh,760px);scroll-snap-align:start;display:grid;align-content:end;position:relative;overflow:hidden;padding:0;background:#020712">${video?`<video src="${video}" poster="${poster}" autoplay muted playsinline loop style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>`:`<div style="position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(110,223,246,.28),transparent 30%),linear-gradient(145deg,#081323,#020712)"></div>`}<div style="position:relative;padding:18px;background:linear-gradient(transparent,rgba(0,0,0,.86));display:grid;gap:8px"><p><strong>${author.display_name||'Pulse creator'}</strong> ${author.premium_mark?'✦':''}<br><span class="pill">${author.primary_label||'Member'}</span></p><h2>${reel.title||'Pulse Reel'}</h2><p>${reel.body||reel.caption||''}</p><p class="muted">${(reel.ai_tags||reel.tags||[]).map(t=>'#'+t).join(' ')}</p><div class="actions"><button data-reel-react="${reel.reel_id||reel.id}" class="button">🔥 ${reel.reactions_count||0}</button><a class="button" href="/pulse/reels/${reel.reel_id||reel.id}">Open</a><button class="button" data-reel-comment="${reel.reel_id||reel.id}">Comment</button><button class="button">Follow</button></div></div></article>`}
-    async function loadReels(){try{const d=await pulseApi('/api/pulse/reels/feed');const reels=d.reels||[];reelsFeed.innerHTML=reels.map(reelHtml).join('');reelsEmpty.style.display=reels.length?'none':'block';document.querySelectorAll('#reelsFeed video').forEach(v=>{v.muted=reelsMuted;v.play().catch(()=>{})})}catch(e){reelsEmpty.style.display='block';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}}
-    document.getElementById('muteReelsBtn')?.addEventListener('click',e=>{reelsMuted=!reelsMuted;e.currentTarget.textContent=reelsMuted?'Mute':'Unmute';document.querySelectorAll('#reelsFeed video').forEach(v=>v.muted=reelsMuted)});
+    const reelsFeed=document.getElementById('reelsFeed'),reelsEmpty=document.getElementById('reelsEmpty'),rail=document.getElementById('reelsRail'),comments=document.getElementById('reelComments'),commentList=document.getElementById('reelCommentsList'),commentBody=document.getElementById('reelCommentBody');let reelsMuted=true,currentCommentReel=0,currentCategory='';
+    const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function reelHtml(reel){const author=reel.author||{};const media=(reel.media||[])[0]||{};const video=media.media_url||reel.video_url||'';const poster=media.thumbnail_url||reel.poster_url||'';const id=reel.reel_id||reel.id;const tags=(reel.ai_tags||reel.tags||[]).slice(0,5);const audio=reel.audio||{};const music=audio.title?`${audio.title}${audio.artist?' · '+audio.artist:''}`:'Original Pulse sound';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="reel-card" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}">${video?`<video class="reel-media" src="${esc(video)}" poster="${esc(poster)}" muted playsinline loop preload="metadata"></video>`:`<div class="reel-fallback"><span class="reel-chip">Media processing</span></div>`}<div class="reel-scrim"></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reel-actions"><button class="reel-action" data-reel-react="${id}" aria-label="Like">🔥<small>${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small>${reel.comments_count||0}</small></button><button class="reel-action" data-reel-toast="Repost is being prepared for creator-safe attribution." aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Bookmark">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reel-caption"><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><span>♪ ${esc(music)}</span><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`}
+    function syncPlayback(){const cards=[...document.querySelectorAll('.reel-card')];const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;const v=card.querySelector('video');if(v){v.muted=reelsMuted;if(visible)v.play().catch(()=>{});else v.pause();}});if(active){const next=active.nextElementSibling?.querySelector('video');if(next)next.load();}}
+    function renderRail(categories){const tabs=['For You','Following','Trending','New Creators','AI Picks','Local','Global','Educational','Music','Live Clips',...(categories||[])];rail.innerHTML=[...new Set(tabs)].map((c,i)=>`<button class="${i===0?'active':''}" data-reel-category="${esc(c)}">${esc(c)}</button>`).join('')}
+    async function loadReels(category=''){currentCategory=category;try{const d=await pulseApi('/api/pulse/reels/feed?limit=18&category='+encodeURIComponent(category));const reels=d.reels||[];renderRail(d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');reelsEmpty.style.display=reels.length?'none':'grid';requestAnimationFrame(syncPlayback)}catch(e){reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}}
+    document.getElementById('muteReelsBtn')?.addEventListener('click',e=>{reelsMuted=!reelsMuted;e.currentTarget.textContent=reelsMuted?'Muted':'Sound on';syncPlayback()});
+    reelsFeed.addEventListener('scroll',()=>requestAnimationFrame(syncPlayback),{passive:true});document.addEventListener('visibilitychange',syncPlayback);
     document.addEventListener('dblclick',e=>{const card=e.target.closest('[data-reel-id]');if(card)pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:card.dataset.reelId,reaction_type:'fire'})}).then(()=>toast('Reaction added.')).catch(err=>toast(err.message))});
-    document.addEventListener('click',e=>{const react=e.target.closest('[data-reel-react]');if(react)pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:react.dataset.reelReact,reaction_type:'fire'})}).then(()=>toast('Reaction added.')).catch(err=>toast(err.message));const comment=e.target.closest('[data-reel-comment]');if(comment){const body=prompt('Write a quick Reel comment');if(body)pulseApi('/api/pulse/reels/comment',{method:'POST',body:JSON.stringify({reel_id:comment.dataset.reelComment,body})}).then(()=>toast('Comment posted.')).catch(err=>toast(err.message))}});
+    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-reel-category]');if(tab){document.querySelectorAll('[data-reel-category]').forEach(b=>b.classList.toggle('active',b===tab));loadReels(tab.textContent==='For You'?'':tab.textContent);return}const react=e.target.closest('[data-reel-react]');if(react){try{await pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:react.dataset.reelReact,reaction_type:'fire'})});react.classList.add('active');toast('Reaction added.')}catch(err){toast(err.message)}return}const open=e.target.closest('[data-open-comments]');if(open){currentCommentReel=open.dataset.openComments;commentList.innerHTML='<p class="muted">Comments are realtime-ready. Add the first reply.</p>';comments.classList.add('open');commentBody.focus();return}if(e.target.closest('#reelComments')&&e.target.id==='reelComments'){comments.classList.remove('open');return}const follow=e.target.closest('[data-follow-creator]');if(follow&&follow.dataset.followCreator){try{await pulseApi('/api/pulse/follows/toggle',{method:'POST',body:JSON.stringify({followed_user_id:follow.dataset.followCreator})});follow.textContent='Following';toast('Creator followed.')}catch(err){toast(err.message)}return}const save=e.target.closest('[data-reel-save]');if(save){toast('Reel saved to your creator inspiration shelf.');save.classList.add('active');return}const sound=e.target.closest('[data-save-sound]');if(sound&&sound.dataset.saveSound){try{await pulseApi('/api/pulse/reels/sounds/save',{method:'POST',body:JSON.stringify({track_id:sound.dataset.saveSound})});toast('Sound saved.')}catch(err){toast(err.message)}return}const share=e.target.closest('[data-share-reel]');if(share){navigator.share?navigator.share({title:'Pulse Reel',url:location.origin+'/pulse/reels/'+share.dataset.shareReel}).catch(()=>{}):navigator.clipboard?.writeText(location.origin+'/pulse/reels/'+share.dataset.shareReel).then(()=>toast('Reel link copied.'));return}const beta=e.target.closest('[data-reel-toast]');if(beta){toast(beta.dataset.reelToast);return}});
+    document.getElementById('reelCommentForm').addEventListener('submit',async e=>{e.preventDefault();const body=commentBody.value.trim();if(!body||!currentCommentReel)return;try{const d=await pulseApi('/api/pulse/reels/comment',{method:'POST',body:JSON.stringify({reel_id:currentCommentReel,body})});commentList.insertAdjacentHTML('beforeend',`<article class="reel-comment"><strong>You</strong><p>${esc(body)}</p></article>`);commentBody.value='';toast(d.message||'Comment posted.')}catch(err){toast(err.message)}});
     loadReels();
     """
     return pulse_social_shell("Pulse Reels", "AI-ranked vertical clips for education, trust, creator growth, and live highlights.", main, side, script)
@@ -16849,6 +16873,37 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0):
     except Exception:
         extra_tags = []
     merged["ai_tags"] = list(dict.fromkeys([*(tags or []), *(extra_tags or [])]))[:10]
+    merged["human_time"] = smart_time_text(merged.get("created_at") or reel_row.get("created_at") or "")
+    audio = {}
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT at.*, ra.start_seconds, ra.end_seconds, ra.volume
+            FROM pulse_reel_audio ra
+            JOIN pulse_audio_tracks at ON at.id=ra.audio_track_id
+            WHERE ra.reel_id=?
+            ORDER BY ra.id DESC LIMIT 1
+            """,
+            (int(merged.get("reel_id") or 0),),
+        )
+        audio = dict(cur.fetchone() or {})
+        conn.close()
+    except Exception:
+        audio = {}
+    merged["audio"] = {
+        "id": int(audio.get("id") or 0),
+        "track_id": int(audio.get("id") or 0),
+        "title": audio.get("title") or reel_row.get("sound_title") or "",
+        "artist": audio.get("artist") or "",
+        "duration": float(audio.get("duration_seconds") or 0),
+        "waveform": audio.get("waveform_json") or "",
+        "bpm": int(audio.get("bpm") or 0),
+        "usage_count": int(audio.get("usage_count") or 0),
+        "trend_score": int(audio.get("trend_score") or 0),
+    }
     merged.update(reel_ranking_engine.score_reel({
         **merged,
         "premium_mark": bool((post.get("author") or {}).get("premium_mark")),
@@ -16882,9 +16937,29 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0):
         reel["post_id"] = int(post.get("id") or 0)
         reel["caption"] = row.get("caption") or post.get("body") or ""
         reel["premium_mark"] = bool((post.get("author") or {}).get("premium_mark"))
+        reel["human_time"] = smart_time_text(reel.get("created_at") or row.get("created_at") or "")
+        audio = {}
+        track_id = safe_int(row.get("audio_track_id"), 0)
+        if track_id:
+            try:
+                cur.execute("SELECT * FROM pulse_audio_tracks WHERE id=? LIMIT 1", (track_id,))
+                audio = dict(cur.fetchone() or {})
+            except Exception:
+                audio = {}
+        reel["audio"] = {
+            "id": int(audio.get("id") or 0),
+            "track_id": int(audio.get("id") or 0),
+            "title": audio.get("title") or row.get("sound_title") or "",
+            "artist": audio.get("artist") or "",
+            "duration": float(audio.get("duration_seconds") or 0),
+            "waveform": audio.get("waveform_json") or "",
+            "bpm": int(audio.get("bpm") or 0),
+            "usage_count": int(audio.get("usage_count") or 0),
+            "trend_score": int(audio.get("trend_score") or 0),
+        }
         reel.update(reel_ranking_engine.score_reel(reel))
         reels.append(reel)
-    return {**base, "reels": reel_ranking_engine.rank_reels(reels), "categories": ["AI Picks", "Trending", "Crypto Education", "Scam Alerts", "Market Pulse", "Teachers", "Livestream Highlights", "Founder Picks", "Community", "Arena"]}
+    return {**base, "reels": reel_ranking_engine.rank_reels(reels), "categories": ["AI Picks", "Trending", "New Creators", "Educational", "Music", "Live Clips", "Crypto Education", "Scam Alerts", "Market Pulse", "Teachers", "Livestream Highlights", "Founder Picks", "Community", "Arena"]}
 
 
 @webhook_app.route("/pulse/friends", methods=["GET"])
@@ -18572,6 +18647,81 @@ def api_pulse_reels_feed():
         return jsonify({"ok": False, "message": "Reels are temporarily unavailable.", "trace_id": trace_id}), 500
 
 
+@webhook_app.route("/api/pulse/reels/sounds", methods=["GET"])
+def api_pulse_reels_sounds():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    query = clean_html(request.args.get("q") or "")[:120].strip()
+    category = clean_html(request.args.get("category") or "")[:80].strip()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    params = []
+    where = "WHERE COALESCE(at.safety_status,'approved')!='blocked'"
+    if query:
+        where += " AND (lower(COALESCE(at.title,'')) LIKE ? OR lower(COALESCE(at.artist,'')) LIKE ?)"
+        like = f"%{query.lower()}%"
+        params.extend([like, like])
+    if category:
+        where += " AND lower(COALESCE(ts.category,at.source_type,''))=lower(?)"
+        params.append(category)
+    cur.execute(
+        f"""
+        SELECT at.*, COALESCE(ts.trend_score, at.trend_score, 0) AS live_trend_score,
+               COALESCE(ts.usage_count, at.usage_count, 0) AS live_usage_count,
+               COALESCE(ts.category, at.source_type, 'Trending') AS live_category,
+               CASE WHEN ss.id IS NULL THEN 0 ELSE 1 END AS saved
+        FROM pulse_audio_tracks at
+        LEFT JOIN pulse_trending_sounds ts ON ts.audio_track_id=at.id
+        LEFT JOIN pulse_reel_sound_saves ss ON ss.audio_track_id=at.id AND ss.user_id=?
+        {where}
+        ORDER BY live_trend_score DESC, live_usage_count DESC, at.created_at DESC
+        LIMIT 40
+        """,
+        [user["user_id"], *params],
+    )
+    sounds = []
+    for row in cur.fetchall():
+        item = dict(row)
+        sounds.append({
+            "id": int(item.get("id") or 0),
+            "track_id": int(item.get("id") or 0),
+            "title": item.get("title") or "Pulse sound",
+            "artist": item.get("artist") or "CoinPilotXAI",
+            "audio_url": item.get("audio_url") or "",
+            "duration": float(item.get("duration_seconds") or 0),
+            "waveform": item.get("waveform_json") or "",
+            "bpm": int(item.get("bpm") or 0),
+            "usage_count": int(item.get("live_usage_count") or 0),
+            "trend_score": int(item.get("live_trend_score") or 0),
+            "category": item.get("live_category") or "Trending",
+            "saved": bool(item.get("saved")),
+        })
+    conn.close()
+    return jsonify({"ok": True, "sounds": sounds})
+
+
+@webhook_app.route("/api/pulse/reels/sounds/save", methods=["POST"])
+def api_pulse_reels_sound_save():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    track_id = safe_int(payload.get("track_id") or payload.get("audio_track_id") or payload.get("sound_id"), 0)
+    if not track_id:
+        return api_error("Choose a sound to save.", 400)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_audio_tracks WHERE id=? AND COALESCE(safety_status,'approved')!='blocked' LIMIT 1", (track_id,))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Sound not found.", 404)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("INSERT OR IGNORE INTO pulse_reel_sound_saves (user_id, audio_track_id, created_at) VALUES (?, ?, ?)", (user["user_id"], track_id, now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Sound saved.", "track_id": track_id})
+
+
 @webhook_app.route("/api/pulse/reels/create", methods=["POST"])
 def api_pulse_reels_create():
     init_db()
@@ -18585,6 +18735,9 @@ def api_pulse_reels_create():
         title = clean_html(payload.get("title") or "Pulse Reel")[:140]
         category = clean_html(payload.get("category") or "Community")[:80]
         media_ids = payload.get("media_ids") or []
+        audio_track_id = safe_int(payload.get("audio_track_id") or payload.get("sound_id"), 0)
+        sound_start = float(payload.get("sound_start_seconds") or payload.get("audio_start_seconds") or 0)
+        sound_end = float(payload.get("sound_end_seconds") or payload.get("audio_end_seconds") or 0)
         tags = payload.get("tags") or ai_social_engine.suggest_hashtags(caption, category)
         safety = ai_moderation_core.moderate_text(caption or title, "reel")
         if safety.get("status") == "blocked":
@@ -18610,6 +18763,17 @@ def api_pulse_reels_create():
         if not reel_id:
             cur.execute("SELECT id FROM pulse_reels WHERE post_id=? LIMIT 1", (post_id,))
             reel_id = safe_int((cur.fetchone() or [0])[0], post_id)
+        if audio_track_id:
+            cur.execute("SELECT title FROM pulse_audio_tracks WHERE id=? AND COALESCE(safety_status,'approved')!='blocked' LIMIT 1", (audio_track_id,))
+            track = dict(cur.fetchone() or {})
+            if track:
+                cur.execute("UPDATE pulse_reels SET audio_track_id=?, sound_title=?, sound_start_seconds=?, sound_end_seconds=? WHERE id=?", (audio_track_id, track.get("title") or "", sound_start, sound_end, reel_id))
+                cur.execute(
+                    "INSERT OR REPLACE INTO pulse_reel_audio (reel_id, audio_track_id, start_seconds, end_seconds, volume, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+                    (reel_id, audio_track_id, sound_start, sound_end, now),
+                )
+                cur.execute("UPDATE pulse_audio_tracks SET usage_count=COALESCE(usage_count,0)+1, updated_at=? WHERE id=?", (now, audio_track_id))
+                cur.execute("UPDATE pulse_trending_sounds SET usage_count=COALESCE(usage_count,0)+1, trend_score=COALESCE(trend_score,0)+1, updated_at=? WHERE audio_track_id=?", (now, audio_track_id))
         conn.commit()
         conn.close()
         reel = pulse_reel_payload(reel_id=reel_id, viewer_user_id=user["user_id"])
@@ -22127,6 +22291,53 @@ def admin_messages_health_page():
     return admin_page_html("Messages Health", body, admin)
 
 
+@webhook_app.route("/admin/reels-health", methods=["GET"])
+def admin_reels_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    reels = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reels")
+    active_reels = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reels WHERE COALESCE(status,'active')='active'")
+    processing = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reels WHERE COALESCE(processing_status,'ready') NOT IN ('ready','complete')")
+    moderation_queue = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reels WHERE COALESCE(moderation_status,'approved') NOT IN ('approved','safe')")
+    audio_tracks = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_audio_tracks")
+    reel_audio = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reel_audio")
+    saved_sounds = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reel_sound_saves")
+    missing_media = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reels r WHERE COALESCE(r.video_url,'')='' AND NOT EXISTS (SELECT 1 FROM chat_media_uploads m WHERE m.context_id=CAST(r.post_id AS TEXT) OR m.context_id=CAST(r.id AS TEXT))")
+    cur.execute(
+        """
+        SELECT id, title, artist, usage_count, trend_score, source_type, safety_status, updated_at
+        FROM pulse_audio_tracks
+        ORDER BY trend_score DESC, usage_count DESC, updated_at DESC
+        LIMIT 20
+        """
+    )
+    sound_rows = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT r.id, r.post_id, r.user_id, r.category, r.reel_score, r.safety_score, r.educational_value,
+               r.processing_status, r.transcoding_status, r.moderation_status, r.created_at
+        FROM pulse_reels r
+        ORDER BY r.id DESC
+        LIMIT 20
+        """
+    )
+    reel_rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    sounds_html = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('title') or '')}</td><td>{clean_html(r.get('artist') or '')}</td><td>{int(r.get('usage_count') or 0)}</td><td>{int(r.get('trend_score') or 0)}</td><td>{clean_html(r.get('safety_status') or '')}</td></tr>" for r in sound_rows)
+    reels_html = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('post_id')}</td><td>{r.get('user_id')}</td><td>{clean_html(r.get('category') or '')}</td><td>{int(r.get('reel_score') or 0)}</td><td>{int(r.get('safety_score') or 0)}</td><td>{clean_html(r.get('processing_status') or 'ready')}</td><td>{clean_html(r.get('moderation_status') or 'approved')}</td></tr>" for r in reel_rows)
+    body = f"""
+    <h1>Reels Health</h1><p class='muted'>Immersive Reels performance, sound system, moderation queue, processing readiness, and trust-ranked discovery health.</p>
+    <section class='grid'><div class='card'><h2>Total Reels</h2><p class='metric'>{reels}</p></div><div class='card'><h2>Active Reels</h2><p class='metric'>{active_reels}</p></div><div class='card'><h2>Processing Queue</h2><p class='metric'>{processing}</p></div><div class='card'><h2>Moderation Queue</h2><p class='metric'>{moderation_queue}</p></div><div class='card'><h2>Audio Tracks</h2><p class='metric'>{audio_tracks}</p></div><div class='card'><h2>Reels With Sound</h2><p class='metric'>{reel_audio}</p></div><div class='card'><h2>Saved Sounds</h2><p class='metric'>{saved_sounds}</p></div><div class='card'><h2>Media Review</h2><p class='metric'>{missing_media}</p><p class='muted'>Reels that may need upload/transcoding inspection.</p></div></section>
+    <section class='card'><h2>Trending Sounds</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Artist</th><th>Uses</th><th>Trend</th><th>Safety</th></tr>{sounds_html or '<tr><td colspan=6>No sounds yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Latest Reels</h2><table class='table'><tr><th>ID</th><th>Post</th><th>User</th><th>Category</th><th>Score</th><th>Safety</th><th>Processing</th><th>Moderation</th></tr>{reels_html or '<tr><td colspan=8>No reels yet.</td></tr>'}</table></section>
+    <p><a class='button' href='/pulse/reels'>Open Reels</a> <a class='button' href='/admin/media-studio'>Media Studio</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
+    """
+    return admin_page_html("Reels Health", body, admin)
+
+
 @webhook_app.route("/admin/content-health", methods=["GET"])
 def admin_content_health_page():
     admin, denied = require_admin_page("system.view")
@@ -22317,7 +22528,7 @@ def admin_system_audit_page():
     init_db()
     route_groups = {
         "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant", "/pulse/camera"],
-        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/group-chat-health", "/admin/messages-health", "/admin/media-studio"],
+        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/group-chat-health", "/admin/messages-health", "/admin/reels-health", "/admin/media-studio"],
     }
     rows = []
     client = webhook_app.test_client()
@@ -29604,12 +29815,106 @@ def init_db():
         ("safety_score", "INTEGER DEFAULT 100"),
         ("educational_value", "INTEGER DEFAULT 50"),
         ("reel_score", "INTEGER DEFAULT 0"),
+        ("audio_track_id", "INTEGER"),
+        ("sound_title", "TEXT"),
+        ("sound_start_seconds", "REAL DEFAULT 0"),
+        ("sound_end_seconds", "REAL DEFAULT 0"),
+        ("editor_state_json", "TEXT"),
+        ("thumbnail_frame_seconds", "REAL DEFAULT 0"),
+        ("processing_status", "TEXT DEFAULT 'ready'"),
+        ("transcoding_status", "TEXT DEFAULT 'ready'"),
+        ("moderation_status", "TEXT DEFAULT 'approved'"),
         ("status", "TEXT DEFAULT 'active'"),
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
     ], conn=conn)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reels_status_score ON pulse_reels(status, reel_score, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reels_user ON pulse_reels(user_id, created_at)")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_audio_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        artist TEXT,
+        uploader_user_id INTEGER,
+        audio_url TEXT,
+        duration_seconds REAL DEFAULT 0,
+        waveform_json TEXT,
+        bpm INTEGER DEFAULT 0,
+        usage_count INTEGER DEFAULT 0,
+        trend_score INTEGER DEFAULT 0,
+        source_type TEXT DEFAULT 'original',
+        safety_status TEXT DEFAULT 'approved',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_audio_tracks", [
+        ("title", "TEXT"),
+        ("artist", "TEXT"),
+        ("uploader_user_id", "INTEGER"),
+        ("audio_url", "TEXT"),
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("waveform_json", "TEXT"),
+        ("bpm", "INTEGER DEFAULT 0"),
+        ("usage_count", "INTEGER DEFAULT 0"),
+        ("trend_score", "INTEGER DEFAULT 0"),
+        ("source_type", "TEXT DEFAULT 'original'"),
+        ("safety_status", "TEXT DEFAULT 'approved'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_reel_audio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reel_id INTEGER,
+        audio_track_id INTEGER,
+        start_seconds REAL DEFAULT 0,
+        end_seconds REAL DEFAULT 0,
+        volume REAL DEFAULT 1,
+        created_at TEXT,
+        UNIQUE(reel_id, audio_track_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_trending_sounds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        audio_track_id INTEGER UNIQUE,
+        trend_score INTEGER DEFAULT 0,
+        usage_count INTEGER DEFAULT 0,
+        category TEXT DEFAULT 'Trending',
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_reel_sound_saves (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        audio_track_id INTEGER,
+        created_at TEXT,
+        UNIQUE(user_id, audio_track_id)
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_audio_tracks_trend ON pulse_audio_tracks(trend_score, usage_count, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reel_audio_reel ON pulse_reel_audio(reel_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_sound_saves_user ON pulse_reel_sound_saves(user_id, created_at)")
+    now_seed = datetime.utcnow().isoformat(timespec="seconds")
+    default_sounds = [
+        ("Pulse Neon Rise", "CoinPilotXAI", 84, 118, "trending"),
+        ("Trust Signal", "Pulse Studio", 72, 96, "educational"),
+        ("Creator Glow Loop", "CoinPilotXAI", 98, 124, "creator"),
+    ]
+    for title, artist, trend, bpm, source in default_sounds:
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_audio_tracks (title, artist, duration_seconds, waveform_json, bpm, usage_count, trend_score, source_type, safety_status, created_at, updated_at) VALUES (?, ?, 30, ?, ?, 0, ?, ?, 'approved', ?, ?)",
+            (title, artist, json.dumps([0.18, 0.45, 0.62, 0.38, 0.72, 0.54, 0.3, 0.66]), bpm, trend, source, now_seed, now_seed),
+        )
+        cur.execute("SELECT id FROM pulse_audio_tracks WHERE title=? AND artist=? LIMIT 1", (title, artist))
+        seed_track_id = safe_int((cur.fetchone() or [0])[0], 0)
+        if seed_track_id:
+            cur.execute(
+                "INSERT OR IGNORE INTO pulse_trending_sounds (audio_track_id, trend_score, usage_count, category, updated_at) VALUES (?, ?, 0, ?, ?)",
+                (seed_track_id, trend, source.title(), now_seed),
+            )
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
