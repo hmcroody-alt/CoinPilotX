@@ -55,24 +55,42 @@ from services import (
     arena_share_service,
     arena_victory_engine,
     arena_world_engine,
+    ai_agent_engine,
+    ai_economy_engine,
+    ai_human_collaboration_engine,
     auto_signals_service,
+    autonomous_safety_engine,
     ai_social_engine,
     ai_moderation_core,
     analytics_intelligence_engine,
     admin_ai_assistant,
     audio_intelligence_engine,
+    civilization_ai_engine,
     chat_realtime_service,
+    community_governance_engine,
     conversion_funnel_engine,
     ad_policy_engine,
+    creator_economy_engine,
     creator_monetization_engine,
     creator_ai_copilot,
     crowd_energy_engine,
+    decentralized_trust_engine,
+    elite_creator_engine,
     feed_ai_personalization,
     filter_engine,
+    global_event_engine,
+    global_intelligence_graph,
+    global_prediction_engine,
+    global_social_energy_engine,
+    identity_sovereignty_engine,
+    immersive_experience_engine,
     intelligence_products_engine,
     marketplace_engine,
     media_enhancement_engine,
     monetization_engine,
+    neural_discovery_engine,
+    personalization_matrix,
+    platform_resilience_engine,
     privacy_intelligence_engine,
     realtime_sync_engine,
     realtime_service,
@@ -88,15 +106,18 @@ from services import (
     notification_orchestrator as notification_orchestrator_service,
     portfolio_service,
     predictions_service,
+    predictive_ai_engine,
     premium_identity_engine,
     pulse_identity_engine,
     pro_access as pro_access_service,
     pulse_feed_engine,
     pulse_feed_ranking_engine,
     pulse_moderation_engine,
+    pulse_search_engine,
     privilege_engine,
     prestige_engine,
     push_service,
+    reputation_economy_engine,
     reel_ranking_engine,
     realtime_engine,
     retention_analytics,
@@ -109,11 +130,15 @@ from services import (
     security_monitor,
     seo_engine,
     sms_service,
+    social_energy_engine,
     social_loop_engine,
     sports_data as sports_data_service,
+    self_healing_engine,
+    ui_state_engine,
     user_context as user_context_service,
     user_trust_engine,
     wallet_intel as wallet_intel_service,
+    world_simulation_engine,
     world_presence_engine,
 )
 from seo import schema as seo_schema
@@ -4531,6 +4556,7 @@ def admin_page_html(title, body, admin=None):
     nav = (
         "<a href='/admin/dashboard'>Dashboard</a>"
         f"{command_center_nav}"
+        "<a href='/admin/global-command'>Global Command</a>"
         "<a href='/admin/users'>Users</a>"
         "<a href='/admin/admins'>Admins</a>"
         "<a href='/admin/employees'>Employees</a>"
@@ -19627,6 +19653,138 @@ def apply_department_action(slug, action, target_id, note, admin):
     return message
 
 
+def global_command_snapshot():
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+
+    def scalar(sql, params=()):
+        try:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            if not row:
+                return 0
+            return int((row[0] if not isinstance(row, dict) else next(iter(row.values()))) or 0)
+        except Exception as exc:
+            logging.info("GLOBAL_COMMAND_SCALAR_SKIPPED sql=%s error=%s", sql, exc)
+            return 0
+
+    nodes = []
+    edges = []
+    signals = []
+    try:
+        cur.execute("SELECT user_id, display_name, username, trust_score FROM user_trust_profiles LEFT JOIN users USING(user_id) ORDER BY trust_score DESC LIMIT 80")
+        for row in cur.fetchall():
+            row = dict(row)
+            nodes.append(global_intelligence_graph.node("user", row.get("user_id"), row.get("display_name") or row.get("username") or "Pulse user", {"username": row.get("username")}, row.get("trust_score") or 0))
+    except Exception as exc:
+        logging.info("GLOBAL_COMMAND_USER_NODES_SKIPPED error=%s", exc)
+    try:
+        cur.execute("SELECT id, user_id, post_type, title, body, created_at FROM pulse_posts ORDER BY id DESC LIMIT 80")
+        for row in cur.fetchall():
+            row = dict(row)
+            title = row.get("title") or (row.get("body") or "Pulse post")[:80]
+            nodes.append(global_intelligence_graph.node("post", row.get("id"), title, {"post_type": row.get("post_type"), "created_at": row.get("created_at")}, 50))
+            if row.get("user_id"):
+                edges.append(global_intelligence_graph.edge("user", row.get("user_id"), "post", row.get("id"), "created_post", 1))
+    except Exception as exc:
+        logging.info("GLOBAL_COMMAND_POST_NODES_SKIPPED error=%s", exc)
+    try:
+        cur.execute("SELECT id, reporter_user_id, target_type, target_id, reason, created_at FROM pulse_reports ORDER BY id DESC LIMIT 80")
+        for row in cur.fetchall():
+            row = dict(row)
+            signals.append({"signal_type": "scam" if "scam" in str(row.get("reason") or "").lower() else "report", "topic": row.get("reason") or "report", "created_at": row.get("created_at")})
+            if row.get("reporter_user_id") and row.get("target_id"):
+                edges.append(global_intelligence_graph.edge("user", row.get("reporter_user_id"), row.get("target_type") or "content", row.get("target_id"), "reported_scam" if "scam" in str(row.get("reason") or "").lower() else "reported", 2))
+    except Exception as exc:
+        logging.info("GLOBAL_COMMAND_REPORT_SIGNALS_SKIPPED error=%s", exc)
+
+    summary = global_intelligence_graph.executive_summary(nodes, edges, signals)
+    counts = {
+        "users": scalar("SELECT COUNT(*) FROM users"),
+        "posts": scalar("SELECT COUNT(*) FROM pulse_posts"),
+        "reels": scalar("SELECT COUNT(*) FROM pulse_reels"),
+        "live_sessions": scalar("SELECT COUNT(*) FROM pulse_live_sessions"),
+        "marketplace": scalar("SELECT COUNT(*) FROM marketplace_listings"),
+        "teachers": scalar("SELECT COUNT(*) FROM teacher_profiles"),
+        "reports": scalar("SELECT COUNT(*) FROM pulse_reports"),
+        "messages": scalar("SELECT COUNT(*) FROM pulse_messages"),
+    }
+    predictions = {
+        "community": predictive_ai_engine.forecast_community_health({"active_members": counts["users"], "reports": counts["reports"], "helpful_posts": counts["posts"]}),
+        "safety": autonomous_safety_engine.detect_attack_cluster(signals),
+        "energy": global_social_energy_engine.global_energy({"activity": counts["posts"] + counts["messages"], "live_viewers": counts["live_sessions"]}),
+        "resilience": platform_resilience_engine.resilience_score({"degraded_services": 0, "attack_signals": 1 if summary["scam_clusters"] else 0, "queue_backlog": scalar("SELECT COUNT(*) FROM notification_jobs WHERE status='failed'")}),
+    }
+    try:
+        cur.execute(
+            """
+            INSERT INTO global_intelligence_snapshots
+            (snapshot_type, health_score, node_count, edge_count, signal_count, summary_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("admin_global_command", summary["health"]["health_score"], summary["health"]["node_count"], summary["health"]["edge_count"], summary["health"]["signal_count"], json.dumps({"summary": summary, "counts": counts, "predictions": predictions}, default=str), now),
+        )
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logging.info("GLOBAL_COMMAND_SNAPSHOT_WRITE_SKIPPED error=%s", exc)
+    finally:
+        conn.close()
+    return {"summary": summary, "counts": counts, "predictions": predictions}
+
+
+@webhook_app.route("/admin/global-command", methods=["GET"])
+def admin_global_command_page():
+    admin, denied = require_admin_page("command_center.view")
+    if denied:
+        return denied
+    snapshot = global_command_snapshot()
+    health = snapshot["summary"]["health"]
+    counts = snapshot["counts"]
+    predictions = snapshot["predictions"]
+    cards = "".join(
+        f"<div class='card'><h2>{clean_html(label)}</h2><p class='metric'>{value}</p></div>"
+        for label, value in [
+            ("Global Users", counts["users"]),
+            ("Pulse Posts", counts["posts"]),
+            ("Reels", counts["reels"]),
+            ("Live Sessions", counts["live_sessions"]),
+            ("Marketplace Items", counts["marketplace"]),
+            ("Teachers", counts["teachers"]),
+        ]
+    )
+    attention = "".join(f"<li>{clean_html(item)}</li>" for item in snapshot["summary"]["what_needs_attention"])
+    trend_rows = "".join(
+        f"<tr><td>{clean_html(item.get('topic'))}</td><td>{int(item.get('mentions') or 0)}</td><td>{clean_html((item.get('origin') or {}).get('created_at') or 'n/a')}</td></tr>"
+        for item in snapshot["summary"]["trend_origins"]
+    ) or "<tr><td colspan='3'>No trend origins indexed yet.</td></tr>"
+    scam_rows = "".join(
+        f"<tr><td>{clean_html(item.get('cluster_key'))}</td><td>{clean_html(item.get('risk_weight'))}</td><td>{len(item.get('members') or [])}</td></tr>"
+        for item in snapshot["summary"]["scam_clusters"]
+    ) or "<tr><td colspan='3'>No scam clusters detected.</td></tr>"
+    body = f"""
+    <h1>Global Command Grid</h1>
+    <p class='muted'>The Phase 3 intelligence layer connects users, posts, creators, reports, events, markets, and trust signals into one observable operating grid.</p>
+    <div class='grid'>{cards}</div>
+    <div class='grid'>
+      <div class='card'><h2>Graph Health</h2><p class='metric'>{health['health_score']}%</p><p><span class='pill'>Nodes {health['node_count']}</span> <span class='pill'>Edges {health['edge_count']}</span> <span class='pill'>Signals {health['signal_count']}</span></p></div>
+      <div class='card'><h2>Community Prediction</h2><p class='metric'>{clean_html(predictions['community']['status'])}</p><p>Health score {predictions['community']['health_score']}%</p></div>
+      <div class='card'><h2>Global Energy</h2><p class='metric'>{predictions['energy']['energy_score']}%</p><p>{clean_html(predictions['energy']['visual_state'])}</p></div>
+      <div class='card'><h2>Resilience</h2><p class='metric'>{predictions['resilience']['resilience_score']}%</p><p>{clean_html(predictions['resilience']['status'])}</p></div>
+    </div>
+    <section class='card'><h2>What Needs Attention Today</h2><ul>{attention}</ul></section>
+    <section class='grid'>
+      <div class='card'><h2>Trend Origin Tracing</h2><table class='table'><tr><th>Topic</th><th>Mentions</th><th>First Seen</th></tr>{trend_rows}</table></div>
+      <div class='card'><h2>Scam Cluster Detection</h2><table class='table'><tr><th>Cluster</th><th>Risk</th><th>Members</th></tr>{scam_rows}</table></div>
+    </section>
+    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a></p>
+    """
+    return admin_page_html("Global Command Grid", body, admin)
+
+
 @webhook_app.route("/admin/command-center", methods=["GET"])
 def admin_command_center_page():
     admin, denied = require_admin_page("command_center.view")
@@ -19645,7 +19803,7 @@ def admin_command_center_page():
             f"<div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div>"
             f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span> <span class='pill'>Today {counts['today']}</span></p></a>"
         )
-    owner_links = " <a class='button primary' href='/admin/pulse-users'>Pulse Users</a> <a class='button primary' href='/admin/pulse-core'>Pulse Core</a>" if admin_is_owner_level(admin) else ""
+    owner_links = " <a class='button primary' href='/admin/pulse-users'>Pulse Users</a> <a class='button primary' href='/admin/pulse-core'>Pulse Core</a> <a class='button primary' href='/admin/global-command'>Global Command</a>" if admin_is_owner_level(admin) else ""
     body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited. Only departments allowed for your role appear here.</p><div class='grid'>{''.join(cards) or '<div class=\"card\">No department rooms assigned to this role yet.</div>'}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a>{owner_links}</p>"
     return admin_page_html("Department Command Center", body, admin)
 
@@ -24284,6 +24442,100 @@ def init_db():
         ("restricted_reason", "TEXT"),
         ("suspended_reason", "TEXT"),
     ], conn=conn)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS global_intelligence_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_key TEXT UNIQUE,
+        entity_type TEXT,
+        entity_id TEXT,
+        label TEXT,
+        trust_score REAL DEFAULT 0,
+        influence_score REAL DEFAULT 0,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS global_intelligence_edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_key TEXT,
+        target_key TEXT,
+        relationship TEXT,
+        weight REAL DEFAULT 1,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS global_intelligence_signals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        signal_type TEXT,
+        entity_key TEXT,
+        topic TEXT,
+        severity TEXT DEFAULT 'info',
+        confidence REAL DEFAULT 0,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS global_intelligence_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_type TEXT,
+        health_score INTEGER DEFAULT 0,
+        node_count INTEGER DEFAULT 0,
+        edge_count INTEGER DEFAULT 0,
+        signal_count INTEGER DEFAULT 0,
+        summary_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_agents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_user_id INTEGER,
+        agent_type TEXT,
+        name TEXT,
+        capabilities_json TEXT,
+        safety_mode TEXT DEFAULT 'strict',
+        status TEXT DEFAULT 'draft',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS global_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT,
+        title TEXT,
+        severity TEXT DEFAULT 'info',
+        payload_json TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        resolved_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS reputation_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT,
+        delta INTEGER DEFAULT 0,
+        source_type TEXT,
+        source_id TEXT,
+        notes TEXT,
+        created_at TEXT
+    )
+    """)
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_nodes_type ON global_intelligence_nodes(entity_type, entity_id)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_edges_source ON global_intelligence_edges(source_key, relationship)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_edges_target ON global_intelligence_edges(target_key, relationship)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_signals_type ON global_intelligence_signals(signal_type, created_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_events_status ON global_events(status, severity, created_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_reputation_ledger_user ON reputation_ledger(user_id, created_at)")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS sms_verification_codes (
