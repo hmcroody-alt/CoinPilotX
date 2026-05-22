@@ -39,23 +39,24 @@ def is_owner(row):
 
 def has_active_premium(row):
     row = row or {}
-    if is_owner(row):
+    if int(row.get("lifetime_premium") or 0):
+        return True
+    if int(row.get("premium_glow_manual_grant") or 0):
         return True
     plan = str(row.get("plan") or row.get("subscription_plan") or "").lower()
-    status = str(row.get("subscription_status") or "").lower()
+    status = str(row.get("premium_status") or row.get("subscription_status") or "").lower()
     if status in {"expired", "canceled", "cancelled", "past_due", "unpaid", "inactive"}:
         return False
-    if _future(row.get("pro_expires_at") or row.get("subscription_expires_at")):
+    if _future(row.get("premium_expires_at") or row.get("pro_expires_at") or row.get("subscription_expires_at")):
         return True
-    return bool(int(row.get("is_pro") or row.get("pro_active") or 0)) or plan in {"pro", "premium"} or status in {"active", "trialing"}
+    return status in {"active", "trialing"} and (bool(int(row.get("is_pro") or row.get("pro_active") or 0)) or plan in {"pro", "premium"})
 
 
 def identity_mark(row=None, badge_keys=None):
-    badge_keys = {str(key) for key in (badge_keys or [])}
-    if PREMIUM_STAR in badge_keys:
-        return {"type": "star", "badge_key": PREMIUM_STAR, "symbol": "✦", "title": "Premium Verified"}
-    if PREMIUM_CHECK in badge_keys:
-        return {"type": "check", "badge_key": PREMIUM_CHECK, "symbol": "✓", "title": "Premium Verified"}
-    if has_active_premium(row or {}):
+    row = row or {}
+    if has_active_premium(row):
+        mark_type = str(row.get("premium_mark_type") or "").lower()
+        if mark_type == "check":
+            return {"type": "check", "badge_key": PREMIUM_CHECK, "symbol": "✓", "title": "Premium Verified"}
         return {"type": "star", "badge_key": PREMIUM_STAR, "symbol": "✦", "title": "Premium Verified"}
     return None

@@ -15659,7 +15659,8 @@ def get_pulse_identity_display(user_id, cur=None):
             SELECT u.user_id, u.username, u.email, u.full_name, u.display_name AS user_display_name,
                    u.display_name, u.avatar_url AS user_avatar_url, u.avatar_url, u.bio, u.banner_url,
                    u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active,
-                   u.pro_expires_at, u.subscription_expires_at,
+                   u.pro_expires_at, u.subscription_expires_at, u.premium_status, u.premium_expires_at,
+                   u.lifetime_premium, u.premium_glow_manual_grant, u.premium_mark_type,
                    COALESCE(upp.trust_score,0) AS trust_score, COALESCE(upp.current_level,'New User') AS current_level,
                    la.status AS livestream_status, ap.public_player_id, ap.avatar_url AS arena_avatar_url
             FROM users u
@@ -16195,12 +16196,110 @@ def pulse_live_page():
         live_card = "<section class='card'><h2>Live Suspended</h2><p>Your Live access is paused. Review the safety reason and contact support to appeal.</p><a class='button' href='/support'>Appeal</a></section>"
     elif privileges["can_go_live"]:
         live_card = """
-        <section class='card'><h2>Go Live Setup</h2><input placeholder='Live title'><select><option>Crypto Education</option><option>Scam Shield Lesson</option><option>Arena Training</option><option>Market Psychology</option></select><input type='file' accept='image/jpeg,image/png,image/webp'><p class='muted'>Live safety rules: no financial advice, no doxxing, no harassment, no scam promotion.</p><button class='primary'>Start Live</button></section>
+        <section class='card live-ready'><h2>Go Live Setup</h2><input id='liveTitle' placeholder='Live title' value='CoinPilotXAI Pulse Live'><select id='liveCategory'><option>Crypto Education</option><option>Scam Shield Lesson</option><option>Arena Training</option><option>Market Psychology</option></select><input id='liveThumb' placeholder='Optional thumbnail URL'><p class='muted'>Live safety rules: no financial advice, no doxxing, no harassment, no scam promotion.</p><button class='primary' id='startLiveBtn'>Start Live</button><p class='muted' id='liveStartStatus'>Ready to validate your creator access.</p></section>
         """
     else:
         live_card = f"<section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {refs['completed']}/{refs['required']} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p>Going live is earned so creators build trust before broadcasting.</p><div class='actions'><a class='button primary' href='/pulse/invite'>Invite Members</a><a class='button' href='/pulse/creator-status'>Creator Status</a></div></section>"
-    main = f"{live_card}<section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
-    return pulse_social_shell("Pulse Live Eligibility", "Unlock Live by growing a real, trusted CoinPilotXAI audience.", main)
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{int(profile['trust_score'])}/100 · {clean_html(profile['trust_band'])}</p></article><article class='card'><h2>Invite Progress</h2><p>{refs['completed']}/{refs['required']} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges['current_level'])}</p></article></section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+    script = """
+    document.getElementById('startLiveBtn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('startLiveBtn');
+      const status = document.getElementById('liveStartStatus');
+      const setState = text => { if (status) status.textContent = text; if (btn) btn.textContent = text; };
+      try {
+        btn.disabled = true;
+        setState('Checking eligibility...');
+        await new Promise(resolve => setTimeout(resolve, 120));
+        setState('Preparing livestream...');
+        const payload = { title: document.getElementById('liveTitle')?.value || '', category: document.getElementById('liveCategory')?.value || '', thumbnail_url: document.getElementById('liveThumb')?.value || '' };
+        setState('Starting Live...');
+        const data = await pulseApi('/api/pulse/live/start', { method:'POST', body: JSON.stringify(payload) });
+        if (status) status.textContent = 'Live session ready. Opening your room...';
+        toast('Livestream started.');
+        window.location.href = data.live_url || ('/pulse/live/' + data.live_id);
+      } catch (err) {
+        if (status) status.textContent = err.message || 'Could not start Live.';
+        toast(err.message || 'Could not start Live.');
+        btn.textContent = 'Start Live';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    """
+    return pulse_social_shell("Pulse Live Eligibility", "Unlock Live by growing a real, trusted CoinPilotXAI audience.", main, "", script)
+
+
+@webhook_app.route("/pulse/live/<int:live_id>", methods=["GET"])
+def pulse_live_room_page(live_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    conn.close()
+    if not live:
+        return pulse_social_shell("Pulse Live", "Live session not found.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>")
+    main = f"""
+    <section class='card'><span class='badge live'>Live</span><h1>{clean_html(live.get('title') or 'Pulse Live')}</h1><p>{clean_html(live.get('category') or 'Community')} · {clean_html(live.get('status') or 'starting')}</p><p class='muted'>Stream channel: {clean_html(live.get('websocket_channel') or '')}</p></section>
+    <section class='grid'><article class='card'><h2>Viewer Counter</h2><p class='metric'>{int(live.get('viewer_count') or 0)}</p></article><article class='card'><h2>Chat Room</h2><p>{clean_html(live.get('chat_room_id') or '')}</p></article><article class='card'><h2>Safety</h2><p>Report abuse, scams, harassment, or unsafe financial claims.</p></article></section>
+    """
+    return pulse_social_shell("Pulse Live Room", "Realtime live session shell with chat and viewer counters.", main)
+
+
+@webhook_app.route("/api/pulse/live/start", methods=["POST"])
+def api_pulse_live_start():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (int(user["user_id"]),))
+        fresh = dict(cur.fetchone() or user)
+        profile = pulse_trust_profile_for_user(cur, fresh)
+        privileges = profile.get("privileges") or {}
+        referrals = profile.get("referrals") or {}
+        is_owner = premium_identity_engine.is_owner(fresh)
+        denial = ""
+        if referrals.get("livestream_status") == "suspended":
+            denial = "Livestream access is suspended."
+        elif not is_owner and not privileges.get("can_go_live"):
+            denial = "Invite 30 real members and build verified trust to unlock Live."
+        elif not is_owner and int(profile.get("trust_score") or 0) < 50:
+            denial = "Build your trust score before going live."
+        if denial:
+            logging.info("PULSE_LIVE_START_DENIED user_id=%s reason=%s", user.get("user_id"), denial)
+            conn.rollback(); conn.close()
+            return jsonify({"ok": False, "message": denial}), 403
+        title = clean_html(payload.get("title") or "CoinPilotXAI Pulse Live")[:140]
+        category = clean_html(payload.get("category") or "Crypto Education")[:80]
+        thumbnail_url = clean_html(payload.get("thumbnail_url") or "")[:600]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        stream_key = "cpx_live_" + secrets.token_urlsafe(24)
+        channel = f"pulse_live_{int(user['user_id'])}_{secrets.token_hex(6)}"
+        chat_room = f"live-chat-{secrets.token_hex(8)}"
+        cur.execute(
+            """
+            INSERT INTO pulse_live_sessions (user_id, title, category, thumbnail_url, audience, status, stream_key, websocket_channel, chat_room_id, viewer_count, created_at, started_at)
+            VALUES (?, ?, ?, ?, 'public', 'live', ?, ?, ?, 0, ?, ?)
+            """,
+            (int(user["user_id"]), title, category, thumbnail_url, stream_key, channel, chat_room, now, now),
+        )
+        live_id = int(cur.lastrowid)
+        pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}"}, int(user["user_id"]), None)
+        conn.commit(); conn.close()
+        logging.info("PULSE_LIVE_START_OK user_id=%s live_id=%s", user.get("user_id"), live_id)
+        return jsonify({"ok": True, "live_id": live_id, "stream_key": stream_key, "live_url": f"/pulse/live/{live_id}", "websocket_channel": channel, "chat_room_id": chat_room})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_START_FAILED user_id=%s error=%s", user.get("user_id"), exc)
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "message": "Livestream could not start. Please try again."}), 500
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -17810,7 +17909,8 @@ def pulse_admin_user_row(cur, user_id):
         SELECT u.*, upp.trust_score, upp.current_level, upp.can_go_live, upp.can_sell, upp.can_teach,
                upp.can_create_groups, upp.can_upload_video, upp.max_video_duration, upp.max_upload_mb,
                upp.posting_limit_per_day, upp.messaging_restricted, upp.posting_restricted, upp.moderation_status,
-               la.status AS livestream_status
+               la.status AS livestream_status, u.premium_status, u.premium_expires_at, u.lifetime_premium,
+               u.premium_glow_manual_grant, u.premium_mark_type
         FROM users u
         LEFT JOIN user_privilege_profiles upp ON upp.user_id=u.user_id
         LEFT JOIN livestream_access la ON la.user_id=u.user_id
@@ -17846,6 +17946,10 @@ def pulse_admin_user_privileges(cur, user_id):
 def pulse_admin_grant_all(conn, user_id, admin_id=0):
     cur = conn.cursor()
     now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE users SET lifetime_premium=1, premium_glow_manual_grant=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?",
+        (now, int(user_id)),
+    )
     cur.execute(
         """
         INSERT INTO user_privilege_profiles
@@ -17885,6 +17989,10 @@ def pulse_admin_grant_all(conn, user_id, admin_id=0):
 def pulse_admin_remove_all(conn, user_id, admin_id=0):
     cur = conn.cursor()
     now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE users SET lifetime_premium=0, premium_glow_manual_grant=0, premium_status=CASE WHEN lower(COALESCE(subscription_status,'')) IN ('active','trialing') THEN subscription_status ELSE 'inactive' END, updated_at=? WHERE user_id=?",
+        (now, int(user_id)),
+    )
     cur.execute("DELETE FROM pulse_user_badges WHERE user_id=?", (int(user_id),))
     cur.execute("UPDATE pulse_user_privileges SET enabled=0, updated_at=?, granted_by=? WHERE user_id=?", (now, int(admin_id or 0), int(user_id)))
     cur.execute(
@@ -18039,14 +18147,15 @@ def admin_pulse_users_health_page():
         f"<tr><td>{clean_html(a.get('created_at') or '')}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('target_type') or '')}</td><td>{clean_html(a.get('target_id') or '')}</td></tr>"
         for a in latest_actions
     )
-    premium_columns = sorted(migration_table_columns(cur, "pulse_user_badges")) if migration_table_exists(cur, "pulse_user_badges") else []
+    premium_columns = sorted(migration_table_columns(cur, "users")) if migration_table_exists(cur, "users") else []
+    required_premium_columns = {"premium_status", "premium_expires_at", "lifetime_premium", "premium_glow_manual_grant", "premium_mark_type"}
     conn.close()
     body = f"""
     <h1>Pulse Users Health</h1>
     <p class='muted'>Owner-only diagnostics for Pulse user control, badges, privileges, and premium identity.</p>
     <section class='grid'>
       <article class='card'><h2>Users</h2><p class='metric'>{clean_html(user_count)}</p><p class='muted'>Total user rows visible to the app.</p></article>
-      <article class='card'><h2>Premium Mark Fields</h2><p>{'Available' if {'user_id','badge_key'} <= set(premium_columns) else 'Needs migration'}</p><p class='muted'>Required fields: user_id, badge_key.</p></article>
+      <article class='card'><h2>Premium Mark Fields</h2><p>{'Available' if required_premium_columns <= set(premium_columns) else 'Needs migration'}</p><p class='muted'>Required fields: {clean_html(', '.join(sorted(required_premium_columns)))}</p></article>
       <article class='card'><h2>Latest Query Error</h2><p class='muted'>{clean_html(latest_error or 'None in this local health check.')}</p></article>
     </section>
     <section class='card'><h2>Table Diagnostics</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{''.join(rows)}</table></section>
@@ -18072,16 +18181,22 @@ def admin_pulse_user_detail_page(user_id):
         elif action == "remove_all":
             pulse_admin_remove_all(conn, user_id, admin.get("id"))
             message = "All Pulse privileges and badges removed."
-        elif action in {"grant_premium_glow", "remove_premium_glow", "premium_glow_star", "premium_glow_check"}:
+        elif action in {"grant_premium_glow", "remove_premium_glow", "premium_glow_star", "premium_glow_check", "grant_lifetime_premium", "revoke_lifetime_premium"}:
             now = datetime.utcnow().isoformat(timespec="seconds")
-            cur.execute("DELETE FROM pulse_user_badges WHERE user_id=? AND badge_key IN ('premium_verified_star','premium_verified_check')", (user_id,))
-            if action in {"grant_premium_glow", "premium_glow_star"}:
-                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, 'premium_verified_star', ?, ?)", (user_id, admin.get("id"), now))
+            if action == "grant_lifetime_premium":
+                cur.execute("UPDATE users SET lifetime_premium=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?", (now, user_id))
+                message = "Lifetime Premium granted."
+            elif action == "revoke_lifetime_premium":
+                cur.execute("UPDATE users SET lifetime_premium=0, premium_status=CASE WHEN lower(COALESCE(subscription_status,'')) IN ('active','trialing') THEN subscription_status ELSE 'inactive' END, updated_at=? WHERE user_id=?", (now, user_id))
+                message = "Lifetime Premium revoked."
+            elif action in {"grant_premium_glow", "premium_glow_star"}:
+                cur.execute("UPDATE users SET premium_glow_manual_grant=1, premium_mark_type='star', updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Premium Glow Star granted."
             elif action == "premium_glow_check":
-                cur.execute("INSERT OR IGNORE INTO pulse_user_badges (user_id, badge_key, granted_by, created_at) VALUES (?, 'premium_verified_check', ?, ?)", (user_id, admin.get("id"), now))
+                cur.execute("UPDATE users SET premium_glow_manual_grant=1, premium_mark_type='check', updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Premium Glow Check granted."
             else:
+                cur.execute("UPDATE users SET premium_glow_manual_grant=0, updated_at=? WHERE user_id=?", (now, user_id))
                 message = "Premium Glow removed."
             conn.commit()
         elif action in {"grant_all_badges", "remove_all_badges", "grant_all_privileges", "remove_all_privileges"}:
@@ -18161,6 +18276,7 @@ def admin_pulse_user_detail_page(user_id):
         ("remove_all_badges", "Remove All Badges"), ("grant_all_privileges", "Grant All Privileges Only"),
         ("remove_all_privileges", "Remove All Privileges Only"), ("verify", "Verify User"), ("make_creator", "Make Creator"),
         ("make_teacher", "Make Teacher"), ("make_seller", "Make Seller"), ("unlock_livestream", "Unlock Livestream"),
+        ("grant_lifetime_premium", "Grant Lifetime Premium"), ("revoke_lifetime_premium", "Revoke Lifetime Premium"),
         ("grant_premium_glow", "Grant Premium Glow"), ("remove_premium_glow", "Remove Premium Glow"),
         ("premium_glow_star", "Choose Star"), ("premium_glow_check", "Choose Check"),
         ("suspend_pulse", "Suspend Pulse Access"), ("restore_pulse", "Restore Pulse Access"), ("reset_trust", "Reset Trust Score"),
@@ -18171,7 +18287,7 @@ def admin_pulse_user_detail_page(user_id):
     <h1>Pulse User Control: {clean_html(row.get('display_name') or row.get('email') or str(user_id))}</h1>
     <p class='muted'>{clean_html(message)}</p>
     <div class='grid'>
-      <section class='card'><h2>Status</h2><p><span class='pill'>Trust {int(row.get('trust_score') or 0)}</span> <span class='pill'>{clean_html(row.get('current_level') or 'New User')}</span> <span class='pill'>Live {clean_html(row.get('livestream_status') or 'locked')}</span></p><p><a class='button' href='/pulse/profile'>View User Profile</a> <a class='button' href='/pulse?profile={user_id}'>View User Posts</a> <a class='button' href='/pulse/messages'>View User Messages</a> <a class='button' href='/admin/audit-logs'>View Audit Log</a></p></section>
+      <section class='card'><h2>Status</h2><p><span class='pill'>Trust {int(row.get('trust_score') or 0)}</span> <span class='pill'>{clean_html(row.get('current_level') or 'New User')}</span> <span class='pill'>Live {clean_html(row.get('livestream_status') or 'locked')}</span> <span class='pill'>Premium {clean_html(row.get('premium_status') or 'inactive')}</span> <span class='pill'>Glow {'on' if row.get('premium_glow_manual_grant') else 'off'} · {clean_html(row.get('premium_mark_type') or 'star')}</span></p><p><a class='button' href='/pulse/profile'>View User Profile</a> <a class='button' href='/pulse?profile={user_id}'>View User Posts</a> <a class='button' href='/pulse/messages'>View User Messages</a> <a class='button' href='/admin/audit-logs'>View Audit Log</a></p></section>
       <section class='card'><h2>Badges</h2>{badge_grid}</section>
       <section class='card'><h2>Privileges</h2>{privilege_grid}</section>
     </div>
@@ -23493,6 +23609,11 @@ def init_db():
         ("avatar_thumbnail_url", "TEXT"),
         ("banner_url", "TEXT"),
         ("bio", "TEXT"),
+        ("premium_status", "TEXT DEFAULT 'inactive'"),
+        ("premium_expires_at", "TEXT"),
+        ("lifetime_premium", "INTEGER DEFAULT 0"),
+        ("premium_glow_manual_grant", "INTEGER DEFAULT 0"),
+        ("premium_mark_type", "TEXT DEFAULT 'star'"),
         ("social_links_json", "TEXT"),
         ("expertise_tags_json", "TEXT"),
         ("profile_visibility", "TEXT DEFAULT 'public'"),
@@ -24567,6 +24688,55 @@ def init_db():
         actor_user_id INTEGER,
         post_id INTEGER,
         payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        title TEXT,
+        category TEXT,
+        thumbnail_url TEXT,
+        audience TEXT DEFAULT 'public',
+        status TEXT DEFAULT 'starting',
+        stream_key TEXT,
+        websocket_channel TEXT,
+        chat_room_id TEXT,
+        viewer_count INTEGER DEFAULT 0,
+        created_at TEXT,
+        started_at TEXT,
+        ended_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_chat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        user_id INTEGER,
+        body TEXT,
+        moderation_status TEXT DEFAULT 'approved',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_viewers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        user_id INTEGER,
+        visitor_id TEXT,
+        status TEXT DEFAULT 'watching',
+        joined_at TEXT,
+        left_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        reporter_user_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
         created_at TEXT
     )
     """)
@@ -25883,6 +26053,10 @@ def init_db():
         owner_user_id = int((owner_row[0] if owner_row else 0) or 0)
         if owner_user_id:
             now_owner = datetime.utcnow().isoformat(timespec="seconds")
+            cur.execute(
+                "UPDATE users SET lifetime_premium=1, premium_glow_manual_grant=1, premium_status='lifetime', premium_mark_type=COALESCE(NULLIF(premium_mark_type,''),'star'), updated_at=? WHERE user_id=?",
+                (now_owner, owner_user_id),
+            )
             cur.execute(
                 """
                 INSERT INTO user_privilege_profiles
