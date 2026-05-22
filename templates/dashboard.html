@@ -150,11 +150,21 @@
     .private-chat-empty::before { content:"💬"; display:grid; place-items:center; width:54px; height:54px; margin:0 auto 12px; border-radius:20px; background:rgba(110,223,246,.1); box-shadow:0 0 24px rgba(110,223,246,.18); animation:chatUnreadPulse 2.4s ease-in-out infinite; }
     .private-chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
     .private-chat-tools { position:relative; display:flex; align-items:center; gap:8px; }
-    .private-chat-menu { position:absolute; right:0; top:48px; min-width:220px; padding:8px; border:1px solid rgba(110,223,246,.22); border-radius:16px; background:rgba(8,15,28,.98); box-shadow:0 20px 70px rgba(0,0,0,.45); backdrop-filter:blur(18px); display:grid; gap:6px; z-index:8; }
+    .private-chat-menu-backdrop { position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.48); backdrop-filter:blur(7px); pointer-events:auto; }
+    .private-chat-menu-backdrop[hidden] { display:none; }
+    .private-chat-menu { position:absolute; right:0; top:48px; min-width:250px; padding:8px; border:1px solid rgba(110,223,246,.22); border-radius:18px; background:rgba(8,15,28,.98); box-shadow:0 20px 70px rgba(0,0,0,.45); backdrop-filter:blur(18px); display:grid; gap:6px; z-index:9999; pointer-events:auto; }
     .private-chat-menu[hidden] { display:none; }
     .private-chat-menu button { width:100%; justify-content:flex-start; min-height:42px; background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.08); }
+    .private-chat-menu-title { padding:8px 10px 4px; font-weight:950; color:var(--text); }
+    .private-chat-menu-section { display:grid; gap:6px; padding:6px; border-top:1px solid rgba(255,255,255,.08); }
+    .private-chat-menu-section:first-of-type { border-top:0; }
+    .private-chat-menu small { padding:8px 10px 0; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-weight:850; }
+    .private-chat-modal { position:fixed; inset:0; z-index:10000; display:none; place-items:end center; padding:14px; background:rgba(0,0,0,.52); backdrop-filter:blur(8px); }
+    .private-chat-modal.is-open { display:grid; }
+    .private-chat-sheet { width:min(560px,100%); max-height:min(720px,86dvh); overflow:auto; padding:16px; border:1px solid rgba(110,223,246,.22); border-radius:24px; background:#071321; box-shadow:0 30px 90px rgba(0,0,0,.55); }
+    .private-chat-sheet form { display:grid; gap:10px; }
     @keyframes chatUnreadPulse { 0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,209,102,.45)} 50%{transform:scale(1.08);box-shadow:0 0 28px rgba(54,229,143,.62)} }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:calc(env(safe-area-inset-bottom) + 88px);width:54px;max-width:54px;height:54px;min-height:54px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 22px rgba(110,223,246,.24)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:23px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(4px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block;padding:10px 0 4px}.private-chat-head{position:sticky;top:0;z-index:8;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(10px)}.private-chat-head .button{width:auto}.private-chat-tabs{z-index:9}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:calc(env(safe-area-inset-bottom) + 88px);width:54px;max-width:54px;height:54px;min-height:54px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 22px rgba(110,223,246,.24)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:23px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(4px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block;padding:10px 0 4px}.private-chat-head{position:sticky;top:0;z-index:8;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(10px)}.private-chat-head .button{width:auto}.private-chat-tabs{z-index:9}.private-chat-tabs button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0}.private-chat-tabs button::after{font-size:12px}.private-chat-tabs [data-chat-tab="list"]::after{content:"Chats"}.private-chat-tabs [data-chat-tab="thread"]::after{content:"Rooms"}.private-chat-tabs [data-chat-tab="groups"]::after{content:"Groups"}.private-chat-menu{position:fixed;left:0;right:0;top:auto;bottom:0;min-width:0;width:100%;padding:12px 12px calc(14px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;animation:chatSheetIn .22s cubic-bezier(.18,.9,.2,1)}.private-chat-menu::before{content:"";display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.private-chat-modal{padding:0}.private-chat-sheet{width:100%;border-radius:26px 26px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} } @keyframes chatSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -424,17 +434,21 @@
         <div class="private-chat-tools">
           <button class="button" type="button" data-chat-menu-toggle aria-label="Conversation options">...</button>
           <button class="button" type="button" data-private-chat-close aria-label="Close private chat">Close</button>
+          <div class="private-chat-menu-backdrop" data-chat-menu-backdrop hidden></div>
           <div class="private-chat-menu" data-chat-safety-menu hidden>
-            <button type="button" data-chat-create-group>Create Group Chat</button>
-            <button type="button" data-chat-new-private>New Private Message</button>
-            <button type="button">Message Requests</button>
-            <button type="button">Muted Chats</button>
-            <button type="button">Blocked Users</button>
-            <button type="button">Report a Problem</button>
-            <button type="button" data-chat-mute>Mute Notifications</button>
-            <button type="button" data-chat-report>Report User</button>
-            <button type="button" data-chat-block>Block User</button>
-            <button type="button" data-chat-restrict>Restrict User</button>
+            <div class="private-chat-menu-title">Messenger Options</div>
+            <div class="private-chat-menu-section">
+              <button type="button" data-chat-create-group>Create Group Chat</button>
+              <button type="button" data-chat-new-private>New Private Message</button>
+              <button type="button">Message Requests</button>
+              <button type="button">Muted Chats</button>
+              <button type="button">Report a Problem</button>
+            </div>
+            <small>Safety & Privacy</small>
+            <div class="private-chat-menu-section">
+              <button type="button">Blocked Users</button>
+              <button type="button">Restricted Users</button>
+            </div>
           </div>
         </div>
       </header>
@@ -471,6 +485,26 @@
       </form>
     </aside>
   </section>
+  <section class="private-chat-modal" data-create-group-modal aria-hidden="true">
+    <div class="private-chat-sheet" role="dialog" aria-modal="true" aria-label="Create Group Chat">
+      <form data-create-group-form>
+        <h2>Create Group Chat</h2>
+        <input name="title" placeholder="Group chat name" maxlength="140" required>
+        <textarea name="description" placeholder="Description optional" maxlength="500"></textarea>
+        <select name="privacy">
+          <option value="private">Private</option>
+          <option value="invite_only">Invite Only</option>
+          <option value="community">Community</option>
+        </select>
+        <p class="muted">You can add people after the chat opens.</p>
+        <div class="private-chat-actions">
+          <button class="button" type="button" data-create-group-cancel>Cancel</button>
+          <button class="button primary" type="submit">Create Group Chat</button>
+        </div>
+        <p class="muted" data-create-group-message></p>
+      </form>
+    </div>
+  </section>
   <nav class="bottom-nav">
     <div class="container">
       <a class="active" href="/dashboard">Home</a>
@@ -503,6 +537,23 @@
       if (threadView) threadView.hidden = tab !== "thread";
       if (groupsView) groupsView.hidden = tab !== "groups";
       if (tab === "groups") loadChatConversations();
+    }
+
+    function setChatMenu(open) {
+      const menu = document.querySelector("[data-chat-safety-menu]");
+      const backdrop = document.querySelector("[data-chat-menu-backdrop]");
+      const toggle = document.querySelector("[data-chat-menu-toggle]");
+      if (menu) menu.hidden = !open;
+      if (backdrop) backdrop.hidden = !open;
+      if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function setCreateGroupModal(open) {
+      const modal = document.querySelector("[data-create-group-modal]");
+      if (!modal) return;
+      modal.classList.toggle("is-open", open);
+      modal.setAttribute("aria-hidden", open ? "false" : "true");
+      if (open) modal.querySelector("input[name='title']")?.focus();
     }
 
     function setPrivateChatSnap(snap) {
@@ -549,7 +600,12 @@
         else setPrivateChatSnap(chatState.snap === "full" ? "half" : "full");
       });
       handle.addEventListener("pointercancel", () => { dragging = false; });
-      document.addEventListener("keydown", event => { if (event.key === "Escape" && chatState.open) closePrivateChat(); });
+      document.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        setChatMenu(false);
+        setCreateGroupModal(false);
+        if (chatState.open) closePrivateChat();
+      });
       let touchStartY = 0;
       document.querySelector("[data-private-chat-open]")?.addEventListener("touchstart", event => { touchStartY = event.touches[0].clientY; }, { passive: true });
       document.querySelector("[data-private-chat-open]")?.addEventListener("touchend", event => {
@@ -582,7 +638,7 @@
         if (groupNode) {
           const pulseResponse = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
           const pulseData = await pulseResponse.json();
-          const groupConversations = (pulseData.conversations || []).filter(item => ["group","community","creator","live"].includes(item.conversation_type || ""));
+          const groupConversations = (pulseData.conversations || []).filter(item => ["group","community","community_group","creator","live"].includes(item.conversation_type || ""));
           groupNode.innerHTML = groupConversations.map(item => `
             <button class="conversation-row" type="button" data-open-pulse-conversation="${item.id}">
               <strong>${escapeHtml(item.title || "Group Chat")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
@@ -1026,6 +1082,21 @@
           thread.insertAdjacentHTML("beforeend", `<div class="private-chat-empty">${escapeHtml(err.message)}</div>`);
         }
       }
+      if (event.target.matches("[data-create-group-form]")) {
+        event.preventDefault();
+        const form = event.target;
+        const payload = Object.fromEntries(new FormData(form).entries());
+        try {
+          const result = await postJson("/api/pulse/messages/group/create", { ...payload, participant_ids: [] });
+          text("[data-create-group-message]", "Group chat created. Opening now.");
+          await loadChatConversations();
+          setCreateGroupModal(false);
+          setChatTab("groups");
+          location.href = result.next_url || ("/pulse/messages/" + result.conversation_id);
+        } catch (err) {
+          text("[data-create-group-message]", err.message);
+        }
+      }
     });
 
     document.addEventListener("click", async event => {
@@ -1042,10 +1113,9 @@
       const chatMenuToggle = event.target.closest("[data-chat-menu-toggle]");
       if (chatMenuToggle) {
         const menu = document.querySelector("[data-chat-safety-menu]");
-        if (menu) menu.hidden = !menu.hidden;
-      } else if (!event.target.closest("[data-chat-safety-menu]")) {
-        const menu = document.querySelector("[data-chat-safety-menu]");
-        if (menu) menu.hidden = true;
+        setChatMenu(menu?.hidden !== false);
+      } else if (event.target.closest("[data-chat-menu-backdrop]") || !event.target.closest("[data-chat-safety-menu]")) {
+        setChatMenu(false);
       }
       const chatTab = event.target.closest("[data-chat-tab]");
       if (chatTab) setChatTab(chatTab.dataset.chatTab);
@@ -1054,20 +1124,15 @@
       const pulseConversation = event.target.closest("[data-open-pulse-conversation]");
       if (pulseConversation) location.href = "/pulse/messages/" + encodeURIComponent(pulseConversation.dataset.openPulseConversation);
       if (event.target.closest("[data-chat-new-private]")) {
+        setChatMenu(false);
         setChatTab("list");
         document.querySelector("[data-chat-start-form] input")?.focus();
       }
       if (event.target.closest("[data-chat-create-group]")) {
-        const title = window.prompt("Group chat name");
-        if (title && title.trim()) {
-          try {
-            const result = await postJson("/api/pulse/messages/group/create", { title: title.trim(), participant_ids: [], privacy: "private" });
-            location.href = result.next_url || ("/pulse/messages/" + result.conversation_id);
-          } catch (err) {
-            text("[data-chat-start-message]", err.message);
-          }
-        }
+        setChatMenu(false);
+        setCreateGroupModal(true);
       }
+      if (event.target.closest("[data-create-group-cancel]") || event.target.matches("[data-create-group-modal]")) setCreateGroupModal(false);
       if (event.target.closest("[data-chat-report]") && chatState.activeConversationId) {
         const reason = window.prompt("Briefly describe the concern for moderation review.");
         if (reason) await postJson("/api/messages/report", { conversation_id: chatState.activeConversationId, reported_user_id: chatState.activeOtherUserId || 0, reason });

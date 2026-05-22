@@ -11,10 +11,12 @@ from werkzeug.utils import secure_filename
 from . import user_context
 
 
-ALLOWED_TYPES = {x.strip().lower() for x in os.getenv("MEDIA_UPLOAD_ALLOWED_TYPES", "jpg,jpeg,png,webp,gif,mp4,webm,mov").split(",")}
+ALLOWED_TYPES = {x.strip().lower() for x in os.getenv("MEDIA_UPLOAD_ALLOWED_TYPES", "jpg,jpeg,png,webp,gif,mp4,webm,mov,mp3,m4a,wav,ogg,pdf,txt,doc,docx").split(",")}
 IMAGE_EXTS = {"jpg", "jpeg", "png", "webp"}
 GIF_EXTS = {"gif"}
 VIDEO_EXTS = {"mp4", "webm", "mov"}
+AUDIO_EXTS = {"mp3", "m4a", "wav", "ogg"}
+FILE_EXTS = {"pdf", "txt", "doc", "docx"}
 UPLOAD_ROOT = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads/chat_media"))
 
 
@@ -27,6 +29,10 @@ def _limit_bytes(ext):
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", "5")) * 1024 * 1024)
     if ext in GIF_EXTS:
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_GIF_MB", "8")) * 1024 * 1024)
+    if ext in AUDIO_EXTS:
+        return int(float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")) * 1024 * 1024)
+    if ext in FILE_EXTS:
+        return int(float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12")) * 1024 * 1024)
     return int(float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "25")) * 1024 * 1024)
 
 
@@ -37,6 +43,10 @@ def _media_type(ext):
         return "gif"
     if ext in VIDEO_EXTS:
         return "video"
+    if ext in AUDIO_EXTS:
+        return "audio"
+    if ext in FILE_EXTS:
+        return "file"
     return ""
 
 
@@ -90,7 +100,7 @@ def rate_limited(user_id, media_type):
 
 def save_upload(user_id, file_storage, context_type="private_chat", context_id=""):
     if not file_storage or not file_storage.filename:
-        return {"ok": False, "message": "Choose an image, GIF, or short video."}, 400
+        return {"ok": False, "message": "Choose a photo, GIF, video, voice note, audio clip, or safe file."}, 400
     original = secure_filename(file_storage.filename)
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
     if ext not in ALLOWED_TYPES:
@@ -104,7 +114,7 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     size = file_storage.stream.tell()
     file_storage.stream.seek(0)
     if size > _limit_bytes(ext):
-        return {"ok": False, "message": "File too large. Please upload a smaller image, GIF, or short video."}, 400
+        return {"ok": False, "message": "File too large. Please upload a smaller media file."}, 400
     if media_type in {"image", "gif"}:
         header = file_storage.stream.read(512)
         file_storage.stream.seek(0)

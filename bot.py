@@ -16123,7 +16123,22 @@ def pulse_get_or_create_group_conversation(cur, current_user_id, group=None, tit
     cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
     member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("UPDATE pulse_conversations SET title=?, member_count=?, updated_at=?, last_activity_at=? WHERE id=?", (title, member_count, now, now, conversation_id))
-    return {"ok": True, "conversation_id": conversation_id, "message": "Group chat ready.", "next_url": f"/pulse/messages/{conversation_id}"}, 200
+    return {
+        "ok": True,
+        "conversation_id": conversation_id,
+        "message": "Group chat ready.",
+        "next_url": f"/pulse/messages/{conversation_id}",
+        "conversation": {
+            "id": conversation_id,
+            "conversation_id": conversation_id,
+            "conversation_type": conversation_type,
+            "title": title,
+            "member_count": member_count,
+            "last_message": "",
+            "last_activity_at": now,
+            "updated_at": now,
+        },
+    }, 200
 
 
 GROUP_REACTION_TYPES = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish"}
@@ -17785,13 +17800,14 @@ def pulse_messages_page():
     conn.close()
     empty_group = "<article class='card'><h2>No group chats yet.</h2><p>No group chats yet. Create one with friends, creators, or your community.</p><button class='primary' data-open-group-create>Create Group Chat</button></article>"
     main = f"""
-    <style>.messenger-tabs-main{{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}}.messenger-tabs-main button{{flex:0 0 auto;border-radius:999px;min-height:40px;padding:8px 14px}}.messenger-tabs-main button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border-color:transparent}}.messenger-menu{{position:relative;flex:0 0 auto}}.messenger-menu summary{{list-style:none;cursor:pointer}}.messenger-menu div{{position:absolute;right:0;z-index:20;display:grid;gap:6px;min-width:220px;padding:8px;border:1px solid var(--line);border-radius:16px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.35)}}.messenger-menu button{{width:100%;justify-content:flex-start}}.messenger-tab-panel[hidden]{{display:none}}.messenger-convo-card{{overflow:hidden}}.messenger-search-results{{display:grid;gap:8px;margin-top:10px}}.messenger-user-result{{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.04)}}.messenger-modal{{position:fixed;inset:0;z-index:90;display:none;place-items:end center;background:rgba(0,0,0,.46);backdrop-filter:blur(8px);padding:14px}}.messenger-modal.open{{display:grid}}.messenger-sheet{{width:min(620px,100%);max-height:min(760px,88dvh);overflow:auto;border:1px solid var(--line);border-radius:24px;background:#071321;padding:16px;box-shadow:0 30px 90px rgba(0,0,0,.55)}}.selected-users{{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}}@media(max-width:620px){{.messenger-user-result{{grid-template-columns:auto minmax(0,1fr)}}.messenger-user-result button{{grid-column:1/-1}}.messenger-menu div{{position:fixed;right:12px;left:12px;top:auto;bottom:calc(110px + env(safe-area-inset-bottom))}}}}</style>
-    <section class='card'><div class='person'><div><h2>Pulse Messenger</h2><p>Conversations, open rooms, and group/community chats in one place.</p></div><details class='messenger-menu'><summary class='button'>...</summary><div><button data-open-group-create>Create Group Chat</button><button data-focus-private>New Private Message</button><button type='button'>Message Requests</button><button type='button'>Muted Chats</button><button type='button'>Blocked Users</button><button type='button'>Report a Problem</button></div></details></div><div class='messenger-tabs-main'><button class='active' data-msg-tab='direct'>Conversations</button><button data-msg-tab='room'>Chat Room</button><button data-msg-tab='group'>Group Chat</button></div></section>
+    <style>.messenger-tabs-main{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding-bottom:4px}}.messenger-tabs-main button{{min-width:0;border-radius:999px;min-height:40px;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.messenger-tabs-main button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border-color:transparent}}.messenger-tab-panel[hidden]{{display:none}}.messenger-convo-card{{overflow:hidden}}.messenger-search-results{{display:grid;gap:8px;margin-top:10px}}.messenger-user-result{{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.04)}}.messenger-modal,.messenger-options{{position:fixed;inset:0;z-index:9999;display:none;background:rgba(0,0,0,.48);backdrop-filter:blur(8px);padding:14px;pointer-events:auto}}.messenger-modal.open,.messenger-options.open{{display:grid}}.messenger-modal{{place-items:end center}}.messenger-options{{place-items:start end}}.messenger-sheet,.messenger-options-sheet{{width:min(620px,100%);max-height:min(760px,88dvh);overflow:auto;border:1px solid var(--line);background:#071321;box-shadow:0 30px 90px rgba(0,0,0,.55)}}.messenger-sheet{{border-radius:24px;padding:16px}}.messenger-options-sheet{{width:min(320px,calc(100vw - 28px));border-radius:18px;padding:10px;margin-top:96px;margin-right:max(14px,env(safe-area-inset-right))}}.messenger-options-title{{padding:8px 10px 10px;font-weight:950;color:var(--text)}}.messenger-options-section{{display:grid;gap:6px;padding:6px;border-top:1px solid rgba(255,255,255,.08)}}.messenger-options-section:first-of-type{{border-top:0}}.messenger-options button{{width:100%;justify-content:flex-start;min-height:44px;background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.08)}}.messenger-options small{{display:block;padding:8px 10px 2px;color:var(--muted);font-weight:850;text-transform:uppercase;font-size:11px;letter-spacing:.08em}}.selected-users{{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}}@media(max-width:620px){{.messenger-tabs-main button[data-full-label]{{font-size:0}}.messenger-tabs-main button[data-full-label]::after{{content:attr(data-short-label);font-size:12px}}.messenger-user-result{{grid-template-columns:auto minmax(0,1fr)}}.messenger-user-result button{{grid-column:1/-1}}.messenger-options{{place-items:end center;padding:0;background:rgba(0,0,0,.58)}}.messenger-options-sheet{{width:100%;margin:0;max-height:74dvh;border-radius:26px 26px 0 0;padding:12px 12px calc(14px + env(safe-area-inset-bottom));animation:messengerSheetIn .22s cubic-bezier(.18,.9,.2,1)}}.messenger-options-sheet::before{{content:'';display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}}}}@keyframes messengerSheetIn{{from{{transform:translateY(18px);opacity:.85}}to{{transform:translateY(0);opacity:1}}}}</style>
+    <section class='card'><div class='person'><div><h2>Pulse Messenger</h2><p>Conversations, open rooms, and group/community chats in one place.</p></div><button class='button' type='button' data-messenger-options-toggle aria-haspopup='dialog' aria-expanded='false'>...</button></div><div class='messenger-tabs-main'><button class='active' data-msg-tab='direct' data-full-label='Conversations' data-short-label='Chats'>Conversations</button><button data-msg-tab='room' data-full-label='Chat Room' data-short-label='Rooms'>Chat Room</button><button data-msg-tab='group' data-full-label='Group Chat' data-short-label='Groups'>Group Chat</button></div></section>
     <section class='card' id='privateSearchCard'><h2>Start a Conversation</h2><form id='pulseUserSearch'><input name='q' placeholder='Search by name or public Pulse ID' autocomplete='off'><button class='primary'>Search</button></form><div class='messenger-search-results' id='pulseUserResults'></div></section>
     <section class='messenger-tab-panel' data-msg-panel='direct'>{''.join(direct_cards) or '<article class="card"><h2>No conversations yet.</h2><p>Search by display name or public Pulse ID to start a private Pulse chat.</p></article>'}</section>
     <section class='messenger-tab-panel' data-msg-panel='room' hidden><article class='card'><h2>Chat Room</h2><p>Open community rooms are being unified with Pulse Groups and Spaces. Use Groups for live community chat today.</p><a class='button primary' href='/pulse/groups'>Browse Groups</a></article></section>
     <section class='messenger-tab-panel' data-msg-panel='group' hidden>{''.join(group_cards + community_cards) or empty_group}</section>
     <section class='messenger-modal' id='groupChatModal'><div class='messenger-sheet'><h2>Create Group Chat</h2><input id='groupChatTitle' placeholder='Group chat name'><textarea id='groupChatDescription' placeholder='Description optional'></textarea><select id='groupChatPrivacy'><option value='private'>Private</option><option value='invite_only'>Invite Only</option><option value='community'>Community</option></select><label>Optional group image<input id='groupChatPhoto' type='file' accept='image/jpeg,image/png,image/webp'></label><form id='groupChatSearch'><input name='q' placeholder='Add people by name or public Pulse ID'><button>Search</button></form><div class='messenger-search-results' id='groupChatResults'></div><div class='selected-users' id='selectedUsers'></div><div class='actions'><button type='button' id='cancelGroupChat'>Cancel</button><button class='primary' id='createGroupChat' type='button'>Create Group Chat</button></div></div></section>
+    <section class='messenger-options' id='messengerOptions' aria-hidden='true'><div class='messenger-options-sheet' role='dialog' aria-modal='true' aria-label='Messenger Options'><div class='messenger-options-title'>Messenger Options</div><div class='messenger-options-section'><button type='button' data-open-group-create>Create Group Chat</button><button type='button' data-focus-private>New Private Message</button><button type='button'>Message Requests</button><button type='button'>Muted Chats</button><button type='button'>Report a Problem</button></div><small>Safety & Privacy</small><div class='messenger-options-section'><button type='button'>Blocked Users</button><button type='button'>Restricted Users</button></div></div></section>
     """
     script = """
     const selectedMembers=new Map();
@@ -17799,7 +17815,10 @@ def pulse_messages_page():
     function renderPulseUser(u,selectMode=false){const avatar=u.avatar_url?`<img src="${mEsc(u.avatar_url)}" alt="">`:mEsc(String(u.display_name||'P').slice(0,1));return `<div class="messenger-user-result" data-user-result="${u.id}"><span class="avatar">${avatar}</span><div><strong>${mEsc(u.display_name||'Pulse user')}${u.premium?' ✦':''}</strong><p class="muted">${mEsc(u.public_pulse_id||'')} • ${mEsc(u.label||'CoinPilotXAI Pulse')}</p></div><button class="${selectMode?'':'primary'}" data-${selectMode?'select':'message'}-user="${u.id}" ${u.is_self?'disabled':''}>${u.is_self?'You':selectMode?(selectedMembers.has(String(u.id))?'Remove':'Add'):'Message'}</button></div>`}
     async function searchPulseUsers(q){const r=await fetch('/api/pulse/users/search?q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Search failed.');return d.users||[]}
     function renderSelected(){document.getElementById('selectedUsers').innerHTML=[...selectedMembers.values()].map(u=>`<span class="pill">${u.display_name||u.public_pulse_id}<button type="button" data-remove-selected="${u.id}">×</button></span>`).join('')||'<span class="muted">No members selected yet.</span>'}
-    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-msg-tab]');if(tab){document.querySelectorAll('[data-msg-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('[data-msg-panel]').forEach(p=>p.hidden=p.dataset.msgPanel!==tab.dataset.msgTab);return}if(e.target.closest('[data-open-group-create]')){document.getElementById('groupChatModal').classList.add('open');return}if(e.target.closest('#cancelGroupChat')||e.target.id==='groupChatModal'){document.getElementById('groupChatModal').classList.remove('open');return}if(e.target.closest('[data-focus-private]')){document.getElementById('privateSearchCard')?.scrollIntoView({behavior:'smooth'});document.querySelector('#pulseUserSearch input')?.focus();return}const msg=e.target.closest('[data-message-user]');if(msg){try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({target_user_id:msg.dataset.messageUser})});location.href=d.next_url}catch(err){toast(err.message)}return}const sel=e.target.closest('[data-select-user]');if(sel){const card=sel.closest('[data-user-result]');const id=String(sel.dataset.selectUser);if(selectedMembers.has(id))selectedMembers.delete(id);else selectedMembers.set(id,{id:Number(id),display_name:card.querySelector('strong')?.textContent?.replace(' ✦','')||'Pulse user'});renderSelected();sel.textContent=selectedMembers.has(id)?'Remove':'Add';return}const rem=e.target.closest('[data-remove-selected]');if(rem){selectedMembers.delete(String(rem.dataset.removeSelected));renderSelected();return}});
+    function closeMessengerOptions(){const sheet=document.getElementById('messengerOptions');sheet?.classList.remove('open');sheet?.setAttribute('aria-hidden','true');document.querySelector('[data-messenger-options-toggle]')?.setAttribute('aria-expanded','false')}
+    function openMessengerOptions(){const sheet=document.getElementById('messengerOptions');sheet?.classList.add('open');sheet?.setAttribute('aria-hidden','false');document.querySelector('[data-messenger-options-toggle]')?.setAttribute('aria-expanded','true')}
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMessengerOptions();document.getElementById('groupChatModal')?.classList.remove('open')}});
+    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-msg-tab]');if(tab){document.querySelectorAll('[data-msg-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('[data-msg-panel]').forEach(p=>p.hidden=p.dataset.msgPanel!==tab.dataset.msgTab);return}if(e.target.closest('[data-messenger-options-toggle]')){openMessengerOptions();return}if(e.target.id==='messengerOptions'){closeMessengerOptions();return}if(e.target.closest('[data-open-group-create]')){closeMessengerOptions();document.getElementById('groupChatModal').classList.add('open');return}if(e.target.closest('#cancelGroupChat')||e.target.id==='groupChatModal'){document.getElementById('groupChatModal').classList.remove('open');return}if(e.target.closest('[data-focus-private]')){closeMessengerOptions();document.getElementById('privateSearchCard')?.scrollIntoView({behavior:'smooth'});document.querySelector('#pulseUserSearch input')?.focus();return}const msg=e.target.closest('[data-message-user]');if(msg){try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({target_user_id:msg.dataset.messageUser})});location.href=d.next_url}catch(err){toast(err.message)}return}const sel=e.target.closest('[data-select-user]');if(sel){const card=sel.closest('[data-user-result]');const id=String(sel.dataset.selectUser);if(selectedMembers.has(id))selectedMembers.delete(id);else selectedMembers.set(id,{id:Number(id),display_name:card.querySelector('strong')?.textContent?.replace(' ✦','')||'Pulse user'});renderSelected();sel.textContent=selectedMembers.has(id)?'Remove':'Add';return}const rem=e.target.closest('[data-remove-selected]');if(rem){selectedMembers.delete(String(rem.dataset.removeSelected));renderSelected();return}});
     document.getElementById('pulseUserSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('pulseUserResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,false)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
     document.getElementById('groupChatSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupChatResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,true)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
     document.getElementById('createGroupChat').addEventListener('click',async()=>{try{const ids=[...selectedMembers.keys()].map(Number);const title=document.getElementById('groupChatTitle').value.trim();if(!title)throw new Error('Add a group chat name.');const d=await pulseApi('/api/pulse/messages/group/create',{method:'POST',body:JSON.stringify({title,description:document.getElementById('groupChatDescription').value,privacy:document.getElementById('groupChatPrivacy').value,participant_ids:ids})});location.href='/pulse/messages/'+d.conversation_id}catch(err){toast(err.message)}});
@@ -17817,6 +17836,11 @@ def pulse_message_media_html(message):
         return ""
     if message_type == "video":
         return f"<video class='message-media' controls playsinline preload='metadata' poster='{thumbnail_url}'><source src='{media_url}'></video>"
+    if message_type in {"voice", "audio"}:
+        return f"<div class='voice-bubble'><span class='waveform' aria-hidden='true'></span><audio class='message-audio' controls preload='metadata' src='{media_url}'></audio></div>"
+    if message_type == "file":
+        filename = clean_html((message or {}).get("body") or "Download file")
+        return f"<a class='share-card' href='{media_url}' download><span>{filename}</span><small>Open attachment</small></a>"
     if message_type == "gif":
         return f"<img class='message-media' src='{media_url}' alt='GIF message' loading='lazy'>"
     if message_type in {"post_share", "reel_share", "group_share", "marketplace_share", "live_share", "link"}:
@@ -17995,32 +18019,37 @@ def pulse_message_thread_page(conversation_id):
     .msg.mine{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.msg.theirs{{justify-self:start}}
     .msg p{{margin:4px 0;color:inherit}}.msg small{{display:block;margin-top:5px;opacity:.72;color:inherit}}
     .message-media{{display:block;width:min(280px,70vw);max-height:360px;object-fit:cover;border-radius:16px;background:#020817;border:1px solid rgba(255,255,255,.1)}}
+    .message-audio{{width:min(280px,70vw);height:38px}}.voice-bubble{{display:grid;gap:8px;min-width:min(280px,70vw);padding:10px;border-radius:16px;background:rgba(5,11,20,.24);border:1px solid rgba(255,255,255,.1)}}.waveform{{height:28px;border-radius:999px;background:repeating-linear-gradient(90deg,rgba(110,223,246,.82) 0 3px,transparent 3px 9px);mask-image:linear-gradient(90deg,transparent,black 8%,black 92%,transparent);opacity:.82}}
     .share-card{{display:grid;gap:4px;min-width:min(260px,68vw);padding:12px;border-radius:16px;background:rgba(5,11,20,.28);text-decoration:none;color:inherit;border:1px solid rgba(255,255,255,.12)}}
     .message-composer{{position:sticky;bottom:0;z-index:12;display:grid;grid-template-columns:46px 46px minmax(0,1fr) 48px;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(18px);border-top:1px solid rgba(255,255,255,.08);pointer-events:auto}}
     .message-composer button{{width:46px;min-width:46px;padding:0;border-radius:50%}}.message-composer input{{min-height:46px;border-radius:999px}}
     .attachment-sheet{{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:80;display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border:1px solid rgba(110,223,246,.24);border-radius:22px;background:rgba(8,15,28,.96);backdrop-filter:blur(20px);box-shadow:0 28px 90px rgba(0,0,0,.48)}}
     .attachment-sheet.open{{display:grid}}.attachment-sheet button,.attachment-sheet a{{min-height:46px;border-radius:14px;white-space:normal}}
-    .safety-menu{{position:absolute;right:0;top:48px;z-index:20;display:grid;gap:6px;min-width:220px;padding:8px;border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(8,15,28,.98);box-shadow:0 20px 70px rgba(0,0,0,.45)}}
-    .safety-menu[hidden]{{display:none}}.safety-menu button{{width:100%;justify-content:flex-start;background:rgba(255,255,255,.045)}}
-    @media(max-width:900px){{body:has(.messenger-screen){{overflow:hidden}}body:has(.messenger-screen) .wrap{{padding:0}}body:has(.messenger-screen) .layout{{display:block}}body:has(.messenger-screen) .layout>aside,body:has(.messenger-screen) .wrap>section.card{{display:none}}.messenger-screen{{position:fixed;inset:0;z-index:200;height:100dvh;max-height:100dvh;border-radius:0;margin:0;border:0}}.mobile-bottom-nav,.pulse-fab{{display:none!important}}}}
+    .safety-backdrop{{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.48);backdrop-filter:blur(7px);pointer-events:auto}}.safety-backdrop[hidden]{{display:none}}
+    .safety-menu{{position:absolute;right:0;top:48px;z-index:9999;display:grid;gap:6px;min-width:260px;padding:8px;border:1px solid rgba(110,223,246,.22);border-radius:18px;background:rgba(8,15,28,.98);box-shadow:0 20px 70px rgba(0,0,0,.45);pointer-events:auto}}
+    .safety-menu[hidden]{{display:none}}.safety-menu button{{width:100%;justify-content:flex-start;background:rgba(255,255,255,.045)}}.safety-menu-title{{padding:8px 10px 4px;font-weight:950}}.safety-menu-section{{display:grid;gap:6px;padding:6px;border-top:1px solid rgba(255,255,255,.08)}}.safety-menu-section:first-of-type{{border-top:0}}.safety-menu small{{padding:8px 10px 0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:850}}
+    @media(max-width:900px){{body:has(.messenger-screen){{overflow:hidden}}body:has(.messenger-screen) .wrap{{padding:0}}body:has(.messenger-screen) .layout{{display:block}}body:has(.messenger-screen) .layout>aside,body:has(.messenger-screen) .wrap>section.card{{display:none}}.messenger-screen{{position:fixed;inset:0;z-index:200;height:100dvh;max-height:100dvh;border-radius:0;margin:0;border:0}}.messenger-tabs a{{font-size:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.messenger-tabs a::after{{font-size:12px}}.messenger-tabs a:nth-child(1)::after{{content:'Chats'}}.messenger-tabs a:nth-child(2)::after{{content:'Rooms'}}.messenger-tabs a:nth-child(3)::after{{content:'Groups'}}.safety-menu{{position:fixed;left:0;right:0;top:auto;bottom:0;min-width:0;width:100%;border-radius:26px 26px 0 0;padding:12px 12px calc(14px + env(safe-area-inset-bottom));animation:messengerSheetIn .22s cubic-bezier(.18,.9,.2,1)}}.safety-menu::before{{content:'';display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}}.mobile-bottom-nav,.pulse-fab{{display:none!important}}}}@keyframes messengerSheetIn{{from{{transform:translateY(18px);opacity:.86}}to{{transform:translateY(0);opacity:1}}}}
     </style>
     <section class='card messenger-screen'>
       <header class='messenger-top'>
         <div class='messenger-handle'></div>
-        <div class='messenger-head'><div class='person'><span class='avatar'>{avatar}</span><div><strong>{other_name}</strong><p class='muted'>{subtitle}</p></div></div><div class='private-chat-tools'><button class='messenger-more' id='safetyMenuBtn' type='button'>⋯</button><a class='button messenger-close' href='/pulse/messages'>Close</a><div class='safety-menu' id='safetyMenu' hidden><button type='button'>Mute Notifications</button><button type='button'>Report User</button><button type='button'>Block User</button><button type='button'>Delete Own Message</button></div></div></div>
+        <div class='messenger-head'><div class='person'><span class='avatar'>{avatar}</span><div><strong>{other_name}</strong><p class='muted'>{subtitle}</p></div></div><div class='private-chat-tools'><button class='messenger-more' id='safetyMenuBtn' type='button' aria-haspopup='dialog' aria-expanded='false'>⋯</button><a class='button messenger-close' href='/pulse/messages'>Close</a><div class='safety-backdrop' id='safetyBackdrop' hidden></div><div class='safety-menu' id='safetyMenu' hidden><div class='safety-menu-title'>Messenger Options</div><div class='safety-menu-section'><button type='button'>Mute Notifications</button><button type='button'>Search in Chat</button><button type='button'>Pinned Messages</button></div><small>Safety & Privacy</small><div class='safety-menu-section'><button type='button'>Report a Problem</button><button type='button'>Blocked Users</button><button type='button'>Restricted Users</button></div></div></div></div>
         <nav class='messenger-tabs'><a href='/pulse/messages'>Conversations</a><a class='active' href='/pulse/messages/{conversation_id}'>Chat Room</a><a href='/pulse/messages#group-chat'>Group Chat</a></nav>
       </header>
       <section class='message-list' id='messages'>{message_html or '<article class="msg theirs"><p>No messages yet. Start the conversation with text, media, or a Pulse share.</p></article>'}</section>
       <form class='message-composer' id='replyForm'><button id='attachBtn' type='button'>+</button><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}' aria-label='Camera'>📷</a><input id='replyBody' placeholder='Message...' autocomplete='off'><button class='primary' id='replyBtn'>➤</button></form>
     </section>
-    <section class='attachment-sheet' id='attachmentSheet'><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=message&conversation_id={conversation_id}'>Record Video</a><button type='button' data-pick-media='image/*'>Upload Photo</button><button type='button' data-pick-media='video/*'>Upload Video</button><button type='button' data-pick-media='image/gif'>Upload GIF</button><button type='button' data-share-kind='post_share'>Share Pulse Post</button><button type='button' data-share-kind='reel_share'>Share Reel</button><button type='button' data-share-kind='marketplace_share'>Share Marketplace Item</button></section><input id='messageMediaFile' type='file' accept='image/*,video/*' hidden>
+    <section class='attachment-sheet' id='attachmentSheet'><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=message&conversation_id={conversation_id}'>Record Video</a><button type='button' data-pick-media='image/*'>Upload Photo</button><button type='button' data-pick-media='video/*'>Upload Video</button><button type='button' data-pick-media='image/gif'>Upload GIF</button><button type='button' data-pick-media='audio/*' data-voice='1'>Voice Note</button><button type='button' data-pick-media='audio/*'>Audio Clip</button><button type='button' data-pick-media='.pdf,.txt,.doc,.docx'>File</button><button type='button' data-share-kind='post_share'>Share Pulse Post</button><button type='button' data-share-kind='reel_share'>Share Reel</button><button type='button' data-share-kind='marketplace_share'>Share Marketplace Item</button></section><input id='messageMediaFile' type='file' accept='image/*,video/*,audio/*,.pdf,.txt,.doc,.docx' hidden>
     """
     script = f"""
-    const list=document.getElementById('messages'),form=document.getElementById('replyForm'),input=document.getElementById('replyBody'),sheet=document.getElementById('attachmentSheet'),file=document.getElementById('messageMediaFile'),safety=document.getElementById('safetyMenu');list.scrollTop=list.scrollHeight;
-    document.getElementById('safetyMenuBtn').addEventListener('click',()=>safety.hidden=!safety.hidden);
+    const list=document.getElementById('messages'),form=document.getElementById('replyForm'),input=document.getElementById('replyBody'),sheet=document.getElementById('attachmentSheet'),file=document.getElementById('messageMediaFile'),safety=document.getElementById('safetyMenu'),safetyBackdrop=document.getElementById('safetyBackdrop'),safetyBtn=document.getElementById('safetyMenuBtn');list.scrollTop=list.scrollHeight;
+    function setSafetyMenu(open){{safety.hidden=!open;safetyBackdrop.hidden=!open;safetyBtn.setAttribute('aria-expanded',open?'true':'false')}}
+    safetyBtn.addEventListener('click',()=>setSafetyMenu(safety.hidden));
+    safetyBackdrop.addEventListener('click',()=>setSafetyMenu(false));
+    document.addEventListener('keydown',e=>{{if(e.key==='Escape')setSafetyMenu(false)}});
     document.getElementById('attachBtn').addEventListener('click',()=>sheet.classList.toggle('open'));
-    document.querySelectorAll('[data-pick-media]').forEach(b=>b.addEventListener('click',()=>{{file.accept=b.dataset.pickMedia;file.click();sheet.classList.remove('open')}}));
-    file.addEventListener('change',async()=>{{const chosen=file.files[0];if(!chosen)return;try{{const fd=new FormData();fd.append('file',chosen);fd.append('conversation_id','{conversation_id}');const r=await fetch('/api/pulse/messages/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.message_type,media_url:d.media_url,thumbnail_url:d.thumbnail_url,body:input.value}})}});location.reload();}}catch(err){{toast(err.message)}}finally{{file.value=''}}}});
+    let voiceUpload=false;document.querySelectorAll('[data-pick-media]').forEach(b=>b.addEventListener('click',()=>{{file.accept=b.dataset.pickMedia;voiceUpload=b.dataset.voice==='1';file.click();sheet.classList.remove('open')}}));
+    file.addEventListener('change',async()=>{{const chosen=file.files[0];if(!chosen)return;try{{const fd=new FormData();fd.append('file',chosen);fd.append('conversation_id','{conversation_id}');if(voiceUpload)fd.append('voice','1');const r=await fetch('/api/pulse/messages/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.message_type,media_url:d.media_url,thumbnail_url:d.thumbnail_url,file_size:d.file_size||0,body:input.value||chosen.name}})}});location.reload();}}catch(err){{toast(err.message)}}finally{{file.value='';voiceUpload=false}}}});
     document.querySelectorAll('[data-share-kind]').forEach(b=>b.addEventListener('click',async()=>{{const url=prompt('Paste the Pulse link to share');if(!url)return;try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},message_type:b.dataset.shareKind,media_url:url,body:'Shared from Pulse'}})}});location.reload();}}catch(err){{toast(err.message)}}}}));
     form.addEventListener('submit',async e=>{{e.preventDefault();try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},body:input.value,message_type:'text'}})}});location.reload()}}catch(err){{toast(err.message)}}}});
     """
@@ -18136,11 +18165,11 @@ def pulse_group_detail_page(group_slug):
     function setLoading(btn,on,label){{if(!btn)return;btn.disabled=on;if(on){{btn.dataset.originalText=btn.textContent;btn.textContent=label||'Working...'}}else if(btn.dataset.originalText){{btn.textContent=btn.dataset.originalText;delete btn.dataset.originalText}}}}
     function updateMemberCount(n){{document.querySelectorAll('[data-group-member-count]').forEach(el=>el.textContent=n)}}
     document.getElementById('cancelGroupReport')?.addEventListener('click',()=>{{reportModal?.classList.remove('open');pendingReportPostId=null;reportMode='post'}});
-    document.getElementById('submitGroupReport')?.addEventListener('click',async e=>{{const btn=e.currentTarget;setLoading(btn,true,'Submitting...');try{{const payload={{reason:document.getElementById('groupReportReason').value,notes:document.getElementById('groupReportNotes').value}};if(reportMode==='group')await pulseApi(`/api/pulse/groups/{group_id}/report`,{{method:'POST',body:JSON.stringify(payload)}});else await pulseApi(`/api/groups/posts/${{pendingReportPostId}}/report`,{{method:'POST',body:JSON.stringify(payload)}});reportModal?.classList.remove('open');toast('Report submitted.');pendingReportPostId=null;reportMode='post';document.getElementById('groupReportNotes').value='';}}catch(err){{console.error('Group action failed',err);toast(err.message)}}finally{{setLoading(btn,false)}}}});
+    document.getElementById('submitGroupReport')?.addEventListener('click',async e=>{{const btn=e.currentTarget;setLoading(btn,true,'Submitting...');try{{const payload={{reason:document.getElementById('groupReportReason').value,notes:document.getElementById('groupReportNotes').value}};if(reportMode==='group')await pulseApi(`/api/pulse/groups/{group_id}/report`,{{method:'POST',body:JSON.stringify(payload)}});else await pulseApi(`/api/pulse/groups/posts/${{pendingReportPostId}}/report`,{{method:'POST',body:JSON.stringify(payload)}});reportModal?.classList.remove('open');toast('Report submitted.');pendingReportPostId=null;reportMode='post';document.getElementById('groupReportNotes').value='';}}catch(err){{console.error('Group action failed',err);toast(err.message)}}finally{{setLoading(btn,false)}}}});
     document.getElementById('cancelGroupInvite')?.addEventListener('click',()=>inviteModal?.classList.remove('open'));
     document.getElementById('copyGroupInvite')?.addEventListener('click',async()=>{{try{{const d=await pulseApi(`/api/pulse/groups/{group_id}/invite-link`,{{method:'POST',body:JSON.stringify({{}})}});await navigator.clipboard.writeText(d.invite_url).catch(()=>{{}});toast('Invite link copied.')}}catch(err){{toast(err.message)}}}});
     document.getElementById('groupInviteSearch')?.addEventListener('submit',async e=>{{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupInviteResults');box.innerHTML='<p class="muted">Searching...</p>';try{{const r=await fetch('/api/pulse/users/search?q='+encodeURIComponent(q),{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Search failed.');box.innerHTML=(d.users||[]).map(u=>`<div class="messenger-user-result"><span class="avatar">${{u.avatar_url?`<img src="${{gEsc(u.avatar_url)}}" alt="">`:gEsc((u.display_name||'P').slice(0,1))}}</span><div><strong>${{gEsc(u.display_name||'Pulse user')}}</strong><p class="muted">${{gEsc(u.public_pulse_id||'')}}</p></div><button data-send-group-invite="${{u.id}}" ${{u.is_self?'disabled':''}}>Invite</button></div>`).join('')||'<p class="muted">No users found.</p>';}}catch(err){{box.innerHTML=`<p class="muted">${{gEsc(err.message)}}</p>`}}}});
-    document.addEventListener('click',async e=>{{const full=e.target.closest('[data-media-fullscreen]');if(full){{window.open(full.dataset.mediaFullscreen,'_blank','noopener');return}}const jid=e.target.closest('[data-join-group-id]'),lid=e.target.closest('[data-leave-group-id]'),rid=e.target.closest('[data-report-group-id]'),invid=e.target.closest('[data-invite-group-id]'),gcid=e.target.closest('[data-open-group-chat-id]'),inviteUser=e.target.closest('[data-send-group-invite]');const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),inv=e.target.closest('[data-invite-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),rm=e.target.closest('[data-group-remove-user]'),pin=e.target.closest('[data-group-post-pin]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(jid){{setLoading(jid,true);const d=await pulseApi(`/api/pulse/groups/${{jid.dataset.joinGroupId}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(jid,false);return}} if(lid){{setLoading(lid,true);const d=await pulseApi(`/api/pulse/groups/${{lid.dataset.leaveGroupId}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(lid,false);return}} if(gcid){{setLoading(gcid,true);const d=await pulseApi(`/api/pulse/groups/${{gcid.dataset.openGroupChatId}}/chat/open`,{{method:'POST',body:JSON.stringify({{}})}});location.href=d.next_url||('/pulse/messages/'+d.conversation_id);return}} if(invid){{inviteModal?.classList.add('open');return}} if(rid){{reportMode='group';pendingReportPostId=null;document.getElementById('groupReportTitle').textContent='Report Group';reportModal?.classList.add('open');return}} if(inviteUser){{setLoading(inviteUser,true,'Sending...');await pulseApi(`/api/pulse/groups/{group_id}/invite`,{{method:'POST',body:JSON.stringify({{invitee_user_id:inviteUser.dataset.sendGroupInvite}})}});toast('Invite sent.');setLoading(inviteUser,false);return}} if(j){{setLoading(j,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(j,false)}} if(l){{setLoading(l,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(l,false)}} if(inv){{const url=location.origin+'/pulse/groups/'+encodeURIComponent(inv.dataset.inviteGroup);if(navigator.share){{navigator.share({{title:'Join this Pulse Group',url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});toast('Group invite link ready.')}}}} if(gc){{setLoading(gc,true);const d=await pulseApi('/api/pulse/messages/group/create',{{method:'POST',body:JSON.stringify({{group_slug:gc.dataset.openGroupChat,title:document.querySelector('h1')?.textContent||'Group chat'}})}});location.href='/pulse/messages/'+d.conversation_id}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{setLoading(gr,true);const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.');setLoading(gr,false)}} if(rp){{reportMode='post';document.getElementById('groupReportTitle').textContent='Report Post';pendingReportPostId=rp.dataset.groupReportPost;reportModal?.classList.add('open');closeMenus(rp);}} if(rm){{if(!confirm('Remove this user from the group?'))return;setLoading(rm,true);await pulseApi(`/api/groups/{group_id}/remove-member`,{{method:'POST',body:JSON.stringify({{user_id:rm.dataset.groupRemoveUser}})}});toast('User removed from group.');closeMenus(rm);setLoading(rm,false)}} if(pin){{setLoading(pin,true);const d=await pulseApi(`/api/groups/posts/${{pin.dataset.groupPostPin}}/pin`,{{method:'POST',body:JSON.stringify({{}})}});toast(d.message||'Pin updated.');closeMenus(pin);location.reload()}} if(cd){{setLoading(cd,true);await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{if(!confirm('Delete this group post?'))return;const post=pd.closest('[data-group-post]');setLoading(pd,true);await pulseApi(`/api/groups/posts/${{pd.dataset.groupPostDelete}}`,{{method:'DELETE',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast('Group post deleted.');closeMenus(pd)}}}}catch(err){{console.error('Group action failed',err);toast(err.message)}}}});
+    document.addEventListener('click',async e=>{{const full=e.target.closest('[data-media-fullscreen]');if(full){{window.open(full.dataset.mediaFullscreen,'_blank','noopener');return}}const jid=e.target.closest('[data-join-group-id]'),lid=e.target.closest('[data-leave-group-id]'),rid=e.target.closest('[data-report-group-id]'),invid=e.target.closest('[data-invite-group-id]'),gcid=e.target.closest('[data-open-group-chat-id]'),inviteUser=e.target.closest('[data-send-group-invite]');const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),inv=e.target.closest('[data-invite-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),rm=e.target.closest('[data-group-remove-user]'),pin=e.target.closest('[data-group-post-pin]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(jid){{setLoading(jid,true);const d=await pulseApi(`/api/pulse/groups/${{jid.dataset.joinGroupId}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(jid,false);return}} if(lid){{setLoading(lid,true);const d=await pulseApi(`/api/pulse/groups/${{lid.dataset.leaveGroupId}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(lid,false);return}} if(gcid){{setLoading(gcid,true);const d=await pulseApi(`/api/pulse/groups/${{gcid.dataset.openGroupChatId}}/chat/open`,{{method:'POST',body:JSON.stringify({{}})}});location.href=d.next_url||('/pulse/messages/'+d.conversation_id);return}} if(invid){{inviteModal?.classList.add('open');return}} if(rid){{reportMode='group';pendingReportPostId=null;document.getElementById('groupReportTitle').textContent='Report Group';reportModal?.classList.add('open');return}} if(inviteUser){{setLoading(inviteUser,true,'Sending...');await pulseApi(`/api/pulse/groups/{group_id}/invite`,{{method:'POST',body:JSON.stringify({{invitee_user_id:inviteUser.dataset.sendGroupInvite}})}});toast('Invite sent.');setLoading(inviteUser,false);return}} if(j){{setLoading(j,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(j,false)}} if(l){{setLoading(l,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(l,false)}} if(inv){{const url=location.origin+'/pulse/groups/'+encodeURIComponent(inv.dataset.inviteGroup);if(navigator.share){{navigator.share({{title:'Join this Pulse Group',url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});toast('Group invite link ready.')}}}} if(gc){{setLoading(gc,true);const d=await pulseApi('/api/pulse/messages/group/create',{{method:'POST',body:JSON.stringify({{group_slug:gc.dataset.openGroupChat,title:document.querySelector('h1')?.textContent||'Group chat'}})}});location.href='/pulse/messages/'+d.conversation_id}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{setLoading(gr,true);const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.');setLoading(gr,false)}} if(rp){{console.log('Group post action: report',rp.dataset.groupReportPost);reportMode='post';document.getElementById('groupReportTitle').textContent='Report Post';pendingReportPostId=rp.dataset.groupReportPost;reportModal?.classList.add('open');closeMenus(rp);}} if(rm){{console.log('Group post action: remove user',rm.dataset.groupRemoveUser);if(!confirm('Remove this user from the group?'))return;setLoading(rm,true);const d=await pulseApi(`/api/pulse/groups/posts/${{rm.closest('[data-group-post]')?.dataset.groupPost||0}}/remove-user`,{{method:'POST',body:JSON.stringify({{user_id:rm.dataset.groupRemoveUser}})}});toast(d.message||'User removed from group.');closeMenus(rm);setLoading(rm,false)}} if(pin){{console.log('Group post action: pin',pin.dataset.groupPostPin);setLoading(pin,true);const d=await pulseApi(`/api/pulse/groups/posts/${{pin.dataset.groupPostPin}}/pin`,{{method:'POST',body:JSON.stringify({{}})}});toast(d.message||'Pin updated.');const post=pin.closest('[data-group-post]');let badge=post?.querySelector('.pinned-pill');if(d.pinned&&!badge)post?.querySelector('.group-post-meta')?.insertAdjacentHTML('afterbegin','<span class="pill pinned-pill">Pinned</span> ');if(!d.pinned)badge?.remove();pin.textContent=d.pinned?'Unpin Post':'Pin Post';closeMenus(pin);setLoading(pin,false)}} if(cd){{setLoading(cd,true);await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{console.log('Group post action: delete',pd.dataset.groupPostDelete);if(!confirm('Delete this group post?'))return;const post=pd.closest('[data-group-post]');setLoading(pd,true);const d=await pulseApi(`/api/pulse/groups/posts/${{pd.dataset.groupPostDelete}}/delete`,{{method:'POST',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast(d.message||'Group post deleted.');closeMenus(pd)}}}}catch(err){{console.error('Group action failed',err);toast(err.message)}}}});
     document.querySelectorAll('[data-group-comment-form]').forEach(form=>form.addEventListener('submit',async e=>{{e.preventDefault();const input=form.querySelector('input[name=body]');try{{const postId=form.dataset.groupCommentForm;const d=await pulseApi(`/api/pulse/groups/posts/${{postId}}/comments`,{{method:'POST',body:JSON.stringify({{body:input.value}})}});form.previousElementSibling?.insertAdjacentHTML('beforeend',renderGroupComment(d.comment));document.querySelectorAll(`[data-comment-count="${{postId}}"]`).forEach(n=>n.textContent=Number(n.textContent||0)+1);input.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}}));
     document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{const fd=new FormData();fd.append('body',document.getElementById('groupPostBody').value);const file=document.getElementById('groupMediaFile').files[0];if(file)fd.append('media',file);const r=await fetch('/api/pulse/groups/{slug}/posts',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Could not post.');location.reload()}}catch(err){{toast(err.message)}}}});
     let groupLastEventId=0;
@@ -18593,26 +18622,64 @@ def api_pulse_post(post_id):
         pulse_emit_event("post_updated", {"post_id": post_id}, user["user_id"], post_id)
         return jsonify({"ok": True, "message": "Post updated.", "post_id": post_id})
     if request.method == "DELETE":
-        conn = db()
-        cur = conn.cursor()
-        cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
-        row = cur.fetchone()
-        owner_id = int(dict(row or {}).get("user_id") or 0) if row else 0
-        if not row:
-            conn.close()
-            return jsonify({"ok": False, "message": "Post not found."}), 404
-        if owner_id != int(user["user_id"]):
-            conn.close()
-            return jsonify({"ok": False, "message": "You can only delete your own Pulse posts."}), 403
-        cur.execute("UPDATE pulse_posts SET deleted_at=?, updated_at=? WHERE id=?", (datetime.utcnow().isoformat(timespec="seconds"), datetime.utcnow().isoformat(timespec="seconds"), post_id))
-        conn.commit()
-        conn.close()
-        pulse_emit_event("post_deleted", {"post_id": post_id}, user["user_id"], post_id)
-        return jsonify({"ok": True, "message": "Pulse post deleted.", "post_id": post_id})
+        return pulse_delete_post_common(post_id, user)
     post = pulse_feed_engine.get_post(post_id, viewer_user_id=user["user_id"], include_private=True)
     if not post:
         return jsonify({"ok": False, "message": "Post not found."}), 404
     return jsonify({"ok": True, "post": post, "comments": pulse_feed_engine.list_comments(post_id).get("comments", [])})
+
+
+def pulse_delete_post_common(post_id, user):
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+        post = dict(cur.fetchone() or {})
+        if not post:
+            conn.close()
+            return api_error("Post not found.", 404, trace_id)
+        owner_id = int(post.get("user_id") or 0)
+        if owner_id != int(user["user_id"]) and not pulse_group_user_is_admin(user):
+            conn.close()
+            return api_error("You cannot delete this post.", 403, trace_id)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute("UPDATE pulse_posts SET deleted_at=?, updated_at=?, moderation_status=COALESCE(moderation_status,'approved') WHERE id=?", (now, now, post_id))
+        for table, column in [
+            ("pulse_reactions", "post_id"),
+            ("pulse_comments", "post_id"),
+            ("pulse_reports", "target_id"),
+            ("pulse_post_saves", "post_id"),
+        ]:
+            try:
+                if table == "pulse_reports":
+                    cur.execute(f"UPDATE {table} SET status='closed' WHERE target_type='post' AND {column}=?", (post_id,))
+                elif "deleted_at" in table_columns(cur, table):
+                    cur.execute(f"UPDATE {table} SET deleted_at=? WHERE {column}=?", (now, post_id))
+                else:
+                    cur.execute(f"DELETE FROM {table} WHERE {column}=?", (post_id,))
+            except Exception:
+                pass
+        try:
+            cur.execute("UPDATE chat_media_uploads SET deleted_at=? WHERE context_type IN ('pulse','pulse_post') AND context_id=?", (now, str(post_id)))
+        except Exception:
+            pass
+        conn.commit(); conn.close()
+        pulse_emit_event("pulse_post_deleted", {"post_id": post_id, "deleted": True}, user["user_id"], post_id)
+        pulse_emit_event("post_deleted", {"post_id": post_id, "deleted": True}, user["user_id"], post_id)
+        return jsonify({"ok": True, "message": "Post deleted.", "post_id": post_id})
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_POST_DELETE_FAILED trace_id=%s post_id=%s user_id=%s", trace_id, post_id, user.get("user_id"))
+        return api_error("Post could not be deleted. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/posts/<int:post_id>/delete", methods=["POST"])
+def api_pulse_post_delete_fallback(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    return pulse_delete_post_common(post_id, user)
 
 
 @webhook_app.route("/api/pulse/post/<int:post_id>", methods=["GET"])
@@ -19008,14 +19075,15 @@ def api_pulse_message_send():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    message = clean_html(payload.get("message") or payload.get("body") or "")[:1200].strip()
-    message_type = clean_html(payload.get("message_type") or "text")[:40]
-    allowed_types = {"text", "image", "gif", "video", "voice", "link", "post_share", "reel_share", "group_share", "marketplace_share", "live_share"}
+    message = clean_html(payload.get("message") or payload.get("body") or payload.get("content") or "")[:2000].strip()
+    message_type = clean_html(payload.get("type") or payload.get("message_type") or "text")[:40]
+    allowed_types = {"text", "image", "gif", "video", "voice", "audio", "file", "system", "reaction", "call_event", "link", "post_share", "reel_share", "group_share", "marketplace_share", "live_share"}
     if message_type not in allowed_types:
         message_type = "text"
     media_url = clean_html(payload.get("media_url") or "")[:1000]
     thumbnail_url = clean_html(payload.get("thumbnail_url") or media_url)[:1000]
     metadata = payload.get("media_metadata") if isinstance(payload.get("media_metadata"), dict) else {}
+    reply_to_id = safe_int(payload.get("reply_to_id"), 0)
     if not message and not media_url:
         return jsonify({"ok": False, "message": "Write a message or attach media before sending."}), 400
     if media_url and message_type == "text":
@@ -19035,8 +19103,8 @@ def api_pulse_message_send():
             cur.execute(
                 """
                 INSERT INTO pulse_messages
-                (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, delivery_status, status, created_at)
-                VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
+                (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, delivery_status, status, created_at)
+                VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
                 """,
                 (
                     conversation_id,
@@ -19047,7 +19115,8 @@ def api_pulse_message_send():
                     thumbnail_url,
                     json.dumps(metadata, default=str)[:4000],
                     int(payload.get("file_size") or 0),
-                    float(payload.get("duration_seconds") or 0),
+                    float(payload.get("duration") or payload.get("duration_seconds") or 0),
+                    reply_to_id or None,
                     now,
                 ),
             )
@@ -19062,11 +19131,14 @@ def api_pulse_message_send():
                     "INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New group message', 'A Pulse group chat has a new message.', ?, ?)",
                     (recipient_id, f"/pulse/messages/{conversation_id}", now),
                 )
+            cur.execute("SELECT * FROM pulse_messages WHERE id=? LIMIT 1", (message_id,))
+            message_payload = _pulse_message_payload(cur.fetchone(), user["user_id"])
             conn.commit(); conn.close()
-            event = {"message": "New group message.", "thread_id": 0, "conversation_id": conversation_id, "target_user_ids": recipient_ids, "message_id": message_id, "message_type": message_type, "media_url": media_url}
+            event = {"message": message_payload, "thread_id": 0, "conversation_id": conversation_id, "target_user_ids": recipient_ids, "message_id": message_id, "message_type": message_type, "media_url": media_url}
+            pulse_emit_event("pulse_message_sent", event, user["user_id"], 0)
             pulse_emit_event("group_message_created", event, user["user_id"], 0)
             pulse_emit_event("conversation_updated", event, user["user_id"], 0)
-            return jsonify({"ok": True, "thread_id": 0, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type})
+            return jsonify({"ok": True, "thread_id": 0, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type, "data": message_payload})
         cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
         receiver_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
         cur.execute(
@@ -19100,8 +19172,8 @@ def api_pulse_message_send():
     cur.execute(
         """
         INSERT INTO pulse_messages
-        (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, delivery_status, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
+        (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, delivery_status, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
         """,
         (
             thread_id,
@@ -19114,7 +19186,8 @@ def api_pulse_message_send():
             thumbnail_url,
             json.dumps(metadata, default=str)[:4000],
             int(payload.get("file_size") or 0),
-            float(payload.get("duration_seconds") or 0),
+            float(payload.get("duration") or payload.get("duration_seconds") or 0),
+            reply_to_id or None,
             now,
         ),
     )
@@ -19124,26 +19197,43 @@ def api_pulse_message_send():
     cur.execute("UPDATE pulse_message_threads SET updated_at=? WHERE id=?", (now, thread_id))
     cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=? WHERE id=?", (now, now, conversation_id))
     cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New Pulse message', 'You received a Pulse message.', ?, ?)", (receiver_id, f"/pulse/messages/{conversation_id}", now))
+    cur.execute("SELECT * FROM pulse_messages WHERE id=? LIMIT 1", (message_id,))
+    message_payload = _pulse_message_payload(cur.fetchone(), user["user_id"])
     conn.commit(); conn.close()
-    event = {"message": "New Pulse message.", "thread_id": thread_id, "conversation_id": conversation_id, "target_user_id": receiver_id, "message_id": message_id, "message_type": message_type, "media_url": media_url}
+    event = {"message": message_payload, "thread_id": thread_id, "conversation_id": conversation_id, "target_user_id": receiver_id, "message_id": message_id, "message_type": message_type, "media_url": media_url}
+    pulse_emit_event("pulse_message_sent", event, user["user_id"], 0)
     pulse_emit_event("message_created", event, user["user_id"], 0)
     pulse_emit_event("conversation_updated", event, user["user_id"], 0)
-    return jsonify({"ok": True, "thread_id": thread_id, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type})
+    return jsonify({"ok": True, "thread_id": thread_id, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type, "data": message_payload})
 
 
 def _pulse_message_payload(row, current_user_id=0):
     item = dict(row or {})
+    message_type = item.get("message_type") or "text"
+    body = item.get("body") or ""
     return {
         "id": int(item.get("id") or 0),
+        "message_id": int(item.get("id") or 0),
         "conversation_id": int(item.get("conversation_id") or item.get("thread_id") or 0),
+        "thread_id": int(item.get("thread_id") or 0),
+        "sender_id": int(item.get("sender_user_id") or 0),
         "sender_user_id": int(item.get("sender_user_id") or 0),
-        "body": item.get("body") or "",
+        "type": message_type,
+        "content": body,
+        "body": body,
         "media_url": item.get("media_url") or "",
         "thumbnail_url": item.get("thumbnail_url") or item.get("media_url") or "",
         "media_metadata": item.get("media_metadata") or "",
-        "message_type": item.get("message_type") or "text",
+        "message_type": message_type,
+        "duration": float(item.get("duration_seconds") or 0),
+        "duration_seconds": float(item.get("duration_seconds") or 0),
+        "file_size": int(item.get("file_size") or 0),
+        "reply_to_id": int(item.get("reply_to_id") or 0),
+        "reactions": {},
         "status": item.get("delivery_status") or item.get("status") or "sent",
         "created_at": item.get("created_at") or "",
+        "edited_at": item.get("edited_at") or "",
+        "deleted_at": item.get("deleted_at") or "",
         "is_mine": int(item.get("sender_user_id") or 0) == int(current_user_id or 0),
     }
 
@@ -19241,6 +19331,107 @@ def api_pulse_message_group_create():
         return api_error("Group chat could not be created. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
+@webhook_app.route("/api/pulse/messages/group/<int:conversation_id>/update", methods=["POST", "PATCH"])
+def api_pulse_message_group_update(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
+    conversation = dict(cur.fetchone() or {})
+    if not conversation:
+        conn.close()
+        return api_error("Conversation not found.", 404, trace_id)
+    cur.execute("SELECT role FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+    role = (dict(cur.fetchone() or {}).get("role") or "").lower()
+    if role not in {"owner", "admin"} and int(conversation.get("owner_user_id") or 0) != int(user["user_id"]) and not pulse_group_user_is_admin(user):
+        conn.close()
+        return api_error("You do not have permission.", 403, trace_id)
+    title = clean_html(payload.get("title") or conversation.get("title") or "Group Chat")[:140]
+    description = clean_html(payload.get("description") or conversation.get("description") or "")[:500]
+    avatar_url = clean_html(payload.get("avatar_url") or conversation.get("avatar_url") or "")[:1000]
+    privacy = clean_html(payload.get("privacy") or conversation.get("privacy") or "private")[:40]
+    if privacy not in {"private", "public", "invite_only", "community"}:
+        privacy = "private"
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_conversations SET title=?, description=?, avatar_url=?, privacy=?, updated_at=?, last_activity_at=? WHERE id=?", (title, description, avatar_url, privacy, now, now, conversation_id))
+    conn.commit(); conn.close()
+    pulse_emit_event("group_chat_updated", {"conversation_id": conversation_id, "title": title, "privacy": privacy}, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "message": "Group chat updated.", "conversation_id": conversation_id, "title": title})
+
+
+@webhook_app.route("/api/pulse/messages/group/<int:conversation_id>/members", methods=["POST", "DELETE"])
+def api_pulse_message_group_members(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
+    if not target_user_id:
+        return api_error("Choose a member.", 400, trace_id)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
+    conversation = dict(cur.fetchone() or {})
+    if not conversation:
+        conn.close()
+        return api_error("Conversation not found.", 404, trace_id)
+    cur.execute("SELECT role FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+    role = (dict(cur.fetchone() or {}).get("role") or "").lower()
+    if role not in {"owner", "admin"} and int(conversation.get("owner_user_id") or 0) != int(user["user_id"]) and not pulse_group_user_is_admin(user):
+        conn.close()
+        return api_error("You do not have permission.", 403, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    if request.method == "DELETE":
+        if target_user_id == int(conversation.get("owner_user_id") or 0):
+            conn.close()
+            return api_error("The owner cannot be removed.", 400, trace_id)
+        cur.execute("UPDATE pulse_conversation_participants SET left_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, target_user_id))
+        action = "removed"
+    else:
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, joined_at, created_at) VALUES (?, ?, 'member', 0, 0, ?, ?)",
+            (conversation_id, target_user_id, now, now),
+        )
+        cur.execute("UPDATE pulse_conversation_participants SET left_at=NULL WHERE conversation_id=? AND user_id=?", (conversation_id, target_user_id))
+        action = "added"
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+    member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("UPDATE pulse_conversations SET member_count=?, updated_at=?, last_activity_at=? WHERE id=?", (member_count, now, now, conversation_id))
+    conn.commit(); conn.close()
+    pulse_emit_event("participant_added" if action == "added" else "participant_removed", {"conversation_id": conversation_id, "user_id": target_user_id, "member_count": member_count}, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "message": f"Member {action}.", "member_count": member_count})
+
+
+@webhook_app.route("/api/pulse/messages/group/<int:conversation_id>/leave", methods=["POST"])
+def api_pulse_message_group_leave(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT owner_user_id FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
+    conversation = dict(cur.fetchone() or {})
+    if not conversation:
+        conn.close()
+        return api_error("Conversation not found.", 404)
+    if int(conversation.get("owner_user_id") or 0) == int(user["user_id"]):
+        cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? AND COALESCE(left_at,'')='' ORDER BY role='admin' DESC, joined_at ASC LIMIT 1", (conversation_id, user["user_id"]))
+        replacement = safe_int(dict(cur.fetchone() or {}).get("user_id"), 0)
+        if replacement:
+            cur.execute("UPDATE pulse_conversations SET owner_user_id=? WHERE id=?", (replacement, conversation_id))
+            cur.execute("UPDATE pulse_conversation_participants SET role='owner' WHERE conversation_id=? AND user_id=?", (conversation_id, replacement))
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_conversation_participants SET left_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, user["user_id"]))
+    conn.commit(); conn.close()
+    pulse_emit_event("participant_removed", {"conversation_id": conversation_id, "user_id": user["user_id"]}, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "message": "You left the group chat."})
+
+
 @webhook_app.route("/api/pulse/messages/conversations", methods=["GET"])
 def api_pulse_message_conversations():
     init_db()
@@ -19250,12 +19441,29 @@ def api_pulse_message_conversations():
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, MIN(p.user_id) AS participant_user_id
+        SELECT c.*,
+               MIN(CASE WHEN p.user_id!=? THEN p.user_id END) AS participant_user_id,
+               COUNT(DISTINCT CASE WHEN COALESCE(p.left_at,'')='' THEN p.user_id END) AS live_member_count,
+               lm.body AS latest_message,
+               lm.message_type AS latest_message_type,
+               lm.created_at AS latest_message_created_at
         FROM pulse_conversations c
-        JOIN pulse_conversation_participants mine ON mine.conversation_id=c.id AND mine.user_id=?
-        LEFT JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id!=?
+        JOIN pulse_conversation_participants mine
+          ON mine.conversation_id=c.id
+         AND mine.user_id=?
+         AND COALESCE(mine.left_at,'')=''
+        LEFT JOIN pulse_conversation_participants p
+          ON p.conversation_id=c.id
+         AND COALESCE(p.left_at,'')=''
+        LEFT JOIN pulse_messages lm
+          ON lm.id=(
+            SELECT pm.id FROM pulse_messages pm
+            WHERE pm.conversation_id=c.id AND COALESCE(pm.deleted_at,'')=''
+            ORDER BY pm.id DESC LIMIT 1
+          )
+        WHERE COALESCE(c.status,'active')='active'
         GROUP BY c.id
-        ORDER BY COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
+        ORDER BY COALESCE(c.last_message_at,c.last_activity_at,c.updated_at,c.created_at) DESC
         LIMIT 80
         """,
         (user["user_id"], user["user_id"]),
@@ -19265,6 +19473,7 @@ def api_pulse_message_conversations():
         item = dict(row)
         convo_type = item.get("conversation_type") or "direct"
         other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0) if convo_type == "direct" else {"name": item.get("title") or "Group Chat", "avatar_url": item.get("avatar_url") or "", "premium_mark": None}
+        latest = item.get("latest_message") or ("Media message" if item.get("latest_message_type") not in {"", "text", None} else "")
         conversations.append({
             "id": int(item.get("id") or 0),
             "conversation_id": int(item.get("id") or 0),
@@ -19273,8 +19482,11 @@ def api_pulse_message_conversations():
             "title": other.get("name") or "Pulse user",
             "avatar_url": other.get("avatar_url") or "",
             "premium_mark": other.get("premium_mark"),
+            "member_count": int(item.get("live_member_count") or item.get("member_count") or (2 if convo_type == "direct" else 1)),
+            "last_message": latest,
+            "latest_message": latest,
             "updated_at": item.get("updated_at") or item.get("created_at") or "",
-            "last_message_at": item.get("last_message_at") or item.get("updated_at") or "",
+            "last_message_at": item.get("latest_message_created_at") or item.get("last_message_at") or item.get("last_activity_at") or item.get("updated_at") or item.get("created_at") or "",
             "unread_count": 0,
         })
     conn.close()
@@ -19301,7 +19513,9 @@ def api_pulse_messages_upload():
         return jsonify(result), status
     media = result.get("media") or {}
     media_type = media.get("media_type") or "image"
-    message_type = "gif" if media_type == "gif" else "video" if media_type == "video" else "image"
+    mime_type = media.get("mime_type") or ""
+    message_type = "gif" if media_type == "gif" else "video" if media_type == "video" else "voice" if mime_type.startswith("audio/") and str(request.form.get("voice") or "").lower() in {"1", "true", "yes"} else "audio" if media_type == "audio" else "file" if media_type == "file" else "image"
+    pulse_emit_event("pulse_upload_progress", {"conversation_id": conversation_id, "media_type": message_type, "status": "complete", "progress": 100}, user["user_id"], 0)
     pulse_emit_event("message_media_uploaded", {"conversation_id": conversation_id, "media_type": message_type}, user["user_id"], 0)
     return jsonify({
         "ok": True,
@@ -19309,6 +19523,8 @@ def api_pulse_messages_upload():
         "media_url": media.get("media_url") or "",
         "thumbnail_url": media.get("thumbnail_url") or media.get("media_url") or "",
         "message_type": message_type,
+        "type": message_type,
+        "file_size": int(media.get("file_size_bytes") or 0),
         "media": media,
     }), 200
 
@@ -19326,8 +19542,171 @@ def api_pulse_conversation_messages(conversation_id):
         return jsonify({"ok": False, "message": "Conversation not found."}), 404
     cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 300", (conversation_id,))
     messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+    message_ids = [m["id"] for m in messages]
+    if message_ids:
+        placeholders = ",".join(["?"] * len(message_ids))
+        cur.execute(f"SELECT message_id, reaction_type, COUNT(*) AS total FROM pulse_message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id, reaction_type", message_ids)
+        by_message = {}
+        for row in cur.fetchall():
+            r = dict(row)
+            by_message.setdefault(int(r.get("message_id") or 0), {})[r.get("reaction_type") or ""] = int(r.get("total") or 0)
+        for m in messages:
+            m["reactions"] = by_message.get(m["id"], {})
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    for m in messages[-100:]:
+        if not m.get("is_mine"):
+            cur.execute(
+                "INSERT OR IGNORE INTO pulse_message_receipts (message_id, conversation_id, user_id, status, created_at, updated_at) VALUES (?, ?, ?, 'seen', ?, ?)",
+                (m["id"], conversation_id, user["user_id"], now, now),
+            )
+    cur.execute("UPDATE pulse_conversation_participants SET last_read_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, user["user_id"]))
+    conn.commit()
     conn.close()
     return jsonify({"ok": True, "conversation_id": conversation_id, "messages": messages})
+
+
+@webhook_app.route("/api/pulse/messages/<int:message_id>/react", methods=["POST"])
+def api_pulse_message_react(message_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    reaction = clean_html(payload.get("reaction_type") or payload.get("reaction") or "heart")[:40]
+    if not reaction:
+        return api_error("Choose a reaction.", 400, trace_id)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_messages WHERE id=? AND deleted_at IS NULL LIMIT 1", (message_id,))
+    message = dict(cur.fetchone() or {})
+    if not message:
+        conn.close()
+        return api_error("Message not found.", 404, trace_id)
+    conversation_id = int(message.get("conversation_id") or 0)
+    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Conversation not found.", 404, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("SELECT reaction_type FROM pulse_message_reactions WHERE message_id=? AND user_id=? LIMIT 1", (message_id, user["user_id"]))
+    existing = dict(cur.fetchone() or {}).get("reaction_type") or ""
+    cur.execute("DELETE FROM pulse_message_reactions WHERE message_id=? AND user_id=?", (message_id, user["user_id"]))
+    active = ""
+    if existing != reaction:
+        cur.execute(
+            "INSERT INTO pulse_message_reactions (message_id, conversation_id, user_id, reaction_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (message_id, conversation_id, user["user_id"], reaction, now, now),
+        )
+        active = reaction
+    cur.execute("SELECT reaction_type, COUNT(*) AS total FROM pulse_message_reactions WHERE message_id=? GROUP BY reaction_type", (message_id,))
+    reactions = {dict(row).get("reaction_type") or "": int(dict(row).get("total") or 0) for row in cur.fetchall()}
+    conn.commit(); conn.close()
+    event = {"message_id": message_id, "conversation_id": conversation_id, "reactions": reactions, "my_reaction": active}
+    pulse_emit_event("pulse_message_reacted", event, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "message": "Reaction updated.", "reactions": reactions, "my_reaction": active})
+
+
+@webhook_app.route("/api/pulse/messages/<int:message_id>/delete", methods=["POST", "DELETE"])
+def api_pulse_message_delete(message_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_messages WHERE id=? AND deleted_at IS NULL LIMIT 1", (message_id,))
+    message = dict(cur.fetchone() or {})
+    if not message:
+        conn.close()
+        return api_error("Message not found.", 404, trace_id)
+    conversation_id = int(message.get("conversation_id") or 0)
+    cur.execute("SELECT role FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+    role = (dict(cur.fetchone() or {}).get("role") or "").lower()
+    can_delete = int(message.get("sender_user_id") or 0) == int(user["user_id"]) or role in {"owner", "admin", "moderator"} or pulse_group_user_is_admin(user)
+    if not can_delete:
+        conn.close()
+        return api_error("You cannot delete this message.", 403, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_messages SET deleted_at=?, status='deleted', delivery_status='deleted' WHERE id=?", (now, message_id))
+    conn.commit(); conn.close()
+    pulse_emit_event("pulse_message_deleted", {"message_id": message_id, "conversation_id": conversation_id}, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "message": "Message deleted.", "message_id": message_id})
+
+
+@webhook_app.route("/api/pulse/messages/<int:conversation_id>/seen", methods=["POST"])
+def api_pulse_messages_seen(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Conversation not found.", 404)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_conversation_participants SET last_read_at=? WHERE conversation_id=? AND user_id=?", (now, conversation_id, user["user_id"]))
+    cur.execute("SELECT id FROM pulse_messages WHERE conversation_id=? AND sender_user_id!=? AND deleted_at IS NULL ORDER BY id DESC LIMIT 100", (conversation_id, user["user_id"]))
+    ids = [int(dict(row).get("id") or 0) for row in cur.fetchall()]
+    for message_id in ids:
+        cur.execute("INSERT OR IGNORE INTO pulse_message_receipts (message_id, conversation_id, user_id, status, created_at, updated_at) VALUES (?, ?, ?, 'seen', ?, ?)", (message_id, conversation_id, user["user_id"], now, now))
+    conn.commit(); conn.close()
+    pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "user_id": user["user_id"]}, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "message": "Seen.", "seen_count": len(ids)})
+
+
+@webhook_app.route("/api/pulse/messages/<int:conversation_id>/typing", methods=["POST"])
+def api_pulse_messages_typing(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    typing = bool((request.get_json(silent=True) or {}).get("typing", True))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+    allowed = bool(cur.fetchone())
+    conn.close()
+    if not allowed:
+        return api_error("Conversation not found.", 404)
+    ident = pulse_identity_for_user(db().cursor(), user["user_id"]) if False else {"name": user.get("display_name") or user.get("username") or "Pulse user"}
+    pulse_emit_event("pulse_typing", {"conversation_id": conversation_id, "typing": typing, "user_id": user["user_id"], "display_name": ident.get("name")}, user["user_id"], conversation_id)
+    return jsonify({"ok": True, "typing": typing})
+
+
+@webhook_app.route("/api/pulse/messages/search", methods=["GET"])
+def api_pulse_messages_search():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    q = clean_html(request.args.get("q") or "")[:120].strip()
+    if not q:
+        return jsonify({"ok": True, "conversations": [], "messages": []})
+    like = f"%{q.lower()}%"
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT c.* FROM pulse_conversations c
+        JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
+        WHERE lower(COALESCE(c.title,'')) LIKE ?
+        ORDER BY COALESCE(c.last_activity_at,c.updated_at,c.created_at) DESC LIMIT 20
+        """,
+        (user["user_id"], like),
+    )
+    conversations = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        """
+        SELECT m.* FROM pulse_messages m
+        JOIN pulse_conversation_participants p ON p.conversation_id=m.conversation_id AND p.user_id=? AND COALESCE(p.left_at,'')=''
+        WHERE m.deleted_at IS NULL AND lower(COALESCE(m.body,'')) LIKE ?
+        ORDER BY m.id DESC LIMIT 50
+        """,
+        (user["user_id"], like),
+    )
+    messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+    conn.close()
+    users = pulse_search_users(db().cursor(), q, viewer_user_id=user["user_id"], limit=8) if False else []
+    return jsonify({"ok": True, "conversations": conversations, "messages": messages, "users": users})
 
 
 @webhook_app.route("/api/pulse/messages/thread/<int:thread_id>", methods=["GET"])
@@ -20108,17 +20487,19 @@ def api_pulse_group_post_delete(post_id):
     cur.execute("UPDATE pulse_group_posts SET deleted_at=?, deleted_by=?, delete_reason=?, status='deleted', updated_at=? WHERE id=?", (now, user["user_id"], reason, now, post_id))
     conn.commit(); conn.close()
     pulse_emit_event("group_post_updated", {"post_id": post_id, "group_id": int(post.get("group_id") or 0), "status": "deleted"}, user["user_id"], post_id)
-    return jsonify({"ok": True, "message": "Group post deleted."})
+    pulse_emit_event("pulse_post_deleted", {"post_id": post_id, "group_id": int(post.get("group_id") or 0), "post_scope": "group"}, user["user_id"], post_id)
+    return jsonify({"ok": True, "message": "Group post deleted.", "post_id": post_id})
 
 
 @webhook_app.route("/api/groups/posts/<int:post_id>", methods=["DELETE"])
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>", methods=["DELETE"])
 def api_groups_post_delete_alias(post_id):
     return api_pulse_group_post_delete(post_id)
 
 
 def pulse_group_post_report_create(post_id, user, reason, notes="", trace_id=""):
     trace_id = trace_id or secrets.token_hex(6)
-    allowed_reasons = {"spam", "harassment", "scam", "nudity", "violence", "misinformation", "illegal", "other", "needs review"}
+    allowed_reasons = {"spam", "harassment", "scam", "nudity", "violence", "misinformation", "illegal", "impersonation", "misleading financial claims", "other", "needs review"}
     reason = clean_html(str(reason or "other").strip().lower())[:80] or "other"
     if reason not in allowed_reasons:
         reason = "other"
@@ -20158,6 +20539,7 @@ def api_pulse_group_post_report():
 
 
 @webhook_app.route("/api/groups/posts/<int:post_id>/report", methods=["POST"])
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/report", methods=["POST"])
 def api_groups_post_report_alias(post_id):
     init_db()
     user = api_account_user()
@@ -20168,6 +20550,7 @@ def api_groups_post_report_alias(post_id):
 
 
 @webhook_app.route("/api/groups/posts/<int:post_id>/pin", methods=["POST"])
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/pin", methods=["POST"])
 def api_groups_post_pin(post_id):
     init_db()
     user = api_account_user()
@@ -20199,14 +20582,8 @@ def api_groups_post_pin(post_id):
         return api_error("Pin action failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
-@webhook_app.route("/api/groups/<int:group_id>/remove-member", methods=["POST"])
-def api_groups_remove_member(group_id):
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Login required.", 401)
+def pulse_group_remove_member_common(group_id, user, payload):
     trace_id = secrets.token_hex(6)
-    payload = request.get_json(silent=True) or {}
     target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
     if not target_user_id:
         return api_error("Choose a member to remove.", 400, trace_id)
@@ -20234,6 +20611,33 @@ def api_groups_remove_member(group_id):
     conn.commit(); conn.close()
     pulse_emit_event("group_member_removed", {"group_id": group_id, "user_id": target_user_id}, user["user_id"], group_id)
     return jsonify({"ok": True, "message": "User removed from group."})
+
+
+@webhook_app.route("/api/groups/<int:group_id>/remove-member", methods=["POST"])
+@webhook_app.route("/api/pulse/groups/<int:group_id>/remove-member", methods=["POST"])
+def api_groups_remove_member(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    return pulse_group_remove_member_common(group_id, user, request.get_json(silent=True) or {})
+
+
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/remove-user", methods=["POST"])
+def api_pulse_group_post_remove_user(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    post = pulse_group_post_context(cur, post_id, user["user_id"])
+    conn.close()
+    if not post:
+        return api_error("Group post not found.", 404, trace_id)
+    payload["user_id"] = safe_int(payload.get("user_id") or post.get("user_id"), 0)
+    return pulse_group_remove_member_common(int(post.get("group_id") or 0), user, payload)
 
 
 @webhook_app.route("/api/pulse/report", methods=["POST"])
@@ -21587,18 +21991,51 @@ def admin_messages_health_page():
     upload_count = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE context_type='pulse_message'")
     pending_media = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE context_type='pulse_message' AND moderation_status='pending'")
     conversations = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations")
+    group_chats = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations WHERE conversation_type IN ('group','community_group','community','creator','live')")
+    orphan_chats = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations c WHERE conversation_type IN ('group','community_group','community','creator','live') AND NOT EXISTS (SELECT 1 FROM pulse_conversation_participants p WHERE p.conversation_id=c.id AND COALESCE(p.left_at,'')='')")
+    missing_owner = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations c WHERE conversation_type IN ('group','community_group','community','creator','live') AND owner_user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pulse_conversation_participants p WHERE p.conversation_id=c.id AND p.user_id=c.owner_user_id AND COALESCE(p.left_at,'')='')")
     missing_cols = [c for c in ["message_type", "media_url", "thumbnail_url", "media_metadata", "file_size", "duration_seconds", "delivery_status", "edited_at", "deleted_at"] if c not in set(table_columns(cur, "pulse_messages"))]
     cur.execute("SELECT id, conversation_id, sender_user_id, receiver_user_id, message_type, status, delivery_status, created_at FROM pulse_messages ORDER BY id DESC LIMIT 20")
     rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, conversation_type, title, owner_user_id, member_count, created_at, updated_at FROM pulse_conversations WHERE conversation_type IN ('group','community_group','community','creator','live') ORDER BY id DESC LIMIT 12")
+    group_rows = [dict(row) for row in cur.fetchall()]
     conn.close()
     latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('conversation_id')}</td><td>{r.get('sender_user_id')}</td><td>{r.get('receiver_user_id')}</td><td>{clean_html(r.get('message_type') or '')}</td><td>{clean_html(r.get('delivery_status') or r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in rows)
+    latest_groups = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('conversation_type') or '')}</td><td>{clean_html(r.get('title') or 'Group Chat')}</td><td>{r.get('owner_user_id') or ''}</td><td>{r.get('member_count') or 0}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in group_rows)
     body = f"""
     <h1>Messages Health</h1><p class='muted'>Pulse Messenger delivery, schema, media upload, and realtime readiness.</p>
-    <section class='grid'><div class='card'><h2>Conversations</h2><p class='metric'>{conversations}</p></div><div class='card'><h2>Messages</h2><p class='metric'>{message_count}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_messages}</p></div><div class='card'><h2>Uploads</h2><p class='metric'>{upload_count}</p></div><div class='card'><h2>Pending Media Review</h2><p class='metric'>{pending_media}</p></div><div class='card'><h2>Missing Columns</h2><p>{clean_html(', '.join(missing_cols) or 'none')}</p></div></section>
+    <section class='grid'><div class='card'><h2>Conversations</h2><p class='metric'>{conversations}</p></div><div class='card'><h2>Group Chats</h2><p class='metric'>{group_chats}</p></div><div class='card'><h2>Orphan Group Chats</h2><p class='metric'>{orphan_chats}</p></div><div class='card'><h2>Missing Owner Participant</h2><p class='metric'>{missing_owner}</p></div><div class='card'><h2>Messages</h2><p class='metric'>{message_count}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_messages}</p></div><div class='card'><h2>Uploads</h2><p class='metric'>{upload_count}</p></div><div class='card'><h2>Pending Media Review</h2><p class='metric'>{pending_media}</p></div><div class='card'><h2>Missing Columns</h2><p>{clean_html(', '.join(missing_cols) or 'none')}</p></div></section>
+    <section class='card'><h2>Latest Group Chat Creations</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Title</th><th>Owner</th><th>Members</th><th>Created</th></tr>{latest_groups or '<tr><td colspan=6>No group chats yet.</td></tr>'}</table></section>
     <section class='card'><h2>Latest Messages</h2><table class='table'><tr><th>ID</th><th>Conversation</th><th>Sender</th><th>Receiver</th><th>Type</th><th>Status</th><th>Time</th></tr>{latest or '<tr><td colspan=7>No messages yet.</td></tr>'}</table></section>
     <p><a class='button' href='/pulse/messages'>Open Messenger</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
     """
     return admin_page_html("Messages Health", body, admin)
+
+
+@webhook_app.route("/admin/content-health", methods=["GET"])
+def admin_content_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    deleted_posts = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_posts WHERE deleted_at IS NOT NULL")
+    deleted_group_posts = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_posts WHERE deleted_at IS NOT NULL OR COALESCE(status,'')='deleted'")
+    orphan_reactions = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_reactions r WHERE NOT EXISTS (SELECT 1 FROM pulse_posts p WHERE p.id=r.post_id AND p.deleted_at IS NULL)")
+    orphan_comments = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_comments c WHERE NOT EXISTS (SELECT 1 FROM pulse_posts p WHERE p.id=c.post_id AND p.deleted_at IS NULL)")
+    orphan_group_reactions = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_reactions r WHERE NOT EXISTS (SELECT 1 FROM pulse_group_posts p WHERE p.id=r.group_post_id AND p.deleted_at IS NULL AND COALESCE(p.status,'published')!='deleted')")
+    orphan_media = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE deleted_at IS NULL AND context_type IN ('pulse','pulse_post','pulse_group_post') AND COALESCE(context_id,'')!='' AND message_id IS NULL")
+    cur.execute("SELECT id, user_id, post_type, deleted_at, updated_at FROM pulse_posts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 20")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('user_id')}</td><td>{clean_html(r.get('post_type') or '')}</td><td>{clean_html(r.get('deleted_at') or '')}</td><td>{clean_html(r.get('updated_at') or '')}</td></tr>" for r in rows)
+    body = f"""
+    <h1>Content Health</h1><p class='muted'>Deletion reliability, content cleanup, orphaned engagement, and media cleanup readiness.</p>
+    <section class='grid'><div class='card'><h2>Deleted Pulse Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Deleted Group Posts</h2><p class='metric'>{deleted_group_posts}</p></div><div class='card'><h2>Orphan Reactions</h2><p class='metric'>{orphan_reactions}</p></div><div class='card'><h2>Orphan Comments</h2><p class='metric'>{orphan_comments}</p></div><div class='card'><h2>Orphan Group Reactions</h2><p class='metric'>{orphan_group_reactions}</p></div><div class='card'><h2>Media Cleanup Queue</h2><p class='metric'>{orphan_media}</p></div></section>
+    <section class='card'><h2>Latest Deleted Posts</h2><table class='table'><tr><th>ID</th><th>User</th><th>Type</th><th>Deleted</th><th>Updated</th></tr>{latest or '<tr><td colspan=5>No deleted posts recorded.</td></tr>'}</table></section>
+    <p><a class='button' href='/admin/pulse-moderation'>Moderation</a> <a class='button' href='/admin/messages-health'>Messages Health</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
+    """
+    return admin_page_html("Content Health", body, admin)
 
 
 @webhook_app.route("/admin/merchant-applications", methods=["GET", "POST"])
@@ -29256,6 +29693,7 @@ def init_db():
         ("receiver_user_id", "INTEGER"),
         ("body", "TEXT"),
         ("read_at", "TEXT"),
+        ("reply_to_id", "INTEGER"),
         ("media_url", "TEXT"),
         ("thumbnail_url", "TEXT"),
         ("message_type", "TEXT DEFAULT 'text'"),
@@ -29314,7 +29752,34 @@ def init_db():
     ], conn=conn)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_id ON pulse_messages(conversation_id, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        reaction_type TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(message_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_receipts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        status TEXT DEFAULT 'seen',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(message_id, user_id, status)
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_message_reactions_message ON pulse_message_reactions(message_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_message_receipts_conversation ON pulse_message_receipts(conversation_id, user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_created_at ON pulse_posts(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_user_created ON pulse_posts(user_id, created_at)")
     cur.execute("""
