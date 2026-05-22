@@ -88,6 +88,7 @@ from services import (
     intelligence_products_engine,
     marketplace_engine,
     media_enhancement_engine,
+    meta_intelligence_engine,
     monetization_engine,
     neural_discovery_engine,
     personalization_matrix,
@@ -137,6 +138,7 @@ from services import (
     self_healing_engine,
     system_health_engine,
     ui_state_engine,
+    universal_intelligence_fabric,
     user_context as user_context_service,
     user_trust_engine,
     wallet_intel as wallet_intel_service,
@@ -19735,6 +19737,16 @@ def global_command_snapshot(persist=True):
         "energy": global_social_energy_engine.global_energy({"activity": counts["posts"] + counts["messages"], "live_viewers": counts["live_sessions"]}),
         "resilience": platform_resilience_engine.resilience_score({"degraded_services": 1 if system_health["state"] in {"degraded", "critical"} else 0, "attack_signals": 1 if summary["scam_clusters"] else 0, "queue_backlog": health_metrics["queue_backlog"]}),
     }
+    fabric_reasoning = universal_intelligence_fabric.reason({
+        "summary": summary,
+        "counts": counts,
+        "predictions": predictions,
+        "system_health": system_health,
+        "health_metrics": health_metrics,
+        "event_bus": bus_metrics,
+        "realtime": realtime_health,
+    })
+    meta_coordination = meta_intelligence_engine.coordinate(fabric_reasoning, system_health, bus_metrics)
     try:
         if not persist:
             raise RuntimeError("snapshot persistence skipped for live refresh")
@@ -19744,7 +19756,7 @@ def global_command_snapshot(persist=True):
             (snapshot_type, health_score, node_count, edge_count, signal_count, summary_json, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            ("admin_global_command", summary["health"]["health_score"], summary["health"]["node_count"], summary["health"]["edge_count"], summary["health"]["signal_count"], json.dumps({"summary": summary, "counts": counts, "predictions": predictions}, default=str), now),
+            ("admin_global_command", summary["health"]["health_score"], summary["health"]["node_count"], summary["health"]["edge_count"], summary["health"]["signal_count"], json.dumps({"summary": summary, "counts": counts, "predictions": predictions, "fabric": fabric_reasoning, "meta": meta_coordination}, default=str), now),
         )
         cur.execute(
             """
@@ -19770,7 +19782,7 @@ def global_command_snapshot(persist=True):
             logging.info("GLOBAL_COMMAND_SNAPSHOT_WRITE_SKIPPED error=%s", exc)
     finally:
         conn.close()
-    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "nodes": nodes, "edges": edges, "signals": signals}
+    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "fabric": fabric_reasoning, "meta": meta_coordination, "nodes": nodes, "edges": edges, "signals": signals}
 
 
 @webhook_app.route("/admin/global-command", methods=["GET"])
@@ -19785,6 +19797,8 @@ def admin_global_command_page():
     system_health = snapshot["system_health"]
     event_bus = snapshot["event_bus"]
     realtime = snapshot["realtime"]
+    fabric = snapshot["fabric"]
+    meta = snapshot["meta"]
     cards = "".join(
         f"<div class='card live-card'><h2>{clean_html(label)}</h2><p class='metric' data-live-key='{clean_html(key)}'>{value}</p><div class='spark'><span style='width:{max(8, min(100, int(value or 0) % 100))}%'></span></div></div>"
         for label, value, key in [
@@ -19811,12 +19825,21 @@ def admin_global_command_page():
     ) or "<li><span>event bus ready</span><small>No live events buffered yet.</small></li>"
     warnings = "".join(f"<li>{clean_html(item)}</li>" for item in system_health.get("warnings", [])) or "<li>All core systems are stable.</li>"
     recommendations = "".join(f"<li>{clean_html(item)}</li>" for item in system_health.get("failsafe", {}).get("recommendations", []))
+    fabric_factors = "".join(
+        f"<li><strong>{clean_html(str(item.get('system') or ''))}</strong>: {clean_html(str(item.get('signal_type') or ''))} = {clean_html(str(item.get('value') or ''))} <span class='pill'>{clean_html(str(item.get('confidence') or ''))}</span></li>"
+        for item in fabric.get("signals", [])[:8]
+    )
+    meta_questions = "".join(
+        f"<li><strong>{clean_html(str(item.get('question') or ''))}</strong><br><span class='muted'>{clean_html(str(item.get('answer') or ''))}</span></li>"
+        for item in meta_intelligence_engine.command_questions(meta)
+    )
+    meta_decision = meta.get("decision") or {}
     command_css = """
     <style>
     .global-command-stage{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:22px;padding:18px;background:radial-gradient(circle at 20% 10%,rgba(110,223,246,.16),transparent 28rem),radial-gradient(circle at 82% 18%,rgba(54,229,143,.12),transparent 20rem),linear-gradient(145deg,rgba(4,12,24,.96),rgba(8,18,34,.94));box-shadow:0 30px 100px rgba(0,0,0,.38)}
     .global-command-stage:before{content:"";position:absolute;inset:-40%;background:conic-gradient(from 130deg,transparent,rgba(110,223,246,.12),transparent 35%,rgba(255,209,102,.08),transparent 70%);animation:commandSweep 18s linear infinite;pointer-events:none}
     .global-command-stage>*{position:relative}.live-card{overflow:hidden}.spark{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}.spark span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166);box-shadow:0 0 18px rgba(110,223,246,.45)}
-    .orb-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.planet{min-height:360px;width:100%;border-radius:18px;background:rgba(0,0,0,.24)}.event-feed{list-style:none;padding:0;margin:0;display:grid;gap:8px}.event-feed li{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.045)}.event-feed span{display:block;font-weight:950}.event-feed small{color:#9fb5c0}.status-healthy{color:#36e58f}.status-watch{color:#ffd166}.status-degraded,.status-critical{color:#ff6b7a}
+    .orb-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.planet{min-height:360px;width:100%;border-radius:18px;background:rgba(0,0,0,.24)}.event-feed,.brain-list{list-style:none;padding:0;margin:0;display:grid;gap:8px}.event-feed li,.brain-list li{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.045)}.event-feed span{display:block;font-weight:950}.event-feed small{color:#9fb5c0}.status-healthy{color:#36e58f}.status-watch{color:#ffd166}.status-degraded,.status-critical{color:#ff6b7a}.brainstem{border-color:rgba(255,209,102,.28);background:linear-gradient(135deg,rgba(255,209,102,.08),rgba(110,223,246,.06)),rgba(255,255,255,.035)}
     @keyframes commandSweep{to{transform:rotate(360deg)}}@media(max-width:820px){.orb-grid{grid-template-columns:1fr}.planet{min-height:260px}.global-command-stage{padding:12px}}
     @media(prefers-reduced-motion:reduce){.global-command-stage:before{animation:none}}
     </style>
@@ -19841,6 +19864,10 @@ def admin_global_command_page():
     <section class='orb-grid'>
       <div class='card'><h2>Live Planetary Pulse</h2><canvas class='planet' id='globalCommandCanvas'></canvas></div>
       <div class='card'><h2>System Nervous System</h2><p class='metric'><span id='systemState' class='status-{clean_html(system_health['state'])}'>{clean_html(system_health['state'])}</span></p><p><span class='pill'>Health {system_health['overall_score']}%</span> <span class='pill'>Realtime {realtime.get('active_realtime_clients', 0)}</span> <span class='pill'>Events {event_bus.get('events_per_minute', 0)}/min</span></p><h3>Warnings</h3><ul>{warnings}</ul><h3>Failsafe Recommendations</h3><ul>{recommendations}</ul></div>
+    </section>
+    <section class='grid'>
+      <div class='card brainstem'><h2>Universal Intelligence Fabric</h2><p class='metric'>{fabric.get('correlation', {}).get('correlation_strength', 0)}%</p><p>{clean_html(str(fabric.get('recommendation') or ''))}</p><p><span class='pill'>Priority {clean_html(str(fabric.get('priority') or ''))}</span> <span class='pill'>Confidence {clean_html(str(fabric.get('confidence') or ''))}</span> <span class='pill'>Domains {len(fabric.get('domains') or [])}</span></p><ul class='brain-list'>{fabric_factors}</ul></div>
+      <div class='card brainstem'><h2>Meta-Intelligence Coordination</h2><p class='metric'>{meta.get('coordination_score', 0)}%</p><p>{clean_html(str(meta_decision.get('decision') or ''))}</p><p><span class='pill'>Priority {clean_html(str(meta_decision.get('priority') or ''))}</span> <span class='pill'>Owner approval {'required' if meta_decision.get('requires_owner_approval') else 'not required'}</span></p><ul class='brain-list'>{meta_questions}</ul></div>
     </section>
     <div class='grid'>
       <div class='card'><h2>Graph Health</h2><p class='metric'>{health['health_score']}%</p><p><span class='pill'>Nodes {health['node_count']}</span> <span class='pill'>Edges {health['edge_count']}</span> <span class='pill'>Signals {health['signal_count']}</span></p></div>
@@ -19886,6 +19913,13 @@ def api_admin_global_command_live():
             "dead_letters": snapshot["event_bus"].get("dead_letters", 0),
             "latest_events": snapshot["event_bus"].get("latest_events", [])[:8],
         },
+        "fabric": {
+            "priority": snapshot["fabric"].get("priority"),
+            "confidence": snapshot["fabric"].get("confidence"),
+            "recommendation": snapshot["fabric"].get("recommendation"),
+            "correlation": snapshot["fabric"].get("correlation"),
+        },
+        "meta": snapshot["meta"],
         "summary": snapshot["summary"],
     })
 
