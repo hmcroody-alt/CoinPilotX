@@ -97,6 +97,7 @@ from services import (
     personalization_matrix,
     platform_resilience_engine,
     privacy_intelligence_engine,
+    production_hardening_engine,
     realtime_sync_engine,
     realtime_service,
     telegram_text_router,
@@ -105,6 +106,7 @@ from services import (
     intelligence as intelligence_service,
     market_data as market_data_service,
     media_service,
+    mobile_ux_engine,
     news_service,
     notification_service,
     notification_health_engine,
@@ -126,6 +128,7 @@ from services import (
     reel_ranking_engine,
     realtime_engine,
     retention_analytics,
+    revenue_safety_engine,
     roast_battle_engine,
     roast_live_engine,
     live_stream_engine,
@@ -137,7 +140,9 @@ from services import (
     sms_service,
     social_energy_engine,
     social_loop_engine,
+    space_discovery_engine,
     sports_data as sports_data_service,
+    stability_engine,
     self_healing_engine,
     safe_execution_engine,
     system_health_engine,
@@ -2085,6 +2090,13 @@ def safe_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def api_error(message, status=400, trace_id=None, **extra):
+    trace_id = trace_id or secrets.token_hex(6)
+    payload = {"ok": False, "message": message, "trace_id": trace_id}
+    payload.update(extra)
+    return jsonify(payload), status
 
 
 def load_account_by_id(user_id):
@@ -15527,20 +15539,45 @@ def api_chat_thread_send(thread_id):
 
 PULSE_DISCLAIMER = "CoinPilotXAI Pulse is a community discussion space. Posts are educational and community-generated, not financial, investment, betting, legal, or professional advice."
 PULSE_SPACES = [
-    {"slug": "crypto-teachers", "name": "Crypto Teachers", "description": "Verified educators, beginner lessons, and practical crypto Q&A."},
-    {"slug": "scam-watch", "name": "Scam Watch", "description": "Community scam warnings, phishing patterns, and wallet safety lessons."},
-    {"slug": "beginner-crypto", "name": "Beginner Crypto", "description": "A friendly room for first steps, simple questions, and safer learning."},
-    {"slug": "wallet-safety", "name": "Wallet Safety", "description": "Seed phrase safety, approvals, cold storage, and wallet hygiene."},
-    {"slug": "alpha-arena", "name": "Alpha Arena", "description": "Arena missions, wins, training moments, and leaderboard stories."},
-    {"slug": "roast-battle", "name": "Roast Battle", "description": "Stage clips, call signs, crowd heat, and clean competitive comedy."},
-    {"slug": "whale-watch", "name": "Whale Watch", "description": "Large moves, network alerts, and market structure discussion."},
-    {"slug": "market-psychology", "name": "Market Psychology", "description": "Discipline, emotion control, patience, and trader behavior."},
-    {"slug": "ai-trading-education", "name": "AI Trading Education", "description": "Educational AI analysis, risk lessons, and scenario thinking."},
-    {"slug": "haiti-crypto-community", "name": "Haiti Crypto Community", "description": "A local-first space for Haitian builders, learners, and creators."},
-    {"slug": "sports-edge", "name": "Sports Edge", "description": "Sports momentum, crowd sentiment, and learning-focused predictions."},
-    {"slug": "cybersecurity", "name": "Cybersecurity", "description": "Practical security habits for crypto users, creators, and builders."},
+    {'slug': 'haiti-crypto-community', 'name': 'Haiti Crypto Community', 'description': 'Haitian builders, learners, creators, remittance safety, and crypto education.', 'category': 'countries', 'region': 'Haiti', 'tags': ['haiti', 'crypto', 'builders'], 'featured': True, 'trust_score': 94, 'energy_score': 88, 'member_count': 304, 'creator_level': 'featured'},
+    {'slug': 'usa-crypto-intelligence', 'name': 'USA Crypto Intelligence', 'description': 'US market education, safety alerts, builders, creators, and policy-aware discussions.', 'category': 'countries', 'region': 'USA', 'tags': ['usa', 'crypto', 'policy'], 'featured': True, 'trust_score': 92, 'energy_score': 86, 'member_count': 298, 'creator_level': 'featured'},
+    {'slug': 'canada-builders-network', 'name': 'Canada Builders Network', 'description': 'Canadian creators, tech founders, crypto education, and safer business building.', 'category': 'countries', 'region': 'Canada', 'tags': ['canada', 'builders'], 'featured': False, 'trust_score': 88, 'energy_score': 72, 'member_count': 256, 'creator_level': 'rising'},
+    {'slug': 'france-tech-circle', 'name': 'France Tech Circle', 'description': 'French tech, AI, crypto safety, creator culture, and education.', 'category': 'countries', 'region': 'France', 'tags': ['france', 'tech'], 'featured': False, 'trust_score': 86, 'energy_score': 70, 'member_count': 250, 'creator_level': 'rising'},
+    {'slug': 'uk-market-pulse', 'name': 'UK Market Pulse', 'description': 'UK creators discussing market psychology, regulation education, and safer investing literacy.', 'category': 'countries', 'region': 'United Kingdom', 'tags': ['uk', 'market'], 'featured': False, 'trust_score': 86, 'energy_score': 69, 'member_count': 247, 'creator_level': 'rising'},
+    {'slug': 'brazil-creator-hub', 'name': 'Brazil Creator Hub', 'description': 'Brazilian creators, fintech builders, education, and creator economy ideas.', 'category': 'countries', 'region': 'Brazil', 'tags': ['brazil', 'creators'], 'featured': False, 'trust_score': 87, 'energy_score': 74, 'member_count': 262, 'creator_level': 'rising'},
+    {'slug': 'nigeria-fintech-network', 'name': 'Nigeria Fintech Network', 'description': 'Fintech, payments, crypto education, builders, and scam safety across Nigeria.', 'category': 'countries', 'region': 'Nigeria', 'tags': ['nigeria', 'fintech'], 'featured': True, 'trust_score': 91, 'energy_score': 82, 'member_count': 286, 'creator_level': 'featured'},
+    {'slug': 'kenya-ai-community', 'name': 'Kenya AI Community', 'description': 'AI builders, mobile-first businesses, fintech education, and creator growth in Kenya.', 'category': 'countries', 'region': 'Kenya', 'tags': ['kenya', 'ai'], 'featured': False, 'trust_score': 88, 'energy_score': 77, 'member_count': 271, 'creator_level': 'rising'},
+    {'slug': 'south-africa-investor-space', 'name': 'South Africa Investor Space', 'description': 'Investor education, cybersecurity, creator tools, and safer market conversations.', 'category': 'countries', 'region': 'South Africa', 'tags': ['south africa', 'investing'], 'featured': False, 'trust_score': 86, 'energy_score': 71, 'member_count': 253, 'creator_level': 'rising'},
+    {'slug': 'india-builders-space', 'name': 'India Builders Space', 'description': 'AI builders, coding, crypto education, business systems, and creator workflows.', 'category': 'countries', 'region': 'India', 'tags': ['india', 'builders'], 'featured': True, 'trust_score': 90, 'energy_score': 84, 'member_count': 292, 'creator_level': 'featured'},
+    {'slug': 'singapore-finance-circle', 'name': 'Singapore Finance Circle', 'description': 'Finance literacy, crypto safety, AI builders, and trusted market education.', 'category': 'countries', 'region': 'Singapore', 'tags': ['singapore', 'finance'], 'featured': True, 'trust_score': 92, 'energy_score': 80, 'member_count': 280, 'creator_level': 'featured'},
+    {'slug': 'dominican-republic-business-hub', 'name': 'Dominican Republic Business Hub', 'description': 'Business builders, creators, tourism tech, payments, and education.', 'category': 'countries', 'region': 'Dominican Republic', 'tags': ['dominican republic', 'business'], 'featured': False, 'trust_score': 86, 'energy_score': 66, 'member_count': 238, 'creator_level': 'rising'},
+    {'slug': 'jamaica-creator-space', 'name': 'Jamaica Creator Space', 'description': 'Jamaican creators, music business, livestreaming, AI tools, and digital safety.', 'category': 'countries', 'region': 'Jamaica', 'tags': ['jamaica', 'creators'], 'featured': False, 'trust_score': 86, 'energy_score': 69, 'member_count': 247, 'creator_level': 'rising'},
+    {'slug': 'trinidad-innovation-circle', 'name': 'Trinidad Innovation Circle', 'description': 'Caribbean innovation, creators, business education, and fintech safety.', 'category': 'countries', 'region': 'Trinidad', 'tags': ['trinidad', 'innovation'], 'featured': False, 'trust_score': 85, 'energy_score': 65, 'member_count': 235, 'creator_level': 'rising'},
+    {'slug': 'bitcoin-strategy', 'name': 'Bitcoin Strategy', 'description': 'Bitcoin learning, custody, cycles, risk, and long-term education.', 'category': 'crypto', 'region': 'Global', 'tags': ['bitcoin', 'strategy'], 'featured': True, 'trust_score': 91, 'energy_score': 85, 'member_count': 295, 'creator_level': 'featured'},
+    {'slug': 'defi-intelligence', 'name': 'DeFi Intelligence', 'description': 'DeFi mechanics, wallet safety, approvals, protocol risk, and scam defense.', 'category': 'crypto', 'region': 'Global', 'tags': ['defi', 'security'], 'featured': False, 'trust_score': 84, 'energy_score': 79, 'member_count': 277, 'creator_level': 'rising'},
+    {'slug': 'meme-coin-radar', 'name': 'Meme Coin Radar', 'description': 'Meme coin culture with scam warnings, risk psychology, and no hype guarantees.', 'category': 'crypto', 'region': 'Global', 'tags': ['meme coins', 'risk'], 'featured': False, 'trust_score': 72, 'energy_score': 83, 'member_count': 289, 'creator_level': 'rising'},
+    {'slug': 'crypto-security', 'name': 'Crypto Security', 'description': 'Wallet hygiene, phishing defense, approvals, hardware wallets, and safe habits.', 'category': 'crypto', 'region': 'Global', 'tags': ['security', 'wallets'], 'featured': True, 'trust_score': 94, 'energy_score': 89, 'member_count': 307, 'creator_level': 'featured'},
+    {'slug': 'ai-trading-systems', 'name': 'AI Trading Systems', 'description': 'Educational AI trading workflows, backtesting concepts, and risk controls.', 'category': 'crypto', 'region': 'Global', 'tags': ['ai', 'trading education'], 'featured': False, 'trust_score': 82, 'energy_score': 77, 'member_count': 271, 'creator_level': 'rising'},
+    {'slug': 'ethical-hackers', 'name': 'Ethical Hackers', 'description': 'Ethical hacking education, defensive security, labs, and responsible disclosure.', 'category': 'cybersecurity', 'region': 'Global', 'tags': ['hacking', 'security'], 'featured': True, 'trust_score': 91, 'energy_score': 82, 'member_count': 286, 'creator_level': 'featured'},
+    {'slug': 'threat-intelligence', 'name': 'Threat Intelligence', 'description': 'Threat trends, OSINT, scam clusters, phishing waves, and defensive learning.', 'category': 'cybersecurity', 'region': 'Global', 'tags': ['threat intel', 'osint'], 'featured': False, 'trust_score': 90, 'energy_score': 78, 'member_count': 274, 'creator_level': 'rising'},
+    {'slug': 'scam-hunters', 'name': 'Scam Hunters', 'description': 'Community scam reports, pattern recognition, evidence review, and safety education.', 'category': 'cybersecurity', 'region': 'Global', 'tags': ['scams', 'safety'], 'featured': True, 'trust_score': 95, 'energy_score': 90, 'member_count': 310, 'creator_level': 'featured'},
+    {'slug': 'osint-community', 'name': 'OSINT Community', 'description': 'Open-source intelligence education, verification skills, and ethical research.', 'category': 'cybersecurity', 'region': 'Global', 'tags': ['osint', 'research'], 'featured': False, 'trust_score': 89, 'energy_score': 76, 'member_count': 268, 'creator_level': 'rising'},
+    {'slug': 'red-team-arena', 'name': 'Red Team Arena', 'description': 'Security labs, defensive thinking, and ethical red-team education.', 'category': 'cybersecurity', 'region': 'Global', 'tags': ['red team', 'security'], 'featured': False, 'trust_score': 87, 'energy_score': 75, 'member_count': 265, 'creator_level': 'rising'},
+    {'slug': 'creator-economy', 'name': 'Creator Economy', 'description': 'Creator business models, brand trust, monetization, and growth without dark patterns.', 'category': 'creators', 'region': 'Global', 'tags': ['creators', 'monetization'], 'featured': True, 'trust_score': 88, 'energy_score': 86, 'member_count': 298, 'creator_level': 'featured'},
+    {'slug': 'influencer-growth', 'name': 'Influencer Growth', 'description': 'Audience strategy, content systems, brand trust, and ethical growth loops.', 'category': 'creators', 'region': 'Global', 'tags': ['influencers', 'growth'], 'featured': False, 'trust_score': 85, 'energy_score': 79, 'member_count': 277, 'creator_level': 'rising'},
+    {'slug': 'livestream-masters', 'name': 'Livestream Masters', 'description': 'Live creator systems, audience retention, production quality, and stream safety.', 'category': 'creators', 'region': 'Global', 'tags': ['livestream', 'creators'], 'featured': False, 'trust_score': 86, 'energy_score': 80, 'member_count': 280, 'creator_level': 'rising'},
+    {'slug': 'video-editing-lab', 'name': 'Video Editing Lab', 'description': 'Short-form editing, storytelling, thumbnails, creator workflows, and tools.', 'category': 'creators', 'region': 'Global', 'tags': ['video', 'editing'], 'featured': False, 'trust_score': 84, 'energy_score': 77, 'member_count': 271, 'creator_level': 'rising'},
+    {'slug': 'brand-builders', 'name': 'Brand Builders', 'description': 'Personal brands, creator trust, offers, community, and long-term reputation.', 'category': 'creators', 'region': 'Global', 'tags': ['branding', 'business'], 'featured': False, 'trust_score': 86, 'energy_score': 78, 'member_count': 274, 'creator_level': 'rising'},
+    {'slug': 'sports-edge', 'name': 'Sports Edge', 'description': 'Sports analytics psychology, educational breakdowns, and fan intelligence without betting signals.', 'category': 'sports', 'region': 'Global', 'tags': ['sports', 'analytics'], 'featured': True, 'trust_score': 86, 'energy_score': 84, 'member_count': 292, 'creator_level': 'featured'},
+    {'slug': 'football-analytics', 'name': 'Football Analytics', 'description': 'Football data, team momentum, fan discussions, and educational prediction literacy.', 'category': 'sports', 'region': 'Global', 'tags': ['football', 'analytics'], 'featured': False, 'trust_score': 84, 'energy_score': 74, 'member_count': 262, 'creator_level': 'rising'},
+    {'slug': 'nba-community', 'name': 'NBA Community', 'description': 'NBA trends, player analysis, fan reactions, and sports education.', 'category': 'sports', 'region': 'Global', 'tags': ['nba', 'basketball'], 'featured': False, 'trust_score': 83, 'energy_score': 76, 'member_count': 268, 'creator_level': 'rising'},
+    {'slug': 'combat-arena', 'name': 'Combat Arena', 'description': 'Combat sports discussion, athlete psychology, analysis, and fan education.', 'category': 'sports', 'region': 'Global', 'tags': ['combat', 'sports'], 'featured': False, 'trust_score': 83, 'energy_score': 75, 'member_count': 265, 'creator_level': 'rising'},
+    {'slug': 'sports-betting-psychology', 'name': 'Sports Betting Psychology', 'description': 'Psychology and risk education only. No betting signals, guarantees, or picks.', 'category': 'sports', 'region': 'Global', 'tags': ['psychology', 'risk'], 'featured': False, 'trust_score': 76, 'energy_score': 73, 'member_count': 259, 'creator_level': 'rising'},
+    {'slug': 'ai-builders', 'name': 'AI Builders', 'description': 'AI builders, product experiments, agents, automations, and creator tools.', 'category': 'AI', 'region': 'Global', 'tags': ['ai', 'builders'], 'featured': True, 'trust_score': 91, 'energy_score': 88, 'member_count': 304, 'creator_level': 'featured'},
+    {'slug': 'prompt-engineering', 'name': 'Prompt Engineering', 'description': 'Prompt craft, AI workflows, tool building, safety, and creative systems.', 'category': 'AI', 'region': 'Global', 'tags': ['prompts', 'ai'], 'featured': False, 'trust_score': 88, 'energy_score': 82, 'member_count': 286, 'creator_level': 'rising'},
+    {'slug': 'autonomous-agents', 'name': 'Autonomous Agents', 'description': 'Agent architecture, safe automation, multi-agent workflows, and AI operations.', 'category': 'AI', 'region': 'Global', 'tags': ['agents', 'automation'], 'featured': False, 'trust_score': 87, 'energy_score': 77, 'member_count': 271, 'creator_level': 'rising'},
+    {'slug': 'ai-startup-lab', 'name': 'AI Startup Lab', 'description': 'AI startup ideas, MVPs, product-market learning, and founder support.', 'category': 'AI', 'region': 'Global', 'tags': ['ai startup', 'business'], 'featured': False, 'trust_score': 89, 'energy_score': 79, 'member_count': 277, 'creator_level': 'rising'},
 ]
-
 
 def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     user = require_account()
@@ -16812,12 +16849,13 @@ def pulse_spaces_page():
     cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
     counts = {dict(row).get("space_slug"): int(dict(row).get("total") or 0) for row in cur.fetchall()}
     conn.close()
-    cards = "".join(
-        f"<article class='card'><h2>{clean_html(space['name'])}</h2><p>{clean_html(space['description'])}</p><p><span class='pill'>{counts.get(space['slug'],0)} members</span></p><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button></div></article>"
-        for space in PULSE_SPACES
-    )
+    cards = ""
+    for space in PULSE_SPACES:
+        metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
+        featured = " featured-space" if space.get("featured") else ""
+        cards += f"<article class='card{featured}'><span class='pill'>{clean_html(space.get('category') or 'Community')}</span><h2>{clean_html(space['name'])}</h2><p>{clean_html(space['description'])}</p><p><span class='pill'>{clean_html(space.get('region') or 'Global')}</span> <span class='pill'>{counts.get(space['slug'], space.get('member_count',0))} members</span> <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
     script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-space]');if(!b)return;try{await pulseApi('/api/pulse/spaces/join',{method:'POST',body:JSON.stringify({space_slug:b.dataset.joinSpace})});toast('Joined space.')}catch(err){toast(err.message)}});"
-    return pulse_social_shell("Pulse Spaces", "Knowledge communities for safety, teachers, Arena energy, local builders, and market learning.", f"<section class='grid'>{cards}</section>", "", script)
+    return pulse_social_shell("Pulse Spaces", "Global intelligence communities for countries, crypto, cybersecurity, creators, sports, AI, business, and education.", f"<style>.featured-space{{border-color:rgba(255,209,102,.4);box-shadow:0 0 34px rgba(255,209,102,.14)}}.mini-chart{{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}}.mini-chart span{{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166)}}</style><section class='grid'>{cards}</section>", "", script)
 
 
 @webhook_app.route("/pulse/spaces/<slug>", methods=["GET"])
@@ -16849,21 +16887,274 @@ def pulse_marketplace_page():
     cur = conn.cursor()
     cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
     seller = dict(cur.fetchone() or {})
-    cur.execute("SELECT l.*, COALESCE(u.display_name,u.username,'Pulse Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id WHERE l.status='active' ORDER BY l.id DESC LIMIT 40")
+    cur.execute("SELECT l.*, COALESCE(u.display_name,u.username,'Pulse Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id WHERE l.status IN ('active','approved') AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','') ORDER BY l.featured DESC, l.id DESC LIMIT 40")
     listings = [dict(row) for row in cur.fetchall()]
     conn.close()
-    listing_html = "".join(f"<article class='card'><h2>{clean_html(row.get('title'))}</h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span></p><p>Seller: {clean_html(row.get('seller_name'))}</p><p>Safety notice: educational products only. Payments are staged for compliance.</p><div class='actions'><button data-contact-seller='{int(row.get('seller_user_id') or 0)}'>Contact Seller</button><button data-report-listing='{int(row.get('id') or 0)}'>Report</button></div></article>" for row in listings)
-    seller_form = "<section class='card'><h2>Apply to Sell</h2><input id='sellerName' placeholder='Seller display name'><textarea id='sellerBio' placeholder='What educational value will you offer?'></textarea><button class='primary' id='sellerApply'>Apply to Sell</button></section>"
+    listing_html = "".join(f"<article class='card'><h2>{clean_html(row.get('title'))}</h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> <span class='pill'>{clean_html(row.get('price_label') or 'Request access')}</span> <span class='pill'>Safety {int(row.get('safety_score') or 0)}</span></p><p>Seller: {clean_html(row.get('seller_name'))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{int(row.get('seller_user_id') or 0)}'>Contact Seller</button><button data-save-listing='{int(row.get('id') or 0)}'>Save</button><button data-report-listing='{int(row.get('id') or 0)}'>Report</button></div></article>" for row in listings)
+    seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
     listing_form = ""
-    if seller:
-        listing_form = "<section class='card'><h2>Create Listing</h2><input id='listingTitle' placeholder='Training video, guide, coaching session...'><select id='listingCategory'><option>Scam Prevention</option><option>Wallet Safety</option><option>Market Psychology</option><option>AI Learning</option><option>Alpha Arena Training</option></select><textarea id='listingDescription' placeholder='Describe the educational product or creator service.'></textarea><input id='listingPrice' placeholder='Free, Request access, Paid later'><button class='primary' id='listingCreate'>Create Listing</button></section>"
+    if seller and seller.get("status") == "approved":
+        listing_form = "<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='/pulse/marketplace/create'>Create Product</a></section>"
+    elif seller:
+        listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{clean_html(seller.get('status') or 'pending_review')}</p><p>Products unlock after approval.</p></section>"
     script = """
     document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
     document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
-    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')}}catch(err){toast(err.message)}})
+    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
     """
     main = f"{seller_form}{listing_form}<section class='grid'>{listing_html or '<article class=\"card\"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'}</section>"
     return pulse_social_shell("Pulse Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
+
+
+@webhook_app.route("/pulse/assistant", methods=["GET"])
+def pulse_assistant_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    suggestions = [
+        ("Unlock Live", "Check referrals, trust, and creator readiness."),
+        ("Avoid Scams", "Learn warning signs before buying or clicking."),
+        ("Find Spaces", "Join communities based on country, interests, and learning goals."),
+        ("Creator Next Step", "Prepare a post, course, livestream, or marketplace product safely."),
+    ]
+    cards = "".join(f"<article class='card'><h2>{clean_html(t)}</h2><p>{clean_html(d)}</p></article>" for t, d in suggestions)
+    main = f"<section class='card'><h2>Pulse Assistant</h2><p>Ask CoinPilotXAI for platform guidance, scam education, creator steps, marketplace safety, and learning recommendations. Answers are educational and should avoid financial guarantees.</p></section><section class='grid'>{cards}</section>"
+    return pulse_social_shell("Pulse Assistant", "Your contextual AI guide for Pulse, learning, creators, marketplace safety, and scam protection.", main)
+
+
+@webhook_app.route("/pulse/merchant/apply", methods=["GET", "POST"])
+def pulse_merchant_apply_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    message = ""
+    if request.method == "POST":
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        fields = {key: clean_html(request.form.get(key, ""))[:1200] for key in [
+            "full_name", "display_name", "country", "state_region", "email", "phone", "pulse_username",
+            "business_name", "seller_type", "website", "social_links", "years_experience", "business_description",
+            "government_id_placeholder", "selfie_placeholder", "business_document_placeholder",
+            "sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims",
+        ]}
+        intents = request.form.getlist("intent")
+        required = ["full_name", "display_name", "country", "email", "business_description", "seller_type"]
+        complete_count = sum(1 for key in required if fields.get(key)) + len(intents)
+        completeness = min(100, int(complete_count / (len(required) + 5) * 100))
+        risk = 0
+        if fields.get("guaranteed_profits") == "yes":
+            risk += 45
+        if fields.get("banned_elsewhere") == "yes":
+            risk += 25
+        if fields.get("understand_claims") != "yes" or fields.get("comply_rules") != "yes":
+            risk += 30
+        status = "pending_review" if completeness >= 65 else "draft"
+        conn = db(); cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO marketplace_merchant_applications
+            (user_id, full_name, display_name, country, state_region, email, phone, pulse_username, business_name,
+             seller_type, website, social_links, years_experience, business_description, seller_intent_json,
+             verification_json, safety_answers_json, completeness, risk_score, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["user_id"], fields["full_name"], fields["display_name"], fields["country"], fields["state_region"],
+                fields["email"], fields["phone"], fields["pulse_username"], fields["business_name"], fields["seller_type"],
+                fields["website"], fields["social_links"], fields["years_experience"], fields["business_description"],
+                json.dumps(intents, default=str),
+                json.dumps({"government_id_placeholder": bool(fields["government_id_placeholder"]), "selfie_placeholder": bool(fields["selfie_placeholder"]), "business_document_placeholder": bool(fields["business_document_placeholder"])}, default=str),
+                json.dumps({k: fields[k] for k in ["sold_online_before", "banned_elsewhere", "guaranteed_profits", "comply_rules", "understand_claims"]}, default=str),
+                completeness, risk, status, now, now,
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO marketplace_sellers
+            (user_id, display_name, bio, status, seller_type, business_name, website, country, state_region, phone, seller_intent_json, verification_status, risk_score, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, bio=excluded.bio, status=excluded.status, seller_type=excluded.seller_type, business_name=excluded.business_name, website=excluded.website, country=excluded.country, state_region=excluded.state_region, phone=excluded.phone, seller_intent_json=excluded.seller_intent_json, risk_score=excluded.risk_score, updated_at=excluded.updated_at
+            """,
+            (user["user_id"], fields["display_name"], fields["business_description"], status, fields["seller_type"], fields["business_name"], fields["website"], fields["country"], fields["state_region"], fields["phone"], json.dumps(intents, default=str), risk, now, now),
+        )
+        conn.commit(); conn.close()
+        message = "Merchant application submitted for review." if status == "pending_review" else "Draft saved. Complete more fields before review."
+    intents = ["Digital Products", "Courses", "Coaching", "Ebooks", "Trading Education", "Templates", "AI Tools", "Physical Products", "Livestream Selling", "Services"]
+    intent_checks = "".join(f"<label><input type='checkbox' name='intent' value='{clean_html(item)}'> {clean_html(item)}</label>" for item in intents)
+    main = f"""
+    <form method='post' class='card'><h2>Merchant Application</h2><p>{clean_html(message)}</p><h3>Identity</h3><input name='full_name' placeholder='Full name'><input name='display_name' placeholder='Display name'><input name='country' placeholder='Country'><input name='state_region' placeholder='State / Region'><input name='email' placeholder='Email'><input name='phone' placeholder='Phone number'><input name='pulse_username' placeholder='Pulse username'><h3>Business Information</h3><input name='business_name' placeholder='Business name'><select name='seller_type'><option>Individual</option><option>Creator</option><option>Teacher</option><option>Brand</option><option>Digital Seller</option><option>Physical Seller</option><option>Agency</option></select><input name='website' placeholder='Website'><textarea name='social_links' placeholder='Social links'></textarea><input name='years_experience' placeholder='Years experience'><textarea name='business_description' placeholder='Business description'></textarea><h3>Seller Intent</h3><div class='grid'>{intent_checks}</div><h3>Verification</h3><input name='government_id_placeholder' placeholder='Government ID upload placeholder'><input name='selfie_placeholder' placeholder='Selfie placeholder'><input name='business_document_placeholder' placeholder='Optional business document placeholder'><label><input type='checkbox' required> I acknowledge marketplace rules and safety review.</label><h3>Trust & Safety</h3><select name='sold_online_before'><option value='yes'>Sold online before</option><option value='no'>Never sold online</option></select><select name='banned_elsewhere'><option value='no'>Not banned elsewhere</option><option value='yes'>Previously banned elsewhere</option></select><select name='guaranteed_profits'><option value='no'>No guaranteed profits</option><option value='yes'>Promises guaranteed profits</option></select><select name='comply_rules'><option value='yes'>Will comply with anti-scam rules</option><option value='no'>Will not comply</option></select><select name='understand_claims'><option value='yes'>I understand misleading financial claims are prohibited</option><option value='no'>I do not understand</option></select><button class='primary'>Submit For Review</button></form>
+    """
+    return pulse_social_shell("Merchant Application", "A serious, trust-first application before marketplace selling unlocks.", main)
+
+
+@webhook_app.route("/pulse/merchant/dashboard", methods=["GET"])
+def pulse_merchant_dashboard_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+    seller = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? ORDER BY id DESC LIMIT 80", (user["user_id"],))
+    listings = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Safety</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+    return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
+
+
+@webhook_app.route("/pulse/merchant/<username>", methods=["GET"])
+def pulse_merchant_profile_page(username):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT ms.*, u.username FROM marketplace_sellers ms LEFT JOIN users u ON u.user_id=ms.user_id WHERE u.username=? OR ms.display_name=? LIMIT 1", (username, username))
+    seller = dict(cur.fetchone() or {})
+    listings = []
+    if seller:
+        cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? AND status IN ('approved','review_ready','active') ORDER BY id DESC LIMIT 20", (seller.get("user_id"),))
+        listings = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    if not seller:
+        return pulse_social_shell("Merchant", "Merchant profile not found.", "<section class='card'><a class='button' href='/pulse/marketplace'>Back to Marketplace</a></section>")
+    cards = "".join(f"<article class='card'><h2>{clean_html(l.get('title') or '')}</h2><p>{clean_html(l.get('short_description') or l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('price_label') or '')}</span></article>" for l in listings)
+    main = f"<section class='card'><h2>{clean_html(seller.get('display_name') or 'Merchant')}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{clean_html(seller.get('bio') or '')}</p></section><section class='grid'>{cards or '<article class=\"card\"><h2>No public products yet.</h2></article>'}</section>"
+    return pulse_social_shell("Merchant Profile", "Verified merchant storefront with safety history, products, courses, and reviews.", main)
+
+
+@webhook_app.route("/pulse/marketplace/create", methods=["GET"])
+def pulse_marketplace_create_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT status FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+    seller = dict(cur.fetchone() or {})
+    conn.close()
+    if seller.get("status") != "approved":
+        return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", "<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a></section>")
+    categories = ["AI Tools","Cybersecurity","Crypto Education","Trading Education","Coding","Business","Marketing","Design","Ebooks","Courses","Templates","Coaching","Livestream Access","Premium Communities","Creator Resources","Productivity","Investing Education","Scam Prevention"]
+    opts = "".join(f"<option>{clean_html(c)}</option>" for c in categories)
+    main = f"<section class='card'><h2>Create Product</h2><input id='listingTitle' placeholder='Product title'><input id='listingShort' placeholder='Short description'><textarea id='listingDescription' placeholder='Full description'></textarea><select id='listingCategory'>{opts}</select><input id='listingSubcategory' placeholder='Subcategory'><input id='listingTags' placeholder='Tags'><input id='listingCover' placeholder='Cover image URL placeholder'><input id='listingGallery' placeholder='Gallery URLs placeholder'><input id='listingVideo' placeholder='Optional video URL'><input id='listingPrice' placeholder='Price'><input id='listingCurrency' value='USD'><input id='listingQuantity' placeholder='Quantity'><select id='listingProductType'><option value='digital'>Digital</option><option value='physical'>Physical</option><option value='course'>Course</option><option value='service'>Service</option></select><input id='listingRefund' placeholder='Refund policy'><input id='listingDelivery' placeholder='Estimated delivery'><textarea id='listingNotes' placeholder='Seller notes'></textarea><button class='primary' id='listingCreate'>Submit For Review</button></section>"
+    script = "document.getElementById('listingCreate').addEventListener('click',async()=>{try{const d=await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,short_description:document.getElementById('listingShort').value,description:document.getElementById('listingDescription').value,category:document.getElementById('listingCategory').value,subcategory:document.getElementById('listingSubcategory').value,tags:document.getElementById('listingTags').value,cover_image_url:document.getElementById('listingCover').value,gallery:document.getElementById('listingGallery').value,video_url:document.getElementById('listingVideo').value,price_label:document.getElementById('listingPrice').value,currency:document.getElementById('listingCurrency').value,quantity:document.getElementById('listingQuantity').value,product_type:document.getElementById('listingProductType').value,refund_policy:document.getElementById('listingRefund').value,estimated_delivery:document.getElementById('listingDelivery').value,seller_notes:document.getElementById('listingNotes').value})});toast(d.message||'Submitted.');location.href='/pulse/merchant/dashboard'}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Create Product", "Advanced product creation with safety scanning before marketplace visibility.", main, "", script)
+
+
+@webhook_app.route("/pulse/creator-monetization", methods=["GET"])
+def pulse_creator_monetization_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    uid = int(user["user_id"])
+    counts = {}
+    for key, sql in {
+        "posts": "SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=?",
+        "listings": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE seller_user_id=?",
+        "courses": "SELECT COUNT(*) AS total FROM pulse_courses WHERE teacher_user_id=?",
+        "lessons": "SELECT COUNT(*) AS total FROM teacher_lessons WHERE teacher_user_id=?",
+    }.items():
+        try:
+            cur.execute(sql, (uid,))
+            counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            counts[key] = 0
+    cur.execute("SELECT trust_score FROM user_privilege_profiles WHERE user_id=? LIMIT 1", (uid,))
+    trust = int(dict(cur.fetchone() or {}).get("trust_score") or 0)
+    readiness = revenue_safety_engine.creator_readiness({"trust_score": trust, "posts": counts["posts"]})
+    conn.close()
+    products = [
+        ("Pulse Premium", "Premium identity, profile glow, advanced filters, and creator analytics lite."),
+        ("Creator Pro", "AI captions, post optimizer, thumbnails, livestream tools, and marketplace seller tools."),
+        ("Teacher Pro", "Lesson builder, course storefront, student messages, live class tools, and teacher analytics."),
+        ("Enterprise", "Team dashboard, scam intelligence, reports, and priority support."),
+    ]
+    product_cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><p>{clean_html(desc)}</p><span class='pill'>Transparent pricing</span></article>" for name, desc in products)
+    steps = "".join(f"<li>{clean_html(item)}</li>" for item in readiness.get("next_steps", []))
+    body = f"""
+    <section class='grid'><div class='card'><h2>Creator Readiness</h2><p class='metric'>{readiness['readiness_score']}%</p><p>{'Ready to prepare monetized tools.' if readiness['ready'] else 'Keep building trust before paid tools unlock.'}</p></div><div class='card'><h2>Audience Growth</h2><p class='metric'>{counts['posts']}</p><p>Pulse posts published.</p></div><div class='card'><h2>Revenue Placeholder</h2><p class='metric'>$0</p><p>Real payout release stays off until compliance is ready.</p></div></section>
+    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='/pulse/marketplace'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
+    <section class='grid'>{product_cards}</section>
+    """
+    return pulse_social_shell("Creator Monetization", "Trust-first creator revenue readiness for premium tools, courses, marketplace products, and livestream monetization placeholders.", body)
+
+
+@webhook_app.route("/pulse/courses", methods=["GET"])
+def pulse_courses_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT c.*, COALESCE(t.display_name,u.display_name,u.username,'Pulse Teacher') AS teacher_name FROM pulse_courses c LEFT JOIN teacher_profiles t ON t.user_id=c.teacher_user_id LEFT JOIN users u ON u.user_id=c.teacher_user_id WHERE c.status IN ('published','review_ready','approved') ORDER BY c.id DESC LIMIT 50")
+    courses = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    cards = "".join(f"<article class='card'><h2>{clean_html(c.get('title'))}</h2><p>{clean_html(c.get('description') or '')}</p><p><span class='pill'>{clean_html(c.get('category') or 'Education')}</span> <span class='pill'>{clean_html(c.get('access_level') or 'free')}</span> <span class='pill'>{clean_html(c.get('price_label') or 'Free')}</span></p><p>Teacher: {clean_html(c.get('teacher_name') or '')}</p><a class='button' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
+    return pulse_social_shell("Pulse Courses", "Free lessons now, paid-course-ready architecture later after trust and compliance review.", f"<section class='card'><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher-dashboard'>Teacher Dashboard</a></div></section><section class='grid'>{cards or '<article class=\"card\"><h2>No courses yet.</h2><p>Teachers can prepare safe, educational course drafts now.</p></article>'}</section>")
+
+
+@webhook_app.route("/pulse/courses/create", methods=["GET"])
+def pulse_course_create_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    main = """
+    <section class='card'><h2>Create Course Draft</h2><input id='courseTitle' placeholder='Course title'><select id='courseCategory'><option>Scam Prevention</option><option>Wallet Safety</option><option>Beginner Crypto</option><option>AI Tools</option><option>Cybersecurity Basics</option></select><textarea id='courseDescription' placeholder='What will students learn safely?'></textarea><input id='coursePrice' placeholder='Free, Premium later, Paid later'><button class='primary' id='courseCreate'>Create Draft</button></section>
+    """
+    script = "document.getElementById('courseCreate').addEventListener('click',async()=>{try{const d=await pulseApi('/api/pulse/courses/create',{method:'POST',body:JSON.stringify({title:document.getElementById('courseTitle').value,category:document.getElementById('courseCategory').value,description:document.getElementById('courseDescription').value,price_label:document.getElementById('coursePrice').value})});location.href=d.next_url}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Create Course", "Prepare educational courses with safety review before any paid access goes live.", main, "", script)
+
+
+@webhook_app.route("/pulse/courses/<int:course_id>", methods=["GET"])
+def pulse_course_detail_page(course_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT c.*, COALESCE(t.display_name,u.display_name,u.username,'Pulse Teacher') AS teacher_name FROM pulse_courses c LEFT JOIN teacher_profiles t ON t.user_id=c.teacher_user_id LEFT JOIN users u ON u.user_id=c.teacher_user_id WHERE c.id=? LIMIT 1", (course_id,))
+    course = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM teacher_lessons WHERE course_id=? ORDER BY id DESC LIMIT 40", (course_id,))
+    lessons = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    if not course:
+        return pulse_social_shell("Course", "This course is not available.", "<section class='card'><a class='button' href='/pulse/courses'>Back to Courses</a></section>")
+    lesson_html = "".join(f"<article class='card'><h2>{clean_html(l.get('title'))}</h2><p>{clean_html(l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('access_level') or 'free')}</span></article>" for l in lessons)
+    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or '<article class=\"card\"><h2>Lessons coming soon.</h2><p>This course is being prepared.</p></article>'}</section>"
+    return pulse_social_shell(course.get("title") or "Course", "Teacher course detail and lesson foundation.", main)
+
+
+@webhook_app.route("/pulse/teacher-dashboard", methods=["GET"])
+def pulse_teacher_dashboard_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    uid = int(user["user_id"])
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (uid,))
+    teacher = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM pulse_courses WHERE teacher_user_id=? ORDER BY id DESC LIMIT 30", (uid,))
+    courses = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM teacher_lessons WHERE teacher_user_id=? ORDER BY id DESC LIMIT 30", (uid,))
+    lessons = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    course_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('title') or '')}</td><td>{clean_html(c.get('status') or '')}</td><td>{clean_html(c.get('price_label') or '')}</td></tr>" for c in courses)
+    lesson_rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{clean_html(l.get('access_level') or '')}</td></tr>" for l in lessons)
+    main = f"""
+    <section class='grid'><div class='card'><h2>Teacher Status</h2><p class='metric'>{clean_html(teacher.get('verification_status') or 'not applied')}</p></div><div class='card'><h2>Courses</h2><p class='metric'>{len(courses)}</p></div><div class='card'><h2>Lessons</h2><p class='metric'>{len(lessons)}</p></div></section>
+    <section class='card'><h2>Teaching Tools</h2><p>Course storefront, lesson builder, student messaging, live class tools, and teacher analytics are staged safely. Paid access stays disabled until review.</p><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teachers'>Teacher Profile</a></div></section>
+    <section class='card'><h2>Courses</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Price</th></tr>{course_rows or '<tr><td colspan=4>No courses yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Lessons</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Access</th></tr>{lesson_rows or '<tr><td colspan=4>No lessons yet.</td></tr>'}</table></section>
+    """
+    return pulse_social_shell("Teacher Dashboard", "Prepare courses, lessons, live classes, and student messaging without enabling unsafe payouts.", main)
 
 
 @webhook_app.route("/pulse/notifications", methods=["GET"])
@@ -16969,13 +17260,28 @@ def pulse_groups_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT g.*, COUNT(m.user_id) AS members FROM pulse_groups g LEFT JOIN pulse_group_members m ON m.group_id=g.id GROUP BY g.id ORDER BY g.id DESC LIMIT 40")
+    cur.execute("SELECT g.*, COUNT(m.user_id) AS members FROM pulse_groups g LEFT JOIN pulse_group_members m ON m.group_id=g.id WHERE COALESCE(g.status,'active')!='suspended' GROUP BY g.id ORDER BY COALESCE(g.featured,0) DESC, g.id DESC LIMIT 80")
     groups = [dict(row) for row in cur.fetchall()]
     conn.close()
-    group_html = "".join(f"<article class='card'><h2>{clean_html(g.get('name'))}</h2><p>{clean_html(g.get('description') or '')}</p><p><span class='pill'>{clean_html(g.get('group_type') or 'public')}</span> <span class='pill'>{int(g.get('members') or 0)} members</span></p><div class='actions'><button class='primary' data-join-group='{int(g.get('id') or 0)}'>Join</button><a class='button' href='/pulse/groups/{int(g.get('id') or 0)}'>Open</a></div></article>" for g in groups)
-    main = f"""<section class='card'><h2>Create Group</h2><input id='groupName' placeholder='Group name'><textarea id='groupDescription' placeholder='Group purpose and rules'></textarea><select id='groupType'><option value='public'>Public</option><option value='private'>Private</option><option value='invite-only'>Invite-only</option></select><button class='primary' id='groupCreate'>Create Group</button></section><section class='grid'>{group_html or '<article class="card"><h2>No groups yet.</h2><p>Create the first Pulse group for your community.</p></article>'}</section>"""
-    script = "document.getElementById('groupCreate').addEventListener('click',async()=>{try{await pulseApi('/api/pulse/groups/create',{method:'POST',body:JSON.stringify({name:document.getElementById('groupName').value,description:document.getElementById('groupDescription').value,group_type:document.getElementById('groupType').value})});toast('Group created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-group]');if(!b)return;try{await pulseApi('/api/pulse/groups/join',{method:'POST',body:JSON.stringify({group_id:b.dataset.joinGroup})});toast('Joined group.')}catch(err){toast(err.message)}});"
+    group_html = "".join(f"<article class='card'><span class='pill'>{clean_html(g.get('category') or 'Community')}</span><h2>{clean_html(g.get('name'))}</h2><p>{clean_html(g.get('description') or '')}</p><p><span class='pill'>{clean_html(g.get('group_type') or 'public')}</span> <span class='pill'>{int(g.get('members') or g.get('member_count') or 0)} members</span> <span class='pill'>{clean_html(g.get('trust_level') or 'standard')}</span></p><div class='actions'><button class='primary' data-join-group='{clean_html(g.get('slug') or str(g.get('id') or 0))}'>Join</button><a class='button' href='/pulse/groups/{clean_html(g.get('slug') or str(g.get('id') or 0))}'>Open</a></div></article>" for g in groups)
+    main = f"""<section class='card'><h2>Create Group</h2><p class='muted'>Groups support public, private, and invite-only communities with rules, owners, members, and safe posting.</p><div class='actions'><a class='button primary' href='/pulse/groups/create'>Create Group</a></div></section><section class='grid'>{group_html or '<article class="card"><h2>No groups yet.</h2><p>Create the first Pulse group for your community.</p></article>'}</section>"""
+    script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-group]');if(!b)return;try{await pulseApi(`/api/pulse/groups/${encodeURIComponent(b.dataset.joinGroup)}/join`,{method:'POST',body:JSON.stringify({})});toast('Joined group.')}catch(err){toast(err.message)}});"
     return pulse_social_shell("Pulse Groups", "Create focused communities, invite friends, post updates, and grow safe discussion spaces.", main, "", script)
+
+
+@webhook_app.route("/pulse/groups/create", methods=["GET"])
+def pulse_groups_create_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    main = """
+    <section class='card'><h2>Create a Pulse Group</h2><input id='groupName' placeholder='Group name'><select id='groupCategory'><option>Community</option><option>Crypto</option><option>Cybersecurity</option><option>Creators</option><option>Education</option><option>Business</option><option>Sports</option><option>AI</option></select><textarea id='groupDescription' placeholder='Group purpose'></textarea><textarea id='groupRules' placeholder='Group rules'></textarea><input id='groupTags' placeholder='Tags, comma separated'><select id='groupType'><option value='public'>Public</option><option value='private'>Private</option><option value='invite-only'>Invite-only</option></select><button class='primary' id='groupCreate'>Create Group</button></section>
+    """
+    script = """
+    document.getElementById('groupCreate').addEventListener('click',async()=>{const btn=document.getElementById('groupCreate');btn.disabled=true;btn.textContent='Creating...';try{const d=await pulseApi('/api/pulse/groups/create',{method:'POST',body:JSON.stringify({name:document.getElementById('groupName').value,category:document.getElementById('groupCategory').value,description:document.getElementById('groupDescription').value,rules:document.getElementById('groupRules').value,tags:document.getElementById('groupTags').value,group_type:document.getElementById('groupType').value})});toast('Group created.');location.href=d.next_url}catch(err){toast(err.message);btn.disabled=false;btn.textContent='Create Group'}});
+    """
+    return pulse_social_shell("Create Group", "Launch a safe Pulse community with rules, category, tags, and member roles.", main, "", script)
 
 
 @webhook_app.route("/pulse/teachers", methods=["GET"])
@@ -17034,18 +17340,19 @@ def pulse_message_thread_page(conversation_id):
     return pulse_social_shell("Pulse Messenger", "Reply quickly and safely inside the Pulse social layer.", main, "", script)
 
 
-@webhook_app.route("/pulse/groups/<int:group_id>", methods=["GET"])
-def pulse_group_detail_page(group_id):
+@webhook_app.route("/pulse/groups/<group_slug>", methods=["GET"])
+def pulse_group_detail_page(group_slug):
     init_db()
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    cur.execute("SELECT * FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
     group = dict(cur.fetchone() or {})
     if not group:
         conn.close()
         return pulse_social_shell("Pulse Group", "This group was not found.", "<section class='card'><a class='button primary' href='/pulse/groups'>Back to Groups</a></section>")
+    group_id = int(group.get("id") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
     members = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT gp.*, COALESCE(u.display_name,u.username,'Pulse Member') AS author FROM pulse_group_posts gp LEFT JOIN users u ON u.user_id=gp.user_id WHERE gp.group_id=? ORDER BY gp.id DESC LIMIT 50", (group_id,))
@@ -17059,8 +17366,9 @@ def pulse_group_detail_page(group_id):
         )
     post_html = "".join(post_cards)
     conn.close()
-    main = f"<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span></p><div class='actions'><button class='primary' data-join-group='{group_id}'>Join Group</button></div></section><section class='card'><h2>Post in Group</h2><textarea id='groupPostBody'></textarea><button class='primary' id='groupPostBtn'>Post</button></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
-    script = f"document.addEventListener('click',async e=>{{const b=e.target.closest('[data-join-group]');if(!b)return;try{{await pulseApi('/api/pulse/groups/join',{{method:'POST',body:JSON.stringify({{group_id:b.dataset.joinGroup}})}});toast('Joined group.')}}catch(err){{toast(err.message)}}}});document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/groups/post',{{method:'POST',body:JSON.stringify({{group_id:{group_id},body:document.getElementById('groupPostBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
+    slug = clean_html(group.get("slug") or str(group_id))
+    main = f"<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='actions'><button class='primary' data-join-group='{slug}'>Join Group</button><button data-leave-group='{slug}'>Leave</button><button data-report-group='{slug}'>Report</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Post in Group</h2><textarea id='groupPostBody'></textarea><button class='primary' id='groupPostBtn'>Post</button></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
+    script = f"document.addEventListener('click',async e=>{{const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]');try{{if(j){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});toast('Joined group.')}} if(l){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});toast('Left group.')}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}}}}catch(err){{toast(err.message)}}}});document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/groups/post',{{method:'POST',body:JSON.stringify({{group_id:{group_id},body:document.getElementById('groupPostBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
     return pulse_social_shell(group.get("name") or "Pulse Group", "A user-created community with posts, members, rules, and safety reporting.", main, "", script)
 
 
@@ -18026,21 +18334,53 @@ def api_pulse_marketplace_listing_create():
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     title = clean_html(payload.get("title") or "")[:140]
+    short_description = clean_html(payload.get("short_description") or "")[:260]
     description = clean_html(payload.get("description") or "")[:1400]
     category = clean_html(payload.get("category") or "Education")[:80]
+    subcategory = clean_html(payload.get("subcategory") or "")[:80]
     price = clean_html(payload.get("price_label") or "Request access")[:80]
+    currency = clean_html(payload.get("currency") or "USD")[:12]
+    quantity = safe_int(payload.get("quantity"), 0)
+    product_type = payload.get("product_type") if payload.get("product_type") in {"digital", "physical", "course", "service"} else "digital"
     if not title or not description:
         return jsonify({"ok": False, "message": "Add a title and description for the listing."}), 400
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); cur = conn.cursor()
-    cur.execute("SELECT id FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
-    if not cur.fetchone():
+    cur.execute("SELECT id, status FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+    seller = cur.fetchone()
+    if not seller:
         conn.close()
-        return jsonify({"ok": False, "message": "Apply as a seller before creating listings."}), 400
-    cur.execute("INSERT INTO marketplace_listings (seller_user_id, title, description, category, price_label, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)", (user["user_id"], title, description, category, price, now, now))
+        return api_error("Apply as a merchant before creating listings.", 400)
+    seller_status = seller["status"] if hasattr(seller, "keys") else seller[1]
+    if seller_status != "approved":
+        conn.close()
+        return api_error("Merchant approval is required before creating listings.", 403)
+    review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
+    status = "pending_review" if review["status"] != "review_ready" else "review_ready"
+    cur.execute(
+        """
+        INSERT INTO marketplace_listings
+        (seller_user_id, title, short_description, description, category, subcategory, tags_json, cover_image_url,
+         gallery_json, video_url, price_label, currency, quantity, delivery_type, product_type, refund_policy,
+         estimated_delivery, seller_notes, status, approval_status, safety_score, safety_flags_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user["user_id"], title, short_description, description, category, subcategory,
+            json.dumps([t.strip() for t in clean_html(payload.get("tags") or "").split(",") if t.strip()][:16], default=str),
+            clean_html(payload.get("cover_image_url") or "")[:800],
+            json.dumps(clean_html(payload.get("gallery") or "").split(","), default=str)[:1600],
+            clean_html(payload.get("video_url") or "")[:800],
+            price, currency, quantity, product_type, product_type,
+            clean_html(payload.get("refund_policy") or "Reviewed products should state refunds clearly.")[:800],
+            clean_html(payload.get("estimated_delivery") or "")[:200],
+            clean_html(payload.get("seller_notes") or "")[:1000],
+            status, review["status"], int(review["risk_score"]), json.dumps(review["flags"], default=str), now, now,
+        ),
+    )
     listing_id = int(cur.lastrowid)
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "listing_id": listing_id, "message": "Listing created."})
+    return jsonify({"ok": True, "listing_id": listing_id, "message": "Listing saved for safety review."})
 
 
 @webhook_app.route("/api/pulse/marketplace/listings/report", methods=["POST"])
@@ -18056,6 +18396,61 @@ def api_pulse_marketplace_listing_report():
     cur.execute("INSERT INTO marketplace_reports (reporter_user_id, listing_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (user["user_id"], listing_id, reason, datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": "Listing report sent."})
+
+
+@webhook_app.route("/api/pulse/marketplace/listings/save", methods=["POST"])
+def api_pulse_marketplace_listing_save():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    listing_id = int(payload.get("listing_id") or 0)
+    if not listing_id:
+        return jsonify({"ok": False, "message": "Listing not found."}), 404
+    conn = db(); cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO marketplace_saved_products (user_id, listing_id, created_at) VALUES (?, ?, ?)", (user["user_id"], listing_id, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Product saved."})
+
+
+@webhook_app.route("/api/pulse/courses/create", methods=["POST"])
+def api_pulse_course_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    title = clean_html(payload.get("title") or "")[:160]
+    description = clean_html(payload.get("description") or "")[:1600]
+    category = clean_html(payload.get("category") or "Education")[:100]
+    price = clean_html(payload.get("price_label") or "Free")[:80]
+    if not title or not description:
+        return jsonify({"ok": False, "message": "Add a course title and safe learning description."}), 400
+    review = revenue_safety_engine.score_text(title, description, category)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM teacher_profiles WHERE user_id=? LIMIT 1", (user["user_id"],))
+    if not cur.fetchone():
+        cur.execute(
+            """
+            INSERT INTO teacher_profiles (user_id, display_name, category, bio, verification_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET updated_at=excluded.updated_at
+            """,
+            (user["user_id"], user.get("display_name") or user.get("username") or "Pulse Teacher", category, "Course creator profile prepared.", now, now),
+        )
+    cur.execute(
+        """
+        INSERT INTO pulse_courses
+        (teacher_user_id, title, description, category, access_level, price_label, status, safety_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user["user_id"], title, description, category, "free" if price.lower() == "free" else "paid_placeholder", price, "draft" if review["risk_score"] else "review_ready", int(review["risk_score"]), now, now),
+    )
+    course_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "course_id": course_id, "next_url": f"/pulse/courses/{course_id}", "message": "Course draft created."})
 
 
 @webhook_app.route("/api/pulse/teachers/apply", methods=["POST"])
@@ -18090,29 +18485,57 @@ def api_pulse_group_create():
     init_db()
     user = api_account_user()
     if not user:
-        return jsonify({"ok": False, "message": "Login required."}), 401
+        return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
     name = clean_html(payload.get("name") or "")[:100]
     description = clean_html(payload.get("description") or "")[:1000]
+    category = clean_html(payload.get("category") or "Community")[:80]
+    rules = clean_html(payload.get("rules") or "Keep it safe, educational, and scam-free.")[:1200]
+    tags = clean_html(payload.get("tags") or "")[:500]
     group_type = payload.get("group_type") if payload.get("group_type") in {"public", "private", "invite-only"} else "public"
     if not name:
-        return jsonify({"ok": False, "message": "Name the group before creating it."}), 400
+        return api_error("Name the group before creating it.", 400, trace_id)
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80] or f"group-{int(time.time())}"
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); cur = conn.cursor()
-    suffix = 1
-    final_slug = slug
-    while True:
+    payload_summary = json.dumps({"name": name, "category": category, "group_type": group_type, "has_description": bool(description), "tags": tags[:120]}, default=str)[:1000]
+    try:
+        final_slug = slug
+        for suffix in range(0, 25):
+            candidate = slug if suffix == 0 else f"{slug}-{suffix + 1}"
+            cur.execute("SELECT id FROM pulse_groups WHERE slug=? LIMIT 1", (candidate,))
+            if not cur.fetchone():
+                final_slug = candidate
+                break
+        else:
+            final_slug = f"{slug}-{secrets.token_hex(3)}"
+        cur.execute(
+            """
+            INSERT INTO pulse_groups
+            (owner_user_id, slug, name, description, category, group_type, rules, tags_json, status, trust_level, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'standard', ?, ?)
+            """,
+            (user["user_id"], final_slug, name, description, category, group_type, rules, json.dumps([t.strip() for t in tags.split(",") if t.strip()][:12]), now, now),
+        )
+        group_id = int(cur.lastrowid)
+        cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)", (group_id, user["user_id"], now))
+        cur.execute("INSERT OR IGNORE INTO pulse_group_roles (group_id, user_id, role, granted_by, created_at) VALUES (?, ?, 'owner', ?, ?)", (group_id, user["user_id"], user["user_id"], now))
+        cur.execute("UPDATE pulse_groups SET member_count=(SELECT COUNT(*) FROM pulse_group_members WHERE group_id=?) WHERE id=?", (group_id, group_id))
+        cur.execute("INSERT INTO pulse_group_creation_attempts (user_id, payload_summary, status, trace_id, error_message, created_at) VALUES (?, ?, 'success', ?, '', ?)", (user["user_id"], payload_summary, trace_id, now))
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logging.exception("PULSE_GROUP_CREATE_FAILED trace_id=%s payload=%s", trace_id, payload_summary)
         try:
-            cur.execute("INSERT INTO pulse_groups (owner_user_id, slug, name, description, group_type, rules, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (user["user_id"], final_slug, name, description, group_type, "Keep it safe, educational, and scam-free.", now, now))
-            break
+            cur.execute("INSERT INTO pulse_group_creation_attempts (user_id, payload_summary, status, trace_id, error_message, created_at) VALUES (?, ?, 'failed', ?, ?, ?)", (user["user_id"], payload_summary, trace_id, str(exc)[:1000], now))
+            conn.commit()
         except Exception:
-            suffix += 1
-            final_slug = f"{slug}-{suffix}"
-    group_id = int(cur.lastrowid)
-    cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)", (group_id, user["user_id"], now))
-    conn.commit(); conn.close()
-    return jsonify({"ok": True, "group_id": group_id, "next_url": f"/pulse/groups/{group_id}", "message": "Group created."})
+            conn.rollback()
+        conn.close()
+        return api_error("Group could not be created. The team can trace this safely.", 500, trace_id)
+    conn.close()
+    return jsonify({"ok": True, "group_id": group_id, "slug": final_slug, "next_url": f"/pulse/groups/{final_slug}", "message": "Group created.", "data": {"group_id": group_id, "slug": final_slug}})
 
 
 @webhook_app.route("/api/pulse/groups/join", methods=["POST"])
@@ -18121,15 +18544,77 @@ def api_pulse_group_join():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    group_id = int((request.get_json(silent=True) or {}).get("group_id") or 0)
+    payload = request.get_json(silent=True) or {}
+    group_id = int(payload.get("group_id") or 0)
+    group_slug = clean_html(payload.get("group_slug") or payload.get("slug") or "")[:120]
+    return pulse_group_join_common(user, group_id=group_id, group_slug=group_slug)
+
+
+def pulse_group_join_common(user, group_id=0, group_slug=""):
+    if not user:
+        return api_error("Login required.", 401)
     conn = db(); cur = conn.cursor()
-    cur.execute("SELECT id FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
-    if not cur.fetchone():
+    cur.execute("SELECT id, group_type FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (int(group_id or 0), clean_html(group_slug or "")))
+    group = cur.fetchone()
+    if not group:
         conn.close()
-        return jsonify({"ok": False, "message": "Group not found."}), 404
+        return api_error("Group not found.", 404)
+    group_id = int(group[0])
     cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], datetime.utcnow().isoformat(timespec="seconds")))
+    cur.execute("UPDATE pulse_groups SET member_count=(SELECT COUNT(*) FROM pulse_group_members WHERE group_id=?) WHERE id=?", (group_id, group_id))
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Joined group."})
+    return jsonify({"ok": True, "message": "Joined group.", "data": {"group_id": group_id}})
+
+
+@webhook_app.route("/api/pulse/groups/<group_slug>/join", methods=["POST"])
+def api_pulse_group_join_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    return pulse_group_join_common(user, group_slug=group_slug)
+
+
+@webhook_app.route("/api/pulse/groups/<group_slug>/leave", methods=["POST"])
+def api_pulse_group_leave_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id, owner_user_id FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    if not group:
+        conn.close()
+        return api_error("Group not found.", 404)
+    if int(group.get("owner_user_id") or 0) == int(user["user_id"]):
+        conn.close()
+        return api_error("Group owners cannot leave before transferring ownership.", 400)
+    group_id = int(group.get("id") or 0)
+    cur.execute("DELETE FROM pulse_group_members WHERE group_id=? AND user_id=?", (group_id, user["user_id"]))
+    cur.execute("DELETE FROM pulse_group_roles WHERE group_id=? AND user_id=? AND role='member'", (group_id, user["user_id"]))
+    cur.execute("UPDATE pulse_groups SET member_count=(SELECT COUNT(*) FROM pulse_group_members WHERE group_id=?) WHERE id=?", (group_id, group_id))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Left group.", "data": {"group_id": group_id}})
+
+
+@webhook_app.route("/api/pulse/groups/report", methods=["POST"])
+def api_pulse_group_report():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    group_id = int(payload.get("group_id") or 0)
+    group_slug = clean_html(payload.get("group_slug") or "")[:120]
+    reason = clean_html(payload.get("reason") or "Needs review")[:500]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (group_id, group_slug))
+    group = dict(cur.fetchone() or {})
+    if not group:
+        conn.close()
+        return api_error("Group not found.", 404)
+    cur.execute("INSERT INTO pulse_group_reports (group_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (int(group["id"]), user["user_id"], reason, datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Group report sent."})
 
 
 @webhook_app.route("/api/pulse/groups/post", methods=["POST"])
@@ -18586,11 +19071,15 @@ def enterprise_page():
 
 @webhook_app.route("/pro", methods=["GET"])
 def pro_page():
-    features = monetization_engine.pro_features()
-    free = ["Pulse Feed", "basic Scam Shield", "basic Arena", "basic Roast Battle", "basic alerts", "public replays"]
-    pro_items = "".join(f"<li>{clean_html(item)}</li>" for item in features)
-    free_items = "".join(f"<li>{clean_html(item)}</li>" for item in free)
-    body = f"<section class='grid'><article class='card'><h2>Free</h2><ul>{free_items}</ul></article><article class='card'><h2>7-day Pro Trial</h2><ul>{pro_items}<li>Premium Glow Mark — stand out with a glowing verified identity badge.</li></ul><a class='button' href='/upgrade'>Start 7-day Pro Trial</a></article><article class='card'><h2>Trust Rules</h2><p>No 30-day trial wording. No hidden data sale. Educational intelligence only.</p></article></section>"
+    packages = [
+        ("Pulse Premium", ["Premium Glow Mark — stand out with a glowing verified identity badge.", "profile glow", "advanced filters", "creator analytics lite", "boosted profile identity", "premium themes"]),
+        ("Creator Pro", ["advanced creator analytics", "AI caption assistant", "AI post optimizer", "AI thumbnail tools", "livestream tools", "marketplace seller tools"]),
+        ("Teacher Pro", ["lesson builder", "course storefront", "student messaging", "live class tools", "teacher analytics"]),
+        ("Enterprise", ["team dashboard", "scam intelligence tools", "enterprise reports", "priority support"]),
+    ]
+    cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><ul>{''.join(f'<li>{clean_html(item)}</li>' for item in items)}</ul><a class='button primary' href='/upgrade'>Review Access</a></article>" for name, items in packages)
+    trust = "<article class='card'><h2>Trust Rules</h2><p>Transparent pricing. Cancel anytime. No hidden charges. Marketplace products, teachers, and sponsors are safety-reviewed before real money flow.</p></article>"
+    body = f"<section class='grid'>{cards}{trust}</section>"
     return trust_public_page("CoinPilotXAI Pro", "Upgrade to advanced alerts, Auto Signals, Scam Shield, and creator tools.", body, "/upgrade")
 
 
@@ -19018,8 +19507,14 @@ def admin_monetization_page():
         safe_counts = {}
         for key, query in {
             "revenue_events": "SELECT COUNT(*) AS total FROM monetization_events",
+            "premium_users": "SELECT COUNT(*) AS total FROM users WHERE premium_status IN ('active','trialing') OR COALESCE(lifetime_premium,0)=1",
+            "trial_users": "SELECT COUNT(*) AS total FROM subscriptions WHERE status='trialing'",
+            "upgrade_clicks": "SELECT COUNT(*) AS total FROM monetization_events WHERE event_type='upgrade_click'",
             "sponsor_slots": "SELECT COUNT(*) AS total FROM sponsor_slots",
             "ad_reviews": "SELECT COUNT(*) AS total FROM ad_reviews WHERE status='pending'",
+            "marketplace_listings": "SELECT COUNT(*) AS total FROM marketplace_listings",
+            "teacher_courses": "SELECT COUNT(*) AS total FROM pulse_courses",
+            "enterprise_leads": "SELECT COUNT(*) AS total FROM enterprise_leads",
             "creator_payouts": "SELECT COUNT(*) AS total FROM creator_payouts_placeholder",
             "marketplace_orders": "SELECT COUNT(*) AS total FROM marketplace_orders_placeholder",
             "teacher_earnings": "SELECT COUNT(*) AS total FROM teacher_earnings_placeholder",
@@ -19044,7 +19539,7 @@ def admin_monetization_page():
             "marketplace": "Payments coming soon",
             "teacher_earnings": "Payments coming soon",
         }
-        body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Pro, creator economy, ethical ads, and aggregate-only intelligence.</p><p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a></p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Provider Setup</h2><pre>{clean_html(json.dumps(config, indent=2))}</pre></div><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
+        body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Premium, creator tools, courses, marketplace products, sponsorship controls, and enterprise leads. Empty providers show setup states instead of crashing.</p><p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a> <a class='button' href='/admin/payments-health'>Payments Health</a> <a class='button' href='/admin/sponsorships'>Sponsorships</a></p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Provider Setup</h2><pre>{clean_html(json.dumps(config, indent=2))}</pre></div><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
     except Exception as exc:
         logging.exception("ADMIN_MONETIZATION_PAGE_FAILED error=%s", exc)
         body = f"<h1>Monetization Control</h1><div class='card'><h2>Monetization diagnostics needed</h2><p class='muted'>The page recovered safely instead of showing a raw error.</p><p>{clean_html(str(exc))}</p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a></div>"
@@ -19085,6 +19580,309 @@ def admin_monetization_health_page():
     conn.close()
     body = f"<h1>Monetization Health</h1><p class='muted'>No secrets are shown here. Missing providers display setup states instead of crashing admin.</p><div class='card'><pre>{clean_html(json.dumps(diagnostics, indent=2, default=str))}</pre></div>"
     return admin_page_html("Monetization Health", body, admin)
+
+
+@webhook_app.route("/admin/payments-health", methods=["GET"])
+@webhook_app.route("/admin/stripe-health", methods=["GET"])
+def admin_payments_health_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    counts = {}
+    for key, sql in {
+        "subscriptions": "SELECT COUNT(*) AS total FROM subscriptions",
+        "active_subscriptions": "SELECT COUNT(*) AS total FROM subscriptions WHERE status IN ('active','trialing')",
+        "payment_records": "SELECT COUNT(*) AS total FROM payment_records",
+        "checkout_attempts": "SELECT COUNT(*) AS total FROM checkout_attempts",
+    }.items():
+        try:
+            cur.execute(sql)
+            counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            counts[key] = 0
+    conn.close()
+    diagnostics = {
+        "stripe_key_configured": bool(STRIPE_SECRET_KEY),
+        "stripe_webhook_configured": bool(STRIPE_WEBHOOK_SECRET),
+        "pro_price_configured": bool(os.getenv("STRIPE_PRO_PRICE_ID") or os.getenv("STRIPE_PRICE_ID")),
+        "publishable_key_configured": bool(STRIPE_PUBLISHABLE_KEY),
+        "status": "ready" if STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET else "setup_required",
+        "counts": counts,
+    }
+    body = f"<h1>Payments Health</h1><p class='muted'>No secrets are exposed. Missing Stripe setup shows as setup required, never a crash.</p><section class='card'><pre>{clean_html(json.dumps(diagnostics, indent=2, default=str))}</pre></section>"
+    return admin_page_html("Payments Health", body, admin)
+
+
+@webhook_app.route("/admin/sponsorships", methods=["GET", "POST"])
+def admin_sponsorships_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        action = request.form.get("action") or "create"
+        sponsor_id = int(request.form.get("sponsor_id") or 0)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db(); cur = conn.cursor()
+        if action == "create":
+            campaign = clean_html(request.form.get("campaign_name") or "")[:160]
+            landing = clean_html(request.form.get("landing_page") or "")[:500]
+            category = clean_html(request.form.get("category") or "")[:100]
+            review = revenue_safety_engine.sponsor_review({"campaign_name": campaign, "landing_page": landing, "category": category})
+            if campaign:
+                cur.execute(
+                    """
+                    INSERT INTO sponsor_slots (slot_key, label, status, sponsor_name, campaign_name, landing_page, category, risk_rating, created_at, updated_at)
+                    VALUES (?, ?, 'review', ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (f"sponsor-{int(time.time())}", campaign, campaign, campaign, landing, category, int(review["risk_score"]), now, now),
+                )
+                message = "Sponsor request created for review."
+        elif sponsor_id and action in {"approve", "reject", "pause", "risky"}:
+            status = {"approve": "approved", "reject": "rejected", "pause": "paused", "risky": "risky_review"}[action]
+            reason = clean_html(request.form.get("reason") or "")[:800]
+            cur.execute("UPDATE sponsor_slots SET status=?, rejection_reason=?, reviewed_by=?, reviewed_at=?, updated_at=? WHERE id=?", (status, reason, admin.get("id"), now, now, sponsor_id))
+            message = "Sponsor status updated."
+        conn.commit(); conn.close()
+        log_admin_audit(admin.get("id"), "sponsorship_updated", "sponsor_slot", str(sponsor_id), {"action": action})
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM sponsor_slots ORDER BY id DESC LIMIT 80")
+    sponsors = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{s.get('id')}</td><td>{clean_html(s.get('campaign_name') or s.get('sponsor_name') or '')}</td><td>{clean_html(s.get('category') or '')}</td><td>{int(s.get('risk_rating') or 0)}</td><td>{clean_html(s.get('status') or '')}</td><td><form method='post'><input type='hidden' name='sponsor_id' value='{s.get('id')}'><input name='reason' placeholder='Reason optional'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='pause'>Pause</button><button name='action' value='risky'>Risky</button></form></td></tr>" for s in sponsors)
+    body = f"""
+    <h1>Sponsorship Control</h1><p class='muted'>Sponsors are reviewed before display. Risky claims, unsafe crypto promises, and misleading campaigns stay out.</p><p>{clean_html(message)}</p>
+    <section class='card'><h2>Create Sponsor Request</h2><form method='post'><input type='hidden' name='action' value='create'><input name='campaign_name' placeholder='Campaign name'><input name='landing_page' placeholder='Landing page'><input name='category' placeholder='Category'><button>Create Review</button></form></section>
+    <section class='card'><h2>Pipeline</h2><table class='table'><tr><th>ID</th><th>Campaign</th><th>Category</th><th>Risk</th><th>Status</th><th>Actions</th></tr>{rows or '<tr><td colspan=6>No sponsor requests yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("Sponsorships", body, admin)
+
+
+def table_exists(cur, table):
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=?", (table,))
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        return bool(cur.fetchone())
+    except Exception:
+        return False
+
+
+def table_columns(cur, table):
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name=? ORDER BY ordinal_position", (table,))
+            return [row[0] for row in cur.fetchall()]
+        cur.execute(f"PRAGMA table_info({table})")
+        return [row[1] for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
+@webhook_app.route("/admin/groups-health", methods=["GET"])
+def admin_groups_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    required = {
+        "pulse_groups": ["id", "owner_user_id", "slug", "name", "description", "category", "group_type", "rules", "status"],
+        "pulse_group_members": ["group_id", "user_id", "role", "created_at"],
+        "pulse_group_posts": ["id", "group_id", "user_id", "body", "created_at"],
+        "pulse_group_invites": ["id", "group_id", "inviter_user_id", "invited_user_id", "status"],
+        "pulse_group_reports": ["id", "group_id", "reporter_user_id", "reason", "status"],
+        "pulse_group_roles": ["id", "group_id", "user_id", "role"],
+    }
+    table_rows = []
+    for table, cols in required.items():
+        exists = table_exists(cur, table)
+        actual = set(table_columns(cur, table)) if exists else set()
+        missing = [c for c in cols if c not in actual]
+        table_rows.append(f"<tr><td>{clean_html(table)}</td><td>{'yes' if exists else 'no'}</td><td>{clean_html(', '.join(missing) or 'none')}</td></tr>")
+    cur.execute("SELECT * FROM pulse_group_creation_attempts ORDER BY id DESC LIMIT 20")
+    attempts = [dict(row) for row in cur.fetchall()]
+    attempt_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('payload_summary') or '')}</td><td>{clean_html(a.get('error_message') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in attempts)
+    conn.close()
+    body = f"""
+    <h1>Groups Health</h1><p class='muted'>Debug surface for Pulse group creation, schema health, and recent traceable failures.</p>
+    <section class='card'><h2>Schema</h2><table class='table'><tr><th>Table</th><th>Exists</th><th>Missing Columns</th></tr>{''.join(table_rows)}</table></section>
+    <section class='card'><h2>Latest Group Creation Attempts</h2><table class='table'><tr><th>ID</th><th>Status</th><th>Trace</th><th>Payload</th><th>Error</th><th>Time</th></tr>{attempt_rows or '<tr><td colspan=6>No attempts logged yet.</td></tr>'}</table></section>
+    <p><a class='button' href='/pulse/groups'>Open Groups</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
+    """
+    return admin_page_html("Groups Health", body, admin)
+
+
+@webhook_app.route("/admin/merchant-applications", methods=["GET", "POST"])
+def admin_merchant_applications_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        app_id = int(request.form.get("application_id") or 0)
+        action = request.form.get("action") or ""
+        note = clean_html(request.form.get("note") or "")[:1200]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT * FROM marketplace_merchant_applications WHERE id=? LIMIT 1", (app_id,))
+        app_row = dict(cur.fetchone() or {})
+        if app_row and action in {"approve", "reject", "more_info", "suspend", "verify"}:
+            status = {"approve": "approved", "reject": "rejected", "more_info": "draft", "suspend": "suspended", "verify": "under_review"}[action]
+            verification_status = "verified" if action in {"approve", "verify"} else "rejected" if action == "reject" else "pending"
+            cur.execute("UPDATE marketplace_merchant_applications SET status=?, reviewer_id=?, internal_notes=?, reviewed_at=?, updated_at=? WHERE id=?", (status, admin.get("id"), note, now, now, app_id))
+            cur.execute(
+                """
+                UPDATE marketplace_sellers
+                SET status=?, verification_status=?, reviewed_by=?, reviewed_at=?, review_notes=?, updated_at=?
+                WHERE user_id=?
+                """,
+                (status, verification_status, admin.get("id"), now, note, now, app_row.get("user_id")),
+            )
+            conn.commit()
+            log_admin_audit(admin.get("id"), "merchant_application_reviewed", "merchant_application", str(app_id), {"action": action, "status": status})
+            message = "Merchant application updated."
+        conn.close()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT ma.*, u.username, u.display_name AS account_name FROM marketplace_merchant_applications ma LEFT JOIN users u ON u.user_id=ma.user_id ORDER BY CASE ma.status WHEN 'pending_review' THEN 0 WHEN 'under_review' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END, ma.id DESC LIMIT 120")
+    apps = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('display_name') or a.get('account_name') or '')}</td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{int(a.get('completeness') or 0)}%</td><td>{int(a.get('risk_score') or 0)}</td><td><form method='post'><input type='hidden' name='application_id' value='{a.get('id')}'><input name='note' placeholder='Internal note'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='more_info'>More Info</button><button name='action' value='suspend'>Suspend</button><button name='action' value='verify'>Verify</button></form></td></tr>" for a in apps)
+    body = f"<h1>Merchant Applications</h1><p class='muted'>Review identity, business intent, verification placeholders, safety answers, Pulse reputation, and risk before unlocking product listings.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Merchant</th><th>Type</th><th>Status</th><th>Complete</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No merchant applications yet.</td></tr>'}</table></section><p><a class='button' href='/admin/marketplace-command'>Marketplace Command</a></p>"
+    return admin_page_html("Merchant Applications", body, admin)
+
+
+@webhook_app.route("/admin/marketplace-command", methods=["GET", "POST"])
+def admin_marketplace_command_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        listing_id = int(request.form.get("listing_id") or 0)
+        action = request.form.get("action") or ""
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db(); cur = conn.cursor()
+        if listing_id and action in {"approve", "reject", "hide", "suspend", "feature"}:
+            status = {"approve": "approved", "reject": "rejected", "hide": "hidden", "suspend": "suspended", "feature": "approved"}[action]
+            cur.execute("UPDATE marketplace_listings SET status=?, approval_status=?, featured=CASE WHEN ?='feature' THEN 1 ELSE COALESCE(featured,0) END, reviewed_by=?, reviewed_at=?, updated_at=? WHERE id=?", (status, status, action, admin.get("id"), now, now, listing_id))
+            conn.commit()
+            log_admin_audit(admin.get("id"), "marketplace_listing_reviewed", "marketplace_listing", str(listing_id), {"action": action})
+            message = "Listing updated."
+        conn.close()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    counts = {}
+    for key, sql in {
+        "pending_merchants": "SELECT COUNT(*) AS total FROM marketplace_merchant_applications WHERE status IN ('pending_review','under_review')",
+        "pending_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE status IN ('pending_review','review_ready') OR approval_status IN ('needs_review','blocked_review','review_ready')",
+        "approved_merchants": "SELECT COUNT(*) AS total FROM marketplace_sellers WHERE status='approved'",
+        "risky_products": "SELECT COUNT(*) AS total FROM marketplace_listings WHERE COALESCE(safety_score,0)>=30",
+        "saved_products": "SELECT COUNT(*) AS total FROM marketplace_saved_products",
+    }.items():
+        try:
+            cur.execute(sql)
+            counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            counts[key] = 0
+    cur.execute("SELECT l.*, COALESCE(u.display_name,u.username,'Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id ORDER BY CASE l.status WHEN 'pending_review' THEN 0 WHEN 'review_ready' THEN 1 ELSE 2 END, l.id DESC LIMIT 100")
+    listings = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{v}</p></div>" for k, v in counts.items())
+    rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('seller_name') or '')}</td><td>{clean_html(l.get('category') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='hide'>Hide</button><button name='action' value='suspend'>Suspend</button><button name='action' value='feature'>Feature</button></form></td></tr>" for l in listings)
+    body = f"<h1>Marketplace Command</h1><p class='muted'>Merchant approvals, product moderation, scam-risk alerts, seller trust, and listing trends.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Product Review Queue</h2><table class='table'><tr><th>ID</th><th>Product</th><th>Seller</th><th>Category</th><th>Status</th><th>Safety</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
+    return admin_page_html("Marketplace Command", body, admin)
+
+
+@webhook_app.route("/admin/spaces-command", methods=["GET", "POST"])
+def admin_spaces_command_page():
+    admin, denied = require_admin_page("command_center.view")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        action = request.form.get("action") or ""
+        slug = clean_html(request.form.get("slug") or "")[:120]
+        conn = db(); cur = conn.cursor()
+        if action in {"feature", "freeze"} and slug:
+            # Default static spaces are virtual. Persist a matching Pulse group shell
+            # so admins can start moderating/freeze/feature without duplicate spaces.
+            space = next((item for item in PULSE_SPACES if item["slug"] == slug), None)
+            if space:
+                now = datetime.utcnow().isoformat(timespec="seconds")
+                cur.execute(
+                    """
+                    INSERT INTO pulse_groups (owner_user_id, slug, name, description, category, group_type, rules, status, featured, trust_level, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'public', 'Keep it safe, educational, and scam-free.', ?, ?, 'trusted', ?, ?)
+                    ON CONFLICT(slug) DO UPDATE SET status=excluded.status, featured=excluded.featured, updated_at=excluded.updated_at
+                    """,
+                    (admin.get("id") or 0, slug, space["name"], space["description"], space.get("category") or "Community", "frozen" if action == "freeze" else "active", 1 if action == "feature" else 0, now, now),
+                )
+                conn.commit()
+                message = "Space command updated."
+        conn.close()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
+    counts = {dict(row).get("space_slug"): int(dict(row).get("total") or 0) for row in cur.fetchall()}
+    conn.close()
+    rows = ""
+    for space in PULSE_SPACES:
+        metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
+        rows += f"<tr><td>{clean_html(space['name'])}</td><td>{clean_html(space.get('category') or '')}</td><td>{clean_html(space.get('region') or '')}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td><form method='post'><input type='hidden' name='slug' value='{clean_html(space['slug'])}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button></form></td></tr>"
+    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global Pulse Spaces network.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>Actions</th></tr>{rows}</table></section>"
+    return admin_page_html("Spaces Command", body, admin)
+
+
+@webhook_app.route("/admin/system-audit", methods=["GET"])
+def admin_system_audit_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    route_groups = {
+        "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant"],
+        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health"],
+    }
+    rows = []
+    client = webhook_app.test_client()
+    if session.get("admin_user_id"):
+        with client.session_transaction() as sess:
+            sess["admin_user_id"] = session.get("admin_user_id")
+    if session.get("account_user_id"):
+        with client.session_transaction() as sess:
+            sess["account_user_id"] = session.get("account_user_id")
+    for area, routes in route_groups.items():
+        for route in routes:
+            try:
+                res = client.get(route)
+                status_code = res.status_code
+                status = "PASS" if status_code < 400 or status_code in {302, 401, 403} else "FAIL" if status_code >= 500 else "WARN"
+                mobile = mobile_ux_engine.mobile_route_check(route, res.get_data(as_text=True)[:20000])
+                reason = "loads" if status == "PASS" else f"HTTP {status_code}"
+                if mobile.get("warnings"):
+                    reason += "; mobile " + ", ".join(mobile["warnings"][:2])
+                    if status == "PASS":
+                        status = "WARN"
+                rows.append({"area": area, "route": route, "status": status, "status_code": status_code, "reason": reason})
+            except Exception as exc:
+                rows.append({"area": area, "route": route, "status": "FAIL", "status_code": 0, "reason": str(exc)})
+    hardening = production_hardening_engine.route_status_score(rows)
+    stable = stability_engine.stability_snapshot({"route_failures": hardening["failures"], "raw_errors": sum(1 for r in rows if "Traceback" in r.get("reason", ""))})
+    row_html = "".join(f"<tr><td>{clean_html(r['area'])}</td><td>{clean_html(r['route'])}</td><td>{clean_html(r['status'])}</td><td>{r['status_code']}</td><td>{clean_html(r['reason'])}</td></tr>" for r in rows)
+    recs = "".join(f"<li>{clean_html(item)}</li>" for item in stable["recommendations"] + hardening["recommendations"])
+    body = f"""
+    <h1>System Audit</h1><p class='muted'>Production-grade route, mobile, and stability sampling. Use the full script for deeper API/action checks.</p>
+    <section class='grid'><div class='card'><h2>Hardening Score</h2><p class='metric'>{hardening['score']}%</p><p>{clean_html(hardening['state'])}</p></div><div class='card'><h2>Stability Score</h2><p class='metric'>{stable['score']}%</p><p>{clean_html(stable['state'])}</p></div><div class='card'><h2>Failures</h2><p class='metric'>{hardening['failures']}</p><p>{hardening['warnings']} warnings</p></div></section>
+    <section class='card'><h2>Recommendations</h2><ul>{recs}</ul></section>
+    <section class='card'><h2>Route Audit</h2><table class='table'><tr><th>Area</th><th>Route</th><th>Status</th><th>HTTP</th><th>Reason</th></tr>{row_html}</table></section>
+    """
+    return admin_page_html("System Audit", body, admin)
 
 
 @webhook_app.route("/admin/privileges", methods=["GET"])
@@ -26439,6 +27237,50 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "marketplace_sellers", [
+        ("seller_type", "TEXT"),
+        ("business_name", "TEXT"),
+        ("website", "TEXT"),
+        ("country", "TEXT"),
+        ("state_region", "TEXT"),
+        ("phone", "TEXT"),
+        ("seller_intent_json", "TEXT"),
+        ("verification_status", "TEXT DEFAULT 'unverified'"),
+        ("risk_score", "INTEGER DEFAULT 0"),
+        ("reviewed_by", "INTEGER"),
+        ("reviewed_at", "TEXT"),
+        ("review_notes", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_merchant_applications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        full_name TEXT,
+        display_name TEXT,
+        country TEXT,
+        state_region TEXT,
+        email TEXT,
+        phone TEXT,
+        pulse_username TEXT,
+        business_name TEXT,
+        seller_type TEXT,
+        website TEXT,
+        social_links TEXT,
+        years_experience TEXT,
+        business_description TEXT,
+        seller_intent_json TEXT,
+        verification_json TEXT,
+        safety_answers_json TEXT,
+        completeness INTEGER DEFAULT 0,
+        risk_score INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'draft',
+        reviewer_id INTEGER,
+        internal_notes TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        reviewed_at TEXT
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_listings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26450,6 +27292,53 @@ def init_db():
         status TEXT DEFAULT 'active',
         created_at TEXT,
         updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "marketplace_listings", [
+        ("approval_status", "TEXT DEFAULT 'pending_review'"),
+        ("safety_score", "INTEGER DEFAULT 0"),
+        ("safety_flags_json", "TEXT"),
+        ("featured", "INTEGER DEFAULT 0"),
+        ("media_url", "TEXT"),
+        ("short_description", "TEXT"),
+        ("subcategory", "TEXT"),
+        ("tags_json", "TEXT"),
+        ("cover_image_url", "TEXT"),
+        ("gallery_json", "TEXT"),
+        ("video_url", "TEXT"),
+        ("currency", "TEXT DEFAULT 'USD'"),
+        ("quantity", "INTEGER DEFAULT 0"),
+        ("delivery_type", "TEXT DEFAULT 'digital'"),
+        ("product_type", "TEXT DEFAULT 'digital'"),
+        ("refund_policy", "TEXT"),
+        ("estimated_delivery", "TEXT"),
+        ("seller_notes", "TEXT"),
+        ("digital_version", "TEXT"),
+        ("lesson_count", "INTEGER DEFAULT 0"),
+        ("duration", "TEXT"),
+        ("difficulty", "TEXT"),
+        ("prerequisites", "TEXT"),
+        ("reviewed_by", "INTEGER"),
+        ("reviewed_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_saved_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        listing_id INTEGER,
+        created_at TEXT,
+        UNIQUE(user_id, listing_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_buyer_interest (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        listing_id INTEGER,
+        message TEXT,
+        status TEXT DEFAULT 'interested',
+        created_at TEXT
     )
     """)
     cur.execute("""
@@ -26507,6 +27396,28 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "teacher_lessons", [
+        ("course_id", "INTEGER"),
+        ("media_url", "TEXT"),
+        ("access_level", "TEXT DEFAULT 'free'"),
+        ("price_label", "TEXT DEFAULT 'Free'"),
+        ("status", "TEXT DEFAULT 'draft'"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_user_id INTEGER,
+        title TEXT,
+        description TEXT,
+        category TEXT,
+        access_level TEXT DEFAULT 'free',
+        price_label TEXT DEFAULT 'Free',
+        status TEXT DEFAULT 'draft',
+        safety_score INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26520,6 +27431,17 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_groups", [
+        ("slug", "TEXT"),
+        ("category", "TEXT DEFAULT 'Community'"),
+        ("cover_image_url", "TEXT"),
+        ("tags_json", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("member_count", "INTEGER DEFAULT 0"),
+        ("trust_level", "TEXT DEFAULT 'standard'"),
+        ("featured", "INTEGER DEFAULT 0"),
+    ], conn=conn)
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_pulse_groups_slug ON pulse_groups(slug)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_members (
         group_id INTEGER,
@@ -26535,6 +27457,49 @@ def init_db():
         group_id INTEGER,
         user_id INTEGER,
         body TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER,
+        inviter_user_id INTEGER,
+        invited_user_id INTEGER,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT,
+        responded_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER,
+        reporter_user_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        granted_by INTEGER,
+        created_at TEXT,
+        UNIQUE(group_id, user_id, role)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_creation_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        payload_summary TEXT,
+        status TEXT,
+        trace_id TEXT,
+        error_message TEXT,
         created_at TEXT
     )
     """)
@@ -28007,6 +28972,15 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "sponsor_slots", [
+        ("campaign_name", "TEXT"),
+        ("landing_page", "TEXT"),
+        ("category", "TEXT"),
+        ("risk_rating", "INTEGER DEFAULT 0"),
+        ("rejection_reason", "TEXT"),
+        ("reviewed_by", "INTEGER"),
+        ("reviewed_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS ad_reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28019,6 +28993,11 @@ def init_db():
         reviewed_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "ad_reviews", [
+        ("landing_page", "TEXT"),
+        ("rejection_reason", "TEXT"),
+        ("reviewed_by", "INTEGER"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS creator_payouts_placeholder (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
