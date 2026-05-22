@@ -16570,6 +16570,14 @@ def pulse_user_id_from_public(cur, public_player_id):
     except Exception:
         pass
     lower_lookup = lookup.lower()
+    if lower_lookup.isdigit() or (lower_lookup.startswith("-") and lower_lookup[1:].isdigit()):
+        try:
+            cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (int(lower_lookup),))
+            row = cur.fetchone()
+            if row:
+                return int(dict(row).get("user_id") or 0)
+        except Exception:
+            pass
     if lower_lookup.startswith(("pilot-", "pulse-")):
         try:
             suffix = lower_lookup.rsplit("-", 1)[-1]
@@ -16580,6 +16588,36 @@ def pulse_user_id_from_public(cur, public_player_id):
         except Exception:
             return None
     return None
+
+
+def pulse_profile_canonical_path(user_id, cur=None):
+    close_conn = False
+    if cur is None:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        close_conn = True
+    try:
+        ident = pulse_identity_for_user(cur, int(user_id or 0))
+        handle = str(ident.get("username") or ident.get("public_player_id") or pulse_public_id_for_user(user_id)).strip()
+        handle = handle[1:] if handle.startswith("@") else handle
+        handle = re.sub(r"[^A-Za-z0-9_.-]+", "", handle) or f"Pilot-{int(user_id or 0)}"
+        return f"/pulse/@{quote(handle)}"
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def pulse_profile_not_found_page(profile_key=""):
+    key = clean_html(str(profile_key or "").strip())
+    main = f"""
+    <section class='card'>
+      <h2>Pulse user not found</h2>
+      <p class='muted'>{'No profile matches ' + key + '.' if key else 'That Pulse profile is not available.'}</p>
+      <div class='actions'><a class='button primary' href='/pulse'>Back to Pulse</a><a class='button' href='/pulse/messages'>Open Messenger</a></div>
+    </section>
+    """
+    return pulse_social_shell("Pulse User Not Found", "This Pulse identity could not be found.", main, ""), 404
 
 
 def pulse_friend_graph(cur, user_id, limit=30):
@@ -16950,19 +16988,21 @@ def pulse_live_metrics():
 def pulse_reels_page():
     main = """
     <style>
-    body:has(.reels-immersive){background:#02050b}.reels-shell{position:relative;min-height:84dvh;border-radius:28px;overflow:hidden;border:1px solid rgba(110,223,246,.18);background:#02050b;box-shadow:0 32px 100px rgba(0,0,0,.42)}
-    .reels-immersive{height:min(86dvh,880px);overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;background:#02050b;scrollbar-width:none}.reels-immersive::-webkit-scrollbar{display:none}
-    .reel-card{position:relative;height:min(86dvh,880px);min-height:620px;scroll-snap-align:start;overflow:hidden;background:#030814;color:#f8fcff;isolation:isolate}
-    .reel-media,.reel-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#02050b}.reel-media{z-index:0}.reel-fallback{display:grid;place-items:center;background:radial-gradient(circle at 30% 18%,rgba(110,223,246,.26),transparent 30%),radial-gradient(circle at 80% 35%,rgba(255,209,102,.18),transparent 24%),linear-gradient(145deg,#071220,#02050b)}
-    .reel-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.72),transparent 22%,transparent 58%,rgba(0,0,0,.88))}
-    .reel-top{position:absolute;z-index:3;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(14px + env(safe-area-inset-top)) 14px 10px}.reel-creator{display:flex;align-items:center;gap:10px;min-width:0}.reel-creator strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.reel-avatar{width:46px;height:46px;border-radius:16px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,var(--cyan),var(--green));color:#06101b;font-weight:950;box-shadow:0 0 28px rgba(110,223,246,.24)}.reel-avatar img{width:100%;height:100%;object-fit:cover}.reel-follow{min-height:34px;border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.14);backdrop-filter:blur(14px)}
-    .reel-actions{position:absolute;z-index:4;right:10px;bottom:112px;display:grid;gap:12px}.reel-action{width:50px;height:50px;min-height:50px;padding:0;border-radius:18px;background:rgba(8,15,28,.52);backdrop-filter:blur(16px);border-color:rgba(255,255,255,.16);box-shadow:0 12px 38px rgba(0,0,0,.28);display:grid;place-items:center;font-size:20px}.reel-action small{display:block;font-size:10px;color:#fff;line-height:1;margin-top:-8px}.reel-action.active{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b}
-    .reel-caption{position:absolute;z-index:3;left:14px;right:78px;bottom:24px;display:grid;gap:7px}.reel-caption h2{font-size:clamp(24px,5vw,42px);line-height:1.02;margin:0;text-shadow:0 12px 40px rgba(0,0,0,.5)}.reel-caption p{margin:0;color:#edfaff}.reel-tags{display:flex;gap:6px;flex-wrap:wrap}.reel-tags span,.reel-chip{display:inline-flex;border:1px solid rgba(255,255,255,.16);background:rgba(8,15,28,.38);backdrop-filter:blur(12px);border-radius:999px;padding:5px 8px;font-size:12px;color:#e9fbff}.reel-music{display:flex;align-items:center;gap:7px;min-width:0;color:#d9f6ff;font-size:13px}.reel-music span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .reels-rail{position:absolute;z-index:6;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;max-width:min(780px,calc(100% - 24px));overflow-x:auto;padding:4px;background:rgba(3,8,17,.38);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:999px;scrollbar-width:none}.reels-rail::-webkit-scrollbar{display:none}.reels-rail button{min-height:34px;border-radius:999px;padding:6px 10px;font-size:12px;background:transparent;border-color:transparent}.reels-rail button.active{background:rgba(110,223,246,.18);border-color:rgba(110,223,246,.24)}
-    .reels-toolbar{position:absolute;z-index:7;left:12px;bottom:12px;display:flex;gap:8px}.reels-toolbar a,.reels-toolbar button{min-height:40px;border-radius:999px;background:rgba(8,15,28,.54);backdrop-filter:blur(14px)}
+    body:has(.reels-immersive){background:#02050b}.reels-shell{position:relative;min-height:84dvh;border-radius:28px;overflow:hidden;border:1px solid rgba(110,223,246,.18);background:#02050b;box-shadow:0 32px 100px rgba(0,0,0,.42);container-type:inline-size}
+    .reels-immersive{height:min(86dvh,880px);overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;background:#02050b;scrollbar-width:none;touch-action:pan-y}.reels-immersive::-webkit-scrollbar{display:none}
+    .reel-card{position:relative;height:min(86dvh,880px);min-height:620px;scroll-snap-align:start;overflow:hidden;background:#030814;color:#f8fcff;isolation:isolate;transform:translateZ(0)}
+    .reel-media,.reel-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#02050b}.reel-media{z-index:0;transform:translateZ(0)}.reel-fallback{display:grid;place-items:center;background:radial-gradient(circle at 30% 18%,rgba(110,223,246,.26),transparent 30%),radial-gradient(circle at 80% 35%,rgba(255,209,102,.18),transparent 24%),linear-gradient(145deg,#071220,#02050b)}
+    .reel-scrim{position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.74),transparent 22%,transparent 54%,rgba(0,0,0,.9))}
+    .reel-top{position:absolute;z-index:4;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(58px + env(safe-area-inset-top)) 14px 10px}.reel-creator{display:flex;align-items:center;gap:10px;min-width:0;max-width:calc(100% - 92px)}.reel-creator strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.reel-creator small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(235,250,255,.72)}.reel-avatar{flex:0 0 auto;width:46px;height:46px;border-radius:16px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,var(--cyan),var(--green));color:#06101b;font-weight:950;box-shadow:0 0 28px rgba(110,223,246,.24)}.reel-avatar img{width:100%;height:100%;object-fit:cover}.reel-follow{flex:0 0 auto;min-height:34px;border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.14);backdrop-filter:blur(14px);white-space:nowrap}
+    .reel-actions{position:absolute;z-index:5;right:12px;top:50%;transform:translateY(-42%);display:grid;gap:10px}.reel-action{width:50px;height:50px;min-height:50px;padding:0;border-radius:18px;background:rgba(8,15,28,.54);backdrop-filter:blur(14px);border-color:rgba(255,255,255,.15);box-shadow:0 12px 38px rgba(0,0,0,.28);display:grid;place-items:center;font-size:20px;transition:transform .18s ease,background .18s ease,box-shadow .18s ease}.reel-action:hover,.reel-action:focus-visible{transform:translateY(-1px) scale(1.04);box-shadow:0 0 24px rgba(110,223,246,.22),0 12px 38px rgba(0,0,0,.32)}.reel-action small{display:block;width:100%;max-width:46px;font-size:9px;color:#fff;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:-8px}.reel-action.active{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b}
+    .reel-caption{position:absolute;z-index:3;left:14px;right:82px;bottom:calc(78px + env(safe-area-inset-bottom));display:grid;gap:7px;max-width:min(620px,calc(100% - 96px))}.reel-caption h2{font-size:clamp(23px,5vw,42px);line-height:1.04;margin:0;text-shadow:0 12px 40px rgba(0,0,0,.5);overflow-wrap:anywhere}.reel-caption p{margin:0;color:#edfaff;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.reel-tags{display:flex;gap:6px;flex-wrap:wrap;max-height:66px;overflow:hidden}.reel-tags span,.reel-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid rgba(255,255,255,.16);background:rgba(8,15,28,.44);backdrop-filter:blur(12px);border-radius:999px;padding:5px 8px;font-size:12px;color:#e9fbff;white-space:nowrap}.reel-music{display:flex;align-items:center;gap:7px;min-width:0;color:#d9f6ff;font-size:13px}.reel-music span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.reel-music .button{min-height:30px;padding:5px 9px;border-radius:999px;white-space:nowrap}
+    .reels-rail{position:absolute;z-index:8;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:7px;width:max-content;max-width:min(860px,calc(100% - 24px));overflow-x:auto;overflow-y:hidden;padding:5px;background:rgba(3,8,17,.34);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.1);border-radius:999px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}.reels-rail::-webkit-scrollbar{display:none}.reels-rail button{flex:0 0 auto;min-width:max-content;min-height:32px;height:32px;border-radius:999px;padding:0 12px;font-size:12px;line-height:1;white-space:nowrap;writing-mode:horizontal-tb;background:transparent;border-color:transparent;scroll-snap-align:center;letter-spacing:0;transition:background .18s ease,border-color .18s ease,transform .18s ease}.reels-rail button:hover{transform:translateY(-1px)}.reels-rail button.active{background:linear-gradient(135deg,rgba(110,223,246,.22),rgba(54,229,143,.12));border-color:rgba(110,223,246,.24);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),0 0 18px rgba(110,223,246,.12)}
+    .reels-toolbar{position:absolute;z-index:7;left:14px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:8px;max-width:calc(100% - 112px);padding:7px;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(8,15,28,.42);backdrop-filter:blur(14px)}.reels-toolbar a,.reels-toolbar button{min-height:34px;border-radius:999px;background:rgba(255,255,255,.08);backdrop-filter:none;white-space:nowrap;padding:7px 11px;font-size:12px}
     .reels-empty{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:20px;z-index:3}.reels-empty .card{max-width:520px;background:rgba(8,15,28,.7);backdrop-filter:blur(18px)}
     .reel-comments{position:fixed;inset:auto 0 0 0;z-index:9999;display:none;min-height:320px;max-height:78dvh;padding:12px 14px calc(14px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid rgba(110,223,246,.2);background:rgba(5,11,20,.98);box-shadow:0 -24px 90px rgba(0,0,0,.5)}.reel-comments.open{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px}.reel-comments::before{content:'';width:46px;height:5px;border-radius:999px;background:rgba(255,255,255,.32);justify-self:center}.reel-comments-list{overflow:auto;display:grid;gap:8px}.reel-comment{padding:10px;border-radius:14px;background:rgba(255,255,255,.06)}.reel-comment-form{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px}.reel-comment-form input{border-radius:999px}.reel-comment-form button{width:48px;padding:0;border-radius:50%}
-    @media(max-width:900px){body:has(.reels-immersive){overflow:hidden}body:has(.reels-immersive) .wrap{width:100%;max-width:100vw;margin:0;padding:0}body:has(.reels-immersive) .wrap>section.card,body:has(.reels-immersive) .layout>aside,body:has(.reels-immersive) .nav,body:has(.reels-immersive) .mobile-topbar,body:has(.reels-immersive) .mobile-bottom-nav,body:has(.reels-immersive) .pulse-fab{display:none!important}body:has(.reels-immersive) .layout{display:block}.reels-shell,.reels-immersive,.reel-card{height:100dvh;min-height:100dvh;border-radius:0;border:0}.reels-rail{top:calc(8px + env(safe-area-inset-top));max-width:calc(100% - 18px)}.reel-top{top:42px}.reel-actions{right:8px;bottom:104px}.reel-action{width:48px;height:48px;min-height:48px}.reel-caption{left:12px;right:72px;bottom:28px}.reels-toolbar{bottom:calc(12px + env(safe-area-inset-bottom))}.reels-toolbar a,.reels-toolbar button{font-size:12px;padding:8px 10px}.reel-follow{font-size:12px;padding:6px 10px}.reel-card{scroll-snap-stop:always}}
+    @media(min-width:901px){.reels-shell{max-width:min(62vw,620px);margin:0 auto}.reels-immersive,.reel-card{aspect-ratio:9/16;height:min(86dvh,880px);min-height:620px}.reel-media{object-fit:cover}}
+    @media(max-width:900px){body:has(.reels-immersive){overflow:hidden}body:has(.reels-immersive) .wrap{width:100%;max-width:100vw;margin:0;padding:0}body:has(.reels-immersive) .wrap>section.card,body:has(.reels-immersive) .layout>aside,body:has(.reels-immersive) .nav,body:has(.reels-immersive) .mobile-topbar,body:has(.reels-immersive) .mobile-bottom-nav,body:has(.reels-immersive) .pulse-fab{display:none!important}body:has(.reels-immersive) .layout{display:block}.reels-shell,.reels-immersive,.reel-card{height:100dvh;min-height:100dvh;border-radius:0;border:0}.reels-rail{top:calc(8px + env(safe-area-inset-top));left:9px;right:9px;transform:none;width:auto;max-width:none;border-radius:999px;padding:5px 6px}.reel-top{padding-top:calc(54px + env(safe-area-inset-top));padding-left:12px;padding-right:10px}.reel-actions{right:8px;top:50%;gap:9px}.reel-action{width:46px;height:46px;min-height:46px;border-radius:16px}.reel-caption{left:12px;right:68px;bottom:calc(74px + env(safe-area-inset-bottom));max-width:calc(100% - 84px)}.reel-caption h2{font-size:clamp(22px,6vw,32px)}.reel-tags{max-height:58px}.reels-toolbar{left:10px;right:64px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:none;border-radius:24px;justify-content:flex-start}.reels-toolbar a,.reels-toolbar button{font-size:12px;padding:7px 9px;min-height:32px}.reel-follow{font-size:12px;padding:6px 10px}.reel-card{scroll-snap-stop:always}}
+    @media(max-width:380px){.reel-action{width:42px;height:42px;min-height:42px;font-size:18px}.reel-action small{font-size:8px;max-width:38px}.reel-caption{right:60px}.reels-toolbar{right:56px}.reels-toolbar a,.reels-toolbar button{font-size:11px;padding:6px 8px}.reels-rail button{height:30px;min-height:30px;padding:0 10px;font-size:11px}}
     </style>
     <section class='reels-shell'>
       <nav class='reels-rail' id='reelsRail' aria-label='Reel discovery tabs'></nav>
@@ -18154,8 +18194,12 @@ def pulse_message_media_html(message):
 
 
 @webhook_app.route("/pulse/profile", methods=["GET"])
+@webhook_app.route("/pulse/profile/", methods=["GET"])
 def pulse_my_profile_page():
-    return pulse_profile_page_for_user((require_account() or {}).get("user_id"))
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    return redirect(pulse_profile_canonical_path(user["user_id"]))
 
 
 @webhook_app.route("/pulse/profile/edit", methods=["GET"])
@@ -18510,15 +18554,20 @@ def pulse_group_detail_page(group_slug):
     return pulse_social_shell(group.get("name") or "Pulse Group", "A user-created community with posts, members, rules, and safety reporting.", main, "", script)
 
 
-@webhook_app.route("/pulse/profile/<public_player_id>", methods=["GET"])
-def pulse_profile_page(public_player_id):
+@webhook_app.route("/pulse/@<path:profile_key>", methods=["GET"])
+@webhook_app.route("/pulse/u/<path:profile_key>", methods=["GET"])
+@webhook_app.route("/pulse/id/<path:profile_key>", methods=["GET"])
+@webhook_app.route("/pulse/profile/<path:profile_key>", methods=["GET"])
+def pulse_profile_page(profile_key):
     init_db()
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    target_user_id = pulse_user_id_from_public(cur, public_player_id) or user["user_id"]
+    target_user_id = pulse_user_id_from_public(cur, profile_key)
     conn.close()
+    if not target_user_id:
+        return pulse_profile_not_found_page(profile_key)
     return pulse_profile_page_for_user(target_user_id)
 
 
@@ -18527,7 +18576,14 @@ def pulse_profile_page_for_user(target_user_id):
     viewer = require_account()
     if not viewer:
         return redirect(url_for("login_page", next=request.path))
+    target_user_id = int(target_user_id or 0)
+    if not target_user_id:
+        return pulse_profile_not_found_page("")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+    if not cur.fetchone():
+        conn.close()
+        return pulse_profile_not_found_page(str(target_user_id))
     ident = pulse_identity_for_user(cur, target_user_id)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL", (target_user_id,))
     post_count = int(dict(cur.fetchone() or {}).get("total") or 0)
