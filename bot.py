@@ -18286,8 +18286,301 @@ def pulse_notifications_page():
     return pulse_social_shell("Pulse Notifications", "Friend requests, reactions, comments, follows, group invites, and creator updates.", f"{request_html}{note_html or '<section class=\"card\"><p>No notifications yet. Follow creators, join spaces, or publish a Pulse to start the loop.</p></section>'}", "", script)
 
 
+def pulse_dashboard_messenger_page(active_thread_id=0):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    active_thread_id = safe_int(active_thread_id, 0)
+    main = """
+    <style>
+    .unified-messenger{height:min(82dvh,820px);min-height:620px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:0;overflow:hidden;border-radius:24px}
+    .unified-messenger-head{position:relative;z-index:5;display:grid;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 16px 14px;background:rgba(7,17,31,.94);border-bottom:1px solid rgba(255,255,255,.08);backdrop-filter:blur(18px)}
+    .unified-messenger-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .unified-messenger-title h2{margin:0}
+    .unified-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .unified-tabs button{min-width:0;min-height:42px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .unified-tabs button.is-active{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}
+    .unified-messenger-body{min-height:0;display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);background:radial-gradient(circle at 80% 0,rgba(110,223,246,.08),transparent 26rem)}
+    .unified-sidebar{min-height:0;overflow:auto;border-right:1px solid rgba(255,255,255,.08);padding:14px;display:grid;align-content:start;gap:12px}
+    .unified-thread-pane{min-height:0;display:grid;grid-template-rows:minmax(0,1fr)}
+    .unified-panel[hidden]{display:none}
+    .unified-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+    .unified-search input{min-width:0}
+    .unified-results,.unified-list{display:grid;gap:8px}
+    .unified-row{width:100%;display:grid;gap:4px;text-align:left;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(255,255,255,.045);color:var(--text);padding:12px;cursor:pointer}
+    .unified-row:hover,.unified-row.is-active{border-color:rgba(110,223,246,.45);background:rgba(110,223,246,.1)}
+    .unified-row strong{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .unified-row span{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .unified-empty{border:1px dashed rgba(110,223,246,.24);border-radius:18px;padding:18px;color:var(--muted);text-align:center;background:rgba(255,255,255,.035)}
+    .unified-thread{min-height:0;overflow:auto;padding:16px;display:grid;align-content:end;gap:10px;scroll-behavior:smooth}
+    .unified-bubble{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:17px;background:rgba(255,255,255,.07);box-shadow:0 14px 42px rgba(0,0,0,.14)}
+    .unified-bubble.me{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}
+    .unified-bubble small{display:block;margin-top:6px;opacity:.72;color:inherit}
+    .unified-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96);backdrop-filter:blur(18px)}
+    .unified-composer textarea{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:16px;background:#081323;color:var(--text);padding:12px;font:inherit}
+    .unified-menu-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.46);backdrop-filter:blur(7px)}
+    .unified-menu-backdrop[hidden],.unified-menu[hidden]{display:none}
+    .unified-menu{position:absolute;right:16px;top:58px;z-index:9999;display:grid;gap:6px;min-width:260px;padding:10px;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(8,15,28,.98);box-shadow:0 24px 80px rgba(0,0,0,.48)}
+    .unified-menu button{width:100%;justify-content:flex-start}
+    .unified-menu small{padding:8px 8px 2px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:850}
+    @media(max-width:900px){
+      body:has(.unified-messenger){overflow:hidden}
+      body:has(.unified-messenger) .wrap{padding:0}
+      body:has(.unified-messenger) .layout{display:block}
+      body:has(.unified-messenger) .layout>aside,body:has(.unified-messenger) .wrap>section.card:not(.unified-messenger){display:none}
+      .unified-messenger{position:fixed;inset:0;z-index:210;height:100dvh;min-height:0;border-radius:0;border:0}
+      .unified-messenger-body{grid-template-columns:1fr}
+      .unified-sidebar.is-thread-open{display:none}
+      .unified-thread-pane:not(.is-open){display:none}
+      .unified-tabs button{font-size:0}
+      .unified-tabs button::after{font-size:12px}
+      .unified-tabs [data-tab="chats"]::after{content:"Chats"}
+      .unified-tabs [data-tab="rooms"]::after{content:"Rooms"}
+      .unified-tabs [data-tab="groups"]::after{content:"Groups"}
+      .unified-composer{grid-template-columns:minmax(0,1fr) 56px}
+      .unified-composer button{width:56px;min-width:56px;padding:0}
+      .unified-menu{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;border-radius:26px 26px 0 0;padding:12px 12px calc(14px + env(safe-area-inset-bottom));animation:unifiedSheetIn .22s cubic-bezier(.18,.9,.2,1)}
+      .unified-menu::before{content:"";display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}
+      .mobile-bottom-nav,.pulse-fab{display:none!important}
+    }
+    @keyframes unifiedSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
+    </style>
+    <section class="card unified-messenger" data-unified-messenger data-active-thread="__ACTIVE_THREAD_ID__">
+      <header class="unified-messenger-head">
+        <div class="unified-messenger-title">
+          <div><h2>Pulse Messenger</h2><p class="muted">Powered by the working dashboard private chat system.</p></div>
+          <div class="actions"><a class="button" href="/pulse">Pulse</a><button class="button" type="button" data-unified-menu-toggle aria-expanded="false">...</button></div>
+          <div class="unified-menu-backdrop" data-unified-menu-backdrop hidden></div>
+          <div class="unified-menu" data-unified-menu hidden>
+            <button type="button" data-focus-search>New Private Message</button>
+            <button type="button" data-switch-tab="groups">Group Chats</button>
+            <button type="button" data-switch-tab="rooms">Chat Room</button>
+            <button type="button" data-menu-toast="Message requests are being prepared. Your private conversations are active now.">Message Requests</button>
+            <button type="button" data-menu-toast="Muted chats controls are coming online.">Muted Chats</button>
+            <button type="button" data-menu-toast="Thanks. Use in-chat report controls for urgent safety issues.">Report a Problem</button>
+            <small>Safety & Privacy</small>
+            <button type="button" data-menu-toast="Blocked users management is being prepared inside Safety & Privacy.">Blocked Users</button>
+          </div>
+        </div>
+        <div class="unified-tabs" role="tablist">
+          <button type="button" class="is-active" data-tab="chats">Conversations</button>
+          <button type="button" data-tab="rooms">Chat Room</button>
+          <button type="button" data-tab="groups">Group Chat</button>
+        </div>
+      </header>
+      <div class="unified-messenger-body">
+        <aside class="unified-sidebar" data-unified-sidebar>
+          <form class="unified-search" data-unified-search-form>
+            <input name="q" placeholder="Search by name or public Pulse ID" autocomplete="off">
+            <button class="primary" type="submit">Search</button>
+          </form>
+          <div class="unified-results" data-unified-search-results></div>
+          <div class="unified-panel" data-panel="chats"><div class="unified-list" data-unified-conversations><div class="unified-empty">Loading conversations...</div></div></div>
+          <div class="unified-panel" data-panel="rooms" hidden><div class="unified-empty">Open rooms are being prepared. Use private chats and group chats for now.</div></div>
+          <div class="unified-panel" data-panel="groups" hidden><div class="unified-list" data-unified-groups><div class="unified-empty">Loading group chats...</div></div></div>
+        </aside>
+        <main class="unified-thread-pane" data-unified-thread-pane>
+          <div class="unified-thread" data-unified-thread><div class="unified-empty">Choose a conversation to start messaging.</div></div>
+        </main>
+      </div>
+      <form class="unified-composer" data-unified-send-form>
+        <textarea name="message" placeholder="Write a message..." autocomplete="off"></textarea>
+        <button class="primary" type="submit">Send</button>
+      </form>
+    </section>
+    """.replace("__ACTIVE_THREAD_ID__", str(active_thread_id))
+    script = """
+    (() => {
+      const root = document.querySelector("[data-unified-messenger]");
+      if (!root) return;
+      const state = { activeThread: Number(root.dataset.activeThread || 0), currentUserId: 0, lastMessageId: 0, polling: false };
+      const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+      const friendlyTime = value => {
+        if (!value) return "";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+        const seconds = Math.max(1, Math.floor((Date.now() - date.getTime()) / 1000));
+        if (seconds < 60) return seconds + "s ago";
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return minutes + "m ago";
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return hours + "h ago";
+        return Math.floor(hours / 24) + "d ago";
+      };
+      const showMenu = open => {
+        document.querySelector("[data-unified-menu]").hidden = !open;
+        document.querySelector("[data-unified-menu-backdrop]").hidden = !open;
+        document.querySelector("[data-unified-menu-toggle]").setAttribute("aria-expanded", open ? "true" : "false");
+      };
+      const setTab = tab => {
+        document.querySelectorAll("[data-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.tab === tab));
+        document.querySelectorAll("[data-panel]").forEach(panel => panel.hidden = panel.dataset.panel !== tab);
+        if (tab === "groups") loadGroups();
+      };
+      const bubble = message => {
+        const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_user_id || message.sender_id || 0) === Number(state.currentUserId);
+        const body = esc(message.body || message.content || "");
+        const id = esc(message.message_id || message.id || "");
+        return `<div class="unified-bubble ${mine ? "me" : "them"}" data-message-id="${id}"><div>${body || "<em>Message</em>"}</div><small>${friendlyTime(message.created_at)}${message.delivery_status || message.status ? " • " + esc(message.delivery_status || message.status) : ""}</small></div>`;
+      };
+      const renderMessages = messages => {
+        const thread = document.querySelector("[data-unified-thread]");
+        thread.innerHTML = (messages || []).map(bubble).join("") || '<div class="unified-empty">No messages yet. Send the first one.</div>';
+        state.lastMessageId = Math.max(0, ...(messages || []).map(m => Number(m.message_id || m.id || 0)));
+        thread.scrollTop = thread.scrollHeight;
+      };
+      const appendMessages = messages => {
+        const thread = document.querySelector("[data-unified-thread]");
+        const seen = new Set([...thread.querySelectorAll("[data-message-id]")].map(node => node.dataset.messageId));
+        (messages || []).forEach(message => {
+          const id = String(message.message_id || message.id || "");
+          if (id && seen.has(id)) return;
+          thread.insertAdjacentHTML("beforeend", bubble(message));
+          state.lastMessageId = Math.max(state.lastMessageId, Number(message.message_id || message.id || 0));
+        });
+        if ((messages || []).length) thread.scrollTop = thread.scrollHeight;
+      };
+      async function loadThreads() {
+        const box = document.querySelector("[data-unified-conversations]");
+        box.innerHTML = '<div class="unified-empty">Loading conversations...</div>';
+        try {
+          const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load conversations.");
+          box.innerHTML = (data.conversations || []).map(item => `
+            <button class="unified-row" type="button" data-open-thread="${item.id}" data-other-user-id="${item.other_user_id || ""}">
+              <strong>${esc(item.title || "Pulse user")}${Number(item.unread_count || 0) ? `<span class="pill">${Number(item.unread_count || 0)}</span>` : ""}</strong>
+              <span>${esc(item.latest_message || "No messages yet.")}</span>
+              <span>${friendlyTime(item.last_message_at || item.updated_at)}</span>
+            </button>`).join("") || '<div class="unified-empty">No private chats yet. Search for a Pulse user to start a conversation.</div>';
+        } catch (error) {
+          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Private chat is temporarily unavailable.")}</div>`;
+        }
+      }
+      async function loadGroups() {
+        const box = document.querySelector("[data-unified-groups]");
+        box.innerHTML = '<div class="unified-empty">Loading group chats...</div>';
+        try {
+          const response = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load group chats.");
+          const groups = (data.conversations || []).filter(item => ["group","community","community_group","creator","live"].includes(item.conversation_type || ""));
+          box.innerHTML = groups.map(item => `
+            <button class="unified-row" type="button" data-menu-toast="Group chat ${esc(item.title || "conversation")} is listed here. Direct private messages now use the dashboard chat system.">
+              <strong>${esc(item.title || "Group Chat")}</strong>
+              <span>${esc(item.latest_message || "No messages yet.")}</span>
+              <span>${esc(item.conversation_type || "group")} • ${friendlyTime(item.last_activity_at || item.updated_at)}</span>
+            </button>`).join("") || '<div class="unified-empty">No group chats yet. Direct conversations are ready now.</div>';
+        } catch (error) {
+          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Group chats are temporarily unavailable.")}</div>`;
+        }
+      }
+      async function openThread(id) {
+        state.activeThread = Number(id || 0);
+        document.querySelector("[data-unified-sidebar]").classList.add("is-thread-open");
+        document.querySelector("[data-unified-thread-pane]").classList.add("is-open");
+        document.querySelectorAll("[data-open-thread]").forEach(button => button.classList.toggle("is-active", Number(button.dataset.openThread) === state.activeThread));
+        const thread = document.querySelector("[data-unified-thread]");
+        thread.innerHTML = '<div class="unified-empty">Loading messages...</div>';
+        try {
+          const response = await fetch("/api/chat/thread/" + state.activeThread, { cache: "no-store", credentials: "same-origin" });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load messages.");
+          state.currentUserId = data.me?.user_id || 0;
+          renderMessages(data.messages || []);
+          history.replaceState(null, "", "/pulse/messages/" + state.activeThread);
+          loadThreads();
+        } catch (error) {
+          thread.innerHTML = `<div class="unified-empty">${esc(error.message || "Unable to load this conversation.")}</div>`;
+        }
+      }
+      async function pollThread() {
+        if (!state.activeThread || state.polling || document.hidden) return;
+        state.polling = true;
+        try {
+          const response = await fetch(`/api/chat/thread/${state.activeThread}/new?after_id=${state.lastMessageId}`, { cache: "no-store", credentials: "same-origin" });
+          const data = await response.json();
+          if (response.ok && data.ok) appendMessages(data.messages || []);
+        } finally {
+          state.polling = false;
+        }
+      }
+      document.addEventListener("click", async event => {
+        const tab = event.target.closest("[data-tab],[data-switch-tab]");
+        if (tab) { setTab(tab.dataset.tab || tab.dataset.switchTab); showMenu(false); return; }
+        if (event.target.closest("[data-unified-menu-toggle]")) { showMenu(document.querySelector("[data-unified-menu]").hidden); return; }
+        if (event.target.closest("[data-unified-menu-backdrop]")) { showMenu(false); return; }
+        const toastButton = event.target.closest("[data-menu-toast]");
+        if (toastButton) { showMenu(false); toast(toastButton.dataset.menuToast || "This Messenger option is being prepared."); return; }
+        if (event.target.closest("[data-focus-search]")) { showMenu(false); document.querySelector("[data-unified-search-form] input")?.focus(); return; }
+        const row = event.target.closest("[data-open-thread]");
+        if (row) { openThread(row.dataset.openThread); return; }
+        const message = event.target.closest("[data-message-user]");
+        if (message) {
+          try {
+            const result = await pulseApi("/api/pulse/messages/start", { method: "POST", body: JSON.stringify({ target_user_id: message.dataset.messageUser }) });
+            await openThread(result.thread_id || result.conversation_id);
+          } catch (error) { toast(error.message); }
+        }
+      });
+      document.querySelector("[data-unified-search-form]").addEventListener("submit", async event => {
+        event.preventDefault();
+        const query = event.target.q.value.trim();
+        if (!query) return;
+        const box = document.querySelector("[data-unified-search-results]");
+        box.innerHTML = '<div class="unified-empty">Searching...</div>';
+        try {
+          const response = await fetch("/api/pulse/users/search?q=" + encodeURIComponent(query), { credentials: "same-origin", cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.message || "Search failed.");
+          box.innerHTML = (data.users || []).map(user => `
+            <div class="unified-row">
+              <strong>${esc(user.display_name || "Pulse user")}${user.premium ? " ✦" : ""}</strong>
+              <span>${esc(user.public_pulse_id || "")} ${user.label ? "• " + esc(user.label) : ""}</span>
+              ${user.is_self ? '<span>You cannot message yourself.</span>' : `<button class="primary" type="button" data-message-user="${user.id}">Message</button>`}
+            </div>`).join("") || '<div class="unified-empty">No Pulse users found.</div>';
+        } catch (error) {
+          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Search failed.")}</div>`;
+        }
+      });
+      document.querySelector("[data-unified-send-form]").addEventListener("submit", async event => {
+        event.preventDefault();
+        const input = event.target.message;
+        const body = input.value.trim();
+        if (!body) return;
+        if (!state.activeThread) { toast("Choose a conversation first."); return; }
+        input.value = "";
+        const button = event.target.querySelector("button");
+        button.disabled = true;
+        try {
+          const response = await fetch(`/api/chat/thread/${state.activeThread}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ message: body }) });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.message || "Could not send message.");
+          appendMessages([data.message]);
+          loadThreads();
+        } catch (error) {
+          input.value = body;
+          toast(error.message || "Could not send message.");
+        } finally {
+          button.disabled = false;
+          input.focus();
+        }
+      });
+      document.querySelector("[data-unified-send-form] textarea").addEventListener("keydown", event => {
+        if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.target.form.requestSubmit(); }
+      });
+      document.addEventListener("keydown", event => { if (event.key === "Escape") showMenu(false); });
+      loadThreads().then(() => { if (state.activeThread) openThread(state.activeThread); });
+      setInterval(pollThread, 1500);
+    })();
+    """
+    return pulse_social_shell("Pulse Messenger", "One working private chat system shared with the dashboard.", main, "", script)
+
+
 @webhook_app.route("/pulse/messages", methods=["GET"])
 def pulse_messages_page():
+    return pulse_dashboard_messenger_page(0)
     init_db()
     user = require_account()
     if not user:
@@ -18504,6 +18797,7 @@ def pulse_topic_page(topic):
 
 @webhook_app.route("/pulse/messages/<int:conversation_id>", methods=["GET"])
 def pulse_message_thread_page(conversation_id):
+    return pulse_dashboard_messenger_page(conversation_id)
     init_db()
     user = require_account()
     if not user:
@@ -20070,18 +20364,39 @@ def api_pulse_message_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
+    query = clean_html(
+        payload.get("query")
+        or payload.get("public_pulse_id")
+        or payload.get("public_player_id")
+        or payload.get("receiver_public_player_id")
+        or payload.get("username")
+        or ""
+    ).strip()
+    target_user_id = safe_int(payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"), 0)
+    if not query and not target_user_id:
+        return jsonify({"ok": False, "message": "Search by name or public Pulse ID."}), 400
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    result, status = pulse_start_conversation(
-        cur,
-        user["user_id"],
-        target_user_id=payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"),
-        public_player_id=payload.get("receiver_public_player_id") or payload.get("public_player_id") or "",
-    )
-    if result.get("ok"):
-        conn.commit()
-        log_product_event(user["user_id"], "pulse_message_thread_started", {"thread_id": result.get("thread_id"), "target_user_id": result.get("target_user_id")})
+    if not target_user_id:
+        matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
+        for match in matches:
+            if not match.get("is_self"):
+                target_user_id = int(match.get("user_id") or 0)
+                break
     conn.close()
-    return jsonify(result), status
+    if not target_user_id:
+        return jsonify({"ok": False, "message": "Pulse user not found."}), 404
+    if int(target_user_id) == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "You cannot message yourself."}), 400
+    conversation_id = direct_conversation_between(user["user_id"], target_user_id)
+    result = {
+        "ok": True,
+        "conversation_id": conversation_id,
+        "thread_id": conversation_id,
+        "target_user_id": target_user_id,
+        "next_url": f"/pulse/messages/{conversation_id}",
+    }
+    log_product_event(user["user_id"], "pulse_message_thread_started", {"thread_id": conversation_id, "target_user_id": target_user_id, "source": "dashboard_private_chat"})
+    return jsonify(result), 200
 
 
 @webhook_app.route("/api/pulse/users/search", methods=["GET"])
