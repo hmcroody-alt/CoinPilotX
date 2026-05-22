@@ -18011,8 +18011,44 @@ def pulse_marketplace_create_page():
         return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", "<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a></section>")
     categories = ["AI Tools","Cybersecurity","Crypto Education","Trading Education","Coding","Business","Marketing","Design","Ebooks","Courses","Templates","Coaching","Livestream Access","Premium Communities","Creator Resources","Productivity","Investing Education","Scam Prevention"]
     opts = "".join(f"<option>{clean_html(c)}</option>" for c in categories)
-    main = f"<section class='card'><h2>Create Product</h2><input id='listingTitle' placeholder='Product title'><input id='listingShort' placeholder='Short description'><textarea id='listingDescription' placeholder='Full description'></textarea><select id='listingCategory'>{opts}</select><input id='listingSubcategory' placeholder='Subcategory'><input id='listingTags' placeholder='Tags'><input id='listingCover' placeholder='Cover image URL'><input id='listingGallery' placeholder='Gallery image URLs'><input id='listingVideo' placeholder='Optional video URL'><input id='listingPrice' placeholder='Price'><input id='listingCurrency' value='USD'><input id='listingQuantity' placeholder='Quantity'><select id='listingProductType'><option value='digital'>Digital</option><option value='physical'>Physical</option><option value='course'>Course</option><option value='service'>Service</option></select><input id='listingRefund' placeholder='Refund policy'><input id='listingDelivery' placeholder='Estimated delivery'><textarea id='listingNotes' placeholder='Seller notes'></textarea><div class='actions'><a class='button' href='/pulse/camera/photo?target=marketplace'>Take Photo</a><a class='button' href='/pulse/camera/video?target=marketplace'>Record Video</a><button class='primary' id='listingCreate'>Submit For Review</button></div></section>"
-    script = "document.getElementById('listingCreate').addEventListener('click',async()=>{try{const d=await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,short_description:document.getElementById('listingShort').value,description:document.getElementById('listingDescription').value,category:document.getElementById('listingCategory').value,subcategory:document.getElementById('listingSubcategory').value,tags:document.getElementById('listingTags').value,cover_image_url:document.getElementById('listingCover').value,gallery:document.getElementById('listingGallery').value,video_url:document.getElementById('listingVideo').value,price_label:document.getElementById('listingPrice').value,currency:document.getElementById('listingCurrency').value,quantity:document.getElementById('listingQuantity').value,product_type:document.getElementById('listingProductType').value,refund_policy:document.getElementById('listingRefund').value,estimated_delivery:document.getElementById('listingDelivery').value,seller_notes:document.getElementById('listingNotes').value})});toast(d.message||'Submitted.');location.href='/pulse/merchant/dashboard'}catch(err){toast(err.message)}});"
+    main = f"""
+    <style>
+    .product-media-board{{display:grid;gap:14px}}
+    .media-zone{{border:1px dashed rgba(110,223,246,.36);border-radius:18px;padding:14px;background:rgba(110,223,246,.045)}}
+    .media-zone h3{{margin-top:0}}.upload-row{{display:flex;gap:10px;flex-wrap:wrap}}
+    .upload-tile{{min-height:112px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);padding:12px;display:grid;place-items:center;text-align:center;font-weight:950;cursor:pointer}}
+    .preview-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;margin-top:12px}}
+    .media-preview{{position:relative;border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;background:#020817;min-height:124px}}
+    .media-preview img,.media-preview video{{width:100%;height:124px;object-fit:cover;display:block}}
+    .media-preview button{{position:absolute;top:6px;right:6px;width:34px;height:34px;min-height:34px;border-radius:50%;padding:0}}
+    .media-preview span{{position:absolute;left:6px;bottom:6px;border-radius:999px;padding:4px 7px;background:rgba(0,0,0,.62);font-size:12px}}
+    .product-camera{{position:fixed;inset:0;z-index:9999;background:#02050b;display:none;color:#fff}}
+    .product-camera.open{{display:block}}.product-camera video{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}
+    .product-camera.front video{{transform:scaleX(-1)}}.camera-shade{{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.5),transparent 30%,rgba(0,0,0,.7));pointer-events:none}}
+    .camera-controls{{position:absolute;inset:auto 0 0;display:grid;gap:12px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));place-items:center}}
+    .camera-top{{position:absolute;top:calc(14px + env(safe-area-inset-top));left:14px;right:14px;display:flex;justify-content:space-between;gap:10px}}
+    .capture-dot{{width:82px;height:82px;border-radius:50%;border:4px solid #fff;background:linear-gradient(135deg,#36e58f,#6edff6);box-shadow:0 0 42px rgba(110,223,246,.4)}}
+    #marketplaceMediaFile{{display:none}}
+    @media(max-width:680px){{.upload-row .button,.upload-row button,.upload-tile{{width:100%}}}}
+    </style>
+    <section class='card'><h2>Create Product</h2><input id='listingTitle' placeholder='Product title'><input id='listingShort' placeholder='Short description'><textarea id='listingDescription' placeholder='Full description'></textarea><select id='listingCategory'>{opts}</select><input id='listingSubcategory' placeholder='Subcategory'><input id='listingTags' placeholder='Tags'><section class='product-media-board'><div class='media-zone'><h3>Cover Media</h3><p class='muted'>Upload or take one clear product cover photo. Required.</p><div class='upload-row'><button type='button' data-upload-kind='cover' class='upload-tile'>Upload cover photo</button><button type='button' data-camera-kind='cover' data-camera-mode='photo' class='upload-tile'>Take cover photo</button></div><div class='preview-grid' id='coverPreview'></div></div><div class='media-zone'><h3>Gallery</h3><p class='muted'>Add multiple product photos so buyers can inspect details.</p><div class='upload-row'><button type='button' data-upload-kind='gallery' class='upload-tile'>Upload multiple photos</button><button type='button' data-camera-kind='gallery' data-camera-mode='photo' class='upload-tile'>Take additional photos</button></div><div class='preview-grid' id='galleryPreview'></div></div><div class='media-zone'><h3>Product Video</h3><p class='muted'>Optional video walkthrough, demo, lesson preview, or product proof.</p><div class='upload-row'><button type='button' data-upload-kind='video' class='upload-tile'>Upload video</button><button type='button' data-camera-kind='video' data-camera-mode='video' class='upload-tile'>Record video</button></div><div class='preview-grid' id='videoPreview'></div></div></section><input id='marketplaceMediaFile' type='file' accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm' multiple><input id='listingPrice' placeholder='Price'><input id='listingCurrency' value='USD'><input id='listingQuantity' placeholder='Quantity'><select id='listingProductType'><option value='digital'>Digital</option><option value='physical'>Physical</option><option value='course'>Course</option><option value='service'>Service</option></select><input id='listingRefund' placeholder='Refund policy'><input id='listingDelivery' placeholder='Estimated delivery'><textarea id='listingNotes' placeholder='Seller notes'></textarea><div class='actions'><button class='primary' id='listingCreate'>Submit For Review</button></div></section><section class='product-camera' id='productCamera'><video id='productCameraVideo' autoplay muted playsinline></video><div class='camera-shade'></div><div class='camera-top'><button type='button' id='cameraClose'>Close</button><button type='button' id='cameraFlip'>Switch</button></div><div class='camera-controls'><p id='cameraStatus'>Product camera ready</p><button type='button' class='capture-dot' id='cameraCapture' aria-label='Capture'></button><button type='button' id='cameraUse' disabled>Use Media</button></div><canvas id='productCameraCanvas' hidden></canvas></section>
+    """
+    script = r"""
+    let mediaItems=[],uploadKind='cover',cameraKind='cover',cameraMode='photo',stream=null,facing='environment',capturedBlob=null,recorder=null,chunks=[],recording=false;
+    const file=document.getElementById('marketplaceMediaFile'),camera=document.getElementById('productCamera'),video=document.getElementById('productCameraVideo'),canvas=document.getElementById('productCameraCanvas'),status=document.getElementById('cameraStatus');
+    function renderMedia(){const zones={cover:document.getElementById('coverPreview'),gallery:document.getElementById('galleryPreview'),video:document.getElementById('videoPreview')};Object.values(zones).forEach(z=>z.innerHTML='');mediaItems.forEach((m,i)=>{const zone=m.kind==='cover'?zones.cover:m.kind==='video'?zones.video:zones.gallery;const el=document.createElement('div');el.className='media-preview';el.innerHTML=(m.media_type==='video'?`<video src="${m.media_url}" muted playsinline preload="metadata"></video>`:`<img src="${m.thumbnail_url||m.media_url}" alt="Product media">`)+`<span>${m.kind}${m.is_cover?' · cover':''}</span><button type="button" data-remove-media="${i}">×</button>`;zone.appendChild(el)})}
+    async function uploadFile(f,kind){const fd=new FormData();fd.append('file',f);fd.append('kind',kind);const r=await fetch('/api/pulse/marketplace/media/upload',{method:'POST',credentials:'same-origin',body:fd});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');const media=d.media;media.kind=kind;media.is_cover=kind==='cover';if(kind==='cover')mediaItems=mediaItems.filter(x=>x.kind!=='cover');if(kind==='video')mediaItems=mediaItems.filter(x=>x.kind!=='video');mediaItems.push(media);renderMedia();toast('Media added.')}
+    document.querySelectorAll('[data-upload-kind]').forEach(b=>b.addEventListener('click',()=>{uploadKind=b.dataset.uploadKind;file.accept=uploadKind==='video'?'video/mp4,video/webm':'image/jpeg,image/png,image/webp,image/gif';file.multiple=uploadKind==='gallery';file.click()}));
+    file.addEventListener('change',async()=>{for(const f of [...file.files]){try{await uploadFile(f,uploadKind)}catch(e){toast(e.message)}}file.value=''});
+    document.addEventListener('click',e=>{const rm=e.target.closest('[data-remove-media]');if(!rm)return;mediaItems.splice(Number(rm.dataset.removeMedia),1);renderMedia()});
+    async function startCamera(){camera.classList.add('open');camera.classList.toggle('front',facing==='user');capturedBlob=null;document.getElementById('cameraUse').disabled=true;if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1080},height:{ideal:1920},frameRate:{ideal:30,max:60}},audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});video.srcObject=stream;status.textContent=cameraMode==='video'?'Tap capture to record product video.':'Frame the product and capture.'}
+    document.querySelectorAll('[data-camera-kind]').forEach(b=>b.addEventListener('click',async()=>{cameraKind=b.dataset.cameraKind;cameraMode=b.dataset.cameraMode;try{await startCamera()}catch(e){toast('Camera unavailable. Upload is ready.')}}));
+    document.getElementById('cameraClose').onclick=()=>{camera.classList.remove('open');stream?.getTracks().forEach(t=>t.stop())};
+    document.getElementById('cameraFlip').onclick=()=>{facing=facing==='user'?'environment':'user';startCamera()};
+    document.getElementById('cameraCapture').onclick=async()=>{if(cameraMode==='video'&&window.MediaRecorder){if(!recording){chunks=[];recorder=new MediaRecorder(stream,{mimeType:'video/webm'});recorder.ondataavailable=e=>chunks.push(e.data);recorder.onstop=()=>{capturedBlob=new Blob(chunks,{type:'video/webm'});document.getElementById('cameraUse').disabled=false;status.textContent='Preview captured. Use media or retake.'};recorder.start();recording=true;status.textContent='Recording... tap again to stop.'}else{recorder.stop();recording=false}return}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');if(facing==='user'){ctx.translate(canvas.width,0);ctx.scale(-1,1)}ctx.filter='brightness(1.06) contrast(1.06) saturate(1.05)';ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.94));document.getElementById('cameraUse').disabled=false;status.textContent='Photo captured. Use media or retake.'};
+    document.getElementById('cameraUse').onclick=async()=>{if(!capturedBlob)return;const name=cameraMode==='video'?'product-video.webm':'product-photo.jpg';await uploadFile(new File([capturedBlob],name,{type:capturedBlob.type}),cameraKind);document.getElementById('cameraClose').click()};
+    document.getElementById('listingCreate').addEventListener('click',async()=>{try{const media_ids=mediaItems.map(m=>m.id);if(!mediaItems.some(m=>m.kind==='cover'||m.is_cover))throw new Error('Add a cover photo before submitting.');const d=await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,short_description:document.getElementById('listingShort').value,description:document.getElementById('listingDescription').value,category:document.getElementById('listingCategory').value,subcategory:document.getElementById('listingSubcategory').value,tags:document.getElementById('listingTags').value,media_ids,price_label:document.getElementById('listingPrice').value,currency:document.getElementById('listingCurrency').value,quantity:document.getElementById('listingQuantity').value,product_type:document.getElementById('listingProductType').value,refund_policy:document.getElementById('listingRefund').value,estimated_delivery:document.getElementById('listingDelivery').value,seller_notes:document.getElementById('listingNotes').value})});toast(d.message||'Submitted.');location.href='/pulse/merchant/dashboard'}catch(err){toast(err.message)}});
+    """
     return pulse_social_shell("Create Product", "Advanced product creation with safety scanning before marketplace visibility.", main, "", script)
 
 
@@ -20617,6 +20653,60 @@ def api_pulse_marketplace_seller_apply():
     return jsonify({"ok": True, "message": "Seller application saved."})
 
 
+def approved_marketplace_seller_for_user(cur, user_id):
+    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (int(user_id or 0),))
+    seller = cur.fetchone()
+    seller = dict(seller or {})
+    return seller if seller.get("status") == "approved" else {}
+
+
+@webhook_app.route("/api/pulse/marketplace/media/upload", methods=["POST"])
+def api_pulse_marketplace_media_upload():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    conn.close()
+    if not seller:
+        return api_error("Merchant approval is required before uploading product media.", 403)
+    file_storage = request.files.get("file") or request.files.get("media")
+    if file_storage:
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = file_storage.stream.tell()
+        file_storage.stream.seek(0)
+        check = camera_filter_engine.validate_media(file_storage.filename or "", file_storage.mimetype or "", size)
+        if not check.get("ok"):
+            return api_error(check.get("message") or "Media could not be validated.", 400)
+    result, status = media_service.save_upload(user["user_id"], file_storage, context_type="marketplace_product", context_id="draft")
+    if not result.get("ok"):
+        return jsonify(result), status
+    media = result.get("media") or {}
+    media_type = media.get("media_type") or "image"
+    if media_type not in {"image", "gif", "video"}:
+        return api_error("Marketplace products support photos, GIFs, and videos only.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    kind = clean_html(request.form.get("kind") or "gallery")[:40]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO marketplace_product_media
+        (product_id, merchant_id, media_type, media_url, thumbnail_url, position, is_cover, mime_type, file_size, moderation_status, created_at)
+        VALUES (0, ?, ?, ?, ?, 0, ?, ?, ?, 'pending_review', ?)
+        """,
+        (user["user_id"], media_type, media.get("media_url") or "", media.get("thumbnail_url") or media.get("media_url") or "", 1 if kind == "cover" else 0, media.get("mime_type") or "", int(media.get("file_size_bytes") or 0), now),
+    )
+    product_media_id = int(cur.lastrowid)
+    cur.execute("UPDATE chat_media_uploads SET context_type='marketplace_product', context_id=? WHERE id=?", (f"draft:{product_media_id}", int(media.get("id") or 0)))
+    conn.commit(); conn.close()
+    media["id"] = product_media_id
+    media["product_media_id"] = product_media_id
+    media["kind"] = kind
+    media["is_cover"] = kind == "cover"
+    return jsonify({"ok": True, "message": "Product media uploaded.", "media": media})
+
+
 @webhook_app.route("/api/pulse/marketplace/listings/create", methods=["POST"])
 def api_pulse_marketplace_listing_create():
     init_db()
@@ -20633,21 +20723,33 @@ def api_pulse_marketplace_listing_create():
     currency = clean_html(payload.get("currency") or "USD")[:12]
     quantity = safe_int(payload.get("quantity"), 0)
     product_type = payload.get("product_type") if payload.get("product_type") in {"digital", "physical", "course", "service"} else "digital"
+    media_ids = [safe_int(x, 0) for x in (payload.get("media_ids") or []) if safe_int(x, 0)]
     if not title or not description:
         return jsonify({"ok": False, "message": "Add a title and description for the listing."}), 400
     now = datetime.utcnow().isoformat(timespec="seconds")
-    conn = db(); cur = conn.cursor()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT id, status FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
-    seller = cur.fetchone()
+    seller = dict(cur.fetchone() or {})
     if not seller:
         conn.close()
         return api_error("Apply as a merchant before creating listings.", 400)
-    seller_status = seller["status"] if hasattr(seller, "keys") else seller[1]
-    if seller_status != "approved":
+    if seller.get("status") != "approved":
         conn.close()
         return api_error("Merchant approval is required before creating listings.", 403)
+    if not media_ids:
+        conn.close()
+        return api_error("Upload or capture a cover photo before creating a listing.", 400)
+    placeholders = ",".join(["?"] * len(media_ids))
+    cur.execute(f"SELECT * FROM marketplace_product_media WHERE id IN ({placeholders}) AND merchant_id=? AND product_id=0 ORDER BY is_cover DESC, id ASC", media_ids + [user["user_id"]])
+    media_rows = [dict(row) for row in cur.fetchall()]
+    if not any(int(m.get("is_cover") or 0) and (m.get("media_type") or "") in {"image", "gif"} for m in media_rows):
+        conn.close()
+        return api_error("Add a cover photo before creating a listing.", 400)
     review = revenue_safety_engine.marketplace_listing_review({"title": title, "description": description, "category": category})
     status = "pending_review" if review["status"] != "review_ready" else "review_ready"
+    cover = next((m for m in media_rows if int(m.get("is_cover") or 0)), media_rows[0])
+    gallery = [m.get("media_url") for m in media_rows if (m.get("media_type") or "") in {"image", "gif"}]
+    video = next((m.get("media_url") for m in media_rows if (m.get("media_type") or "") == "video"), "")
     cur.execute(
         """
         INSERT INTO marketplace_listings
@@ -20659,9 +20761,9 @@ def api_pulse_marketplace_listing_create():
         (
             user["user_id"], title, short_description, description, category, subcategory,
             json.dumps([t.strip() for t in clean_html(payload.get("tags") or "").split(",") if t.strip()][:16], default=str),
-            clean_html(payload.get("cover_image_url") or "")[:800],
-            json.dumps(clean_html(payload.get("gallery") or "").split(","), default=str)[:1600],
-            clean_html(payload.get("video_url") or "")[:800],
+            clean_html(cover.get("media_url") or "")[:800],
+            json.dumps(gallery, default=str)[:1600],
+            clean_html(video or "")[:800],
             price, currency, quantity, product_type, product_type,
             clean_html(payload.get("refund_policy") or "Reviewed products should state refunds clearly.")[:800],
             clean_html(payload.get("estimated_delivery") or "")[:200],
@@ -20670,6 +20772,12 @@ def api_pulse_marketplace_listing_create():
         ),
     )
     listing_id = int(cur.lastrowid)
+    for pos, media in enumerate(media_rows):
+        cur.execute(
+            "UPDATE marketplace_product_media SET product_id=?, position=?, moderation_status='pending_review' WHERE id=? AND merchant_id=?",
+            (listing_id, pos, int(media.get("id") or 0), user["user_id"]),
+        )
+        cur.execute("UPDATE chat_media_uploads SET context_type='marketplace_product', context_id=? WHERE media_url=?", (str(listing_id), media.get("media_url") or ""))
     conn.commit(); conn.close()
     return jsonify({"ok": True, "listing_id": listing_id, "message": "Listing saved for safety review."})
 
@@ -23565,10 +23673,22 @@ def admin_marketplace_command_page():
             counts[key] = 0
     cur.execute("SELECT l.*, COALESCE(u.display_name,u.username,'Seller') AS seller_name FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id ORDER BY CASE l.status WHEN 'pending_review' THEN 0 WHEN 'review_ready' THEN 1 ELSE 2 END, l.id DESC LIMIT 100")
     listings = [dict(row) for row in cur.fetchall()]
+    listing_ids = [int(l.get("id") or 0) for l in listings]
+    media_by_listing = {}
+    if listing_ids:
+        placeholders = ",".join(["?"] * len(listing_ids))
+        cur.execute(f"SELECT * FROM marketplace_product_media WHERE product_id IN ({placeholders}) ORDER BY is_cover DESC, position ASC, id ASC", listing_ids)
+        for row in cur.fetchall():
+            item = dict(row)
+            media_by_listing.setdefault(int(item.get("product_id") or 0), []).append(item)
     conn.close()
     cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{v}</p></div>" for k, v in counts.items())
-    rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('seller_name') or '')}</td><td>{clean_html(l.get('category') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='hide'>Hide</button><button name='action' value='suspend'>Suspend</button><button name='action' value='feature'>Feature</button></form></td></tr>" for l in listings)
-    body = f"<h1>Marketplace Command</h1><p class='muted'>Merchant approvals, product moderation, scam-risk alerts, seller trust, and listing trends.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Product Review Queue</h2><table class='table'><tr><th>ID</th><th>Product</th><th>Seller</th><th>Category</th><th>Status</th><th>Safety</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
+    rows = ""
+    for l in listings:
+        media_items = media_by_listing.get(int(l.get("id") or 0), [])
+        media_html = "".join((f"<video src='{clean_html(m.get('media_url') or '')}' muted playsinline preload='metadata'></video>" if (m.get("media_type") or "") == "video" else f"<img src='{clean_html(m.get('thumbnail_url') or m.get('media_url') or '')}' alt='Product media' loading='lazy'>") for m in media_items[:4]) or "<span class='muted'>No media</span>"
+        rows += f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}<div class='market-media-strip'>{media_html}</div></td><td>{clean_html(l.get('seller_name') or '')}</td><td>{clean_html(l.get('category') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='hide'>Hide</button><button name='action' value='suspend'>Suspend</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+    body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}</style><h1>Marketplace Command</h1><p class='muted'>Merchant approvals, product moderation, scam-risk alerts, seller trust, and listing trends.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Product Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Category</th><th>Status</th><th>Safety</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
     return admin_page_html("Marketplace Command", body, admin)
 
 
@@ -31596,6 +31716,41 @@ def init_db():
         ("prerequisites", "TEXT"),
         ("reviewed_by", "INTEGER"),
         ("reviewed_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace_product_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER DEFAULT 0,
+        merchant_id INTEGER,
+        media_type TEXT,
+        media_url TEXT,
+        thumbnail_url TEXT,
+        position INTEGER DEFAULT 0,
+        is_cover INTEGER DEFAULT 0,
+        mime_type TEXT,
+        file_size INTEGER DEFAULT 0,
+        width INTEGER,
+        height INTEGER,
+        duration_seconds REAL DEFAULT 0,
+        moderation_status TEXT DEFAULT 'pending_review',
+        created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "marketplace_product_media", [
+        ("product_id", "INTEGER DEFAULT 0"),
+        ("merchant_id", "INTEGER"),
+        ("media_type", "TEXT"),
+        ("media_url", "TEXT"),
+        ("thumbnail_url", "TEXT"),
+        ("position", "INTEGER DEFAULT 0"),
+        ("is_cover", "INTEGER DEFAULT 0"),
+        ("mime_type", "TEXT"),
+        ("file_size", "INTEGER DEFAULT 0"),
+        ("width", "INTEGER"),
+        ("height", "INTEGER"),
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("moderation_status", "TEXT DEFAULT 'pending_review'"),
+        ("created_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_saved_products (
