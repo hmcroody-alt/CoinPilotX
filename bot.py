@@ -16067,7 +16067,7 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
 
 def pulse_get_or_create_group_conversation(cur, current_user_id, group=None, title="", participant_ids=None):
     current_user_id = int(current_user_id or 0)
-    participant_ids = [int(uid) for uid in (participant_ids or []) if int(uid or 0) > 0 and int(uid or 0) != current_user_id]
+    participant_ids = [int(uid) for uid in (participant_ids or []) if int(uid or 0) != 0 and int(uid or 0) != current_user_id]
     now = datetime.utcnow().isoformat(timespec="seconds")
     group = dict(group or {})
     group_id = int(group.get("id") or 0)
@@ -18497,6 +18497,23 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     if not user:
         return redirect(url_for("login_page", next=request.path))
     active_thread_id = safe_int(active_thread_id, 0)
+    active_pulse_conversation_id = 0
+    if active_thread_id:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT conversation_type
+            FROM pulse_conversations
+            WHERE id=? AND COALESCE(status,'active')='active'
+            LIMIT 1
+            """,
+            (active_thread_id,),
+        )
+        active_conversation = dict(cur.fetchone() or {})
+        conn.close()
+        if active_conversation and (active_conversation.get("conversation_type") or "direct") != "direct":
+            active_pulse_conversation_id = active_thread_id
+            active_thread_id = 0
     main = """
     <style>
     .unified-messenger{height:min(82dvh,820px);min-height:620px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:0;overflow:hidden;border-radius:24px}
@@ -18561,6 +18578,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-modal.is-open{display:grid}
     .unified-sheet{width:min(620px,100%);max-height:min(780px,88dvh);overflow:auto;border:1px solid var(--line);border-radius:24px;background:#071321;box-shadow:0 30px 90px rgba(0,0,0,.55);padding:16px;display:grid;gap:12px}
     .unified-selected{display:flex;flex-wrap:wrap;gap:6px}
+    .unified-selected .pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden}
+    .unified-selected .pill button{min-height:24px;min-width:24px;width:24px;padding:0;border-radius:999px}
     .unified-room-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
     @media(max-width:900px){
       body:has(.unified-messenger){overflow:hidden}
@@ -18591,7 +18610,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     @keyframes unifiedSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
     @keyframes msgIn{from{transform:translateY(4px);opacity:.72}to{transform:translateY(0);opacity:1}}
     </style>
-    <section class="card unified-messenger" data-unified-messenger data-active-thread="__ACTIVE_THREAD_ID__" data-current-user="__CURRENT_USER_ID__">
+    <section class="card unified-messenger" data-unified-messenger data-active-thread="__ACTIVE_THREAD_ID__" data-active-pulse-conversation="__ACTIVE_PULSE_CONVERSATION_ID__" data-current-user="__CURRENT_USER_ID__">
       <header class="unified-messenger-head">
         <div class="unified-messenger-title">
           <div><h2>Pulse Messenger</h2><p class="muted">Powered by the working dashboard private chat system.</p></div>
@@ -18673,12 +18692,12 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         <div class="actions"><button type="button" data-close-group-modal>Cancel</button><button class="primary" type="button" data-create-group-chat>Create Group Chat</button></div>
       </div>
     </section>
-    """.replace("__ACTIVE_THREAD_ID__", str(active_thread_id)).replace("__CURRENT_USER_ID__", str(int(user["user_id"])))
+    """.replace("__ACTIVE_THREAD_ID__", str(active_thread_id)).replace("__ACTIVE_PULSE_CONVERSATION_ID__", str(active_pulse_conversation_id)).replace("__CURRENT_USER_ID__", str(int(user["user_id"])))
     script = """
     (() => {
       const root = document.querySelector("[data-unified-messenger]");
       if (!root) return;
-      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: 0, activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null };
+      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: Number(root.dataset.activePulseConversation || 0), activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null, creatingGroup: false };
       const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
       const friendlyTime = value => {
         if (!value) return "";
@@ -19074,24 +19093,45 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           const name = selectUser.dataset.name || "Pulse user";
           if (state.selectedMembers.has(id)) state.selectedMembers.delete(id); else state.selectedMembers.set(id, { id: Number(id), name });
           renderSelectedMembers();
-          selectUser.textContent = state.selectedMembers.has(id) ? "Remove" : "Add";
+          document.querySelectorAll(`[data-select-group-user="${CSS.escape(id)}"]`).forEach(button => { button.textContent = state.selectedMembers.has(id) ? "Remove" : "Add"; });
           return;
         }
         const removeUser = event.target.closest("[data-remove-group-user]");
-        if (removeUser) { state.selectedMembers.delete(String(removeUser.dataset.removeGroupUser || "")); renderSelectedMembers(); return; }
-        if (event.target.closest("[data-create-group-chat]")) {
+        if (removeUser) {
+          const id = String(removeUser.dataset.removeGroupUser || "");
+          state.selectedMembers.delete(id);
+          renderSelectedMembers();
+          document.querySelectorAll(`[data-select-group-user="${CSS.escape(id)}"]`).forEach(button => { button.textContent = "Add"; });
+          return;
+        }
+        const createGroupButton = event.target.closest("[data-create-group-chat]");
+        if (createGroupButton) {
+          if (state.creatingGroup) return;
           try {
             const title = document.querySelector("[data-group-title]").value.trim();
-            if (!title) throw new Error("Add a group chat name.");
-            const participant_ids = [...state.selectedMembers.keys()].map(Number);
-            const result = await pulseApi("/api/pulse/messages/group/create", { method: "POST", body: JSON.stringify({ title, description: document.querySelector("[data-group-description]").value, participant_ids }) });
+            if (title.length < 2) throw new Error("Add a group chat name.");
+            const participant_ids = [...state.selectedMembers.keys()].map(Number).filter(Boolean);
+            if (!participant_ids.length) throw new Error("Add at least one other person.");
+            state.creatingGroup = true;
+            createGroupButton.disabled = true;
+            createGroupButton.textContent = "Creating...";
+            const payload = { title, description: document.querySelector("[data-group-description]").value, privacy: "private", participant_ids };
+            const result = await pulseApi("/api/pulse/messages/group/create", { method: "POST", body: JSON.stringify(payload) });
+            if (!result.conversation_id) throw new Error("Group chat was created, but no conversation id came back.");
             document.querySelector("[data-group-modal]").classList.remove("is-open");
             document.querySelector("[data-group-modal]").setAttribute("aria-hidden", "true");
             setTab("groups");
             await loadGroups();
-            await openPulseConversation(result.conversation_id);
             toast("Group chat created.");
-          } catch (error) { console.error("Create group chat failed", error); toast(error.message); }
+            location.href = "/pulse/messages/" + result.conversation_id;
+          } catch (error) {
+            console.error("Create group chat failed", error);
+            toast(error.message || "Group chat could not be created.");
+          } finally {
+            state.creatingGroup = false;
+            createGroupButton.disabled = false;
+            createGroupButton.textContent = "Create Group Chat";
+          }
           return;
         }
         const message = event.target.closest("[data-message-user]");
@@ -19124,7 +19164,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       });
       function renderSelectedMembers() {
         const box = document.querySelector("[data-group-selected]");
-        box.innerHTML = [...state.selectedMembers.values()].map(item => `<span class="pill">${esc(item.name)} <button type="button" data-remove-group-user="${item.id}">×</button></span>`).join("") || '<span class="muted">No members selected yet.</span>';
+        box.innerHTML = [...state.selectedMembers.values()].map(item => `<span class="pill">${esc(item.name)} <button type="button" aria-label="Remove ${esc(item.name)}" data-remove-group-user="${item.id}">×</button></span>`).join("") || '<span class="muted">Self is included automatically. Add at least one other person.</span>';
       }
       document.querySelector("[data-group-search-form]").addEventListener("submit", async event => {
         event.preventDefault();
@@ -19136,7 +19176,14 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           const response = await fetch("/api/pulse/users/search?q=" + encodeURIComponent(query), { credentials: "same-origin", cache: "no-store" });
           const data = await response.json();
           if (!response.ok || data.ok === false) throw new Error(data.message || "Search failed.");
-          box.innerHTML = (data.users || []).map(user => `
+          const seen = new Set();
+          const users = (data.users || []).filter(user => {
+            const id = String(user.id || user.user_id || "");
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+          });
+          box.innerHTML = users.map(user => `
             <div class="unified-row">
               <strong>${esc(user.display_name || "Pulse user")}${user.premium ? " ✦" : ""}</strong>
               <span>${esc(user.public_pulse_id || "")} ${user.label ? "• " + esc(user.label) : ""}</span>
@@ -19229,7 +19276,10 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       });
       document.addEventListener("keydown", event => { if (event.key === "Escape") showMenu(false); });
       setComposerEnabled(false);
-      loadThreads().then(() => { if (state.activeThread) openThread(state.activeThread); });
+      loadThreads().then(() => {
+        if (state.activePulseConversation) { setTab("groups"); openPulseConversation(state.activePulseConversation); }
+        else if (state.activeThread) openThread(state.activeThread);
+      });
       startLiveStream();
       setInterval(pollThread, 8000);
       setInterval(refreshPresence, 15000);
@@ -21099,8 +21149,13 @@ def api_pulse_message_group_create():
     if privacy not in {"private", "public", "invite_only", "community"}:
         privacy = "private"
     participant_ids = payload.get("participant_ids") if isinstance(payload.get("participant_ids"), list) else []
+    participant_ids = sorted({safe_int(uid, 0) for uid in participant_ids if safe_int(uid, 0) and safe_int(uid, 0) != int(user["user_id"])})
+    if len(title.strip()) < 2:
+        return api_error("Add a group chat name.", 400, trace_id)
     group_id = safe_int(payload.get("group_id"), 0)
     group_slug = clean_html(payload.get("group_slug") or "")[:140]
+    if not participant_ids and not (group_id or group_slug):
+        return api_error("Add at least one other person.", 400, trace_id)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         group = {}
@@ -21113,6 +21168,15 @@ def api_pulse_message_group_create():
             if str(group.get("status") or "active").lower() in {"frozen", "suspended"}:
                 conn.close()
                 return api_error("This group chat is paused for review.", 403, trace_id)
+        if participant_ids:
+            placeholders = ",".join(["?"] * len(participant_ids))
+            cur.execute(f"SELECT user_id FROM users WHERE user_id IN ({placeholders})", participant_ids)
+            valid_participants = sorted({int(dict(row).get("user_id") or 0) for row in cur.fetchall()})
+            missing = set(participant_ids) - set(valid_participants)
+            if missing:
+                conn.close()
+                return api_error("One or more selected users could not be found.", 400, trace_id)
+            participant_ids = valid_participants
         result, status = pulse_get_or_create_group_conversation(cur, user["user_id"], group=group, title=title, participant_ids=participant_ids)
         if result.get("ok"):
             cur.execute(
