@@ -1,4 +1,4 @@
-"""Fast shared chat helpers for dashboard private chat and Arena redirects."""
+"""Fast shared chat helpers for dashboard private chat and Pulse redirects."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def _row(row):
 def _public_profile(cur, user_id):
     cur.execute(
         """
-        SELECT u.user_id, u.roast_call_sign, u.last_seen_at,
+        SELECT u.user_id, u.roast_call_sign, u.display_name, u.full_name, u.username, u.last_seen_at,
                ap.public_player_id, ap.display_name AS arena_name, ap.rank, ap.avatar_url, ap.faction
         FROM users u
         LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
@@ -32,8 +32,8 @@ def _public_profile(cur, user_id):
         (int(user_id),),
     )
     row = _row(cur.fetchone()) or {}
-    public_id = row.get("public_player_id") or f"pilot-{int(row.get('user_id') or 0)}"
-    display = row.get("roast_call_sign") or f"Arena Pilot #{int(row.get('user_id') or 0)}"
+    public_id = row.get("public_player_id") or f"Pilot-{str(abs(int(row.get('user_id') or 0)))[-4:].rjust(4, '0')}"
+    display = row.get("display_name") or row.get("full_name") or row.get("username") or row.get("arena_name") or f"Pulse user #{int(row.get('user_id') or 0)}"
     return {
         "player_id": public_id,
         "display_name": display,
@@ -87,7 +87,7 @@ def list_threads(user_id, limit=80):
     cur.execute(
         """
         SELECT c.id, c.updated_at, ou.user_id AS other_user_id,
-               COALESCE(NULLIF(ou.roast_call_sign, ''), NULLIF(ap.public_player_id, ''), 'Arena Pilot #' || ou.user_id) AS other_name,
+               COALESCE(NULLIF(ou.display_name, ''), NULLIF(ou.full_name, ''), NULLIF(ou.username, ''), NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), 'Pulse user #' || ou.user_id) AS other_name,
                ap.public_player_id AS other_public_player_id, ou.last_seen_at AS other_last_seen_at,
                MAX(pm.created_at) AS last_message_at,
                (
@@ -102,7 +102,7 @@ def list_threads(user_id, limit=80):
         LEFT JOIN users ou ON ou.user_id=other_cm.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=ou.user_id
         LEFT JOIN private_messages pm ON pm.conversation_id=c.id AND pm.deleted_at IS NULL
-        GROUP BY c.id, c.updated_at, ou.user_id, ou.roast_call_sign, ap.display_name, ap.public_player_id, ou.last_seen_at
+        GROUP BY c.id, c.updated_at, ou.user_id, ou.display_name, ou.full_name, ou.username, ap.display_name, ap.public_player_id, ou.last_seen_at
         ORDER BY COALESCE(MAX(pm.created_at), c.updated_at) DESC
         LIMIT ?
         """,

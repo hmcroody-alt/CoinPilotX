@@ -2735,7 +2735,7 @@ def private_chat_thread_page(thread_id):
         )
     other = payload.get("other") or {}
     other_name = clean_html(other.get("display_name") or "CoinPilotXAI user")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPilotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "Arena contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPilotXAI</title><style>:root{{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "Pulse contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
 
 
 @webhook_app.route("/chat/fan-messages", methods=["GET"])
@@ -15453,31 +15453,27 @@ def api_messages_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    query = clean_html(payload.get("query") or payload.get("public_player_id") or payload.get("email") or payload.get("username") or "").strip()
-    if not query:
-        return jsonify({"ok": False, "message": "Player name or public Arena ID required."}), 400
+    target_user_id = safe_int(payload.get("target_user_id") or payload.get("user_id"), 0)
+    query = clean_html(payload.get("query") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("email") or payload.get("username") or "").strip()
+    if not query and not target_user_id:
+        return jsonify({"ok": False, "message": "Search by name or public Pulse ID."}), 400
     conn = db()
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT u.user_id FROM users u
-        LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
-        WHERE lower(ap.public_player_id)=lower(?)
-           OR lower(ap.display_name)=lower(?)
-           OR lower(u.display_name)=lower(?)
-           OR lower(u.full_name)=lower(?)
-           OR lower(u.username)=lower(?)
-        ORDER BY u.user_id LIMIT 1
-        """,
-        (query, query, query, query, query),
-    )
-    other = cur.fetchone()
+    if not target_user_id:
+        matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
+        for match in matches:
+            if not match.get("is_self"):
+                target_user_id = int(match.get("user_id") or 0)
+                break
     conn.close()
-    if not other or other[0] == user["user_id"]:
+    if not target_user_id:
         return jsonify({"ok": False, "message": "User not found."}), 404
-    conversation_id = direct_conversation_between(user["user_id"], other[0])
+    if int(target_user_id) == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "You cannot message yourself."}), 400
+    conversation_id = direct_conversation_between(user["user_id"], target_user_id)
     log_product_event(user["user_id"], "private_chat_started", {"conversation_id": conversation_id})
-    return jsonify({"ok": True, "conversation_id": conversation_id})
+    return jsonify({"ok": True, "conversation_id": conversation_id, "thread_id": conversation_id, "next_url": f"/pulse/messages/{conversation_id}"})
 
 
 @webhook_app.route("/api/chat/threads", methods=["GET"])
@@ -15496,15 +15492,37 @@ def api_chat_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    result, status = chat_realtime_service.start_thread(
-        user["user_id"],
-        public_player_id=payload.get("public_player_id") or "",
-        query=payload.get("query") or payload.get("username") or "",
-        message=payload.get("message") or payload.get("body") or "",
-    )
-    if result.get("ok"):
-        log_product_event(user["user_id"], "private_chat_started", {"thread_id": result.get("thread_id"), "source": "fast_chat"})
-    return jsonify(result), status
+    query = clean_html(payload.get("query") or payload.get("public_pulse_id") or payload.get("public_player_id") or payload.get("username") or "").strip()
+    target_user_id = safe_int(payload.get("target_user_id") or payload.get("user_id"), 0)
+    if not query and not target_user_id:
+        return jsonify({"ok": False, "message": "Search by name or public Pulse ID."}), 400
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if not target_user_id:
+        matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
+        for match in matches:
+            if not match.get("is_self"):
+                target_user_id = int(match.get("user_id") or 0)
+                break
+    conn.close()
+    if not target_user_id:
+        return jsonify({"ok": False, "message": "Pulse user not found."}), 404
+    if int(target_user_id) == int(user["user_id"]):
+        return jsonify({"ok": False, "message": "You cannot message yourself."}), 400
+    conversation_id = direct_conversation_between(user["user_id"], target_user_id)
+    message = clean_html(payload.get("message") or payload.get("body") or "")[:2000]
+    if message:
+        conn = db()
+        cur = conn.cursor()
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            "INSERT INTO private_messages (conversation_id, sender_user_id, body, delivery_status, created_at) VALUES (?, ?, ?, 'sent', ?)",
+            (conversation_id, user["user_id"], message, now),
+        )
+        cur.execute("UPDATE conversations SET last_message_at=?, updated_at=? WHERE id=?", (now, now, conversation_id))
+        conn.commit(); conn.close()
+    result = {"ok": True, "thread_id": conversation_id, "conversation_id": conversation_id, "next_url": f"/pulse/messages/{conversation_id}"}
+    log_product_event(user["user_id"], "private_chat_started", {"thread_id": conversation_id, "source": "pulse_search"})
+    return jsonify(result), 200
 
 
 @webhook_app.route("/api/chat/thread/<int:thread_id>", methods=["GET"])
@@ -15643,9 +15661,18 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         )
         for group, links in drawer_groups
     )
+    mobile_bottom_items = [
+        ("Home", "/pulse", "⌂"),
+        ("Reels", "/pulse/reels", "▶"),
+        ("Spaces", "/pulse/spaces", "◇"),
+        ("Market", "/pulse/marketplace", "▣"),
+        ("Alerts", "/pulse/notifications", "!"),
+        ("Chats", "/pulse/messages", "✉"),
+        ("Profile", "/pulse/profile", "◉"),
+    ]
     mobile_bottom_html = "".join(
-        f"<a href='{clean_html(href)}'>{clean_html(label)}</a>"
-        for label, href in [("Home", "/pulse"), ("Reels", "/pulse/reels"), ("Spaces", "/pulse/spaces"), ("Market", "/pulse/marketplace"), ("Alerts", "/pulse/notifications"), ("Messages", "/pulse/messages"), ("Profile", "/pulse/profile")]
+        f"<a href='{clean_html(href)}'><span class='nav-ico' aria-hidden='true'>{clean_html(icon)}</span><span class='nav-label'>{clean_html(label)}</span></a>"
+        for label, href, icon in mobile_bottom_items
     )
     html = """<!doctype html>
 <html lang="en"><head>
@@ -15659,7 +15686,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 .wrap{width:min(100% - 28px,1200px);margin:auto;padding:18px 0 calc(92px + env(safe-area-inset-bottom))}a{color:inherit}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}.brand img{width:36px;height:36px;border-radius:10px}.actions,.tabs,.reactions{display:flex;gap:8px;flex-wrap:wrap}.button,button,input,select,textarea{font:inherit}.button,button{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);padding:9px 12px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}.primary,button.primary{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}button:disabled{opacity:.55;cursor:not-allowed}
 .pulse-nav{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none}.pulse-nav::-webkit-scrollbar{display:none}.pulse-nav-link{white-space:nowrap;text-decoration:none;border:1px solid rgba(110,223,246,.18);border-radius:999px;padding:8px 11px;background:rgba(255,255,255,.04);font-weight:850;color:#dffcff}
 .premium-glow-mark{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}.premium-glow-mark.check{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}@keyframes premiumGlow{0%,100%{transform:translateY(0) scale(1);filter:saturate(1)}50%{transform:translateY(-1px) scale(1.06);filter:saturate(1.25)}}
-.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab,.create-sheet{display:none}.mobile-topbar{align-items:center;gap:8px;justify-content:space-between;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}.icon-btn{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}.mobile-brand{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none;min-width:0}.mobile-brand img{width:34px;height:34px;border-radius:10px}.mobile-actions{display:flex;gap:6px;align-items:center}.badge-dot{position:relative}.badge-dot:after{content:"";position:absolute;right:6px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(54,229,143,.8)}.drawer-backdrop{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}.pulse-drawer{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}.pulse-drawer header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.pulse-drawer h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9fb5c0;margin:16px 0 8px}.drawer-link{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}.drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}.drawer-open .pulse-drawer{display:block;transform:translate3d(0,0,0)}.mobile-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}.mobile-bottom-nav a{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}.mobile-bottom-nav a:active{background:rgba(110,223,246,.12)}.pulse-fab{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}.create-sheet{position:fixed;left:10px;right:10px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:47;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(8,19,35,.98);box-shadow:0 24px 80px rgba(0,0,0,.52);padding:12px;transform:translateY(120%);transition:transform .22s ease}.create-sheet.open{display:block;transform:translateY(0)}.create-sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.create-sheet-grid button,.create-sheet-grid a{min-height:48px;text-decoration:none}
+.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab,.create-sheet{display:none}.mobile-topbar{align-items:center;gap:8px;justify-content:space-between;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(12px);border-bottom:1px solid rgba(110,223,246,.14)}.icon-btn{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}.mobile-brand{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none;min-width:0}.mobile-brand img{width:34px;height:34px;border-radius:10px}.mobile-actions{display:flex;gap:6px;align-items:center}.badge-dot{position:relative}.badge-dot:after{content:"";position:absolute;right:6px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(54,229,143,.8)}.drawer-backdrop{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(4px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}.pulse-drawer{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:18px 0 54px rgba(0,0,0,.38);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}.pulse-drawer header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.pulse-drawer h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9fb5c0;margin:16px 0 8px}.drawer-link{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}.drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}.drawer-open .pulse-drawer{display:block;transform:translate3d(0,0,0)}.mobile-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}.mobile-bottom-nav a{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mobile-bottom-nav .nav-ico{font-size:17px;line-height:1}.mobile-bottom-nav .nav-label{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mobile-bottom-nav a:active{background:rgba(110,223,246,.12)}.pulse-fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}.create-sheet{position:fixed;left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:47;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(8,19,35,.98);box-shadow:0 20px 60px rgba(0,0,0,.44);padding:12px;transform:translateY(120%);transition:transform .22s ease}.create-sheet.open{display:block;transform:translateY(0)}.create-sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.create-sheet-grid button,.create-sheet-grid a{min-height:48px;text-decoration:none}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}.card{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}.hero{display:flex;justify-content:space-between;gap:14px;align-items:center}.hero h1{font-size:clamp(34px,7vw,66px);line-height:.94;margin:6px 0}.muted,p{color:var(--muted);line-height:1.55}.badge{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08);font-weight:850}.live:before{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9);display:inline-block;margin-right:7px}
 textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}textarea{min-height:98px;resize:vertical}.composer{display:grid;gap:10px;margin:12px 0}.composer-tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.tabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.tabs button{white-space:nowrap}.tabs button.active{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}.feed{display:grid;gap:12px;margin-top:12px}.post{display:grid;gap:10px}.author{display:flex;align-items:center;justify-content:space-between;gap:10px}.author-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}.avatar img{width:100%;height:100%;object-fit:cover}.author-name{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-grid{display:grid;gap:8px}.media-grid img,.media-grid video{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}.tags{display:flex;gap:6px;flex-wrap:wrap}.tag{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}.side{position:sticky;top:12px;display:grid;gap:12px}.intel-list{display:grid;gap:8px}.intel-item{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04);text-decoration:none}.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}.toast.show{display:block}
 
@@ -15668,7 +15695,8 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	.reaction-strip{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;padding:2px 0 4px;scrollbar-width:none}.reaction-strip::-webkit-scrollbar{display:none}.reaction-pill{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px;font-weight:950;background:rgba(255,255,255,.045);transition:transform .14s ease,background .14s ease,border-color .14s ease}.reaction-pill b{font-size:12px}.reaction-pill.active{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.58);box-shadow:0 0 0 1px rgba(54,229,143,.12),0 0 24px rgba(54,229,143,.16);transform:translateY(-1px)}
 	.quick-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);padding:7px 0}.quick-action{min-height:36px;border:0;background:transparent;border-radius:10px;padding:6px 5px;color:#dffcff;font-size:13px}.quick-action:active{background:rgba(110,223,246,.1)}
 	.inline-comments{display:grid;gap:7px;padding-top:2px}.comments{display:grid;gap:7px;max-height:220px;overflow:auto}.comment{border-left:0;border-radius:12px;background:rgba(255,255,255,.045);padding:8px 10px}.comment p{margin:3px 0}.comment-preview-toggle{min-height:32px;justify-content:flex-start;border:0;background:transparent;color:#b9f7ff;padding:3px 0}.comment-composer{display:grid;grid-template-columns:34px minmax(0,1fr) 36px 38px;gap:6px;align-items:center}.comment-avatar{width:34px;height:34px;border-radius:999px}.comment-input{min-height:38px;border-radius:999px;padding:9px 13px}.comment-send,.comment-emoji{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0}.typing{min-height:18px;color:#b9f7ff;font-size:12px}.live-enter{animation:pulseIn .28s ease-out}@keyframes pulseIn{from{opacity:.2;transform:translateY(-8px)}to{opacity:1;transform:none}}
-	@media(max-width:900px){body{padding-top:0}.mobile-topbar{display:flex}.mobile-bottom-nav{display:grid}.pulse-fab{display:grid;place-items:center;bottom:calc(84px + env(safe-area-inset-bottom))}.wrap,.pulse-shell{width:100%;max-width:100vw;padding:12px 12px calc(154px + env(safe-area-inset-bottom));overflow-x:hidden}.top,.pulse-nav{display:none}.pulse-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pulse-actions .button,.pulse-actions button{width:100%;min-width:0}.pulse-grid,.layout{grid-template-columns:1fr!important;gap:12px}.hero,.pulse-hero{display:grid!important;gap:10px}.hero h1{font-size:clamp(28px,10vw,40px);line-height:1}.tabs{margin-left:-14px;margin-right:-14px;padding:0 14px 4px;max-width:calc(100vw - 24px)}.composer-tools{grid-template-columns:1fr 1fr!important}.composer .actions{display:grid;grid-template-columns:1fr;gap:8px}.composer .actions .button,.composer .actions button{width:100%;min-width:0}.author{align-items:flex-start}.author-main{max-width:calc(100% - 46px)}.author-name{white-space:normal}.reaction-strip{margin-left:-2px;margin-right:-2px}.quick-actions{grid-template-columns:repeat(5,minmax(0,1fr))}.quick-action{font-size:12px;padding:5px 2px}.side{position:static!important}.card{border-radius:14px;padding:12px;margin-left:0;margin-right:0}.toast{left:12px;right:12px;bottom:calc(96px + env(safe-area-inset-bottom));transform:none;min-width:0;width:auto}textarea{min-height:118px}.grid{grid-template-columns:1fr!important}.button,button{min-height:44px}.actions .button,.actions button{white-space:normal}}
+	@media(max-width:900px){body{padding-top:0}.mobile-topbar{display:flex}.mobile-bottom-nav{display:grid}.pulse-fab{display:grid;place-items:center}.wrap,.pulse-shell{width:100%;max-width:100vw;padding:12px 12px calc(168px + env(safe-area-inset-bottom));overflow-x:hidden}.top,.pulse-nav{display:none}.pulse-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pulse-actions .button,.pulse-actions button{width:100%;min-width:0}.pulse-grid,.layout{grid-template-columns:1fr!important;gap:12px}.hero,.pulse-hero{display:grid!important;gap:10px}.hero h1{font-size:clamp(28px,10vw,40px);line-height:1}.tabs{margin-left:-14px;margin-right:-14px;padding:0 14px 4px;max-width:calc(100vw - 24px)}.composer-tools{grid-template-columns:1fr 1fr!important}.composer .actions{display:grid;grid-template-columns:1fr;gap:8px}.composer .actions .button,.composer .actions button{width:100%;min-width:0}.author{align-items:flex-start}.author-main{max-width:calc(100% - 46px)}.author-name{white-space:normal}.reaction-strip{margin-left:-2px;margin-right:-2px}.quick-actions{grid-template-columns:repeat(5,minmax(0,1fr))}.quick-action{font-size:12px;padding:5px 2px}.side{position:static!important}.card{border-radius:14px;padding:12px;margin-left:0;margin-right:0}.toast{left:12px;right:12px;bottom:calc(108px + env(safe-area-inset-bottom));transform:none;min-width:0;width:auto}textarea{min-height:118px}.grid{grid-template-columns:1fr!important}.button,button{min-height:44px}.actions .button,.actions button{white-space:normal}}
+	@media(max-width:375px){.mobile-bottom-nav{padding-left:4px;padding-right:4px;gap:1px}.mobile-bottom-nav a{font-size:9px;border-radius:8px}.mobile-bottom-nav .nav-ico{font-size:16px}.pulse-fab{right:12px;width:50px;height:50px;min-height:50px}}
 	@media(max-width:430px){.wrap,.pulse-shell{padding-left:10px;padding-right:10px}.top .actions,.pulse-actions,.composer-tools{grid-template-columns:1fr!important}.badge{max-width:100%;white-space:normal}.card{padding:11px}.hero h1{font-size:34px}.button,button{padding:9px 10px}.comment-composer{grid-template-columns:30px minmax(0,1fr) 34px 36px}.comment-avatar{width:30px;height:30px}.quick-action{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
@@ -15711,7 +15739,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
 document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>document.getElementById('postType').value=b.dataset.type));
 document.getElementById('aiBtn').addEventListener('click',()=>{const body=document.getElementById('postBody');if(!body.value.trim()){body.value='Question for Pulse: ';document.getElementById('postType').value='poll';body.focus();return}body.value=body.value.trim()+"\\n\\n#CoinPilotXAI #MarketPsychology";toast('AI clarity pass added tags.')});
 document.getElementById('publishBtn').addEventListener('click',async()=>{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const d=await api('/api/media/upload',{method:'POST',body:fd});mediaIds.push(d.media.id)}const d=await api('/api/pulse/posts',{method:'POST',body:JSON.stringify({body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds})});const next=d.next_url||`/pulse/post/${d.post_id}`;document.getElementById('successView').href=next;document.getElementById('publishSuccess').classList.add('show');document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';if(d.post)applyLiveEvents([{event_type:'new_post',id:state.lastEventId||0,post_id:d.post_id,payload:{post:d.post}}]);toast('Post published.')}catch(e){toast(e.message)}finally{btn.disabled=false}});
-	document.addEventListener('click',async e=>{const menu=e.target.closest('[data-post-menu]');if(menu){const id=menu.dataset.postMenu;document.querySelectorAll('.post-sheet.open').forEach(s=>{if(s.dataset.postSheet!==id)s.classList.remove('open')});document.querySelector(`[data-post-sheet="${id}"]`)?.classList.toggle('open');return}if(!e.target.closest('.post-sheet,.post-menu-btn'))document.querySelectorAll('.post-sheet.open').forEach(s=>s.classList.remove('open'));const quick=e.target.closest('[data-quick-like]');if(quick){document.querySelector(`[data-post="${quick.dataset.quickLike}"][data-react="fire"]`)?.click();return}const view=e.target.closest('[data-view-comments],[data-open-comments]');if(view){const id=view.dataset.viewComments||view.dataset.openComments;loadComments(id,true);document.querySelector(`[data-comment-input="${id}"]`)?.focus();return}const emoji=e.target.closest('[data-comment-emoji]');if(emoji){const input=document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);if(input){input.value=(input.value||'')+' 🔥';input.focus()}return}const save=e.target.closest('[data-save-post]');if(save){toast('Post saved to your Pulse collection.');return}const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(countEl)countEl.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this Pulse post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});document.querySelector(`[data-post-id="${del.dataset.deletePost}"]`)?.remove();toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({public_player_id:msg.dataset.message})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'CoinPilotXAI Pulse',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
+	document.addEventListener('click',async e=>{const menu=e.target.closest('[data-post-menu]');if(menu){const id=menu.dataset.postMenu;document.querySelectorAll('.post-sheet.open').forEach(s=>{if(s.dataset.postSheet!==id)s.classList.remove('open')});document.querySelector(`[data-post-sheet="${id}"]`)?.classList.toggle('open');return}if(!e.target.closest('.post-sheet,.post-menu-btn'))document.querySelectorAll('.post-sheet.open').forEach(s=>s.classList.remove('open'));const quick=e.target.closest('[data-quick-like]');if(quick){document.querySelector(`[data-post="${quick.dataset.quickLike}"][data-react="fire"]`)?.click();return}const view=e.target.closest('[data-view-comments],[data-open-comments]');if(view){const id=view.dataset.viewComments||view.dataset.openComments;loadComments(id,true);document.querySelector(`[data-comment-input="${id}"]`)?.focus();return}const emoji=e.target.closest('[data-comment-emoji]');if(emoji){const input=document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);if(input){input.value=(input.value||'')+' 🔥';input.focus()}return}const save=e.target.closest('[data-save-post]');if(save){try{const d=await api(`/api/pulse/posts/${save.dataset.savePost}/save`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Saved.')}catch(err){toast(err.message)}return}const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(countEl)countEl.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this Pulse post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});document.querySelector(`[data-post-id="${del.dataset.deletePost}"]`)?.remove();toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({public_player_id:msg.dataset.message})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'CoinPilotXAI Pulse',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
 document.addEventListener('focusin',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;const postId=input.dataset.commentInput;loadComments(postId);api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{})});
 document.addEventListener('input',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;clearTimeout(input._typingTimer);const postId=input.dataset.commentInput;api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{});input._typingTimer=setTimeout(()=>api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{}),2400)});
 document.addEventListener('keydown',e=>{const input=e.target.closest('[data-comment-input]');if(input&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendComment(input.dataset.commentInput)}});
@@ -16061,15 +16089,17 @@ def pulse_get_or_create_group_conversation(cur, current_user_id, group=None, tit
         cur.execute(
             """
             INSERT INTO pulse_conversations
-            (conversation_type, group_id, title, owner_user_id, created_by_user_id, is_public, participant_limit, status, created_at, updated_at, last_activity_at)
-            VALUES (?, ?, ?, ?, ?, ?, 250, 'active', ?, ?, ?)
+            (conversation_type, group_id, linked_group_id, title, owner_user_id, created_by_user_id, privacy, is_public, participant_limit, status, created_at, updated_at, last_activity_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 250, 'active', ?, ?, ?)
             """,
             (
                 conversation_type,
                 group_id or None,
+                group_id or None,
                 title,
                 int(group.get("owner_user_id") or current_user_id),
                 current_user_id,
+                "community" if group_id else "private",
                 1 if group_id and str(group.get("group_type") or "public").lower() == "public" else 0,
                 now,
                 now,
@@ -16087,10 +16117,12 @@ def pulse_get_or_create_group_conversation(cur, current_user_id, group=None, tit
         cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, uid))
         if not cur.fetchone():
             cur.execute(
-                "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, created_at) VALUES (?, ?, ?, 0, 0, ?)",
-                (conversation_id, uid, role, now),
+                "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, joined_at, created_at) VALUES (?, ?, ?, 0, 0, ?, ?)",
+                (conversation_id, uid, role, now, now),
             )
-    cur.execute("UPDATE pulse_conversations SET title=?, updated_at=?, last_activity_at=? WHERE id=?", (title, now, now, conversation_id))
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+    member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("UPDATE pulse_conversations SET title=?, member_count=?, updated_at=?, last_activity_at=? WHERE id=?", (title, member_count, now, now, conversation_id))
     return {"ok": True, "conversation_id": conversation_id, "message": "Group chat ready.", "next_url": f"/pulse/messages/{conversation_id}"}, 200
 
 
@@ -16173,6 +16205,17 @@ def pulse_group_can_delete_post(post_ctx, user):
     return pulse_group_user_is_admin(user)
 
 
+def pulse_group_can_moderate_post(post_ctx, user):
+    if not user or not post_ctx:
+        return False
+    user_id = int(user.get("user_id") or 0)
+    if int(post_ctx.get("owner_user_id") or 0) == user_id:
+        return True
+    if pulse_group_role_allows_moderation(post_ctx.get("member_role")):
+        return True
+    return pulse_group_user_is_admin(user)
+
+
 def pulse_group_comment_payload(cur, comment, viewer_id=0):
     item = dict(comment or {})
     ident = pulse_identity_for_user(cur, item.get("user_id"))
@@ -16191,21 +16234,112 @@ def pulse_group_comment_payload(cur, comment, viewer_id=0):
     }
 
 
+def pulse_public_id_for_user(user_id):
+    suffix = str(abs(int(user_id or 0)))[-4:].rjust(4, "0")
+    return f"@Pilot-{suffix}"
+
+
+def pulse_media_url(url):
+    value = str(url or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "/", "data:")):
+        return value
+    if value.startswith("static/") or value.startswith("uploads/"):
+        return "/" + value
+    return value
+
+
+def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False):
+    raw = str(query or "").strip()
+    if not raw:
+        return []
+    q = raw[1:] if raw.startswith("@") else raw
+    q_lower = q.lower()
+    suffix = ""
+    if "-" in q_lower and q_lower.rsplit("-", 1)[-1].isdigit():
+        suffix = q_lower.rsplit("-", 1)[-1]
+    elif q_lower.isdigit():
+        suffix = q_lower[-4:]
+    like = f"%{q_lower}%"
+    params = [q_lower, q_lower, like, like, like, like]
+    email_clause = ""
+    if allow_email:
+        email_clause = " OR lower(u.email)=lower(?) "
+        params.append(q_lower)
+    suffix_clause = ""
+    if suffix:
+        suffix_clause = " OR CAST(ABS(u.user_id) AS TEXT) LIKE ? "
+        params.append(f"%{suffix}")
+    params.append(int(limit or 12))
+    cur.execute(
+        f"""
+        SELECT u.user_id, u.display_name, u.full_name, u.username, u.email, u.avatar_url,
+               ap.public_player_id, ap.display_name AS arena_name
+        FROM users u
+        LEFT JOIN arena_profiles ap ON ap.user_id=u.user_id
+        WHERE lower(COALESCE(ap.public_player_id,''))=lower(?)
+           OR lower(COALESCE(u.username,''))=lower(?)
+           OR lower(COALESCE(u.display_name,'')) LIKE ?
+           OR lower(COALESCE(u.full_name,'')) LIKE ?
+           OR lower(COALESCE(u.username,'')) LIKE ?
+           OR lower(COALESCE(ap.display_name,'')) LIKE ?
+           {email_clause}
+           {suffix_clause}
+        ORDER BY CASE WHEN u.user_id=? THEN 1 ELSE 0 END, u.user_id DESC
+        LIMIT ?
+        """,
+        params[:-1] + [int(viewer_user_id or 0), params[-1]],
+    )
+    users = []
+    for row in cur.fetchall():
+        item = dict(row)
+        ident = pulse_identity_for_user(cur, item.get("user_id"))
+        public_id = ident.get("public_player_id") or item.get("public_player_id") or pulse_public_id_for_user(item.get("user_id"))
+        if not str(public_id).startswith("@"):
+            public_id = f"@{public_id}"
+        users.append({
+            "id": int(item.get("user_id") or 0),
+            "user_id": int(item.get("user_id") or 0),
+            "display_name": ident.get("name") or item.get("display_name") or item.get("full_name") or item.get("username") or "Pulse user",
+            "public_pulse_id": public_id,
+            "public_player_id": public_id.lstrip("@"),
+            "avatar_url": ident.get("avatar_url") or item.get("avatar_url") or "",
+            "premium": bool(ident.get("premium_mark")),
+            "premium_mark": ident.get("premium_mark"),
+            "label": ident.get("primary_label") or ident.get("rank") or "CoinPilotXAI Pulse",
+            "is_self": int(item.get("user_id") or 0) == int(viewer_user_id or 0),
+        })
+    return users
+
+
 def pulse_user_id_from_public(cur, public_player_id):
     public_player_id = str(public_player_id or "").strip()
     if not public_player_id:
         return None
+    lookup = public_player_id[1:] if public_player_id.startswith("@") else public_player_id
     try:
-        cur.execute("SELECT user_id FROM arena_profiles WHERE public_player_id=? LIMIT 1", (public_player_id,))
+        cur.execute("SELECT user_id FROM arena_profiles WHERE lower(public_player_id)=lower(?) LIMIT 1", (lookup,))
         row = cur.fetchone()
         if row:
             return int(dict(row).get("user_id") or 0)
     except Exception:
         pass
-    if public_player_id.startswith("pilot-"):
+    try:
+        cur.execute(
+            "SELECT user_id FROM users WHERE lower(username)=lower(?) OR lower(display_name)=lower(?) OR lower(full_name)=lower(?) LIMIT 1",
+            (lookup, lookup, lookup),
+        )
+        row = cur.fetchone()
+        if row:
+            return int(dict(row).get("user_id") or 0)
+    except Exception:
+        pass
+    lower_lookup = lookup.lower()
+    if lower_lookup.startswith(("pilot-", "pulse-")):
         try:
-            suffix = int(public_player_id.rsplit("-", 1)[-1])
-            cur.execute("SELECT user_id FROM users WHERE CAST(user_id AS TEXT) LIKE ? LIMIT 1", (f"%{suffix}",))
+            suffix = lower_lookup.rsplit("-", 1)[-1]
+            cur.execute("SELECT user_id FROM users WHERE CAST(ABS(user_id) AS TEXT) LIKE ? ORDER BY user_id DESC LIMIT 1", (f"%{suffix}",))
             row = cur.fetchone()
             if row:
                 return int(dict(row).get("user_id") or 0)
@@ -16433,9 +16567,12 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     ]
     nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
     drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
-    mobile_bottom_html = "".join(f"<a href='{href}'>{label}</a>" for label, href in [("Home", "/pulse"), ("Reels", "/pulse/reels"), ("Spaces", "/pulse/spaces"), ("Market", "/pulse/marketplace"), ("Alerts", "/pulse/notifications"), ("Messages", "/pulse/messages"), ("Profile", "/pulse/profile")])
+    mobile_bottom_html = "".join(
+        f"<a href='{href}'><span class='nav-ico' aria-hidden='true'>{icon}</span><span class='nav-label'>{label}</span></a>"
+        for label, href, icon in [("Home", "/pulse", "⌂"), ("Reels", "/pulse/reels", "▶"), ("Spaces", "/pulse/spaces", "◇"), ("Market", "/pulse/marketplace", "▣"), ("Alerts", "/pulse/notifications", "!"), ("Chats", "/pulse/messages", "✉"), ("Profile", "/pulse/profile", "◉")]
+    )
     default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}}.mobile-bottom-nav a{{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}}.pulse-fab{{position:fixed;right:16px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -17623,7 +17760,9 @@ def pulse_messages_page():
         (user["user_id"], user["user_id"]),
     )
     conversations = [dict(row) for row in cur.fetchall()]
-    cards = []
+    direct_cards = []
+    group_cards = []
+    community_cards = []
     for convo in conversations:
         other_id = int(convo.get("other_user_id") or 0)
         convo_type = convo.get("conversation_type") or "direct"
@@ -17636,10 +17775,38 @@ def pulse_messages_page():
         preview = last.get("body") or ("Media message" if last.get("message_type") not in {"", "text", None} else "No messages yet.")
         avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
         chat_type = clean_html(convo_type.replace("_", " "))
-        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p><span class='pill'>{chat_type}</span></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>")
+        card = f"<article class='card messenger-convo-card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p><p><span class='pill'>{chat_type}</span> <span class='pill'>{int(convo.get('member_count') or 0) or (2 if convo_type == 'direct' else 1)} members</span></p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>"
+        if convo_type == "direct":
+            direct_cards.append(card)
+        elif "community" in convo_type:
+            community_cards.append(card)
+        else:
+            group_cards.append(card)
     conn.close()
-    main = f"<section class='card'><h2>Pulse Messenger</h2><p>Message friends, creators, teachers, sellers, and group communities using public identities only.</p><div class='actions'><a class='button primary' href='/pulse/messages'>Direct</a><a class='button' href='/pulse/groups'>Groups</a><a class='button' href='/pulse/groups'>Communities</a></div></section><section>{''.join(cards) or '<article class=\"card\"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, Teacher, or Group pages to start a safe Pulse conversation.</p></article>'}</section>"
-    return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, friend messages, and request-friendly replies.", main)
+    empty_group = "<article class='card'><h2>No group chats yet.</h2><p>No group chats yet. Create one with friends, creators, or your community.</p><button class='primary' data-open-group-create>Create Group Chat</button></article>"
+    main = f"""
+    <style>.messenger-tabs-main{{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}}.messenger-tabs-main button{{flex:0 0 auto;border-radius:999px;min-height:40px;padding:8px 14px}}.messenger-tabs-main button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border-color:transparent}}.messenger-menu{{position:relative;flex:0 0 auto}}.messenger-menu summary{{list-style:none;cursor:pointer}}.messenger-menu div{{position:absolute;right:0;z-index:20;display:grid;gap:6px;min-width:220px;padding:8px;border:1px solid var(--line);border-radius:16px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.35)}}.messenger-menu button{{width:100%;justify-content:flex-start}}.messenger-tab-panel[hidden]{{display:none}}.messenger-convo-card{{overflow:hidden}}.messenger-search-results{{display:grid;gap:8px;margin-top:10px}}.messenger-user-result{{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.04)}}.messenger-modal{{position:fixed;inset:0;z-index:90;display:none;place-items:end center;background:rgba(0,0,0,.46);backdrop-filter:blur(8px);padding:14px}}.messenger-modal.open{{display:grid}}.messenger-sheet{{width:min(620px,100%);max-height:min(760px,88dvh);overflow:auto;border:1px solid var(--line);border-radius:24px;background:#071321;padding:16px;box-shadow:0 30px 90px rgba(0,0,0,.55)}}.selected-users{{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}}@media(max-width:620px){{.messenger-user-result{{grid-template-columns:auto minmax(0,1fr)}}.messenger-user-result button{{grid-column:1/-1}}.messenger-menu div{{position:fixed;right:12px;left:12px;top:auto;bottom:calc(110px + env(safe-area-inset-bottom))}}}}</style>
+    <section class='card'><div class='person'><div><h2>Pulse Messenger</h2><p>Conversations, open rooms, and group/community chats in one place.</p></div><details class='messenger-menu'><summary class='button'>...</summary><div><button data-open-group-create>Create Group Chat</button><button data-focus-private>New Private Message</button><button type='button'>Message Requests</button><button type='button'>Muted Chats</button><button type='button'>Blocked Users</button><button type='button'>Report a Problem</button></div></details></div><div class='messenger-tabs-main'><button class='active' data-msg-tab='direct'>Conversations</button><button data-msg-tab='room'>Chat Room</button><button data-msg-tab='group'>Group Chat</button></div></section>
+    <section class='card' id='privateSearchCard'><h2>Start a Conversation</h2><form id='pulseUserSearch'><input name='q' placeholder='Search by name or public Pulse ID' autocomplete='off'><button class='primary'>Search</button></form><div class='messenger-search-results' id='pulseUserResults'></div></section>
+    <section class='messenger-tab-panel' data-msg-panel='direct'>{''.join(direct_cards) or '<article class="card"><h2>No conversations yet.</h2><p>Search by display name or public Pulse ID to start a private Pulse chat.</p></article>'}</section>
+    <section class='messenger-tab-panel' data-msg-panel='room' hidden><article class='card'><h2>Chat Room</h2><p>Open community rooms are being unified with Pulse Groups and Spaces. Use Groups for live community chat today.</p><a class='button primary' href='/pulse/groups'>Browse Groups</a></article></section>
+    <section class='messenger-tab-panel' data-msg-panel='group' hidden>{''.join(group_cards + community_cards) or empty_group}</section>
+    <section class='messenger-modal' id='groupChatModal'><div class='messenger-sheet'><h2>Create Group Chat</h2><input id='groupChatTitle' placeholder='Group chat name'><textarea id='groupChatDescription' placeholder='Description optional'></textarea><select id='groupChatPrivacy'><option value='private'>Private</option><option value='invite_only'>Invite Only</option><option value='community'>Community</option></select><label>Optional group image<input id='groupChatPhoto' type='file' accept='image/jpeg,image/png,image/webp'></label><form id='groupChatSearch'><input name='q' placeholder='Add people by name or public Pulse ID'><button>Search</button></form><div class='messenger-search-results' id='groupChatResults'></div><div class='selected-users' id='selectedUsers'></div><div class='actions'><button type='button' id='cancelGroupChat'>Cancel</button><button class='primary' id='createGroupChat' type='button'>Create Group Chat</button></div></div></section>
+    """
+    script = """
+    const selectedMembers=new Map();
+    function mEsc(v){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+    function renderPulseUser(u,selectMode=false){const avatar=u.avatar_url?`<img src="${mEsc(u.avatar_url)}" alt="">`:mEsc(String(u.display_name||'P').slice(0,1));return `<div class="messenger-user-result" data-user-result="${u.id}"><span class="avatar">${avatar}</span><div><strong>${mEsc(u.display_name||'Pulse user')}${u.premium?' ✦':''}</strong><p class="muted">${mEsc(u.public_pulse_id||'')} • ${mEsc(u.label||'CoinPilotXAI Pulse')}</p></div><button class="${selectMode?'':'primary'}" data-${selectMode?'select':'message'}-user="${u.id}" ${u.is_self?'disabled':''}>${u.is_self?'You':selectMode?(selectedMembers.has(String(u.id))?'Remove':'Add'):'Message'}</button></div>`}
+    async function searchPulseUsers(q){const r=await fetch('/api/pulse/users/search?q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Search failed.');return d.users||[]}
+    function renderSelected(){document.getElementById('selectedUsers').innerHTML=[...selectedMembers.values()].map(u=>`<span class="pill">${u.display_name||u.public_pulse_id}<button type="button" data-remove-selected="${u.id}">×</button></span>`).join('')||'<span class="muted">No members selected yet.</span>'}
+    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-msg-tab]');if(tab){document.querySelectorAll('[data-msg-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('[data-msg-panel]').forEach(p=>p.hidden=p.dataset.msgPanel!==tab.dataset.msgTab);return}if(e.target.closest('[data-open-group-create]')){document.getElementById('groupChatModal').classList.add('open');return}if(e.target.closest('#cancelGroupChat')||e.target.id==='groupChatModal'){document.getElementById('groupChatModal').classList.remove('open');return}if(e.target.closest('[data-focus-private]')){document.getElementById('privateSearchCard')?.scrollIntoView({behavior:'smooth'});document.querySelector('#pulseUserSearch input')?.focus();return}const msg=e.target.closest('[data-message-user]');if(msg){try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({target_user_id:msg.dataset.messageUser})});location.href=d.next_url}catch(err){toast(err.message)}return}const sel=e.target.closest('[data-select-user]');if(sel){const card=sel.closest('[data-user-result]');const id=String(sel.dataset.selectUser);if(selectedMembers.has(id))selectedMembers.delete(id);else selectedMembers.set(id,{id:Number(id),display_name:card.querySelector('strong')?.textContent?.replace(' ✦','')||'Pulse user'});renderSelected();sel.textContent=selectedMembers.has(id)?'Remove':'Add';return}const rem=e.target.closest('[data-remove-selected]');if(rem){selectedMembers.delete(String(rem.dataset.removeSelected));renderSelected();return}});
+    document.getElementById('pulseUserSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('pulseUserResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,false)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
+    document.getElementById('groupChatSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupChatResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,true)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
+    document.getElementById('createGroupChat').addEventListener('click',async()=>{try{const ids=[...selectedMembers.keys()].map(Number);const title=document.getElementById('groupChatTitle').value.trim();if(!title)throw new Error('Add a group chat name.');const d=await pulseApi('/api/pulse/messages/group/create',{method:'POST',body:JSON.stringify({title,description:document.getElementById('groupChatDescription').value,privacy:document.getElementById('groupChatPrivacy').value,participant_ids:ids})});location.href='/pulse/messages/'+d.conversation_id}catch(err){toast(err.message)}});
+    renderSelected();
+    if(location.hash==='#group-chat')document.querySelector('[data-msg-tab="group"]')?.click();
+    """
+    return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, group chats, community chats, and request-friendly replies.", main, "", script)
 
 
 def pulse_message_media_html(message):
@@ -17819,7 +17986,7 @@ def pulse_message_thread_page(conversation_id):
     .messenger-top{{position:relative;z-index:8;display:grid;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;background:rgba(7,17,31,.94);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.08);pointer-events:auto}}
     .messenger-handle{{width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.32);margin:0 auto;pointer-events:none}}
     .messenger-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:auto;position:relative;z-index:9}}
-    .messenger-tabs{{display:grid;grid-template-columns:1fr 1fr;gap:8px;position:relative;z-index:10;pointer-events:auto}}
+    .messenger-tabs{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;position:relative;z-index:10;pointer-events:auto}}
     .messenger-tabs a,.messenger-more,.messenger-close{{pointer-events:auto;position:relative;z-index:11}}
     .messenger-tabs a{{min-height:42px;border-radius:999px;text-decoration:none;display:grid;place-items:center;border:1px solid rgba(110,223,246,.2);font-weight:950;background:rgba(255,255,255,.05)}}
     .messenger-tabs .active{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}
@@ -17841,7 +18008,7 @@ def pulse_message_thread_page(conversation_id):
       <header class='messenger-top'>
         <div class='messenger-handle'></div>
         <div class='messenger-head'><div class='person'><span class='avatar'>{avatar}</span><div><strong>{other_name}</strong><p class='muted'>{subtitle}</p></div></div><div class='private-chat-tools'><button class='messenger-more' id='safetyMenuBtn' type='button'>⋯</button><a class='button messenger-close' href='/pulse/messages'>Close</a><div class='safety-menu' id='safetyMenu' hidden><button type='button'>Mute Notifications</button><button type='button'>Report User</button><button type='button'>Block User</button><button type='button'>Delete Own Message</button></div></div></div>
-        <nav class='messenger-tabs'><a href='/pulse/messages'>Conversations</a><a class='active' href='/pulse/messages/{conversation_id}'>Chat Room</a></nav>
+        <nav class='messenger-tabs'><a href='/pulse/messages'>Conversations</a><a class='active' href='/pulse/messages/{conversation_id}'>Chat Room</a><a href='/pulse/messages#group-chat'>Group Chat</a></nav>
       </header>
       <section class='message-list' id='messages'>{message_html or '<article class="msg theirs"><p>No messages yet. Start the conversation with text, media, or a Pulse share.</p></article>'}</section>
       <form class='message-composer' id='replyForm'><button id='attachBtn' type='button'>+</button><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}' aria-label='Camera'>📷</a><input id='replyBody' placeholder='Message...' autocomplete='off'><button class='primary' id='replyBtn'>➤</button></form>
@@ -17883,7 +18050,9 @@ def pulse_group_detail_page(group_slug):
         WHERE gp.group_id=?
           AND gp.deleted_at IS NULL
           AND COALESCE(gp.status,'published') NOT IN ('deleted','removed')
-        ORDER BY gp.id DESC LIMIT 50
+        ORDER BY CASE WHEN gp.pinned_at IS NOT NULL AND gp.pinned_at!='' THEN 0 ELSE 1 END,
+                 gp.pinned_at DESC,
+                 gp.id DESC LIMIT 50
         """,
         (group_id,),
     )
@@ -17910,36 +18079,68 @@ def pulse_group_detail_page(group_slug):
             for c in reversed(previews)
         )
         media_html = ""
-        media_url = clean_html(p.get("media_url") or "")
+        media_url = pulse_media_url(p.get("media_url") or "")
         media_type = clean_html(p.get("media_type") or "")
+        thumbnail_url = pulse_media_url(p.get("thumbnail_url") or "")
+        if not media_url:
+            cur.execute(
+                """
+                SELECT media_url, thumbnail_url, media_type
+                FROM pulse_group_post_media
+                WHERE group_post_id=?
+                ORDER BY id ASC LIMIT 1
+                """,
+                (int(p.get("id") or 0),),
+            )
+            media_row = dict(cur.fetchone() or {})
+            media_url = pulse_media_url(media_row.get("media_url") or "")
+            thumbnail_url = pulse_media_url(media_row.get("thumbnail_url") or "")
+            media_type = clean_html(media_row.get("media_type") or media_type)
         if media_url and media_type == "video":
-            media_html = f"<video controls playsinline preload='metadata' poster='{clean_html(p.get('thumbnail_url') or '')}' style='width:100%;border-radius:16px;margin-top:10px;background:#050b14'><source src='{media_url}'></video>"
+            media_html = f"<div class='group-media-frame'><video controls playsinline preload='metadata' poster='{clean_html(thumbnail_url)}'><source src='{clean_html(media_url)}'></video></div>"
         elif media_url:
-            media_html = f"<img src='{media_url}' alt='Group post media' loading='lazy' style='width:100%;max-height:520px;object-fit:cover;border-radius:16px;margin-top:10px;background:#050b14'>"
+            media_html = f"<button class='group-media-frame' type='button' data-media-fullscreen='{clean_html(media_url)}'><img src='{clean_html(media_url)}' alt='Group post media' loading='lazy' onerror=\"this.closest('.group-media-frame').classList.add('is-broken');this.replaceWith(document.createTextNode('Media could not load.'))\"></button>"
         post_id = int(p.get("id") or 0)
         reaction_buttons = "".join(
             f"<button class='group-reaction-chip {'primary' if stats.get('my_reaction') == key else ''}' data-group-react='{post_id}' data-reaction='{key}'>{label} <span data-reaction-count='{post_id}:{key}'>{int(stats['reactions'].get(key) or 0)}</span></button>"
             for key, label in [("fire", "Fire"), ("smart", "Smart"), ("scam_alert", "Scam Alert"), ("whale", "Whale"), ("bullish", "Bullish"), ("bearish", "Bearish")]
         )
-        menu_html = f"<details class='group-post-menu'><summary>...</summary><div><button data-group-report-post='{post_id}'>Report Post</button>{'<button data-group-post-delete=\"'+str(post_id)+'\">Delete Post</button>' if can_delete else ''}{'<button data-group-post-delete=\"'+str(post_id)+'\" data-delete-reason=\"moderator_remove\">Remove From Group</button><button type=\"button\">Pin Post</button>' if pulse_group_role_allows_moderation(current_role) else ''}</div></details>"
+        is_pinned = bool(p.get("pinned_at"))
+        moderator_controls = ""
+        if pulse_group_role_allows_moderation(current_role):
+            moderator_controls = f"<button data-group-remove-user='{int(p.get('user_id') or 0)}'>Remove User From Group</button><button data-group-post-pin='{post_id}'>{'Unpin Post' if is_pinned else 'Pin Post'}</button>"
+        menu_html = f"<details class='group-post-menu'><summary>...</summary><div><button data-group-report-post='{post_id}'>Report Post</button>{'<button data-group-post-delete=\"'+str(post_id)+'\">Delete Post</button>' if can_delete else ''}{moderator_controls}</div></details>"
         author_avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
+        pinned_badge = "<span class='pill pinned-pill'>Pinned</span> " if is_pinned else ""
         post_cards.append(
             f"<article class='card group-post-card' data-group-post='{post_id}'><div class='group-post-head'><div class='person'><span class='avatar'>{author_avatar}</span><div><strong>{clean_html(ident.get('name') or p.get('author') or 'Pulse Member')}{pulse_premium_mark_html(ident.get('premium_mark'))}</strong><p class='muted'>{clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')} <span class='time-dot'>•</span> {smart_time_html(p.get('created_at'))}</p></div></div>{menu_html}</div>"
-        f"<p>{clean_html(p.get('body') or p.get('content') or '')}</p>{media_html}<p class='group-post-meta'><span class='pill'>{clean_html(p.get('post_type') or 'text')}</span> <span class='pill'>{clean_html(p.get('moderation_status') or 'approved')}</span> <span class='pill'><span data-comment-count='{post_id}'>{stats['comment_count']}</span> comments</span></p>"
+        f"<p>{clean_html(p.get('body') or p.get('content') or '')}</p>{media_html}<p class='group-post-meta'>{pinned_badge}<span class='pill'>{clean_html(p.get('post_type') or 'text')}</span> <span class='pill'>{clean_html(p.get('moderation_status') or 'approved')}</span> <span class='pill'><span data-comment-count='{post_id}'>{stats['comment_count']}</span> comments</span></p>"
             f"<div class='group-reaction-row'>{reaction_buttons}</div><div class='group-comments' data-comments-for='{post_id}'>{preview_html}</div><form class='group-comment-form' data-group-comment-form='{post_id}'><input name='body' placeholder='Write a comment...' autocomplete='off'><button class='primary'>Comment</button></form></article>"
         )
     post_html = "".join(post_cards)
     conn.close()
     slug = clean_html(group.get("slug") or str(group_id))
-    style = "<style>.group-post-head{display:flex;justify-content:space-between;gap:10px;align-items:start;min-width:0}.group-post-menu{position:relative;flex:0 0 auto}.group-post-menu summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:950}.group-post-menu div{position:absolute;right:0;z-index:8;display:grid;gap:6px;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:14px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.35)}.group-reaction-row{display:flex;gap:7px;overflow-x:auto;padding:6px 0;max-width:100%;scrollbar-width:thin}.group-reaction-chip{min-height:38px;font-size:13px;padding:7px 10px;flex:0 0 auto}.group-comments{display:grid;gap:8px;margin-top:8px}.group-comment{border-left:2px solid rgba(110,223,246,.3);padding:7px 9px;background:rgba(255,255,255,.035);border-radius:10px}.group-comment p{margin:3px 0}.group-comment-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:10px}.group-comment-form input{min-height:42px;border-radius:999px}.group-community-actions{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}.group-community-actions button,.group-community-actions .button{width:100%;min-width:0}.group-meta-pills,.group-post-meta{display:flex;gap:6px;flex-wrap:wrap}.group-composer-actions{display:grid;grid-template-columns:1fr;gap:10px}.group-post-card{overflow:hidden}@media(min-width:768px){.group-community-actions,.group-composer-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.group-comment-form{grid-template-columns:1fr}.group-post-head{align-items:center}.group-post-menu div{position:fixed;right:12px;left:12px;top:auto;bottom:calc(110px + env(safe-area-inset-bottom))}.group-reaction-chip{flex:0 0 auto}}</style>"
-    main = f"{style}<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'><button class='primary' data-join-group='{slug}'>Join Group</button><button data-open-group-chat='{slug}'>Open Group Chat</button><button data-invite-group='{slug}'>Invite</button><button data-report-group='{slug}'>Report</button><button data-leave-group='{slug}'>Leave</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
+    style = "<style>.group-post-head{display:flex;justify-content:space-between;gap:10px;align-items:start;min-width:0}.group-post-menu{position:relative;flex:0 0 auto}.group-post-menu summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:950}.group-post-menu div{position:absolute;right:0;z-index:8;display:grid;gap:6px;min-width:210px;padding:8px;border:1px solid var(--line);border-radius:14px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.35)}.group-post-menu button{width:100%;justify-content:flex-start}.group-media-frame{display:block;width:100%;margin-top:12px;padding:0;border:0;border-radius:18px;overflow:hidden;background:linear-gradient(135deg,rgba(110,223,246,.09),rgba(255,255,255,.035));box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}.group-media-frame img,.group-media-frame video{display:block;width:100%;max-height:540px;object-fit:cover;background:#050b14}.group-media-frame.is-broken{padding:18px;border:1px dashed rgba(255,255,255,.18);color:var(--muted);text-align:center}.pinned-pill{background:rgba(255,209,102,.14);border-color:rgba(255,209,102,.38)}.group-reaction-row{display:flex;gap:7px;overflow-x:auto;padding:6px 0;max-width:100%;scrollbar-width:thin}.group-reaction-chip{min-height:38px;font-size:13px;padding:7px 10px;flex:0 0 auto}.group-comments{display:grid;gap:8px;margin-top:8px}.group-comment{border-left:2px solid rgba(110,223,246,.3);padding:7px 9px;background:rgba(255,255,255,.035);border-radius:10px}.group-comment p{margin:3px 0}.group-comment-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:10px}.group-comment-form input{min-height:42px;border-radius:999px}.group-community-actions{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}.group-community-actions button,.group-community-actions .button{width:100%;min-width:0}.group-meta-pills,.group-post-meta{display:flex;gap:6px;flex-wrap:wrap}.group-composer-actions{display:grid;grid-template-columns:1fr;gap:10px}.group-post-card{overflow:hidden}.group-report-modal{position:fixed;inset:0;z-index:100;display:none;place-items:end center;background:rgba(0,0,0,.45);backdrop-filter:blur(8px);padding:14px}.group-report-modal.open{display:grid}.group-report-sheet{width:min(520px,100%);border:1px solid var(--line);border-radius:22px;background:#071321;padding:16px;box-shadow:0 28px 90px rgba(0,0,0,.5)}@media(min-width:768px){.group-community-actions,.group-composer-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.group-comment-form{grid-template-columns:1fr}.group-post-head{align-items:center}.group-post-menu div{position:fixed;right:12px;left:12px;top:auto;bottom:calc(110px + env(safe-area-inset-bottom))}.group-reaction-chip{flex:0 0 auto}.group-media-frame img,.group-media-frame video{max-height:70dvh;object-fit:contain}}</style>"
+    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'><button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section><section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by name or public Pulse ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>"
     script = f"""
     const groupSlug={json.dumps(slug)};
+    let pendingReportPostId=null;
+    let reportMode='post';
+    const reportModal=document.getElementById('groupReportModal');
+    const inviteModal=document.getElementById('groupInviteModal');
     function gEsc(v){{return String(v||'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]))}}
     function groupTime(ts){{return window.CoinPilotTime?window.CoinPilotTime.element(ts):gEsc(ts||'Recently')}}
     function renderGroupComment(c){{return `<div class="group-comment" data-comment-id="${{c.id}}"><strong>${{gEsc(c.author_name||'Pulse Member')}}</strong><p>${{gEsc(c.body||'')}}</p><small>${{groupTime(c.created_at)}}</small>${{c.can_delete?`<button data-group-comment-delete="${{c.id}}">Delete</button>`:''}}<button data-group-comment-report="${{c.id}}">Report</button></div>`}}
     function updateReactions(postId,data){{Object.entries(data.reactions||{{}}).forEach(([k,v])=>{{document.querySelectorAll(`[data-reaction-count="${{postId}}:${{k}}"]`).forEach(n=>n.textContent=v)}});document.querySelectorAll(`[data-group-react="${{postId}}"]`).forEach(b=>b.classList.toggle('primary',b.dataset.reaction===(data.my_reaction||'')))}}
-    document.addEventListener('click',async e=>{{const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),inv=e.target.closest('[data-invite-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(j){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});toast('Joined group.')}} if(l){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});toast('Left group.')}} if(inv){{const url=location.origin+'/pulse/groups/'+encodeURIComponent(inv.dataset.inviteGroup);if(navigator.share){{navigator.share({{title:'Join this Pulse Group',url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});toast('Group invite link ready.')}}}} if(gc){{const d=await pulseApi('/api/pulse/messages/group/create',{{method:'POST',body:JSON.stringify({{group_slug:gc.dataset.openGroupChat,title:document.querySelector('h1')?.textContent||'Group chat'}})}});location.href='/pulse/messages/'+d.conversation_id}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.')}} if(rp){{await pulseApi('/api/pulse/groups/posts/report',{{method:'POST',body:JSON.stringify({{group_post_id:rp.dataset.groupReportPost,reason:'Needs review'}})}});toast('Post report sent.')}} if(cd){{await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{const post=pd.closest('[data-group-post]');await pulseApi(`/api/pulse/groups/posts/${{pd.dataset.groupPostDelete}}/delete`,{{method:'POST',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast('Group post deleted.')}}}}catch(err){{toast(err.message)}}}});
+    function closeMenus(el){{el?.closest('details')?.removeAttribute('open')}}
+    function setLoading(btn,on,label){{if(!btn)return;btn.disabled=on;if(on){{btn.dataset.originalText=btn.textContent;btn.textContent=label||'Working...'}}else if(btn.dataset.originalText){{btn.textContent=btn.dataset.originalText;delete btn.dataset.originalText}}}}
+    function updateMemberCount(n){{document.querySelectorAll('[data-group-member-count]').forEach(el=>el.textContent=n)}}
+    document.getElementById('cancelGroupReport')?.addEventListener('click',()=>{{reportModal?.classList.remove('open');pendingReportPostId=null;reportMode='post'}});
+    document.getElementById('submitGroupReport')?.addEventListener('click',async e=>{{const btn=e.currentTarget;setLoading(btn,true,'Submitting...');try{{const payload={{reason:document.getElementById('groupReportReason').value,notes:document.getElementById('groupReportNotes').value}};if(reportMode==='group')await pulseApi(`/api/pulse/groups/{group_id}/report`,{{method:'POST',body:JSON.stringify(payload)}});else await pulseApi(`/api/groups/posts/${{pendingReportPostId}}/report`,{{method:'POST',body:JSON.stringify(payload)}});reportModal?.classList.remove('open');toast('Report submitted.');pendingReportPostId=null;reportMode='post';document.getElementById('groupReportNotes').value='';}}catch(err){{console.error('Group action failed',err);toast(err.message)}}finally{{setLoading(btn,false)}}}});
+    document.getElementById('cancelGroupInvite')?.addEventListener('click',()=>inviteModal?.classList.remove('open'));
+    document.getElementById('copyGroupInvite')?.addEventListener('click',async()=>{{try{{const d=await pulseApi(`/api/pulse/groups/{group_id}/invite-link`,{{method:'POST',body:JSON.stringify({{}})}});await navigator.clipboard.writeText(d.invite_url).catch(()=>{{}});toast('Invite link copied.')}}catch(err){{toast(err.message)}}}});
+    document.getElementById('groupInviteSearch')?.addEventListener('submit',async e=>{{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupInviteResults');box.innerHTML='<p class="muted">Searching...</p>';try{{const r=await fetch('/api/pulse/users/search?q='+encodeURIComponent(q),{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Search failed.');box.innerHTML=(d.users||[]).map(u=>`<div class="messenger-user-result"><span class="avatar">${{u.avatar_url?`<img src="${{gEsc(u.avatar_url)}}" alt="">`:gEsc((u.display_name||'P').slice(0,1))}}</span><div><strong>${{gEsc(u.display_name||'Pulse user')}}</strong><p class="muted">${{gEsc(u.public_pulse_id||'')}}</p></div><button data-send-group-invite="${{u.id}}" ${{u.is_self?'disabled':''}}>Invite</button></div>`).join('')||'<p class="muted">No users found.</p>';}}catch(err){{box.innerHTML=`<p class="muted">${{gEsc(err.message)}}</p>`}}}});
+    document.addEventListener('click',async e=>{{const full=e.target.closest('[data-media-fullscreen]');if(full){{window.open(full.dataset.mediaFullscreen,'_blank','noopener');return}}const jid=e.target.closest('[data-join-group-id]'),lid=e.target.closest('[data-leave-group-id]'),rid=e.target.closest('[data-report-group-id]'),invid=e.target.closest('[data-invite-group-id]'),gcid=e.target.closest('[data-open-group-chat-id]'),inviteUser=e.target.closest('[data-send-group-invite]');const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),inv=e.target.closest('[data-invite-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),rm=e.target.closest('[data-group-remove-user]'),pin=e.target.closest('[data-group-post-pin]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(jid){{setLoading(jid,true);const d=await pulseApi(`/api/pulse/groups/${{jid.dataset.joinGroupId}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(jid,false);return}} if(lid){{setLoading(lid,true);const d=await pulseApi(`/api/pulse/groups/${{lid.dataset.leaveGroupId}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(lid,false);return}} if(gcid){{setLoading(gcid,true);const d=await pulseApi(`/api/pulse/groups/${{gcid.dataset.openGroupChatId}}/chat/open`,{{method:'POST',body:JSON.stringify({{}})}});location.href=d.next_url||('/pulse/messages/'+d.conversation_id);return}} if(invid){{inviteModal?.classList.add('open');return}} if(rid){{reportMode='group';pendingReportPostId=null;document.getElementById('groupReportTitle').textContent='Report Group';reportModal?.classList.add('open');return}} if(inviteUser){{setLoading(inviteUser,true,'Sending...');await pulseApi(`/api/pulse/groups/{group_id}/invite`,{{method:'POST',body:JSON.stringify({{invitee_user_id:inviteUser.dataset.sendGroupInvite}})}});toast('Invite sent.');setLoading(inviteUser,false);return}} if(j){{setLoading(j,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(j,false)}} if(l){{setLoading(l,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(l,false)}} if(inv){{const url=location.origin+'/pulse/groups/'+encodeURIComponent(inv.dataset.inviteGroup);if(navigator.share){{navigator.share({{title:'Join this Pulse Group',url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});toast('Group invite link ready.')}}}} if(gc){{setLoading(gc,true);const d=await pulseApi('/api/pulse/messages/group/create',{{method:'POST',body:JSON.stringify({{group_slug:gc.dataset.openGroupChat,title:document.querySelector('h1')?.textContent||'Group chat'}})}});location.href='/pulse/messages/'+d.conversation_id}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{setLoading(gr,true);const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.');setLoading(gr,false)}} if(rp){{reportMode='post';document.getElementById('groupReportTitle').textContent='Report Post';pendingReportPostId=rp.dataset.groupReportPost;reportModal?.classList.add('open');closeMenus(rp);}} if(rm){{if(!confirm('Remove this user from the group?'))return;setLoading(rm,true);await pulseApi(`/api/groups/{group_id}/remove-member`,{{method:'POST',body:JSON.stringify({{user_id:rm.dataset.groupRemoveUser}})}});toast('User removed from group.');closeMenus(rm);setLoading(rm,false)}} if(pin){{setLoading(pin,true);const d=await pulseApi(`/api/groups/posts/${{pin.dataset.groupPostPin}}/pin`,{{method:'POST',body:JSON.stringify({{}})}});toast(d.message||'Pin updated.');closeMenus(pin);location.reload()}} if(cd){{setLoading(cd,true);await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{if(!confirm('Delete this group post?'))return;const post=pd.closest('[data-group-post]');setLoading(pd,true);await pulseApi(`/api/groups/posts/${{pd.dataset.groupPostDelete}}`,{{method:'DELETE',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast('Group post deleted.');closeMenus(pd)}}}}catch(err){{console.error('Group action failed',err);toast(err.message)}}}});
     document.querySelectorAll('[data-group-comment-form]').forEach(form=>form.addEventListener('submit',async e=>{{e.preventDefault();const input=form.querySelector('input[name=body]');try{{const postId=form.dataset.groupCommentForm;const d=await pulseApi(`/api/pulse/groups/posts/${{postId}}/comments`,{{method:'POST',body:JSON.stringify({{body:input.value}})}});form.previousElementSibling?.insertAdjacentHTML('beforeend',renderGroupComment(d.comment));document.querySelectorAll(`[data-comment-count="${{postId}}"]`).forEach(n=>n.textContent=Number(n.textContent||0)+1);input.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}}));
     document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{const fd=new FormData();fd.append('body',document.getElementById('groupPostBody').value);const file=document.getElementById('groupMediaFile').files[0];if(file)fd.append('media',file);const r=await fetch('/api/pulse/groups/{slug}/posts',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Could not post.');location.reload()}}catch(err){{toast(err.message)}}}});
     let groupLastEventId=0;
@@ -18357,12 +18558,40 @@ def api_pulse_reels_comment():
     return jsonify(result), status
 
 
-@webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET", "DELETE"])
+@webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET", "PATCH", "DELETE"])
 def api_pulse_post(post_id):
     init_db()
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    if request.method == "PATCH":
+        trace_id = secrets.token_hex(6)
+        payload = request.get_json(silent=True) or {}
+        body = clean_html(payload.get("body") or "")[:5000]
+        title = clean_html(payload.get("title") or "")[:180]
+        visibility = clean_html(payload.get("visibility") or "public")[:40]
+        if visibility not in {"public", "followers", "private"}:
+            visibility = "public"
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT user_id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+        post = dict(cur.fetchone() or {})
+        if not post:
+            conn.close()
+            return api_error("Post not found.", 404, trace_id)
+        if int(post.get("user_id") or 0) != int(user["user_id"]) and not pulse_group_user_is_admin(user):
+            conn.close()
+            return api_error("You can only edit your own Pulse posts.", 403, trace_id)
+        if not body and not title:
+            conn.close()
+            return api_error("Add text before saving the edit.", 400, trace_id)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            "UPDATE pulse_posts SET body=?, title=?, visibility=?, updated_at=? WHERE id=?",
+            (body, title, visibility, now, post_id),
+        )
+        conn.commit(); conn.close()
+        pulse_emit_event("post_updated", {"post_id": post_id}, user["user_id"], post_id)
+        return jsonify({"ok": True, "message": "Post updated.", "post_id": post_id})
     if request.method == "DELETE":
         conn = db()
         cur = conn.cursor()
@@ -18402,6 +18631,89 @@ def api_pulse_react(post_id):
     if result.get("ok"):
         pulse_emit_event("reaction_removed" if result.get("removed") else "reaction_added", result, user["user_id"], post_id)
     return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/posts/<int:post_id>/save", methods=["POST"])
+def api_pulse_post_save(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Post not found.", 404, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("SELECT id FROM pulse_post_saves WHERE post_id=? AND user_id=? LIMIT 1", (post_id, user["user_id"]))
+    existing = cur.fetchone()
+    if existing:
+        cur.execute("DELETE FROM pulse_post_saves WHERE post_id=? AND user_id=?", (post_id, user["user_id"]))
+        saved = False
+    else:
+        cur.execute("INSERT INTO pulse_post_saves (post_id, user_id, collection_name, created_at) VALUES (?, ?, 'Saved', ?)", (post_id, user["user_id"], now))
+        saved = True
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "saved": saved, "message": "Post saved." if saved else "Post removed from saved."})
+
+
+@webhook_app.route("/api/pulse/posts/<int:post_id>/pin", methods=["POST"])
+def api_pulse_post_pin(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+    post = dict(cur.fetchone() or {})
+    if not post:
+        conn.close()
+        return api_error("Post not found.", 404, trace_id)
+    if int(post.get("user_id") or 0) != int(user["user_id"]) and not pulse_group_user_is_admin(user):
+        conn.close()
+        return api_error("You can only pin your own posts.", 403, trace_id)
+    pinned = not bool(post.get("pinned_at"))
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    if pinned:
+        cur.execute("UPDATE pulse_posts SET pinned_at=NULL, pinned_by=NULL WHERE user_id=?", (int(post.get("user_id") or 0),))
+        cur.execute("UPDATE pulse_posts SET pinned_at=?, pinned_by=?, updated_at=? WHERE id=?", (now, user["user_id"], now, post_id))
+    else:
+        cur.execute("UPDATE pulse_posts SET pinned_at=NULL, pinned_by=NULL, updated_at=? WHERE id=?", (now, post_id))
+    conn.commit(); conn.close()
+    pulse_emit_event("post_pinned", {"post_id": post_id, "pinned": pinned}, user["user_id"], post_id)
+    return jsonify({"ok": True, "pinned": pinned, "message": "Post pinned." if pinned else "Post unpinned."})
+
+
+@webhook_app.route("/api/pulse/posts/<int:post_id>/repost", methods=["POST"])
+def api_pulse_post_repost(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    note = clean_html(payload.get("body") or payload.get("note") or "")[:1200]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (post_id,))
+    original = dict(cur.fetchone() or {})
+    if not original:
+        conn.close()
+        return api_error("Post not found.", 404, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    body = note or f"Reposted a Pulse from @{clean_html(original.get('public_player_id') or original.get('user_id') or 'creator')}"
+    cur.execute(
+        """
+        INSERT INTO pulse_posts (user_id, public_player_id, post_type, body, title, tags_json, visibility, moderation_status, repost_of_post_id, created_at, updated_at)
+        VALUES (?, ?, 'repost', ?, ?, ?, 'public', 'approved', ?, ?, ?)
+        """,
+        (user["user_id"], str(user.get("user_id")), body, original.get("title") or "", original.get("tags_json") or "[]", post_id, now, now),
+    )
+    repost_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    pulse_emit_event("post_reposted", {"post_id": repost_id, "original_post_id": post_id}, user["user_id"], repost_id)
+    return jsonify({"ok": True, "message": "Reposted to Pulse.", "post_id": repost_id, "next_url": f"/pulse/post/{repost_id}"})
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>/comments", methods=["GET", "POST"])
@@ -18857,6 +19169,32 @@ def api_pulse_message_start():
     return jsonify(result), status
 
 
+@webhook_app.route("/api/pulse/users/search", methods=["GET"])
+@webhook_app.route("/api/messages/users/search", methods=["GET"])
+def api_pulse_users_search():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    query = (request.args.get("q") or request.args.get("query") or "").strip()
+    if not query:
+        return jsonify({"ok": True, "users": []})
+    try:
+        allow_email = bool(admin_current_user())
+    except Exception:
+        allow_email = False
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        users = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=16, allow_email=allow_email)
+        conn.close()
+        return jsonify({"ok": True, "users": users})
+    except Exception as exc:
+        conn.close()
+        logging.exception("PULSE_USER_SEARCH_FAILED trace_id=%s user_id=%s query=%s", trace_id, user.get("user_id"), query)
+        return api_error("Search failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
 @webhook_app.route("/api/pulse/messages/group/create", methods=["POST"])
 def api_pulse_message_group_create():
     init_db()
@@ -18866,6 +19204,10 @@ def api_pulse_message_group_create():
     payload = request.get_json(silent=True) or {}
     trace_id = secrets.token_hex(6)
     title = clean_html(payload.get("title") or "")[:140]
+    description = clean_html(payload.get("description") or "")[:500]
+    privacy = clean_html(payload.get("privacy") or "private")[:40]
+    if privacy not in {"private", "public", "invite_only", "community"}:
+        privacy = "private"
     participant_ids = payload.get("participant_ids") if isinstance(payload.get("participant_ids"), list) else []
     group_id = safe_int(payload.get("group_id"), 0)
     group_slug = clean_html(payload.get("group_slug") or "")[:140]
@@ -18882,6 +19224,11 @@ def api_pulse_message_group_create():
                 conn.close()
                 return api_error("This group chat is paused for review.", 403, trace_id)
         result, status = pulse_get_or_create_group_conversation(cur, user["user_id"], group=group, title=title, participant_ids=participant_ids)
+        if result.get("ok"):
+            cur.execute(
+                "UPDATE pulse_conversations SET description=?, privacy=?, updated_at=? WHERE id=?",
+                (description, privacy, datetime.utcnow().isoformat(timespec="seconds"), int(result.get("conversation_id") or 0)),
+            )
         if result.get("ok"):
             conn.commit()
         conn.close()
@@ -19283,17 +19630,30 @@ def api_pulse_group_join():
 def pulse_group_join_common(user, group_id=0, group_slug=""):
     if not user:
         return api_error("Login required.", 401)
-    conn = db(); cur = conn.cursor()
-    cur.execute("SELECT id, group_type FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (int(group_id or 0), clean_html(group_slug or "")))
-    group = cur.fetchone()
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id, group_type, owner_user_id FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (int(group_id or 0), clean_html(group_slug or "")))
+    group = dict(cur.fetchone() or {})
     if not group:
         conn.close()
-        return api_error("Group not found.", 404)
-    group_id = int(group[0])
-    cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], datetime.utcnow().isoformat(timespec="seconds")))
+        return api_error("Group not found.", 404, trace_id)
+    group_id = int(group.get("id") or 0)
+    group_type = str(group.get("group_type") or "public").lower()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    if group_type in {"private", "invite-only", "invite_only"} and int(group.get("owner_user_id") or 0) != int(user["user_id"]):
+        cur.execute(
+            "INSERT INTO pulse_group_invites (group_id, inviter_user_id, invited_user_id, status, created_at) VALUES (?, ?, ?, 'requested', ?)",
+            (group_id, user["user_id"], user["user_id"], now),
+        )
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "joined": False, "pending_review": True, "message": "Join request sent.", "group_id": group_id})
+    cur.execute("INSERT OR IGNORE INTO pulse_group_members (group_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)", (group_id, user["user_id"], now))
     cur.execute("UPDATE pulse_groups SET member_count=(SELECT COUNT(*) FROM pulse_group_members WHERE group_id=?) WHERE id=?", (group_id, group_id))
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
+    member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Joined group.", "data": {"group_id": group_id}})
+    pulse_emit_event("group_member_joined", {"group_id": group_id, "user_id": user["user_id"], "member_count": member_count}, user["user_id"], group_id)
+    return jsonify({"ok": True, "joined": True, "member_count": member_count, "message": "Joined group.", "data": {"group_id": group_id, "member_count": member_count}})
 
 
 @webhook_app.route("/api/pulse/groups/<group_slug>/join", methods=["POST"])
@@ -19322,8 +19682,111 @@ def api_pulse_group_leave_slug(group_slug):
     cur.execute("DELETE FROM pulse_group_members WHERE group_id=? AND user_id=?", (group_id, user["user_id"]))
     cur.execute("DELETE FROM pulse_group_roles WHERE group_id=? AND user_id=? AND role='member'", (group_id, user["user_id"]))
     cur.execute("UPDATE pulse_groups SET member_count=(SELECT COUNT(*) FROM pulse_group_members WHERE group_id=?) WHERE id=?", (group_id, group_id))
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
+    member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Left group.", "data": {"group_id": group_id}})
+    pulse_emit_event("group_member_left", {"group_id": group_id, "user_id": user["user_id"], "member_count": member_count}, user["user_id"], group_id)
+    return jsonify({"ok": True, "left": True, "member_count": member_count, "message": "Left group.", "data": {"group_id": group_id, "member_count": member_count}})
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/join", methods=["POST"])
+def api_pulse_group_join_id(group_id):
+    init_db()
+    user = api_account_user()
+    return pulse_group_join_common(user, group_id=group_id)
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/leave", methods=["POST"])
+def api_pulse_group_leave_id(group_id):
+    return api_pulse_group_leave_slug(str(group_id))
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/chat/open", methods=["POST"])
+def api_pulse_group_chat_open(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+        group = dict(cur.fetchone() or {})
+        if not group:
+            conn.close()
+            return api_error("Group not found.", 404, trace_id)
+        cur.execute("SELECT 1 FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+        is_member = bool(cur.fetchone()) or int(group.get("owner_user_id") or 0) == int(user["user_id"])
+        if not is_member:
+            pulse_group_join_common(user, group_id=group_id)
+            conn.close()
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+            group = dict(cur.fetchone() or {})
+        result, status = pulse_get_or_create_group_conversation(cur, user["user_id"], group=group, title=f"{group.get('name') or 'Pulse Group'} Chat")
+        if result.get("ok"):
+            conn.commit()
+            pulse_emit_event("group_chat_created", {"conversation_id": result.get("conversation_id"), "group_id": group_id}, user["user_id"], group_id)
+        conn.close()
+        return jsonify({"ok": True, "conversation_id": result.get("conversation_id"), "next_url": result.get("next_url"), "message": "Group chat opened."}), status
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_GROUP_CHAT_OPEN_FAILED trace_id=%s group_id=%s user_id=%s", trace_id, group_id, user.get("user_id"))
+        return api_error("Group chat could not be opened. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/invite-link", methods=["GET", "POST"])
+def api_pulse_group_invite_link(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT slug FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    group = dict(cur.fetchone() or {})
+    conn.close()
+    if not group:
+        return api_error("Group not found.", 404)
+    url = request.host_url.rstrip("/") + f"/pulse/groups/{group.get('slug') or group_id}"
+    return jsonify({"ok": True, "invite_url": url, "message": "Invite link ready."})
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/invite", methods=["POST"])
+def api_pulse_group_invite(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    invitee_user_id = safe_int(payload.get("invitee_user_id") or payload.get("user_id"), 0)
+    public_id = clean_html(payload.get("public_pulse_id") or payload.get("public_player_id") or "")[:120]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if not invitee_user_id and public_id:
+        invitee_user_id = pulse_user_id_from_public(cur, public_id) or 0
+    cur.execute("SELECT id FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Group not found.", 404)
+    if not invitee_user_id:
+        conn.close()
+        return api_error("Choose a Pulse user to invite.", 400)
+    cur.execute(
+        "INSERT INTO pulse_group_invites (group_id, inviter_user_id, invited_user_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
+        (group_id, user["user_id"], invitee_user_id, datetime.utcnow().isoformat(timespec="seconds")),
+    )
+    conn.commit(); conn.close()
+    pulse_emit_event("group_invite_created", {"group_id": group_id, "invitee_user_id": invitee_user_id}, user["user_id"], group_id)
+    return jsonify({"ok": True, "message": "Invite sent."})
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/report", methods=["POST"])
+def api_pulse_group_report_id(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    return pulse_group_report_common(user, group_id=group_id, reason=payload.get("reason") or "Needs review", notes=payload.get("notes") or "")
 
 
 @webhook_app.route("/api/pulse/groups/report", methods=["POST"])
@@ -19335,14 +19798,20 @@ def api_pulse_group_report():
     payload = request.get_json(silent=True) or {}
     group_id = int(payload.get("group_id") or 0)
     group_slug = clean_html(payload.get("group_slug") or "")[:120]
-    reason = clean_html(payload.get("reason") or "Needs review")[:500]
+    return pulse_group_report_common(user, group_id=group_id, group_slug=group_slug, reason=payload.get("reason") or "Needs review", notes=payload.get("notes") or "")
+
+
+def pulse_group_report_common(user, group_id=0, group_slug="", reason="Needs review", notes=""):
+    reason = clean_html(reason or "Needs review")[:120]
+    notes = clean_html(notes or "")[:1000]
+    report_text = reason if not notes else f"{reason}: {notes}"
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT id FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (group_id, group_slug))
     group = dict(cur.fetchone() or {})
     if not group:
         conn.close()
         return api_error("Group not found.", 404)
-    cur.execute("INSERT INTO pulse_group_reports (group_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (int(group["id"]), user["user_id"], reason, datetime.utcnow().isoformat(timespec="seconds")))
+    cur.execute("INSERT INTO pulse_group_reports (group_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (int(group["id"]), user["user_id"], report_text, datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit(); conn.close()
     return jsonify({"ok": True, "message": "Group report sent."})
 
@@ -19642,19 +20111,129 @@ def api_pulse_group_post_delete(post_id):
     return jsonify({"ok": True, "message": "Group post deleted."})
 
 
+@webhook_app.route("/api/groups/posts/<int:post_id>", methods=["DELETE"])
+def api_groups_post_delete_alias(post_id):
+    return api_pulse_group_post_delete(post_id)
+
+
+def pulse_group_post_report_create(post_id, user, reason, notes="", trace_id=""):
+    trace_id = trace_id or secrets.token_hex(6)
+    allowed_reasons = {"spam", "harassment", "scam", "nudity", "violence", "misinformation", "illegal", "other", "needs review"}
+    reason = clean_html(str(reason or "other").strip().lower())[:80] or "other"
+    if reason not in allowed_reasons:
+        reason = "other"
+    notes = clean_html(notes or "")[:1000]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        post = pulse_group_post_context(cur, post_id, user["user_id"])
+        allowed, message = pulse_group_can_interact(post, user)
+        if not allowed:
+            conn.close()
+            return api_error(message, 403 if message != "Group post not found." else 404, trace_id)
+        report_reason = reason if not notes else f"{reason}: {notes}"
+        cur.execute(
+            "INSERT INTO pulse_group_post_reports (group_post_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)",
+            (post_id, user["user_id"], report_reason, datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "message": "Report submitted."})
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_GROUP_POST_REPORT_FAILED trace_id=%s post_id=%s user_id=%s", trace_id, post_id, user.get("user_id"))
+        return api_error("Report could not be submitted. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
 @webhook_app.route("/api/pulse/groups/posts/report", methods=["POST"])
 def api_pulse_group_post_report():
     init_db()
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     post_id = safe_int(payload.get("group_post_id"), 0)
-    reason = clean_html(payload.get("reason") or "Needs review")[:500]
-    conn = db(); cur = conn.cursor()
-    cur.execute("INSERT INTO pulse_group_post_reports (group_post_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, 'open', ?)", (post_id, user["user_id"], reason, datetime.utcnow().isoformat(timespec="seconds")))
+    if not post_id:
+        return api_error("Group post not found.", 404, trace_id)
+    return pulse_group_post_report_create(post_id, user, payload.get("reason") or "other", payload.get("notes") or "", trace_id)
+
+
+@webhook_app.route("/api/groups/posts/<int:post_id>/report", methods=["POST"])
+def api_groups_post_report_alias(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    return pulse_group_post_report_create(post_id, user, payload.get("reason") or "other", payload.get("notes") or "")
+
+
+@webhook_app.route("/api/groups/posts/<int:post_id>/pin", methods=["POST"])
+def api_groups_post_pin(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        post = pulse_group_post_context(cur, post_id, user["user_id"])
+        if not post:
+            conn.close()
+            return api_error("Group post not found.", 404, trace_id)
+        if not pulse_group_can_moderate_post(post, user):
+            conn.close()
+            return api_error("You do not have permission.", 403, trace_id)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        pinned = not bool(post.get("pinned_at"))
+        if pinned:
+            cur.execute("UPDATE pulse_group_posts SET pinned_at=NULL, pinned_by=NULL WHERE group_id=?", (int(post.get("group_id") or 0),))
+            cur.execute("UPDATE pulse_group_posts SET pinned_at=?, pinned_by=?, updated_at=? WHERE id=?", (now, user["user_id"], now, post_id))
+        else:
+            cur.execute("UPDATE pulse_group_posts SET pinned_at=NULL, pinned_by=NULL, updated_at=? WHERE id=?", (now, post_id))
+        conn.commit(); conn.close()
+        pulse_emit_event("group_post_updated", {"post_id": post_id, "group_id": int(post.get("group_id") or 0), "pinned": pinned}, user["user_id"], post_id)
+        return jsonify({"ok": True, "message": "Post pinned." if pinned else "Post unpinned.", "pinned": pinned})
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_GROUP_POST_PIN_FAILED trace_id=%s post_id=%s user_id=%s", trace_id, post_id, user.get("user_id"))
+        return api_error("Pin action failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/groups/<int:group_id>/remove-member", methods=["POST"])
+def api_groups_remove_member(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    target_user_id = safe_int(payload.get("user_id") or payload.get("target_user_id"), 0)
+    if not target_user_id:
+        return api_error("Choose a member to remove.", 400, trace_id)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+    group = dict(cur.fetchone() or {})
+    if not group:
+        conn.close()
+        return api_error("Group not found.", 404, trace_id)
+    cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+    role = (dict(cur.fetchone() or {}).get("role") or "").lower()
+    can_remove = pulse_group_role_allows_moderation(role) or int(group.get("owner_user_id") or 0) == int(user["user_id"]) or pulse_group_user_is_admin(user)
+    if not can_remove:
+        conn.close()
+        return api_error("You do not have permission.", 403, trace_id)
+    if int(target_user_id) == int(group.get("owner_user_id") or 0):
+        conn.close()
+        return api_error("The group owner cannot be removed.", 400, trace_id)
+    cur.execute("DELETE FROM pulse_group_members WHERE group_id=? AND user_id=?", (group_id, target_user_id))
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE pulse_conversation_participants SET left_at=? WHERE user_id=? AND conversation_id IN (SELECT id FROM pulse_conversations WHERE group_id=? OR linked_group_id=?)",
+        (now, target_user_id, group_id, group_id),
+    )
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Post report sent."})
+    pulse_emit_event("group_member_removed", {"group_id": group_id, "user_id": target_user_id}, user["user_id"], group_id)
+    return jsonify({"ok": True, "message": "User removed from group."})
 
 
 @webhook_app.route("/api/pulse/report", methods=["POST"])
@@ -23229,7 +23808,7 @@ def api_messages_conversations():
     cur.execute(
         """
         SELECT c.id, c.updated_at, ou.user_id AS other_user_id,
-               COALESCE(NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), NULLIF(ou.display_name, ''), 'Arena Pilot') AS other_name,
+               COALESCE(NULLIF(ou.display_name, ''), NULLIF(ou.full_name, ''), NULLIF(ou.username, ''), NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), 'Pulse user') AS other_name,
                ap.public_player_id AS other_public_player_id, ou.last_seen_at AS other_last_seen_at,
                MAX(pm.created_at) AS last_message_at,
                (
@@ -28418,10 +28997,24 @@ def init_db():
         ("sentiment", "TEXT"),
         ("risk_score", "INTEGER DEFAULT 0"),
         ("engagement_score", "REAL DEFAULT 0"),
+        ("pinned_at", "TEXT"),
+        ("pinned_by", "INTEGER"),
+        ("repost_of_post_id", "INTEGER"),
+        ("edited_at", "TEXT"),
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
         ("deleted_at", "TEXT"),
     ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_post_saves (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER,
+        user_id INTEGER,
+        collection_name TEXT DEFAULT 'Saved',
+        created_at TEXT,
+        UNIQUE(post_id, user_id)
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_reels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28687,9 +29280,15 @@ def init_db():
     add_columns_if_missing(cur, "pulse_conversations", [
         ("created_by_user_id", "INTEGER"),
         ("group_id", "INTEGER"),
+        ("linked_group_id", "INTEGER"),
+        ("linked_space_id", "TEXT"),
+        ("linked_live_id", "INTEGER"),
         ("title", "TEXT"),
+        ("description", "TEXT"),
         ("avatar_url", "TEXT"),
         ("owner_user_id", "INTEGER"),
+        ("privacy", "TEXT DEFAULT 'private'"),
+        ("member_count", "INTEGER DEFAULT 0"),
         ("is_public", "INTEGER DEFAULT 0"),
         ("participant_limit", "INTEGER DEFAULT 250"),
         ("last_activity_at", "TEXT"),
@@ -28707,6 +29306,12 @@ def init_db():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_conversation_participants", [
+        ("muted_until", "TEXT"),
+        ("joined_at", "TEXT"),
+        ("left_at", "TEXT"),
+        ("last_read_at", "TEXT"),
+    ], conn=conn)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)")
@@ -28986,6 +29591,8 @@ def init_db():
         ("deleted_at", "TEXT"),
         ("deleted_by", "INTEGER"),
         ("delete_reason", "TEXT"),
+        ("pinned_at", "TEXT"),
+        ("pinned_by", "INTEGER"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_post_media (

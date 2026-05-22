@@ -101,9 +101,9 @@
     .locked { opacity:.56; filter:saturate(.72); }
     .lock-badge { display:inline-flex; align-items:center; padding:4px 8px; border-radius:999px; background:rgba(255,209,102,.14); color:#ffe4a8; font-size:12px; font-weight:900; }
     .score-ring { width:118px; height:118px; border-radius:999px; display:grid; place-items:center; border:10px solid rgba(54,229,143,.24); box-shadow:inset 0 0 24px rgba(54,229,143,.15),0 0 28px rgba(110,223,246,.12); font-size:34px; font-weight:950; }
-    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:40; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); backdrop-filter:blur(18px); }
-    .bottom-nav .container { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:4px; padding:8px 12px; }
-    .bottom-nav a { min-height:48px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:12px; font-weight:900; border-radius:8px; }
+    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:40; min-height:calc(64px + env(safe-area-inset-bottom)); border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); backdrop-filter:blur(10px); padding-bottom:env(safe-area-inset-bottom); overflow:hidden; }
+    .bottom-nav .container { display:flex; gap:2px; padding:6px; align-items:center; justify-content:space-around; }
+    .bottom-nav a { min-width:0; flex:1 1 0; min-height:50px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:10px; line-height:1; font-weight:900; border-radius:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .bottom-nav a:hover,.bottom-nav a.active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .channel-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .channel-grid label { display:flex; gap:8px; align-items:center; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:8px; color:var(--muted); }
@@ -113,7 +113,7 @@
     .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:12px; margin-top:8px; color:var(--muted); }
     .toggle-row input { width:44px; height:24px; min-height:24px; accent-color:var(--green); filter:drop-shadow(0 0 10px rgba(54,229,143,.3)); }
     [data-home-hidden="true"] { display:none!important; }
-    .private-chat-launcher { position:fixed; right:20px; bottom:92px; z-index:65; width:clamp(160px,42vw,220px); min-width:0; border:1px solid rgba(110,223,246,.34); border-radius:999px; box-shadow:0 18px 58px rgba(0,0,0,.34),0 0 34px rgba(110,223,246,.2); backdrop-filter:blur(16px); white-space:nowrap; }
+    .private-chat-launcher { position:fixed; right:20px; bottom:calc(env(safe-area-inset-bottom) + 88px); z-index:65; width:clamp(160px,42vw,220px); min-width:0; border:1px solid rgba(110,223,246,.34); border-radius:999px; box-shadow:0 14px 40px rgba(0,0,0,.3),0 0 24px rgba(110,223,246,.16); backdrop-filter:blur(10px); white-space:nowrap; }
     .private-chat-launcher-icon { font-size:20px; line-height:1; }
     .private-chat-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--gold),var(--green)); font-size:12px; font-weight:950; box-shadow:0 0 18px rgba(255,209,102,.5); }
     .private-chat-badge:not([hidden]) { animation:chatUnreadPulse 1.7s ease-in-out infinite; }
@@ -128,7 +128,7 @@
     .private-chat-drag::before { content:""; display:block; width:46px; height:5px; margin:auto; border-radius:999px; background:rgba(242,251,255,.38); box-shadow:0 0 18px rgba(110,223,246,.35); }
     .private-chat-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; border-bottom:1px solid rgba(255,255,255,.07); position:relative; z-index:8; pointer-events:auto; }
     .private-chat-head strong { display:block; }
-    .private-chat-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); position:relative; z-index:9; pointer-events:auto; }
+    .private-chat-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); position:relative; z-index:9; pointer-events:auto; }
     .private-chat-tabs button { min-height:38px; border:1px solid rgba(110,223,246,.2); border-radius:10px; background:rgba(255,255,255,.05); color:var(--text); font-weight:850; position:relative; z-index:10; pointer-events:auto; }
     .private-chat-tabs button.is-active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .private-chat-main { min-height:0; overflow:hidden; display:grid; grid-template-columns:1fr; }
@@ -154,7 +154,7 @@
     .private-chat-menu[hidden] { display:none; }
     .private-chat-menu button { width:100%; justify-content:flex-start; min-height:42px; background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.08); }
     @keyframes chatUnreadPulse { 0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,209,102,.45)} 50%{transform:scale(1.08);box-shadow:0 0 28px rgba(54,229,143,.62)} }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:18px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;max-width:56px;height:56px;min-height:56px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 18px 52px rgba(0,0,0,.38),0 0 30px rgba(110,223,246,.36)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:24px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(5px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block;padding:10px 0 4px}.private-chat-head{position:sticky;top:0;z-index:8;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(14px)}.private-chat-head .button{width:auto}.private-chat-tabs{z-index:9}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:calc(env(safe-area-inset-bottom) + 88px);width:54px;max-width:54px;height:54px;min-height:54px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 22px rgba(110,223,246,.24)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:23px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(4px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block;padding:10px 0 4px}.private-chat-head{position:sticky;top:0;z-index:8;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(10px)}.private-chat-head .button{width:auto}.private-chat-tabs{z-index:9}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -425,6 +425,12 @@
           <button class="button" type="button" data-chat-menu-toggle aria-label="Conversation options">...</button>
           <button class="button" type="button" data-private-chat-close aria-label="Close private chat">Close</button>
           <div class="private-chat-menu" data-chat-safety-menu hidden>
+            <button type="button" data-chat-create-group>Create Group Chat</button>
+            <button type="button" data-chat-new-private>New Private Message</button>
+            <button type="button">Message Requests</button>
+            <button type="button">Muted Chats</button>
+            <button type="button">Blocked Users</button>
+            <button type="button">Report a Problem</button>
             <button type="button" data-chat-mute>Mute Notifications</button>
             <button type="button" data-chat-report>Report User</button>
             <button type="button" data-chat-block>Block User</button>
@@ -435,11 +441,12 @@
       <div class="private-chat-tabs">
         <button class="is-active" type="button" data-chat-tab="list">Conversations</button>
         <button type="button" data-chat-tab="thread">Chat Room</button>
+        <button type="button" data-chat-tab="groups">Group Chat</button>
       </div>
       <div class="private-chat-main">
         <div class="private-chat-view" data-chat-list-view>
           <form data-chat-start-form>
-            <input name="query" type="text" placeholder="Search player name or public Arena ID" maxlength="160" autocomplete="off">
+            <input name="query" type="text" placeholder="Search by name or public Pulse ID" maxlength="160" autocomplete="off">
             <button class="button primary" type="submit">Start Chat</button>
             <p class="muted" data-chat-start-message></p>
           </form>
@@ -450,6 +457,12 @@
         <div class="private-chat-view" data-chat-thread-view hidden>
           <div class="private-chat-empty" data-chat-thread-empty>Choose a conversation to start messaging.</div>
           <div class="chat-thread" data-chat-thread></div>
+        </div>
+        <div class="private-chat-view" data-chat-groups-view hidden>
+          <button class="button primary" type="button" data-chat-create-group>Create Group Chat</button>
+          <div data-chat-groups>
+            <div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>
+          </div>
         </div>
       </div>
       <form class="private-chat-form" data-chat-send-form>
@@ -485,8 +498,11 @@
       document.querySelectorAll("[data-chat-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.chatTab === tab));
       const listView = qs("[data-chat-list-view]");
       const threadView = qs("[data-chat-thread-view]");
+      const groupsView = qs("[data-chat-groups-view]");
       if (listView) listView.hidden = tab !== "list";
       if (threadView) threadView.hidden = tab !== "thread";
+      if (groupsView) groupsView.hidden = tab !== "groups";
+      if (tab === "groups") loadChatConversations();
     }
 
     function setPrivateChatSnap(snap) {
@@ -543,8 +559,10 @@
 
     async function loadChatConversations() {
       const node = document.querySelector("[data-chat-conversations]");
+      const groupNode = document.querySelector("[data-chat-groups]");
       if (!node) return;
       node.innerHTML = '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another CoinPilotXAI user.</div>';
+      if (groupNode) groupNode.innerHTML = '<div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>';
       try {
         const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
         const data = await response.json();
@@ -561,8 +579,20 @@
             <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
             <span class="conversation-meta"><span class="online-dot">${item.other_last_seen_at ? "Recently active" : "User"}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
           </button>`).join("") || '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another CoinPilotXAI user.</div>';
+        if (groupNode) {
+          const pulseResponse = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
+          const pulseData = await pulseResponse.json();
+          const groupConversations = (pulseData.conversations || []).filter(item => ["group","community","creator","live"].includes(item.conversation_type || ""));
+          groupNode.innerHTML = groupConversations.map(item => `
+            <button class="conversation-row" type="button" data-open-pulse-conversation="${item.id}">
+              <strong>${escapeHtml(item.title || "Group Chat")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
+              <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
+              <span class="conversation-meta"><span class="online-dot">${escapeHtml(item.conversation_type || "group")}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
+            </button>`).join("") || '<div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>';
+        }
       } catch (error) {
         node.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Private chat is temporarily unavailable.")}</div>`;
+        if (groupNode) groupNode.innerHTML = `<div class="private-chat-empty">${escapeHtml(error.message || "Group chats are temporarily unavailable.")}</div>`;
       }
     }
 
@@ -1021,6 +1051,23 @@
       if (chatTab) setChatTab(chatTab.dataset.chatTab);
       const conversation = event.target.closest("[data-open-conversation]");
       if (conversation) await openConversation(conversation.dataset.openConversation, conversation.dataset.otherUserId);
+      const pulseConversation = event.target.closest("[data-open-pulse-conversation]");
+      if (pulseConversation) location.href = "/pulse/messages/" + encodeURIComponent(pulseConversation.dataset.openPulseConversation);
+      if (event.target.closest("[data-chat-new-private]")) {
+        setChatTab("list");
+        document.querySelector("[data-chat-start-form] input")?.focus();
+      }
+      if (event.target.closest("[data-chat-create-group]")) {
+        const title = window.prompt("Group chat name");
+        if (title && title.trim()) {
+          try {
+            const result = await postJson("/api/pulse/messages/group/create", { title: title.trim(), participant_ids: [], privacy: "private" });
+            location.href = result.next_url || ("/pulse/messages/" + result.conversation_id);
+          } catch (err) {
+            text("[data-chat-start-message]", err.message);
+          }
+        }
+      }
       if (event.target.closest("[data-chat-report]") && chatState.activeConversationId) {
         const reason = window.prompt("Briefly describe the concern for moderation review.");
         if (reason) await postJson("/api/messages/report", { conversation_id: chatState.activeConversationId, reported_user_id: chatState.activeOtherUserId || 0, reason });
