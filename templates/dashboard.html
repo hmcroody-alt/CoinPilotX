@@ -114,6 +114,7 @@
     .toggle-row input { width:44px; height:24px; min-height:24px; accent-color:var(--green); filter:drop-shadow(0 0 10px rgba(54,229,143,.3)); }
     [data-home-hidden="true"] { display:none!important; }
     .private-chat-launcher { position:fixed; right:20px; bottom:92px; z-index:65; width:clamp(160px,42vw,220px); min-width:0; border:1px solid rgba(110,223,246,.34); border-radius:999px; box-shadow:0 18px 58px rgba(0,0,0,.34),0 0 34px rgba(110,223,246,.2); backdrop-filter:blur(16px); white-space:nowrap; }
+    .private-chat-launcher-icon { font-size:20px; line-height:1; }
     .private-chat-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--gold),var(--green)); font-size:12px; font-weight:950; box-shadow:0 0 18px rgba(255,209,102,.5); }
     .private-chat-badge:not([hidden]) { animation:chatUnreadPulse 1.7s ease-in-out infinite; }
     .private-chat-shell { position:fixed; inset:0; z-index:64; pointer-events:none; }
@@ -142,12 +143,12 @@
     .chat-bubble.me { justify-self:end; color:#06101b; background:linear-gradient(135deg,var(--cyan),#77a7ff); }
     .chat-bubble.them { justify-self:start; background:rgba(255,255,255,.065); }
     .chat-bubble small { display:block; margin-top:4px; opacity:.76; }
-    .private-chat-form { display:flex; gap:8px; padding:12px; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); }
+    .private-chat-form { position:sticky; bottom:0; z-index:2; display:flex; gap:8px; padding:12px; border-top:1px solid rgba(255,255,255,.08); background:rgba(5,11,20,.94); }
     .private-chat-form input { min-width:0; }
     .private-chat-empty { min-height:180px; display:grid; place-items:center; text-align:center; color:var(--muted); padding:20px; }
     .private-chat-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
     @keyframes chatUnreadPulse { 0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,209,102,.45)} 50%{transform:scale(1.08);box-shadow:0 0 28px rgba(54,229,143,.62)} }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:14px;bottom:calc(72px + env(safe-area-inset-bottom));width:190px;min-height:46px;padding:10px 14px}.private-chat-shell.is-open{z-index:67}.private-chat-panel{inset:auto 0 0 0; width:100%; height:80vh; max-height:80vh; border-radius:22px 22px 0 0; transform:translate3d(0,105%,0); opacity:1}.private-chat-shell.is-half .private-chat-panel{height:65vh;max-height:65vh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:80vh;max-height:80vh;transform:translate3d(0,0,0)}.private-chat-drag{display:block}.private-chat-head{padding-top:8px}.private-chat-form .button{width:auto;min-width:54px}.private-chat-form{padding-bottom:calc(12px + env(safe-area-inset-bottom))}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:18px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;max-width:56px;height:56px;min-height:56px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 18px 52px rgba(0,0,0,.38),0 0 30px rgba(110,223,246,.36)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:24px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:24px 24px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:62dvh;max-height:62dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:95dvh;max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block}.private-chat-head{position:sticky;top:0;z-index:3;padding-top:8px;background:rgba(8,15,28,.96);backdrop-filter:blur(14px)}.private-chat-head .button{width:auto}.private-chat-view{padding-bottom:16px}.private-chat-form .button{width:48px;min-width:48px;padding:0}.private-chat-form{padding-bottom:calc(14px + env(safe-area-inset-bottom))}.private-chat-form input{min-height:46px}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -409,8 +410,8 @@
 
     <p class="notice">Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds, does not ask for seed phrases/private keys, and does not provide financial advice.</p>
   </main>
-  <button class="button primary private-chat-launcher" type="button" data-private-chat-open aria-expanded="false">
-    💬 Private Chat <span class="private-chat-badge" data-private-chat-unread hidden>0</span>
+  <button class="button primary private-chat-launcher" type="button" data-private-chat-open aria-expanded="false" aria-label="Open Private Chat">
+    <span class="private-chat-launcher-icon" aria-hidden="true">💬</span><span class="private-chat-launcher-label">Private Chat</span><span class="private-chat-badge" data-private-chat-unread hidden>0</span>
   </button>
   <section class="private-chat-shell" data-private-chat-shell aria-label="Private chat room" aria-hidden="true">
     <div class="private-chat-backdrop" data-private-chat-close></div>
@@ -532,7 +533,7 @@
       let touchStartY = 0;
       document.querySelector("[data-private-chat-open]")?.addEventListener("touchstart", event => { touchStartY = event.touches[0].clientY; }, { passive: true });
       document.querySelector("[data-private-chat-open]")?.addEventListener("touchend", event => {
-        if (touchStartY - event.changedTouches[0].clientY > 34) openPrivateChat("half");
+        if (touchStartY - event.changedTouches[0].clientY > 34) openPrivateChat("full");
       }, { passive: true });
     }
 
@@ -1004,7 +1005,7 @@
         const defaults = { show_account:false, show_upgrade_pro:false, show_command_center:false, show_logout:false, show_saved_insights:true, show_activity_timeline:true };
         for (const [key, value] of Object.entries(defaults)) await saveDashboardPreference(key, value).catch(() => {});
       }
-      if (event.target.closest("[data-private-chat-open]")) openPrivateChat("half");
+      if (event.target.closest("[data-private-chat-open]")) openPrivateChat("full");
       if (event.target.closest("[data-private-chat-close]")) closePrivateChat();
       const chatTab = event.target.closest("[data-chat-tab]");
       if (chatTab) setChatTab(chatTab.dataset.chatTab);

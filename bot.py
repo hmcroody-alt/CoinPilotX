@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import quote, urlparse
 from flask import Flask, request, render_template, send_from_directory, jsonify, Response, session, redirect, url_for, has_request_context
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -55,13 +56,22 @@ from services import (
     arena_victory_engine,
     arena_world_engine,
     auto_signals_service,
+    ai_social_engine,
+    ai_moderation_core,
+    analytics_intelligence_engine,
+    admin_ai_assistant,
+    audio_intelligence_engine,
     chat_realtime_service,
     conversion_funnel_engine,
     ad_policy_engine,
     creator_monetization_engine,
+    creator_ai_copilot,
     crowd_energy_engine,
+    feed_ai_personalization,
+    filter_engine,
     intelligence_products_engine,
     marketplace_engine,
+    media_enhancement_engine,
     monetization_engine,
     privacy_intelligence_engine,
     realtime_sync_engine,
@@ -79,20 +89,27 @@ from services import (
     portfolio_service,
     predictions_service,
     premium_identity_engine,
+    pulse_identity_engine,
     pro_access as pro_access_service,
     pulse_feed_engine,
+    pulse_feed_ranking_engine,
     pulse_moderation_engine,
     privilege_engine,
+    prestige_engine,
     push_service,
+    reel_ranking_engine,
+    realtime_engine,
     retention_analytics,
     roast_battle_engine,
     roast_live_engine,
+    live_stream_engine,
     scam_shield_engine,
     scam_shield as scam_shield_service,
     security_guard,
     security_monitor,
     seo_engine,
     sms_service,
+    social_loop_engine,
     sports_data as sports_data_service,
     user_context as user_context_service,
     user_trust_engine,
@@ -2026,6 +2043,15 @@ def account_user_id():
     return session.get("account_user_id")
 
 
+def safe_int(value, default=0):
+    try:
+        if value is None or value == "":
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def load_account_by_id(user_id):
     if not user_id:
         return None
@@ -3124,6 +3150,34 @@ def friendly_method_not_allowed(error):
         "</main></body></html>",
         405,
     )
+
+
+@webhook_app.errorhandler(500)
+def friendly_internal_error(error):
+    trace_id = secrets.token_hex(6)
+    logging.exception("HTTP_500 trace_id=%s path=%s method=%s", trace_id, request.path, request.method)
+    if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
+        return jsonify({"ok": False, "message": "Something needs attention. Please try again.", "trace_id": trace_id}), 500
+    body = (
+        "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>CoinPilotXAI | System Notice</title>"
+        "<style>body{margin:0;font-family:system-ui;background:#050b14;color:#f2fbff;display:grid;min-height:100vh;place-items:center;padding:24px}"
+        ".card{max-width:680px;border:1px solid rgba(110,223,246,.22);border-radius:16px;background:#0d1627;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.32)}"
+        "a{color:#36e58f}.trace{color:#9fb5c0;font-size:13px}</style></head><body><main class='card'>"
+        "<h1>CoinPilotXAI hit a temporary system issue.</h1>"
+        "<p>The team can trace this safely without exposing raw server details.</p>"
+        f"<p class='trace'>Trace ID: {trace_id}</p>"
+        "<p><a href='/dashboard'>Open Dashboard</a> · <a href='/pulse'>Open Pulse</a> · <a href='/support'>Support</a></p>"
+        "</main></body></html>"
+    )
+    return body, 500
+
+
+@webhook_app.errorhandler(Exception)
+def friendly_unhandled_exception(error):
+    if isinstance(error, HTTPException):
+        return error
+    return friendly_internal_error(error)
 
 
 @webhook_app.route("/settings", methods=["GET", "POST"])
@@ -15621,27 +15675,10 @@ def pulse_section_shell(title, description, cards=None, primary_href="/pulse/cre
 
 
 def _pulse_primary_label(row=None, badge_keys=None, badge_labels=None):
-    row = row or {}
-    badge_key_set = {str(key) for key in (badge_keys or [])}
-    label_set = {str(label).strip().lower() for label in (badge_labels or [])}
-    if premium_identity_engine.is_owner(row) or {"owner", "founder"} & badge_key_set:
-        return "Founder · CoinPilotXAI Pulse"
-    if {"creator", "verified", "partner_creator"} & badge_key_set or {"creator", "verified creator"} & label_set:
-        return "Verified Creator"
-    if "teacher" in badge_key_set or "teacher" in label_set:
-        return "Teacher"
-    if "marketplace_seller" in badge_key_set or "marketplace seller" in label_set:
-        return "Marketplace Seller"
-    if "livestream_eligible" in badge_key_set or "livestream eligible" in label_set:
-        return "Livestream Eligible"
-    trust_score = 0
     try:
-        trust_score = int(row.get("trust_score") or 0)
+        return pulse_identity_engine.primary_label(row, badge_keys, badge_labels)
     except Exception:
-        trust_score = 0
-    if "trusted_member" in badge_key_set or "trusted member" in label_set or trust_score >= 70:
-        return "Trusted Member"
-    return "Member"
+        return "Member"
 
 
 def get_pulse_identity_display(user_id, cur=None):
@@ -15699,35 +15736,7 @@ def get_pulse_identity_display(user_id, cur=None):
                 badge_labels.append(label)
     except Exception as exc:
         logging.warning("PULSE_IDENTITY_BADGE_QUERY_FAILED user_id=%s error=%s", user_id, exc)
-    public_id = row.get("public_player_id") or f"pilot-{str(user_id)[-6:]}"
-    name = (
-        row.get("user_display_name")
-        or row.get("display_name")
-        or row.get("full_name")
-        or row.get("username")
-        or f"Pulse Member #{str(public_id)[-4:]}"
-    )
-    premium_mark = premium_identity_engine.identity_mark(row, badge_keys)
-    primary_label = _pulse_primary_label(row, badge_keys, badge_labels)
-    identity = {
-        "user_id": int(user_id or 0),
-        "public_player_id": public_id,
-        "display_name": str(name)[:80],
-        "name": str(name)[:80],
-        "username": (row.get("username") or "")[:80],
-        "avatar_url": row.get("user_avatar_url") or row.get("avatar_url") or "",
-        "banner_url": row.get("banner_url") or "",
-        "primary_label": primary_label,
-        "rank": primary_label,
-        "bio": row.get("bio") or "",
-        "badges": badge_labels or [primary_label],
-        "badge_keys": badge_keys,
-        "premium_mark_type": (premium_mark or {}).get("type") if premium_mark else "",
-        "premium_mark": premium_mark,
-        "premium_verified": bool(premium_mark),
-        "is_owner": bool(premium_identity_engine.is_owner(row) or {"owner", "founder"} & set(badge_keys)),
-        "is_verified": bool({"verified", "creator", "teacher", "safety_verified"} & set(badge_keys)),
-    }
+    identity = pulse_identity_engine.build_identity(row, badge_keys, badge_labels)
     if close_conn and conn:
         conn.close()
     return identity
@@ -16042,6 +16051,25 @@ def pulse_trust_profile_for_user(cur, user):
             "creator_verified": "creator" in verification_types,
         },
     )
+    reputation_scores = user_trust_engine.calculate_reputation_scores(
+        {
+            "created_at": user.get("created_at"),
+            "display_name": user.get("display_name"),
+            "username": user.get("username"),
+            "avatar_url": user.get("avatar_url"),
+            "bio": user.get("bio"),
+            "email_verified": user.get("email_verified"),
+            "phone_verified": user.get("phone_verified"),
+        },
+        {
+            "successful_referrals": referrals["completed"],
+            "helpful_posts": helpful_posts,
+            "reports_received": reports,
+            "teacher_verified": "teacher" in verification_types,
+            "seller_verified": "seller" in verification_types,
+            "creator_verified": "creator" in verification_types,
+        },
+    )
     privileges = privilege_engine.get_user_privileges(
         user_id=user_id,
         trust_score=trust_score,
@@ -16060,9 +16088,18 @@ def pulse_trust_profile_for_user(cur, user):
             """,
             (user_id, trust_score, privileges["current_level"], int(privileges["can_go_live"]), int(privileges["can_sell"]), int(privileges["can_teach"]), int(privileges["can_create_group"]), int(privileges["can_upload_video"]), now, now),
         )
+        cur.execute(
+            """
+            INSERT INTO user_trust_profiles
+            (user_id, trust_score, creator_score, influence_score, safety_score, risk_score, invite_score, education_score, market_accuracy_score, scam_hunter_score, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET trust_score=excluded.trust_score, creator_score=excluded.creator_score, influence_score=excluded.influence_score, safety_score=excluded.safety_score, risk_score=excluded.risk_score, invite_score=excluded.invite_score, education_score=excluded.education_score, market_accuracy_score=excluded.market_accuracy_score, scam_hunter_score=excluded.scam_hunter_score, updated_at=excluded.updated_at
+            """,
+            (user_id, reputation_scores["trust_score"], reputation_scores["creator_score"], reputation_scores["influence_score"], reputation_scores["safety_score"], reputation_scores["risk_score"], reputation_scores["invite_score"], reputation_scores["education_score"], reputation_scores["market_accuracy_score"], reputation_scores["scam_hunter_score"], now, now),
+        )
     except Exception as exc:
         logging.info("PULSE_PRIVILEGE_PROFILE_SYNC_SKIPPED user_id=%s error=%s", user_id, exc)
-    return {"trust_score": trust_score, "trust_band": user_trust_engine.trust_band(trust_score), "referrals": referrals, "verification_types": verification_types, "privileges": privileges}
+    return {"trust_score": trust_score, "trust_band": user_trust_engine.trust_band(trust_score), "scores": reputation_scores, "referrals": referrals, "verification_types": verification_types, "privileges": privileges}
 
 
 def pulse_social_shell(title, description, main_html, side_html="", script_html=""):
@@ -16090,12 +16127,27 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/create/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
     mobile_bottom_html = "".join(f"<a href='{href}'>{label}</a>" for label, href in [("Home", "/pulse"), ("Reels", "/pulse/reels"), ("Spaces", "/pulse/spaces"), ("Market", "/pulse/marketplace"), ("Alerts", "/pulse/notifications"), ("Messages", "/pulse/messages"), ("Profile", "/pulse/profile")])
     default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden}}.profile-cover{{height:150px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:116px minmax(0,1fr);gap:14px;align-items:end;padding:0 16px 16px;margin-top:-54px}}.profile-avatar{{width:108px;height:108px;border-radius:26px;border:3px solid rgba(5,11,20,.95);box-shadow:0 16px 45px rgba(0,0,0,.35),0 0 34px rgba(110,223,246,.18)}}.profile-title h2{{font-size:clamp(28px,6vw,44px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-48px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:96px;height:96px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}}.mobile-bottom-nav a{{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}}.pulse-fab{{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(132px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}{script_html}</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:18px 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0}}h1{{font-size:clamp(34px,7vw,64px);line-height:.96;margin:8px 0}}h2,h3{{margin:.2rem 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.pill{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08)}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden}}.profile-cover{{height:150px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:116px minmax(0,1fr);gap:14px;align-items:end;padding:0 16px 16px;margin-top:-54px}}.profile-avatar{{width:108px;height:108px;border-radius:26px;border:3px solid rgba(5,11,20,.95);box-shadow:0 16px 45px rgba(0,0,0,.35),0 0 34px rgba(110,223,246,.18)}}.profile-title h2{{font-size:clamp(28px,6vw,44px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-48px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:96px;height:96px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,1fr);gap:4px}}.mobile-bottom-nav a{{min-height:44px;border-radius:12px;text-decoration:none;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:900;color:#dffcff}}.pulse-fab{{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:25;width:58px;height:58px;min-height:58px;border-radius:20px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:28px;box-shadow:0 18px 55px rgba(54,229,143,.28)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(132px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html}</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
     try:
         init_db()
+        canonical_type = {
+            "new_comment": "pulse_comment_created",
+            "reaction_added": "pulse_reaction_updated",
+            "reaction_removed": "pulse_reaction_updated",
+            "typing_start": "pulse_typing_started",
+            "typing_stop": "pulse_typing_stopped",
+            "message_received": "pulse_message_created",
+            "friend_request": "pulse_friend_request_created",
+            "notification_created": "pulse_notification_created",
+            "livestream_started": "pulse_live_started",
+            "pulse_reel_created": "pulse_reel_created",
+            "pulse_reel_reaction_updated": "pulse_reel_reaction_updated",
+            "pulse_reel_comment_created": "pulse_reel_comment_created",
+        }.get(str(event_type or ""), str(event_type or "event"))
+        realtime_engine.publish_event("pulse:global", canonical_type, payload or {})
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -16123,6 +16175,7 @@ def pulse_mark_online(user_id, connection_type="http", current_path=""):
         if not user_id:
             return
         sid = session.get("visitor_session_id") or session.get("csrf_token") or request.cookies.get("session") or "pulse"
+        realtime_engine.heartbeat(user_id, str(sid)[:160], "pulse:global", {"path": str(current_path or request.path)[:260], "connection_type": str(connection_type)[:40]})
         now = datetime.utcnow().isoformat(timespec="seconds")
         conn = db()
         cur = conn.cursor()
@@ -16198,19 +16251,122 @@ def pulse_live_metrics():
     except Exception:
         metrics["latest_event_id"] = 0
     conn.close()
+    realtime_health = realtime_engine.health_snapshot()
     metrics["transport"] = "sse_with_polling_fallback"
     metrics["comments_per_sec"] = round(metrics.get("comments_last_minute", 0) / 60, 3)
     metrics["reactions_per_sec"] = round(metrics.get("reactions_last_minute", 0) / 60, 3)
-    metrics["online_users"] = metrics.get("active_users", 0)
+    metrics["online_users"] = max(metrics.get("active_users", 0), realtime_health.get("online_users", 0))
+    metrics["active_realtime_clients"] = realtime_health.get("active_realtime_clients", 0)
     metrics["websocket_clients"] = 0
-    metrics["failed_socket_events"] = 0
+    metrics["failed_socket_events"] = realtime_health.get("failed_broadcasts", 0)
+    metrics["reconnect_count"] = realtime_health.get("reconnect_count", 0)
     metrics["queue_latency_ms"] = 0
     return metrics
 
 
 @webhook_app.route("/pulse/reels", methods=["GET"])
 def pulse_reels_page():
-    return pulse_page_html("Pulse Reels", "reels")
+    main = """
+    <section class='card'><h2>Pulse Reels</h2><p>Swipe-ready short clips for crypto education, Scam Shield warnings, teacher lessons, livestream highlights, Arena moments, and Founder picks.</p><div class='actions'><a class='button primary' href='/pulse/create'>Create Reel</a><button class='button' id='muteReelsBtn' type='button'>Mute</button></div></section>
+    <section id='reelsFeed' style='display:grid;gap:14px;scroll-snap-type:y mandatory'></section>
+    <section class='card' id='reelsEmpty' style='display:none'><h2>Reels are warming up.</h2><p>Post the first short clip or turn a livestream highlight into a Reel.</p><a class='button primary' href='/pulse/create'>Create Reel</a></section>
+    """
+    side = "<article class='card'><h2>Reel Categories</h2><p>AI Picks · Trending · Crypto Education · Scam Alerts · Market Pulse · Teachers · Livestream Highlights · Founder Picks · Community · Arena</p></article>"
+    script = """
+    const reelsFeed=document.getElementById('reelsFeed');const reelsEmpty=document.getElementById('reelsEmpty');let reelsMuted=true;
+    function reelHtml(reel){const author=reel.author||{};const media=(reel.media||[])[0]||{};const video=media.media_url||reel.video_url||'';const poster=media.thumbnail_url||reel.poster_url||'';return `<article class="card" data-reel-id="${reel.reel_id||reel.id}" style="min-height:min(78dvh,760px);scroll-snap-align:start;display:grid;align-content:end;position:relative;overflow:hidden;padding:0;background:#020712">${video?`<video src="${video}" poster="${poster}" autoplay muted playsinline loop style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>`:`<div style="position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(110,223,246,.28),transparent 30%),linear-gradient(145deg,#081323,#020712)"></div>`}<div style="position:relative;padding:18px;background:linear-gradient(transparent,rgba(0,0,0,.86));display:grid;gap:8px"><p><strong>${author.display_name||'Pulse creator'}</strong> ${author.premium_mark?'✦':''}<br><span class="pill">${author.primary_label||'Member'}</span></p><h2>${reel.title||'Pulse Reel'}</h2><p>${reel.body||reel.caption||''}</p><p class="muted">${(reel.ai_tags||reel.tags||[]).map(t=>'#'+t).join(' ')}</p><div class="actions"><button data-reel-react="${reel.reel_id||reel.id}" class="button">🔥 ${reel.reactions_count||0}</button><a class="button" href="/pulse/reels/${reel.reel_id||reel.id}">Open</a><button class="button" data-reel-comment="${reel.reel_id||reel.id}">Comment</button><button class="button">Follow</button></div></div></article>`}
+    async function loadReels(){try{const d=await pulseApi('/api/pulse/reels/feed');const reels=d.reels||[];reelsFeed.innerHTML=reels.map(reelHtml).join('');reelsEmpty.style.display=reels.length?'none':'block';document.querySelectorAll('#reelsFeed video').forEach(v=>{v.muted=reelsMuted;v.play().catch(()=>{})})}catch(e){reelsEmpty.style.display='block';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}}
+    document.getElementById('muteReelsBtn')?.addEventListener('click',e=>{reelsMuted=!reelsMuted;e.currentTarget.textContent=reelsMuted?'Mute':'Unmute';document.querySelectorAll('#reelsFeed video').forEach(v=>v.muted=reelsMuted)});
+    document.addEventListener('dblclick',e=>{const card=e.target.closest('[data-reel-id]');if(card)pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:card.dataset.reelId,reaction_type:'fire'})}).then(()=>toast('Reaction added.')).catch(err=>toast(err.message))});
+    document.addEventListener('click',e=>{const react=e.target.closest('[data-reel-react]');if(react)pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:react.dataset.reelReact,reaction_type:'fire'})}).then(()=>toast('Reaction added.')).catch(err=>toast(err.message));const comment=e.target.closest('[data-reel-comment]');if(comment){const body=prompt('Write a quick Reel comment');if(body)pulseApi('/api/pulse/reels/comment',{method:'POST',body:JSON.stringify({reel_id:comment.dataset.reelComment,body})}).then(()=>toast('Comment posted.')).catch(err=>toast(err.message))}});
+    loadReels();
+    """
+    return pulse_social_shell("Pulse Reels", "AI-ranked vertical clips for education, trust, creator growth, and live highlights.", main, side, script)
+
+
+@webhook_app.route("/pulse/reels/<int:reel_id>", methods=["GET"])
+def pulse_reel_detail_page(reel_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    reel = pulse_reel_payload(reel_id, viewer_user_id=user["user_id"])
+    if not reel:
+        return pulse_social_shell("Pulse Reel", "Reel not found.", "<section class='card'><a class='button primary' href='/pulse/reels'>Back to Reels</a></section>")
+    media = (reel.get("media") or [{}])[0] or {}
+    video = clean_html(media.get("media_url") or reel.get("video_url") or "")
+    video_html = f"<video src='{video}' autoplay muted playsinline loop controls style='width:100%;max-height:72dvh;border-radius:18px;background:#020712'></video>" if video else "<div class='card'><p class='muted'>This Reel is waiting for media processing.</p></div>"
+    main = f"<section class='card'>{video_html}<h1>{clean_html(reel.get('title') or 'Pulse Reel')}</h1><p>{clean_html(reel.get('body') or reel.get('caption') or '')}</p><p><span class='pill'>{clean_html((reel.get('author') or {}).get('primary_label') or 'Member')}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a></div></section>"
+    script = f"document.getElementById('reelReact')?.addEventListener('click',()=>pulseApi('/api/pulse/reels/react',{{method:'POST',body:JSON.stringify({{reel_id:{int(reel_id)},reaction_type:'fire'}})}}).then(()=>toast('Reaction added.')).catch(e=>toast(e.message)));"
+    return pulse_social_shell("Pulse Reel", "Vertical Pulse clip with live social actions.", main, "", script)
+
+
+def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0):
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        if reel_id:
+            cur.execute("SELECT * FROM pulse_reels WHERE id=? AND COALESCE(status,'active')!='deleted' LIMIT 1", (int(reel_id),))
+        else:
+            cur.execute("SELECT * FROM pulse_reels WHERE post_id=? AND COALESCE(status,'active')!='deleted' LIMIT 1", (int(post_id),))
+        reel_row = dict(cur.fetchone() or {})
+    except Exception:
+        reel_row = {}
+    conn.close()
+    if not reel_row and post_id:
+        reel_row = {"id": int(post_id), "post_id": int(post_id), "category": "Community"}
+    if not reel_row:
+        return None
+    post = pulse_feed_engine.get_post(int(reel_row.get("post_id") or 0), viewer_user_id=viewer_user_id, include_private=False)
+    if not post:
+        return None
+    merged = {**post, **{k: v for k, v in reel_row.items() if v not in (None, "")}}
+    merged["reel_id"] = int(reel_row.get("id") or post.get("id") or 0)
+    merged["post_id"] = int(post.get("id") or reel_row.get("post_id") or 0)
+    merged["caption"] = reel_row.get("caption") or post.get("body") or ""
+    tags = post.get("ai_tags") or post.get("tags") or []
+    try:
+        extra_tags = json.loads(reel_row.get("ai_tags_json") or "[]")
+    except Exception:
+        extra_tags = []
+    merged["ai_tags"] = list(dict.fromkeys([*(tags or []), *(extra_tags or [])]))[:10]
+    merged.update(reel_ranking_engine.score_reel({
+        **merged,
+        "premium_mark": bool((post.get("author") or {}).get("premium_mark")),
+        "engagement_score": post.get("engagement_score") or post.get("reactions_count") or 0,
+    }))
+    return merged
+
+
+def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0):
+    base = pulse_feed_engine.list_feed(viewer_user_id=viewer_user_id, feed="reels", limit=limit, offset=offset)
+    posts = base.get("posts") or []
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    reel_rows = {}
+    if posts:
+        placeholders = ",".join(["?"] * len(posts))
+        try:
+            cur.execute(f"SELECT * FROM pulse_reels WHERE post_id IN ({placeholders}) AND COALESCE(status,'active')!='deleted'", tuple(int(p.get("id") or 0) for p in posts))
+            reel_rows = {int(row["post_id"]): dict(row) for row in cur.fetchall()}
+        except Exception:
+            reel_rows = {}
+    conn.close()
+    reels = []
+    for post in posts:
+        row = reel_rows.get(int(post.get("id") or 0), {})
+        if category and row and str(row.get("category") or "").lower() != str(category).lower():
+            continue
+        reel = {**post, **{k: v for k, v in row.items() if v not in (None, "")}}
+        reel["reel_id"] = int(row.get("id") or post.get("id") or 0)
+        reel["post_id"] = int(post.get("id") or 0)
+        reel["caption"] = row.get("caption") or post.get("body") or ""
+        reel["premium_mark"] = bool((post.get("author") or {}).get("premium_mark"))
+        reel.update(reel_ranking_engine.score_reel(reel))
+        reels.append(reel)
+    return {**base, "reels": reel_ranking_engine.rank_reels(reels), "categories": ["AI Picks", "Trending", "Crypto Education", "Scam Alerts", "Market Pulse", "Teachers", "Livestream Highlights", "Founder Picks", "Community", "Arena"]}
 
 
 @webhook_app.route("/pulse/friends", methods=["GET"])
@@ -16309,38 +16465,151 @@ def pulse_live_page():
     conn.commit(); conn.close()
     refs = profile["referrals"]
     privileges = profile["privileges"]
-    progress = min(100, int(refs["completed"] / refs["required"] * 100))
+    completed = safe_int(refs.get("completed"), 0)
+    required = max(1, safe_int(refs.get("required"), 30))
+    progress = min(100, int(completed / required * 100))
     if refs["livestream_status"] == "suspended":
         live_card = "<section class='card'><h2>Live Suspended</h2><p>Your Live access is paused. Review the safety reason and contact support to appeal.</p><a class='button' href='/support'>Appeal</a></section>"
     elif privileges["can_go_live"]:
         live_card = """
-        <section class='card live-ready'><h2>Go Live Setup</h2><input id='liveTitle' placeholder='Live title' value='CoinPilotXAI Pulse Live'><select id='liveCategory'><option>Crypto Education</option><option>Scam Shield Lesson</option><option>Arena Training</option><option>Market Psychology</option></select><input id='liveThumb' placeholder='Optional thumbnail URL'><p class='muted'>Live safety rules: no financial advice, no doxxing, no harassment, no scam promotion.</p><button class='primary' id='startLiveBtn'>Start Live</button><p class='muted' id='liveStartStatus'>Ready to validate your creator access.</p></section>
+        <section class='card live-ready'>
+          <h2>Go Live Setup</h2>
+          <input id='liveTitle' placeholder='Live title' value='CoinPilotXAI Pulse Live'>
+          <select id='liveCategory'><option>Crypto Education</option><option>Scam Shield Lesson</option><option>Arena Training</option><option>Market Psychology</option></select>
+          <input id='liveThumb' placeholder='Optional thumbnail URL'>
+          <p class='muted'>Live safety rules: no financial advice, no doxxing, no harassment, no scam promotion.</p>
+          <button class='primary' id='startLiveBtn'>Start Live</button>
+          <p class='muted' id='liveStartStatus'>Ready to validate your creator access.</p>
+          <div id='liveErrorBox' class='card' style='display:none;border-color:rgba(255,107,122,.42);background:rgba(255,107,122,.08)'></div>
+        </section>
+        <section id='livePreviewSheet' class='card' style='display:none;position:fixed;inset:0;z-index:80;margin:0;border-radius:0;background:rgba(2,7,14,.96);overflow:auto;padding:calc(18px + env(safe-area-inset-top)) 14px calc(22px + env(safe-area-inset-bottom))'>
+          <div style='width:min(100%,860px);margin:auto;display:grid;gap:12px'>
+            <div class='person' style='justify-content:space-between'>
+              <div><span class='pill' style='background:rgba(255,0,80,.22);border-color:rgba(255,0,80,.42)'>LIVE PREVIEW</span><h2 style='margin-top:8px'>Check your camera and microphone</h2><p class='muted' id='livePreviewStatus'>Device preview is starting.</p></div>
+              <button class='button' id='closeLivePreview' type='button'>Close</button>
+            </div>
+            <div style='position:relative;border:1px solid rgba(110,223,246,.24);border-radius:22px;overflow:hidden;background:#020712;min-height:320px;box-shadow:0 24px 90px rgba(0,0,0,.42),0 0 42px rgba(110,223,246,.14)'>
+              <video id='livePreviewVideo' autoplay muted playsinline style='width:100%;height:min(62vh,520px);object-fit:cover;display:block;transform:scaleX(-1)'></video>
+              <div style='position:absolute;left:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap'><span class='pill'>0 viewers</span><span class='pill' id='liveHealth'>Camera warming up</span></div>
+            </div>
+            <div class='actions'>
+              <button class='button' id='toggleMicBtn' type='button'>Mute Mic</button>
+              <button class='button' id='toggleCamBtn' type='button'>Disable Camera</button>
+              <button class='button' id='shareScreenBtn' type='button'>Share Screen</button>
+              <button class='primary' id='enterLiveBtn' type='button'>Go Live</button>
+            </div>
+            <p class='muted'>If camera access is unavailable, Pulse can continue with audio-only or a local live room while media setup is completed.</p>
+          </div>
+        </section>
         """
     else:
-        live_card = f"<section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {refs['completed']}/{refs['required']} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p>Going live is earned so creators build trust before broadcasting.</p><div class='actions'><a class='button primary' href='/pulse/invite'>Invite Members</a><a class='button' href='/pulse/creator-status'>Creator Status</a></div></section>"
-    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{int(profile['trust_score'])}/100 · {clean_html(profile['trust_band'])}</p></article><article class='card'><h2>Invite Progress</h2><p>{refs['completed']}/{refs['required']} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges['current_level'])}</p></article></section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+        live_card = f"<section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {completed}/{required} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p>Going live is earned so creators build trust before broadcasting.</p><div class='actions'><a class='button primary' href='/pulse/invite'>Invite Members</a><a class='button' href='/pulse/creator-status'>Creator Status</a></div></section>"
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
+    let pulseLiveStream = null;
+    let pulseLiveRoom = null;
+    function liveError(message) {
+      const box = document.getElementById('liveErrorBox');
+      if (box) { box.style.display = 'block'; box.textContent = message || 'Livestream setup needs one more configuration step.'; }
+      const status = document.getElementById('liveStartStatus');
+      if (status) status.textContent = message || 'Livestream setup needs one more configuration step.';
+      toast(message || 'Livestream setup needs one more configuration step.');
+    }
+    function stopPulseLivePreview() {
+      if (pulseLiveStream) pulseLiveStream.getTracks().forEach(track => track.stop());
+      pulseLiveStream = null;
+    }
+    async function requestPulseLiveMedia() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera preview is not available in this browser. You can still enter the live room.');
+      }
+      try {
+        return await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+      } catch (firstError) {
+        try {
+          const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          liveError('Camera was unavailable, but microphone is ready for audio-only Live.');
+          return audioOnly;
+        } catch (secondError) {
+          throw new Error('Camera and microphone access are required to preview Live. Please allow access and try again.');
+        }
+      }
+    }
+    async function openLivePreview(room) {
+      pulseLiveRoom = room;
+      const sheet = document.getElementById('livePreviewSheet');
+      const video = document.getElementById('livePreviewVideo');
+      const previewStatus = document.getElementById('livePreviewStatus');
+      const health = document.getElementById('liveHealth');
+      if (sheet) sheet.style.display = 'block';
+      document.body.style.overflow = 'hidden';
+      if (previewStatus) previewStatus.textContent = 'Requesting camera and microphone permission...';
+      try {
+        pulseLiveStream = await requestPulseLiveMedia();
+        if (video) video.srcObject = pulseLiveStream;
+        if (previewStatus) previewStatus.textContent = 'Preview ready. Check your mic/camera, then go live.';
+        if (health) health.textContent = pulseLiveStream.getVideoTracks().length ? 'Camera ready' : 'Audio-only ready';
+      } catch (err) {
+        if (previewStatus) previewStatus.textContent = err.message;
+        if (health) health.textContent = 'Permission needed';
+        liveError(err.message);
+      }
+    }
+    document.getElementById('closeLivePreview')?.addEventListener('click', () => {
+      stopPulseLivePreview();
+      const sheet = document.getElementById('livePreviewSheet');
+      if (sheet) sheet.style.display = 'none';
+      document.body.style.overflow = '';
+    });
+    document.getElementById('toggleMicBtn')?.addEventListener('click', event => {
+      const tracks = pulseLiveStream ? pulseLiveStream.getAudioTracks() : [];
+      tracks.forEach(track => track.enabled = !track.enabled);
+      event.currentTarget.textContent = tracks.some(track => track.enabled) ? 'Mute Mic' : 'Unmute Mic';
+    });
+    document.getElementById('toggleCamBtn')?.addEventListener('click', event => {
+      const tracks = pulseLiveStream ? pulseLiveStream.getVideoTracks() : [];
+      tracks.forEach(track => track.enabled = !track.enabled);
+      event.currentTarget.textContent = tracks.some(track => track.enabled) ? 'Disable Camera' : 'Enable Camera';
+    });
+    document.getElementById('shareScreenBtn')?.addEventListener('click', async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return liveError('Screen share is not available in this browser.');
+      try {
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        stopPulseLivePreview();
+        pulseLiveStream = screen;
+        const video = document.getElementById('livePreviewVideo');
+        if (video) video.srcObject = screen;
+        const health = document.getElementById('liveHealth');
+        if (health) health.textContent = 'Screen share ready';
+      } catch (err) {
+        liveError('Screen share was not started.');
+      }
+    });
+    document.getElementById('enterLiveBtn')?.addEventListener('click', () => {
+      const url = (pulseLiveRoom && pulseLiveRoom.live_url) || (pulseLiveRoom && pulseLiveRoom.live_id ? '/pulse/live/' + pulseLiveRoom.live_id : '/pulse/live');
+      window.location.href = url;
+    });
     document.getElementById('startLiveBtn')?.addEventListener('click', async () => {
       const btn = document.getElementById('startLiveBtn');
       const status = document.getElementById('liveStartStatus');
+      const errorBox = document.getElementById('liveErrorBox');
       const setState = text => { if (status) status.textContent = text; if (btn) btn.textContent = text; };
       try {
+        if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
         btn.disabled = true;
         setState('Checking eligibility...');
         await new Promise(resolve => setTimeout(resolve, 120));
         setState('Preparing livestream...');
         const payload = { title: document.getElementById('liveTitle')?.value || '', category: document.getElementById('liveCategory')?.value || '', thumbnail_url: document.getElementById('liveThumb')?.value || '' };
-        setState('Starting Live...');
+        setState('Creating live room...');
         const data = await pulseApi('/api/pulse/live/start', { method:'POST', body: JSON.stringify(payload) });
-        if (status) status.textContent = 'Live session ready. Opening your room...';
-        toast('Livestream started.');
-        window.location.href = data.live_url || ('/pulse/live/' + data.live_id);
+        if (status) status.textContent = 'Live room ready. Starting camera preview...';
+        toast('Live room ready.');
+        await openLivePreview(data);
       } catch (err) {
         console.error('Pulse livestream start failed', err);
-        const message = err.message || 'Could not start Live.';
-        if (status) status.textContent = message;
-        alert(message);
-        toast(message);
+        const message = err.message || 'Livestream setup needs one more configuration step.';
+        liveError(message);
         btn.textContent = 'Start Live';
       } finally {
         btn.disabled = false;
@@ -16378,21 +16647,47 @@ def api_pulse_live_start():
     payload = request.get_json(silent=True) or {}
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (int(user["user_id"]),))
+        user_id = safe_int(user.get("user_id"), 0)
+        if not user_id:
+            conn.rollback(); conn.close()
+            return jsonify({"ok": False, "message": "Missing required value: user_id"}), 400
+        cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (user_id,))
         fresh = dict(cur.fetchone() or user)
         profile = pulse_trust_profile_for_user(cur, fresh)
         privileges = profile.get("privileges") or {}
         referrals = profile.get("referrals") or {}
         is_owner = premium_identity_engine.is_owner(fresh)
+        if is_owner:
+            now_owner = datetime.utcnow().isoformat(timespec="seconds")
+            cur.execute(
+                """
+                INSERT INTO livestream_access (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at)
+                VALUES (?, 'approved', 30, 0, '', ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, suspended_reason='', updated_at=excluded.updated_at
+                """,
+                (user_id, now_owner, now_owner),
+            )
+            cur.execute(
+                """
+                INSERT INTO livestream_eligibility (user_id, status, referral_count, approved_by, suspended_reason, created_at, updated_at)
+                VALUES (?, 'approved', 30, 0, '', ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET status='approved', referral_count=30, suspended_reason='', updated_at=excluded.updated_at
+                """,
+                (user_id, now_owner, now_owner),
+            )
+            profile["trust_score"] = max(100, safe_int(profile.get("trust_score"), 0))
+            referrals["completed"] = max(30, safe_int(referrals.get("completed"), 0))
+            referrals["livestream_status"] = "approved"
+            privileges["can_go_live"] = True
         denial = ""
         if referrals.get("livestream_status") == "suspended":
             denial = "Livestream access is suspended."
         elif not is_owner and not privileges.get("can_go_live"):
             denial = "Invite 30 real members and build verified trust to unlock Live."
-        elif not is_owner and int(profile.get("trust_score") or 0) < 50:
+        elif not is_owner and safe_int(profile.get("trust_score"), 0) < 50:
             denial = "Build your trust score before going live."
         if denial:
-            logging.info("PULSE_LIVE_START_DENIED user_id=%s reason=%s", user.get("user_id"), denial)
+            logging.info("PULSE_LIVE_START_DENIED user_id=%s reason=%s", user_id, denial)
             conn.rollback(); conn.close()
             return jsonify({"ok": False, "message": denial}), 403
         title = clean_html(payload.get("title") or "CoinPilotXAI Pulse Live")[:140]
@@ -16400,19 +16695,19 @@ def api_pulse_live_start():
         thumbnail_url = clean_html(payload.get("thumbnail_url") or "")[:600]
         now = datetime.utcnow().isoformat(timespec="seconds")
         stream_key = "cpx_live_" + secrets.token_urlsafe(24)
-        channel = f"pulse_live_{int(user['user_id'])}_{secrets.token_hex(6)}"
+        channel = f"pulse_live_{user_id}_{secrets.token_hex(6)}"
         chat_room = f"live-chat-{secrets.token_hex(8)}"
         cur.execute(
             """
             INSERT INTO pulse_live_sessions (user_id, title, category, thumbnail_url, audience, status, stream_key, websocket_channel, chat_room_id, viewer_count, created_at, started_at)
             VALUES (?, ?, ?, ?, 'public', 'live', ?, ?, ?, 0, ?, ?)
             """,
-            (int(user["user_id"]), title, category, thumbnail_url, stream_key, channel, chat_room, now, now),
+            (user_id, title, category, thumbnail_url, stream_key, channel, chat_room, now, now),
         )
         live_id = int(cur.lastrowid)
         conn.commit(); conn.close()
-        pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}"}, int(user["user_id"]), None)
-        logging.info("PULSE_LIVE_START_OK user_id=%s live_id=%s", user.get("user_id"), live_id)
+        pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}"}, user_id, None)
+        logging.info("PULSE_LIVE_START_OK user_id=%s live_id=%s", user_id, live_id)
         return jsonify({"ok": True, "live_id": live_id, "stream_key": stream_key, "live_url": f"/pulse/live/{live_id}", "websocket_channel": channel, "chat_room_id": chat_room})
     except Exception as exc:
         trace_id = secrets.token_hex(6)
@@ -16424,7 +16719,7 @@ def api_pulse_live_start():
             conn.rollback(); conn.close()
         except Exception:
             pass
-        return jsonify({"ok": False, "message": f"Livestream failed: {exc}", "error": str(exc), "type": exc.__class__.__name__, "trace_id": trace_id}), 500
+        return jsonify({"ok": False, "message": "Livestream setup needs one more configuration step.", "error": str(exc), "type": exc.__class__.__name__, "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -17034,6 +17329,107 @@ def api_pulse_posts():
             message = f"Database migration missing{detail}. Please run the latest migration and try again."
         record_attempt("failed", 500, message, exc_text)
         return jsonify({"ok": False, "message": message}), 500
+
+
+@webhook_app.route("/api/pulse/reels/feed", methods=["GET"])
+def api_pulse_reels_feed():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    try:
+        payload = pulse_reel_feed_payload(
+            viewer_user_id=user["user_id"],
+            category=request.args.get("category") or "",
+            limit=safe_int(request.args.get("limit"), 12),
+            offset=safe_int(request.args.get("offset"), 0),
+        )
+        pulse_mark_online(user["user_id"], "reels", request.path)
+        return jsonify({"ok": True, "data": {"reels": payload.get("reels", [])}, "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)})
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        logging.exception("PULSE_REELS_FEED_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
+        return jsonify({"ok": False, "message": "Reels are temporarily unavailable.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/reels/create", methods=["POST"])
+def api_pulse_reels_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
+    try:
+        caption = clean_html(payload.get("caption") or payload.get("body") or "")[:2200]
+        title = clean_html(payload.get("title") or "Pulse Reel")[:140]
+        category = clean_html(payload.get("category") or "Community")[:80]
+        media_ids = payload.get("media_ids") or []
+        tags = payload.get("tags") or ai_social_engine.suggest_hashtags(caption, category)
+        safety = ai_moderation_core.moderate_text(caption or title, "reel")
+        if safety.get("status") == "blocked":
+            return jsonify({"ok": False, "message": "This Reel needs changes before publishing.", "trace_id": trace_id}), 400
+        result = pulse_feed_engine.create_post(user["user_id"], caption, payload.get("post_type") or "video", title, tags=tags, visibility=payload.get("visibility") or "public", media_ids=media_ids)
+        if not result.get("ok"):
+            return jsonify({**result, "trace_id": trace_id}), 400
+        post_id = int(result.get("post_id") or 0)
+        score = reel_ranking_engine.score_reel({"risk_score": safety.get("risk_score"), "educational_value": 65, "created_at": datetime.utcnow().isoformat(timespec="seconds")})
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO pulse_reels
+            (post_id, user_id, category, caption, ai_tags_json, safety_score, educational_value, reel_score, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            ON CONFLICT(post_id) DO UPDATE SET category=excluded.category, caption=excluded.caption, ai_tags_json=excluded.ai_tags_json, safety_score=excluded.safety_score, educational_value=excluded.educational_value, reel_score=excluded.reel_score, updated_at=excluded.updated_at
+            """,
+            (post_id, user["user_id"], category, caption, json.dumps(tags[:10]), score["safety_score"], score["educational_score"], score["reel_score"], now, now),
+        )
+        reel_id = int(cur.lastrowid or 0)
+        if not reel_id:
+            cur.execute("SELECT id FROM pulse_reels WHERE post_id=? LIMIT 1", (post_id,))
+            reel_id = safe_int((cur.fetchone() or [0])[0], post_id)
+        conn.commit()
+        conn.close()
+        reel = pulse_reel_payload(reel_id=reel_id, viewer_user_id=user["user_id"])
+        pulse_emit_event("pulse_reel_created", {"reel_id": reel_id, "post_id": post_id, "reel": reel}, user["user_id"], post_id)
+        return jsonify({"ok": True, "data": {"reel": reel}, "reel": reel, "reel_id": reel_id, "post_id": post_id, "next_url": f"/pulse/reels/{reel_id}"})
+    except Exception as exc:
+        logging.exception("PULSE_REELS_CREATE_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
+        return jsonify({"ok": False, "message": "Reel could not be created.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/reels/react", methods=["POST"])
+def api_pulse_reels_react():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    reel = pulse_reel_payload(reel_id=safe_int(payload.get("reel_id"), 0), post_id=safe_int(payload.get("post_id"), 0), viewer_user_id=user["user_id"])
+    if not reel:
+        return jsonify({"ok": False, "message": "Reel not found."}), 404
+    result, status = pulse_feed_engine.react(user["user_id"], reel["post_id"], payload.get("reaction_type") or "fire")
+    if result.get("ok"):
+        pulse_emit_event("pulse_reel_reaction_updated", {**result, "reel_id": reel.get("reel_id")}, user["user_id"], reel["post_id"])
+    return jsonify(result), status
+
+
+@webhook_app.route("/api/pulse/reels/comment", methods=["POST"])
+def api_pulse_reels_comment():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    reel = pulse_reel_payload(reel_id=safe_int(payload.get("reel_id"), 0), post_id=safe_int(payload.get("post_id"), 0), viewer_user_id=user["user_id"])
+    if not reel:
+        return jsonify({"ok": False, "message": "Reel not found."}), 404
+    result, status = pulse_feed_engine.add_comment(user["user_id"], reel["post_id"], payload.get("body") or "", payload.get("parent_comment_id"), payload.get("media_ids") or [])
+    if result.get("ok"):
+        pulse_emit_event("pulse_reel_comment_created", {**result, "reel_id": reel.get("reel_id")}, user["user_id"], reel["post_id"])
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET", "DELETE"])
@@ -17890,7 +18286,10 @@ def admin_pulse_core_page():
         "premium_marks": "SELECT COUNT(*) AS total FROM pulse_user_badges WHERE badge_key IN ('premium_verified_star','premium_verified_check')",
         "message_threads": "SELECT COUNT(*) AS total FROM pulse_message_threads",
         "messages": "SELECT COUNT(*) AS total FROM pulse_messages",
+        "active_reels": "SELECT COUNT(*) AS total FROM pulse_reels WHERE COALESCE(status,'active')='active'",
         "trusted_profiles": "SELECT COUNT(*) AS total FROM user_privilege_profiles WHERE COALESCE(trust_score,0)>=70",
+        "trust_profiles": "SELECT COUNT(*) AS total FROM user_trust_profiles",
+        "active_livestreams": "SELECT COUNT(*) AS total FROM pulse_live_sessions WHERE status='live'",
         "media_jobs_pending": "SELECT COUNT(*) AS total FROM pulse_jobs WHERE status='pending' AND job_type IN ('generate_thumbnail','process_video','scan_links','generate_ai_summary','generate_ai_tags')",
         "failed_events": "SELECT COUNT(*) AS total FROM pulse_jobs WHERE status='failed'",
     }.items():
@@ -17900,14 +18299,16 @@ def admin_pulse_core_page():
         except Exception:
             counts[key] = 0
     conn.close()
-    rows = [{"name": key.replace("_", " ").title(), "value": value} for key, value in {**metrics, **counts}.items()]
+    realtime_health = realtime_engine.health_snapshot()
+    rows = [{"name": key.replace("_", " ").title(), "value": value} for key, value in {**metrics, **counts, **realtime_health}.items()]
     body = (
         "<h1>Pulse Core Systems</h1>"
-        "<p class='muted'>Realtime events, messaging stability, trust scoring, premium identity, media jobs, and AI social foundations.</p>"
+        "<p class='muted'>Realtime events, messaging stability, trust scoring, premium identity, media jobs, AI social foundations, and livestream health.</p>"
         f"<div class='card'>{admin_rows_table(rows, [('name','System'),('value','Value')])}</div>"
         "<div class='grid'><a class='card' href='/admin/pulse-live'><h2>Realtime Health</h2><p>Live events, typing, reactions, comments, and notification activity.</p></a>"
         "<a class='card' href='/admin/pulse-users'><h2>Premium + Privileges</h2><p>Grant glow marks, creator roles, trust scores, and access controls.</p></a>"
-        "<a class='card' href='/admin/pulse-worker-health'><h2>Media + AI Jobs</h2><p>Moderation, summaries, tags, thumbnails, and feed ranking queues.</p></a></div>"
+        "<a class='card' href='/admin/pulse-worker-health'><h2>Media + AI Jobs</h2><p>Moderation, summaries, tags, thumbnails, and feed ranking queues.</p></a>"
+        "<a class='card' href='/admin/livestreams'><h2>Livestream Operations</h2><p>Active lives, live access, reports, and stream readiness.</p></a></div>"
     )
     return admin_page_html("Pulse Core", body, admin)
 
@@ -19244,7 +19645,7 @@ def admin_command_center_page():
             f"<div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div>"
             f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span> <span class='pill'>Today {counts['today']}</span></p></a>"
         )
-    owner_links = " <a class='button primary' href='/admin/pulse-users'>Pulse Users</a>" if admin_is_owner_level(admin) else ""
+    owner_links = " <a class='button primary' href='/admin/pulse-users'>Pulse Users</a> <a class='button primary' href='/admin/pulse-core'>Pulse Core</a>" if admin_is_owner_level(admin) else ""
     body = f"<h1>Backend Department Command Center</h1><p class='muted'>Professional operations rooms for every department. Dangerous actions stay permission-gated and audited. Only departments allowed for your role appear here.</p><div class='grid'>{''.join(cards) or '<div class=\"card\">No department rooms assigned to this role yet.</div>'}</div><p><a class='button' href='/admin/ai-command'>Open AI Admin Assistant</a> <a class='button' href='/admin/audit-logs'>Audit Logs</a>{owner_links}</p>"
     return admin_page_html("Department Command Center", body, admin)
 
@@ -24615,6 +25016,49 @@ def init_db():
         ("deleted_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_reels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER UNIQUE,
+        user_id INTEGER,
+        category TEXT DEFAULT 'Community',
+        caption TEXT,
+        video_url TEXT,
+        poster_url TEXT,
+        ai_tags_json TEXT,
+        watch_duration_ms INTEGER DEFAULT 0,
+        completion_rate REAL DEFAULT 0,
+        replay_count INTEGER DEFAULT 0,
+        share_count INTEGER DEFAULT 0,
+        safety_score INTEGER DEFAULT 100,
+        educational_value INTEGER DEFAULT 50,
+        reel_score INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_reels", [
+        ("post_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("category", "TEXT DEFAULT 'Community'"),
+        ("caption", "TEXT"),
+        ("video_url", "TEXT"),
+        ("poster_url", "TEXT"),
+        ("ai_tags_json", "TEXT"),
+        ("watch_duration_ms", "INTEGER DEFAULT 0"),
+        ("completion_rate", "REAL DEFAULT 0"),
+        ("replay_count", "INTEGER DEFAULT 0"),
+        ("share_count", "INTEGER DEFAULT 0"),
+        ("safety_score", "INTEGER DEFAULT 100"),
+        ("educational_value", "INTEGER DEFAULT 50"),
+        ("reel_score", "INTEGER DEFAULT 0"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reels_status_score ON pulse_reels(status, reel_score, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reels_user ON pulse_reels(user_id, created_at)")
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         post_id INTEGER,
@@ -26051,6 +26495,59 @@ def init_db():
         ("manual_override", "INTEGER DEFAULT 0"),
         ("updated_by", "INTEGER"),
     ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_trust_profiles (
+        user_id INTEGER PRIMARY KEY,
+        trust_score INTEGER DEFAULT 0,
+        creator_score INTEGER DEFAULT 0,
+        influence_score INTEGER DEFAULT 0,
+        safety_score INTEGER DEFAULT 100,
+        risk_score INTEGER DEFAULT 0,
+        invite_score INTEGER DEFAULT 0,
+        education_score INTEGER DEFAULT 0,
+        market_accuracy_score INTEGER DEFAULT 0,
+        scam_hunter_score INTEGER DEFAULT 0,
+        frozen INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_trust_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT,
+        score_delta INTEGER DEFAULT 0,
+        reason TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_reputation_scores (
+        user_id INTEGER PRIMARY KEY,
+        trust_score INTEGER DEFAULT 0,
+        creator_score INTEGER DEFAULT 0,
+        influence_score INTEGER DEFAULT 0,
+        safety_score INTEGER DEFAULT 100,
+        risk_score INTEGER DEFAULT 0,
+        invite_score INTEGER DEFAULT 0,
+        education_score INTEGER DEFAULT 0,
+        market_accuracy_score INTEGER DEFAULT 0,
+        scam_hunter_score INTEGER DEFAULT 0,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_privilege_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        level TEXT,
+        privileges_json TEXT,
+        scores_json TEXT,
+        created_at TEXT
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_badges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

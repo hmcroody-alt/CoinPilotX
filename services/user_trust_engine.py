@@ -62,3 +62,33 @@ def trust_band(score):
     if score >= 30:
         return "New"
     return "Needs trust signals"
+
+
+def calculate_reputation_scores(profile=None, metrics=None):
+    profile = profile or {}
+    metrics = metrics or {}
+    trust = calculate_trust_score(profile, metrics)
+    helpful_posts = int(metrics.get("helpful_posts") or 0)
+    positive_reactions = int(metrics.get("positive_reactions") or 0)
+    reports = int(metrics.get("reports_received") or 0)
+    referrals = int(metrics.get("successful_referrals") or 0)
+    scam_reports = int(metrics.get("accurate_scam_reports") or 0)
+    lessons = int(metrics.get("teacher_contributions") or 0)
+    marketplace_success = int(metrics.get("marketplace_success") or 0)
+    live_reports = int(metrics.get("live_reports") or 0)
+    creator_score = min(100, trust // 2 + min(30, helpful_posts * 2) + min(20, positive_reactions // 4))
+    influence_score = min(100, min(35, referrals * 3) + min(35, positive_reactions // 3) + min(30, helpful_posts))
+    risk_score = min(100, reports * 8 + int(metrics.get("moderation_strikes") or 0) * 18 + live_reports * 10)
+    safety_score = max(0, 100 - risk_score + min(12, scam_reports))
+    return {
+        "trust_score": trust,
+        "creator_score": max(0, creator_score),
+        "influence_score": max(0, influence_score),
+        "safety_score": min(100, safety_score),
+        "risk_score": risk_score,
+        "invite_score": min(100, referrals * 4),
+        "education_score": min(100, lessons * 8 + (10 if metrics.get("teacher_verified") else 0)),
+        "market_accuracy_score": min(100, int(metrics.get("market_accuracy_hits") or 0) * 5),
+        "scam_hunter_score": min(100, scam_reports * 10),
+        "trust_band": trust_band(trust),
+    }

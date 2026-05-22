@@ -60,3 +60,45 @@ def identity_mark(row=None, badge_keys=None):
             return {"type": "check", "badge_key": PREMIUM_CHECK, "symbol": "✓", "title": "Premium Verified"}
         return {"type": "star", "badge_key": PREMIUM_STAR, "symbol": "✦", "title": "Premium Verified"}
     return None
+
+
+def user_has_premium_mark(user_or_row, loader=None):
+    if isinstance(user_or_row, dict):
+        return bool(identity_mark(user_or_row))
+    if loader:
+        return bool(identity_mark(loader(user_or_row)))
+    return False
+
+
+def get_premium_mark_type(user_or_row, loader=None):
+    row = user_or_row if isinstance(user_or_row, dict) else (loader(user_or_row) if loader else {})
+    mark = identity_mark(row)
+    return (mark or {}).get("type") or ""
+
+
+def grant_premium_override(user_id, mark_type="star", admin_id=0, executor=None):
+    mark_type = "check" if str(mark_type).lower() == "check" else "star"
+    if executor:
+        return executor(
+            int(user_id or 0),
+            {
+                "premium_mark_override": 1,
+                "premium_glow_manual_grant": 1,
+                "premium_mark_type": mark_type,
+                "admin_id": int(admin_id or 0),
+            },
+        )
+    return {"ok": True, "user_id": int(user_id or 0), "premium_mark_type": mark_type, "dry_run": True}
+
+
+def revoke_premium_override(user_id, admin_id=0, executor=None):
+    if executor:
+        return executor(
+            int(user_id or 0),
+            {
+                "premium_mark_override": 0,
+                "premium_glow_manual_grant": 0,
+                "admin_id": int(admin_id or 0),
+            },
+        )
+    return {"ok": True, "user_id": int(user_id or 0), "dry_run": True}

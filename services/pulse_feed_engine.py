@@ -8,7 +8,7 @@ import math
 import re
 from datetime import datetime, timedelta
 
-from . import media_service, premium_identity_engine, pulse_moderation_engine, user_context
+from . import media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, user_context
 
 
 REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
@@ -486,6 +486,11 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     conn.close()
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
+    try:
+        if feed in {"for_you", "trending"}:
+            posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
+    except Exception:
+        logging.exception("PULSE_FEED_RANKING_FAILED feed=%s viewer=%s", feed, viewer_user_id)
     return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel(topic)}
 
 
