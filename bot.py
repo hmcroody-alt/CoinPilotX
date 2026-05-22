@@ -16999,6 +16999,7 @@ def pulse_reels_page():
     .reels-rail{position:absolute;z-index:8;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:7px;width:max-content;max-width:min(860px,calc(100% - 24px));overflow-x:auto;overflow-y:hidden;padding:5px;background:rgba(3,8,17,.34);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.1);border-radius:999px;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}.reels-rail::-webkit-scrollbar{display:none}.reels-rail button{flex:0 0 auto;min-width:max-content;min-height:32px;height:32px;border-radius:999px;padding:0 12px;font-size:12px;line-height:1;white-space:nowrap;writing-mode:horizontal-tb;background:transparent;border-color:transparent;scroll-snap-align:center;letter-spacing:0;transition:background .18s ease,border-color .18s ease,transform .18s ease}.reels-rail button:hover{transform:translateY(-1px)}.reels-rail button.active{background:linear-gradient(135deg,rgba(110,223,246,.22),rgba(54,229,143,.12));border-color:rgba(110,223,246,.24);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),0 0 18px rgba(110,223,246,.12)}
     .reels-toolbar{position:absolute;z-index:7;left:14px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:8px;max-width:calc(100% - 112px);padding:7px;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(8,15,28,.42);backdrop-filter:blur(14px)}.reels-toolbar a,.reels-toolbar button{min-height:34px;border-radius:999px;background:rgba(255,255,255,.08);backdrop-filter:none;white-space:nowrap;padding:7px 11px;font-size:12px}
     .reels-empty{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:20px;z-index:3}.reels-empty .card{max-width:520px;background:rgba(8,15,28,.7);backdrop-filter:blur(18px)}
+    .reels-loading{position:absolute;inset:0;z-index:4;display:none;place-items:center;pointer-events:none;background:linear-gradient(180deg,rgba(2,5,11,.14),rgba(2,5,11,.42))}.reels-loading.open{display:grid}.reels-loader{width:min(72%,320px);height:7px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.11);box-shadow:0 0 28px rgba(110,223,246,.18)}.reels-loader::after{content:'';display:block;width:42%;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--green),var(--cyan));animation:reelsLoad 1s ease-in-out infinite}@keyframes reelsLoad{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
     .reel-comments{position:fixed;inset:auto 0 0 0;z-index:9999;display:none;min-height:320px;max-height:78dvh;padding:12px 14px calc(14px + env(safe-area-inset-bottom));border-radius:26px 26px 0 0;border:1px solid rgba(110,223,246,.2);background:rgba(5,11,20,.98);box-shadow:0 -24px 90px rgba(0,0,0,.5)}.reel-comments.open{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px}.reel-comments::before{content:'';width:46px;height:5px;border-radius:999px;background:rgba(255,255,255,.32);justify-self:center}.reel-comments-list{overflow:auto;display:grid;gap:8px}.reel-comment{padding:10px;border-radius:14px;background:rgba(255,255,255,.06)}.reel-comment-form{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px}.reel-comment-form input{border-radius:999px}.reel-comment-form button{width:48px;padding:0;border-radius:50%}
     @media(min-width:901px){.reels-shell{max-width:min(62vw,620px);margin:0 auto}.reels-immersive,.reel-card{aspect-ratio:9/16;height:min(86dvh,880px);min-height:620px}.reel-media{object-fit:cover}}
     @media(max-width:900px){body:has(.reels-immersive){overflow:hidden}body:has(.reels-immersive) .wrap{width:100%;max-width:100vw;margin:0;padding:0}body:has(.reels-immersive) .wrap>section.card,body:has(.reels-immersive) .layout>aside,body:has(.reels-immersive) .nav,body:has(.reels-immersive) .mobile-topbar,body:has(.reels-immersive) .mobile-bottom-nav,body:has(.reels-immersive) .pulse-fab{display:none!important}body:has(.reels-immersive) .layout{display:block}.reels-shell,.reels-immersive,.reel-card{height:100dvh;min-height:100dvh;border-radius:0;border:0}.reels-rail{top:calc(8px + env(safe-area-inset-top));left:9px;right:9px;transform:none;width:auto;max-width:none;border-radius:999px;padding:5px 6px}.reel-top{padding-top:calc(54px + env(safe-area-inset-top));padding-left:12px;padding-right:10px}.reel-actions{right:8px;top:50%;gap:9px}.reel-action{width:46px;height:46px;min-height:46px;border-radius:16px}.reel-caption{left:12px;right:68px;bottom:calc(74px + env(safe-area-inset-bottom));max-width:calc(100% - 84px)}.reel-caption h2{font-size:clamp(22px,6vw,32px)}.reel-tags{max-height:58px}.reels-toolbar{left:10px;right:64px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:none;border-radius:24px;justify-content:flex-start}.reels-toolbar a,.reels-toolbar button{font-size:12px;padding:7px 9px;min-height:32px}.reel-follow{font-size:12px;padding:6px 10px}.reel-card{scroll-snap-stop:always}}
@@ -17007,6 +17008,7 @@ def pulse_reels_page():
     <section class='reels-shell'>
       <nav class='reels-rail' id='reelsRail' aria-label='Reel discovery tabs'></nav>
       <section class='reels-immersive' id='reelsFeed' aria-live='polite'></section>
+      <div class='reels-loading' id='reelsLoading' aria-hidden='true'><span class='reels-loader'></span></div>
       <section class='reels-empty' id='reelsEmpty'><div class='card'><h2>Reels are warming up.</h2><p>Post the first short clip, add a sound, or turn a livestream highlight into a Reel.</p><div class='actions'><a class='button primary' href='/pulse/camera/reel'>Open Camera</a><a class='button' href='/pulse/create'>Upload Reel</a></div></div></section>
       <div class='reels-toolbar'><a class='button primary' href='/pulse/camera/reel'>Camera</a><a class='button' href='/pulse/create'>Upload</a><button class='button' id='muteReelsBtn' type='button'>Muted</button></div>
     </section>
@@ -17014,16 +17016,19 @@ def pulse_reels_page():
     """
     side = "<article class='card'><h2>Reel Intelligence</h2><p>Ranking blends retention, trust, originality, educational value, report history, and creator loyalty. Ragebait stays below quality.</p></article><article class='card'><h2>Creator Tools</h2><p>Camera, filters, sound reuse, caption AI, hook ideas, and thumbnail selection are wired into the Reels creation flow.</p></article>"
     script = """
-    const reelsFeed=document.getElementById('reelsFeed'),reelsEmpty=document.getElementById('reelsEmpty'),rail=document.getElementById('reelsRail'),comments=document.getElementById('reelComments'),commentList=document.getElementById('reelCommentsList'),commentBody=document.getElementById('reelCommentBody');let reelsMuted=true,currentCommentReel=0,currentCategory='';
+    const reelsFeed=document.getElementById('reelsFeed'),reelsEmpty=document.getElementById('reelsEmpty'),rail=document.getElementById('reelsRail'),reelsLoading=document.getElementById('reelsLoading'),comments=document.getElementById('reelComments'),commentList=document.getElementById('reelCommentsList'),commentBody=document.getElementById('reelCommentBody');let reelsMuted=true,currentCommentReel=0,currentLane='for_you';
     const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const reelTabs=[['for_you','For You'],['following','Following'],['trending','Trending'],['new_creators','New Creators'],['ai_picks','AI Picks'],['local','Local'],['global','Global'],['educational','Educational'],['music','Music'],['live','Live']];
+    const emptyCopy={for_you:['Reels are warming up.','Post the first short clip, add a sound, or turn a livestream highlight into a Reel.'],following:['No followed creator Reels yet.','Follow creators from Pulse, then their clips will land here first.'],trending:['No trending Reels yet.','Reels with strong watch energy and healthy engagement will rise here.'],new_creators:['New creators are warming up.','Fresh Pulse creators will appear here as they post vertical clips.'],ai_picks:['AI Picks are calibrating.','Pulse AI highlights original, trustworthy, high-quality clips here.'],local:['Local Reels are warming up.','As profiles add region signals, nearby creator clips will appear here.'],global:['Global Reels are warming up.','Worldwide creator clips will appear here as the network grows.'],educational:['No educational Reels yet.','Safety lessons, market education, and creator tutorials will appear here.'],music:['No sound-powered Reels yet.','Clips with original audio or saved sounds will appear here.'],live:['No live clips yet.','Livestream highlights and event clips will appear here.']};
     function reelHtml(reel){const author=reel.author||{};const media=(reel.media||[])[0]||{};const video=media.media_url||reel.video_url||'';const poster=media.thumbnail_url||reel.poster_url||'';const id=reel.reel_id||reel.id;const tags=(reel.ai_tags||reel.tags||[]).slice(0,5);const audio=reel.audio||{};const music=audio.title?`${audio.title}${audio.artist?' · '+audio.artist:''}`:'Original Pulse sound';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="reel-card" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}">${video?`<video class="reel-media" src="${esc(video)}" poster="${esc(poster)}" muted playsinline loop preload="metadata"></video>`:`<div class="reel-fallback"><span class="reel-chip">Media processing</span></div>`}<div class="reel-scrim"></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reel-actions"><button class="reel-action" data-reel-react="${id}" aria-label="Like">🔥<small>${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small>${reel.comments_count||0}</small></button><button class="reel-action" data-reel-toast="Repost is being prepared for creator-safe attribution." aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Bookmark">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reel-caption"><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><span>♪ ${esc(music)}</span><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`}
     function syncPlayback(){const cards=[...document.querySelectorAll('.reel-card')];const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;const v=card.querySelector('video');if(v){v.muted=reelsMuted;if(visible)v.play().catch(()=>{});else v.pause();}});if(active){const next=active.nextElementSibling?.querySelector('video');if(next)next.load();}}
-    function renderRail(categories){const tabs=['For You','Following','Trending','New Creators','AI Picks','Local','Global','Educational','Music','Live Clips',...(categories||[])];rail.innerHTML=[...new Set(tabs)].map((c,i)=>`<button class="${i===0?'active':''}" data-reel-category="${esc(c)}">${esc(c)}</button>`).join('')}
-    async function loadReels(category=''){currentCategory=category;try{const d=await pulseApi('/api/pulse/reels/feed?limit=18&category='+encodeURIComponent(category));const reels=d.reels||[];renderRail(d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');reelsEmpty.style.display=reels.length?'none':'grid';requestAnimationFrame(syncPlayback)}catch(e){reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}}
+    function renderRail(activeLane='for_you',categories=[]){const seen=new Set();const tabs=[...reelTabs,...(categories||[]).map(c=>['category:'+c,c])].filter(([key])=>{if(seen.has(key))return false;seen.add(key);return true});rail.innerHTML=tabs.map(([key,label])=>`<button class="${key===activeLane?'active':''}" data-reel-lane="${esc(key)}" aria-pressed="${key===activeLane?'true':'false'}">${esc(label)}</button>`).join('');rail.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'center'});}
+    function setEmpty(lane){const copy=emptyCopy[lane]||['No Reels in this lane yet.','Creators are still warming this category up.'];reelsEmpty.querySelector('h2').textContent=copy[0];reelsEmpty.querySelector('p').textContent=copy[1];}
+    async function loadReels(lane='for_you'){currentLane=lane;renderRail(lane);reelsLoading?.classList.add('open');try{const isCategory=lane.startsWith('category:');const url='/api/pulse/reels/feed?limit=18&lane='+encodeURIComponent(isCategory?'category':lane)+(isCategory?'&category='+encodeURIComponent(lane.slice(9)):'');const d=await pulseApi(url);const reels=d.reels||[];renderRail(d.lane||lane,d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');setEmpty(d.lane||lane);reelsEmpty.style.display=reels.length?'none':'grid';requestAnimationFrame(syncPlayback)}catch(e){setEmpty(lane);reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}finally{reelsLoading?.classList.remove('open')}}
     document.getElementById('muteReelsBtn')?.addEventListener('click',e=>{reelsMuted=!reelsMuted;e.currentTarget.textContent=reelsMuted?'Muted':'Sound on';syncPlayback()});
     reelsFeed.addEventListener('scroll',()=>requestAnimationFrame(syncPlayback),{passive:true});document.addEventListener('visibilitychange',syncPlayback);
     document.addEventListener('dblclick',e=>{const card=e.target.closest('[data-reel-id]');if(card)pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:card.dataset.reelId,reaction_type:'fire'})}).then(()=>toast('Reaction added.')).catch(err=>toast(err.message))});
-    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-reel-category]');if(tab){document.querySelectorAll('[data-reel-category]').forEach(b=>b.classList.toggle('active',b===tab));loadReels(tab.textContent==='For You'?'':tab.textContent);return}const react=e.target.closest('[data-reel-react]');if(react){try{await pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:react.dataset.reelReact,reaction_type:'fire'})});react.classList.add('active');toast('Reaction added.')}catch(err){toast(err.message)}return}const open=e.target.closest('[data-open-comments]');if(open){currentCommentReel=open.dataset.openComments;commentList.innerHTML='<p class="muted">Comments are realtime-ready. Add the first reply.</p>';comments.classList.add('open');commentBody.focus();return}if(e.target.closest('#reelComments')&&e.target.id==='reelComments'){comments.classList.remove('open');return}const follow=e.target.closest('[data-follow-creator]');if(follow&&follow.dataset.followCreator){try{await pulseApi('/api/pulse/follows/toggle',{method:'POST',body:JSON.stringify({followed_user_id:follow.dataset.followCreator})});follow.textContent='Following';toast('Creator followed.')}catch(err){toast(err.message)}return}const save=e.target.closest('[data-reel-save]');if(save){toast('Reel saved to your creator inspiration shelf.');save.classList.add('active');return}const sound=e.target.closest('[data-save-sound]');if(sound&&sound.dataset.saveSound){try{await pulseApi('/api/pulse/reels/sounds/save',{method:'POST',body:JSON.stringify({track_id:sound.dataset.saveSound})});toast('Sound saved.')}catch(err){toast(err.message)}return}const share=e.target.closest('[data-share-reel]');if(share){navigator.share?navigator.share({title:'Pulse Reel',url:location.origin+'/pulse/reels/'+share.dataset.shareReel}).catch(()=>{}):navigator.clipboard?.writeText(location.origin+'/pulse/reels/'+share.dataset.shareReel).then(()=>toast('Reel link copied.'));return}const beta=e.target.closest('[data-reel-toast]');if(beta){toast(beta.dataset.reelToast);return}});
+    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-reel-lane]');if(tab){document.querySelectorAll('[data-reel-lane]').forEach(b=>{b.classList.toggle('active',b===tab);b.setAttribute('aria-pressed',b===tab?'true':'false')});loadReels(tab.dataset.reelLane||'for_you');return}const react=e.target.closest('[data-reel-react]');if(react){try{await pulseApi('/api/pulse/reels/react',{method:'POST',body:JSON.stringify({reel_id:react.dataset.reelReact,reaction_type:'fire'})});react.classList.add('active');toast('Reaction added.')}catch(err){toast(err.message)}return}const open=e.target.closest('[data-open-comments]');if(open){currentCommentReel=open.dataset.openComments;commentList.innerHTML='<p class="muted">Comments are realtime-ready. Add the first reply.</p>';comments.classList.add('open');commentBody.focus();return}if(e.target.closest('#reelComments')&&e.target.id==='reelComments'){comments.classList.remove('open');return}const follow=e.target.closest('[data-follow-creator]');if(follow&&follow.dataset.followCreator){try{await pulseApi('/api/pulse/follows/toggle',{method:'POST',body:JSON.stringify({followed_user_id:follow.dataset.followCreator})});follow.textContent='Following';toast('Creator followed.')}catch(err){toast(err.message)}return}const save=e.target.closest('[data-reel-save]');if(save){toast('Reel saved to your creator inspiration shelf.');save.classList.add('active');return}const sound=e.target.closest('[data-save-sound]');if(sound&&sound.dataset.saveSound){try{await pulseApi('/api/pulse/reels/sounds/save',{method:'POST',body:JSON.stringify({track_id:sound.dataset.saveSound})});toast('Sound saved.')}catch(err){toast(err.message)}return}const share=e.target.closest('[data-share-reel]');if(share){navigator.share?navigator.share({title:'Pulse Reel',url:location.origin+'/pulse/reels/'+share.dataset.shareReel}).catch(()=>{}):navigator.clipboard?.writeText(location.origin+'/pulse/reels/'+share.dataset.shareReel).then(()=>toast('Reel link copied.'));return}const beta=e.target.closest('[data-reel-toast]');if(beta){toast(beta.dataset.reelToast);return}});
     document.getElementById('reelCommentForm').addEventListener('submit',async e=>{e.preventDefault();const body=commentBody.value.trim();if(!body||!currentCommentReel)return;try{const d=await pulseApi('/api/pulse/reels/comment',{method:'POST',body:JSON.stringify({reel_id:currentCommentReel,body})});commentList.insertAdjacentHTML('beforeend',`<article class="reel-comment"><strong>You</strong><p>${esc(body)}</p></article>`);commentBody.value='';toast(d.message||'Comment posted.')}catch(err){toast(err.message)}});
     loadReels();
     """
@@ -17116,8 +17121,68 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0):
     return merged
 
 
-def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0):
-    base = pulse_feed_engine.list_feed(viewer_user_id=viewer_user_id, feed="reels", limit=limit, offset=offset)
+PULSE_REEL_LANES = {
+    "for_you": "For You",
+    "following": "Following",
+    "trending": "Trending",
+    "new_creators": "New Creators",
+    "ai_picks": "AI Picks",
+    "local": "Local",
+    "global": "Global",
+    "educational": "Educational",
+    "music": "Music",
+    "live": "Live",
+    "category": "Category",
+}
+
+
+def normalize_reel_lane(lane):
+    lane = str(lane or "for_you").strip().lower().replace("-", "_").replace(" ", "_")
+    return lane if lane in PULSE_REEL_LANES else "for_you"
+
+
+def reel_text_blob(reel):
+    bits = [
+        reel.get("category") or "",
+        reel.get("title") or "",
+        reel.get("caption") or "",
+        reel.get("body") or "",
+        reel.get("sound_title") or "",
+        " ".join(str(t) for t in (reel.get("ai_tags") or reel.get("tags") or [])),
+    ]
+    return " ".join(bits).lower()
+
+
+def pulse_reel_matches_lane(reel, lane, viewer_user_id=0, category=""):
+    lane = normalize_reel_lane(lane)
+    if lane in {"for_you", "global"}:
+        return True
+    if lane == "category":
+        return not category or str(reel.get("category") or "").lower() == str(category).lower()
+    if lane == "following":
+        return bool(reel.get("viewer_follows_author"))
+    if lane == "new_creators":
+        return int(reel.get("author_post_count") or 0) <= 5 or int(reel.get("author_follower_count") or 0) <= 25
+    if lane == "ai_picks":
+        return int(reel.get("reel_score") or 0) >= 55 or bool(reel.get("ai_tags"))
+    if lane == "local":
+        return bool(str(reel.get("author_country") or reel.get("author_region") or "").strip())
+    blob = reel_text_blob(reel)
+    if lane == "educational":
+        return any(token in blob for token in ["learn", "lesson", "teacher", "education", "tutorial", "safety", "scam", "course", "wallet", "cyber"])
+    if lane == "music":
+        audio = reel.get("audio") or {}
+        return bool(audio.get("track_id") or audio.get("title") or reel.get("sound_title"))
+    if lane == "live":
+        return any(token in blob for token in ["live", "livestream", "stream", "event", "highlight"])
+    if lane == "trending":
+        return True
+    return True
+
+
+def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, lane="for_you"):
+    lane = normalize_reel_lane(lane)
+    base = pulse_feed_engine.list_feed(viewer_user_id=viewer_user_id, feed="reels", limit=max(int(limit or 12), 40), offset=offset)
     posts = base.get("posts") or []
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -17130,16 +17195,49 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0):
             reel_rows = {int(row["post_id"]): dict(row) for row in cur.fetchall()}
         except Exception:
             reel_rows = {}
-    conn.close()
     reels = []
+    author_ids = [int(p.get("user_id") or 0) for p in posts if int(p.get("user_id") or 0)]
+    following_ids = set()
+    author_counts = {}
+    author_followers = {}
+    author_geo = {}
+    if viewer_user_id and author_ids:
+        placeholders = ",".join(["?"] * len(set(author_ids)))
+        ids = tuple(sorted(set(author_ids)))
+        try:
+            cur.execute(f"SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=? AND followed_user_id IN ({placeholders})", (int(viewer_user_id), *ids))
+            following_ids = {int(dict(row).get("followed_user_id") or 0) for row in cur.fetchall()}
+        except Exception:
+            following_ids = set()
+        try:
+            cur.execute(f"SELECT user_id, COUNT(*) AS total FROM pulse_posts WHERE user_id IN ({placeholders}) AND deleted_at IS NULL GROUP BY user_id", ids)
+            author_counts = {int(dict(row).get("user_id") or 0): int(dict(row).get("total") or 0) for row in cur.fetchall()}
+        except Exception:
+            author_counts = {}
+        try:
+            cur.execute(f"SELECT followed_user_id, COUNT(*) AS total FROM pulse_follows WHERE followed_user_id IN ({placeholders}) GROUP BY followed_user_id", ids)
+            author_followers = {int(dict(row).get("followed_user_id") or 0): int(dict(row).get("total") or 0) for row in cur.fetchall()}
+        except Exception:
+            author_followers = {}
+        try:
+            cur.execute(f"SELECT user_id, country, state_region FROM users WHERE user_id IN ({placeholders})", ids)
+            author_geo = {int(dict(row).get("user_id") or 0): dict(row) for row in cur.fetchall()}
+        except Exception:
+            author_geo = {}
+    conn.close()
     for post in posts:
         row = reel_rows.get(int(post.get("id") or 0), {})
-        if category and row and str(row.get("category") or "").lower() != str(category).lower():
-            continue
         reel = {**post, **{k: v for k, v in row.items() if v not in (None, "")}}
         reel["reel_id"] = int(row.get("id") or post.get("id") or 0)
         reel["post_id"] = int(post.get("id") or 0)
         reel["caption"] = row.get("caption") or post.get("body") or ""
+        author_id = int(reel.get("user_id") or 0)
+        reel["viewer_follows_author"] = author_id in following_ids
+        reel["author_post_count"] = author_counts.get(author_id, 0)
+        reel["author_follower_count"] = author_followers.get(author_id, 0)
+        geo = author_geo.get(author_id, {})
+        reel["author_country"] = geo.get("country") or ""
+        reel["author_region"] = geo.get("state_region") or ""
         reel["premium_mark"] = bool((post.get("author") or {}).get("premium_mark"))
         reel["human_time"] = smart_time_text(reel.get("created_at") or row.get("created_at") or "")
         audio = {}
@@ -17162,8 +17260,17 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0):
             "trend_score": int(audio.get("trend_score") or 0),
         }
         reel.update(reel_ranking_engine.score_reel(reel))
+        if not pulse_reel_matches_lane(reel, lane, viewer_user_id, category):
+            continue
         reels.append(reel)
-    return {**base, "reels": reel_ranking_engine.rank_reels(reels), "categories": ["AI Picks", "Trending", "New Creators", "Educational", "Music", "Live Clips", "Crypto Education", "Scam Alerts", "Market Pulse", "Teachers", "Livestream Highlights", "Founder Picks", "Community", "Arena"]}
+    ranked = reel_ranking_engine.rank_reels(reels)
+    if lane == "trending":
+        ranked = sorted(ranked, key=lambda r: (int(r.get("engagement_score") or 0) + int(r.get("reactions_count") or 0) + int(r.get("comments_count") or 0) + int(r.get("reel_score") or 0)), reverse=True)
+    elif lane == "new_creators":
+        ranked = sorted(ranked, key=lambda r: (int(r.get("author_post_count") or 0), -int(r.get("reel_score") or 0)))
+    elif lane == "music":
+        ranked = sorted(ranked, key=lambda r: int(((r.get("audio") or {}).get("trend_score") or 0)) + int(((r.get("audio") or {}).get("usage_count") or 0)), reverse=True)
+    return {**base, "feed": "reels", "lane": lane, "lane_label": PULSE_REEL_LANES.get(lane, "For You"), "reels": ranked[: int(limit or 12)], "categories": ["Crypto Education", "Scam Alerts", "Market Pulse", "Teachers", "Livestream Highlights", "Founder Picks", "Community", "Arena"]}
 
 
 @webhook_app.route("/pulse/friends", methods=["GET"])
@@ -18884,9 +18991,10 @@ def api_pulse_reels_feed():
             category=request.args.get("category") or "",
             limit=safe_int(request.args.get("limit"), 12),
             offset=safe_int(request.args.get("offset"), 0),
+            lane=request.args.get("lane") or request.args.get("feed") or "for_you",
         )
         pulse_mark_online(user["user_id"], "reels", request.path)
-        return jsonify({"ok": True, "data": {"reels": payload.get("reels", [])}, "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)})
+        return jsonify({"ok": True, "data": {"reels": payload.get("reels", [])}, "lane": payload.get("lane") or "for_you", "lane_label": payload.get("lane_label") or "For You", "reels": payload.get("reels", []), "categories": payload.get("categories", []), "has_more": payload.get("has_more", False), "next_offset": payload.get("next_offset", 0)})
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception("PULSE_REELS_FEED_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
