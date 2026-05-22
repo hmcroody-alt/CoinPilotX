@@ -18452,7 +18452,9 @@ def pulse_group_detail_page(group_slug):
         moderator_controls = ""
         if groups_advanced and pulse_group_role_allows_moderation(current_role):
             moderator_controls = f"<button data-group-remove-user='{int(p.get('user_id') or 0)}'>Remove User From Group</button><button data-group-post-pin='{post_id}'>{'Unpin Post' if is_pinned else 'Pin Post'}</button>"
-        menu_html = f"<details class='group-post-menu'><summary>...</summary><div><button data-group-report-post='{post_id}'>Report Post</button>{'<button data-group-post-delete=\"'+str(post_id)+'\">Delete Post</button>' if can_delete else ''}{moderator_controls}</div></details>" if groups_advanced else ""
+        delete_control = f"<button data-group-post-delete='{post_id}'>Delete Post</button>" if can_delete else ""
+        report_control = f"<button data-group-report-post='{post_id}'>Report Post</button>" if groups_advanced else ""
+        menu_html = f"<details class='group-post-menu'><summary>...</summary><div>{report_control}{delete_control}{moderator_controls}</div></details>" if (groups_advanced or delete_control) else ""
         author_avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
         pinned_badge = "<span class='pill pinned-pill'>Pinned</span> " if is_pinned else ""
         interaction_html = (
@@ -21321,8 +21323,6 @@ def api_pulse_group_post_delete(post_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    if not GROUPS_ADVANCED_MODE:
-        return groups_advanced_disabled_response()
     trace_id = secrets.token_hex(6)
     reason = clean_html((request.get_json(silent=True) or {}).get("reason") or "owner_delete")[:240]
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
