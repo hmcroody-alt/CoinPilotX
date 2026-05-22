@@ -136,7 +136,7 @@
           <a href="/">Home</a>
           <a href="/dashboard">Dashboard</a>
           <a href="/account">Account</a>
-          <a href="/upgrade">Upgrade</a>
+          <a href="/pulse/premium">Pulse Premium</a>
           <a href="/account/settings">Settings</a>
           <a href="/support">Support</a>
           {% if current_user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
@@ -154,7 +154,7 @@
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
         {% if page == "signup" %}
-          <p>Create your CoinPilotXAI platform account. First-time account users receive a 7-day Pro Trial, then automatically return to Free unless they subscribe.</p>
+          <p>Create your CoinPilotXAI platform account. Core tools are free for authenticated users; Pulse Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
@@ -221,13 +221,13 @@
               <p><strong>Plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
               {% if access.is_paid_pro %}
-                <p><strong>Pro:</strong> Paid Pro active.</p>
+                <p><strong>Pulse Premium:</strong> Active.</p>
                 <p><strong>Billing/access date:</strong> {{ access.pro_expires_at }}</p>
               {% elif access.is_trial %}
                 <p><strong>Trial ends:</strong> {{ access.trial_end }}</p>
                 <p><strong>Days remaining:</strong> {{ access.days_remaining }}</p>
               {% elif access.trial_expired %}
-                <p><strong>Trial:</strong> Ended. Upgrade anytime when deeper intelligence becomes useful.</p>
+                <p><strong>Trial:</strong> Ended. Core access remains free; Pulse Premium is optional when you want elite identity and creator enhancements.</p>
               {% endif %}
               <p><strong>Telegram:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>
               <p><strong>Email updates:</strong> {% if current_user.email_opt_in %}Enabled{% else %}Disabled{% endif %}</p>
@@ -235,14 +235,14 @@
             </div>
           </div>
           <div class="profile-card" style="margin-top:18px">
-            <h3>Pro Trial Benefits</h3>
-            <p>Deeper AI intelligence, Sports Edge context, wallet risk details, portfolio decision support, whale intelligence, advanced scam protection, and saved intelligence workflows.</p>
-            <p class="muted">CoinPilotXAI Inc. provides educational AI intelligence only. Pro does not guarantee profit, betting outcomes, or investment results.</p>
+            <h3>Free Core Ecosystem</h3>
+            <p>Pulse posting, groups, spaces, messenger, reels, livestream basics, marketplace browsing, AI utilities, watchlists, alerts, profile customization, and community participation are available to authenticated users.</p>
+            <p class="muted">Pulse Premium adds prestige identity, creator cosmetics, advanced creator tools, and elite profile enhancements. CoinPilotXAI Inc. provides educational AI intelligence only.</p>
           </div>
           {% if access.referral_code %}
             <div class="profile-card" style="margin-top:18px">
               <h3>Referral Link</h3>
-              <p>Invite 3 verified users and receive +30 days of Pro access.</p>
+              <p>Invite verified users and help grow the free CoinPilotXAI ecosystem.</p>
               <p><code>https://coinpilotx.app/r/{{ access.referral_code }}</code></p>
             </div>
           {% endif %}
@@ -250,7 +250,7 @@
             <a class="button primary" href="/account/settings">Account Settings</a>
             <a class="button primary" href="/dashboard">Open Dashboard</a>
             {% if not access.is_paid_pro %}
-              <a class="button primary" href="/upgrade" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
+              <a class="button primary" href="/pulse/premium" data-analytics="dashboard_upgrade_clicked">Pulse Premium</a>
             {% endif %}
             <a class="button gold" href="https://t.me/DocShieldX_bot">Connect Telegram Companion</a>
             <a class="button" href="/support">Support</a>
@@ -259,27 +259,27 @@
         {% elif page == "upgrade" %}
           <div class="grid">
             <div class="profile-card">
-              <h3>CoinPilotXAI Pro</h3>
-              <p><strong>Price:</strong> $14.99/month</p>
+              <h3>Pulse Premium</h3>
+              <p><strong>Positioning:</strong> Optional prestige and creator enhancement.</p>
               <p><strong>Current plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
               {% if access.is_paid_pro %}
-                <p><strong>You already have CoinPilotXAI Pro active.</strong></p>
-                <p>Your paid subscription is active. No upgrade is needed.</p>
+                <p><strong>Pulse Premium is active.</strong></p>
+                <p>Your premium identity and creator enhancements are active. Core platform access remains free.</p>
                 <div class="actions">
                   <a class="button primary" href="/dashboard">Open Dashboard</a>
                   <a class="button" href="/account">Account</a>
                 </div>
               {% else %}
-                <p>Pro unlocks Arena access, live multiplayer virtual-dollar battles, AI tactical systems, live rooms, advanced alerts, Scam Shield intelligence, portfolio context, immersive training, faction systems, cinematic match participation, and privacy-safe social learning.</p>
-                <a class="button primary" href="/upgrade?checkout=1&source=website" data-analytics="stripe_checkout_started">Continue to Secure Checkout</a>
+                <p>Core CoinPilotXAI tools are free. Pulse Premium adds glowing identity, elite profile effects, creator studio enhancements, advanced creator AI, analytics, exclusive badges, and future prestige features.</p>
+                <a class="button primary" href="/pulse/premium" data-analytics="pulse_premium_opened">Explore Pulse Premium</a>
               {% endif %}
             </div>
             <div class="profile-card">
-              <h3>Free vs Pro</h3>
-              <p><strong>Free:</strong> market tracking, limited AI previews, limited alerts, and limited education.</p>
-              <p><strong>Pro:</strong> full Arena, live rooms, AI commentary, virtual portfolio battles, tournaments, advanced intelligence, and advanced notifications.</p>
-              <p><strong>Pro Trial:</strong> temporary Arena access and selected premium features during the active trial window.</p>
+              <h3>Free Core vs Pulse Premium</h3>
+              <p><strong>Free core:</strong> social ecosystem, creator tools, messaging, groups, spaces, livestream basics, reels, AI utilities, marketplace access, alerts, and education.</p>
+              <p><strong>Pulse Premium:</strong> prestige identity, glowing marks, elite profile cosmetics, advanced creator filters, advanced creator AI, analytics, and exclusive Pulse badges.</p>
+              <p><strong>Old trials:</strong> legacy trial states never block core platform access.</p>
               <p class="muted">Arena is educational simulation only. Virtual balances, no real-money trading execution.</p>
             </div>
             <div class="profile-card">
@@ -293,7 +293,7 @@
         {% elif page == "upgrade_success" %}
           <div class="profile-card" data-upgrade-session="{{ stripe_session_id or '' }}">
             <h3>Payment Confirmation In Progress</h3>
-            <p data-upgrade-status>Your Pro upgrade is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
+            <p data-upgrade-status>Your Pulse Premium activation is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
             <p class="muted" data-upgrade-detail>Checking your account status now...</p>
             <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@coinpilotx.app">support@coinpilotx.app</a> and include the email address used for your CoinPilotXAI account.</p>
             <div class="actions">
@@ -321,14 +321,14 @@
               <p><strong>Plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription status:</strong> {{ current_user.subscription_status or "inactive" }}</p>
               {% if access.is_paid_pro %}
-                <p><strong>Pro access:</strong> Paid Pro active.</p>
+                <p><strong>Pulse Premium:</strong> Active.</p>
                 <p><strong>Billing/access date:</strong> <span data-friendly-date>{{ access.pro_expires_at or "Active" }}</span></p>
               {% elif access.is_trial %}
                 <p><strong>Trial ends:</strong> <span data-friendly-date>{{ access.trial_end }}</span></p>
               {% elif access.trial_expired %}
-                <p><strong>Trial:</strong> Ended. Upgrade anytime when deeper intelligence becomes useful.</p>
+                <p><strong>Trial:</strong> Ended. Core access remains free; Pulse Premium is optional.</p>
               {% else %}
-                <p><strong>Pro access:</strong> Free account.</p>
+                <p><strong>Core access:</strong> Free.</p>
               {% endif %}
               <p><strong>Companion channel:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>
               <p>Generate a one-time code, then send it to the optional Telegram companion with <code>/link CODE</code> or <code>/connect CODE</code>. Codes expire in 10 minutes.</p>
@@ -371,8 +371,8 @@
             <div class="profile-card"><strong>New users today</strong><p>{{ stats.new_today }}</p></div>
             <div class="profile-card"><strong>Telegram linked</strong><p>{{ stats.linked }}</p></div>
             <div class="profile-card"><strong>Email / SMS opt-ins</strong><p>{{ stats.email_opt_ins }} / {{ stats.sms_opt_ins }}</p></div>
-            <div class="profile-card"><strong>Pro trial users</strong><p>{{ stats.pro_trial_users }}</p></div>
-            <div class="profile-card"><strong>Paid Pro users</strong><p>{{ stats.paid_pro_users }}</p></div>
+            <div class="profile-card"><strong>Legacy trial users</strong><p>{{ stats.pro_trial_users }}</p></div>
+            <div class="profile-card"><strong>Pulse Premium users</strong><p>{{ stats.paid_pro_users }}</p></div>
             <div class="profile-card"><strong>Expired trials</strong><p>{{ stats.expired_trials }}</p></div>
             <div class="profile-card"><strong>Trials expiring 7 days</strong><p>{{ stats.expiring_soon }}</p></div>
           </div>
@@ -467,8 +467,8 @@
             .then(function (response) { return response.json(); })
             .then(function (data) {
               if (data && data.ok) {
-                upgradeStatus.textContent = "Pro Active";
-                upgradeDetail.textContent = "Arena is unlocked. Opening your dashboard...";
+                upgradeStatus.textContent = "Pulse Premium Active";
+                upgradeDetail.textContent = "Premium identity and creator enhancements are active. Opening your dashboard...";
                 setTimeout(function () { window.location.href = data.next_url || "/dashboard?pro=active"; }, 900);
                 return true;
               }
@@ -486,13 +486,13 @@
             .then(function (response) { return response.json(); })
             .then(function (data) {
               if (data && data.ok && data.is_paid_pro) {
-                upgradeStatus.textContent = "Pro Active";
-                upgradeDetail.textContent = "Your dashboard, command center, and optional Telegram companion can now use Pro intelligence.";
+                upgradeStatus.textContent = "Pulse Premium Active";
+                upgradeDetail.textContent = "Your dashboard, command center, and optional Telegram companion can now use Premium enhancements.";
                 return;
               }
               if (data && data.ok && data.has_pro_access) {
-                upgradeStatus.textContent = "Pro Active";
-                upgradeDetail.textContent = "Your dashboard and optional Telegram companion can now use Pro intelligence.";
+                upgradeStatus.textContent = "Pulse Premium Active";
+                upgradeDetail.textContent = "Your dashboard and optional Telegram companion can now use Premium enhancements.";
                 return;
               }
               if (attempts < 20) {
@@ -500,7 +500,7 @@
                   if (!confirmed) setTimeout(pollStatus, 3000);
                 });
               } else {
-                upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
+                upgradeStatus.textContent = "Payment received. We are activating Pulse Premium.";
                 upgradeDetail.textContent = "If it does not activate in a few minutes, email support@coinpilotx.app with your account email.";
               }
             })
@@ -508,7 +508,7 @@
               if (attempts < 20) {
                 setTimeout(pollStatus, 3000);
               } else {
-                upgradeStatus.textContent = "Payment received. We are activating your Pro access.";
+                upgradeStatus.textContent = "Payment received. We are activating Pulse Premium.";
                 upgradeDetail.textContent = "If it does not activate in a few minutes, email support@coinpilotx.app with your account email.";
               }
             });

@@ -52,12 +52,6 @@ def _count_table(user_id, table, active_only=False):
 
 
 def _limit_check(user_id, kind):
-    if user_has_pro(user_id):
-        return True, ""
-    count = _count_table(user_id, {"holdings": "portfolio_items", "watchlist": "watchlist_items", "alerts": "user_alerts"}[kind], active_only=(kind == "alerts"))
-    limit = FREE_LIMITS[kind]
-    if count >= limit:
-        return False, f"Free accounts can save up to {limit} {kind}. Upgrade Pro for higher limits."
     return True, ""
 
 
@@ -286,7 +280,7 @@ def portfolio_insight(portfolio, watchlist, pro=False):
     risk = "Elevated" if concentration >= 65 else "Medium" if concentration >= 40 else "Balanced"
     movement = sorted(holdings, key=lambda x: abs(x.get("change_24h") or 0), reverse=True)[:3]
     moved = ", ".join(f"{item.get('symbol')} {float(item.get('change_24h') or 0):+.2f}%" for item in movement if item.get("change_24h") is not None) or "24h moves unavailable"
-    detail = "Pro view includes deeper concentration, volatility, alert, and watchlist context." if pro else "Free view includes basic concentration and movement context."
+    detail = "Pulse Premium view adds richer creator-grade presentation and prestige context." if pro else "Free core view includes concentration, volatility, alert, and watchlist context."
     return (
         f"Risk Reminder: {SAFETY}\n\n"
         f"Portfolio concentration: {largest.get('symbol')} is about {concentration:.1f}% of tracked value.\n"
@@ -316,7 +310,7 @@ def get_user_dashboard_data(user_id):
         "user": {
             "name": user.get("full_name") or user.get("display_name") or "CoinPilotX user",
             "email": user_context.mask_email(user.get("email")),
-            "plan": "Paid Pro" if paid_pro else "Pro Trial" if trialing else "Pro" if pro else "Free",
+            "plan": "Pulse Premium" if paid_pro else "Legacy Trial" if trialing else "Premium" if pro else "Free Core",
             "subscription_status": user.get("subscription_status") or "inactive",
             "has_pro_access": pro,
             "is_paid_pro": paid_pro,

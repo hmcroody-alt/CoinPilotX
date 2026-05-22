@@ -59,7 +59,7 @@ MENU_SECTIONS = [
     ]),
     ("Account", [
         ("account", "Account"),
-        ("upgrade_pro", "Upgrade Pro"),
+        ("upgrade_pro", "Pulse Premium"),
         ("open_dashboard", "Open Dashboard"),
         ("billing", "Billing"),
         ("help", "Help"),
@@ -194,7 +194,7 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         question = payload.get("question") or "Analyze BTC and the current crypto market."
         response = intelligence.assistant_response(user_id, question, pro=pro)
         user_context.log_interaction(user_id or 0, "website_ai_used", question, response, channel)
-        return _card(action_key, "AI Crypto Assistant", response, "OpenAI + public market context", "Medium" if response else "Low", ["Ask follow-up", "Save insight", "Upgrade Pro"])
+        return _card(action_key, "AI Crypto Assistant", response, "OpenAI + public market context", "Medium" if response else "Low", ["Ask follow-up", "Save insight", "Pulse Premium"])
     if action_key == "scam_shield":
         text = payload.get("text") or payload.get("query") or "Paste suspicious text or a URL to scan."
         result = scam_shield.analyze_text(text)
@@ -255,12 +255,12 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         if not user_id:
             return _card(action_key, "Account", "Log in to view your CoinPilotXAI account.", "Website account database", "High", ["Login", "Create account"])
         access_type = pro_access.pro_access_type(user)
-        label = "Paid Pro active" if access_type == "paid" else "Pro trial active" if access_type == "trial" else "Free"
+        label = "Pulse Premium active" if access_type == "paid" else "Legacy trial active" if access_type == "trial" else "Free Core"
         return _card(action_key, "Account", f"Plan: {label}\nSubscription: {user.get('subscription_status') or 'inactive'}\nTelegram: {'Connected' if user.get('telegram_user_id') else 'Optional and not connected'}", "Website account database", "High", ["Open dashboard", "Account settings"])
     if action_key == "upgrade_pro":
         if pro:
-            return _card(action_key, "Upgrade Pro", "You already have CoinPilotXAI Pro active.", "Website account database", "High", ["Open dashboard", "Account"])
-        return _card(action_key, "Upgrade Pro", "Open the website checkout while logged into your CoinPilotXAI account. No anonymous checkout is allowed.", "Stripe hosted checkout", "High", ["Upgrade on website"])
+            return _card(action_key, "Pulse Premium", "Pulse Premium is active for this account.", "Website account database", "High", ["Open dashboard", "Account"])
+        return _card(action_key, "Pulse Premium", "Core tools are free. Pulse Premium adds prestige identity, advanced creator effects, elite AI tools, and creator analytics.", "Stripe hosted checkout", "High", ["Explore Pulse Premium"])
     if action_key == "help":
         return _card(action_key, "Help", "Use buttons or slash commands like /price BTC, /market, /scam, /wallet, /portfolio, /day, /sports, or ask naturally.", "CoinPilotXAI command router", "High")
     return _card(action_key, "CoinPilotXAI Command", "Live source temporarily unavailable or this command is being connected.", "CoinPilotXAI platform", "Low")

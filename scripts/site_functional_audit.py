@@ -83,6 +83,7 @@ def main():
         "/pulse/live",
         "/pulse/assistant",
         "/pulse/camera",
+        "/pulse/premium",
         "/admin/command-center",
         "/admin/global-command",
         "/admin/capability-matrix",
@@ -98,6 +99,7 @@ def main():
         "/admin/spaces-command",
         "/admin/media-studio",
         "/admin/groups-health",
+        "/admin/messages-health",
         "/admin/system-audit",
     ]
     failed = 0

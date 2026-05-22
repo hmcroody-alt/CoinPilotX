@@ -118,17 +118,18 @@
     .private-chat-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--gold),var(--green)); font-size:12px; font-weight:950; box-shadow:0 0 18px rgba(255,209,102,.5); }
     .private-chat-badge:not([hidden]) { animation:chatUnreadPulse 1.7s ease-in-out infinite; }
     .private-chat-shell { position:fixed; inset:0; z-index:64; pointer-events:none; }
-    .private-chat-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.42); backdrop-filter:blur(7px); opacity:0; transition:opacity .2s ease; }
+    .private-chat-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.42); backdrop-filter:blur(7px); opacity:0; transition:opacity .2s ease; pointer-events:none; }
     .private-chat-panel { position:absolute; right:20px; bottom:92px; width:min(420px,calc(100vw - 32px)); height:min(650px,calc(100vh - 130px)); display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; border:1px solid rgba(110,223,246,.24); border-radius:20px; background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.95)); box-shadow:0 28px 90px rgba(0,0,0,.48),0 0 34px rgba(110,223,246,.16); overflow:hidden; transform:translate3d(0,18px,0) scale(.98); opacity:0; transition:transform .34s cubic-bezier(.18,.9,.2,1),opacity .2s ease; will-change:transform; }
-    .private-chat-shell.is-open { pointer-events:auto; }
-    .private-chat-shell.is-open .private-chat-backdrop { opacity:1; }
+    .private-chat-shell.is-open { pointer-events:none; }
+    .private-chat-shell.is-open .private-chat-backdrop { opacity:1; pointer-events:auto; }
     .private-chat-shell.is-open .private-chat-panel { transform:translate3d(0,0,0) scale(1); opacity:1; }
-    .private-chat-drag { display:none; padding:9px 0 2px; touch-action:none; cursor:grab; }
+    .private-chat-panel { pointer-events:auto; }
+    .private-chat-drag { display:none; padding:9px 0 2px; touch-action:none; cursor:grab; pointer-events:none; }
     .private-chat-drag::before { content:""; display:block; width:46px; height:5px; margin:auto; border-radius:999px; background:rgba(242,251,255,.38); box-shadow:0 0 18px rgba(110,223,246,.35); }
-    .private-chat-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; border-bottom:1px solid rgba(255,255,255,.07); }
+    .private-chat-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px; border-bottom:1px solid rgba(255,255,255,.07); position:relative; z-index:8; pointer-events:auto; }
     .private-chat-head strong { display:block; }
-    .private-chat-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); }
-    .private-chat-tabs button { min-height:38px; border:1px solid rgba(110,223,246,.2); border-radius:10px; background:rgba(255,255,255,.05); color:var(--text); font-weight:850; }
+    .private-chat-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 14px; border-bottom:1px solid rgba(255,255,255,.08); position:relative; z-index:9; pointer-events:auto; }
+    .private-chat-tabs button { min-height:38px; border:1px solid rgba(110,223,246,.2); border-radius:10px; background:rgba(255,255,255,.05); color:var(--text); font-weight:850; position:relative; z-index:10; pointer-events:auto; }
     .private-chat-tabs button.is-active { color:#06101b; background:linear-gradient(135deg,var(--green),var(--cyan)); }
     .private-chat-main { min-height:0; overflow:hidden; display:grid; grid-template-columns:1fr; }
     .private-chat-view { min-height:0; overflow:auto; padding:12px; }
@@ -153,7 +154,7 @@
     .private-chat-menu[hidden] { display:none; }
     .private-chat-menu button { width:100%; justify-content:flex-start; min-height:42px; background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.08); }
     @keyframes chatUnreadPulse { 0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,209,102,.45)} 50%{transform:scale(1.08);box-shadow:0 0 28px rgba(54,229,143,.62)} }
-    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:18px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;max-width:56px;height:56px;min-height:56px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 18px 52px rgba(0,0,0,.38),0 0 30px rgba(110,223,246,.36)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:24px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(5px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block}.private-chat-head{position:sticky;top:0;z-index:3;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(14px)}.private-chat-head .button{width:auto}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
+    @media (max-width:900px){ .hero,.grid{grid-template-columns:1fr}.wide{grid-column:auto}.row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.button{width:100%}.nav-links{width:100%;display:grid;grid-template-columns:1fr 1fr}.watch-row,.alert-row,.activity-row{align-items:flex-start;flex-direction:column}.private-chat-launcher{right:18px;bottom:calc(74px + env(safe-area-inset-bottom));width:56px;max-width:56px;height:56px;min-height:56px;padding:0;border-radius:50%;display:grid;place-items:center;font-size:0;background:linear-gradient(135deg,rgba(54,229,143,.92),rgba(110,223,246,.96));color:#06101b;box-shadow:0 18px 52px rgba(0,0,0,.38),0 0 30px rgba(110,223,246,.36)}.private-chat-launcher-label{display:none}.private-chat-launcher-icon{font-size:24px}.private-chat-launcher .private-chat-badge{position:absolute;right:-5px;top:-6px;min-width:22px;height:22px;font-size:11px}.private-chat-shell.is-open{z-index:67}.private-chat-backdrop{backdrop-filter:blur(5px)}.private-chat-panel{inset:auto 0 0 0; width:100%; height:95dvh; max-height:95dvh; border-radius:26px 26px 0 0; transform:translate3d(0,105%,0); opacity:1; grid-template-rows:auto auto minmax(0,1fr) auto}.private-chat-shell.is-half .private-chat-panel{height:58dvh;max-height:58dvh;transform:translate3d(0,0,0)}.private-chat-shell.is-full .private-chat-panel,.private-chat-shell.is-open:not(.is-half) .private-chat-panel{height:min(95dvh,100dvh);max-height:95dvh;transform:translate3d(0,0,0)}.private-chat-drag{display:block;padding:10px 0 4px}.private-chat-head{position:sticky;top:0;z-index:8;padding:8px 14px 14px;background:rgba(8,15,28,.96);backdrop-filter:blur(14px)}.private-chat-head .button{width:auto}.private-chat-tabs{z-index:9}.private-chat-view{padding:16px 14px 18px}.private-chat-form .button{width:50px;min-width:50px;padding:0}.private-chat-form{padding:12px 14px calc(16px + env(safe-area-inset-bottom));align-items:end}.private-chat-form input{min-height:48px;border-radius:16px}.arena-preview-grid{grid-template-columns:1fr} body.private-chat-lock{overflow:hidden;touch-action:none} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
   </style>
 </head>
@@ -168,7 +169,7 @@
             <summary class="button">☰ Menu</summary>
             <div class="customize-panel" style="right:0;top:54px">
               <a class="button" href="/account">Account</a>
-              <a class="button" href="/account/billing">Manage Pro</a>
+              <a class="button" href="/pulse/premium">Pulse Premium</a>
               <a class="button" href="/command-center">Command Center</a>
               <a class="button" href="/logout">Logout</a>
             </div>
@@ -201,7 +202,7 @@
         <a class="button command-glow command-glow-portfolio" href="#add-holding">Open Portfolio Details</a>
       </article>
       <article class="card arena-cta-card" data-priority-card="arena">
-        <span class="arena-live-badge">{% if access.has_pro %}LIVE / PRO{% else %}PRO REQUIRED{% endif %}</span>
+        <span class="arena-live-badge">FREE CORE ACCESS</span>
         <div class="kicker">Alpha Arena</div>
         <h2>Enter Alpha Arena</h2>
         <p>Battle, train, survive scams, and climb the ranks.</p>
@@ -211,7 +212,7 @@
         </div>
         <p class="muted" data-arena-summary>Virtual dollars. Real skill. No gambling.</p>
         <div class="private-chat-actions">
-          <a class="button primary command-glow command-glow-ai" href="{% if access.has_pro %}/arena/play{% else %}/upgrade?next=/arena/play{% endif %}">Play Now</a>
+          <a class="button primary command-glow command-glow-ai" href="/arena/play">Play Now</a>
           <a class="button" href="/arena/leaderboard">View Leaderboard</a>
         </div>
       </article>
@@ -379,7 +380,7 @@
               <strong>Customize Home</strong>
               <p class="muted">Hide or restore dashboard actions and large cards.</p>
               <label class="toggle-row">Account <input type="checkbox" data-pref-toggle="show_account" checked></label>
-              <label class="toggle-row">Upgrade Pro <input type="checkbox" data-pref-toggle="show_upgrade_pro" checked></label>
+              <label class="toggle-row">Pulse Premium <input type="checkbox" data-pref-toggle="show_upgrade_pro" checked></label>
               <label class="toggle-row">Command Center <input type="checkbox" data-pref-toggle="show_command_center" checked></label>
               <label class="toggle-row">Logout <input type="checkbox" data-pref-toggle="show_logout" checked></label>
               <label class="toggle-row">Saved Insights Library <input type="checkbox" data-pref-toggle="show_saved_insights" checked></label>
@@ -388,7 +389,7 @@
             </div>
           </div>
         </div>
-        <div class="list{% if not access.has_pro %} locked{% endif %}">
+        <div class="list">
           <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
           <a class="button primary command-glow command-glow-market" href="/pulse">Open Pulse Feed</a>
           <a class="button command-glow command-glow-risk" href="/scam-shield/scan">Run Scam Shield</a>
@@ -399,15 +400,8 @@
           <a class="button command-glow command-glow-market" href="/predictions/crypto">Crypto Predictions</a>
           <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
           <a class="button command-glow command-glow-sports" href="/arena">Play Arena</a>
-          {% if not access.has_pro %}<span class="lock-badge">Pro tools locked</span>{% endif %}
-          {% if access.is_paid_pro %}
-            {% if dashboard_prefs.show_upgrade_pro %}
-            <a class="button gold command-glow command-glow-account" href="/account" data-home-action="show_upgrade_pro">Manage Pro</a>
-            {% endif %}
-          {% else %}
-            {% if dashboard_prefs.show_upgrade_pro %}
-            <a class="button gold command-glow command-glow-account" href="/upgrade" data-home-action="show_upgrade_pro" data-analytics="dashboard_upgrade_clicked">Upgrade Pro</a>
-            {% endif %}
+          {% if dashboard_prefs.show_upgrade_pro %}
+          <a class="button gold command-glow command-glow-account" href="/pulse/premium" data-home-action="show_upgrade_pro" data-analytics="pulse_premium_clicked">Pulse Premium</a>
           {% endif %}
         </div>
       </article>
@@ -912,7 +906,7 @@
         const payload = await response.json();
         console.log("account status parsed payload", payload);
         if (!response.ok || !payload.ok) throw new Error(payload.message || "Account status unavailable");
-        const planLabel = payload.is_paid_pro ? "Paid Pro" : payload.is_trialing ? "Pro Trial" : payload.has_pro_access ? "Pro" : "Free";
+        const planLabel = payload.is_paid_pro ? "Pulse Premium" : payload.is_trialing ? "Legacy Trial" : payload.has_pro_access ? "Premium" : "Free Core";
         const subLabel = payload.is_paid_pro ? "active" : payload.subscription_status || "inactive";
         const telegramLabel = payload.telegram_linked ? ("Connected" + (payload.telegram_username ? " @" + payload.telegram_username : "")) : "Not connected";
         const expiresLabel = payload.is_paid_pro
@@ -924,7 +918,7 @@
         text("[data-subscription]", subLabel);
         text("[data-telegram]", telegramLabel);
         text("[data-expires]", expiresLabel);
-        accountSyncText(payload.is_paid_pro ? "Paid Pro account sync complete." : "Account sync complete.");
+        accountSyncText(payload.is_paid_pro ? "Pulse Premium account sync complete." : "Account sync complete.");
         console.log("account status render success");
       } catch (error) {
         console.log("account status render error", error && error.message ? error.message : error);

@@ -104,11 +104,11 @@
         {% else %}
         <p><strong>{{ access.label }}</strong></p>
         {% if access.is_paid_pro %}
-          <p>Paid Pro active. Full command access is enabled.</p>
+          <p>Pulse Premium active. Prestige identity and creator enhancements are enabled.</p>
         {% elif access.is_trial %}
-          <p>Pro trial active until {{ access.trial_end }}.</p>
+          <p>Legacy trial active until {{ access.trial_end }}. Core access remains free.</p>
         {% else %}
-          <p>Free access. Upgrade when you want deeper intelligence and more alerts.</p>
+          <p>Free core access. Pulse Premium is optional for prestige identity and creator enhancements.</p>
         {% endif %}
         {% endif %}
       </article>
@@ -247,7 +247,7 @@
         return;
       }
       if (res.status === 403) {
-        addMessage("ai", `${data.message || "You need CoinPilotXAI Pro to access this command."}\n\nNext step: open Upgrade or Account to review your access.`);
+        addMessage("ai", `${data.message || "This command is unavailable right now."}\n\nNext step: open your account or try again shortly.`);
         return;
       }
       renderResult(data);

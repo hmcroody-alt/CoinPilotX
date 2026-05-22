@@ -163,7 +163,7 @@ FEATURE_DEFINITIONS = [
         "realtime_status": "not required",
         "mobile_status": "mobile-ready",
         "ai_integration": "not required",
-        "monetization_readiness": "subscription gated",
+        "monetization_readiness": "Pulse Premium prestige",
         "security_review": "reviewed",
         "observability": "traceable",
         "risk_level": "medium",
@@ -177,7 +177,7 @@ FEATURE_DEFINITIONS = [
         "realtime_status": "not required",
         "mobile_status": "mobile-ready",
         "ai_integration": "partial",
-        "monetization_readiness": "subscription gated",
+        "monetization_readiness": "Pulse Premium enhancement",
         "security_review": "needs deeper review",
         "observability": "limited",
         "risk_level": "medium",
@@ -267,7 +267,7 @@ def evaluate_flag(flag: dict | None, user: dict | None = None) -> dict:
     if state == "owner-only" and not user.get("is_owner"):
         return {"visible": False, "usable": False, "state": state, "reason": "Owner-only feature."}
     if state == "premium-only" and not (user.get("is_premium") or user.get("is_owner")):
-        return {"visible": True, "usable": False, "state": state, "reason": "Premium subscription required."}
+        return {"visible": True, "usable": False, "state": state, "reason": "Pulse Premium prestige feature."}
     return {"visible": True, "usable": True, "state": state, "reason": "Available."}
 
 

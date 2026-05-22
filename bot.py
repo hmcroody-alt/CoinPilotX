@@ -494,7 +494,7 @@ def seed_education_knowledge_bank(cur):
     questions = [
         {"question": "Should you ever share a seed phrase with support?", "options": ["Yes", "No", "Only if urgent"], "answer": "No", "explanation": "A seed phrase controls funds and should never be shared."},
         {"question": "What does an urgent wallet-connect airdrop link usually deserve?", "options": ["Immediate click", "Caution and verification", "A bigger transaction"], "answer": "Caution and verification", "explanation": "Urgency and wallet connect requests are common scam patterns."},
-        {"question": "Are AI signals guaranteed outcomes?", "options": ["Yes", "No", "Only for Pro users"], "answer": "No", "explanation": "AI can summarize context, but outcomes remain uncertain."},
+        {"question": "Are AI signals guaranteed outcomes?", "options": ["Yes", "No", "Only for Pulse Premium users"], "answer": "No", "explanation": "AI can summarize context, but outcomes remain uncertain."},
     ]
     cur.execute("SELECT COUNT(*) FROM education_lessons")
     if (cur.fetchone()[0] or 0) > 0:
@@ -805,47 +805,44 @@ def website_upgrade_url(telegram_user_id=None):
 
 def pro_upgrade_message(user_id):
     account = get_linked_website_account(user_id)
-    if platform_pro_access(account):
+    if has_pro_access(account):
         return (
-            "✅ Your CoinPilotXAI Pro access is already active.\n\n"
+            "✅ Your Pulse Premium access is already active.\n\n"
             "Open your dashboard anytime to use the full platform. Telegram is an optional companion for quick commands and alerts."
         )
     return (
-        "⭐ CoinPilotX Pro\n\n"
-        f"Card price: {PRO_PRICE_MONTHLY}\n"
+        "⭐ Pulse Premium\n\n"
+        "Optional prestige and creator enhancements.\n"
         "Payments are completed securely on the CoinPilotXAI website.\n\n"
-        "Free is useful for basic awareness. Pro is built for deeper decision support.\n\n"
-        "Free includes:\n"
-        "• Basic BTC price\n"
-        "• Basic alerts\n"
-        "• Basic news summaries\n"
-        "• Short scam warning\n\n"
-        "Pro unlocks:\n"
-        "• Deeper AI analysis\n"
-        "• Whale intelligence\n"
-        "• Portfolio decision engine\n"
-        "• Country crypto intelligence\n"
-        "• Advanced scam breakdowns\n"
-        "• Wallet/transaction risk insights\n"
-        "• Market pressure signals\n"
-        "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
+        "The core platform is free for authenticated users.\n\n"
+        "Free core includes:\n"
+        "• Pulse posting, groups, spaces, and Messenger\n"
+        "• Reels, livestream basics, creator studio, and marketplace access\n"
+        "• AI utilities, alerts, watchlists, and scam education\n\n"
+        "Pulse Premium adds:\n"
+        "• Glowing premium mark\n"
+        "• Elite profile cosmetics\n"
+        "• Premium creator filters\n"
+        "• Advanced creator AI and analytics\n"
+        "• Premium livestream cosmetics\n"
+        "• Exclusive Pulse badges and prestige themes\n\n"
         "CoinPilotX is operated by CoinPilotXAI Inc.\n"
         "No hidden fees from CoinPilotXAI Inc. Checkout opens only on the website.\n"
         "CoinPilotX never holds funds.\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Create or log in to your website account, upgrade there, then return here and send your Telegram activation code."
+        "Create or log in to your website account, then explore Pulse Premium whenever you want elite identity and creator polish."
     )
 
 def upgrade_payment_menu(user_id):
     account = get_linked_website_account(user_id)
-    if platform_pro_access(account):
+    if has_pro_access(account):
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("Open Dashboard", url="https://coinpilotx.app/dashboard")],
             [InlineKeyboardButton("Account", url="https://coinpilotx.app/account")],
             [InlineKeyboardButton("Main Menu", callback_data="main_menu")]
         ])
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(user_id))],
+        [InlineKeyboardButton("Pulse Premium on Website", url=website_upgrade_url(user_id))],
         [InlineKeyboardButton("Open Platform Account", url="https://coinpilotx.app/account")],
         [InlineKeyboardButton("Main Menu", callback_data="main_menu")]
     ])
@@ -858,12 +855,12 @@ def main_menu():
             InlineKeyboardButton("🚨 Free Alerts", callback_data="menu_alerts_on"),
         ],
         [
-            InlineKeyboardButton("⭐ Pro Signals", callback_data="pro_signals"),
-            InlineKeyboardButton("💼 Pro Portfolio", callback_data="pro_portfolio"),
+            InlineKeyboardButton("⭐ AI Signals", callback_data="pro_signals"),
+            InlineKeyboardButton("💼 Portfolio", callback_data="pro_portfolio"),
         ],
         [
-            InlineKeyboardButton("🛡️ Pro Scam Shield", callback_data="pro_scanner"),
-            InlineKeyboardButton("💳 Upgrade to Pro", callback_data="upgrade_pro"),
+            InlineKeyboardButton("🛡️ Scam Shield", callback_data="pro_scanner"),
+            InlineKeyboardButton("✦ Pulse Premium", callback_data="upgrade_pro"),
         ],
         [
             InlineKeyboardButton("💬 Ask Crypto Question", callback_data="menu_talk"),
@@ -1936,7 +1933,7 @@ def enforce_arena_pro_access():
     if not user:
         if path.startswith("/api/arena/"):
             log_security_event("arena_api_auth_required", "blocked", 0, path)
-            return jsonify({"ok": False, "message": "Login and Pro access required.", "login_url": url_for("login_page", next=path)}), 401
+            return jsonify({"ok": False, "message": "Please log in to use Arena.", "login_url": url_for("login_page", next=path)}), 401
         return redirect(url_for("login_page", next=path))
     if not platform_pro_access(user):
         return arena_access_preview_response(user)
@@ -2193,14 +2190,14 @@ def plan_status_label(user):
     status = (user.get("subscription_status") or "inactive").lower()
     access_type = pro_access_type(user)
     if access_type == "paid":
-        return "Paid Pro Active"
+        return "Pulse Premium Active"
     if access_type == "trial":
-        return "Pro Trial"
+        return "Legacy Trial"
     if has_pro_access(user):
-        return "Pro Active"
+        return "Premium Active"
     if status == "expired":
-        return "Free — trial ended"
-    return "Free"
+        return "Free Core"
+    return "Free Core"
 
 
 def pro_access_type(user):
@@ -2250,11 +2247,10 @@ def is_user_pro_or_trial(user_id):
 
 
 def platform_pro_access(user):
-    user = user or {}
-    user_id = user.get("user_id")
-    if user_id:
-        return is_user_pro_or_trial(user_id)
-    return has_pro_access(user)
+    # Growth-first platform policy: core app capabilities are free for every
+    # authenticated user. Keep paid entitlement records for Pulse Premium
+    # identity/cosmetic upgrades, but do not use legacy Pro gates for core tools.
+    return bool(user)
 
 
 def pro_activation_columns_payload(user):
@@ -2308,10 +2304,10 @@ def pro_locked_response(user, feature_name="AI Command Center"):
     body = f"""
       <div class='grid'>
         <div class='profile-card'>
-          <h2>You need CoinPilotXAI Pro to access the {clean_html(feature_name)}.</h2>
-          <p>Pro unlocks the native AI command center, private AI chat, advanced Scam Shield, Wallet Intel, portfolio intelligence, Sports Edge context, and real-time alert tools.</p>
+          <h2>{clean_html(feature_name)} is available in the free core ecosystem.</h2>
+          <p>Pulse Premium adds prestige identity, creator cosmetics, elite profile effects, and advanced creator enhancements. Core tools stay free for authenticated users.</p>
           <div class='actions'>
-            <a class='button gold' href='/upgrade'>Upgrade to Pro</a>
+            <a class='button gold' href='/pulse/premium'>Pulse Premium</a>
             <a class='button' href='/account'>Account</a>
             <a class='button' href='/logout'>Logout</a>
           </div>
@@ -2331,22 +2327,11 @@ def pro_locked_response(user, feature_name="AI Command Center"):
     return response_obj
 
 
-def api_pro_required(user, feature_name="CoinPilotXAI Pro"):
+def api_pro_required(user, feature_name="Pulse Premium"):
     if not user:
         response = jsonify({"ok": False, "message": "Login required.", "signup_url": url_for("signup_page", next=request.path)})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 401
-    if not platform_pro_access(user):
-        log_product_event(user["user_id"], "pro_gated_blocked_attempt", {"feature": feature_name, "path": request.path})
-        response = jsonify({
-            "ok": False,
-            "error": "CoinPilotXAI Pro required.",
-            "message": "You need CoinPilotXAI Pro to access the AI Command Center.",
-            "upgrade_url": url_for("upgrade_page"),
-            "account_url": url_for("account_page"),
-        })
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return response, 403
     return None
 
 
@@ -3005,11 +2990,11 @@ def create_stripe_checkout_session(user):
         cfg["app_base_url"],
     )
     record_checkout_attempt(user, "started")
-    if platform_pro_access(user):
+    if has_pro_access(user):
         logging.info("pro_upgrade_blocked_already_active user_id=%s source=checkout_session", user.get("user_id"))
         log_product_event(user.get("user_id") or 0, "pro_upgrade_blocked_already_active", {"source": "checkout_session"})
-        record_checkout_attempt(user, "blocked", error_message="Already active paid Pro")
-        return None, "You already have CoinPilotXAI Pro active. No upgrade is needed."
+        record_checkout_attempt(user, "blocked", error_message="Already active paid Premium")
+        return None, "You already have Pulse Premium active. No upgrade is needed."
     if not STRIPE_SECRET_KEY:
         logging.warning("Stripe checkout cannot be created: STRIPE_SECRET_KEY missing.")
         record_checkout_attempt(user, "failed", error_message="STRIPE_SECRET_KEY missing")
@@ -3084,15 +3069,15 @@ def upgrade_page():
     if (user.get("account_status") or "active").lower() != "active":
         return render_account_page("account", "Account", current_user=user, error="Please contact support before upgrading. This account is not active.")
     if not user.get("email"):
-        return render_account_page("account", "Account", current_user=user, error="Add an email address to your account before upgrading to Pro.")
-    if platform_pro_access(user):
+        return render_account_page("account", "Account", current_user=user, error="Add an email address to your account before upgrading to Pulse Premium.")
+    if has_pro_access(user):
         logging.info("pro_upgrade_blocked_already_active user_id=%s source=upgrade_page", user.get("user_id"))
         log_product_event(user["user_id"], "pro_upgrade_blocked_already_active", {"source": "upgrade_page"})
         return render_account_page(
             "upgrade",
-            "Upgrade Pro",
+            "Pulse Premium",
             current_user=load_account_by_id(user["user_id"]),
-            message="You already have CoinPilotXAI Pro active. No upgrade is needed.",
+            message="You already have Pulse Premium active. No upgrade is needed.",
         )
     if request.args.get("checkout") == "1":
         log_product_event(user["user_id"], "stripe_checkout_started", {"source": request.args.get("source", "website")})
@@ -3107,12 +3092,12 @@ def upgrade_page():
         logging.warning("Stripe checkout session unavailable for user_id=%s reason=%s", user["user_id"], checkout_error)
         return render_account_page(
             "upgrade",
-            "Upgrade Pro",
+            "Pulse Premium",
             current_user=load_account_by_id(user["user_id"]),
             error="Checkout temporarily unavailable. Please try again in a few minutes or contact support@coinpilotx.app.",
         )
     log_product_event(user["user_id"], "website_upgrade_started", {"source": request.args.get("source", "website")})
-    return render_account_page("upgrade", "Upgrade Pro", current_user=load_account_by_id(user["user_id"]))
+    return render_account_page("upgrade", "Pulse Premium", current_user=load_account_by_id(user["user_id"]))
 
 
 @webhook_app.route("/create-checkout-session", methods=["POST"])
@@ -3128,18 +3113,18 @@ def create_checkout_session_route():
         (user or {}).get("account_status"),
     )
     if not user:
-        return jsonify({"ok": False, "message": "Please log in before upgrading to Pro.", "login_url": url_for("login_page", next="/upgrade")}), 401
+        return jsonify({"ok": False, "message": "Please log in before upgrading to Pulse Premium.", "login_url": url_for("login_page", next="/upgrade")}), 401
     if (user.get("account_status") or "active").lower() != "active":
         return jsonify({"ok": False, "message": "This account is not active. Contact support before upgrading."}), 403
     if not user.get("email"):
         return jsonify({"ok": False, "message": "Add an email address to your account before upgrading."}), 400
-    if platform_pro_access(user):
+    if has_pro_access(user):
         logging.info("pro_upgrade_blocked_already_active user_id=%s source=checkout_api", user.get("user_id"))
         log_product_event(user["user_id"], "pro_upgrade_blocked_already_active", {"source": "checkout_api"})
         return jsonify({
             "ok": False,
             "already_active": True,
-            "message": "You already have CoinPilotXAI Pro active. No upgrade is needed.",
+            "message": "You already have Pulse Premium active. No upgrade is needed.",
             "dashboard_url": url_for("dashboard_page"),
         }), 409
     try:
@@ -3554,7 +3539,7 @@ def api_admin_user_pro(user_id):
         payment_id = record_payment_record(user_id, stripe_event_id=f"owner_pro_{int(time.time())}_{user_id}", amount=0, currency="USD", status="succeeded", payment_type="owner_manual_pro", manual=True, metadata={"admin_id": admin.get("id"), "action": action})
         fresh = load_account_by_id(user_id) or {}
         if fresh.get("email"):
-            send_platform_email(fresh.get("email"), "CoinPilotXAI Pro Activated", "Your CoinPilotXAI Pro access has been activated by the owner/admin.", "<p>Your CoinPilotXAI Pro access has been activated by the owner/admin.</p>", user_id)
+            send_platform_email(fresh.get("email"), "Pulse Premium Activated", "Your Pulse Premium access has been activated by the owner/admin.", "<p>Your Pulse Premium access has been activated by the owner/admin.</p>", user_id)
         admin_user_action(admin, user_id, "owner_activate_pro", {"payment_record_id": payment_id, "expires": expires})
     elif action in {"downgrade", "free", "remove"}:
         cur.execute("UPDATE users SET plan='free', subscription_plan='free', subscription_status='inactive', trial_status='', is_pro=0, pro_expires_at='', subscription_expires_at='', updated_at=? WHERE user_id=?", (now, user_id))
@@ -3619,7 +3604,7 @@ def api_admin_user_resend_email(user_id):
         return jsonify({"ok": False, "error": "User email not found."}), 404
     payload = request.get_json(silent=True) or {}
     email_type = clean_html(payload.get("email_type") or "account_update")[:80]
-    subject = "CoinPilotXAI Account Update" if email_type == "account_update" else "CoinPilotXAI Pro Activated"
+    subject = "CoinPilotXAI Account Update" if email_type == "account_update" else "Pulse Premium Activated"
     text = "This is a CoinPilotXAI account update from support."
     html = "<p>This is a CoinPilotXAI account update from support.</p>"
     sent = send_platform_email(user.get("email"), subject, text, html, user_id)
@@ -5163,9 +5148,9 @@ def admin_manual_upgrade_route():
     )
     log_admin_audit(admin.get("id"), "manual_pro_upgrade", "user", target_user_id, {"plan": "pro", "subscription_status": "active", "pro_expires_at": pro_expires_at, "payment_record_id": payment_id})
     fresh_user = load_account_by_id(int(target_user_id)) or {}
-    subject = "CoinPilotXAI Pro Activated"
-    text = "Your CoinPilotXAI Pro access has been activated by the system administrator.\n\nOpen your dashboard: https://coinpilotx.app/dashboard\n\nCoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
-    html = "<p>Your CoinPilotXAI Pro access has been activated by the system administrator.</p><p><a href='https://coinpilotx.app/dashboard'>Open your dashboard</a></p><p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
+    subject = "Pulse Premium Activated"
+    text = "Your Pulse Premium access has been activated by the system administrator.\n\nOpen your dashboard: https://coinpilotx.app/dashboard\n\nCoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
+    html = "<p>Your Pulse Premium access has been activated by the system administrator.</p><p><a href='https://coinpilotx.app/dashboard'>Open your dashboard</a></p><p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
     if fresh_user.get("email"):
         send_platform_email(fresh_user.get("email"), subject, text, html, fresh_user.get("user_id"))
     log_product_event(fresh_user.get("user_id") or int(target_user_id), "manual_pro_upgrade", {"admin_id": admin.get("id"), "payment_record_id": payment_id})
@@ -5558,8 +5543,8 @@ def admin_data_recovery_page():
       <form method="post" class="card">
         <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
         <input type="hidden" name="action" value="repair_paid" />
-        <h3>Restore Paid Pro From Payments</h3>
-        <p>Scans successful payment records and converts matched users to paid Pro active. Unmatched payments remain visible for manual repair.</p>
+        <h3>Restore Pulse Premium From Payments</h3>
+        <p>Scans successful payment records and converts matched users to paid Premium active. Unmatched payments remain visible for manual repair.</p>
         <button type="submit">Repair Paid Users</button>
       </form>
     </div>
@@ -6163,7 +6148,7 @@ def admin_user_detail_page(user_id):
     cur.execute("SELECT stripe_session_id, status, error_message, created_at FROM checkout_attempts WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,))
     latest_checkout_attempt = dict(cur.fetchone() or {})
     conn.close()
-    paid_class = "Paid Pro" if is_paid_pro_user(user) else "Trial" if is_trialing_user(user) else "Free/Inactive"
+    paid_class = "Pulse Premium" if is_paid_pro_user(user) else "Legacy Trial" if is_trialing_user(user) else "Free Core/Inactive"
     backend_status = backend_pro_status_payload(user)
     diagnostic_rows = {
         "User ID": backend_status.get("user_id"),
@@ -6205,12 +6190,12 @@ def admin_user_detail_page(user_id):
     )
     body = (
         f"<h1>User #{user_id}</h1><p><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></p>"
-        f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to Paid Pro</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
-        f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Pro From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
-        f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or '')}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates Pro if paid.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to Pulse Premium</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Premium From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or '')}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates Pulse Premium if paid.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/reprocess-latest-webhook' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Reprocess Latest Webhook</button><p class='muted'>Retries local payment/email repair from the latest processed Stripe event.</p></form>"
-        f"<form method='post' action='/admin/users/{user_id}/send-pro-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Confirmation Email</button><p class='muted'>Sends the Pro activation/payment confirmation email bundle again.</p></form>"
-        f"<h2>Backend Pro Status</h2><div class='grid'>{diagnostic}</div>"
+        f"<form method='post' action='/admin/users/{user_id}/send-pro-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Confirmation Email</button><p class='muted'>Sends the Pulse Premium activation/payment confirmation email bundle again.</p></form>"
+        f"<h2>Backend Premium Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
         f"<h2>Activity Timeline</h2><div class='card'><p class='muted'>Latest activity: {clean_html((activity[0] or {}).get('event_type') if activity else 'none')} · {len(activity)} recent items.</p><button type='button' onclick=\"var p=document.getElementById('activityPanel');p.hidden=!p.hidden;this.textContent=p.hidden?'View Activity Timeline':'Hide Timeline';\">View Activity Timeline</button><div id='activityPanel' hidden style='max-height:400px;overflow:auto;margin-top:12px'>{admin_rows_table(activity[:25], [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div></div>"
@@ -7503,8 +7488,8 @@ def admin_analytics_page():
 	      <div class="card"><div>SMS subscribers</div><div class="metric">{data['sms_subscribers']}</div></div>
 	      <div class="card"><div>Organic search visits</div><div class="metric">{data['organic_visits']}</div></div>
 	      <div class="card"><div>Referral clicks</div><div class="metric">{data['referral_clicks']}</div></div>
-	      <div class="card"><div>Pro trial users</div><div class="metric">{data['pro_trial_users']}</div></div>
-	      <div class="card"><div>Paid Pro users</div><div class="metric">{data['paid_pro_users']}</div></div>
+	      <div class="card"><div>Legacy trial users</div><div class="metric">{data['pro_trial_users']}</div></div>
+	      <div class="card"><div>Pulse Premium users</div><div class="metric">{data['paid_pro_users']}</div></div>
 	      <div class="card"><div>Expired trials</div><div class="metric">{data['expired_trials']}</div></div>
 	      <div class="card"><div>Trials expiring 7 days</div><div class="metric">{data['trials_expiring_soon']}</div></div>
 	      <div class="card"><div>Free users</div><div class="metric">{data['free_users']}</div></div>
@@ -8076,20 +8061,20 @@ def arena_access_preview_response(user=None):
     next_url = quote(request.path, safe="")
     if request.path.startswith("/api/arena/"):
         log_security_event("arena_api_pro_gate", "blocked", (user or {}).get("user_id") or 0, request.path, {"next": request.path})
-        return jsonify({"ok": False, "message": "CoinPilotXAI Arena requires Pro or an active Pro Trial.", "upgrade_url": f"/upgrade?next={next_url}"}), 403
+        return jsonify({"ok": False, "message": "Arena is available to authenticated users. Please log in again.", "login_url": f"/login?next={next_url}"}), 403
     body = f"""
     <section class="hero">
       <article class="card wide">
-        <div class="kicker">Arena Pro Access</div>
-        <h1>CoinPilotXAI Arena is a Pro training ecosystem.</h1>
-        <p>Unlock live virtual-dollar battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training.</p>
-        <div class="actions"><a class="button primary" href="/upgrade?next={next_url}">Upgrade Pro</a><a class="button" href="/arena-preview">View Arena Preview</a><a class="button" href="/dashboard">Dashboard</a></div>
+        <div class="kicker">Arena Access</div>
+        <h1>CoinPilotXAI Arena is part of the free core ecosystem.</h1>
+        <p>Live virtual-dollar battles, Arena chat, AI commentary, live rooms, Scam Hunter, boss training, cinematic match rooms, and immersive risk psychology training are available after login.</p>
+        <div class="actions"><a class="button primary" href="/login?next={next_url}">Log In</a><a class="button" href="/arena-preview">View Arena Preview</a><a class="button" href="/dashboard">Dashboard</a></div>
       </article>
       <article class="card"><h2>Educational Only</h2><p>Virtual balances only. No real-money trading execution and no guaranteed outcomes.</p></article>
     </section>
     """
     log_security_event("arena_page_pro_gate", "blocked", (user or {}).get("user_id") or 0, request.path, {"next": request.path})
-    return arena_page_shell("Arena Pro Access", body, user=user)
+    return arena_page_shell("Arena Access", body, user=user)
 
 
 @webhook_app.route("/api/menu", methods=["GET"])
@@ -15632,6 +15617,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Groups", "/pulse/groups"),
         ("Teachers", "/pulse/teachers"),
         ("Live", "/pulse/live"),
+        ("Premium", "/pulse/premium"),
         ("Creator Status", "/pulse/creator-status"),
         ("Scam Alerts", "/pulse/scam-alerts"),
         ("Arena Highlights", "/pulse/arena"),
@@ -15971,7 +15957,12 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
             (current_user_id, now, now, now),
         )
         conversation_id = int(cur.lastrowid)
-        for uid, role in [(current_user_id, "owner"), (target_user_id, "member")]:
+    for uid, role in [(current_user_id, "owner"), (target_user_id, "member")]:
+        cur.execute(
+            "SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1",
+            (conversation_id, uid),
+        )
+        if not cur.fetchone():
             cur.execute(
                 "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, created_at) VALUES (?, ?, ?, 0, 0, ?)",
                 (conversation_id, uid, role, now),
@@ -16924,6 +16915,7 @@ def pulse_camera_studio_page():
     mode = "video" if request.path.endswith("/video") else "reel" if request.path.endswith("/reel") else "photo"
     target = clean_html(request.args.get("target") or "post")
     group = clean_html(request.args.get("group") or "")
+    conversation_id = safe_int(request.args.get("conversation_id") or 0, 0)
     filters = "".join(f"<button class='filter-chip' data-filter='{clean_html(f['key'])}' data-css='{clean_html(f['css'])}' {'disabled' if f['locked'] else ''}><span></span>{clean_html(f['label'])}{' 🔒' if f['locked'] else ''}</button>" for f in catalog)
     mode_label = "Reel" if mode == "reel" else "Video" if mode == "video" else "Photo"
     main = f"""
@@ -16950,7 +16942,7 @@ def pulse_camera_studio_page():
     <canvas id='cameraCanvas' hidden></canvas>
     """
     script = f"""
-    let stream=null,facing='user',capturedBlob=null,activeFilter='',recording=false,startedAt=0,timerId=null;const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas'),tip=document.getElementById('permissionTip'),overlay=document.getElementById('processingOverlay'),denied=document.getElementById('deniedModal'),capture=document.getElementById('captureBtn'),timer=document.getElementById('recordTimer');function setStatus(m){{status.textContent=m||''}}function applyFilter(css){{const intensity=Number(document.getElementById('filterIntensity').value||74)/100;document.documentElement.style.setProperty('--camera-filter',css?css+` opacity(${{0.72+intensity*.28}})`:'brightness(1.04) contrast(1.06) saturate(1.08)')}}async function startCamera(){{try{{denied.classList.remove('is-on');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}}}},audio:{str(mode != 'photo').lower()}}});video.srcObject=stream;tip.classList.add('is-hidden');setStatus('')}}catch(e){{denied.classList.add('is-on');setStatus('Camera permission blocked. Upload is ready.')}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);setStatus('Microphone toggled')}};document.getElementById('flashToggle').onclick=async()=>{{const track=stream?.getVideoTracks()[0];try{{await track?.applyConstraints({{advanced:[{{torch:true}}]}});setStatus('Light adjusted')}}catch(e){{setStatus('Flash is not available on this device')}}}};document.getElementById('galleryBtn').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('modalUpload').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('retryCamera').onclick=startCamera;document.getElementById('filterIntensity').oninput=()=>{{const active=document.querySelector('.filter-chip.is-active');applyFilter(active?.dataset.css||'')}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{if(b.disabled){{setStatus('Premium filter locked.');return}}document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('is-active'));b.classList.add('is-active');activeFilter=b.dataset.filter;applyFilter(b.dataset.css||'');}});capture.onclick=async()=>{{if(!stream){{await startCamera();return}}if('{mode}'!=='photo'){{recording=!recording;capture.classList.toggle('is-recording',recording);timer.classList.toggle('is-on',recording);if(recording){{startedAt=Date.now();timerId=setInterval(()=>{{const s=Math.floor((Date.now()-startedAt)/1000);timer.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},250);setStatus('Recording visual state. Capture still stores a cover frame in this web build.')}}else{{clearInterval(timerId);setStatus('Recording stopped. Continue to upload the captured frame or gallery video.')}}}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.9));if('{mode}'==='photo')setStatus('Captured. Apply another filter or continue.');}};document.getElementById('uploadCapture').onclick=async()=>{{try{{overlay.classList.add('is-on');const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='avatar'||'{target}'==='cover'){{const endpoint='{target}'==='avatar'?'/api/pulse/profile/avatar':'/api/pulse/profile/cover';const pr=await fetch(endpoint,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,filter_name:activeFilter}})}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Profile media update failed.');location.href='/pulse/profile/edit';return}}if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';return}}toast('Media uploaded.');location.href='/pulse/create';}}catch(e){{overlay.classList.remove('is-on');setStatus(e.message)}}}};window.addEventListener('pagehide',()=>stream?.getTracks().forEach(t=>t.stop()));startCamera();
+    let stream=null,facing='user',capturedBlob=null,activeFilter='',recording=false,startedAt=0,timerId=null;const video=document.getElementById('cameraPreview'),status=document.getElementById('cameraStatus'),canvas=document.getElementById('cameraCanvas'),tip=document.getElementById('permissionTip'),overlay=document.getElementById('processingOverlay'),denied=document.getElementById('deniedModal'),capture=document.getElementById('captureBtn'),timer=document.getElementById('recordTimer');function setStatus(m){{status.textContent=m||''}}function applyFilter(css){{const intensity=Number(document.getElementById('filterIntensity').value||74)/100;document.documentElement.style.setProperty('--camera-filter',css?css+` opacity(${{0.72+intensity*.28}})`:'brightness(1.04) contrast(1.06) saturate(1.08)')}}async function startCamera(){{try{{denied.classList.remove('is-on');if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:facing,width:{{ideal:1080}},height:{{ideal:1920}}}},audio:{str(mode != 'photo').lower()}}});video.srcObject=stream;tip.classList.add('is-hidden');setStatus('')}}catch(e){{denied.classList.add('is-on');setStatus('Camera permission blocked. Upload is ready.')}}}}document.getElementById('switchCamera').onclick=()=>{{facing=facing==='user'?'environment':'user';startCamera();}};document.getElementById('micToggle').onclick=()=>{{stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);setStatus('Microphone toggled')}};document.getElementById('flashToggle').onclick=async()=>{{const track=stream?.getVideoTracks()[0];try{{await track?.applyConstraints({{advanced:[{{torch:true}}]}});setStatus('Light adjusted')}}catch(e){{setStatus('Flash is not available on this device')}}}};document.getElementById('galleryBtn').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('modalUpload').onclick=()=>document.getElementById('fallbackUpload').click();document.getElementById('retryCamera').onclick=startCamera;document.getElementById('filterIntensity').oninput=()=>{{const active=document.querySelector('.filter-chip.is-active');applyFilter(active?.dataset.css||'')}};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{{if(b.disabled){{setStatus('Premium filter locked.');return}}document.querySelectorAll('.filter-chip').forEach(x=>x.classList.remove('is-active'));b.classList.add('is-active');activeFilter=b.dataset.filter;applyFilter(b.dataset.css||'');}});capture.onclick=async()=>{{if(!stream){{await startCamera();return}}if('{mode}'!=='photo'){{recording=!recording;capture.classList.toggle('is-recording',recording);timer.classList.toggle('is-on',recording);if(recording){{startedAt=Date.now();timerId=setInterval(()=>{{const s=Math.floor((Date.now()-startedAt)/1000);timer.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}},250);setStatus('Recording visual state. Capture still stores a cover frame in this web build.')}}else{{clearInterval(timerId);setStatus('Recording stopped. Continue to upload the captured frame or gallery video.')}}}}canvas.width=video.videoWidth||1080;canvas.height=video.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--camera-filter')||'none';ctx.drawImage(video,0,0,canvas.width,canvas.height);capturedBlob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',.9));if('{mode}'==='photo')setStatus('Captured. Apply another filter or continue.');}};document.getElementById('uploadCapture').onclick=async()=>{{try{{overlay.classList.add('is-on');const fd=new FormData();const fallback=document.getElementById('fallbackUpload').files[0];if(fallback)fd.append('file',fallback);else if(capturedBlob)fd.append('file',capturedBlob,'coinpilot-camera.jpg');else throw new Error('Capture or choose media first.');fd.append('context_type','pulse_camera');fd.append('target','{target}');fd.append('group','{group}');fd.append('filter_name',activeFilter);const r=await fetch('/api/pulse/media/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');if('{target}'==='avatar'||'{target}'==='cover'){{const endpoint='{target}'==='avatar'?'/api/pulse/profile/avatar':'/api/pulse/profile/cover';const pr=await fetch(endpoint,{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,filter_name:activeFilter}})}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Profile media update failed.');location.href='/pulse/profile/edit';return}}if('{target}'==='message'&&{conversation_id}>0){{await fetch('/api/pulse/messages/send',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.media.media_type==='gif'?'gif':d.media.media_type==='video'?'video':'image',media_url:d.media.media_url,thumbnail_url:d.media.thumbnail_url||d.media.media_url,body:''}})}}).then(async pr=>{{const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Message send failed.')}});location.href='/pulse/messages/{conversation_id}';return}}if('{target}'==='group'&&'{group}'){{const postFd=new FormData();postFd.append('body','');postFd.append('media_url',d.media.media_url);postFd.append('thumbnail_url',d.media.thumbnail_url||d.media.media_url);postFd.append('media_type',d.media.media_type);postFd.append('filter_name',activeFilter);const pr=await fetch('/api/pulse/groups/{group}/posts',{{method:'POST',credentials:'same-origin',body:postFd}});const pd=await pr.json();if(!pr.ok||pd.ok===false)throw new Error(pd.message||'Group post failed.');location.href='/pulse/groups/{group}';return}}toast('Media uploaded.');location.href='/pulse/create';}}catch(e){{overlay.classList.remove('is-on');setStatus(e.message)}}}};window.addEventListener('pagehide',()=>stream?.getTracks().forEach(t=>t.stop()));startCamera();
     """
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across Pulse.", main, "", script)
 
@@ -17207,6 +17199,30 @@ def pulse_creator_monetization_page():
     return pulse_social_shell("Creator Monetization", "Trust-first creator revenue readiness for premium tools, courses, marketplace products, and livestream monetization placeholders.", body)
 
 
+@webhook_app.route("/pulse/premium", methods=["GET"])
+def pulse_premium_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    perks = [
+        ("Premium Identity", "Glowing profile mark, elite profile glow, prestige border, and exclusive Pulse badges."),
+        ("Creator AI", "Advanced creator assistance for captions, hooks, post polish, and studio guidance."),
+        ("Discovery Boosts", "Priority creator discovery signals that help serious creators stand out without blocking free users."),
+        ("Advanced Analytics", "Deeper creator and audience insights for growth, retention, and content quality."),
+        ("Premium Creator Studio", "Elite filters, profile themes, livestream cosmetics, and advanced media enhancements."),
+        ("Future Elite Features", "Optional creator economy boosts and prestige systems as the platform expands."),
+    ]
+    cards = "".join(f"<article class='card premium-card'><span class='pill'>Pulse Premium</span><h2>{clean_html(title)}</h2><p>{clean_html(desc)}</p></article>" for title, desc in perks)
+    main = f"""
+    <style>.premium-hero{{min-height:420px;display:grid;align-content:end;border-radius:26px;padding:24px;overflow:hidden;background:radial-gradient(circle at 20% 14%,rgba(255,209,102,.34),transparent 28%),radial-gradient(circle at 78% 18%,rgba(110,223,246,.32),transparent 34%),linear-gradient(145deg,#050b14,#111d32)}}.premium-hero h2{{font-size:clamp(38px,8vw,78px);line-height:.92;margin:8px 0}}.premium-card{{border-color:rgba(255,209,102,.28);box-shadow:0 28px 90px rgba(0,0,0,.3),0 0 34px rgba(255,209,102,.08)}}.premium-glow-demo{{width:92px;height:92px;border-radius:30px;display:grid;place-items:center;font-size:42px;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);color:#06101b;box-shadow:0 0 0 1px rgba(255,255,255,.22),0 0 48px rgba(255,209,102,.65),0 0 72px rgba(54,229,143,.25)}}@media(max-width:720px){{.premium-hero{{min-height:360px;padding:18px}}}}</style>
+    <section class='premium-hero'><div class='premium-glow-demo'>✦</div><span class='pill'>Free core platform. Premium prestige.</span><h2>Pulse Premium</h2><p>CoinPilotXAI core tools stay generous and open. Premium is for status, identity, creator enhancement, elite cosmetics, and deeper creator intelligence.</p><div class='actions'><a class='button primary' href='/upgrade?product=pulse-premium'>Activate Premium</a><a class='button' href='/pulse/profile/edit'>Polish Profile</a></div></section>
+    <section class='grid'>{cards}</section>
+    <section class='card'><h2>Free Core Ecosystem</h2><p>Posting, Reels, Groups, Messenger, Spaces, marketplace browsing, merchant applications, basic livestreaming, AI utilities, creator studio, profile customization, notifications, watchlists, and basic alerts are available to authenticated users. Safety, trust, moderation, and rate limits still protect the ecosystem.</p></section>
+    """
+    return pulse_social_shell("Pulse Premium", "Prestige, identity, creator enhancement, elite cosmetics, and advanced creator intelligence without locking the core platform.", main)
+
+
 @webhook_app.route("/pulse/courses", methods=["GET"])
 def pulse_courses_page():
     init_db()
@@ -17320,12 +17336,30 @@ def pulse_messages_page():
     for convo in conversations:
         other_id = int(convo.get("other_user_id") or 0)
         ident = pulse_identity_for_user(cur, other_id)
-        cur.execute("SELECT body, created_at FROM pulse_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1", (convo.get("id"),))
+        cur.execute("SELECT body, message_type, created_at FROM pulse_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1", (convo.get("id"),))
         last = dict(cur.fetchone() or {})
-        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{clean_html((ident.get('name') or 'P')[:1])}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html((last.get('body') or 'No messages yet.')[:140])}</p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>")
+        preview = last.get("body") or ("Media message" if last.get("message_type") not in {"", "text", None} else "No messages yet.")
+        avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
+        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>")
     conn.close()
     main = f"<section class='card'><h2>Pulse-only Messenger</h2><p>Message friends, creators, teachers, and sellers using public identities only.</p></section><section>{''.join(cards) or '<article class="card"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, or Teacher pages to start a safe Pulse conversation.</p></article>'}</section>"
     return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, friend messages, and request-friendly replies.", main)
+
+
+def pulse_message_media_html(message):
+    media_url = clean_html((message or {}).get("media_url") or "")
+    thumbnail_url = clean_html((message or {}).get("thumbnail_url") or media_url)
+    message_type = clean_html((message or {}).get("message_type") or "text")
+    if not media_url:
+        return ""
+    if message_type == "video":
+        return f"<video class='message-media' controls playsinline preload='metadata' poster='{thumbnail_url}'><source src='{media_url}'></video>"
+    if message_type == "gif":
+        return f"<img class='message-media' src='{media_url}' alt='GIF message' loading='lazy'>"
+    if message_type in {"post_share", "reel_share", "group_share", "marketplace_share", "live_share", "link"}:
+        title = clean_html((message or {}).get("body") or "Shared from Pulse")
+        return f"<a class='share-card' href='{media_url}'><span>{title}</span><small>Open shared item</small></a>"
+    return f"<img class='message-media' src='{thumbnail_url}' alt='Message media' loading='lazy'>"
 
 
 @webhook_app.route("/pulse/profile", methods=["GET"])
@@ -17463,9 +17497,58 @@ def pulse_message_thread_page(conversation_id):
     messages = [dict(row) for row in cur.fetchall()]
     conn.close()
     other_name = clean_html(other.get("name") or "Pulse user") + pulse_premium_mark_html(other.get("premium_mark"))
-    message_html = "".join(f"<article class='card'><p><strong>{'You' if int(m.get('sender_user_id') or 0)==int(user['user_id']) else other_name}</strong></p><p>{clean_html(m.get('body') or '')}</p><small>{clean_html(m.get('created_at') or '')}</small></article>" for m in messages)
-    main = f"<section class='card'><h2>{other_name}</h2><p>Pulse thread uses public identity only.</p></section><section id='messages'>{message_html or '<article class="card"><p>No messages yet.</p></article>'}</section><section class='card'><textarea id='replyBody' placeholder='Reply...'></textarea><button class='primary' id='replyBtn'>Send Reply</button></section>"
-    script = f"document.getElementById('replyBtn').addEventListener('click',async()=>{{try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},body:document.getElementById('replyBody').value}})}});location.reload()}}catch(err){{toast(err.message)}}}});"
+    avatar = f"<img src='{clean_html(other.get('avatar_url'))}' alt=''>" if other.get("avatar_url") else clean_html((other.get("name") or "P")[:1])
+    message_html = "".join(
+        f"<article class='msg {'mine' if int(m.get('sender_user_id') or 0)==int(user['user_id']) else 'theirs'}'>"
+        f"{pulse_message_media_html(m)}"
+        f"{'<p>'+clean_html(m.get('body') or '')+'</p>' if (m.get('body') or '').strip() and (m.get('message_type') or 'text') not in {'post_share','reel_share','group_share','marketplace_share','live_share'} else ''}"
+        f"<small>{clean_html(m.get('created_at') or '')}</small></article>"
+        for m in messages
+    )
+    main = f"""
+    <style>
+    .messenger-screen{{height:min(82dvh,820px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;border-radius:22px;overflow:hidden;padding:0}}
+    .messenger-top{{position:relative;z-index:8;display:grid;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;background:rgba(7,17,31,.94);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.08);pointer-events:auto}}
+    .messenger-handle{{width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.32);margin:0 auto;pointer-events:none}}
+    .messenger-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:auto;position:relative;z-index:9}}
+    .messenger-tabs{{display:grid;grid-template-columns:1fr 1fr;gap:8px;position:relative;z-index:10;pointer-events:auto}}
+    .messenger-tabs a,.messenger-more,.messenger-close{{pointer-events:auto;position:relative;z-index:11}}
+    .messenger-tabs a{{min-height:42px;border-radius:999px;text-decoration:none;display:grid;place-items:center;border:1px solid rgba(110,223,246,.2);font-weight:950;background:rgba(255,255,255,.05)}}
+    .messenger-tabs .active{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}
+    .message-list{{min-height:0;overflow:auto;padding:14px;display:grid;align-content:end;gap:10px;scroll-behavior:smooth}}
+    .msg{{max-width:min(78%,520px);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:10px 12px;background:rgba(255,255,255,.06);box-shadow:0 14px 42px rgba(0,0,0,.18)}}
+    .msg.mine{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.msg.theirs{{justify-self:start}}
+    .msg p{{margin:4px 0;color:inherit}}.msg small{{display:block;margin-top:5px;opacity:.72;color:inherit}}
+    .message-media{{display:block;width:min(280px,70vw);max-height:360px;object-fit:cover;border-radius:16px;background:#020817;border:1px solid rgba(255,255,255,.1)}}
+    .share-card{{display:grid;gap:4px;min-width:min(260px,68vw);padding:12px;border-radius:16px;background:rgba(5,11,20,.28);text-decoration:none;color:inherit;border:1px solid rgba(255,255,255,.12)}}
+    .message-composer{{position:sticky;bottom:0;z-index:12;display:grid;grid-template-columns:46px 46px minmax(0,1fr) 48px;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(18px);border-top:1px solid rgba(255,255,255,.08);pointer-events:auto}}
+    .message-composer button{{width:46px;min-width:46px;padding:0;border-radius:50%}}.message-composer input{{min-height:46px;border-radius:999px}}
+    .attachment-sheet{{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:80;display:none;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border:1px solid rgba(110,223,246,.24);border-radius:22px;background:rgba(8,15,28,.96);backdrop-filter:blur(20px);box-shadow:0 28px 90px rgba(0,0,0,.48)}}
+    .attachment-sheet.open{{display:grid}}.attachment-sheet button,.attachment-sheet a{{min-height:46px;border-radius:14px;white-space:normal}}
+    .safety-menu{{position:absolute;right:0;top:48px;z-index:20;display:grid;gap:6px;min-width:220px;padding:8px;border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(8,15,28,.98);box-shadow:0 20px 70px rgba(0,0,0,.45)}}
+    .safety-menu[hidden]{{display:none}}.safety-menu button{{width:100%;justify-content:flex-start;background:rgba(255,255,255,.045)}}
+    @media(max-width:900px){{body:has(.messenger-screen){{overflow:hidden}}body:has(.messenger-screen) .wrap{{padding:0}}body:has(.messenger-screen) .layout{{display:block}}body:has(.messenger-screen) .layout>aside,body:has(.messenger-screen) .wrap>section.card{{display:none}}.messenger-screen{{position:fixed;inset:0;z-index:200;height:100dvh;max-height:100dvh;border-radius:0;margin:0;border:0}}.mobile-bottom-nav,.pulse-fab{{display:none!important}}}}
+    </style>
+    <section class='card messenger-screen'>
+      <header class='messenger-top'>
+        <div class='messenger-handle'></div>
+        <div class='messenger-head'><div class='person'><span class='avatar'>{avatar}</span><div><strong>{other_name}</strong><p class='muted'>Pulse Messenger</p></div></div><div class='private-chat-tools'><button class='messenger-more' id='safetyMenuBtn' type='button'>⋯</button><a class='button messenger-close' href='/pulse/messages'>Close</a><div class='safety-menu' id='safetyMenu' hidden><button type='button'>Mute Notifications</button><button type='button'>Report User</button><button type='button'>Block User</button><button type='button'>Delete Own Message</button></div></div></div>
+        <nav class='messenger-tabs'><a href='/pulse/messages'>Conversations</a><a class='active' href='/pulse/messages/{conversation_id}'>Chat Room</a></nav>
+      </header>
+      <section class='message-list' id='messages'>{message_html or '<article class="msg theirs"><p>No messages yet. Start the conversation with text, media, or a Pulse share.</p></article>'}</section>
+      <form class='message-composer' id='replyForm'><button id='attachBtn' type='button'>+</button><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}' aria-label='Camera'>📷</a><input id='replyBody' placeholder='Message...' autocomplete='off'><button class='primary' id='replyBtn'>➤</button></form>
+    </section>
+    <section class='attachment-sheet' id='attachmentSheet'><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=message&conversation_id={conversation_id}'>Record Video</a><button type='button' data-pick-media='image/*'>Upload Photo</button><button type='button' data-pick-media='video/*'>Upload Video</button><button type='button' data-pick-media='image/gif'>Upload GIF</button><button type='button' data-share-kind='post_share'>Share Pulse Post</button><button type='button' data-share-kind='reel_share'>Share Reel</button><button type='button' data-share-kind='marketplace_share'>Share Marketplace Item</button></section><input id='messageMediaFile' type='file' accept='image/*,video/*' hidden>
+    """
+    script = f"""
+    const list=document.getElementById('messages'),form=document.getElementById('replyForm'),input=document.getElementById('replyBody'),sheet=document.getElementById('attachmentSheet'),file=document.getElementById('messageMediaFile'),safety=document.getElementById('safetyMenu');list.scrollTop=list.scrollHeight;
+    document.getElementById('safetyMenuBtn').addEventListener('click',()=>safety.hidden=!safety.hidden);
+    document.getElementById('attachBtn').addEventListener('click',()=>sheet.classList.toggle('open'));
+    document.querySelectorAll('[data-pick-media]').forEach(b=>b.addEventListener('click',()=>{{file.accept=b.dataset.pickMedia;file.click();sheet.classList.remove('open')}}));
+    file.addEventListener('change',async()=>{{const chosen=file.files[0];if(!chosen)return;try{{const fd=new FormData();fd.append('file',chosen);fd.append('conversation_id','{conversation_id}');const r=await fetch('/api/pulse/messages/upload',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},message_type:d.message_type,media_url:d.media_url,thumbnail_url:d.thumbnail_url,body:input.value}})}});location.reload();}}catch(err){{toast(err.message)}}finally{{file.value=''}}}});
+    document.querySelectorAll('[data-share-kind]').forEach(b=>b.addEventListener('click',async()=>{{const url=prompt('Paste the Pulse link to share');if(!url)return;try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},message_type:b.dataset.shareKind,media_url:url,body:'Shared from Pulse'}})}});location.reload();}}catch(err){{toast(err.message)}}}}));
+    form.addEventListener('submit',async e=>{{e.preventDefault();try{{await pulseApi('/api/pulse/messages/send',{{method:'POST',body:JSON.stringify({{conversation_id:{conversation_id},body:input.value,message_type:'text'}})}});location.reload()}}catch(err){{toast(err.message)}}}});
+    """
     return pulse_social_shell("Pulse Messenger", "Reply quickly and safely inside the Pulse social layer.", main, "", script)
 
 
@@ -18255,8 +18338,17 @@ def api_pulse_message_send():
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
     message = clean_html(payload.get("message") or payload.get("body") or "")[:1200].strip()
-    if not message:
-        return jsonify({"ok": False, "message": "Write a message before sending."}), 400
+    message_type = clean_html(payload.get("message_type") or "text")[:40]
+    allowed_types = {"text", "image", "gif", "video", "voice", "link", "post_share", "reel_share", "group_share", "marketplace_share", "live_share"}
+    if message_type not in allowed_types:
+        message_type = "text"
+    media_url = clean_html(payload.get("media_url") or "")[:1000]
+    thumbnail_url = clean_html(payload.get("thumbnail_url") or media_url)[:1000]
+    metadata = payload.get("media_metadata") if isinstance(payload.get("media_metadata"), dict) else {}
+    if not message and not media_url:
+        return jsonify({"ok": False, "message": "Write a message or attach media before sending."}), 400
+    if media_url and message_type == "text":
+        message_type = "link" if media_url.startswith(("http://", "https://", "/pulse/")) and not media_url.startswith("/static/") else "image"
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     conversation_id = int(payload.get("conversation_id") or 0)
     thread_id = int(payload.get("thread_id") or 0)
@@ -18267,7 +18359,15 @@ def api_pulse_message_send():
             return jsonify({"ok": False, "message": "Conversation not found."}), 404
         cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
         receiver_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
-        cur.execute("SELECT id FROM pulse_message_threads WHERE conversation_id=? LIMIT 1", (conversation_id,))
+        cur.execute(
+            """
+            SELECT id FROM pulse_message_threads
+            WHERE conversation_id=?
+              AND ((user_one_id=? AND user_two_id=?) OR (user_one_id=? AND user_two_id=?))
+            ORDER BY id DESC LIMIT 1
+            """,
+            (conversation_id, user["user_id"], receiver_id, receiver_id, user["user_id"]),
+        )
         thread_id = int(dict(cur.fetchone() or {}).get("id") or 0)
     if thread_id:
         cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
@@ -18287,15 +18387,38 @@ def api_pulse_message_send():
         thread_id = int(result["thread_id"])
         conversation_id = int(result["conversation_id"])
     now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute("INSERT INTO pulse_messages (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, status, created_at) VALUES (?, ?, ?, ?, ?, 'text', 'sent', ?)", (thread_id, conversation_id, user["user_id"], receiver_id, message, now))
+    cur.execute(
+        """
+        INSERT INTO pulse_messages
+        (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, delivery_status, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
+        """,
+        (
+            thread_id,
+            conversation_id,
+            user["user_id"],
+            receiver_id,
+            message,
+            message_type,
+            media_url,
+            thumbnail_url,
+            json.dumps(metadata, default=str)[:4000],
+            int(payload.get("file_size") or 0),
+            float(payload.get("duration_seconds") or 0),
+            now,
+        ),
+    )
     message_id = int(cur.lastrowid)
+    if media_url:
+        cur.execute("UPDATE chat_media_uploads SET message_id=?, context_type='pulse_message', context_id=? WHERE uploader_user_id=? AND media_url=? AND message_id IS NULL", (message_id, str(conversation_id), user["user_id"], media_url))
     cur.execute("UPDATE pulse_message_threads SET updated_at=? WHERE id=?", (now, thread_id))
     cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=? WHERE id=?", (now, now, conversation_id))
     cur.execute("INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New Pulse message', 'You received a Pulse message.', ?, ?)", (receiver_id, f"/pulse/messages/{conversation_id}", now))
     conn.commit(); conn.close()
-    event = {"message": "New Pulse message.", "thread_id": thread_id, "conversation_id": conversation_id, "target_user_id": receiver_id, "message_id": message_id}
-    pulse_emit_event("message_received", event, user["user_id"], 0)
-    return jsonify({"ok": True, "thread_id": thread_id, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id})
+    event = {"message": "New Pulse message.", "thread_id": thread_id, "conversation_id": conversation_id, "target_user_id": receiver_id, "message_id": message_id, "message_type": message_type, "media_url": media_url}
+    pulse_emit_event("message_created", event, user["user_id"], 0)
+    pulse_emit_event("conversation_updated", event, user["user_id"], 0)
+    return jsonify({"ok": True, "thread_id": thread_id, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type})
 
 
 def _pulse_message_payload(row, current_user_id=0):
@@ -18306,8 +18429,10 @@ def _pulse_message_payload(row, current_user_id=0):
         "sender_user_id": int(item.get("sender_user_id") or 0),
         "body": item.get("body") or "",
         "media_url": item.get("media_url") or "",
+        "thumbnail_url": item.get("thumbnail_url") or item.get("media_url") or "",
+        "media_metadata": item.get("media_metadata") or "",
         "message_type": item.get("message_type") or "text",
-        "status": item.get("status") or "sent",
+        "status": item.get("delivery_status") or item.get("status") or "sent",
         "created_at": item.get("created_at") or "",
         "is_mine": int(item.get("sender_user_id") or 0) == int(current_user_id or 0),
     }
@@ -18370,6 +18495,38 @@ def api_pulse_message_conversations():
         })
     conn.close()
     return jsonify({"ok": True, "conversations": conversations})
+
+
+@webhook_app.route("/api/pulse/messages/upload", methods=["POST"])
+def api_pulse_messages_upload():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conversation_id = safe_int(request.form.get("conversation_id") or request.args.get("conversation_id") or 0, 0)
+    if conversation_id:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
+        allowed = bool(cur.fetchone())
+        conn.close()
+        if not allowed:
+            return api_error("Conversation not found.", 404)
+    file_storage = request.files.get("file") or request.files.get("media") or request.files.get("upload")
+    result, status = media_service.save_upload(user["user_id"], file_storage, context_type="pulse_message", context_id=str(conversation_id or "draft"))
+    if not result.get("ok"):
+        return jsonify(result), status
+    media = result.get("media") or {}
+    media_type = media.get("media_type") or "image"
+    message_type = "gif" if media_type == "gif" else "video" if media_type == "video" else "image"
+    pulse_emit_event("message_media_uploaded", {"conversation_id": conversation_id, "media_type": message_type}, user["user_id"], 0)
+    return jsonify({
+        "ok": True,
+        "message": "Media uploaded.",
+        "media_url": media.get("media_url") or "",
+        "thumbnail_url": media.get("thumbnail_url") or media.get("media_url") or "",
+        "message_type": message_type,
+        "media": media,
+    }), 200
 
 
 @webhook_app.route("/api/pulse/messages/<int:conversation_id>/messages", methods=["GET"])
@@ -19308,15 +19465,14 @@ def enterprise_page():
 @webhook_app.route("/pro", methods=["GET"])
 def pro_page():
     packages = [
-        ("Pulse Premium", ["Premium Glow Mark — stand out with a glowing verified identity badge.", "profile glow", "advanced filters", "creator analytics lite", "boosted profile identity", "premium themes"]),
-        ("Creator Pro", ["advanced creator analytics", "AI caption assistant", "AI post optimizer", "AI thumbnail tools", "livestream tools", "marketplace seller tools"]),
-        ("Teacher Pro", ["lesson builder", "course storefront", "student messaging", "live class tools", "teacher analytics"]),
-        ("Enterprise", ["team dashboard", "scam intelligence tools", "enterprise reports", "priority support"]),
+        ("Free Core Ecosystem", ["Pulse posting", "Reels, Groups, Messenger, and Spaces", "basic livestreaming", "marketplace browsing and applications", "AI utilities, alerts, watchlists, media uploads, and profile customization"]),
+        ("Pulse Premium", ["glowing premium mark", "elite profile cosmetics", "advanced creator filters", "premium livestream cosmetics", "advanced creator AI and analytics", "exclusive Pulse badges and prestige themes"]),
+        ("Future Creator Economy", ["creator prestige upgrades", "teacher and merchant enhancements", "optional discovery boosts", "future monetization tools after trust review"]),
     ]
-    cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><ul>{''.join(f'<li>{clean_html(item)}</li>' for item in items)}</ul><a class='button primary' href='/upgrade'>Review Access</a></article>" for name, items in packages)
-    trust = "<article class='card'><h2>Trust Rules</h2><p>Transparent pricing. Cancel anytime. No hidden charges. Marketplace products, teachers, and sponsors are safety-reviewed before real money flow.</p></article>"
+    cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><ul>{''.join(f'<li>{clean_html(item)}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore Pulse Premium</a></article>" for name, items in packages)
+    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPilotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
-    return trust_public_page("CoinPilotXAI Pro", "Upgrade to advanced alerts, Auto Signals, Scam Shield, and creator tools.", body, "/upgrade")
+    return trust_public_page("CoinPilotXAI Premium", "Free core ecosystem with Pulse Premium prestige and creator enhancements.", body, "/pulse/premium")
 
 
 def pulse_admin_user_row(cur, user_id):
@@ -19987,7 +20143,7 @@ def capability_runtime_status(cur):
         },
         "premium_identity": {
             "last_tested": now,
-            "monetization_readiness": "subscription gated" if premium_count >= 0 else "needs setup",
+            "monetization_readiness": "Pulse Premium prestige" if premium_count >= 0 else "needs setup",
         },
     }
 
@@ -20172,6 +20328,32 @@ def admin_groups_health_page():
     return admin_page_html("Groups Health", body, admin)
 
 
+@webhook_app.route("/admin/messages-health", methods=["GET"])
+def admin_messages_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    message_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages")
+    media_messages = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages WHERE COALESCE(media_url,'')!=''")
+    upload_count = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE context_type='pulse_message'")
+    pending_media = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE context_type='pulse_message' AND moderation_status='pending'")
+    conversations = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations")
+    missing_cols = [c for c in ["message_type", "media_url", "thumbnail_url", "media_metadata", "file_size", "duration_seconds", "delivery_status", "edited_at", "deleted_at"] if c not in set(table_columns(cur, "pulse_messages"))]
+    cur.execute("SELECT id, conversation_id, sender_user_id, receiver_user_id, message_type, status, delivery_status, created_at FROM pulse_messages ORDER BY id DESC LIMIT 20")
+    rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('conversation_id')}</td><td>{r.get('sender_user_id')}</td><td>{r.get('receiver_user_id')}</td><td>{clean_html(r.get('message_type') or '')}</td><td>{clean_html(r.get('delivery_status') or r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in rows)
+    body = f"""
+    <h1>Messages Health</h1><p class='muted'>Pulse Messenger delivery, schema, media upload, and realtime readiness.</p>
+    <section class='grid'><div class='card'><h2>Conversations</h2><p class='metric'>{conversations}</p></div><div class='card'><h2>Messages</h2><p class='metric'>{message_count}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_messages}</p></div><div class='card'><h2>Uploads</h2><p class='metric'>{upload_count}</p></div><div class='card'><h2>Pending Media Review</h2><p class='metric'>{pending_media}</p></div><div class='card'><h2>Missing Columns</h2><p>{clean_html(', '.join(missing_cols) or 'none')}</p></div></section>
+    <section class='card'><h2>Latest Messages</h2><table class='table'><tr><th>ID</th><th>Conversation</th><th>Sender</th><th>Receiver</th><th>Type</th><th>Status</th><th>Time</th></tr>{latest or '<tr><td colspan=7>No messages yet.</td></tr>'}</table></section>
+    <p><a class='button' href='/pulse/messages'>Open Messenger</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
+    """
+    return admin_page_html("Messages Health", body, admin)
+
+
 @webhook_app.route("/admin/merchant-applications", methods=["GET", "POST"])
 def admin_merchant_applications_page():
     admin, denied = require_admin_page("monetization.manage")
@@ -20336,7 +20518,7 @@ def admin_system_audit_page():
     init_db()
     route_groups = {
         "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant", "/pulse/camera"],
-        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/media-studio"],
+        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/messages-health", "/admin/media-studio"],
     }
     rows = []
     client = webhook_app.test_client()
@@ -22898,8 +23080,8 @@ def stripe_webhook():
                 if activated_user_id:
                     send_telegram_confirmation(
                         activated_user_id,
-                        "✅ CoinPilotX Pro activated successfully.\n\n"
-                        "Your card payment was confirmed by Stripe, and your Pro access is now active.\n\n"
+                        "✅ Pulse Premium activated successfully.\n\n"
+                        "Your card payment was confirmed by Stripe, and your Premium access is now active.\n\n"
                         "Educational only — not financial advice.\n"
                         "CoinPilotX will never ask for your seed phrase or private key."
                     )
@@ -23296,30 +23478,22 @@ def send_welcome_email(user, override_email=None, audit_label="user"):
     trial_end_label = format_date(trial_end)
     logging.info("Attempting welcome email for user_id: %s recipient=%s", user.get("user_id"), audit_label)
     logging.info("Brevo API key loaded: %s", bool(os.getenv("BREVO_API_KEY")))
-    subject = "Welcome to CoinPilotX Pro Trial — Powered by CoinPilotXAI Inc."
+    subject = "Welcome to CoinPilotXAI — Free Core Access"
     text = (
         f"Hi {name},\n\n"
-        f"Welcome to CoinPilotX. Your account includes {PRO_TRIAL_DAYS} days of Pro Trial access.\n\n"
-        f"Trial end date: {trial_end_label}\n\n"
-        "Pro features unlocked during your trial:\n"
-        "- Deeper AI crypto intelligence\n"
-        "- Premium Sports Edge context\n"
-        "- Wallet and transaction risk details\n"
-        "- Portfolio decision support\n"
-        "- Whale intelligence and deeper market analysis\n"
-        "- Advanced scam protection and saved intelligence workflows\n\n"
-        "You can upgrade before the trial ends to keep Pro active. If you do not subscribe, your account automatically returns to Free access after the trial.\n\n"
+        "Welcome to CoinPilotX. Your core platform access is free.\n\n"
+        "Free core includes Pulse, AI utilities, alerts, watchlists, groups, spaces, marketplace access, creator tools, and scam education.\n\n"
+        "Pulse Premium is optional for glowing identity, creator cosmetics, advanced creator tools, analytics, exclusive badges, and prestige effects.\n\n"
         "You can access your dashboard at https://coinpilotx.app/account and connect Telegram from Account Settings.\n\n"
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.\n"
         "Educational AI intelligence only. Not financial, betting, investment, or legal advice.\n\n"
         "Support: support@coinpilotx.app"
     )
-    html = branded_email_html("Welcome to CoinPilotX Pro Trial", f"""
+    html = branded_email_html("Welcome to CoinPilotXAI", f"""
       <p>Hi {clean_html(name)},</p>
-      <p>Your CoinPilotX account includes <strong>{PRO_TRIAL_DAYS} days of Pro Trial access</strong>.</p>
-      <p><strong>Trial end date:</strong> {clean_html(trial_end_label)}</p>
-      <p>During your trial, Pro unlocks deeper AI crypto intelligence, premium Sports Edge context, wallet and transaction risk details, portfolio decision support, whale intelligence, deeper market analysis, advanced scam protection, and saved intelligence workflows.</p>
-      <p>You can upgrade before the trial ends to keep Pro active. If you do not subscribe, your account automatically returns to Free access after the trial.</p>
+      <p>Your CoinPilotX account includes <strong>free core platform access</strong>.</p>
+      <p>Free core includes Pulse, AI utilities, alerts, watchlists, groups, spaces, marketplace access, creator tools, and scam education.</p>
+      <p>Pulse Premium is optional for glowing identity, creator cosmetics, advanced creator tools, analytics, exclusive badges, and prestige effects.</p>
       <p><a href="https://coinpilotx.app/account" style="color:#36e58f">Open your account dashboard</a></p>
       <p>Support: <a href="mailto:support@coinpilotx.app" style="color:#6edff6">support@coinpilotx.app</a></p>
     """)
@@ -23451,20 +23625,20 @@ def send_trial_lifecycle_email(user, event_type):
     days_left = days_until(user.get("trial_end_date") or user.get("pro_expires_at"))
     copy = {
         "day_7": (
-            "Make the most of your CoinPilotX Pro trial",
-            "You still have Pro access. Try deeper AI analysis, Wallet Intel, Scam Shield, Portfolio Advice, whale intelligence, and Sports Edge context while your trial is active.",
+            "Make the most of CoinPilotXAI",
+            "Your core platform access is free. Explore Pulse, AI utilities, watchlists, alerts, groups, spaces, marketplace access, and scam education.",
         ),
         "day_21": (
-            "Your CoinPilotX Pro trial expires soon",
-            f"Your Pro trial is scheduled to end on {trial_end_label}. Upgrade before then if you want to keep deeper intelligence active.",
+            "Your legacy trial expires soon",
+            f"Your legacy trial is scheduled to end on {trial_end_label}. Core platform access remains free.",
         ),
         "day_29": (
-            "Final reminder: CoinPilotX Pro trial ending",
-            f"Your Pro trial is close to ending. Days remaining: {days_left if days_left is not None else 'soon'}. You can upgrade anytime from your CoinPilotXAI website account dashboard.",
+            "Final reminder: legacy trial ending",
+            f"Your legacy trial is close to ending. Days remaining: {days_left if days_left is not None else 'soon'}. Core platform access remains free.",
         ),
         "trial_ended": (
-            "Your CoinPilotX Pro trial has ended",
-            "Your account has returned to Free access. You can keep using CoinPilotX, and you can upgrade anytime when deeper intelligence becomes useful.",
+            "Your legacy trial has ended",
+            "Your account remains on Free Core access. You can keep using CoinPilotXAI, and Pulse Premium is optional for prestige identity and creator enhancements.",
         ),
     }
     subject, message = copy.get(event_type, copy["day_7"])
@@ -23472,7 +23646,7 @@ def send_trial_lifecycle_email(user, event_type):
         f"Hi {account_display_name(user)},\n\n"
         f"{message}\n\n"
         f"Trial end date: {trial_end_label}\n\n"
-        "Upgrade or review your account:\n"
+        "Review your account:\n"
         "https://coinpilotx.app/account\n\n"
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.\n"
         "Educational AI intelligence only. Not financial, betting, investment, or legal advice.\n\n"
@@ -23561,27 +23735,27 @@ def payment_email_copy(user, details, email_type):
     account = "https://coinpilotx.app/account"
     support = "https://coinpilotx.app/support"
     subject_map = {
-        "pro_activated": "Your CoinPilotXAI Pro Access Is Active",
+        "pro_activated": "Your Pulse Premium Access Is Active",
         "payment_successful": "CoinPilotXAI Payment Successful",
         "receipt_invoice": "Your CoinPilotXAI Receipt and Billing Details",
-        "payment_failed": "Action needed: CoinPilotXAI Pro payment issue",
-        "subscription_canceled": "CoinPilotXAI Pro subscription update",
-        "trial_ending": "Your CoinPilotXAI Pro trial is ending soon",
+        "payment_failed": "Action needed: Pulse Premium payment issue",
+        "subscription_canceled": "Pulse Premium subscription update",
+        "trial_ending": "Your Pulse Premium trial is ending soon",
     }
     intro_map = {
-        "pro_activated": "Your CoinPilotXAI Pro access is active.",
-        "payment_successful": "Stripe confirmed your CoinPilotXAI Pro payment successfully.",
-        "receipt_invoice": "Your CoinPilotXAI Pro billing details are below.",
-        "payment_failed": "Stripe reported a payment issue for your CoinPilotXAI Pro subscription.",
-        "subscription_canceled": "Your CoinPilotXAI Pro subscription status changed to canceled.",
-        "trial_ending": "Your CoinPilotXAI Pro trial is ending soon.",
+        "pro_activated": "Your Pulse Premium access is active.",
+        "payment_successful": "Stripe confirmed your Pulse Premium payment successfully.",
+        "receipt_invoice": "Your Pulse Premium billing details are below.",
+        "payment_failed": "Stripe reported a payment issue for your Pulse Premium subscription.",
+        "subscription_canceled": "Your Pulse Premium subscription status changed to canceled.",
+        "trial_ending": "Your Pulse Premium trial is ending soon.",
     }
-    subject = subject_map.get(email_type, "Your CoinPilotXAI Pro Upgrade Is Active")
-    intro = intro_map.get(email_type, "Your CoinPilotXAI Pro access is active.")
+    subject = subject_map.get(email_type, "Your Pulse Premium Upgrade Is Active")
+    intro = intro_map.get(email_type, "Your Pulse Premium access is active.")
     text = (
         f"Hi {account_display_name(user)},\n\n"
         f"{intro}\n\n"
-        "Plan: CoinPilotX Pro\n"
+        "Plan: Pulse Premium\n"
         f"{amount_line}"
         f"Billing date: {billing_date}\n"
         f"Next billing date: {next_billing_date}\n\n"
@@ -23595,7 +23769,7 @@ def payment_email_copy(user, details, email_type):
     html = branded_email_html(subject, f"""
       <p>Hi {clean_html(account_display_name(user))},</p>
       <p>{clean_html(intro)}</p>
-      <p><strong>Plan:</strong> CoinPilotX Pro<br>
+      <p><strong>Plan:</strong> Pulse Premium<br>
       {f"<strong>Payment amount:</strong> {clean_html(str(amount))} {clean_html(currency)}<br>" if amount else ""}
       <strong>Billing date:</strong> {clean_html(str(billing_date))}<br>
       <strong>Next billing date:</strong> {clean_html(str(next_billing_date))}</p>
@@ -23741,7 +23915,7 @@ def log_upgrade_confirmation_email(user_id, email, stripe_event_id="", stripe_se
         (
             user_id or 0,
             email or "",
-            "Your CoinPilotXAI Pro Upgrade Is Active",
+            "Your Pulse Premium Upgrade Is Active",
             status,
             datetime.now().isoformat(),
             email or "",
@@ -23778,11 +23952,11 @@ def send_upgrade_confirmation_email(user, details=None):
     amount_line = f"Payment amount: {amount} {currency}\n" if amount else ""
     billing_date = details.get("billing_date") or datetime.now().strftime("%b %d, %Y")
     next_billing_date = details.get("next_billing_date") or details.get("pro_expires_at") or "Available in your Stripe billing details"
-    subject = "Your CoinPilotXAI Pro Upgrade Is Active"
+    subject = "Your Pulse Premium Upgrade Is Active"
     text = (
         f"Hi {account_display_name(user)},\n\n"
-        "Your CoinPilotXAI Pro access is active.\n\n"
-        "Plan: CoinPilotX Pro\n"
+        "Your Pulse Premium access is active.\n\n"
+        "Plan: Pulse Premium\n"
         f"{amount_line}"
         f"Billing date: {billing_date}\n"
         f"Next billing date: {next_billing_date}\n\n"
@@ -23794,10 +23968,10 @@ def send_upgrade_confirmation_email(user, details=None):
         "If you experience any issue after payment, please email us immediately at support@coinpilotx.app and include the email address used for your CoinPilotXAI account.\n\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
     )
-    html = branded_email_html("Your CoinPilotXAI Pro Upgrade Is Active", f"""
+    html = branded_email_html("Your Pulse Premium Upgrade Is Active", f"""
       <p>Hi {clean_html(account_display_name(user))},</p>
-      <p>Your <strong>CoinPilotX Pro</strong> access is active.</p>
-      <p><strong>Plan:</strong> CoinPilotX Pro<br>
+      <p>Your <strong>Pulse Premium</strong> access is active.</p>
+      <p><strong>Plan:</strong> Pulse Premium<br>
       {f"<strong>Payment amount:</strong> {clean_html(str(amount))} {clean_html(currency)}<br>" if amount else ""}
       <strong>Billing date:</strong> {clean_html(str(billing_date))}<br>
       <strong>Next billing date:</strong> {clean_html(str(next_billing_date))}</p>
@@ -23853,8 +24027,8 @@ def send_subscription_canceled_email(user, details=None):
 def subscription_email_body(plan_name, timestamp, txid=None):
     txid_line = f"\nTXID reference: {txid}\n" if txid else ""
     return (
-        "Welcome to CoinPilotX Pro.\n\n"
-        "Your Pro access is active.\n\n"
+        "Welcome to Pulse Premium.\n\n"
+        "Your Premium access is active.\n\n"
         f"Plan: {plan_name}\n"
         f"Activated at: {timestamp}\n"
         f"{txid_line}"
@@ -23873,11 +24047,11 @@ def send_subscription_email(user_id, payment_type, txid=None, stripe_session_id=
     email = get_user_email(user_id)
     if payment_type == "btc":
         subject = "Your CoinPilotX BTC Payment Was Verified"
-        body = subscription_email_body("CoinPilotX Pro - BTC", timestamp, txid=txid)
+        body = subscription_email_body("Pulse Premium - BTC", timestamp, txid=txid)
     else:
-        subject = "Your CoinPilotX Pro Subscription Is Active"
+        subject = "Your Pulse Premium Subscription Is Active"
         ref = stripe_session_id or txid
-        body = subscription_email_body("CoinPilotX Pro", timestamp, txid=ref)
+        body = subscription_email_body("Pulse Premium", timestamp, txid=ref)
     return send_email_confirmation(user_id, email, subject, body)
 
 
@@ -24055,8 +24229,8 @@ def consume_ai_usage(user_id, feature="ai_assistant", limit=FREE_AI_DAILY_LIMIT)
     if count >= limit:
         conn.close()
         return False, (
-            f"Free AI limit reached for today ({limit} requests). "
-            "Upgrade to CoinPilotX Pro to continue with deeper AI intelligence, or try again tomorrow."
+            f"Daily AI safety limit reached for today ({limit} requests). "
+            "Please try again tomorrow. Core platform access remains free."
         )
     count += 1
     cur.execute("UPDATE users SET usage_ai_count=?, usage_reset_at=?, updated_at=? WHERE user_id=? OR telegram_user_id=?", (count, today, now.isoformat(), user_id, user_id))
@@ -24387,35 +24561,32 @@ BTC_PRO_PRICE = "0.00025 BTC"
 
 def pro_upgrade_message(user_id):
     account = get_linked_website_account(user_id)
-    if platform_pro_access(account):
+    if has_pro_access(account):
         return (
-            "✅ Your CoinPilotXAI Pro access is already active.\n\n"
+            "✅ Your Pulse Premium access is already active.\n\n"
             "Open your dashboard anytime to use the full platform. Telegram is an optional companion for quick commands and alerts."
         )
     return (
-        "⭐ CoinPilotX Pro\n\n"
-        f"Card price: {PRO_PRICE_MONTHLY}\n"
+        "⭐ Pulse Premium\n\n"
+        "Optional prestige and creator enhancements.\n"
         "Payments are completed securely on the CoinPilotXAI website.\n\n"
-        "Free is useful for basic awareness. Pro is built for deeper decision support.\n\n"
-        "Free includes:\n"
-        "• Basic BTC price\n"
-        "• Basic alerts\n"
-        "• Basic news summaries\n"
-        "• Short scam warning\n\n"
-        "Pro unlocks:\n"
-        "• Deeper AI analysis\n"
-        "• Whale intelligence\n"
-        "• Portfolio decision engine\n"
-        "• Country crypto intelligence\n"
-        "• Advanced scam breakdowns\n"
-        "• Wallet/transaction risk insights\n"
-        "• Market pressure signals\n"
-        "• Personalized BUY / SELL / WAIT / HOLD explanations\n\n"
+        "The core platform is free for authenticated users.\n\n"
+        "Free core includes:\n"
+        "• Pulse posting, groups, spaces, and Messenger\n"
+        "• Reels, livestream basics, creator studio, and marketplace access\n"
+        "• AI utilities, alerts, watchlists, and scam education\n\n"
+        "Pulse Premium adds:\n"
+        "• Glowing premium mark\n"
+        "• Elite profile cosmetics\n"
+        "• Premium creator filters\n"
+        "• Advanced creator AI and analytics\n"
+        "• Premium livestream cosmetics\n"
+        "• Exclusive Pulse badges and prestige themes\n\n"
         "CoinPilotX is operated by CoinPilotXAI Inc.\n"
         "No hidden fees from CoinPilotXAI Inc. Checkout opens only on the website.\n"
         "CoinPilotX never holds funds.\n"
         "CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.\n\n"
-        "Create or log in to your website account, upgrade there, then return here and send your Telegram activation code."
+        "Create or log in to your website account, then explore Pulse Premium whenever you want elite identity and creator polish."
     )
 
 
@@ -25399,8 +25570,8 @@ def live_sports_edge(game_id="", league="all"):
 
 def sports_edge_footer(user_id):
     if user_id and is_pro(user_id):
-        return "⭐ Pro active — deeper Sports Edge intelligence enabled."
-    return "⭐ Want deeper Sports Edge reasoning, market pressure, and risk breakdowns? Upgrade to CoinPilotX Pro."
+        return "⭐ Premium active — deeper Sports Edge intelligence enabled."
+    return "⭐ Core Sports Edge context is available. Pulse Premium adds prestige identity and creator enhancement."
 
 
 def sports_edge_summary(user_id=None):
@@ -26319,7 +26490,7 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⭐ Website Checkout Required\n\n"
         "Direct Telegram payment verification is no longer used. For your safety, Pro payments and subscription status are managed by your CoinPilotXAI website account.\n\n"
         "1. Open your website account.\n"
-        "2. Upgrade to Pro on the website.\n"
+        "2. Explore Pulse Premium on the website for prestige identity and creator enhancements.\n"
         "3. Return here and send your activation code with /link CODE or /connect CODE.\n\n"
         "CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.",
         reply_markup=upgrade_payment_menu(update.effective_user.id),
@@ -27818,9 +27989,19 @@ def init_db():
     )
     """)
     add_columns_if_missing(cur, "pulse_messages", [
+        ("thread_id", "INTEGER"),
         ("conversation_id", "INTEGER"),
+        ("sender_user_id", "INTEGER"),
+        ("receiver_user_id", "INTEGER"),
+        ("body", "TEXT"),
+        ("read_at", "TEXT"),
         ("media_url", "TEXT"),
+        ("thumbnail_url", "TEXT"),
         ("message_type", "TEXT DEFAULT 'text'"),
+        ("media_metadata", "TEXT"),
+        ("file_size", "INTEGER DEFAULT 0"),
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("delivery_status", "TEXT DEFAULT 'sent'"),
         ("status", "TEXT DEFAULT 'sent'"),
         ("edited_at", "TEXT"),
         ("deleted_at", "TEXT"),
@@ -31519,9 +31700,9 @@ def append_ethical_upgrade_footer(user_id, message, context_type=None):
     if context_type in tiny_contexts:
         return message
     footer = (
-        "⭐ Pro active — you’re receiving deeper CoinPilotX intelligence."
+        "⭐ Premium active — you’re receiving deeper CoinPilotX intelligence."
         if is_pro(user_id)
-        else "⭐ Want deeper analysis, whale intelligence, portfolio decision support, and advanced scam protection? Upgrade to CoinPilotX Pro."
+        else "⭐ Core intelligence is available. Pulse Premium adds prestige identity, creator polish, and advanced enhancements."
     )
     if footer in message:
         return message
@@ -31552,7 +31733,7 @@ def openai_chat_completion(user_id, question):
     logging.info("Telegram user id: %s", user_id)
     linked = get_linked_website_account(user_id)
     logging.info("linked account found: %s", bool(linked))
-    logging.info("Pro access: %s", is_pro(user_id))
+    logging.info("Premium access: %s", is_pro(user_id))
     openai_key_loaded = bool(os.getenv("OPENAI_API_KEY"))
     logging.info("OpenAI key loaded: %s", openai_key_loaded)
     allowed, limit_message = consume_ai_usage(user_id, "telegram_ai_assistant")
@@ -32345,9 +32526,9 @@ def scam_stories_summary(pro=False):
         + f"\n\nFinal warning:\n{story['final']}"
     )
     if pro:
-        msg += "\n\nPro safety check: pause, verify the domain, inspect wallet permissions, confirm official support channels, and assume urgency is part of the trap."
+        msg += "\n\nPremium safety lens: pause, verify the domain, inspect wallet permissions, confirm official support channels, and assume urgency is part of the trap."
     else:
-        msg += "\n\nPro unlocks a deeper red-flag and prevention checklist."
+        msg += "\n\nCore safety checklist: pause, verify the domain, inspect wallet permissions, confirm official support channels, and assume urgency is part of the trap."
     return msg
 
 
@@ -33118,9 +33299,9 @@ def portfolio_advice_summary(user_id):
     )
 
     if pro and explanation_bits:
-        explanation += "\nPro detail:\n" + "\n".join([f"• {bit}" for bit in explanation_bits]) + "\n"
+        explanation += "\nPremium detail:\n" + "\n".join([f"• {bit}" for bit in explanation_bits]) + "\n"
     elif not pro:
-        explanation += "\nFree view: upgrade to Pro for trend, momentum, volatility, whale pressure, and exposure detail.\n"
+        explanation += "\nCore view: trend, momentum, volatility, whale pressure, and exposure detail remain educational and risk-aware.\n"
 
     explanation += "\nEducational only — not financial advice."
 
@@ -33171,7 +33352,7 @@ def account_summary(user_id):
         if portfolio.get("holdings")
         else "\nPortfolio: No website holdings saved yet.\n"
     )
-    pro_line = "\n✅ Pro active — deeper CoinPilotX intelligence enabled.\n" if has_pro_access(website_user) else "\nUpgrade Pro on the website when you want deeper intelligence.\n"
+    pro_line = "\n✅ Premium active — deeper CoinPilotX intelligence enabled.\n" if has_pro_access(website_user) else "\nPulse Premium on the website when you want deeper intelligence.\n"
     return (
         "👤 CoinPilotX Account\n\n"
         f"Name: {name}\n"
@@ -33207,7 +33388,7 @@ def legacy_account_summary(user_id):
         f"Email: {email or 'Not set'}\n"
         f"Plan: {plan or 'free'}\n"
         f"Subscription: {status or 'inactive'}\n"
-        f"Pro active: {'Yes' if pro else 'No'}\n"
+        f"Premium active: {'Yes' if pro else 'No'}\n"
         f"Risk profile: {risk or 'balanced'}\n"
         f"Exchange preference: {exchange_goal or 'beginner'}"
     )
@@ -33259,7 +33440,7 @@ def account_reply_markup(telegram_user_id):
             [InlineKeyboardButton("Main Menu", callback_data="main_menu")],
         ]
         if not has_pro_access(account):
-            rows.insert(1, [InlineKeyboardButton("Upgrade Pro on Website", url=website_upgrade_url(telegram_user_id))])
+            rows.insert(1, [InlineKeyboardButton("Pulse Premium on Website", url=website_upgrade_url(telegram_user_id))])
         return InlineKeyboardMarkup(rows)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Create Account", url="https://coinpilotx.app/signup")],
@@ -33594,7 +33775,7 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info("TELEGRAM_COMMAND_RECEIVED command=upgrade telegram_user_id=%s", update.effective_user.id)
     user = get_linked_website_account(update.effective_user.id)
     if user and platform_pro_access(user):
-        await update.message.reply_text("Your CoinPilotXAI Pro access is already active.", reply_markup=account_reply_markup(update.effective_user.id))
+        await update.message.reply_text("Your Pulse Premium access is already active.", reply_markup=account_reply_markup(update.effective_user.id))
         return
     await update.message.reply_text(pro_upgrade_message(update.effective_user.id), reply_markup=upgrade_payment_menu(update.effective_user.id))
 
@@ -33815,10 +33996,10 @@ async def connect_account_command(update: Update, context: ContextTypes.DEFAULT_
         sync_brevo_contact_safe({**linked_user, "source": "telegram_link"}, entity_type="user", entity_id=target_user_id)
     logging.info("Telegram linking success for Telegram user %s", update.effective_user.id)
     pro_line = (
-        "\n\nYour CoinPilotXAI Pro access is now active in Telegram.\n\n"
+        "\n\nYour Pulse Premium access is now active in Telegram.\n\n"
         "If you had any payment issue, email support@coinpilotx.app with your account email."
         if linked_user and has_pro_access(linked_user)
-        else "\n\nYour Telegram account is linked. Upgrade Pro on the website when you want deeper intelligence."
+        else "\n\nYour Telegram account is linked. Pulse Premium on the website when you want deeper intelligence."
     )
     log_product_event(target_user_id, "telegram_account_linked", {"telegram_user_id": update.effective_user.id})
     log_product_event(target_user_id, "telegram_connect", {"telegram_user_id": update.effective_user.id})
@@ -33855,7 +34036,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     except Exception as exc:
         logging.info("Telegram status alert count failed for user=%s error=%s", user.get("user_id"), exc)
-    pro_status = "Pro Active" if platform_pro_access(user) else "Free"
+    pro_status = "Pulse Premium Active" if has_pro_access(user) else "Free Core"
     await update.message.reply_text(
         "CoinPilotXAI Status\n\n"
         "Account linked: Yes\n"
@@ -34895,7 +35076,7 @@ def main_menu():
         [InlineKeyboardButton("👤 Account", callback_data="menu_account")],
         [
             InlineKeyboardButton("🛡️ Scam Shield", callback_data="pro_scanner"),
-            InlineKeyboardButton("💳 Upgrade Pro", callback_data="upgrade_pro"),
+            InlineKeyboardButton("💳 Pulse Premium", callback_data="upgrade_pro"),
         ],
         [
             InlineKeyboardButton("💬 Chat Assistant", callback_data="menu_talk"),

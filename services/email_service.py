@@ -154,15 +154,15 @@ def send_payment_confirmation(user, payment_details=None):
     amount_line = f"<p><strong>Payment amount:</strong> {amount} {currency}</p>" if amount else ""
     return send_email(
         (user or {}).get("email"),
-        "Your CoinPilotXAI Pro Upgrade Is Active",
+        "Your Pulse Premium Is Active",
         (
-            "<p>Your CoinPilotX Pro access is active.</p>"
+            "<p>Your Pulse Premium access is active.</p>"
             f"{amount_line}"
             "<p>Dashboard: <a href='https://coinpilotx.app/dashboard'>https://coinpilotx.app/dashboard</a></p>"
             "<p>If you experience any issue after payment, please email support@coinpilotx.app and include the email address used for your CoinPilotXAI account.</p>"
             "<p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
         ),
-        "Your CoinPilotX Pro access is active. Dashboard: https://coinpilotx.app/dashboard. Support: support@coinpilotx.app",
+        "Your Pulse Premium access is active. Dashboard: https://coinpilotx.app/dashboard. Support: support@coinpilotx.app",
         email_type="payment_confirmation",
     )
 
@@ -190,9 +190,9 @@ def send_security_email(to_email, subject, html_body, text_body=None):
 def send_payment_issue_email(user, payment_details=None):
     return send_email(
         (user or {}).get("email"),
-        "Action needed: CoinPilotXAI Pro payment issue",
-        "<p>Stripe reported a payment issue for your CoinPilotX Pro subscription.</p>",
-        "Stripe reported a payment issue for your CoinPilotX Pro subscription.",
+        "Action needed: Pulse Premium payment issue",
+        "<p>Stripe reported a payment issue for your Pulse Premium subscription.</p>",
+        "Stripe reported a payment issue for your Pulse Premium subscription.",
     )
 
 
@@ -201,11 +201,11 @@ def send_trial_started_email(user):
 
 
 def send_trial_expiring_email(user):
-    return send_email((user or {}).get("email"), "Your CoinPilotX Pro trial expires soon", "<p>Your Pro trial expires soon.</p>", "Your Pro trial expires soon.")
+    return send_email((user or {}).get("email"), "Your legacy trial expires soon", "<p>Your legacy trial expires soon. Core access remains free.</p>", "Your legacy trial expires soon. Core access remains free.")
 
 
 def send_trial_ended_email(user):
-    return send_email((user or {}).get("email"), "Your CoinPilotX Pro trial has ended", "<p>Your Pro trial has ended.</p>", "Your Pro trial has ended.")
+    return send_email((user or {}).get("email"), "Your legacy trial has ended", "<p>Your legacy trial has ended. Core access remains free.</p>", "Your legacy trial has ended. Core access remains free.")
 
 
 def send_admin_invitation_email(admin_user, invite_url):
