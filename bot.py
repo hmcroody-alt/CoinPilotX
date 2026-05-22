@@ -75,8 +75,10 @@ from services import (
     creator_ai_copilot,
     crowd_energy_engine,
     decentralized_trust_engine,
+    distributed_realtime_engine,
     elite_creator_engine,
     event_bus_engine,
+    event_stream_analytics,
     feed_ai_personalization,
     filter_engine,
     global_event_engine,
@@ -142,6 +144,7 @@ from services import (
     user_context as user_context_service,
     user_trust_engine,
     wallet_intel as wallet_intel_service,
+    websocket_orchestrator,
     world_simulation_engine,
     world_presence_engine,
 )
@@ -16179,6 +16182,7 @@ def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
         }.get(str(event_type or ""), str(event_type or "event"))
         realtime_engine.publish_event("pulse:global", canonical_type, payload or {})
         event_bus_engine.publish("pulse:global", canonical_type, payload or {}, priority="live")
+        distributed_realtime_engine.publish("pulse:global", canonical_type, payload or {})
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -16207,6 +16211,7 @@ def pulse_mark_online(user_id, connection_type="http", current_path=""):
             return
         sid = session.get("visitor_session_id") or session.get("csrf_token") or request.cookies.get("session") or "pulse"
         realtime_engine.heartbeat(user_id, str(sid)[:160], "pulse:global", {"path": str(current_path or request.path)[:260], "connection_type": str(connection_type)[:40]})
+        websocket_orchestrator.heartbeat(str(sid)[:160], user_id=user_id, channel="pulse:global", transport=str(connection_type or "http")[:40], metadata={"path": str(current_path or request.path)[:260]})
         now = datetime.utcnow().isoformat(timespec="seconds")
         conn = db()
         cur = conn.cursor()
@@ -19709,6 +19714,9 @@ def global_command_snapshot(persist=True):
     summary = global_intelligence_graph.executive_summary(nodes, edges, signals)
     realtime_health = realtime_engine.health_snapshot()
     bus_metrics = event_bus_engine.metrics()
+    distributed_health = distributed_realtime_engine.health()
+    websocket_health = websocket_orchestrator.health_snapshot()
+    stream_analytics = event_stream_analytics.stream_pressure(bus_metrics, distributed_health.get("metrics", {}))
     counts = {
         "users": scalar("SELECT COUNT(*) FROM users"),
         "posts": scalar("SELECT COUNT(*) FROM pulse_posts"),
@@ -19722,6 +19730,9 @@ def global_command_snapshot(persist=True):
     stale_cutoff = (datetime.utcnow() - timedelta(minutes=5)).isoformat(timespec="seconds")
     health_metrics = {
         "realtime_failures": realtime_health.get("failed_broadcasts", 0),
+        "distributed_realtime_failures": distributed_health.get("metrics", {}).get("failed", 0),
+        "websocket_pressure": websocket_health.get("pressure", 0),
+        "stream_pressure": stream_analytics.get("stream_pressure", 0),
         "queue_backlog": scalar("SELECT COUNT(*) FROM notification_jobs WHERE status IN ('pending','failed','retry')"),
         "stale_workers": scalar("SELECT COUNT(*) FROM worker_heartbeats WHERE COALESCE(last_seen_at,'')<?", (stale_cutoff,)),
         "db_latency_ms": 0,
@@ -19745,6 +19756,9 @@ def global_command_snapshot(persist=True):
         "health_metrics": health_metrics,
         "event_bus": bus_metrics,
         "realtime": realtime_health,
+        "distributed_realtime": distributed_health,
+        "websocket": websocket_health,
+        "stream": stream_analytics,
     })
     meta_coordination = meta_intelligence_engine.coordinate(fabric_reasoning, system_health, bus_metrics)
     try:
@@ -19782,7 +19796,7 @@ def global_command_snapshot(persist=True):
             logging.info("GLOBAL_COMMAND_SNAPSHOT_WRITE_SKIPPED error=%s", exc)
     finally:
         conn.close()
-    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "fabric": fabric_reasoning, "meta": meta_coordination, "nodes": nodes, "edges": edges, "signals": signals}
+    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "distributed_realtime": distributed_health, "websocket": websocket_health, "stream": stream_analytics, "fabric": fabric_reasoning, "meta": meta_coordination, "nodes": nodes, "edges": edges, "signals": signals}
 
 
 @webhook_app.route("/admin/global-command", methods=["GET"])
@@ -19797,6 +19811,9 @@ def admin_global_command_page():
     system_health = snapshot["system_health"]
     event_bus = snapshot["event_bus"]
     realtime = snapshot["realtime"]
+    distributed = snapshot["distributed_realtime"]
+    websocket = snapshot["websocket"]
+    stream = snapshot["stream"]
     fabric = snapshot["fabric"]
     meta = snapshot["meta"]
     cards = "".join(
@@ -19808,6 +19825,8 @@ def admin_global_command_page():
             ("AI Events/min", event_bus.get("events_per_minute", 0), "events_per_minute"),
             ("Live Sessions", counts["live_sessions"], "live_sessions"),
             ("Queue Backlog", snapshot["health_metrics"].get("queue_backlog", 0), "queue_backlog"),
+            ("Stream Pressure", stream.get("stream_pressure", 0), "stream_pressure"),
+            ("Socket Pressure", websocket.get("pressure", 0), "websocket_pressure"),
         ]
     )
     attention = "".join(f"<li>{clean_html(item)}</li>" for item in snapshot["summary"]["what_needs_attention"])
@@ -19869,6 +19888,11 @@ def admin_global_command_page():
       <div class='card brainstem'><h2>Universal Intelligence Fabric</h2><p class='metric'>{fabric.get('correlation', {}).get('correlation_strength', 0)}%</p><p>{clean_html(str(fabric.get('recommendation') or ''))}</p><p><span class='pill'>Priority {clean_html(str(fabric.get('priority') or ''))}</span> <span class='pill'>Confidence {clean_html(str(fabric.get('confidence') or ''))}</span> <span class='pill'>Domains {len(fabric.get('domains') or [])}</span></p><ul class='brain-list'>{fabric_factors}</ul></div>
       <div class='card brainstem'><h2>Meta-Intelligence Coordination</h2><p class='metric'>{meta.get('coordination_score', 0)}%</p><p>{clean_html(str(meta_decision.get('decision') or ''))}</p><p><span class='pill'>Priority {clean_html(str(meta_decision.get('priority') or ''))}</span> <span class='pill'>Owner approval {'required' if meta_decision.get('requires_owner_approval') else 'not required'}</span></p><ul class='brain-list'>{meta_questions}</ul></div>
     </section>
+    <section class='grid'>
+      <div class='card'><h2>Distributed Realtime Nervous System</h2><p class='metric'>{distributed.get('score', 0)}%</p><p><span class='pill'>Status {clean_html(str(distributed.get('status') or ''))}</span> <span class='pill'>Success {clean_html(str((distributed.get('metrics') or {}).get('delivery_success_rate') or 0))}%</span> <span class='pill'>Replay {sum(((distributed.get('metrics') or {}).get('replay_depths') or {}).values())}</span></p></div>
+      <div class='card'><h2>Websocket Orchestration</h2><p class='metric'>{websocket.get('pressure', 0)}%</p><p><span class='pill'>Sockets {websocket.get('active_sockets', 0)}</span> <span class='pill'>Reconnects {websocket.get('reconnect_spikes', 0)}</span> <span class='pill'>{clean_html(str((websocket.get('policy') or {}).get('mode') or ''))}</span></p></div>
+      <div class='card'><h2>Event Stream Pressure</h2><p class='metric'>{stream.get('stream_pressure', 0)}%</p><p><span class='pill'>Lag {stream.get('queue_lag', 0)}</span> <span class='pill'>Dropped {stream.get('dropped_events', 0)}</span> <span class='pill'>Replay {stream.get('replay_count', 0)}</span></p></div>
+    </section>
     <div class='grid'>
       <div class='card'><h2>Graph Health</h2><p class='metric'>{health['health_score']}%</p><p><span class='pill'>Nodes {health['node_count']}</span> <span class='pill'>Edges {health['edge_count']}</span> <span class='pill'>Signals {health['signal_count']}</span></p></div>
       <div class='card'><h2>Community Prediction</h2><p class='metric'>{clean_html(predictions['community']['status'])}</p><p>Health score {predictions['community']['health_score']}%</p></div>
@@ -19884,7 +19908,7 @@ def admin_global_command_page():
       <div class='card'><h2>Trend Origin Tracing</h2><table class='table'><tr><th>Topic</th><th>Mentions</th><th>First Seen</th></tr>{trend_rows}</table></div>
       <div class='card'><h2>Scam Cluster Detection</h2><table class='table'><tr><th>Cluster</th><th>Risk</th><th>Members</th></tr>{scam_rows}</table></div>
     </section>
-    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a> <a class='button' href='/admin/intelligence-graph'>Intelligence Graph</a> <a class='button' href='/admin/trust-map'>Trust Map</a> <a class='button' href='/admin/global-events'>Global Events</a></p>
+    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a> <a class='button' href='/admin/realtime-grid'>Realtime Grid</a> <a class='button' href='/admin/intelligence-graph'>Intelligence Graph</a> <a class='button' href='/admin/trust-map'>Trust Map</a> <a class='button' href='/admin/global-events'>Global Events</a></p>
     </section>
     {command_script}
     """
@@ -19905,6 +19929,8 @@ def api_admin_global_command_live():
             "realtime_clients": snapshot["realtime"].get("active_realtime_clients", 0),
             "events_per_minute": snapshot["event_bus"].get("events_per_minute", 0),
             "queue_backlog": snapshot["health_metrics"].get("queue_backlog", 0),
+            "stream_pressure": snapshot["stream"].get("stream_pressure", 0),
+            "websocket_pressure": snapshot["websocket"].get("pressure", 0),
         },
         "system_health": snapshot["system_health"],
         "event_bus": {
@@ -19920,8 +19946,48 @@ def api_admin_global_command_live():
             "correlation": snapshot["fabric"].get("correlation"),
         },
         "meta": snapshot["meta"],
+        "distributed_realtime": snapshot["distributed_realtime"],
+        "websocket": snapshot["websocket"],
+        "stream": snapshot["stream"],
         "summary": snapshot["summary"],
     })
+
+
+@webhook_app.route("/admin/realtime-grid", methods=["GET"])
+def admin_realtime_grid_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    snapshot = global_command_snapshot(persist=False)
+    distributed = snapshot["distributed_realtime"]
+    websocket = snapshot["websocket"]
+    stream = snapshot["stream"]
+    dist_metrics = distributed.get("metrics") or {}
+    priority_rows = "".join(f"<tr><td>{clean_html(k)}</td><td>{v}</td></tr>" for k, v in (dist_metrics.get("priority_counts") or {}).items())
+    partition_rows = "".join(f"<tr><td>{clean_html(k)}</td><td>{v}</td></tr>" for k, v in sorted((dist_metrics.get("partition_depths") or {}).items())[:24])
+    channel_rows = "".join(f"<tr><td>{clean_html(name)}</td><td>{count}</td></tr>" for name, count in websocket.get("top_channels", []))
+    css = """
+    <style>
+    .ops-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.pressure{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.pressure span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#ffd166,#ff6b7a);box-shadow:0 0 18px rgba(110,223,246,.32)}@media(max-width:720px){.table{font-size:13px}}
+    </style>
+    """
+    body = f"""
+    {css}
+    <h1>Realtime Grid</h1><p class='muted'>Distributed realtime nervous system, websocket orchestration, replay buffers, partition pressure, and stream analytics.</p>
+    <section class='ops-grid'>
+      <div class='card'><h2>Distributed Health</h2><p class='metric'>{distributed.get('score', 0)}%</p><div class='pressure'><span style='width:{distributed.get('score', 0)}%'></span></div><p>{clean_html(distributed.get('status'))}</p></div>
+      <div class='card'><h2>Delivery Success</h2><p class='metric'>{clean_html(str(dist_metrics.get('delivery_success_rate') or 0))}%</p><p><span class='pill'>Published {dist_metrics.get('published', 0)}</span> <span class='pill'>Failed {dist_metrics.get('failed', 0)}</span></p></div>
+      <div class='card'><h2>Websocket Pressure</h2><p class='metric'>{websocket.get('pressure', 0)}%</p><p><span class='pill'>Active {websocket.get('active_sockets', 0)}</span> <span class='pill'>Reconnects {websocket.get('reconnect_spikes', 0)}</span></p></div>
+      <div class='card'><h2>Stream Pressure</h2><p class='metric'>{stream.get('stream_pressure', 0)}%</p><p><span class='pill'>Lag {stream.get('queue_lag', 0)}</span> <span class='pill'>Replay {stream.get('replay_count', 0)}</span></p></div>
+    </section>
+    <section class='grid'>
+      <div class='card'><h2>Priority Tiers</h2><table class='table'><tr><th>Tier</th><th>Events</th></tr>{priority_rows or '<tr><td colspan=2>No events yet.</td></tr>'}</table></div>
+      <div class='card'><h2>Partition Depth</h2><table class='table'><tr><th>Partition</th><th>Depth</th></tr>{partition_rows or '<tr><td colspan=2>No partition pressure.</td></tr>'}</table></div>
+      <div class='card'><h2>Socket Channels</h2><table class='table'><tr><th>Channel</th><th>Clients</th></tr>{channel_rows or '<tr><td colspan=2>No active sockets.</td></tr>'}</table></div>
+    </section>
+    <p><a class='button' href='/admin/global-command'>Global Command</a> <a class='button' href='/admin/global-events'>Global Events</a></p>
+    """
+    return admin_page_html("Realtime Grid", body, admin)
 
 
 @webhook_app.route("/admin/intelligence-graph", methods=["GET"])
