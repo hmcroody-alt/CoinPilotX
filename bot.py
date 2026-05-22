@@ -76,6 +76,7 @@ from services import (
     crowd_energy_engine,
     decentralized_trust_engine,
     elite_creator_engine,
+    event_bus_engine,
     feed_ai_personalization,
     filter_engine,
     global_event_engine,
@@ -134,6 +135,7 @@ from services import (
     social_loop_engine,
     sports_data as sports_data_service,
     self_healing_engine,
+    system_health_engine,
     ui_state_engine,
     user_context as user_context_service,
     user_trust_engine,
@@ -16174,6 +16176,7 @@ def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
             "pulse_reel_comment_created": "pulse_reel_comment_created",
         }.get(str(event_type or ""), str(event_type or "event"))
         realtime_engine.publish_event("pulse:global", canonical_type, payload or {})
+        event_bus_engine.publish("pulse:global", canonical_type, payload or {}, priority="live")
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -19653,7 +19656,7 @@ def apply_department_action(slug, action, target_id, note, admin):
     return message
 
 
-def global_command_snapshot():
+def global_command_snapshot(persist=True):
     init_db()
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -19702,6 +19705,8 @@ def global_command_snapshot():
         logging.info("GLOBAL_COMMAND_REPORT_SIGNALS_SKIPPED error=%s", exc)
 
     summary = global_intelligence_graph.executive_summary(nodes, edges, signals)
+    realtime_health = realtime_engine.health_snapshot()
+    bus_metrics = event_bus_engine.metrics()
     counts = {
         "users": scalar("SELECT COUNT(*) FROM users"),
         "posts": scalar("SELECT COUNT(*) FROM pulse_posts"),
@@ -19712,13 +19717,27 @@ def global_command_snapshot():
         "reports": scalar("SELECT COUNT(*) FROM pulse_reports"),
         "messages": scalar("SELECT COUNT(*) FROM pulse_messages"),
     }
+    stale_cutoff = (datetime.utcnow() - timedelta(minutes=5)).isoformat(timespec="seconds")
+    health_metrics = {
+        "realtime_failures": realtime_health.get("failed_broadcasts", 0),
+        "queue_backlog": scalar("SELECT COUNT(*) FROM notification_jobs WHERE status IN ('pending','failed','retry')"),
+        "stale_workers": scalar("SELECT COUNT(*) FROM worker_heartbeats WHERE COALESCE(last_seen_at,'')<?", (stale_cutoff,)),
+        "db_latency_ms": 0,
+        "ai_failures": scalar("SELECT COUNT(*) FROM ai_observability_events WHERE COALESCE(error_message,'')!=''"),
+        "media_failures": scalar("SELECT COUNT(*) FROM pulse_jobs WHERE status='failed' AND job_type IN ('generate_thumbnail','process_video')"),
+        "livestream_errors": scalar("SELECT COUNT(*) FROM global_events WHERE event_type='livestream_error' AND status='active'"),
+        "security_events": scalar("SELECT COUNT(*) FROM security_events"),
+    }
+    system_health = system_health_engine.snapshot(health_metrics)
     predictions = {
         "community": predictive_ai_engine.forecast_community_health({"active_members": counts["users"], "reports": counts["reports"], "helpful_posts": counts["posts"]}),
         "safety": autonomous_safety_engine.detect_attack_cluster(signals),
         "energy": global_social_energy_engine.global_energy({"activity": counts["posts"] + counts["messages"], "live_viewers": counts["live_sessions"]}),
-        "resilience": platform_resilience_engine.resilience_score({"degraded_services": 0, "attack_signals": 1 if summary["scam_clusters"] else 0, "queue_backlog": scalar("SELECT COUNT(*) FROM notification_jobs WHERE status='failed'")}),
+        "resilience": platform_resilience_engine.resilience_score({"degraded_services": 1 if system_health["state"] in {"degraded", "critical"} else 0, "attack_signals": 1 if summary["scam_clusters"] else 0, "queue_backlog": health_metrics["queue_backlog"]}),
     }
     try:
+        if not persist:
+            raise RuntimeError("snapshot persistence skipped for live refresh")
         cur.execute(
             """
             INSERT INTO global_intelligence_snapshots
@@ -19727,13 +19746,31 @@ def global_command_snapshot():
             """,
             ("admin_global_command", summary["health"]["health_score"], summary["health"]["node_count"], summary["health"]["edge_count"], summary["health"]["signal_count"], json.dumps({"summary": summary, "counts": counts, "predictions": predictions}, default=str), now),
         )
+        cur.execute(
+            """
+            INSERT INTO system_health_snapshots
+            (health_score, state, metrics_json, warnings_json, failsafe_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (system_health["overall_score"], system_health["state"], json.dumps(health_metrics, default=str), json.dumps(system_health["warnings"], default=str), json.dumps(system_health["failsafe"], default=str), now),
+        )
+        for event in bus_metrics.get("latest_events", [])[:5]:
+            cur.execute(
+                """
+                INSERT INTO event_bus_events
+                (channel, event_type, priority, status, trace_id, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (event.get("channel"), event.get("event_type"), event.get("priority"), event.get("status"), event.get("trace_id"), json.dumps(event.get("payload") or {}, default=str)[:12000], event.get("created_at") or now),
+            )
         conn.commit()
     except Exception as exc:
         conn.rollback()
-        logging.info("GLOBAL_COMMAND_SNAPSHOT_WRITE_SKIPPED error=%s", exc)
+        if persist:
+            logging.info("GLOBAL_COMMAND_SNAPSHOT_WRITE_SKIPPED error=%s", exc)
     finally:
         conn.close()
-    return {"summary": summary, "counts": counts, "predictions": predictions}
+    return {"summary": summary, "counts": counts, "predictions": predictions, "system_health": system_health, "health_metrics": health_metrics, "event_bus": bus_metrics, "realtime": realtime_health, "nodes": nodes, "edges": edges, "signals": signals}
 
 
 @webhook_app.route("/admin/global-command", methods=["GET"])
@@ -19745,15 +19782,18 @@ def admin_global_command_page():
     health = snapshot["summary"]["health"]
     counts = snapshot["counts"]
     predictions = snapshot["predictions"]
+    system_health = snapshot["system_health"]
+    event_bus = snapshot["event_bus"]
+    realtime = snapshot["realtime"]
     cards = "".join(
-        f"<div class='card'><h2>{clean_html(label)}</h2><p class='metric'>{value}</p></div>"
-        for label, value in [
-            ("Global Users", counts["users"]),
-            ("Pulse Posts", counts["posts"]),
-            ("Reels", counts["reels"]),
-            ("Live Sessions", counts["live_sessions"]),
-            ("Marketplace Items", counts["marketplace"]),
-            ("Teachers", counts["teachers"]),
+        f"<div class='card live-card'><h2>{clean_html(label)}</h2><p class='metric' data-live-key='{clean_html(key)}'>{value}</p><div class='spark'><span style='width:{max(8, min(100, int(value or 0) % 100))}%'></span></div></div>"
+        for label, value, key in [
+            ("Global Users", counts["users"], "users"),
+            ("Online Users", realtime.get("online_users", 0), "online_users"),
+            ("Realtime Clients", realtime.get("active_realtime_clients", 0), "realtime_clients"),
+            ("AI Events/min", event_bus.get("events_per_minute", 0), "events_per_minute"),
+            ("Live Sessions", counts["live_sessions"], "live_sessions"),
+            ("Queue Backlog", snapshot["health_metrics"].get("queue_backlog", 0), "queue_backlog"),
         ]
     )
     attention = "".join(f"<li>{clean_html(item)}</li>" for item in snapshot["summary"]["what_needs_attention"])
@@ -19765,10 +19805,43 @@ def admin_global_command_page():
         f"<tr><td>{clean_html(item.get('cluster_key'))}</td><td>{clean_html(item.get('risk_weight'))}</td><td>{len(item.get('members') or [])}</td></tr>"
         for item in snapshot["summary"]["scam_clusters"]
     ) or "<tr><td colspan='3'>No scam clusters detected.</td></tr>"
+    event_rows = "".join(
+        f"<li><span>{clean_html(event.get('event_type'))}</span><small>{clean_html(event.get('channel'))} · {clean_html(event.get('created_at'))}</small></li>"
+        for event in event_bus.get("latest_events", [])[:8]
+    ) or "<li><span>event bus ready</span><small>No live events buffered yet.</small></li>"
+    warnings = "".join(f"<li>{clean_html(item)}</li>" for item in system_health.get("warnings", [])) or "<li>All core systems are stable.</li>"
+    recommendations = "".join(f"<li>{clean_html(item)}</li>" for item in system_health.get("failsafe", {}).get("recommendations", []))
+    command_css = """
+    <style>
+    .global-command-stage{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:22px;padding:18px;background:radial-gradient(circle at 20% 10%,rgba(110,223,246,.16),transparent 28rem),radial-gradient(circle at 82% 18%,rgba(54,229,143,.12),transparent 20rem),linear-gradient(145deg,rgba(4,12,24,.96),rgba(8,18,34,.94));box-shadow:0 30px 100px rgba(0,0,0,.38)}
+    .global-command-stage:before{content:"";position:absolute;inset:-40%;background:conic-gradient(from 130deg,transparent,rgba(110,223,246,.12),transparent 35%,rgba(255,209,102,.08),transparent 70%);animation:commandSweep 18s linear infinite;pointer-events:none}
+    .global-command-stage>*{position:relative}.live-card{overflow:hidden}.spark{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}.spark span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166);box-shadow:0 0 18px rgba(110,223,246,.45)}
+    .orb-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.planet{min-height:360px;width:100%;border-radius:18px;background:rgba(0,0,0,.24)}.event-feed{list-style:none;padding:0;margin:0;display:grid;gap:8px}.event-feed li{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.045)}.event-feed span{display:block;font-weight:950}.event-feed small{color:#9fb5c0}.status-healthy{color:#36e58f}.status-watch{color:#ffd166}.status-degraded,.status-critical{color:#ff6b7a}
+    @keyframes commandSweep{to{transform:rotate(360deg)}}@media(max-width:820px){.orb-grid{grid-template-columns:1fr}.planet{min-height:260px}.global-command-stage{padding:12px}}
+    @media(prefers-reduced-motion:reduce){.global-command-stage:before{animation:none}}
+    </style>
+    """
+    command_script = f"""
+    <script>
+    const graphHealth={int(health['health_score'])}, trustHeat={int(health['trust_score'])}, riskHeat={100-int(system_health['overall_score'])};
+    const canvas=document.getElementById('globalCommandCanvas'); const ctx=canvas?.getContext('2d');
+    function sizeCanvas(){{if(!canvas)return;canvas.width=canvas.clientWidth*2;canvas.height=canvas.clientHeight*2}}
+    function draw(){{if(!ctx)return;sizeCanvas();const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.fillStyle='rgba(3,10,20,.9)';ctx.fillRect(0,0,w,h);const cx=w/2,cy=h/2,r=Math.min(w,h)*.28;ctx.strokeStyle='rgba(110,223,246,.28)';ctx.lineWidth=2;for(let i=0;i<6;i++){{ctx.beginPath();ctx.arc(cx,cy,r+i*18,0,Math.PI*2);ctx.stroke()}}const points=[graphHealth,trustHeat,riskHeat,{int(predictions['energy']['energy_score'])},{int(system_health['overall_score'])}];points.forEach((v,i)=>{{const a=(Date.now()/1800+i*1.25)%(Math.PI*2);const rr=r+v;const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;ctx.beginPath();ctx.fillStyle=i===2?'rgba(255,107,122,.88)':i===3?'rgba(255,209,102,.88)':'rgba(110,223,246,.9)';ctx.shadowBlur=22;ctx.shadowColor=ctx.fillStyle;ctx.arc(x,y,8+v/14,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.12)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(x,y);ctx.stroke()}});requestAnimationFrame(draw)}}
+    draw();
+    async function refreshCommand(){{try{{const d=await fetch('/api/admin/global-command/live',{{cache:'no-store'}}).then(r=>r.json());if(!d.ok)return;Object.entries(d.counts||{{}}).forEach(([k,v])=>{{document.querySelectorAll(`[data-live-key="${{k}}"]`).forEach(el=>el.textContent=v)}});document.getElementById('systemState').textContent=d.system_health?.state||'unknown';document.getElementById('systemState').className='status-'+(d.system_health?.state||'watch');}}catch(e){{}}}}
+    setInterval(refreshCommand,7000);
+    </script>
+    """
     body = f"""
+    {command_css}
+    <section class='global-command-stage'>
     <h1>Global Command Grid</h1>
-    <p class='muted'>The Phase 3 intelligence layer connects users, posts, creators, reports, events, markets, and trust signals into one observable operating grid.</p>
+    <p class='muted'>A realtime planetary operations grid for trust, creator momentum, event flow, social energy, infrastructure, and AI recommendations.</p>
     <div class='grid'>{cards}</div>
+    <section class='orb-grid'>
+      <div class='card'><h2>Live Planetary Pulse</h2><canvas class='planet' id='globalCommandCanvas'></canvas></div>
+      <div class='card'><h2>System Nervous System</h2><p class='metric'><span id='systemState' class='status-{clean_html(system_health['state'])}'>{clean_html(system_health['state'])}</span></p><p><span class='pill'>Health {system_health['overall_score']}%</span> <span class='pill'>Realtime {realtime.get('active_realtime_clients', 0)}</span> <span class='pill'>Events {event_bus.get('events_per_minute', 0)}/min</span></p><h3>Warnings</h3><ul>{warnings}</ul><h3>Failsafe Recommendations</h3><ul>{recommendations}</ul></div>
+    </section>
     <div class='grid'>
       <div class='card'><h2>Graph Health</h2><p class='metric'>{health['health_score']}%</p><p><span class='pill'>Nodes {health['node_count']}</span> <span class='pill'>Edges {health['edge_count']}</span> <span class='pill'>Signals {health['signal_count']}</span></p></div>
       <div class='card'><h2>Community Prediction</h2><p class='metric'>{clean_html(predictions['community']['status'])}</p><p>Health score {predictions['community']['health_score']}%</p></div>
@@ -19777,12 +19850,128 @@ def admin_global_command_page():
     </div>
     <section class='card'><h2>What Needs Attention Today</h2><ul>{attention}</ul></section>
     <section class='grid'>
+      <div class='card'><h2>Predictive Insight Panels</h2><p><span class='pill'>Creator Forecast active</span> <span class='pill'>Scam Forecast {clean_html(predictions['safety']['recommended_action'])}</span> <span class='pill'>Infrastructure {clean_html(predictions['resilience']['status'])}</span></p><ul><li>Community health forecast: {clean_html(predictions['community']['status'])} at {predictions['community']['health_score']}%.</li><li>Social energy: {clean_html(predictions['energy']['visual_state'])} at {predictions['energy']['energy_score']}%.</li><li>Event throughput: {event_bus.get('events_per_minute', 0)} events/min.</li></ul></div>
+      <div class='card'><h2>Global Event Feed</h2><ul class='event-feed'>{event_rows}</ul></div>
+    </section>
+    <section class='grid'>
       <div class='card'><h2>Trend Origin Tracing</h2><table class='table'><tr><th>Topic</th><th>Mentions</th><th>First Seen</th></tr>{trend_rows}</table></div>
       <div class='card'><h2>Scam Cluster Detection</h2><table class='table'><tr><th>Cluster</th><th>Risk</th><th>Members</th></tr>{scam_rows}</table></div>
     </section>
-    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a></p>
+    <p><a class='button' href='/admin/command-center'>Department Command Center</a> <a class='button' href='/admin/pulse-core'>Pulse Core</a> <a class='button' href='/admin/intelligence-graph'>Intelligence Graph</a> <a class='button' href='/admin/trust-map'>Trust Map</a> <a class='button' href='/admin/global-events'>Global Events</a></p>
+    </section>
+    {command_script}
     """
     return admin_page_html("Global Command Grid", body, admin)
+
+
+@webhook_app.route("/api/admin/global-command/live", methods=["GET"])
+def api_admin_global_command_live():
+    admin = admin_login_required()
+    if not admin or not admin_has_permission(admin, "command_center.view"):
+        return jsonify({"ok": False, "message": "Admin access required."}), 403
+    snapshot = global_command_snapshot(persist=False)
+    return jsonify({
+        "ok": True,
+        "counts": {
+            **snapshot["counts"],
+            "online_users": snapshot["realtime"].get("online_users", 0),
+            "realtime_clients": snapshot["realtime"].get("active_realtime_clients", 0),
+            "events_per_minute": snapshot["event_bus"].get("events_per_minute", 0),
+            "queue_backlog": snapshot["health_metrics"].get("queue_backlog", 0),
+        },
+        "system_health": snapshot["system_health"],
+        "event_bus": {
+            "published": snapshot["event_bus"].get("published", 0),
+            "failed": snapshot["event_bus"].get("failed", 0),
+            "dead_letters": snapshot["event_bus"].get("dead_letters", 0),
+            "latest_events": snapshot["event_bus"].get("latest_events", [])[:8],
+        },
+        "summary": snapshot["summary"],
+    })
+
+
+@webhook_app.route("/admin/intelligence-graph", methods=["GET"])
+def admin_intelligence_graph_page():
+    admin, denied = require_admin_page("command_center.view")
+    if denied:
+        return denied
+    snapshot = global_command_snapshot(persist=False)
+    nodes = []
+    for item in snapshot.get("nodes", [])[:160]:
+        entity_type = item.get("entity_type")
+        nodes.append({
+            "id": item.get("key"),
+            "label": item.get("label") or item.get("key"),
+            "type": entity_type,
+            "score": item.get("score") or 0,
+            "risk": 1 if entity_type in {"report", "scam"} else 0,
+        })
+    edges = [{"source": item.get("source_key"), "target": item.get("target_key"), "relationship": item.get("relationship"), "weight": item.get("weight") or 1} for item in snapshot.get("edges", [])[:260]]
+    graph_json = json.dumps({"nodes": nodes, "edges": edges}, default=str)
+    body = f"""
+    <style>
+    .graph-shell{{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px}}.graph-canvas{{width:100%;height:68vh;min-height:420px;border-radius:18px;border:1px solid rgba(110,223,246,.22);background:radial-gradient(circle at 50% 45%,rgba(110,223,246,.12),transparent 32rem),#030914;touch-action:none}}.legend-dot{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:#6edff6;box-shadow:0 0 14px #6edff6}}.legend-dot.risk{{background:#ff6b7a;box-shadow:0 0 14px #ff6b7a}}@media(max-width:820px){{.graph-shell{{grid-template-columns:1fr}}.graph-canvas{{height:58vh;min-height:320px}}}}
+    </style>
+    <h1>Global Intelligence Graph</h1><p class='muted'>Force-directed view of users, creators, posts, communities, trust relationships, scam clusters, and trend propagation.</p>
+    <section class='graph-shell'><canvas id='intelligenceGraph' class='graph-canvas'></canvas><aside class='card'><h2>Graph Controls</h2><p><span class='legend-dot'></span> Trusted/neutral entity</p><p><span class='legend-dot risk'></span> Risk or report signal</p><p><span class='pill'>Nodes {len(nodes)}</span> <span class='pill'>Edges {len(edges)}</span></p><p class='muted'>Drag nodes. Scroll/touch remains page-safe on mobile.</p><p><a class='button' href='/admin/global-command'>Back to Global Command</a></p></aside></section>
+    <script>
+    const graph={graph_json};
+    const canvas=document.getElementById('intelligenceGraph'),ctx=canvas.getContext('2d');let drag=null;
+    function resize(){{canvas.width=canvas.clientWidth*2;canvas.height=canvas.clientHeight*2}}resize();
+    const nodes=graph.nodes.map((n,i)=>({{...n,x:(Math.random()*canvas.width*.7)+canvas.width*.15,y:(Math.random()*canvas.height*.7)+canvas.height*.15,vx:0,vy:0,r:8+Math.min(12,Number(n.score||0)/10)}}));const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
+    function tick(){{for(const e of graph.edges){{const a=byId[e.source],b=byId[e.target];if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,d=Math.max(40,Math.hypot(dx,dy));const f=(d-160)*.0008*(Number(e.weight||1));a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f}}for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){{const a=nodes[i],b=nodes[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy));if(d<90){{const f=(90-d)*.0015;a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f}}}}for(const n of nodes){{if(n!==drag){{n.vx+=(canvas.width/2-n.x)*.00008;n.vy+=(canvas.height/2-n.y)*.00008;n.x+=n.vx;n.y+=n.vy;n.vx*=.88;n.vy*=.88}}}}
+    function draw(){{tick();ctx.clearRect(0,0,canvas.width,canvas.height);ctx.lineWidth=1.2;for(const e of graph.edges){{const a=byId[e.source],b=byId[e.target];if(!a||!b)continue;ctx.strokeStyle='rgba(110,223,246,.16)';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}}for(const n of nodes){{ctx.beginPath();ctx.fillStyle=n.risk?'rgba(255,107,122,.9)':n.type==='user'?'rgba(54,229,143,.9)':'rgba(110,223,246,.86)';ctx.shadowBlur=18;ctx.shadowColor=ctx.fillStyle;ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}}requestAnimationFrame(draw)}}draw();
+    function pos(e){{const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{{x:(t.clientX-r.left)*2,y:(t.clientY-r.top)*2}}}}function pick(p){{return nodes.find(n=>Math.hypot(n.x-p.x,n.y-p.y)<n.r+10)}}canvas.addEventListener('pointerdown',e=>{{drag=pick(pos(e));if(drag)canvas.setPointerCapture(e.pointerId)}});canvas.addEventListener('pointermove',e=>{{if(!drag)return;const p=pos(e);drag.x=p.x;drag.y=p.y;drag.vx=drag.vy=0}});canvas.addEventListener('pointerup',()=>drag=null);
+    </script>
+    """
+    return admin_page_html("Intelligence Graph", body, admin)
+
+
+@webhook_app.route("/admin/trust-map", methods=["GET"])
+def admin_trust_map_page():
+    admin, denied = require_admin_page("security.events")
+    if denied:
+        return denied
+    snapshot = global_command_snapshot(persist=False)
+    health = snapshot["summary"]["health"]
+    clusters = snapshot["summary"]["scam_clusters"]
+    cluster_html = "".join(f"<div class='card'><h2>{clean_html(c.get('cluster_key'))}</h2><p class='metric'>{clean_html(c.get('risk_weight'))}</p><p class='muted'>{len(c.get('members') or [])} connected entities</p></div>" for c in clusters) or "<div class='card'><h2>No active scam cluster</h2><p class='muted'>Trust map is calm right now.</p></div>"
+    body = f"""
+    <style>.heat{{height:18px;border-radius:999px;background:linear-gradient(90deg,#ff6b7a,#ffd166,#36e58f);position:relative;overflow:hidden}}.heat:after{{content:"";position:absolute;inset:0 {max(0,100-health['trust_score'])}% 0 0;background:rgba(255,255,255,.16);box-shadow:0 0 20px rgba(110,223,246,.35)}}.trust-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}</style>
+    <h1>Trust Map</h1><p class='muted'>Trust clusters, scam propagation, creator reliability, reputation spread, and suspicious behavior overlays.</p>
+    <section class='card'><h2>Trust Heat</h2><p class='metric'>{health['trust_score']}%</p><div class='heat'></div><p><span class='pill'>Safety {health['safety_score']}%</span> <span class='pill'>Coverage {health['coverage_score']}%</span></p></section>
+    <section class='trust-grid'>{cluster_html}</section>
+    <p><a class='button' href='/admin/intelligence-graph'>Open Graph</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
+    """
+    return admin_page_html("Trust Map", body, admin)
+
+
+@webhook_app.route("/admin/global-events", methods=["GET"])
+def admin_global_events_page():
+    admin, denied = require_admin_page("command_center.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    rows = []
+    try:
+        cur.execute("SELECT * FROM global_events ORDER BY id DESC LIMIT 80")
+        rows = [dict(row) for row in cur.fetchall()]
+    except Exception as exc:
+        logging.info("GLOBAL_EVENTS_LIST_SKIPPED error=%s", exc)
+    conn.close()
+    bus = event_bus_engine.metrics()
+    bus_rows = "".join(f"<tr><td>{clean_html(e.get('created_at'))}</td><td>{clean_html(e.get('channel'))}</td><td>{clean_html(e.get('event_type'))}</td><td>{clean_html(e.get('status'))}</td></tr>" for e in bus.get("latest_events", [])[:30])
+    db_rows = "".join(f"<tr><td>{clean_html(row.get('created_at'))}</td><td>{clean_html(row.get('event_type'))}</td><td>{clean_html(row.get('severity'))}</td><td>{clean_html(row.get('title'))}</td></tr>" for row in rows)
+    body = f"""
+    <h1>Global Event Timeline</h1><p class='muted'>Creator spikes, livestream starts, scam outbreaks, AI recommendations, moderation events, infrastructure events, and economy signals.</p>
+    <section class='grid'><div class='card'><h2>Event Throughput</h2><p class='metric'>{bus.get('events_per_minute', 0)}/min</p></div><div class='card'><h2>Dead Letters</h2><p class='metric'>{bus.get('dead_letters', 0)}</p></div><div class='card'><h2>Buffered Events</h2><p class='metric'>{bus.get('buffered_events', 0)}</p></div></section>
+    <section class='card'><h2>Realtime Bus</h2><table class='table'><tr><th>Time</th><th>Channel</th><th>Event</th><th>Status</th></tr>{bus_rows or '<tr><td colspan=4>No realtime events buffered yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Persisted Global Events</h2><table class='table'><tr><th>Time</th><th>Type</th><th>Severity</th><th>Title</th></tr>{db_rows or '<tr><td colspan=4>No persisted global events yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("Global Events", body, admin)
 
 
 @webhook_app.route("/admin/command-center", methods=["GET"])
@@ -24494,6 +24683,43 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS system_health_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        health_score INTEGER DEFAULT 0,
+        state TEXT,
+        metrics_json TEXT,
+        warnings_json TEXT,
+        failsafe_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS event_bus_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel TEXT,
+        event_type TEXT,
+        priority TEXT,
+        status TEXT DEFAULT 'published',
+        trace_id TEXT,
+        payload_json TEXT,
+        error_message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_observability_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        system_name TEXT,
+        event_type TEXT,
+        confidence REAL DEFAULT 0,
+        duration_ms REAL DEFAULT 0,
+        fallback_used INTEGER DEFAULT 0,
+        hallucination_risk REAL DEFAULT 0,
+        error_message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS ai_agents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         owner_user_id INTEGER,
@@ -24536,6 +24762,9 @@ def init_db():
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_signals_type ON global_intelligence_signals(signal_type, created_at)")
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_global_events_status ON global_events(status, severity, created_at)")
     safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_reputation_ledger_user ON reputation_ledger(user_id, created_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_system_health_created ON system_health_snapshots(created_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_event_bus_events_type ON event_bus_events(channel, event_type, created_at)")
+    safe_create_index(cur, conn, "CREATE INDEX IF NOT EXISTS idx_ai_observability_system ON ai_observability_events(system_name, created_at)")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS sms_verification_codes (
