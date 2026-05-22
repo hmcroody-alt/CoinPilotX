@@ -202,6 +202,7 @@ AUTO_PK_TABLES = {
     "pulse_group_post_reactions": "id",
     "pulse_group_post_comments": "id",
     "pulse_group_post_reports": "id",
+    "pulse_group_comment_reports": "id",
     "pulse_post_views": "id",
     "pulse_jobs": "id",
     "pulse_post_attempts": "id",

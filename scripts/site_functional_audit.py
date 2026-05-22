@@ -99,6 +99,7 @@ def main():
         "/admin/spaces-command",
         "/admin/media-studio",
         "/admin/groups-health",
+        "/admin/group-chat-health",
         "/admin/messages-health",
         "/admin/system-audit",
     ]

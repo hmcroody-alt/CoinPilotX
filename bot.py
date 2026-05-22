@@ -15981,6 +15981,166 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
     }, 200
 
 
+def pulse_get_or_create_group_conversation(cur, current_user_id, group=None, title="", participant_ids=None):
+    current_user_id = int(current_user_id or 0)
+    participant_ids = [int(uid) for uid in (participant_ids or []) if int(uid or 0) > 0 and int(uid or 0) != current_user_id]
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    group = dict(group or {})
+    group_id = int(group.get("id") or 0)
+    conversation_type = "community_group" if group_id else "group"
+    title = clean_html(title or group.get("name") or "Pulse Group Chat")[:140]
+    if group_id:
+        cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, current_user_id))
+        role = dict(cur.fetchone() or {}).get("role") or ""
+        if not role and int(group.get("owner_user_id") or 0) != current_user_id:
+            return {"ok": False, "message": "Join this group before opening its community chat."}, 403
+        cur.execute(
+            """
+            SELECT * FROM pulse_conversations
+            WHERE group_id=? AND conversation_type='community_group' AND COALESCE(status,'active')='active'
+            ORDER BY id DESC LIMIT 1
+            """,
+            (group_id,),
+        )
+        convo = dict(cur.fetchone() or {})
+    else:
+        convo = {}
+    if convo:
+        conversation_id = int(convo.get("id") or 0)
+    else:
+        cur.execute(
+            """
+            INSERT INTO pulse_conversations
+            (conversation_type, group_id, title, owner_user_id, created_by_user_id, is_public, participant_limit, status, created_at, updated_at, last_activity_at)
+            VALUES (?, ?, ?, ?, ?, ?, 250, 'active', ?, ?, ?)
+            """,
+            (
+                conversation_type,
+                group_id or None,
+                title,
+                int(group.get("owner_user_id") or current_user_id),
+                current_user_id,
+                1 if group_id and str(group.get("group_type") or "public").lower() == "public" else 0,
+                now,
+                now,
+                now,
+            ),
+        )
+        conversation_id = int(cur.lastrowid)
+    participants = {current_user_id}
+    if group_id:
+        cur.execute("SELECT user_id FROM pulse_group_members WHERE group_id=? ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, created_at ASC LIMIT 250", (group_id,))
+        participants.update(int(dict(row).get("user_id") or 0) for row in cur.fetchall())
+    participants.update(participant_ids[:80])
+    for uid in sorted(uid for uid in participants if uid):
+        role = "owner" if uid == int(group.get("owner_user_id") or current_user_id) else "member"
+        cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, uid))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, created_at) VALUES (?, ?, ?, 0, 0, ?)",
+                (conversation_id, uid, role, now),
+            )
+    cur.execute("UPDATE pulse_conversations SET title=?, updated_at=?, last_activity_at=? WHERE id=?", (title, now, now, conversation_id))
+    return {"ok": True, "conversation_id": conversation_id, "message": "Group chat ready.", "next_url": f"/pulse/messages/{conversation_id}"}, 200
+
+
+GROUP_REACTION_TYPES = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish"}
+
+
+def pulse_group_post_context(cur, post_id, user_id=0):
+    cur.execute(
+        """
+        SELECT p.*, g.slug AS group_slug, g.name AS group_name, g.group_type, g.status AS group_status,
+               g.owner_user_id, gm.role AS member_role
+        FROM pulse_group_posts p
+        JOIN pulse_groups g ON g.id=p.group_id
+        LEFT JOIN pulse_group_members gm ON gm.group_id=p.group_id AND gm.user_id=?
+        WHERE p.id=? LIMIT 1
+        """,
+        (int(user_id or 0), int(post_id or 0)),
+    )
+    return dict(cur.fetchone() or {})
+
+
+def pulse_group_role_allows_moderation(role):
+    return str(role or "").lower() in {"owner", "admin", "moderator"}
+
+
+def pulse_group_user_is_admin(user):
+    try:
+        return bool(user and admin_current_user())
+    except Exception:
+        return False
+
+
+def pulse_group_can_interact(post_ctx, user):
+    if not user:
+        return False, "Login required."
+    if not post_ctx:
+        return False, "Group post not found."
+    if post_ctx.get("deleted_at") or str(post_ctx.get("status") or "published").lower() in {"deleted", "removed"}:
+        return False, "This group post is no longer available."
+    if str(post_ctx.get("group_status") or "active").lower() in {"frozen", "suspended"}:
+        return False, "This group is paused for review."
+    group_type = str(post_ctx.get("group_type") or "public").lower()
+    if group_type in {"private", "invite-only"} and not post_ctx.get("member_role") and int(post_ctx.get("owner_user_id") or 0) != int(user.get("user_id") or 0):
+        return False, "Join this group before interacting."
+    return True, ""
+
+
+def pulse_group_reaction_counts(cur, post_id):
+    counts = {key: 0 for key in GROUP_REACTION_TYPES}
+    cur.execute(
+        "SELECT reaction_type, COUNT(*) AS total FROM pulse_group_post_reactions WHERE group_post_id=? GROUP BY reaction_type",
+        (int(post_id or 0),),
+    )
+    for row in cur.fetchall():
+        item = dict(row)
+        reaction_type = item.get("reaction_type") or ""
+        if reaction_type in counts:
+            counts[reaction_type] = int(item.get("total") or 0)
+    return counts
+
+
+def pulse_group_post_stats(cur, post_id, user_id=0):
+    cur.execute("SELECT reaction_type FROM pulse_group_post_reactions WHERE group_post_id=? AND user_id=? LIMIT 1", (int(post_id or 0), int(user_id or 0)))
+    my_reaction = dict(cur.fetchone() or {}).get("reaction_type") or ""
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_group_post_comments WHERE group_post_id=? AND deleted_at IS NULL AND COALESCE(status,'visible')='visible'", (int(post_id or 0),))
+    comment_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    return {"reactions": pulse_group_reaction_counts(cur, post_id), "my_reaction": my_reaction, "comment_count": comment_count}
+
+
+def pulse_group_can_delete_post(post_ctx, user):
+    if not user or not post_ctx:
+        return False
+    user_id = int(user.get("user_id") or 0)
+    if int(post_ctx.get("user_id") or 0) == user_id:
+        return True
+    if int(post_ctx.get("owner_user_id") or 0) == user_id:
+        return True
+    if pulse_group_role_allows_moderation(post_ctx.get("member_role")):
+        return True
+    return pulse_group_user_is_admin(user)
+
+
+def pulse_group_comment_payload(cur, comment, viewer_id=0):
+    item = dict(comment or {})
+    ident = pulse_identity_for_user(cur, item.get("user_id"))
+    return {
+        "id": int(item.get("id") or 0),
+        "group_post_id": int(item.get("group_post_id") or 0),
+        "user_id": int(item.get("user_id") or 0),
+        "author_name": ident.get("name") or "Pulse Member",
+        "avatar_url": ident.get("avatar_url") or "",
+        "premium_mark": ident.get("premium_mark"),
+        "body": item.get("body") or "",
+        "media_url": item.get("media_url") or "",
+        "status": item.get("status") or "visible",
+        "created_at": item.get("created_at") or "",
+        "can_delete": int(item.get("user_id") or 0) == int(viewer_id or 0),
+    }
+
+
 def pulse_user_id_from_public(cur, public_player_id):
     public_player_id = str(public_player_id or "").strip()
     if not public_player_id:
@@ -17322,10 +17482,11 @@ def pulse_messages_page():
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, p.user_id AS other_user_id
+        SELECT c.*, MIN(p.user_id) AS other_user_id
         FROM pulse_conversations c
         JOIN pulse_conversation_participants mine ON mine.conversation_id=c.id AND mine.user_id=?
         LEFT JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id!=?
+        GROUP BY c.id
         ORDER BY COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
         LIMIT 40
         """,
@@ -17335,14 +17496,19 @@ def pulse_messages_page():
     cards = []
     for convo in conversations:
         other_id = int(convo.get("other_user_id") or 0)
-        ident = pulse_identity_for_user(cur, other_id)
+        convo_type = convo.get("conversation_type") or "direct"
+        if convo_type != "direct":
+            ident = {"name": convo.get("title") or "Group Chat", "avatar_url": convo.get("avatar_url") or "", "premium_mark": None}
+        else:
+            ident = pulse_identity_for_user(cur, other_id)
         cur.execute("SELECT body, message_type, created_at FROM pulse_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1", (convo.get("id"),))
         last = dict(cur.fetchone() or {})
         preview = last.get("body") or ("Media message" if last.get("message_type") not in {"", "text", None} else "No messages yet.")
         avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
-        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>")
+        chat_type = clean_html(convo_type.replace("_", " "))
+        cards.append(f"<article class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p><span class='pill'>{chat_type}</span></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>")
     conn.close()
-    main = f"<section class='card'><h2>Pulse-only Messenger</h2><p>Message friends, creators, teachers, and sellers using public identities only.</p></section><section>{''.join(cards) or '<article class="card"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, or Teacher pages to start a safe Pulse conversation.</p></article>'}</section>"
+    main = f"<section class='card'><h2>Pulse Messenger</h2><p>Message friends, creators, teachers, sellers, and group communities using public identities only.</p><div class='actions'><a class='button primary' href='/pulse/messages'>Direct</a><a class='button' href='/pulse/groups'>Groups</a><a class='button' href='/pulse/groups'>Communities</a></div></section><section>{''.join(cards) or '<article class=\"card\"><h2>No Pulse messages yet.</h2><p>Use Friend, Profile, Marketplace, Teacher, or Group pages to start a safe Pulse conversation.</p></article>'}</section>"
     return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, friend messages, and request-friendly replies.", main)
 
 
@@ -17490,14 +17656,26 @@ def pulse_message_thread_page(conversation_id):
             return pulse_social_shell("Pulse Message", result.get("message") or "This Pulse member is not available for messaging.", "<section class='card'><a class='button primary' href='/pulse/messages'>Back to Messenger</a></section>"), status
         conn.close()
         return pulse_social_shell("Pulse Message", "This conversation was not found or is not available to your account.", "<section class='card'><a class='button primary' href='/pulse/messages'>Back to Messenger</a></section>")
+    cur.execute("SELECT * FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
+    conversation = dict(cur.fetchone() or {})
+    conversation_type = conversation.get("conversation_type") or "direct"
     cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
     other_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
-    other = pulse_identity_for_user(cur, other_id)
+    if conversation_type == "direct":
+        other = pulse_identity_for_user(cur, other_id)
+        other_name = clean_html(other.get("name") or "Pulse user") + pulse_premium_mark_html(other.get("premium_mark"))
+        avatar = f"<img src='{clean_html(other.get('avatar_url'))}' alt=''>" if other.get("avatar_url") else clean_html((other.get("name") or "P")[:1])
+        subtitle = "Pulse Messenger"
+    else:
+        cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=?", (conversation_id,))
+        participant_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+        label = conversation.get("title") or "Group Chat"
+        other_name = clean_html(label)
+        avatar = f"<img src='{clean_html(conversation.get('avatar_url'))}' alt=''>" if conversation.get("avatar_url") else clean_html((label or "G")[:1])
+        subtitle = f"{participant_count} members · {clean_html(conversation_type.replace('_', ' '))}"
     cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 200", (conversation_id,))
     messages = [dict(row) for row in cur.fetchall()]
     conn.close()
-    other_name = clean_html(other.get("name") or "Pulse user") + pulse_premium_mark_html(other.get("premium_mark"))
-    avatar = f"<img src='{clean_html(other.get('avatar_url'))}' alt=''>" if other.get("avatar_url") else clean_html((other.get("name") or "P")[:1])
     message_html = "".join(
         f"<article class='msg {'mine' if int(m.get('sender_user_id') or 0)==int(user['user_id']) else 'theirs'}'>"
         f"{pulse_message_media_html(m)}"
@@ -17532,7 +17710,7 @@ def pulse_message_thread_page(conversation_id):
     <section class='card messenger-screen'>
       <header class='messenger-top'>
         <div class='messenger-handle'></div>
-        <div class='messenger-head'><div class='person'><span class='avatar'>{avatar}</span><div><strong>{other_name}</strong><p class='muted'>Pulse Messenger</p></div></div><div class='private-chat-tools'><button class='messenger-more' id='safetyMenuBtn' type='button'>⋯</button><a class='button messenger-close' href='/pulse/messages'>Close</a><div class='safety-menu' id='safetyMenu' hidden><button type='button'>Mute Notifications</button><button type='button'>Report User</button><button type='button'>Block User</button><button type='button'>Delete Own Message</button></div></div></div>
+        <div class='messenger-head'><div class='person'><span class='avatar'>{avatar}</span><div><strong>{other_name}</strong><p class='muted'>{subtitle}</p></div></div><div class='private-chat-tools'><button class='messenger-more' id='safetyMenuBtn' type='button'>⋯</button><a class='button messenger-close' href='/pulse/messages'>Close</a><div class='safety-menu' id='safetyMenu' hidden><button type='button'>Mute Notifications</button><button type='button'>Report User</button><button type='button'>Block User</button><button type='button'>Delete Own Message</button></div></div></div>
         <nav class='messenger-tabs'><a href='/pulse/messages'>Conversations</a><a class='active' href='/pulse/messages/{conversation_id}'>Chat Room</a></nav>
       </header>
       <section class='message-list' id='messages'>{message_html or '<article class="msg theirs"><p>No messages yet. Start the conversation with text, media, or a Pulse share.</p></article>'}</section>
@@ -17567,11 +17745,40 @@ def pulse_group_detail_page(group_slug):
     group_id = int(group.get("id") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
     members = int(dict(cur.fetchone() or {}).get("total") or 0)
-    cur.execute("SELECT gp.*, COALESCE(u.display_name,u.username,'Pulse Member') AS author FROM pulse_group_posts gp LEFT JOIN users u ON u.user_id=gp.user_id WHERE gp.group_id=? ORDER BY gp.id DESC LIMIT 50", (group_id,))
+    cur.execute(
+        """
+        SELECT gp.*, COALESCE(u.display_name,u.username,'Pulse Member') AS author
+        FROM pulse_group_posts gp
+        LEFT JOIN users u ON u.user_id=gp.user_id
+        WHERE gp.group_id=?
+          AND gp.deleted_at IS NULL
+          AND COALESCE(gp.status,'published') NOT IN ('deleted','removed')
+        ORDER BY gp.id DESC LIMIT 50
+        """,
+        (group_id,),
+    )
     posts = [dict(row) for row in cur.fetchall()]
     post_cards = []
+    current_role = ""
+    cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+    current_role = dict(cur.fetchone() or {}).get("role") or ""
     for p in posts:
         ident = pulse_identity_for_user(cur, p.get("user_id"))
+        stats = pulse_group_post_stats(cur, p.get("id"), user["user_id"])
+        can_delete = pulse_group_can_delete_post({**p, **group, "member_role": current_role, "owner_user_id": group.get("owner_user_id"), "group_status": group.get("status"), "group_type": group.get("group_type")}, user)
+        cur.execute(
+            """
+            SELECT * FROM pulse_group_post_comments
+            WHERE group_post_id=? AND deleted_at IS NULL AND COALESCE(status,'visible')='visible'
+            ORDER BY id DESC LIMIT 3
+            """,
+            (int(p.get("id") or 0),),
+        )
+        previews = [pulse_group_comment_payload(cur, row, user["user_id"]) for row in cur.fetchall()]
+        preview_html = "".join(
+            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{clean_html(c['author_name'])}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{clean_html(c['body'])}</p>{'<button data-group-comment-delete=\"'+str(c['id'])+'\">Delete</button>' if c.get('can_delete') else ''}<button data-group-comment-report='{c['id']}'>Report</button></div>"
+            for c in reversed(previews)
+        )
         media_html = ""
         media_url = clean_html(p.get("media_url") or "")
         media_type = clean_html(p.get("media_type") or "")
@@ -17579,15 +17786,35 @@ def pulse_group_detail_page(group_slug):
             media_html = f"<video controls playsinline preload='metadata' poster='{clean_html(p.get('thumbnail_url') or '')}' style='width:100%;border-radius:16px;margin-top:10px;background:#050b14'><source src='{media_url}'></video>"
         elif media_url:
             media_html = f"<img src='{media_url}' alt='Group post media' loading='lazy' style='width:100%;max-height:520px;object-fit:cover;border-radius:16px;margin-top:10px;background:#050b14'>"
+        post_id = int(p.get("id") or 0)
+        reaction_buttons = "".join(
+            f"<button class='group-reaction-chip {'primary' if stats.get('my_reaction') == key else ''}' data-group-react='{post_id}' data-reaction='{key}'>{label} <span data-reaction-count='{post_id}:{key}'>{int(stats['reactions'].get(key) or 0)}</span></button>"
+            for key, label in [("fire", "Fire"), ("smart", "Smart"), ("scam_alert", "Scam Alert"), ("whale", "Whale"), ("bullish", "Bullish"), ("bearish", "Bearish")]
+        )
+        menu_html = f"<details class='group-post-menu'><summary>...</summary><div><button data-group-report-post='{post_id}'>Report Post</button>{'<button data-group-post-delete=\"'+str(post_id)+'\">Delete Post</button>' if can_delete else ''}{'<button data-group-post-delete=\"'+str(post_id)+'\" data-delete-reason=\"moderator_remove\">Remove From Group</button><button type=\"button\">Pin Post</button>' if pulse_group_role_allows_moderation(current_role) else ''}</div></details>"
+        author_avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
         post_cards.append(
-            f"<article class='card'><strong>{clean_html(ident.get('name') or p.get('author') or 'Pulse Member')}{pulse_premium_mark_html(ident.get('premium_mark'))}</strong> "
-            f"<span class='pill'>{clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')}</span><p>{clean_html(p.get('body') or p.get('content') or '')}</p>{media_html}<p><span class='pill'>{clean_html(p.get('post_type') or 'text')}</span> <span class='pill'>{clean_html(p.get('moderation_status') or 'approved')}</span></p><small>{clean_html(p.get('created_at') or '')}</small><div class='actions'><button data-group-react='{int(p.get('id') or 0)}' data-reaction='fire'>🔥</button><button data-group-react='{int(p.get('id') or 0)}' data-reaction='smart'>🧠</button><button data-group-report-post='{int(p.get('id') or 0)}'>Report</button></div></article>"
+            f"<article class='card group-post-card' data-group-post='{post_id}'><div class='group-post-head'><div class='person'><span class='avatar'>{author_avatar}</span><div><strong>{clean_html(ident.get('name') or p.get('author') or 'Pulse Member')}{pulse_premium_mark_html(ident.get('premium_mark'))}</strong><p class='muted'>{clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')} · {clean_html(p.get('created_at') or '')}</p></div></div>{menu_html}</div>"
+            f"<p>{clean_html(p.get('body') or p.get('content') or '')}</p>{media_html}<p><span class='pill'>{clean_html(p.get('post_type') or 'text')}</span> <span class='pill'>{clean_html(p.get('moderation_status') or 'approved')}</span> <span class='pill'><span data-comment-count='{post_id}'>{stats['comment_count']}</span> comments</span></p>"
+            f"<div class='group-reaction-row'>{reaction_buttons}</div><div class='group-comments' data-comments-for='{post_id}'>{preview_html}</div><form class='group-comment-form' data-group-comment-form='{post_id}'><input name='body' placeholder='Write a comment...' autocomplete='off'><button class='primary'>Comment</button></form></article>"
         )
     post_html = "".join(post_cards)
     conn.close()
     slug = clean_html(group.get("slug") or str(group_id))
-    main = f"<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='actions'><button class='primary' data-join-group='{slug}'>Join Group</button><button data-leave-group='{slug}'>Leave</button><button data-report-group='{slug}'>Report</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
-    script = f"document.addEventListener('click',async e=>{{const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]');try{{if(j){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});toast('Joined group.')}} if(l){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});toast('Left group.')}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{await pulseApi('/api/pulse/groups/posts/react',{{method:'POST',body:JSON.stringify({{group_post_id:gr.dataset.groupReact,reaction_type:gr.dataset.reaction}})}});toast('Reaction saved.')}} if(rp){{await pulseApi('/api/pulse/groups/posts/report',{{method:'POST',body:JSON.stringify({{group_post_id:rp.dataset.groupReportPost,reason:'Needs review'}})}});toast('Post report sent.')}}}}catch(err){{toast(err.message)}}}});document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{const fd=new FormData();fd.append('body',document.getElementById('groupPostBody').value);const file=document.getElementById('groupMediaFile').files[0];if(file)fd.append('media',file);const r=await fetch('/api/pulse/groups/{slug}/posts',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Could not post.');location.reload()}}catch(err){{toast(err.message)}}}});"
+    style = "<style>.group-post-head{display:flex;justify-content:space-between;gap:10px;align-items:start}.group-post-menu{position:relative}.group-post-menu summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:950}.group-post-menu div{position:absolute;right:0;z-index:8;display:grid;gap:6px;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:14px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.35)}.group-reaction-row{display:flex;gap:7px;overflow-x:auto;padding:6px 0}.group-reaction-chip{min-height:36px;font-size:13px;padding:7px 10px}.group-comments{display:grid;gap:8px;margin-top:8px}.group-comment{border-left:2px solid rgba(110,223,246,.3);padding:7px 9px;background:rgba(255,255,255,.035);border-radius:10px}.group-comment p{margin:3px 0}.group-comment-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:10px}.group-comment-form input{min-height:42px;border-radius:999px}.group-community-actions{display:flex;gap:8px;flex-wrap:wrap}@media(max-width:560px){.group-comment-form{grid-template-columns:1fr}.group-post-head{align-items:center}.group-post-menu div{position:fixed;right:12px;left:12px;top:auto;bottom:calc(86px + env(safe-area-inset-bottom))}.group-reaction-chip{flex:0 0 auto}.group-community-actions{display:grid;grid-template-columns:1fr 1fr}}</style>"
+    main = f"{style}<section class='card'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'>{members} members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'><button class='primary' data-join-group='{slug}'>Join Group</button><button data-leave-group='{slug}'>Leave</button><button data-open-group-chat='{slug}'>Open Group Chat</button><button data-report-group='{slug}'>Report</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section>"
+    script = f"""
+    const groupSlug={json.dumps(slug)};
+    function renderGroupComment(c){{return `<div class="group-comment" data-comment-id="${{c.id}}"><strong>${{c.author_name||'Pulse Member'}}</strong><p>${{c.body||''}}</p>${{c.can_delete?`<button data-group-comment-delete="${{c.id}}">Delete</button>`:''}}<button data-group-comment-report="${{c.id}}">Report</button></div>`}}
+    function updateReactions(postId,data){{Object.entries(data.reactions||{{}}).forEach(([k,v])=>{{document.querySelectorAll(`[data-reaction-count="${{postId}}:${{k}}"]`).forEach(n=>n.textContent=v)}});document.querySelectorAll(`[data-group-react="${{postId}}"]`).forEach(b=>b.classList.toggle('primary',b.dataset.reaction===(data.my_reaction||'')))}}
+    document.addEventListener('click',async e=>{{const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(j){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});toast('Joined group.')}} if(l){{await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});toast('Left group.')}} if(gc){{const d=await pulseApi('/api/pulse/messages/group/create',{{method:'POST',body:JSON.stringify({{group_slug:gc.dataset.openGroupChat,title:document.querySelector('h1')?.textContent||'Group chat'}})}});location.href='/pulse/messages/'+d.conversation_id}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.')}} if(rp){{await pulseApi('/api/pulse/groups/posts/report',{{method:'POST',body:JSON.stringify({{group_post_id:rp.dataset.groupReportPost,reason:'Needs review'}})}});toast('Post report sent.')}} if(cd){{await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{const post=pd.closest('[data-group-post]');await pulseApi(`/api/pulse/groups/posts/${{pd.dataset.groupPostDelete}}/delete`,{{method:'POST',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast('Group post deleted.')}}}}catch(err){{toast(err.message)}}}});
+    document.querySelectorAll('[data-group-comment-form]').forEach(form=>form.addEventListener('submit',async e=>{{e.preventDefault();const input=form.querySelector('input[name=body]');try{{const postId=form.dataset.groupCommentForm;const d=await pulseApi(`/api/pulse/groups/posts/${{postId}}/comments`,{{method:'POST',body:JSON.stringify({{body:input.value}})}});form.previousElementSibling?.insertAdjacentHTML('beforeend',renderGroupComment(d.comment));document.querySelectorAll(`[data-comment-count="${{postId}}"]`).forEach(n=>n.textContent=Number(n.textContent||0)+1);input.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}}));
+    document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{const fd=new FormData();fd.append('body',document.getElementById('groupPostBody').value);const file=document.getElementById('groupMediaFile').files[0];if(file)fd.append('media',file);const r=await fetch('/api/pulse/groups/{slug}/posts',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Could not post.');location.reload()}}catch(err){{toast(err.message)}}}});
+    let groupLastEventId=0;
+    function applyGroupLiveEvents(events){{(events||[]).forEach(ev=>{{const p=ev.payload||{{}};if(Number(p.group_id||0)!=={group_id})return;if(ev.event_type==='group_post_reacted')updateReactions(p.post_id,p);if(ev.event_type==='group_post_comment_created'){{const box=document.querySelector(`[data-comments-for="${{p.post_id}}"]`);if(box&&p.comment&&!box.querySelector(`[data-comment-id="${{p.comment.id}}"]`))box.insertAdjacentHTML('beforeend',renderGroupComment(p.comment));document.querySelectorAll(`[data-comment-count="${{p.post_id}}"]`).forEach(n=>n.textContent=p.comment_count||Number(n.textContent||0)+1)}}if(ev.event_type==='group_post_comment_deleted'){{document.querySelector(`[data-comment-id="${{p.comment_id}}"]`)?.remove();document.querySelectorAll(`[data-comment-count="${{p.post_id}}"]`).forEach(n=>n.textContent=p.comment_count||Math.max(0,Number(n.textContent||0)-1))}}if(ev.event_type==='group_post_updated'&&p.status==='deleted')document.querySelector(`[data-group-post="${{p.post_id}}"]`)?.remove();groupLastEventId=Math.max(groupLastEventId,Number(ev.id||0));}})}}
+    async function pollGroupLive(){{try{{const d=await pulseApi(`/api/pulse/live?since_id=${{groupLastEventId}}`);applyGroupLiveEvents(d.events||[]);groupLastEventId=d.latest_event_id||groupLastEventId}}catch(_ ){{}}}}
+    if(window.EventSource){{try{{const es=new EventSource(`/api/pulse/live/stream?since_id=0`);es.addEventListener('pulse',e=>{{try{{const d=JSON.parse(e.data);applyGroupLiveEvents(d.events||[]);groupLastEventId=d.latest_event_id||groupLastEventId}}catch(_){{}}}});es.onerror=()=>{{es.close();setInterval(pollGroupLive,3500)}};}}catch(_){{setInterval(pollGroupLive,3500)}}}}else{{setInterval(pollGroupLive,3500)}}
+    """
     return pulse_social_shell(group.get("name") or "Pulse Group", "A user-created community with posts, members, rules, and safety reporting.", main, "", script)
 
 
@@ -18353,10 +18580,49 @@ def api_pulse_message_send():
     conversation_id = int(payload.get("conversation_id") or 0)
     thread_id = int(payload.get("thread_id") or 0)
     if conversation_id and not thread_id:
+        cur.execute("SELECT * FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
+        conversation = dict(cur.fetchone() or {})
         cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
         if not cur.fetchone():
             conn.close()
             return jsonify({"ok": False, "message": "Conversation not found."}), 404
+        if (conversation.get("conversation_type") or "direct") != "direct":
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            cur.execute(
+                """
+                INSERT INTO pulse_messages
+                (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, delivery_status, status, created_at)
+                VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
+                """,
+                (
+                    conversation_id,
+                    user["user_id"],
+                    message,
+                    message_type,
+                    media_url,
+                    thumbnail_url,
+                    json.dumps(metadata, default=str)[:4000],
+                    int(payload.get("file_size") or 0),
+                    float(payload.get("duration_seconds") or 0),
+                    now,
+                ),
+            )
+            message_id = int(cur.lastrowid)
+            if media_url:
+                cur.execute("UPDATE chat_media_uploads SET message_id=?, context_type='pulse_message', context_id=? WHERE uploader_user_id=? AND media_url=? AND message_id IS NULL", (message_id, str(conversation_id), user["user_id"], media_url))
+            cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=?, last_activity_at=? WHERE id=?", (now, now, now, conversation_id))
+            cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=?", (conversation_id, user["user_id"]))
+            recipient_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
+            for recipient_id in recipient_ids[:250]:
+                cur.execute(
+                    "INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New group message', 'A Pulse group chat has a new message.', ?, ?)",
+                    (recipient_id, f"/pulse/messages/{conversation_id}", now),
+                )
+            conn.commit(); conn.close()
+            event = {"message": "New group message.", "thread_id": 0, "conversation_id": conversation_id, "target_user_ids": recipient_ids, "message_id": message_id, "message_type": message_type, "media_url": media_url}
+            pulse_emit_event("group_message_created", event, user["user_id"], 0)
+            pulse_emit_event("conversation_updated", event, user["user_id"], 0)
+            return jsonify({"ok": True, "thread_id": 0, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type})
         cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
         receiver_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
         cur.execute(
@@ -18459,6 +18725,43 @@ def api_pulse_message_start():
     return jsonify(result), status
 
 
+@webhook_app.route("/api/pulse/messages/group/create", methods=["POST"])
+def api_pulse_message_group_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
+    title = clean_html(payload.get("title") or "")[:140]
+    participant_ids = payload.get("participant_ids") if isinstance(payload.get("participant_ids"), list) else []
+    group_id = safe_int(payload.get("group_id"), 0)
+    group_slug = clean_html(payload.get("group_slug") or "")[:140]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        group = {}
+        if group_id or group_slug:
+            cur.execute("SELECT * FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (group_id, group_slug))
+            group = dict(cur.fetchone() or {})
+            if not group:
+                conn.close()
+                return api_error("Group not found.", 404, trace_id)
+            if str(group.get("status") or "active").lower() in {"frozen", "suspended"}:
+                conn.close()
+                return api_error("This group chat is paused for review.", 403, trace_id)
+        result, status = pulse_get_or_create_group_conversation(cur, user["user_id"], group=group, title=title, participant_ids=participant_ids)
+        if result.get("ok"):
+            conn.commit()
+        conn.close()
+        if result.get("ok"):
+            pulse_emit_event("group_chat_created", {"conversation_id": result.get("conversation_id"), "group_id": int((group or {}).get("id") or 0), "title": title or (group or {}).get("name") or "Group Chat"}, user["user_id"], 0)
+        return jsonify(result), status
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_GROUP_CHAT_CREATE_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
+        return api_error("Group chat could not be created. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
 @webhook_app.route("/api/pulse/messages/conversations", methods=["GET"])
 def api_pulse_message_conversations():
     init_db()
@@ -18468,10 +18771,11 @@ def api_pulse_message_conversations():
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.*, p.user_id AS participant_user_id
+        SELECT c.*, MIN(p.user_id) AS participant_user_id
         FROM pulse_conversations c
         JOIN pulse_conversation_participants mine ON mine.conversation_id=c.id AND mine.user_id=?
         LEFT JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id!=?
+        GROUP BY c.id
         ORDER BY COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
         LIMIT 80
         """,
@@ -18480,11 +18784,12 @@ def api_pulse_message_conversations():
     conversations = []
     for row in cur.fetchall():
         item = dict(row)
-        other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0)
+        convo_type = item.get("conversation_type") or "direct"
+        other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0) if convo_type == "direct" else {"name": item.get("title") or "Group Chat", "avatar_url": item.get("avatar_url") or "", "premium_mark": None}
         conversations.append({
             "id": int(item.get("id") or 0),
             "conversation_id": int(item.get("id") or 0),
-            "conversation_type": item.get("conversation_type") or "direct",
+            "conversation_type": convo_type,
             "other_user_id": int(item.get("participant_user_id") or 0),
             "title": other.get("name") or "Pulse user",
             "avatar_url": other.get("avatar_url") or "",
@@ -19009,13 +19314,200 @@ def api_pulse_group_post_react():
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     post_id = safe_int(payload.get("group_post_id"), 0)
-    reaction = clean_html(payload.get("reaction_type") or "fire")[:40]
-    if reaction not in {"fire", "smart", "scam_alert", "whale", "bullish", "bearish"}:
-        reaction = "fire"
-    conn = db(); cur = conn.cursor()
-    cur.execute("INSERT OR IGNORE INTO pulse_group_post_reactions (group_post_id, user_id, reaction_type, created_at) VALUES (?, ?, ?, ?)", (post_id, user["user_id"], reaction, datetime.utcnow().isoformat(timespec="seconds")))
+    return pulse_group_post_react_common(user, post_id, payload)
+
+
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/react", methods=["POST"])
+def api_pulse_group_post_react_id(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    return pulse_group_post_react_common(user, post_id, request.get_json(silent=True) or {})
+
+
+def pulse_group_post_react_common(user, post_id, payload):
+    trace_id = secrets.token_hex(6)
+    reaction = clean_html((payload or {}).get("reaction_type") or "fire")[:40]
+    if reaction not in GROUP_REACTION_TYPES:
+        return api_error("Choose a supported reaction.", 400, trace_id)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        post = pulse_group_post_context(cur, post_id, user["user_id"])
+        allowed, message = pulse_group_can_interact(post, user)
+        if not allowed:
+            conn.close()
+            return api_error(message, 403 if message != "Group post not found." else 404, trace_id)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute("SELECT reaction_type FROM pulse_group_post_reactions WHERE group_post_id=? AND user_id=? LIMIT 1", (post_id, user["user_id"]))
+        existing = dict(cur.fetchone() or {}).get("reaction_type") or ""
+        cur.execute("DELETE FROM pulse_group_post_reactions WHERE group_post_id=? AND user_id=?", (post_id, user["user_id"]))
+        my_reaction = ""
+        message = "Reaction removed." if existing == reaction else "Reaction updated."
+        if existing != reaction:
+            cur.execute(
+                "INSERT INTO pulse_group_post_reactions (group_post_id, user_id, reaction_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (post_id, user["user_id"], reaction, now, now),
+            )
+            my_reaction = reaction
+        stats = pulse_group_post_stats(cur, post_id, user["user_id"])
+        if my_reaction:
+            stats["my_reaction"] = my_reaction
+        conn.commit()
+        payload = {"post_id": post_id, "group_id": int(post.get("group_id") or 0), "reactions": stats["reactions"], "my_reaction": stats["my_reaction"]}
+        pulse_emit_event("group_post_reacted", payload, user["user_id"], post_id)
+        conn.close()
+        return jsonify({"ok": True, "message": message, "reactions": stats["reactions"], "my_reaction": stats["my_reaction"]})
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_GROUP_REACTION_FAILED trace_id=%s post_id=%s user_id=%s", trace_id, post_id, user.get("user_id"))
+        return api_error("Reaction could not be updated. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/comments", methods=["GET"])
+def api_pulse_group_post_comments(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    post = pulse_group_post_context(cur, post_id, user["user_id"])
+    allowed, message = pulse_group_can_interact(post, user)
+    if not allowed:
+        conn.close()
+        return api_error(message, 403 if message != "Group post not found." else 404, trace_id)
+    cur.execute(
+        """
+        SELECT * FROM pulse_group_post_comments
+        WHERE group_post_id=? AND deleted_at IS NULL AND COALESCE(status,'visible')='visible'
+        ORDER BY id ASC LIMIT 100
+        """,
+        (post_id,),
+    )
+    comments = [pulse_group_comment_payload(cur, row, user["user_id"]) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "comments": comments})
+
+
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/comments", methods=["POST"])
+def api_pulse_group_post_comment_create(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    body = clean_html(payload.get("body") or "")[:1200].strip()
+    media_url = clean_html(payload.get("media_url") or "")[:1000]
+    parent_id = safe_int(payload.get("parent_comment_id"), 0)
+    if not body and not media_url:
+        return api_error("Write a comment before posting.", 400, trace_id)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        post = pulse_group_post_context(cur, post_id, user["user_id"])
+        allowed, message = pulse_group_can_interact(post, user)
+        if not allowed:
+            conn.close()
+            return api_error(message, 403 if message != "Group post not found." else 404, trace_id)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            """
+            INSERT INTO pulse_group_post_comments
+            (group_post_id, user_id, body, media_url, parent_comment_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'visible', ?, ?)
+            """,
+            (post_id, user["user_id"], body, media_url, parent_id or None, now, now),
+        )
+        comment_id = int(cur.lastrowid)
+        cur.execute("SELECT * FROM pulse_group_post_comments WHERE id=?", (comment_id,))
+        comment = pulse_group_comment_payload(cur, cur.fetchone(), user["user_id"])
+        stats = pulse_group_post_stats(cur, post_id, user["user_id"])
+        conn.commit()
+        event = {"post_id": post_id, "group_id": int(post.get("group_id") or 0), "comment": comment, "comment_count": stats["comment_count"]}
+        pulse_emit_event("group_post_comment_created", event, user["user_id"], post_id)
+        conn.close()
+        return jsonify({"ok": True, "message": "Comment posted.", "comment": comment, "comment_count": stats["comment_count"]})
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_GROUP_COMMENT_FAILED trace_id=%s post_id=%s user_id=%s", trace_id, post_id, user.get("user_id"))
+        return api_error("Comment could not be posted. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/groups/comments/<int:comment_id>/delete", methods=["POST"])
+def api_pulse_group_comment_delete(comment_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_group_post_comments WHERE id=? LIMIT 1", (comment_id,))
+    comment = dict(cur.fetchone() or {})
+    if not comment:
+        conn.close()
+        return api_error("Comment not found.", 404, trace_id)
+    post = pulse_group_post_context(cur, comment.get("group_post_id"), user["user_id"])
+    can_delete = int(comment.get("user_id") or 0) == int(user["user_id"]) or pulse_group_can_delete_post(post, user)
+    if not can_delete:
+        conn.close()
+        return api_error("You do not have permission.", 403, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_group_post_comments SET deleted_at=?, status='removed', updated_at=? WHERE id=?", (now, now, comment_id))
+    stats = pulse_group_post_stats(cur, comment.get("group_post_id"), user["user_id"])
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Reaction saved."})
+    pulse_emit_event("group_post_comment_deleted", {"comment_id": comment_id, "post_id": int(comment.get("group_post_id") or 0), "group_id": int(post.get("group_id") or 0), "comment_count": stats["comment_count"]}, user["user_id"], int(comment.get("group_post_id") or 0))
+    return jsonify({"ok": True, "message": "Comment deleted.", "comment_count": stats["comment_count"]})
+
+
+@webhook_app.route("/api/pulse/groups/comments/<int:comment_id>/report", methods=["POST"])
+def api_pulse_group_comment_report(comment_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    reason = clean_html((request.get_json(silent=True) or {}).get("reason") or "Needs review")[:500]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_group_post_comments WHERE id=? LIMIT 1", (comment_id,))
+    comment = dict(cur.fetchone() or {})
+    if not comment:
+        conn.close()
+        return api_error("Comment not found.", 404, trace_id)
+    post = pulse_group_post_context(cur, comment.get("group_post_id"), user["user_id"])
+    allowed, message = pulse_group_can_interact(post, user)
+    if not allowed:
+        conn.close()
+        return api_error(message, 403 if message != "Group post not found." else 404, trace_id)
+    cur.execute(
+        "INSERT INTO pulse_group_comment_reports (comment_id, group_post_id, reporter_user_id, reason, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
+        (comment_id, int(comment.get("group_post_id") or 0), user["user_id"], reason, datetime.utcnow().isoformat(timespec="seconds")),
+    )
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Comment report sent."})
+
+
+@webhook_app.route("/api/pulse/groups/posts/<int:post_id>/delete", methods=["POST"])
+def api_pulse_group_post_delete(post_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    reason = clean_html((request.get_json(silent=True) or {}).get("reason") or "owner_delete")[:240]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    post = pulse_group_post_context(cur, post_id, user["user_id"])
+    if not post:
+        conn.close()
+        return api_error("Group post not found.", 404, trace_id)
+    if not pulse_group_can_delete_post(post, user):
+        conn.close()
+        return api_error("You do not have permission.", 403, trace_id)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_group_posts SET deleted_at=?, deleted_by=?, delete_reason=?, status='deleted', updated_at=? WHERE id=?", (now, user["user_id"], reason, now, post_id))
+    conn.commit(); conn.close()
+    pulse_emit_event("group_post_updated", {"post_id": post_id, "group_id": int(post.get("group_id") or 0), "status": "deleted"}, user["user_id"], post_id)
+    return jsonify({"ok": True, "message": "Group post deleted."})
 
 
 @webhook_app.route("/api/pulse/groups/posts/report", methods=["POST"])
@@ -20301,9 +20793,10 @@ def admin_groups_health_page():
         "pulse_group_reports": ["id", "group_id", "reporter_user_id", "reason", "status"],
         "pulse_group_roles": ["id", "group_id", "user_id", "role"],
         "pulse_group_post_media": ["id", "group_post_id", "media_url", "media_type", "created_at"],
-        "pulse_group_post_comments": ["id", "group_post_id", "user_id", "body", "created_at"],
-        "pulse_group_post_reactions": ["id", "group_post_id", "user_id", "reaction_type", "created_at"],
+        "pulse_group_post_comments": ["id", "group_post_id", "user_id", "body", "status", "deleted_at", "created_at", "updated_at"],
+        "pulse_group_post_reactions": ["id", "group_post_id", "user_id", "reaction_type", "created_at", "updated_at"],
         "pulse_group_post_reports": ["id", "group_post_id", "reporter_user_id", "reason", "status"],
+        "pulse_group_comment_reports": ["id", "comment_id", "group_post_id", "reporter_user_id", "reason", "status"],
     }
     table_rows = []
     for table, cols in required.items():
@@ -20315,17 +20808,60 @@ def admin_groups_health_page():
     attempts = [dict(row) for row in cur.fetchall()]
     media_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_media")
     media_reports = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_reports WHERE status='open'")
+    comment_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_comments WHERE deleted_at IS NULL")
+    reaction_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_reactions")
+    comment_reports = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_comment_reports WHERE status='open'")
+    deleted_posts = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_posts WHERE deleted_at IS NOT NULL OR COALESCE(status,'')='deleted'")
     missing_media_cols = [c for c in ["post_type", "media_url", "thumbnail_url", "media_type", "media_metadata", "moderation_status"] if c not in set(table_columns(cur, "pulse_group_posts"))]
+    cur.execute("SELECT id, group_post_id, user_id, status, created_at FROM pulse_group_post_comments ORDER BY id DESC LIMIT 12")
+    latest_comments = [dict(row) for row in cur.fetchall()]
+    latest_comment_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{c.get('group_post_id')}</td><td>{c.get('user_id')}</td><td>{clean_html(c.get('status') or '')}</td><td>{clean_html(c.get('created_at') or '')}</td></tr>" for c in latest_comments)
     attempt_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('payload_summary') or '')}</td><td>{clean_html(a.get('error_message') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in attempts)
     conn.close()
     body = f"""
     <h1>Groups Health</h1><p class='muted'>Debug surface for Pulse group creation, schema health, and recent traceable failures.</p>
-    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Open Media Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{clean_html(', '.join(missing_media_cols) or 'none')}</p></div></section>
+    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Comments</h2><p class='metric'>{comment_count}</p></div><div class='card'><h2>Reactions</h2><p class='metric'>{reaction_count}</p></div><div class='card'><h2>Open Post Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Open Comment Reports</h2><p class='metric'>{comment_reports}</p></div><div class='card'><h2>Deleted Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{clean_html(', '.join(missing_media_cols) or 'none')}</p></div></section>
     <section class='card'><h2>Schema</h2><table class='table'><tr><th>Table</th><th>Exists</th><th>Missing Columns</th></tr>{''.join(table_rows)}</table></section>
+    <section class='card'><h2>Latest Group Comments</h2><table class='table'><tr><th>ID</th><th>Post</th><th>User</th><th>Status</th><th>Time</th></tr>{latest_comment_rows or '<tr><td colspan=5>No comments yet.</td></tr>'}</table></section>
     <section class='card'><h2>Latest Group Creation Attempts</h2><table class='table'><tr><th>ID</th><th>Status</th><th>Trace</th><th>Payload</th><th>Error</th><th>Time</th></tr>{attempt_rows or '<tr><td colspan=6>No attempts logged yet.</td></tr>'}</table></section>
-    <p><a class='button' href='/pulse/groups'>Open Groups</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
+    <p><a class='button' href='/pulse/groups'>Open Groups</a> <a class='button' href='/admin/group-chat-health'>Group Chat Health</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
     """
     return admin_page_html("Groups Health", body, admin)
+
+
+@webhook_app.route("/admin/group-chat-health", methods=["GET"])
+def admin_group_chat_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    group_chats = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations WHERE conversation_type IN ('group','community_group')")
+    community_chats = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_conversations WHERE conversation_type='community_group'")
+    group_messages = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages WHERE conversation_id IN (SELECT id FROM pulse_conversations WHERE conversation_type IN ('group','community_group'))")
+    media_group_messages = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages WHERE COALESCE(media_url,'')!='' AND conversation_id IN (SELECT id FROM pulse_conversations WHERE conversation_type IN ('group','community_group'))")
+    largest_rows = []
+    cur.execute(
+        """
+        SELECT c.id, c.title, c.conversation_type, c.group_id, COUNT(p.user_id) AS participants, c.last_message_at
+        FROM pulse_conversations c
+        LEFT JOIN pulse_conversation_participants p ON p.conversation_id=c.id
+        WHERE c.conversation_type IN ('group','community_group')
+        GROUP BY c.id
+        ORDER BY participants DESC, COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
+        LIMIT 20
+        """
+    )
+    largest_rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('title') or 'Group Chat')}</td><td>{clean_html(r.get('conversation_type') or '')}</td><td>{r.get('group_id') or ''}</td><td>{int(r.get('participants') or 0)}</td><td>{clean_html(r.get('last_message_at') or '')}</td></tr>" for r in largest_rows)
+    body = f"""
+    <h1>Group Chat Health</h1><p class='muted'>Pulse Messenger community chat activity, participant scale, media usage, and delivery readiness.</p>
+    <section class='grid'><div class='card'><h2>Group Chats</h2><p class='metric'>{group_chats}</p></div><div class='card'><h2>Community Chats</h2><p class='metric'>{community_chats}</p></div><div class='card'><h2>Group Messages</h2><p class='metric'>{group_messages}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_group_messages}</p></div></section>
+    <section class='card'><h2>Largest Communities</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Type</th><th>Group</th><th>Participants</th><th>Last Message</th></tr>{rows or '<tr><td colspan=6>No group chats yet.</td></tr>'}</table></section>
+    <p><a class='button' href='/pulse/messages'>Open Messenger</a> <a class='button' href='/admin/groups-health'>Groups Health</a></p>
+    """
+    return admin_page_html("Group Chat Health", body, admin)
 
 
 @webhook_app.route("/admin/messages-health", methods=["GET"])
@@ -20518,7 +21054,7 @@ def admin_system_audit_page():
     init_db()
     route_groups = {
         "Pulse": ["/pulse", "/pulse/create", "/pulse/my-posts", "/pulse/reels", "/pulse/friends", "/pulse/messages", "/pulse/notifications", "/pulse/profile", "/pulse/profile/edit", "/pulse/groups", "/pulse/groups/create", "/pulse/spaces", "/pulse/teachers", "/pulse/marketplace", "/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/marketplace/create", "/pulse/creator-monetization", "/pulse/live", "/pulse/assistant", "/pulse/camera"],
-        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/messages-health", "/admin/media-studio"],
+        "Admin": ["/admin/command-center", "/admin/global-command", "/admin/capability-matrix", "/admin/reliability", "/admin/pulse-users", "/admin/realtime-grid", "/admin/intelligence-graph", "/admin/trust-map", "/admin/global-events", "/admin/marketplace-command", "/admin/merchant-applications", "/admin/monetization", "/admin/notifications", "/admin/groups-health", "/admin/group-chat-health", "/admin/messages-health", "/admin/media-studio"],
     }
     rows = []
     client = webhook_app.test_client()
@@ -28016,6 +28552,17 @@ def init_db():
         last_message_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_conversations", [
+        ("created_by_user_id", "INTEGER"),
+        ("group_id", "INTEGER"),
+        ("title", "TEXT"),
+        ("avatar_url", "TEXT"),
+        ("owner_user_id", "INTEGER"),
+        ("is_public", "INTEGER DEFAULT 0"),
+        ("participant_limit", "INTEGER DEFAULT 250"),
+        ("last_activity_at", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_conversation_participants (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28304,6 +28851,9 @@ def init_db():
         ("status", "TEXT DEFAULT 'published'"),
         ("updated_at", "TEXT"),
         ("edited_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+        ("deleted_by", "INTEGER"),
+        ("delete_reason", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_post_media (
@@ -28326,18 +28876,43 @@ def init_db():
         group_post_id INTEGER,
         user_id INTEGER,
         reaction_type TEXT,
+        updated_at TEXT,
         created_at TEXT,
         UNIQUE(group_post_id, user_id, reaction_type)
     )
     """)
+    add_columns_if_missing(cur, "pulse_group_post_reactions", [
+        ("updated_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_post_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         group_post_id INTEGER,
         user_id INTEGER,
         body TEXT,
+        media_url TEXT,
+        parent_comment_id INTEGER,
+        status TEXT DEFAULT 'visible',
+        updated_at TEXT,
         created_at TEXT,
         deleted_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_group_post_comments", [
+        ("media_url", "TEXT"),
+        ("parent_comment_id", "INTEGER"),
+        ("status", "TEXT DEFAULT 'visible'"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_comment_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comment_id INTEGER,
+        group_post_id INTEGER,
+        reporter_user_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT
     )
     """)
     cur.execute("""
@@ -28382,6 +28957,10 @@ def init_db():
         UNIQUE(group_id, user_id, role)
     )
     """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_posts_group ON pulse_group_posts(group_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_comments_post ON pulse_group_post_comments(group_post_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_reactions_post ON pulse_group_post_reactions(group_post_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_conversations_group ON pulse_conversations(group_id, conversation_type)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_creation_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
