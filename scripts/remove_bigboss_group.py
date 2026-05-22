@@ -141,13 +141,22 @@ def main() -> int:
         if conversation_ids:
             if table_exists(cur, "pulse_messages"):
                 msg_cols = columns(cur, "pulse_messages")
+                message_ids: list[int] = []
                 if "media_url" in msg_cols:
-                    cur.execute(f"SELECT media_url, thumbnail_url FROM pulse_messages WHERE conversation_id IN ({placeholders(conversation_ids)})", conversation_ids)
+                    cur.execute(f"SELECT id, media_url, thumbnail_url FROM pulse_messages WHERE conversation_id IN ({placeholders(conversation_ids)})", conversation_ids)
                     for row in cur.fetchall():
+                        message_ids.append(int(row["id"]))
                         if row["media_url"]:
                             media_urls.add(str(row["media_url"]))
                         if "thumbnail_url" in row.keys() and row["thumbnail_url"]:
                             media_urls.add(str(row["thumbnail_url"]))
+                else:
+                    cur.execute(f"SELECT id FROM pulse_messages WHERE conversation_id IN ({placeholders(conversation_ids)})", conversation_ids)
+                    message_ids = [int(row["id"]) for row in cur.fetchall()]
+                deleted["pulse_message_reactions"] = delete_where(cur, "pulse_message_reactions", f"conversation_id IN ({placeholders(conversation_ids)})", tuple(conversation_ids))
+                deleted["pulse_message_receipts"] = delete_where(cur, "pulse_message_receipts", f"conversation_id IN ({placeholders(conversation_ids)})", tuple(conversation_ids))
+                if message_ids:
+                    deleted["chat_media_uploads_by_message"] = delete_where(cur, "chat_media_uploads", f"message_id IN ({placeholders(message_ids)})", tuple(message_ids))
                 deleted["pulse_messages"] = delete_where(cur, "pulse_messages", f"conversation_id IN ({placeholders(conversation_ids)})", tuple(conversation_ids))
             deleted["pulse_conversation_participants"] = delete_where(cur, "pulse_conversation_participants", f"conversation_id IN ({placeholders(conversation_ids)})", tuple(conversation_ids))
             deleted["pulse_conversations"] = delete_where(cur, "pulse_conversations", f"id IN ({placeholders(conversation_ids)})", tuple(conversation_ids))
@@ -165,6 +174,7 @@ def main() -> int:
         deleted["pulse_group_reports"] = delete_where(cur, "pulse_group_reports", f"group_id IN ({placeholders(group_ids)})", tuple(group_ids))
         deleted["pulse_group_invites"] = delete_where(cur, "pulse_group_invites", f"group_id IN ({placeholders(group_ids)})", tuple(group_ids))
         deleted["pulse_group_roles"] = delete_where(cur, "pulse_group_roles", f"group_id IN ({placeholders(group_ids)})", tuple(group_ids))
+        deleted["pulse_group_bans"] = delete_where(cur, "pulse_group_bans", f"group_id IN ({placeholders(group_ids)})", tuple(group_ids))
         deleted["pulse_group_members"] = delete_where(cur, "pulse_group_members", f"group_id IN ({placeholders(group_ids)})", tuple(group_ids))
         deleted["pulse_group_action_logs"] = delete_where(cur, "pulse_group_action_logs", f"group_id IN ({placeholders(group_ids)})", tuple(group_ids))
 
