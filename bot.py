@@ -16207,7 +16207,7 @@ def pulse_group_post_context(cur, post_id, user_id=0):
         FROM pulse_group_posts p
         JOIN pulse_groups g ON g.id=p.group_id
         LEFT JOIN pulse_group_members gm ON gm.group_id=p.group_id AND gm.user_id=?
-        WHERE p.id=? LIMIT 1
+        WHERE p.id=? AND COALESCE(g.status,'active') NOT IN ('deleted','removed') LIMIT 1
         """,
         (int(user_id or 0), int(post_id or 0)),
     )
@@ -16234,6 +16234,8 @@ def pulse_group_can_interact(post_ctx, user):
         return False, "This group post is no longer available."
     if str(post_ctx.get("group_status") or "active").lower() in {"frozen", "suspended"}:
         return False, "This group is paused for review."
+    if str(post_ctx.get("group_status") or "active").lower() in {"deleted", "removed"}:
+        return False, "This group is no longer available."
     group_type = str(post_ctx.get("group_type") or "public").lower()
     if group_type in {"private", "invite-only"} and not post_ctx.get("member_role") and int(post_ctx.get("owner_user_id") or 0) != int(user.get("user_id") or 0):
         return False, "Join this group before interacting."
@@ -16286,6 +16288,15 @@ def pulse_group_can_moderate_post(post_ctx, user):
     return pulse_group_user_is_admin(user)
 
 
+def pulse_group_can_delete_group(group, user, role=""):
+    if not user or not group:
+        return False
+    user_id = int(user.get("user_id") or 0)
+    if int(group.get("owner_user_id") or 0) == user_id:
+        return True
+    return pulse_group_user_is_admin(user)
+
+
 def pulse_group_comment_payload(cur, comment, viewer_id=0):
     item = dict(comment or {})
     ident = pulse_identity_for_user(cur, item.get("user_id"))
@@ -16313,10 +16324,16 @@ def pulse_media_url(url):
     value = str(url or "").strip()
     if not value:
         return ""
-    if value.startswith(("http://", "https://", "/", "data:")):
+    if value.startswith(("http://", "https://", "data:")):
         return value
-    if value.startswith("static/") or value.startswith("uploads/"):
+    if value.startswith("/uploads/"):
+        return "/static" + value
+    if value.startswith("/static/"):
+        return value
+    if value.startswith("static/"):
         return "/" + value
+    if value.startswith("uploads/"):
+        return "/static/" + value
     return value
 
 
@@ -18050,7 +18067,7 @@ def pulse_groups_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT g.*, COUNT(m.user_id) AS members FROM pulse_groups g LEFT JOIN pulse_group_members m ON m.group_id=g.id WHERE COALESCE(g.status,'active')!='suspended' GROUP BY g.id ORDER BY COALESCE(g.featured,0) DESC, g.id DESC LIMIT 80")
+    cur.execute("SELECT g.*, COUNT(m.user_id) AS members FROM pulse_groups g LEFT JOIN pulse_group_members m ON m.group_id=g.id WHERE COALESCE(g.status,'active') NOT IN ('suspended','deleted','removed') GROUP BY g.id ORDER BY COALESCE(g.featured,0) DESC, g.id DESC LIMIT 80")
     groups = [dict(row) for row in cur.fetchall()]
     conn.close()
     group_html = "".join(f"<article class='card group-list-card'><span class='pill'>{clean_html(g.get('category') or 'Community')}</span><h2>{clean_html(g.get('name'))}</h2><p>{clean_html(g.get('description') or '')}</p><p class='group-pill-row'><span class='pill'>{clean_html(g.get('group_type') or 'public')}</span> <span class='pill'>{int(g.get('members') or g.get('member_count') or 0)} members</span> <span class='pill'>{clean_html(g.get('trust_level') or 'standard')}</span></p><div class='group-card-actions'><button class='primary' data-join-group='{clean_html(g.get('slug') or str(g.get('id') or 0))}'>Join</button><a class='button' href='/pulse/groups/{clean_html(g.get('slug') or str(g.get('id') or 0))}'>Open</a></div></article>" for g in groups)
@@ -18203,11 +18220,11 @@ def pulse_group_detail_page(group_slug):
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    cur.execute("SELECT * FROM pulse_groups WHERE (slug=? OR id=?) AND COALESCE(status,'active') NOT IN ('deleted','removed') LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
     group = dict(cur.fetchone() or {})
     if not group:
         conn.close()
-        return pulse_social_shell("Pulse Group", "This group was not found.", "<section class='card'><a class='button primary' href='/pulse/groups'>Back to Groups</a></section>")
+        return pulse_social_shell("Pulse Group", "This group was not found.", "<section class='card'><a class='button primary' href='/pulse/groups'>Back to Groups</a></section>"), 404
     group_id = int(group.get("id") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE group_id=?", (group_id,))
     members = int(dict(cur.fetchone() or {}).get("total") or 0)
@@ -18230,7 +18247,9 @@ def pulse_group_detail_page(group_slug):
     current_role = ""
     cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
     current_role = dict(cur.fetchone() or {}).get("role") or ""
+    can_delete_group = pulse_group_can_delete_group(group, user, current_role)
     for p in posts:
+        post_id = int(p.get("id") or 0)
         ident = pulse_identity_for_user(cur, p.get("user_id"))
         stats = pulse_group_post_stats(cur, p.get("id"), user["user_id"])
         can_delete = pulse_group_can_delete_post({**p, **group, "member_role": current_role, "owner_user_id": group.get("owner_user_id"), "group_status": group.get("status"), "group_type": group.get("group_type")}, user)
@@ -18266,10 +18285,9 @@ def pulse_group_detail_page(group_slug):
             thumbnail_url = pulse_media_url(media_row.get("thumbnail_url") or "")
             media_type = clean_html(media_row.get("media_type") or media_type)
         if media_url and media_type == "video":
-            media_html = f"<div class='group-media-frame'><video controls playsinline preload='metadata' poster='{clean_html(thumbnail_url)}'><source src='{clean_html(media_url)}'></video></div>"
+            media_html = f"<div class='group-media-frame'><video controls playsinline preload='metadata' poster='{clean_html(thumbnail_url)}' data-group-media='{post_id}' onerror=\"window.reportGroupMediaFailure&&window.reportGroupMediaFailure({post_id},'{clean_html(media_url)}')\"><source src='{clean_html(media_url)}'></video></div>"
         elif media_url:
-            media_html = f"<button class='group-media-frame' type='button' data-media-fullscreen='{clean_html(media_url)}'><img src='{clean_html(media_url)}' alt='Group post media' loading='lazy' onerror=\"this.closest('.group-media-frame').classList.add('is-broken');this.replaceWith(document.createTextNode('Media could not load.'))\"></button>"
-        post_id = int(p.get("id") or 0)
+            media_html = f"<button class='group-media-frame' type='button' data-media-fullscreen='{clean_html(media_url)}'><img src='{clean_html(media_url)}' alt='Group post media' loading='lazy' data-group-media='{post_id}' onerror=\"window.reportGroupMediaFailure&&window.reportGroupMediaFailure({post_id},'{clean_html(media_url)}');this.closest('.group-media-frame').classList.add('is-broken');this.replaceWith(document.createTextNode('Media could not load.'))\"></button>"
         reaction_buttons = "".join(
             f"<button class='group-reaction-chip {'primary' if stats.get('my_reaction') == key else ''}' data-group-react='{post_id}' data-reaction='{key}'>{label} <span data-reaction-count='{post_id}:{key}'>{int(stats['reactions'].get(key) or 0)}</span></button>"
             for key, label in [("fire", "Fire"), ("smart", "Smart"), ("scam_alert", "Scam Alert"), ("whale", "Whale"), ("bullish", "Bullish"), ("bearish", "Bearish")]
@@ -18289,8 +18307,9 @@ def pulse_group_detail_page(group_slug):
     post_html = "".join(post_cards)
     conn.close()
     slug = clean_html(group.get("slug") or str(group_id))
-    style = "<style>.group-post-head{display:flex;justify-content:space-between;gap:10px;align-items:start;min-width:0}.group-post-menu{position:relative;flex:0 0 auto}.group-post-menu summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:950}.group-post-menu div{position:absolute;right:0;z-index:8;display:grid;gap:6px;min-width:210px;padding:8px;border:1px solid var(--line);border-radius:14px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.35)}.group-post-menu button{width:100%;justify-content:flex-start}.group-media-frame{display:block;width:100%;margin-top:12px;padding:0;border:0;border-radius:18px;overflow:hidden;background:linear-gradient(135deg,rgba(110,223,246,.09),rgba(255,255,255,.035));box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}.group-media-frame img,.group-media-frame video{display:block;width:100%;max-height:540px;object-fit:cover;background:#050b14}.group-media-frame.is-broken{padding:18px;border:1px dashed rgba(255,255,255,.18);color:var(--muted);text-align:center}.pinned-pill{background:rgba(255,209,102,.14);border-color:rgba(255,209,102,.38)}.group-reaction-row{display:flex;gap:7px;overflow-x:auto;padding:6px 0;max-width:100%;scrollbar-width:thin}.group-reaction-chip{min-height:38px;font-size:13px;padding:7px 10px;flex:0 0 auto}.group-comments{display:grid;gap:8px;margin-top:8px}.group-comment{border-left:2px solid rgba(110,223,246,.3);padding:7px 9px;background:rgba(255,255,255,.035);border-radius:10px}.group-comment p{margin:3px 0}.group-comment-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:10px}.group-comment-form input{min-height:42px;border-radius:999px}.group-community-actions{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}.group-community-actions button,.group-community-actions .button{width:100%;min-width:0}.group-meta-pills,.group-post-meta{display:flex;gap:6px;flex-wrap:wrap}.group-composer-actions{display:grid;grid-template-columns:1fr;gap:10px}.group-post-card{overflow:hidden}.group-report-modal{position:fixed;inset:0;z-index:100;display:none;place-items:end center;background:rgba(0,0,0,.45);backdrop-filter:blur(8px);padding:14px}.group-report-modal.open{display:grid}.group-report-sheet{width:min(520px,100%);border:1px solid var(--line);border-radius:22px;background:#071321;padding:16px;box-shadow:0 28px 90px rgba(0,0,0,.5)}@media(min-width:768px){.group-community-actions,.group-composer-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.group-comment-form{grid-template-columns:1fr}.group-post-head{align-items:center}.group-post-menu div{position:fixed;right:12px;left:12px;top:auto;bottom:calc(110px + env(safe-area-inset-bottom))}.group-reaction-chip{flex:0 0 auto}.group-media-frame img,.group-media-frame video{max-height:70dvh;object-fit:contain}}</style>"
-    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'><button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section><section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section><section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by name or public Pulse ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>"
+    style = "<style>.group-post-head{display:flex;justify-content:space-between;gap:10px;align-items:start;min-width:0}.group-post-menu{position:relative;flex:0 0 auto;z-index:20}.group-post-menu summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:950}.group-post-menu div{position:absolute;right:0;z-index:999;display:grid;gap:6px;min-width:min(260px,calc(100vw - 28px));max-width:calc(100vw - 28px);padding:8px;border:1px solid var(--line);border-radius:14px;background:#081323;box-shadow:0 20px 60px rgba(0,0,0,.42)}.group-post-menu button{width:100%;justify-content:flex-start;white-space:normal}.group-media-frame{display:block;width:100%;margin-top:12px;padding:0;border:0;border-radius:18px;overflow:hidden;background:linear-gradient(135deg,rgba(110,223,246,.09),rgba(255,255,255,.035));box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}.group-media-frame img,.group-media-frame video{display:block;width:100%;max-height:540px;object-fit:cover;background:#050b14}.group-media-frame.is-broken{padding:18px;border:1px dashed rgba(255,255,255,.18);color:var(--muted);text-align:center}.pinned-pill{background:rgba(255,209,102,.14);border-color:rgba(255,209,102,.38)}.group-reaction-row{display:flex;gap:7px;overflow-x:auto;padding:6px 0;max-width:100%;scrollbar-width:thin}.group-reaction-chip{min-height:38px;font-size:13px;padding:7px 10px;flex:0 0 auto}.group-comments{display:grid;gap:8px;margin-top:8px}.group-comment{border-left:2px solid rgba(110,223,246,.3);padding:7px 9px;background:rgba(255,255,255,.035);border-radius:10px}.group-comment p{margin:3px 0}.group-comment-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:10px}.group-comment-form input{min-height:42px;border-radius:999px}.group-community-actions{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}.group-community-actions button,.group-community-actions .button{width:100%;min-width:0}.group-meta-pills,.group-post-meta{display:flex;gap:6px;flex-wrap:wrap}.group-composer-actions{display:grid;grid-template-columns:1fr;gap:10px}.group-post-card{overflow:hidden}.group-report-modal{position:fixed;inset:0;z-index:1000;display:none;place-items:end center;background:rgba(0,0,0,.45);backdrop-filter:blur(8px);padding:14px}.group-report-modal.open{display:grid}.group-report-sheet{width:min(520px,100%);border:1px solid var(--line);border-radius:22px;background:#071321;padding:16px;box-shadow:0 28px 90px rgba(0,0,0,.5)}.group-danger-zone{border-color:rgba(255,107,122,.38);background:linear-gradient(180deg,rgba(255,107,122,.08),rgba(17,29,50,.88))}@media(min-width:768px){.group-community-actions,.group-composer-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.group-comment-form{grid-template-columns:1fr}.group-post-head{align-items:center}.group-post-menu div{position:fixed;right:12px;left:12px;top:auto;bottom:calc(110px + env(safe-area-inset-bottom));border-radius:22px}.group-reaction-chip{flex:0 0 auto}.group-media-frame img,.group-media-frame video{max-height:70dvh;object-fit:contain}}</style>"
+    delete_group_html = f"<section class='card group-danger-zone'><h2>Owner Controls</h2><p class='muted'>Delete hides this group, posts, and community chat while preserving audit history.</p><button data-delete-group-id='{group_id}'>Delete Group</button></section>" if can_delete_group else ""
+    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'><button class='primary' data-join-group-id='{group_id}'>Join Group</button><button data-open-group-chat-id='{group_id}'>Open Group Chat</button><button data-invite-group-id='{group_id}'>Invite</button><button data-report-group-id='{group_id}'>Report</button><button data-leave-group-id='{group_id}'>Leave</button></div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}<section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section><section>{post_html or '<article class=\"card\"><p>No group posts yet.</p></article>'}</section><section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by name or public Pulse ID'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>"
     script = f"""
     const groupSlug={json.dumps(slug)};
     let pendingReportPostId=null;
@@ -18304,12 +18323,15 @@ def pulse_group_detail_page(group_slug):
     function closeMenus(el){{el?.closest('details')?.removeAttribute('open')}}
     function setLoading(btn,on,label){{if(!btn)return;btn.disabled=on;if(on){{btn.dataset.originalText=btn.textContent;btn.textContent=label||'Working...'}}else if(btn.dataset.originalText){{btn.textContent=btn.dataset.originalText;delete btn.dataset.originalText}}}}
     function updateMemberCount(n){{document.querySelectorAll('[data-group-member-count]').forEach(el=>el.textContent=n)}}
+    window.reportGroupMediaFailure=(postId,url)=>{{fetch('/api/pulse/groups/media-failure',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{post_id:postId,media_url:url,page:location.pathname}})}}).catch(()=>{{}})}};
+    document.addEventListener('keydown',e=>{{if(e.key==='Escape'){{document.querySelectorAll('.group-post-menu[open]').forEach(d=>d.removeAttribute('open'));reportModal?.classList.remove('open');inviteModal?.classList.remove('open')}}}});
+    document.addEventListener('click',e=>{{if(!e.target.closest('.group-post-menu'))document.querySelectorAll('.group-post-menu[open]').forEach(d=>d.removeAttribute('open'))}});
     document.getElementById('cancelGroupReport')?.addEventListener('click',()=>{{reportModal?.classList.remove('open');pendingReportPostId=null;reportMode='post'}});
     document.getElementById('submitGroupReport')?.addEventListener('click',async e=>{{const btn=e.currentTarget;setLoading(btn,true,'Submitting...');try{{const payload={{reason:document.getElementById('groupReportReason').value,notes:document.getElementById('groupReportNotes').value}};if(reportMode==='group')await pulseApi(`/api/pulse/groups/{group_id}/report`,{{method:'POST',body:JSON.stringify(payload)}});else await pulseApi(`/api/pulse/groups/posts/${{pendingReportPostId}}/report`,{{method:'POST',body:JSON.stringify(payload)}});reportModal?.classList.remove('open');toast('Report submitted.');pendingReportPostId=null;reportMode='post';document.getElementById('groupReportNotes').value='';}}catch(err){{console.error('Group action failed',err);toast(err.message)}}finally{{setLoading(btn,false)}}}});
     document.getElementById('cancelGroupInvite')?.addEventListener('click',()=>inviteModal?.classList.remove('open'));
     document.getElementById('copyGroupInvite')?.addEventListener('click',async()=>{{try{{const d=await pulseApi(`/api/pulse/groups/{group_id}/invite-link`,{{method:'POST',body:JSON.stringify({{}})}});await navigator.clipboard.writeText(d.invite_url).catch(()=>{{}});toast('Invite link copied.')}}catch(err){{toast(err.message)}}}});
     document.getElementById('groupInviteSearch')?.addEventListener('submit',async e=>{{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupInviteResults');box.innerHTML='<p class="muted">Searching...</p>';try{{const r=await fetch('/api/pulse/users/search?q='+encodeURIComponent(q),{{credentials:'same-origin',cache:'no-store'}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Search failed.');box.innerHTML=(d.users||[]).map(u=>`<div class="messenger-user-result"><span class="avatar">${{u.avatar_url?`<img src="${{gEsc(u.avatar_url)}}" alt="">`:gEsc((u.display_name||'P').slice(0,1))}}</span><div><strong>${{gEsc(u.display_name||'Pulse user')}}</strong><p class="muted">${{gEsc(u.public_pulse_id||'')}}</p></div><button data-send-group-invite="${{u.id}}" ${{u.is_self?'disabled':''}}>Invite</button></div>`).join('')||'<p class="muted">No users found.</p>';}}catch(err){{box.innerHTML=`<p class="muted">${{gEsc(err.message)}}</p>`}}}});
-    document.addEventListener('click',async e=>{{const full=e.target.closest('[data-media-fullscreen]');if(full){{window.open(full.dataset.mediaFullscreen,'_blank','noopener');return}}const jid=e.target.closest('[data-join-group-id]'),lid=e.target.closest('[data-leave-group-id]'),rid=e.target.closest('[data-report-group-id]'),invid=e.target.closest('[data-invite-group-id]'),gcid=e.target.closest('[data-open-group-chat-id]'),inviteUser=e.target.closest('[data-send-group-invite]');const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),inv=e.target.closest('[data-invite-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),rm=e.target.closest('[data-group-remove-user]'),pin=e.target.closest('[data-group-post-pin]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(jid){{setLoading(jid,true);const d=await pulseApi(`/api/pulse/groups/${{jid.dataset.joinGroupId}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(jid,false);return}} if(lid){{setLoading(lid,true);const d=await pulseApi(`/api/pulse/groups/${{lid.dataset.leaveGroupId}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(lid,false);return}} if(gcid){{setLoading(gcid,true);const d=await pulseApi(`/api/pulse/groups/${{gcid.dataset.openGroupChatId}}/chat/open`,{{method:'POST',body:JSON.stringify({{}})}});location.href=d.next_url||('/pulse/messages/'+d.conversation_id);return}} if(invid){{inviteModal?.classList.add('open');return}} if(rid){{reportMode='group';pendingReportPostId=null;document.getElementById('groupReportTitle').textContent='Report Group';reportModal?.classList.add('open');return}} if(inviteUser){{setLoading(inviteUser,true,'Sending...');await pulseApi(`/api/pulse/groups/{group_id}/invite`,{{method:'POST',body:JSON.stringify({{invitee_user_id:inviteUser.dataset.sendGroupInvite}})}});toast('Invite sent.');setLoading(inviteUser,false);return}} if(j){{setLoading(j,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(j,false)}} if(l){{setLoading(l,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(l,false)}} if(inv){{const url=location.origin+'/pulse/groups/'+encodeURIComponent(inv.dataset.inviteGroup);if(navigator.share){{navigator.share({{title:'Join this Pulse Group',url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});toast('Group invite link ready.')}}}} if(gc){{setLoading(gc,true);const d=await pulseApi('/api/pulse/messages/group/create',{{method:'POST',body:JSON.stringify({{group_slug:gc.dataset.openGroupChat,title:document.querySelector('h1')?.textContent||'Group chat'}})}});location.href='/pulse/messages/'+d.conversation_id}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{setLoading(gr,true);const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.');setLoading(gr,false)}} if(rp){{console.log('Group post action: report',rp.dataset.groupReportPost);reportMode='post';document.getElementById('groupReportTitle').textContent='Report Post';pendingReportPostId=rp.dataset.groupReportPost;reportModal?.classList.add('open');closeMenus(rp);}} if(rm){{console.log('Group post action: remove user',rm.dataset.groupRemoveUser);if(!confirm('Remove this user from the group?'))return;setLoading(rm,true);const d=await pulseApi(`/api/pulse/groups/posts/${{rm.closest('[data-group-post]')?.dataset.groupPost||0}}/remove-user`,{{method:'POST',body:JSON.stringify({{user_id:rm.dataset.groupRemoveUser}})}});toast(d.message||'User removed from group.');closeMenus(rm);setLoading(rm,false)}} if(pin){{console.log('Group post action: pin',pin.dataset.groupPostPin);setLoading(pin,true);const d=await pulseApi(`/api/pulse/groups/posts/${{pin.dataset.groupPostPin}}/pin`,{{method:'POST',body:JSON.stringify({{}})}});toast(d.message||'Pin updated.');const post=pin.closest('[data-group-post]');let badge=post?.querySelector('.pinned-pill');if(d.pinned&&!badge)post?.querySelector('.group-post-meta')?.insertAdjacentHTML('afterbegin','<span class="pill pinned-pill">Pinned</span> ');if(!d.pinned)badge?.remove();pin.textContent=d.pinned?'Unpin Post':'Pin Post';closeMenus(pin);setLoading(pin,false)}} if(cd){{setLoading(cd,true);await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{console.log('Group post action: delete',pd.dataset.groupPostDelete);if(!confirm('Delete this group post?'))return;const post=pd.closest('[data-group-post]');setLoading(pd,true);const d=await pulseApi(`/api/pulse/groups/posts/${{pd.dataset.groupPostDelete}}/delete`,{{method:'POST',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast(d.message||'Group post deleted.');closeMenus(pd)}}}}catch(err){{console.error('Group action failed',err);toast(err.message)}}}});
+    document.addEventListener('click',async e=>{{const full=e.target.closest('[data-media-fullscreen]');if(full){{window.open(full.dataset.mediaFullscreen,'_blank','noopener');return}}const jid=e.target.closest('[data-join-group-id]'),lid=e.target.closest('[data-leave-group-id]'),rid=e.target.closest('[data-report-group-id]'),invid=e.target.closest('[data-invite-group-id]'),gcid=e.target.closest('[data-open-group-chat-id]'),deleteGroup=e.target.closest('[data-delete-group-id]'),inviteUser=e.target.closest('[data-send-group-invite]');const j=e.target.closest('[data-join-group]'),l=e.target.closest('[data-leave-group]'),r=e.target.closest('[data-report-group]'),inv=e.target.closest('[data-invite-group]'),gr=e.target.closest('[data-group-react]'),rp=e.target.closest('[data-group-report-post]'),rm=e.target.closest('[data-group-remove-user]'),pin=e.target.closest('[data-group-post-pin]'),cd=e.target.closest('[data-group-comment-delete]'),cr=e.target.closest('[data-group-comment-report]'),pd=e.target.closest('[data-group-post-delete]'),gc=e.target.closest('[data-open-group-chat]');try{{if(deleteGroup){{if(!confirm('Delete this group? This will hide the group and its posts.'))return;setLoading(deleteGroup,true,'Deleting...');const d=await pulseApi(`/api/pulse/groups/${{deleteGroup.dataset.deleteGroupId}}/delete`,{{method:'POST',body:JSON.stringify({{reason:'owner_delete'}})}});toast(d.message||'Group deleted.');location.href=d.next_url||'/pulse/groups';return}} if(jid){{setLoading(jid,true);const d=await pulseApi(`/api/pulse/groups/${{jid.dataset.joinGroupId}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(jid,false);return}} if(lid){{setLoading(lid,true);const d=await pulseApi(`/api/pulse/groups/${{lid.dataset.leaveGroupId}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(lid,false);return}} if(gcid){{setLoading(gcid,true);const d=await pulseApi(`/api/pulse/groups/${{gcid.dataset.openGroupChatId}}/chat/open`,{{method:'POST',body:JSON.stringify({{}})}});location.href=d.next_url||('/pulse/messages/'+d.conversation_id);return}} if(invid){{inviteModal?.classList.add('open');return}} if(rid){{reportMode='group';pendingReportPostId=null;document.getElementById('groupReportTitle').textContent='Report Group';reportModal?.classList.add('open');return}} if(inviteUser){{setLoading(inviteUser,true,'Sending...');await pulseApi(`/api/pulse/groups/{group_id}/invite`,{{method:'POST',body:JSON.stringify({{invitee_user_id:inviteUser.dataset.sendGroupInvite}})}});toast('Invite sent.');setLoading(inviteUser,false);return}} if(j){{setLoading(j,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(j.dataset.joinGroup)}}/join`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Joined group.');setLoading(j,false)}} if(l){{setLoading(l,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(l.dataset.leaveGroup)}}/leave`,{{method:'POST',body:JSON.stringify({{}})}});if(d.member_count!==undefined)updateMemberCount(d.member_count);toast(d.message||'Left group.');setLoading(l,false)}} if(inv){{const url=location.origin+'/pulse/groups/'+encodeURIComponent(inv.dataset.inviteGroup);if(navigator.share){{navigator.share({{title:'Join this Pulse Group',url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});toast('Group invite link ready.')}}}} if(gc){{setLoading(gc,true);const d=await pulseApi(`/api/pulse/groups/${{encodeURIComponent(gc.dataset.openGroupChat)}}/chat/open`,{{method:'POST',body:JSON.stringify({{}})}});location.href=d.next_url||('/pulse/messages/'+d.conversation_id)}} if(r){{await pulseApi('/api/pulse/groups/report',{{method:'POST',body:JSON.stringify({{group_slug:r.dataset.reportGroup,reason:'Needs review'}})}});toast('Group report sent.')}} if(gr){{setLoading(gr,true);const d=await pulseApi(`/api/pulse/groups/posts/${{gr.dataset.groupReact}}/react`,{{method:'POST',body:JSON.stringify({{reaction_type:gr.dataset.reaction}})}});updateReactions(gr.dataset.groupReact,d);toast(d.message||'Reaction updated.');setLoading(gr,false)}} if(rp){{reportMode='post';document.getElementById('groupReportTitle').textContent='Report Post';pendingReportPostId=rp.dataset.groupReportPost;reportModal?.classList.add('open');closeMenus(rp);}} if(rm){{if(!confirm('Remove this user from the group?'))return;setLoading(rm,true);const d=await pulseApi(`/api/pulse/groups/posts/${{rm.closest('[data-group-post]')?.dataset.groupPost||0}}/remove-user`,{{method:'POST',body:JSON.stringify({{user_id:rm.dataset.groupRemoveUser}})}});toast(d.message||'User removed from group.');closeMenus(rm);setLoading(rm,false)}} if(pin){{setLoading(pin,true);const d=await pulseApi(`/api/pulse/groups/posts/${{pin.dataset.groupPostPin}}/pin`,{{method:'POST',body:JSON.stringify({{}})}});toast(d.message||'Pin updated.');const post=pin.closest('[data-group-post]');let badge=post?.querySelector('.pinned-pill');if(d.pinned&&!badge)post?.querySelector('.group-post-meta')?.insertAdjacentHTML('afterbegin','<span class="pill pinned-pill">Pinned</span> ');if(!d.pinned)badge?.remove();pin.textContent=d.pinned?'Unpin Post':'Pin Post';closeMenus(pin);setLoading(pin,false)}} if(cd){{setLoading(cd,true);await pulseApi(`/api/pulse/groups/comments/${{cd.dataset.groupCommentDelete}}/delete`,{{method:'POST',body:JSON.stringify({{}})}});cd.closest('[data-comment-id]')?.remove();toast('Comment deleted.')}} if(cr){{await pulseApi(`/api/pulse/groups/comments/${{cr.dataset.groupCommentReport}}/report`,{{method:'POST',body:JSON.stringify({{reason:'Needs review'}})}});toast('Comment report sent.')}} if(pd){{if(!confirm('Delete this group post?'))return;const post=pd.closest('[data-group-post]');setLoading(pd,true);const d=await pulseApi(`/api/pulse/groups/posts/${{pd.dataset.groupPostDelete}}/delete`,{{method:'POST',body:JSON.stringify({{reason:pd.dataset.deleteReason||'owner_delete'}})}});post?.animate([{{opacity:1,transform:'scale(1)'}},{{opacity:0,transform:'scale(.98)'}}],{{duration:180,easing:'ease'}}).onfinish=()=>post.remove();toast(d.message||'Group post deleted.');closeMenus(pd)}}}}catch(err){{console.error('Group action failed',err);toast(err.message)}}}});
     document.querySelectorAll('[data-group-comment-form]').forEach(form=>form.addEventListener('submit',async e=>{{e.preventDefault();const input=form.querySelector('input[name=body]');try{{const postId=form.dataset.groupCommentForm;const d=await pulseApi(`/api/pulse/groups/posts/${{postId}}/comments`,{{method:'POST',body:JSON.stringify({{body:input.value}})}});form.previousElementSibling?.insertAdjacentHTML('beforeend',renderGroupComment(d.comment));document.querySelectorAll(`[data-comment-count="${{postId}}"]`).forEach(n=>n.textContent=Number(n.textContent||0)+1);input.value='';toast('Comment posted.')}}catch(err){{toast(err.message)}}}}));
     document.getElementById('groupPostBtn').addEventListener('click',async()=>{{try{{const fd=new FormData();fd.append('body',document.getElementById('groupPostBody').value);const file=document.getElementById('groupMediaFile').files[0];if(file)fd.append('media',file);const r=await fetch('/api/pulse/groups/{slug}/posts',{{method:'POST',credentials:'same-origin',body:fd}});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Could not post.');location.reload()}}catch(err){{toast(err.message)}}}});
     let groupLastEventId=0;
@@ -20389,6 +20411,21 @@ def api_pulse_group_chat_open(group_id):
         return api_error("Group chat could not be opened. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
+@webhook_app.route("/api/pulse/groups/<group_slug>/chat/open", methods=["POST"])
+def api_pulse_group_chat_open_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    conn.close()
+    if not group:
+        return api_error("Group not found.", 404)
+    return api_pulse_group_chat_open(int(group.get("id") or 0))
+
+
 @webhook_app.route("/api/pulse/groups/<int:group_id>/invite-link", methods=["GET", "POST"])
 def api_pulse_group_invite_link(group_id):
     init_db()
@@ -20403,6 +20440,21 @@ def api_pulse_group_invite_link(group_id):
         return api_error("Group not found.", 404)
     url = request.host_url.rstrip("/") + f"/pulse/groups/{group.get('slug') or group_id}"
     return jsonify({"ok": True, "invite_url": url, "message": "Invite link ready."})
+
+
+@webhook_app.route("/api/pulse/groups/<group_slug>/invite-link", methods=["GET", "POST"])
+def api_pulse_group_invite_link_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    conn.close()
+    if not group:
+        return api_error("Group not found.", 404)
+    return api_pulse_group_invite_link(int(group.get("id") or 0))
 
 
 @webhook_app.route("/api/pulse/groups/<int:group_id>/invite", methods=["POST"])
@@ -20433,6 +20485,21 @@ def api_pulse_group_invite(group_id):
     return jsonify({"ok": True, "message": "Invite sent."})
 
 
+@webhook_app.route("/api/pulse/groups/<group_slug>/invite", methods=["POST"])
+def api_pulse_group_invite_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    conn.close()
+    if not group:
+        return api_error("Group not found.", 404)
+    return api_pulse_group_invite(int(group.get("id") or 0))
+
+
 @webhook_app.route("/api/pulse/groups/<int:group_id>/report", methods=["POST"])
 def api_pulse_group_report_id(group_id):
     init_db()
@@ -20441,6 +20508,99 @@ def api_pulse_group_report_id(group_id):
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     return pulse_group_report_common(user, group_id=group_id, reason=payload.get("reason") or "Needs review", notes=payload.get("notes") or "")
+
+
+@webhook_app.route("/api/pulse/groups/<group_slug>/report", methods=["POST"])
+def api_pulse_group_report_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    return pulse_group_report_common(user, group_slug=group_slug, reason=payload.get("reason") or "Needs review", notes=payload.get("notes") or "")
+
+
+@webhook_app.route("/api/pulse/groups/<int:group_id>/delete", methods=["POST"])
+def api_pulse_group_delete_id(group_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    reason = clean_html(payload.get("reason") or "owner_delete")[:240]
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_groups WHERE id=? LIMIT 1", (group_id,))
+        group = dict(cur.fetchone() or {})
+        if not group:
+            conn.close()
+            return api_error("Group not found.", 404, trace_id)
+        cur.execute("SELECT role FROM pulse_group_members WHERE group_id=? AND user_id=? LIMIT 1", (group_id, user["user_id"]))
+        role = dict(cur.fetchone() or {}).get("role") or ""
+        if not pulse_group_can_delete_group(group, user, role):
+            conn.close()
+            return api_error("You do not have permission to delete this group.", 403, trace_id)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute("UPDATE pulse_groups SET status='deleted', deleted_at=?, deleted_by=?, delete_reason=?, updated_at=? WHERE id=?", (now, user["user_id"], reason, now, group_id))
+        cur.execute("UPDATE pulse_group_posts SET status='deleted', deleted_at=COALESCE(deleted_at, ?), deleted_by=COALESCE(deleted_by, ?), delete_reason=COALESCE(delete_reason, 'group_deleted'), updated_at=? WHERE group_id=? AND deleted_at IS NULL", (now, user["user_id"], now, group_id))
+        cur.execute("UPDATE pulse_conversations SET status='archived', updated_at=?, last_activity_at=? WHERE group_id=? OR linked_group_id=?", (now, now, group_id, group_id))
+        cur.execute(
+            "INSERT INTO pulse_group_action_logs (group_id, post_id, user_id, action, status, trace_id, message, created_at) VALUES (?, 0, ?, 'delete_group', 'success', ?, ?, ?)",
+            (group_id, user["user_id"], trace_id, reason, now),
+        )
+        conn.commit(); conn.close()
+        pulse_emit_event("group_deleted", {"group_id": group_id, "deleted_by": user["user_id"]}, user["user_id"], group_id)
+        return jsonify({"ok": True, "message": "Group deleted.", "group_id": group_id, "next_url": "/pulse/groups"})
+    except Exception as exc:
+        conn.rollback()
+        try:
+            cur.execute(
+                "INSERT INTO pulse_group_action_logs (group_id, post_id, user_id, action, status, trace_id, message, created_at) VALUES (?, 0, ?, 'delete_group', 'failed', ?, ?, ?)",
+                (group_id, user.get("user_id"), trace_id, str(exc)[:1000], datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        conn.close()
+        logging.exception("PULSE_GROUP_DELETE_FAILED trace_id=%s group_id=%s user_id=%s", trace_id, group_id, user.get("user_id"))
+        return api_error("Group could not be deleted. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+
+
+@webhook_app.route("/api/pulse/groups/<group_slug>/delete", methods=["POST"])
+def api_pulse_group_delete_slug(group_slug):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_groups WHERE slug=? OR id=? LIMIT 1", (clean_html(group_slug), safe_int(group_slug, 0)))
+    group = dict(cur.fetchone() or {})
+    conn.close()
+    if not group:
+        return api_error("Group not found.", 404)
+    return api_pulse_group_delete_id(int(group.get("id") or 0))
+
+
+@webhook_app.route("/api/pulse/groups/media-failure", methods=["POST"])
+def api_pulse_group_media_failure():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    post_id = safe_int(payload.get("post_id"), 0)
+    media_url = clean_html(payload.get("media_url") or "")[:1000]
+    page = clean_html(payload.get("page") or "")[:240]
+    conn = db(); cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO pulse_group_action_logs (group_id, post_id, user_id, action, status, trace_id, message, created_at) VALUES (0, ?, ?, 'media_load_failed', 'failed', ?, ?, ?)",
+        (post_id, user["user_id"], trace_id, json.dumps({"media_url": media_url, "page": page}, default=str)[:1000], datetime.utcnow().isoformat(timespec="seconds")),
+    )
+    conn.commit(); conn.close()
+    logging.warning("PULSE_GROUP_MEDIA_LOAD_FAILED trace_id=%s post_id=%s media_url=%s page=%s", trace_id, post_id, media_url, page)
+    return jsonify({"ok": True, "message": "Media failure logged.", "trace_id": trace_id})
 
 
 @webhook_app.route("/api/pulse/groups/report", methods=["POST"])
@@ -22187,6 +22347,7 @@ def admin_groups_health_page():
         "pulse_group_post_reactions": ["id", "group_post_id", "user_id", "reaction_type", "created_at", "updated_at"],
         "pulse_group_post_reports": ["id", "group_post_id", "reporter_user_id", "reason", "status"],
         "pulse_group_comment_reports": ["id", "comment_id", "group_post_id", "reporter_user_id", "reason", "status"],
+        "pulse_group_action_logs": ["id", "group_id", "post_id", "user_id", "action", "status", "trace_id", "message", "created_at"],
     }
     table_rows = []
     for table, cols in required.items():
@@ -22202,17 +22363,37 @@ def admin_groups_health_page():
     reaction_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_reactions")
     comment_reports = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_comment_reports WHERE status='open'")
     deleted_posts = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_posts WHERE deleted_at IS NOT NULL OR COALESCE(status,'')='deleted'")
+    deleted_groups = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_groups WHERE deleted_at IS NOT NULL OR COALESCE(status,'')='deleted'")
+    join_failures = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_action_logs WHERE action='join_group' AND status='failed'")
+    leave_failures = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_action_logs WHERE action='leave_group' AND status='failed'")
+    delete_failures = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_action_logs WHERE action='delete_group' AND status='failed'")
+    media_failures = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_action_logs WHERE action='media_load_failed'")
+    post_action_failures = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_action_logs WHERE action LIKE 'post_%' AND status='failed'")
+    missing_media_files = 0
+    orphan_media_records = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_media m WHERE NOT EXISTS (SELECT 1 FROM pulse_group_posts p WHERE p.id=m.group_post_id)")
+    try:
+        cur.execute("SELECT media_url FROM pulse_group_post_media WHERE COALESCE(media_url,'') LIKE '/static/%' LIMIT 500")
+        for row in cur.fetchall():
+            media_path = str(dict(row).get("media_url") or "").lstrip("/")
+            if media_path and not os.path.exists(os.path.join(webhook_app.root_path, media_path)):
+                missing_media_files += 1
+    except Exception:
+        missing_media_files = 0
     missing_media_cols = [c for c in ["post_type", "media_url", "thumbnail_url", "media_type", "media_metadata", "moderation_status"] if c not in set(table_columns(cur, "pulse_group_posts"))]
     cur.execute("SELECT id, group_post_id, user_id, status, created_at FROM pulse_group_post_comments ORDER BY id DESC LIMIT 12")
     latest_comments = [dict(row) for row in cur.fetchall()]
     latest_comment_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{c.get('group_post_id')}</td><td>{c.get('user_id')}</td><td>{clean_html(c.get('status') or '')}</td><td>{smart_time_html(c.get('created_at'))}</td></tr>" for c in latest_comments)
     attempt_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('payload_summary') or '')}</td><td>{clean_html(a.get('error_message') or '')}</td><td>{smart_time_html(a.get('created_at'))}</td></tr>" for a in attempts)
+    cur.execute("SELECT * FROM pulse_group_action_logs ORDER BY id DESC LIMIT 20")
+    action_logs = [dict(row) for row in cur.fetchall()]
+    action_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{a.get('group_id') or ''}</td><td>{a.get('post_id') or ''}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('message') or '')}</td><td>{smart_time_html(a.get('created_at'))}</td></tr>" for a in action_logs)
     conn.close()
     body = f"""
     <h1>Groups Health</h1><p class='muted'>Debug surface for Pulse group creation, schema health, and recent traceable failures.</p>
-    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Comments</h2><p class='metric'>{comment_count}</p></div><div class='card'><h2>Reactions</h2><p class='metric'>{reaction_count}</p></div><div class='card'><h2>Open Post Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Open Comment Reports</h2><p class='metric'>{comment_reports}</p></div><div class='card'><h2>Deleted Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{clean_html(', '.join(missing_media_cols) or 'none')}</p></div></section>
+    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Media Load Failures</h2><p class='metric'>{media_failures}</p></div><div class='card'><h2>Missing Media Files</h2><p class='metric'>{missing_media_files}</p></div><div class='card'><h2>Orphan Media</h2><p class='metric'>{orphan_media_records}</p></div><div class='card'><h2>Join Failures</h2><p class='metric'>{join_failures}</p></div><div class='card'><h2>Leave Failures</h2><p class='metric'>{leave_failures}</p></div><div class='card'><h2>Delete Failures</h2><p class='metric'>{delete_failures}</p></div><div class='card'><h2>Post Action Failures</h2><p class='metric'>{post_action_failures}</p></div><div class='card'><h2>Comments</h2><p class='metric'>{comment_count}</p></div><div class='card'><h2>Reactions</h2><p class='metric'>{reaction_count}</p></div><div class='card'><h2>Open Post Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Open Comment Reports</h2><p class='metric'>{comment_reports}</p></div><div class='card'><h2>Deleted Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Deleted Groups</h2><p class='metric'>{deleted_groups}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{clean_html(', '.join(missing_media_cols) or 'none')}</p></div></section>
     <section class='card'><h2>Schema</h2><table class='table'><tr><th>Table</th><th>Exists</th><th>Missing Columns</th></tr>{''.join(table_rows)}</table></section>
     <section class='card'><h2>Latest Group Comments</h2><table class='table'><tr><th>ID</th><th>Post</th><th>User</th><th>Status</th><th>Time</th></tr>{latest_comment_rows or '<tr><td colspan=5>No comments yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Latest Group Action Logs</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Group</th><th>Post</th><th>Trace</th><th>Message</th><th>Time</th></tr>{action_rows or '<tr><td colspan=8>No group action logs yet.</td></tr>'}</table></section>
     <section class='card'><h2>Latest Group Creation Attempts</h2><table class='table'><tr><th>ID</th><th>Status</th><th>Trace</th><th>Payload</th><th>Error</th><th>Time</th></tr>{attempt_rows or '<tr><td colspan=6>No attempts logged yet.</td></tr>'}</table></section>
     <p><a class='button' href='/pulse/groups'>Open Groups</a> <a class='button' href='/admin/group-chat-health'>Group Chat Health</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
     """
@@ -30440,6 +30621,9 @@ def init_db():
         ("member_count", "INTEGER DEFAULT 0"),
         ("trust_level", "TEXT DEFAULT 'standard'"),
         ("featured", "INTEGER DEFAULT 0"),
+        ("deleted_at", "TEXT"),
+        ("deleted_by", "INTEGER"),
+        ("delete_reason", "TEXT"),
     ], conn=conn)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_pulse_groups_slug ON pulse_groups(slug)")
     cur.execute("""
@@ -30571,6 +30755,19 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_group_action_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER DEFAULT 0,
+        post_id INTEGER DEFAULT 0,
+        user_id INTEGER,
+        action TEXT,
+        status TEXT,
+        trace_id TEXT,
+        message TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_roles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         group_id INTEGER,
@@ -30584,6 +30781,7 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_posts_group ON pulse_group_posts(group_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_comments_post ON pulse_group_post_comments(group_post_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_reactions_post ON pulse_group_post_reactions(group_post_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_group_action_logs ON pulse_group_action_logs(action, status, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_conversations_group ON pulse_conversations(group_id, conversation_type)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_group_creation_attempts (
