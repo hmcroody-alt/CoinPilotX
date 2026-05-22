@@ -17742,7 +17742,7 @@ def pulse_space_detail_page(slug):
     cur.execute("SELECT title, body, post_type, topic, quality_score, energy_score, created_at FROM pulse_ai_posts WHERE space_slug=? AND status IN ('published','queued','pending_approval') ORDER BY id DESC LIMIT 3", (slug,))
     ai_posts = [dict(row) for row in cur.fetchall()]
     conn.close()
-    ai_html = "".join(f"<article class='card'><span class='pill'>AI {clean_html(row.get('post_type') or 'insight')}</span><h3>{clean_html(row.get('title') or 'Space intelligence')}</h3><p>{clean_html((row.get('body') or '')[:420])}{'...' if len(row.get('body') or '') > 420 else ''}</p><p><span class='pill'>Quality {int(row.get('quality_score') or 0)}%</span> <span class='pill'>Energy {int(row.get('energy_score') or 0)}%</span> <span class='pill'>{clean_html(row.get('topic') or 'topic')}</span></p></article>" for row in ai_posts)
+    ai_html = "".join(f"<article class='card'><span class='pill'>Pulse Intelligence</span> <span class='pill'>{clean_html(row.get('post_type') or 'insight')}</span><h3>{clean_html(row.get('title') or 'Space intelligence')}</h3><p>{clean_html((row.get('body') or '')[:420])}{'...' if len(row.get('body') or '') > 420 else ''}</p><p><span class='pill'>Quality {int(row.get('quality_score') or 0)}%</span> <span class='pill'>Energy {int(row.get('energy_score') or 0)}%</span> <span class='pill'>{clean_html(row.get('topic') or 'topic')}</span></p></article>" for row in ai_posts)
     main = f"""
     <section class='card'><h2>Pinned Knowledge</h2><p>{clean_html(space['description'])}</p><p>Discussion prompt: What is one useful lesson, warning, question, or resource you can share with this space today?</p><div class='actions'><button class='primary' data-join-space='{clean_html(slug)}'>Join Space</button><a class='button' href='/pulse/create'>Create Full Post</a></div></section>
     <section class='card'><h2>AI Intelligence Drops</h2><p class='muted'>This space receives morning and evening educational prompts designed to spark safer, smarter discussion.</p>{ai_html or '<p class="muted">The first AI intelligence drops are scheduled.</p>'}</section>
@@ -23482,6 +23482,22 @@ def admin_spaces_command_page():
             result = pulse_ai.run_due_space_ai_posts(cur, PULSE_SPACES, pulse_create_post=pulse_feed_engine.create_post, force=True, limit=16)
             conn.commit()
             message = f"Space AI generated {int(result.get('ran') or 0)} posts."
+        elif action in {"unpublish_ai", "approve_ai"}:
+            ai_post_id = safe_int(request.form.get("ai_post_id"), 0)
+            cur.execute("UPDATE pulse_ai_posts SET status=?, updated_at=? WHERE id=?", ("published" if action == "approve_ai" else "unpublished", datetime.utcnow().isoformat(timespec="seconds"), ai_post_id))
+            conn.commit()
+            message = "AI post status updated."
+        elif action == "regenerate_ai":
+            ai_post_id = safe_int(request.form.get("ai_post_id"), 0)
+            cur.execute("SELECT space_slug, schedule_slot FROM pulse_ai_posts WHERE id=? LIMIT 1", (ai_post_id,))
+            old = dict(cur.fetchone() or {})
+            space = next((item for item in PULSE_SPACES if item["slug"] == old.get("space_slug")), None)
+            if space:
+                cur.execute("UPDATE pulse_ai_posts SET status='regenerated', updated_at=? WHERE id=?", (datetime.utcnow().isoformat(timespec="seconds"), ai_post_id))
+                from services.pulse_ai.space_post_scheduler import publish_space_ai_post
+                publish_space_ai_post(cur, space, old.get("schedule_slot") or "morning", pulse_create_post=pulse_feed_engine.create_post, approve_only=False)
+                conn.commit()
+                message = "AI post regenerated."
         conn.close()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
@@ -23490,7 +23506,7 @@ def admin_spaces_command_page():
     ai_counts = {dict(row).get("space_slug"): int(dict(row).get("total") or 0) for row in cur.fetchall()}
     cur.execute("SELECT space_slug, SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) AS enabled, MIN(next_run_at) AS next_run FROM pulse_ai_schedules GROUP BY space_slug")
     ai_schedules = {dict(row).get("space_slug"): dict(row) for row in cur.fetchall()}
-    cur.execute("SELECT title, space_slug, quality_score, energy_score, status, created_at FROM pulse_ai_posts ORDER BY id DESC LIMIT 12")
+    cur.execute("SELECT id, title, space_slug, post_type, topic, quality_score, topic_score, trust_score, energy_score, sentiment_score, status, metadata_json, schedule_slot, created_at FROM pulse_ai_posts ORDER BY id DESC LIMIT 18")
     latest_ai_rows = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = ""
@@ -23499,8 +23515,15 @@ def admin_spaces_command_page():
         schedule = ai_schedules.get(space["slug"], {})
         ai_enabled = int(schedule.get("enabled") or 0)
         rows += f"<tr><td>{clean_html(space['name'])}</td><td>{clean_html(space.get('category') or '')}</td><td>{clean_html(space.get('region') or '')}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {clean_html(schedule.get('next_run') or 'scheduled')}</span></td><td><form method='post'><input type='hidden' name='slug' value='{clean_html(space['slug'])}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
-    latest_ai = "".join(f"<tr><td>{clean_html(row.get('space_slug') or '')}</td><td>{clean_html(row.get('title') or '')}</td><td>{int(row.get('quality_score') or 0)}%</td><td>{int(row.get('energy_score') or 0)}%</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>" for row in latest_ai_rows)
-    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global Pulse Spaces network.</p><p>{clean_html(message)}</p><section class='card'><form method='post'><button class='button primary' name='action' value='run_ai'>Run due AI posts now</button></form></section><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>AI</th><th>Actions</th></tr>{rows}</table></section><section class='card'><h2>Latest AI Posts</h2><table class='table'><tr><th>Space</th><th>Title</th><th>Quality</th><th>Energy</th><th>Status</th><th>Created</th></tr>{latest_ai}</table></section>"
+    latest_ai = ""
+    for row in latest_ai_rows:
+        try:
+            meta = json.loads(row.get("metadata_json") or "{}")
+        except Exception:
+            meta = {}
+        duplicate = (meta.get("duplicate_risk") or {}).get("risk", 0)
+        latest_ai += f"<tr><td>{clean_html(row.get('space_slug') or '')}</td><td>{clean_html(row.get('title') or '')}<br><span class='muted'>{clean_html(row.get('post_type') or '')} · {clean_html(row.get('topic') or '')} · {clean_html(row.get('schedule_slot') or '')}</span></td><td>{int(row.get('quality_score') or 0)}%</td><td>{int(row.get('trust_score') or 0)}%</td><td>{int(row.get('energy_score') or 0)}%</td><td>{int(row.get('topic_score') or 0)}%</td><td>{int(duplicate or 0)}%</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('created_at') or '')}</td><td><form method='post'><input type='hidden' name='ai_post_id' value='{int(row.get('id') or 0)}'><button name='action' value='regenerate_ai'>Regenerate</button><button name='action' value='approve_ai'>Approve</button><button name='action' value='unpublish_ai'>Unpublish</button></form></td></tr>"
+    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global Pulse Spaces network.</p><p>{clean_html(message)}</p><section class='card'><form method='post'><button class='button primary' name='action' value='run_ai'>Run due AI posts now</button></form></section><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>AI</th><th>Actions</th></tr>{rows}</table></section><section class='card'><h2>AI Post Review</h2><p class='muted'>Pulse Intelligence posts are generated by category-aware safety rules, scored for quality, duplicate risk, trust, and engagement before publishing.</p><table class='table'><tr><th>Space</th><th>Post</th><th>Quality</th><th>Trust</th><th>Energy</th><th>Topic</th><th>Dup Risk</th><th>Status</th><th>Created</th><th>Controls</th></tr>{latest_ai}</table></section>"
     return admin_page_html("Spaces Command", body, admin)
 
 

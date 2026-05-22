@@ -79,3 +79,32 @@ def passes_quality(text, tags=None, minimum=MIN_QUALITY_SCORE):
     result = score_post(text, tags=tags)
     return result["score"] >= minimum and not result["blocked"], result
 
+
+def duplicate_risk(candidate, recent_posts=None):
+    candidate = candidate or {}
+    recent_posts = recent_posts or []
+    hook = str(candidate.get("hook") or "").strip().lower()
+    title = str(candidate.get("title") or "").strip().lower()
+    topic = str(candidate.get("topic") or "").strip().lower()
+    body = str(candidate.get("body") or "").strip().lower()
+    risk = 0
+    reasons = []
+    for post in recent_posts:
+        recent_title = str(post.get("title") or "").strip().lower()
+        recent_topic = str(post.get("topic") or "").strip().lower()
+        recent_body = str(post.get("body") or "").strip().lower()
+        metadata = post.get("metadata") or {}
+        recent_hook = str(metadata.get("hook") or "").strip().lower()
+        if hook and hook == recent_hook:
+            risk += 44
+            reasons.append("same_hook")
+        if title and title == recent_title:
+            risk += 30
+            reasons.append("same_title")
+        if topic and topic == recent_topic:
+            risk += 18
+            reasons.append("same_topic")
+        if body and recent_body and body[:180] == recent_body[:180]:
+            risk += 55
+            reasons.append("same_opening")
+    return {"risk": min(100, risk), "reasons": reasons, "duplicate": risk >= 45}

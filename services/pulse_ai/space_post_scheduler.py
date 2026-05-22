@@ -6,6 +6,7 @@ import logging
 
 from .space_ai_engine import generate_space_post, live_space_slugs
 from .space_prompt_builder import DEFAULT_FORMATS
+from .space_quality_guard import duplicate_risk
 from .space_topic_memory import get_space_memory, update_space_memory
 
 SCHEDULE_SLOTS = (("morning", "09:00"), ("evening", "19:00"))
@@ -107,12 +108,45 @@ def _insert_ai_post(cur, generated, status="published", pulse_post_id=0):
 
 def generate_publishable_post(cur, space, slot):
     memory = get_space_memory(cur, space.get("slug") or "")
-    for attempt in range(6):
+    recent = recent_ai_posts(cur, space.get("slug") or "", limit=10)
+    last_generated = None
+    for attempt in range(8):
         post_type = DEFAULT_FORMATS[(attempt + (0 if slot == "morning" else 4)) % len(DEFAULT_FORMATS)]
         generated = generate_space_post(space, post_type=post_type, memory=memory, schedule_slot=slot, attempt=attempt)
-        if generated.get("ok"):
+        risk = duplicate_risk(generated, recent)
+        generated.setdefault("metadata", {})["duplicate_risk"] = risk
+        if generated.get("metadata_json"):
+            try:
+                payload = json.loads(generated["metadata_json"])
+                payload["duplicate_risk"] = risk
+                generated["metadata_json"] = json.dumps(payload, ensure_ascii=True)
+            except Exception:
+                pass
+        last_generated = generated
+        if generated.get("ok") and not risk.get("duplicate"):
             return generated
-    return generated
+    return last_generated or generated
+
+
+def recent_ai_posts(cur, space_slug, limit=10):
+    cur.execute(
+        """
+        SELECT title, body, topic, metadata_json
+        FROM pulse_ai_posts
+        WHERE space_slug=? AND status!='rejected'
+        ORDER BY id DESC LIMIT ?
+        """,
+        (space_slug, int(limit or 10)),
+    )
+    rows = []
+    for row in cur.fetchall():
+        item = _row_dict(row)
+        try:
+            item["metadata"] = json.loads(item.get("metadata_json") or "{}")
+        except Exception:
+            item["metadata"] = {}
+        rows.append(item)
+    return rows
 
 
 def publish_space_ai_post(cur, space, slot, pulse_create_post=None, approve_only=False):
@@ -170,6 +204,9 @@ def run_due_space_ai_posts(cur, spaces, pulse_create_post=None, force=False, lim
             "UPDATE pulse_ai_schedules SET last_run_at=?, next_run_at=?, updated_at=? WHERE id=?",
             (now, next_run_for_slot(slot), now, schedule.get("id")),
         )
+        try:
+            cur.connection.commit()
+        except Exception:
+            pass
         results.append(result)
     return {"ok": True, "ran": len(results), "results": results}
-
