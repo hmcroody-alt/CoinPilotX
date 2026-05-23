@@ -56,6 +56,7 @@ REQUIRED_ROUTES = [
     "/pulse/teacher/payouts",
     "/pulse/creator/payouts",
     "/admin/payments",
+    "/admin/payments-command-center",
     "/admin/treasury",
     "/admin/platform-revenue",
     "/admin/creator-payouts",
