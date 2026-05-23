@@ -81,6 +81,7 @@ from services import (
     ad_policy_engine,
     creator_economy_engine,
     creator_economy_service,
+    platform_treasury_service,
     creator_monetization_engine,
     creator_ai_copilot,
     crowd_energy_engine,
@@ -26191,6 +26192,7 @@ def admin_payments_page():
     wallet_rows = "".join(f"<tr><td>{w.get('id')}</td><td>{int(w.get('user_id') or 0)}</td><td>{clean_html(w.get('wallet_type') or '')}</td><td>${int(w.get('pending_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('available_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('lifetime_fees_cents') or 0)/100:.2f}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (creator_summary.get("wallets") or []))
     body = f"""
     <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments backed by internal wallets, append-only ledger entries, webhook idempotency, entitlements, and audit logs.</p>
+    <section class='card'><h2>Treasury Modules</h2><p class='muted'>Platform fee revenue now flows into the CoinPilotXAI treasury ledger and settlement system.</p><div class='actions'><a class='button primary' href='/admin/treasury'>Treasury</a><a class='button' href='/admin/platform-revenue'>Platform Revenue</a><a class='button' href='/admin/creator-payouts'>Creator Payouts</a><a class='button' href='/admin/fee-ledger'>Fee Ledger</a><a class='button' href='/admin/escrow'>Escrow</a><a class='button' href='/admin/settlements'>Settlement Engine</a><a class='button' href='/admin/stripe-connect'>Stripe Connect</a><a class='button' href='/admin/tax-center'>Tax Center</a><a class='button' href='/admin/revenue-analytics'>Revenue Analytics</a><a class='button' href='/admin/financial-audit'>Financial Audit</a><a class='button' href='/admin/refunds'>Refund Center</a><a class='button' href='/admin/disputes'>Dispute Resolution</a></div></section>
     <section class='card'><h2>Provider Status</h2><pre>{clean_html(json.dumps(provider, indent=2, default=str))}</pre></section>
     <section class='grid'>{core_cards}</section>
     <section class='card'><h2>Creator Economy Ledger Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Buyer</th><th>Seller</th><th>Gross</th><th>Fee</th><th>Status</th><th>Trace</th></tr>{ledger_rows or '<tr><td colspan=8>No creator economy transactions yet.</td></tr>'}</table></section>
@@ -26201,6 +26203,72 @@ def admin_payments_page():
     <section class='card'><h2>Payout Accounts</h2><table class='table'><tr><th>ID</th><th>User</th><th>Seller Type</th><th>Onboarding</th><th>Charges</th><th>Payouts</th><th>Stripe Account</th></tr>{acct_rows or '<tr><td colspan=7>No payout accounts yet.</td></tr>'}</table></section>
     """
     return admin_page_html("Payments", body, admin)
+
+
+@webhook_app.route("/admin/treasury", methods=["GET"])
+@webhook_app.route("/admin/platform-revenue", methods=["GET"])
+@webhook_app.route("/admin/creator-payouts", methods=["GET"])
+@webhook_app.route("/admin/fee-ledger", methods=["GET"])
+@webhook_app.route("/admin/escrow", methods=["GET"])
+@webhook_app.route("/admin/settlements", methods=["GET"])
+@webhook_app.route("/admin/stripe-connect", methods=["GET"])
+@webhook_app.route("/admin/tax-center", methods=["GET"])
+@webhook_app.route("/admin/revenue-analytics", methods=["GET"])
+@webhook_app.route("/admin/financial-audit", methods=["GET"])
+@webhook_app.route("/admin/refunds", methods=["GET"])
+@webhook_app.route("/admin/disputes", methods=["GET"])
+def admin_treasury_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    data = platform_treasury_service.treasury_summary()
+    provider = payment_provider.provider_status()
+    summary = data.get("summary") or {}
+
+    def dollars(value):
+        return f"${int(value or 0) / 100:,.2f}"
+
+    cards = [
+        ("Total Platform Revenue", dollars(summary.get("total_platform_revenue_cents")), "All earned platform fees posted to treasury."),
+        ("Today Revenue", dollars(summary.get("today_revenue_cents")), "Current UTC-day platform fee intake."),
+        ("Monthly Revenue", dollars(summary.get("monthly_revenue_cents")), "Month-to-date platform fee intake."),
+        ("Creator Sales Volume", dollars(summary.get("creator_sales_volume_cents")), "Gross creator economy volume."),
+        ("Merchant Revenue", dollars(summary.get("merchant_revenue_cents")), "Marketplace platform fee share."),
+        ("Teacher Revenue", dollars(summary.get("teacher_revenue_cents")), "Course, lesson, and live class fee share."),
+        ("Premium Revenue", dollars(summary.get("premium_revenue_cents")), "Premium upgrade and subscription revenue."),
+        ("Pending Payouts", dollars(summary.get("pending_payouts_cents")), "Queued creator, teacher, and merchant payouts."),
+        ("Failed Payouts", int(summary.get("failed_payouts") or 0), "Failures requiring operator review."),
+        ("Refund Rate", f"{int(summary.get('refund_rate_bps') or 0) / 100:.2f}%", "Refunds divided by settled transactions."),
+    ]
+    card_html = "".join(f"<article class='treasury-card'><span>{clean_html(label)}</span><strong>{clean_html(str(value))}</strong><p>{clean_html(note)}</p></article>" for label, value, note in cards)
+    wallet_rows = "".join(f"<tr><td>{clean_html(w.get('wallet_key') or '')}</td><td>{clean_html(w.get('currency') or 'USD')}</td><td>{dollars(w.get('available_balance_cents'))}</td><td>{dollars(w.get('pending_balance_cents'))}</td><td>{dollars(w.get('lifetime_revenue_cents'))}</td><td>{dollars(w.get('lifetime_refunds_cents'))}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (data.get("wallets") or []))
+    treasury_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('transaction_type') or '')}</td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')}</td><td>{dollars(t.get('gross_amount_cents'))}</td><td>{dollars(t.get('platform_fee_cents'))}</td><td>{dollars(t.get('creator_net_cents'))}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('trace_id') or '')}</td></tr>" for t in (data.get("treasury_transactions") or []))
+    fee_rows = "".join(f"<tr><td>{f.get('id')}</td><td>{clean_html(f.get('fee_type') or '')}</td><td>{clean_html(f.get('source_type') or '')} #{clean_html(f.get('source_id') or '')}</td><td>{dollars(f.get('amount_cents'))}</td><td>{clean_html(f.get('status') or '')}</td><td>{clean_html(f.get('provider_reference') or '')}</td><td>{clean_html(f.get('trace_id') or '')}</td></tr>" for f in (data.get("fee_ledger") or []))
+    payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{int(p.get('user_id') or 0)}</td><td>{clean_html(p.get('seller_type') or '')}</td><td>{dollars(p.get('amount_cents'))}</td><td>{clean_html(p.get('status') or '')}</td><td>{clean_html(p.get('risk_status') or '')}</td><td>{smart_time_html(p.get('scheduled_for'))}</td><td>{clean_html(p.get('trace_id') or '')}</td></tr>" for p in (data.get("payout_queue") or []))
+    escrow_rows = "".join(f"<tr><td>{e.get('id')}</td><td>{int(e.get('seller_user_id') or 0)}</td><td>{clean_html(e.get('seller_type') or '')}</td><td>{dollars(e.get('amount_cents'))}</td><td>{clean_html(e.get('status') or '')}</td><td>{smart_time_html(e.get('release_after'))}</td><td>{clean_html(e.get('trace_id') or '')}</td></tr>" for e in (data.get("escrow_holds") or []))
+    revenue_rows = "".join(f"<tr><td>{clean_html(r.get('period_key') or '')}</td><td>{clean_html(r.get('revenue_source') or '')}</td><td>{clean_html(r.get('seller_type') or '')}</td><td>{clean_html(r.get('item_type') or '')}</td><td>{dollars(r.get('gross_amount_cents'))}</td><td>{dollars(r.get('platform_fee_cents'))}</td><td>{dollars(r.get('creator_net_cents'))}</td><td>{int(r.get('transaction_count') or 0)}</td></tr>" for r in (data.get("revenue_breakdown") or []))
+    creator_rows = "".join(f"<tr><td>{int(c.get('user_id') or 0)}</td><td>{clean_html(c.get('seller_type') or '')}</td><td>{dollars(c.get('pending_balance_cents'))}</td><td>{dollars(c.get('available_balance_cents'))}</td><td>{dollars(c.get('lifetime_gross_cents'))}</td><td>{dollars(c.get('lifetime_fees_cents'))}</td><td>{dollars(c.get('lifetime_net_cents'))}</td><td>{'frozen' if c.get('frozen') else 'clear'}</td></tr>" for c in (data.get("creator_balances") or []))
+    body = f"""
+    <style>
+    .treasury-hero{{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.2);border-radius:24px;padding:24px;background:radial-gradient(circle at top left,rgba(120,255,214,.2),transparent 32%),linear-gradient(135deg,rgba(9,14,30,.96),rgba(6,9,19,.98));box-shadow:0 24px 80px rgba(0,0,0,.35)}}
+    .treasury-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:16px 0}}
+    .treasury-card{{border:1px solid rgba(122,245,211,.18);border-radius:20px;padding:16px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 14px 40px rgba(0,0,0,.22)}}
+    .treasury-card span{{display:block;color:#9fb2c3;font-weight:800;font-size:.86rem}}.treasury-card strong{{display:block;font-size:1.75rem;margin:7px 0;color:#ecfbff}}.treasury-card p{{color:#9fb2c3;margin:0}}
+    .treasury-orbit{{height:8px;border-radius:999px;background:linear-gradient(90deg,#7af5d3,#69d7ff,#f5d76e);box-shadow:0 0 28px rgba(105,215,255,.45);margin-top:16px}}
+    </style>
+    <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPilotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
+    <section class='treasury-grid'>{card_html}</section>
+    <section class='card'><h2>Treasury Health</h2><pre>{clean_html(json.dumps({'stripe': provider, 'treasury_tables': 'active', 'settlement_engine': 'ledger_ready', 'payout_safety': 'queue_and_review'}, indent=2, default=str))}</pre></section>
+    <section class='card table-wrap'><h2>Platform Wallets</h2><table class='table'><tr><th>Wallet</th><th>Currency</th><th>Available</th><th>Pending</th><th>Lifetime Revenue</th><th>Refunds</th><th>Status</th></tr>{wallet_rows or '<tr><td colspan=7>No platform wallets yet.</td></tr>'}</table></section>
+    <section class='card table-wrap'><h2>Treasury Transactions</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Seller</th><th>Item</th><th>Gross</th><th>Fee</th><th>Creator Net</th><th>Status</th><th>Trace</th></tr>{treasury_rows or '<tr><td colspan=9>No treasury transactions yet.</td></tr>'}</table></section>
+    <section class='card table-wrap'><h2>Fee Ledger</h2><table class='table'><tr><th>ID</th><th>Fee Type</th><th>Source</th><th>Amount</th><th>Status</th><th>Provider Ref</th><th>Trace</th></tr>{fee_rows or '<tr><td colspan=7>No fee ledger entries yet.</td></tr>'}</table></section>
+    <section class='card table-wrap'><h2>Payout Queue</h2><table class='table'><tr><th>ID</th><th>User</th><th>Seller</th><th>Amount</th><th>Status</th><th>Risk</th><th>Scheduled</th><th>Trace</th></tr>{payout_rows or '<tr><td colspan=8>No queued payouts yet.</td></tr>'}</table></section>
+    <section class='card table-wrap'><h2>Escrow Holds</h2><table class='table'><tr><th>ID</th><th>Seller</th><th>Type</th><th>Amount</th><th>Status</th><th>Release</th><th>Trace</th></tr>{escrow_rows or '<tr><td colspan=7>No escrow holds yet.</td></tr>'}</table></section>
+    <section class='card table-wrap'><h2>Revenue Breakdown</h2><table class='table'><tr><th>Period</th><th>Source</th><th>Seller</th><th>Item</th><th>Gross</th><th>Fee</th><th>Creator Net</th><th>Count</th></tr>{revenue_rows or '<tr><td colspan=8>No revenue breakdown yet.</td></tr>'}</table></section>
+    <section class='card table-wrap'><h2>Creator Balances</h2><table class='table'><tr><th>User</th><th>Seller Type</th><th>Pending</th><th>Available</th><th>Gross</th><th>Fees</th><th>Net</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=8>No creator balances yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("Treasury", body, admin)
 
 
 @webhook_app.route("/admin/sponsorships", methods=["GET", "POST"])
@@ -33686,6 +33754,199 @@ def init_db():
         updated_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wallet_key TEXT UNIQUE,
+        currency TEXT DEFAULT 'USD',
+        available_balance_cents INTEGER DEFAULT 0,
+        pending_balance_cents INTEGER DEFAULT 0,
+        lifetime_revenue_cents INTEGER DEFAULT 0,
+        lifetime_refunds_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS treasury_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wallet_id INTEGER,
+        transaction_type TEXT,
+        source_type TEXT,
+        source_id TEXT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        seller_type TEXT,
+        item_type TEXT,
+        gross_amount_cents INTEGER DEFAULT 0,
+        platform_fee_cents INTEGER DEFAULT 0,
+        creator_net_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'posted',
+        settlement_status TEXT DEFAULT 'unsettled',
+        provider TEXT,
+        provider_reference TEXT,
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(transaction_type, source_type, source_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_balances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        seller_type TEXT,
+        currency TEXT DEFAULT 'USD',
+        pending_balance_cents INTEGER DEFAULT 0,
+        available_balance_cents INTEGER DEFAULT 0,
+        lifetime_gross_cents INTEGER DEFAULT 0,
+        lifetime_fees_cents INTEGER DEFAULT 0,
+        lifetime_net_cents INTEGER DEFAULT 0,
+        frozen INTEGER DEFAULT 0,
+        freeze_reason TEXT,
+        risk_score INTEGER DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(user_id, seller_type, currency)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payout_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        seller_type TEXT,
+        wallet_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'queued',
+        scheduled_for TEXT,
+        attempts INTEGER DEFAULT 0,
+        provider TEXT DEFAULT 'stripe',
+        provider_reference TEXT,
+        risk_status TEXT DEFAULT 'clear',
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payout_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payout_queue_id INTEGER,
+        user_id INTEGER,
+        seller_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        provider TEXT DEFAULT 'stripe',
+        provider_payout_id TEXT,
+        status TEXT,
+        paid_at TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payout_failures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payout_queue_id INTEGER,
+        user_id INTEGER,
+        seller_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        failure_reason TEXT,
+        retry_after TEXT,
+        trace_id TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS settlement_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_key TEXT UNIQUE,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'open',
+        gross_amount_cents INTEGER DEFAULT 0,
+        platform_fee_cents INTEGER DEFAULT 0,
+        creator_net_cents INTEGER DEFAULT 0,
+        transaction_count INTEGER DEFAULT 0,
+        opened_at TEXT,
+        closed_at TEXT,
+        metadata_json TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_tax_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        seller_type TEXT,
+        country TEXT,
+        tax_status TEXT DEFAULT 'not_started',
+        tax_form_type TEXT,
+        tax_year TEXT,
+        provider_reference TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, seller_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS revenue_breakdown (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        period_key TEXT,
+        revenue_source TEXT,
+        seller_type TEXT,
+        item_type TEXT,
+        currency TEXT DEFAULT 'USD',
+        gross_amount_cents INTEGER DEFAULT 0,
+        platform_fee_cents INTEGER DEFAULT 0,
+        creator_net_cents INTEGER DEFAULT 0,
+        refunds_cents INTEGER DEFAULT 0,
+        transaction_count INTEGER DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(period_key, revenue_source, seller_type, item_type, currency)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS fee_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        treasury_transaction_id INTEGER,
+        source_type TEXT,
+        source_id TEXT,
+        fee_type TEXT DEFAULT 'platform_fee',
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'earned',
+        provider TEXT,
+        provider_reference TEXT,
+        trace_id TEXT,
+        created_at TEXT,
+        UNIQUE(source_type, source_id, fee_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS escrow_holds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        creator_transaction_id INTEGER,
+        seller_user_id INTEGER,
+        seller_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'held',
+        hold_reason TEXT,
+        release_after TEXT,
+        released_at TEXT,
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(creator_transaction_id, seller_user_id)
+    )
+    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -39461,6 +39722,14 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_payment_audit_entity ON payment_audit_logs(entity_type, entity_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_premium_entitlements_user_key ON premium_entitlements(user_id, entitlement_key, status)",
         "CREATE INDEX IF NOT EXISTS idx_payment_webhook_events_type_status ON payment_webhook_events(event_type, status)",
+        "CREATE INDEX IF NOT EXISTS idx_platform_wallets_key_currency ON platform_wallets(wallet_key, currency)",
+        "CREATE INDEX IF NOT EXISTS idx_treasury_transactions_source ON treasury_transactions(source_type, source_id, transaction_type)",
+        "CREATE INDEX IF NOT EXISTS idx_treasury_transactions_created ON treasury_transactions(created_at, transaction_type)",
+        "CREATE INDEX IF NOT EXISTS idx_fee_ledger_source ON fee_ledger(source_type, source_id, fee_type)",
+        "CREATE INDEX IF NOT EXISTS idx_payout_queue_user_status ON payout_queue(user_id, seller_type, status, scheduled_for)",
+        "CREATE INDEX IF NOT EXISTS idx_escrow_holds_status_release ON escrow_holds(status, release_after)",
+        "CREATE INDEX IF NOT EXISTS idx_revenue_breakdown_period ON revenue_breakdown(period_key, revenue_source)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_balances_user_type ON creator_balances(user_id, seller_type, currency)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_channel_id ON live_events(channel, id)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_dedupe ON live_events(channel, dedupe_key, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_live_ops_plans_date ON live_ops_plans(plan_date)",

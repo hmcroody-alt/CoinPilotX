@@ -8,7 +8,7 @@ import secrets
 from datetime import datetime
 from typing import Any
 
-from services import db as db_service
+from services import db as db_service, platform_treasury_service
 
 
 def now_iso() -> str:
@@ -293,6 +293,7 @@ def mark_transaction_paid(transaction_id: int, provider_payment_id: str = "", pr
     add_ledger_entry(wallet_id=platform_wallet["id"], user_id=0, related_user_id=int(tx["seller_user_id"] or 0), source_type=tx["item_type"] + "_sale", source_id=int(transaction_id), entry_type="fee", amount_cents=int(tx["platform_fee_cents"] or 0), currency=tx.get("currency") or "USD", status="posted", description=f"Platform fee for {tx['item_type']} sale", provider="stripe", provider_reference=provider_reference or provider_payment_id, trace_id=tx.get("trace_id") or "", metadata={"transaction_id": transaction_id})
     reconcile_wallet(int(seller_wallet["id"]))
     reconcile_wallet(int(platform_wallet["id"]))
+    platform_treasury_service.record_platform_fee_from_transaction({**tx, "id": int(transaction_id)}, provider_reference=provider_reference or provider_payment_id)
     return {"ok": True, "transaction_id": int(transaction_id), "seller_wallet_id": int(seller_wallet["id"])}
 
 
@@ -312,6 +313,7 @@ def handle_refund(transaction_id: int, amount_cents: int | None = None, provider
     seller_wallet = ensure_wallet(int(tx["seller_user_id"]), tx["seller_type"], tx.get("currency") or "USD")
     add_ledger_entry(wallet_id=seller_wallet["id"], user_id=int(tx["seller_user_id"]), related_user_id=int(tx["buyer_user_id"] or 0), source_type="refund", source_id=int(transaction_id), entry_type="refund", amount_cents=min(refund_amount, int(tx.get("net_amount_cents") or 0)), currency=tx.get("currency") or "USD", status="posted", description="Refund reversal", provider="stripe", provider_reference=provider_reference, trace_id=tx.get("trace_id") or "", metadata={"transaction_id": transaction_id})
     reconcile_wallet(int(seller_wallet["id"]))
+    platform_treasury_service.record_refund_reversal({**tx, "id": int(transaction_id)}, refund_amount, provider_reference=provider_reference)
     return {"ok": True, "transaction_id": int(transaction_id), "refunded_cents": refund_amount}
 
 
