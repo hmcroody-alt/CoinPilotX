@@ -16184,6 +16184,14 @@ def pulse_get_or_create_room_conversation(cur, current_user_id, room_key="pulse-
     cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
     member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("UPDATE pulse_conversations SET member_count=?, updated_at=?, last_activity_at=? WHERE id=?", (member_count, now, now, conversation_id))
+    cur.execute(
+        """
+        INSERT INTO pulse_chat_room_members (room_key, conversation_id, user_id, role, joined_at, last_seen_at)
+        VALUES (?, ?, ?, 'member', ?, ?)
+        ON CONFLICT(room_key, user_id) DO UPDATE SET conversation_id=excluded.conversation_id, last_seen_at=excluded.last_seen_at
+        """,
+        (room_key, conversation_id, current_user_id, now, now),
+    )
     return {
         "ok": True,
         "conversation_id": conversation_id,
@@ -16230,6 +16238,21 @@ def pulse_ensure_default_rooms(cur, current_user_id):
         result, _ = pulse_get_or_create_room_conversation(cur, current_user_id, room_key=room["key"])
         conversation = result.get("conversation") or {}
         conversation_id = int(result.get("conversation_id") or conversation.get("id") or 0)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            """
+            INSERT INTO pulse_chat_rooms (room_key, name, description, notice, conversation_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+            ON CONFLICT(room_key) DO UPDATE SET
+              name=excluded.name,
+              description=excluded.description,
+              notice=excluded.notice,
+              conversation_id=excluded.conversation_id,
+              status='active',
+              updated_at=excluded.updated_at
+            """,
+            (room["key"], room["name"], room["description"], room["notice"], conversation_id, now, now),
+        )
         cur.execute(
             """
             SELECT m.body, m.created_at
@@ -16245,6 +16268,7 @@ def pulse_ensure_default_rooms(cur, current_user_id):
         rooms.append({
             "id": room["key"],
             "room_id": room["key"],
+            "energy": min(99, 42 + online_count * 3),
             "conversation_id": conversation_id,
             "name": room["name"],
             "title": room["name"],
@@ -16297,6 +16321,8 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
     )
     message_id = int(cur.lastrowid)
     cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=?, last_activity_at=? WHERE id=?", (now, now, now, conversation_id))
+    if (conversation.get("conversation_type") or "") in {"room", "chat_room"}:
+        cur.execute("INSERT INTO pulse_chat_room_messages (room_key, conversation_id, message_id, created_at) VALUES (?, ?, ?, ?)", (conversation.get("linked_space_id") or "", conversation_id, message_id, now))
     cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
     member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("UPDATE pulse_conversations SET member_count=? WHERE id=?", (member_count, conversation_id))
@@ -18567,6 +18593,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-media-tray button{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .unified-reply-bar{display:none;grid-column:1/-1;padding:8px 10px;border-radius:12px;background:rgba(110,223,246,.1);color:var(--muted);font-size:13px}
     .unified-reply-bar.is-on{display:block}
+    .unified-media-preview{display:none;grid-column:1/-1;align-items:center;justify-content:space-between;gap:10px;padding:10px;border-radius:14px;background:rgba(110,223,246,.1);border:1px solid rgba(110,223,246,.18)}
+    .unified-media-preview.is-on{display:flex}
+    .unified-media-preview img,.unified-media-preview video{width:54px;height:54px;border-radius:12px;object-fit:cover;background:#020713}
+    .unified-error{display:none;color:#ffb6b6;background:rgba(255,77,109,.12);border:1px solid rgba(255,77,109,.28);border-radius:14px;padding:10px}
+    .unified-error.is-on{display:block}
     .unified-upload-progress{display:none;grid-column:1/-1;height:4px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
     .unified-upload-progress span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan));transition:width .2s ease}
     .unified-menu-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.46);backdrop-filter:blur(7px)}
@@ -18665,6 +18696,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       <form class="unified-composer" data-unified-send-form>
         <button class="unified-attach" type="button" data-toggle-media-tray aria-label="Attach media">+</button>
         <div class="unified-reply-bar" data-reply-bar></div>
+        <div class="unified-media-preview" data-media-preview></div>
         <div class="unified-upload-progress" data-upload-progress><span></span></div>
         <textarea name="message" placeholder="Write a message..." autocomplete="off"></textarea>
         <button class="primary" type="submit">Send</button>
@@ -18674,6 +18706,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           <button type="button" data-upload-kind="gif">GIF</button>
           <button type="button" data-upload-kind="voice">Voice</button>
           <button type="button" data-upload-kind="file">File</button>
+          <button type="button" data-upload-kind="camera">Camera</button>
+          <button type="button" data-upload-kind="record">Record Video</button>
         </div>
         <input type="file" data-message-file hidden accept="image/*,video/mp4,video/webm,audio/*,.pdf,.txt,.doc,.docx,.zip">
       </form>
@@ -18689,6 +18723,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         </form>
         <div class="unified-results" data-group-search-results></div>
         <div class="unified-selected" data-group-selected><span class="muted">No members selected yet.</span></div>
+        <div class="unified-error" data-group-create-error></div>
         <div class="actions"><button type="button" data-close-group-modal>Cancel</button><button class="primary" type="button" data-create-group-chat>Create Group Chat</button></div>
       </div>
     </section>
@@ -18716,14 +18751,31 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         document.querySelector("[data-unified-menu-backdrop]").hidden = !open;
         document.querySelector("[data-unified-menu-toggle]").setAttribute("aria-expanded", open ? "true" : "false");
       };
+      const clearThread = message => {
+        state.activeThread = 0;
+        state.activePulseConversation = 0;
+        state.activeRoomId = "";
+        state.lastMessageId = 0;
+        state.mediaDraft = null;
+        state.replyToId = 0;
+        document.querySelector("[data-unified-sidebar]").classList.remove("is-thread-open");
+        document.querySelector("[data-unified-thread-pane]").classList.remove("is-open");
+        document.querySelector("[data-unified-thread]").innerHTML = `<div class="unified-empty">${esc(message || "Choose a chat first.")}</div>`;
+        document.querySelector("[data-media-preview]").classList.remove("is-on");
+        document.querySelector("[data-media-preview]").innerHTML = "";
+        document.querySelector("[data-reply-bar]").classList.remove("is-on");
+        renderPresence(null);
+      };
       const setTab = tab => {
         document.querySelectorAll("[data-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.tab === tab));
         document.querySelectorAll("[data-panel]").forEach(panel => panel.hidden = panel.dataset.panel !== tab);
-        document.querySelector("[data-unified-sidebar]").classList.remove("is-thread-open");
-        document.querySelector("[data-unified-thread-pane]").classList.remove("is-open");
-        setComposerEnabled(false);
+        const hint = tab === "rooms" ? "Choose a room to start chatting." : tab === "groups" ? "Choose a group chat or create one." : "Choose a private conversation.";
+        clearThread(hint);
+        setThreadChrome(tab === "rooms" ? "Chat Rooms" : tab === "groups" ? "Group Chats" : "Conversations", tab === "rooms" ? "Rooms" : tab === "groups" ? "Groups" : "Direct");
+        setComposerEnabled(false, tab);
         if (tab === "rooms") loadRooms();
-        if (tab === "groups") loadGroups();
+        else if (tab === "groups") loadGroups();
+        else loadThreads();
       };
       const mediaMarkup = message => {
         const url = message.media_url || "";
@@ -18776,11 +18828,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         });
         if ((messages || []).length) thread.scrollTop = thread.scrollHeight;
       };
-      const setComposerEnabled = enabled => {
+      const setComposerEnabled = (enabled, mode = state.mode) => {
         const form = document.querySelector("[data-unified-send-form]");
         form.message.disabled = !enabled;
-        form.querySelector("button").disabled = !enabled;
-        form.message.placeholder = enabled ? "Write a message..." : "Choose a chat first.";
+        form.querySelector('[type="submit"]').disabled = !enabled;
+        form.querySelector("[data-toggle-media-tray]").disabled = !enabled;
+        const label = mode === "room" ? "Choose a room first." : mode === "group" ? "Choose a group chat first." : "Choose a chat first.";
+        form.message.placeholder = enabled ? (mode === "room" && state.activeRoomId ? `Message ${state.activeRoomName || "this room"}...` : "Write a message...") : label;
       };
       const setThreadChrome = (title, mode) => {
         document.querySelector("[data-thread-title]").textContent = title || "Pulse Messenger";
@@ -18857,22 +18911,27 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         box.innerHTML = '<div class="unified-empty">Loading chat rooms...</div>';
         try {
           const response = await fetch("/api/pulse/chatrooms", { cache: "no-store", credentials: "same-origin" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load chat rooms.");
+          const responseText = await response.text();
+          let data = {};
+          try { data = JSON.parse(responseText || "{}"); } catch (parseError) { throw new Error(`Chat room API returned ${response.status}: ${responseText.slice(0, 180)}`); }
+          if (!response.ok || data.ok === false) {
+            console.error("Chat room load failed", { status: response.status, responseText, trace_id: data.trace_id });
+            throw new Error(`${data.message || "Unable to load chat rooms."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
+          }
           box.innerHTML = (data.rooms || []).map(room => `
-            <button class="unified-row" type="button" data-open-room="${room.room_id}">
+            <button class="unified-row" type="button" data-open-room="${room.room_id || room.id}" data-room-name="${esc(room.name || "Pulse Room")}">
               <strong>${esc(room.name || "Pulse Room")}<span class="pill">${Number(room.online_count || 0)} online</span></strong>
               <span>${esc(room.description || "")}</span>
               <span>${esc(room.last_message || room.pinned_notice || "No messages yet.")}</span>
               <span>${friendlyTime(room.last_message_at)}</span>
             </button>`).join("") || '<div class="unified-empty">No rooms are available right now.</div>';
           document.querySelector("[data-smart-rooms]").innerHTML = (data.rooms || []).slice(0,4).map(room => `
-            <button class="unified-row" type="button" data-open-room="${room.room_id}">
+            <button class="unified-row" type="button" data-open-room="${room.room_id || room.id}" data-room-name="${esc(room.name || "Pulse Room")}">
               <strong>${esc(room.name)}<span class="pill">Pulse ${Math.min(99, 55 + Number(room.online_count || 0) * 3)}%</span></strong>
               <span>${esc(room.pinned_notice || room.description || "")}</span>
             </button>`).join("") || '<div class="unified-empty">Rooms are warming up.</div>';
         } catch (error) {
-          console.error("Chat rooms failed", error);
+          console.error("Chat room load failed", error);
           box.innerHTML = `<div class="unified-empty">${esc(error.message || "Chat rooms are temporarily unavailable.")}</div>`;
         }
       }
@@ -18906,6 +18965,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         state.mode = roomId ? "room" : "group";
         state.activePulseConversation = Number(conversationId || 0);
         state.activeRoomId = roomId || "";
+        state.activeRoomName = state.activeRoomName || "";
         state.activeThread = 0;
         setThreadChrome(roomId ? "Pulse room" : "Group chat", roomId ? "Room" : "Group");
         document.querySelector("[data-unified-sidebar]").classList.add("is-thread-open");
@@ -18919,10 +18979,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load messages.");
           state.activePulseConversation = Number(data.conversation_id || state.activePulseConversation);
           state.currentUserId = Number(root.dataset.currentUser || 0);
-          setThreadChrome(data.conversation?.title || (roomId ? "Pulse room" : "Group chat"), roomId ? "Room" : "Group");
+          const title = data.conversation?.title || (roomId ? (state.activeRoomName || "Pulse room") : "Group chat");
+          setThreadChrome(title, roomId ? "Room" : "Group");
           const notice = data.pinned_notice ? [{id:0, body:data.pinned_notice, status:"pinned", created_at:""}] : [];
           renderMessages(notice.concat(data.messages || []));
-          setComposerEnabled(true);
+          setComposerEnabled(true, state.mode);
           refreshPresence();
           history.replaceState(null, "", "/pulse/messages?conversation=" + state.activePulseConversation);
         } catch (error) {
@@ -19025,9 +19086,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (event.target.closest("[data-toggle-media-tray]")) { document.querySelector("[data-media-tray]")?.classList.toggle("is-open"); return; }
         const uploadKind = event.target.closest("[data-upload-kind]");
         if (uploadKind) {
+          if ((state.mode === "direct" && !state.activeThread) || (state.mode !== "direct" && !state.activePulseConversation)) { toast("Choose a chat first."); return; }
           const input = document.querySelector("[data-message-file]");
           input.dataset.kind = uploadKind.dataset.uploadKind || "file";
-          input.accept = uploadKind.dataset.uploadKind === "image" ? "image/*" : uploadKind.dataset.uploadKind === "video" ? "video/mp4,video/webm" : uploadKind.dataset.uploadKind === "gif" ? "image/gif" : uploadKind.dataset.uploadKind === "voice" ? "audio/*" : "image/*,video/*,audio/*,.pdf,.txt,.doc,.docx,.zip";
+          input.removeAttribute("capture");
+          if (uploadKind.dataset.uploadKind === "camera") { input.accept = "image/*"; input.setAttribute("capture", "environment"); }
+          else if (uploadKind.dataset.uploadKind === "record") { input.accept = "video/mp4,video/webm,video/*"; input.setAttribute("capture", "environment"); }
+          else input.accept = uploadKind.dataset.uploadKind === "image" ? "image/*" : uploadKind.dataset.uploadKind === "video" ? "video/mp4,video/webm" : uploadKind.dataset.uploadKind === "gif" ? "image/gif" : uploadKind.dataset.uploadKind === "voice" ? "audio/*" : "image/*,video/*,audio/*,.pdf,.txt,.doc,.docx,.zip";
           input.click();
           return;
         }
@@ -19055,6 +19120,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           document.querySelector("[data-reply-bar]").classList.remove("is-on");
           return;
         }
+        if (event.target.closest("[data-remove-media-draft]")) {
+          state.mediaDraft = null;
+          document.querySelector("[data-media-preview]").classList.remove("is-on");
+          document.querySelector("[data-media-preview]").innerHTML = "";
+          document.querySelector("[data-unified-send-form] textarea").placeholder = "Write a message...";
+          return;
+        }
         const del = event.target.closest("[data-delete-message]");
         if (del) {
           if (!confirm("Delete this message?")) return;
@@ -19080,6 +19152,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const roomRow = event.target.closest("[data-open-room]");
         if (roomRow) {
           try {
+            state.activeRoomName = roomRow.dataset.roomName || "Pulse room";
             const result = await pulseApi(`/api/pulse/chatrooms/${encodeURIComponent(roomRow.dataset.openRoom)}/join`, { method: "POST", body: JSON.stringify({}) });
             await openPulseConversation(result.conversation_id, roomRow.dataset.openRoom);
           } catch (error) { console.error("Room open failed", error); toast(error.message); }
@@ -19107,6 +19180,10 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const createGroupButton = event.target.closest("[data-create-group-chat]");
         if (createGroupButton) {
           if (state.creatingGroup) return;
+          const errorBox = document.querySelector("[data-group-create-error]");
+          errorBox.classList.remove("is-on");
+          errorBox.textContent = "";
+          let payload = {};
           try {
             const title = document.querySelector("[data-group-title]").value.trim();
             if (title.length < 2) throw new Error("Add a group chat name.");
@@ -19115,8 +19192,15 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             state.creatingGroup = true;
             createGroupButton.disabled = true;
             createGroupButton.textContent = "Creating...";
-            const payload = { title, description: document.querySelector("[data-group-description]").value, privacy: "private", participant_ids };
-            const result = await pulseApi("/api/pulse/messages/group/create", { method: "POST", body: JSON.stringify(payload) });
+            payload = { title, description: document.querySelector("[data-group-description]").value, privacy: "private", participant_ids };
+            const response = await fetch("/api/pulse/messages/group/create", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            const responseText = await response.text();
+            let result = {};
+            try { result = JSON.parse(responseText || "{}"); } catch (parseError) { result = { ok: false, message: responseText || "Invalid server response." }; }
+            if (!response.ok || result.ok === false) {
+              console.error("Create group chat failed", { status: response.status, responseText, payload });
+              throw new Error(`${result.message || "Group chat could not be created."}${result.trace_id ? " Trace " + result.trace_id : ""}`);
+            }
             if (!result.conversation_id) throw new Error("Group chat was created, but no conversation id came back.");
             document.querySelector("[data-group-modal]").classList.remove("is-open");
             document.querySelector("[data-group-modal]").setAttribute("aria-hidden", "true");
@@ -19125,7 +19209,9 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             toast("Group chat created.");
             location.href = "/pulse/messages/" + result.conversation_id;
           } catch (error) {
-            console.error("Create group chat failed", error);
+            console.error("Create group chat failed", { error, payload });
+            errorBox.textContent = error.message || "Group chat could not be created.";
+            errorBox.classList.add("is-on");
             toast(error.message || "Group chat could not be created.");
           } finally {
             state.creatingGroup = false;
@@ -19199,6 +19285,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (!file) return;
         if (state.mode === "direct" && !state.activeThread) { toast("Choose a chat first."); event.target.value = ""; return; }
         if (state.mode !== "direct" && !state.activePulseConversation) { toast("Choose a chat first."); event.target.value = ""; return; }
+        const preview = document.querySelector("[data-media-preview]");
         const progress = document.querySelector("[data-upload-progress]");
         const bar = progress.querySelector("span");
         progress.style.display = "block";
@@ -19208,16 +19295,26 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           fd.append("file", file);
           fd.append("conversation_id", state.activePulseConversation || 0);
           if (event.target.dataset.kind === "voice") fd.append("voice", "1");
-          const response = await fetch("/api/pulse/messages/upload", { method: "POST", credentials: "same-origin", body: fd });
+          const response = await fetch("/api/pulse/messages/media/upload", { method: "POST", credentials: "same-origin", body: fd });
           bar.style.width = "75%";
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Upload failed.");
+          const responseText = await response.text();
+          let data = {};
+          try { data = JSON.parse(responseText || "{}"); } catch (parseError) { data = { ok: false, message: responseText || "Invalid upload response." }; }
+          if (!response.ok || data.ok === false) {
+            console.error("Chat media upload failed", { status: response.status, responseText, fileName: file.name });
+            throw new Error(`${data.message || "Upload failed."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
+          }
           state.mediaDraft = { media_url: data.media_url, thumbnail_url: data.thumbnail_url, message_type: data.message_type || data.type || "file", file_size: data.file_size || file.size, media_ids: data.media?.id ? [data.media.id] : [] };
+          const previewUrl = URL.createObjectURL(file);
+          const mediaKind = state.mediaDraft.message_type;
+          preview.innerHTML = `<div style="display:flex;align-items:center;gap:10px">${mediaKind === "video" ? `<video src="${previewUrl}" muted playsinline></video>` : mediaKind === "image" || mediaKind === "gif" ? `<img src="${previewUrl}" alt="">` : `<span class="pill">${esc(mediaKind)}</span>`}<span>${esc(file.name)}</span></div><button type="button" data-remove-media-draft>Remove</button>`;
+          preview.classList.add("is-on");
           document.querySelector("[data-unified-send-form] textarea").placeholder = `${file.name} ready. Add a caption or press Send.`;
           document.querySelector("[data-media-tray]")?.classList.remove("is-open");
           bar.style.width = "100%";
           setTimeout(() => { progress.style.display = "none"; bar.style.width = "0"; }, 700);
         } catch (error) {
+          console.error("Chat media upload failed", error);
           progress.style.display = "none";
           bar.style.width = "0";
           toast(error.message || "Upload failed.");
@@ -19251,6 +19348,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           state.mediaDraft = null;
           state.replyToId = 0;
           document.querySelector("[data-reply-bar]").classList.remove("is-on");
+          document.querySelector("[data-media-preview]").classList.remove("is-on");
+          document.querySelector("[data-media-preview]").innerHTML = "";
           input.placeholder = "Write a message...";
           if (state.mode === "direct") loadThreads();
           if (state.mode === "group") loadGroups();
@@ -21141,15 +21240,31 @@ def api_pulse_message_group_create():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    payload = request.get_json(silent=True) or {}
     trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    if not payload and request.form:
+        payload = dict(request.form)
+        raw_participants = request.form.get("participant_ids") or request.form.get("participants") or ""
+        if raw_participants:
+            try:
+                payload["participant_ids"] = json.loads(raw_participants)
+            except Exception:
+                payload["participant_ids"] = [part.strip() for part in str(raw_participants).split(",") if part.strip()]
+    logging.info("PULSE_GROUP_CHAT_CREATE_REQUEST trace_id=%s user_id=%s payload=%s", trace_id, user.get("user_id"), {k: v for k, v in payload.items() if k != "csrf_token"})
     title = clean_html(payload.get("title") or "")[:140]
     description = clean_html(payload.get("description") or "")[:500]
     privacy = clean_html(payload.get("privacy") or "private")[:40]
     if privacy not in {"private", "public", "invite_only", "community"}:
         privacy = "private"
-    participant_ids = payload.get("participant_ids") if isinstance(payload.get("participant_ids"), list) else []
+    raw_participant_ids = payload.get("participant_ids")
+    if isinstance(raw_participant_ids, str):
+        try:
+            raw_participant_ids = json.loads(raw_participant_ids)
+        except Exception:
+            raw_participant_ids = [part.strip() for part in raw_participant_ids.split(",") if part.strip()]
+    participant_ids = raw_participant_ids if isinstance(raw_participant_ids, list) else []
     participant_ids = sorted({safe_int(uid, 0) for uid in participant_ids if safe_int(uid, 0) and safe_int(uid, 0) != int(user["user_id"])})
+    logging.info("PULSE_GROUP_CHAT_CREATE_PARSED trace_id=%s user_id=%s participant_ids=%s title=%s privacy=%s", trace_id, user.get("user_id"), participant_ids, title, privacy)
     if len(title.strip()) < 2:
         return api_error("Add a group chat name.", 400, trace_id)
     group_id = safe_int(payload.get("group_id"), 0)
@@ -21187,6 +21302,7 @@ def api_pulse_message_group_create():
             conn.commit()
         conn.close()
         if result.get("ok"):
+            logging.info("PULSE_GROUP_CHAT_CREATED trace_id=%s user_id=%s conversation_id=%s participants=%s", trace_id, user.get("user_id"), result.get("conversation_id"), participant_ids)
             pulse_emit_event("group_chat_created", {"conversation_id": result.get("conversation_id"), "group_id": int((group or {}).get("id") or 0), "title": title or (group or {}).get("name") or "Group Chat"}, user["user_id"], 0)
         return jsonify(result), status
     except Exception as exc:
@@ -21605,6 +21721,7 @@ def api_pulse_message_conversations():
 
 
 @webhook_app.route("/api/pulse/messages/upload", methods=["POST"])
+@webhook_app.route("/api/pulse/messages/media/upload", methods=["POST"])
 def api_pulse_messages_upload():
     init_db()
     user = api_account_user()
@@ -32768,6 +32885,43 @@ def init_db():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_message_reactions_message ON pulse_message_reactions(message_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_message_receipts_conversation ON pulse_message_receipts(conversation_id, user_id)")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT UNIQUE,
+        name TEXT,
+        description TEXT,
+        notice TEXT,
+        conversation_id INTEGER,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_room_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        joined_at TEXT,
+        last_seen_at TEXT,
+        UNIQUE(room_key, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_room_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT,
+        conversation_id INTEGER,
+        message_id INTEGER,
+        created_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_chat_rooms_key ON pulse_chat_rooms(room_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_members_room ON pulse_chat_room_members(room_key, user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_messages_room ON pulse_chat_room_messages(room_key, message_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_created_at ON pulse_posts(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_user_created ON pulse_posts(user_id, created_at)")
     cur.execute("""
