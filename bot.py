@@ -117,7 +117,9 @@ from services import (
     portfolio_service,
     predictions_service,
     predictive_ai_engine,
+    premium_capability_engine,
     premium_identity_engine,
+    premium_visibility_engine,
     pulse_identity_engine,
     pro_access as pro_access_service,
     pulse_feed_engine,
@@ -4695,6 +4697,8 @@ def admin_page_html(title, body, admin=None):
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="robots" content="noindex,nofollow" />
   <title>{clean_html(title)} | CoinPilotXAI Admin</title>
+  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   <style>
     :root {{ color-scheme: dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --accent:#36e58f; --cyan:#6edff6; }}
     body {{ margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif; background:radial-gradient(circle at top left,rgba(54,229,143,.12),transparent 34%),var(--bg); color:var(--text); }}
@@ -17230,8 +17234,9 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         f"<a href='{href}'><span class='nav-ico' aria-hidden='true'>{icon}</span><span class='nav-label'>{label}</span></a>"
         for label, href, icon in [("Home", "/pulse", "⌂"), ("Reels", "/pulse/reels", "▶"), ("Spaces", "/pulse/spaces", "◇"), ("Market", "/pulse/marketplace", "▣"), ("Alerts", "/pulse/notifications", "!"), ("Chats", "/pulse/messages", "✉"), ("Profile", "/pulse/profile", "◉")]
     )
-    default_side = side_html or "<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
+    premium_side = premium_visibility_engine.prompt_html("dashboard", user)
+    default_side = side_html or f"<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -18803,7 +18808,7 @@ def pulse_premium_page():
           <span class='prestige-cycle'>Elevate your identity. Stand out intelligently.</span>
           <h2>Pulse Premium</h2>
           <p>This is not a paywall for the core ecosystem. This is creator prestige: identity effects, deeper intelligence, elite analytics, premium studio polish, and the signal that you are building seriously.</p>
-          <div class='actions'><a class='button primary' href='/upgrade?product=pulse-premium'>Unlock Premium Identity</a><a class='button' href='/pulse/profile/edit'>Preview Profile Power</a></div>
+          <div class='actions'><a class='button primary' href='/pulse/premium/activate'>Unlock Premium Identity</a><a class='button' href='/pulse/creator/dashboard'>Preview Profile Power</a></div>
         </div>
         <aside class='prestige-card'>
           <div class='elite-mark'>✦</div>
@@ -18833,10 +18838,310 @@ def pulse_premium_page():
         <article class='lux-card'><h3>Creator Economy Ready</h3><p>Optional future monetization boosts, creator collaborations, elite audience rooms, and premium creator identity systems.</p></article>
         <article class='lux-card'><h3>Trust First</h3><p>Premium never removes moderation, safety, scam protection, or ecosystem quality standards.</p></article>
       </section>
-      <div class='premium-sticky-cta'><strong>Enter elite creator mode.</strong><div class='actions'><a class='button primary' href='/upgrade?product=pulse-premium'>Activate Creator Intelligence</a><a class='button' href='/pulse'>Explore Free Pulse</a></div></div>
+      <div class='premium-sticky-cta'><strong>Enter elite creator mode.</strong><div class='actions'><a class='button primary' href='/pulse/creator/dashboard#creator-ai'>Activate Creator Intelligence</a><a class='button' href='/pulse'>Explore Free Pulse</a></div></div>
     </section>
     """
     return pulse_social_shell("Pulse Premium", "Prestige, identity, creator enhancement, elite cosmetics, and advanced creator intelligence without locking the core platform.", main)
+
+
+def premium_user_is_grantable(user):
+    return bool(user and (int(user.get("lifetime_premium") or 0) == 1 or int(user.get("premium_glow_manual_grant") or 0) == 1 or str(user.get("premium_status") or "").lower() in {"active", "founder", "lifetime"}))
+
+
+def grant_pulse_premium(cur, user_id, actor_id=0, source="manual"):
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "UPDATE users SET premium_status='active', lifetime_premium=1, premium_glow_manual_grant=1, premium_mark_override=1, premium_mark_type='star', updated_at=? WHERE user_id=?",
+        (now, int(user_id)),
+    )
+    for entitlement in ["premium_identity", "creator_ai", "advanced_analytics", "premium_studio", "livestream_prestige"]:
+        cur.execute(
+            """
+            INSERT INTO pulse_premium_entitlements (user_id, entitlement_key, source, status, granted_by, starts_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
+            ON CONFLICT(user_id, entitlement_key) DO UPDATE SET status='active', source=excluded.source, granted_by=excluded.granted_by, updated_at=excluded.updated_at
+            """,
+            (int(user_id), entitlement, source, int(actor_id or 0), now, now, now),
+        )
+    cur.execute(
+        """
+        INSERT INTO pulse_premium_profiles (user_id, tier, aura_style, badge_style, status, granted_by, created_at, updated_at)
+        VALUES (?, 'premium', 'founder_gold', 'elite_creator', 'active', ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET status='active', tier='premium', updated_at=excluded.updated_at, granted_by=excluded.granted_by
+        """,
+        (int(user_id), int(actor_id or 0), now, now),
+    )
+    cur.execute(
+        """
+        INSERT INTO pulse_profile_themes (user_id, theme_key, accent_color, background_style, active, created_at, updated_at)
+        VALUES (?, 'midnight_elite', '#ffd166', 'premium_gradient', 1, ?, ?)
+        ON CONFLICT(user_id, theme_key) DO UPDATE SET active=1, updated_at=excluded.updated_at
+        """,
+        (int(user_id), now, now),
+    )
+    cur.execute(
+        "INSERT INTO pulse_premium_audit_logs (actor_id, target_user_id, action, metadata_json, created_at) VALUES (?, ?, 'grant', ?, ?)",
+        (int(actor_id or 0), int(user_id), json.dumps({"source": source}), now),
+    )
+
+
+@webhook_app.route("/pulse/premium/activate", methods=["GET"])
+def pulse_premium_activate_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    if not premium_user_is_grantable(user) and int(user.get("user_id") or 0) != 1:
+        body = """
+        <section class='card premium-promo-card'>
+          <span class='premium-badge'>Coming soon</span>
+          <h2>Premium checkout is being connected safely.</h2>
+          <p>Founder/admin grants are active now. Public checkout will open when payment and entitlement automation passes final review.</p>
+          <div class='actions'><a class='button primary' href='/pulse'>Explore Free Pulse</a><a class='button' href='/pulse/premium'>Back to Premium</a></div>
+        </section>
+        """
+        return pulse_social_shell("Premium Activation", "Premium is available through safe entitlement grants while public checkout is finalized.", body)
+    conn = db(); cur = conn.cursor()
+    grant_pulse_premium(cur, int(user.get("user_id") or 0), int(user.get("user_id") or 0), "self_founder")
+    conn.commit(); conn.close()
+    return redirect("/pulse/creator/dashboard")
+
+
+@webhook_app.route("/api/pulse/premium/activate", methods=["POST"])
+def pulse_premium_activate_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    try:
+        if not premium_user_is_grantable(user) and int(user.get("user_id") or 0) != 1:
+            return jsonify({"ok": False, "message": "Premium checkout is coming soon. Founder/admin grants are active now.", "coming_soon": True}), 200
+        conn = db(); cur = conn.cursor()
+        grant_pulse_premium(cur, int(user.get("user_id") or 0), int(user.get("user_id") or 0), "self_founder")
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "message": "Pulse Premium activated.", "entitlements": ["premium_identity", "creator_ai", "advanced_analytics", "premium_studio"]})
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        logging.exception("PULSE_PREMIUM_ACTIVATE_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
+        return jsonify({"ok": False, "message": str(exc), "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/premium/identity-effects", methods=["GET", "POST"])
+def pulse_premium_identity_effects_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if request.method == "GET":
+        cur.execute("SELECT effect_key, label, effect_type, premium_only, status, metadata_json FROM pulse_identity_effects WHERE status='active' ORDER BY id")
+        effects = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return jsonify({"ok": True, "premium": premium_visibility_engine.is_premium_user(user), "effects": effects})
+    data = request.get_json(silent=True) or request.form.to_dict()
+    effect_key = str(data.get("effect_key") or "founder_gold")[:80]
+    if not premium_visibility_engine.is_premium_user(user):
+        conn.close()
+        return api_error("Premium identity effects require Pulse Premium.", 403)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        INSERT INTO pulse_premium_profiles (user_id, aura_style, status, created_at, updated_at)
+        VALUES (?, ?, 'active', ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET aura_style=excluded.aura_style, updated_at=excluded.updated_at
+        """,
+        (int(user.get("user_id") or 0), effect_key, now, now),
+    )
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Identity effect updated.", "effect_key": effect_key})
+
+
+@webhook_app.route("/api/pulse/premium/profile-theme", methods=["GET", "POST"])
+def pulse_premium_profile_theme_api():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if request.method == "GET":
+        cur.execute("SELECT * FROM pulse_profile_themes WHERE user_id=? AND active=1 ORDER BY updated_at DESC LIMIT 1", (int(user.get("user_id") or 0),))
+        theme = cur.fetchone()
+        conn.close()
+        return jsonify({"ok": True, "theme": dict(theme) if theme else {"theme_key": "midnight_elite", "accent_color": "#ffd166"}})
+    if not premium_visibility_engine.is_premium_user(user):
+        conn.close()
+        return api_error("Premium profile themes require Pulse Premium.", 403)
+    data = request.get_json(silent=True) or request.form.to_dict()
+    theme_key = str(data.get("theme_key") or "midnight_elite")[:80]
+    accent = str(data.get("accent_color") or "#ffd166")[:32]
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("UPDATE pulse_profile_themes SET active=0 WHERE user_id=?", (int(user.get("user_id") or 0),))
+    cur.execute(
+        """
+        INSERT INTO pulse_profile_themes (user_id, theme_key, accent_color, background_style, active, created_at, updated_at)
+        VALUES (?, ?, ?, 'premium_gradient', 1, ?, ?)
+        ON CONFLICT(user_id, theme_key) DO UPDATE SET active=1, accent_color=excluded.accent_color, updated_at=excluded.updated_at
+        """,
+        (int(user.get("user_id") or 0), theme_key, accent, now, now),
+    )
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Profile theme updated.", "theme_key": theme_key})
+
+
+def creator_ai_payload(kind, text, topic=""):
+    seed = clean_html((text or topic or "your next Pulse post").strip())[:700]
+    topic = clean_html((topic or "creator growth").strip())[:120]
+    if kind == "hook":
+        output = f"Most people scroll past {topic} because the first line feels safe. Try this: {seed[:90] or 'Here is the simple mistake creators keep making'}... and make the next sentence reveal the tension."
+    elif kind == "caption":
+        output = f"{seed}\n\nMake it useful in one swipe: one clear lesson, one proof point, one question people can answer fast."
+    elif kind == "virality":
+        score = min(94, max(41, 58 + len(seed) // 18 + (12 if "?" in seed else 0)))
+        return {"score": score, "retention_tip": "Open with contrast, keep paragraphs under two lines, and end with a specific question.", "risk_note": "No guaranteed outcomes or misleading claims detected by the safety heuristic."}
+    else:
+        output = f"{topic.title()} Live: the useful breakdown people can join before it gets noisy"
+    return {"output": output, "safety": "educational framing; no guaranteed profit, betting pick, or unsafe instruction"}
+
+
+@webhook_app.route("/api/pulse/creator-ai/<tool>", methods=["POST"])
+def pulse_creator_ai_tool_api(tool):
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    tool = str(tool or "").strip().lower()
+    if tool not in {"hook", "caption", "virality", "live-title"}:
+        return api_error("Unknown creator AI tool.", 404)
+    data = request.get_json(silent=True) or request.form.to_dict()
+    payload = creator_ai_payload(tool, data.get("text") or data.get("caption") or data.get("idea") or "", data.get("topic") or data.get("category") or "")
+    return jsonify({"ok": True, "tool": tool, **payload})
+
+
+@webhook_app.route("/pulse/creator/dashboard", methods=["GET"])
+def pulse_creator_dashboard_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    premium = premium_visibility_engine.is_premium_user(user)
+    prompt = premium_visibility_engine.prompt_html("creator", user)
+    main = f"""
+    <section class='grid'>
+      <article class='card premium-analytics-preview {"locked" if not premium else ""}'><span class='premium-badge'>Creator Energy</span><h2>{'88' if premium else '--'}%</h2><p>Consistency, trust, education value, and audience fit signals.</p></article>
+      <article class='card premium-analytics-preview {"locked" if not premium else ""}'><span class='premium-badge'>Retention Radar</span><h2>{'Live' if premium else 'Preview'}</h2><p>Hook strength, replay potential, and comment quality context.</p></article>
+      <article class='card premium-analytics-preview {"locked" if not premium else ""}'><span class='premium-badge'>Studio</span><h2>Premium LUTs</h2><p>Founder Gold, Glass Premium, AI Studio, Creator Glow, Midnight Elite.</p></article>
+    </section>
+    <section class='card' id='creator-ai'><h2>Creator AI</h2><p>Write a rough idea and use the premium-safe AI tools.</p><textarea id='creatorAiText' placeholder='Paste a post idea, reel caption, or live topic'></textarea><div class='actions'><button type='button' data-ai-tool='hook'>Hook AI</button><button type='button' data-ai-tool='caption'>Caption Enhancer</button><button type='button' data-ai-tool='virality'>Virality Radar</button><button type='button' data-ai-tool='live-title'>Live Title</button></div><pre class='card' id='creatorAiOutput' style='white-space:pre-wrap'></pre></section>
+    {prompt}
+    """
+    script = """
+    document.querySelectorAll('[data-ai-tool]').forEach(btn=>btn.addEventListener('click',async()=>{
+      const out=document.getElementById('creatorAiOutput'); out.textContent='Thinking...';
+      try{const data=await pulseApi(`/api/pulse/creator-ai/${btn.dataset.aiTool}`,{method:'POST',body:JSON.stringify({text:document.getElementById('creatorAiText').value,topic:'Pulse creator'})});out.textContent=data.output||JSON.stringify(data,null,2);}catch(err){out.textContent=err.message;}
+    }));
+    """
+    return pulse_social_shell("Creator Dashboard", "Premium-ready creator intelligence, studio polish, analytics previews, and trust-safe acceleration.", main, script_html=script)
+
+
+@webhook_app.route("/pulse/creator/analytics", methods=["GET"])
+def pulse_creator_analytics_page():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    premium = premium_visibility_engine.is_premium_user(user)
+    cards = [
+        ("Audience Heatmap", "Shows when real audience activity clusters."),
+        ("Retention Curve", "Highlights where viewers slow down, replay, or drop."),
+        ("Sentiment Radar", "Separates helpful discussion from noisy engagement."),
+        ("Trust Graph", "Keeps creator growth tied to safety and reliability."),
+    ]
+    body = "<section class='grid'>" + "".join(f"<article class='card premium-analytics-preview {'locked' if not premium else ''}'><span class='premium-badge'>{clean_html(name)}</span><p>{clean_html(desc)}</p><div class='premium-energy-meter'><span style='width:{70+i*6}%'></span></div></article>" for i, (name, desc) in enumerate(cards)) + "</section>"
+    body += premium_visibility_engine.prompt_html("creator", user)
+    return pulse_social_shell("Creator Analytics", "Premium analytics previews grounded in real Pulse activity, never fake performance claims.", body)
+
+
+@webhook_app.route("/admin/premium-command", methods=["GET", "POST"])
+def admin_premium_command_page():
+    init_db()
+    admin, denied = require_admin_page("settings.edit")
+    if denied:
+        return denied
+    message = ""
+    if request.method == "POST":
+        if not verify_csrf():
+            message = "Security check failed."
+        else:
+            action = str(request.form.get("action") or "").strip()
+            target_user_id = int(request.form.get("user_id") or 0)
+            conn = db(); cur = conn.cursor()
+            if target_user_id and action == "grant":
+                grant_pulse_premium(cur, target_user_id, int(admin.get("id") or 0), "admin_manual")
+                message = f"Premium granted to user {target_user_id}."
+            elif target_user_id and action == "revoke":
+                now = datetime.utcnow().isoformat(timespec="seconds")
+                cur.execute("UPDATE users SET premium_status='inactive', premium_glow_manual_grant=0, lifetime_premium=0, premium_mark_override=0, updated_at=? WHERE user_id=?", (now, target_user_id))
+                cur.execute("UPDATE pulse_premium_entitlements SET status='revoked', updated_at=? WHERE user_id=?", (now, target_user_id))
+                cur.execute("UPDATE pulse_premium_profiles SET status='inactive', updated_at=? WHERE user_id=?", (now, target_user_id))
+                cur.execute("INSERT INTO pulse_premium_audit_logs (actor_id, target_user_id, action, metadata_json, created_at) VALUES (?, ?, 'revoke', ?, ?)", (int(admin.get("id") or 0), target_user_id, "{}", now))
+                message = f"Premium revoked for user {target_user_id}."
+            else:
+                message = "Enter a valid user ID and action."
+            conn.commit(); conn.close()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT user_id, username, display_name, email, premium_status, lifetime_premium, premium_glow_manual_grant FROM users WHERE COALESCE(premium_status,'')='active' OR COALESCE(lifetime_premium,0)=1 OR COALESCE(premium_glow_manual_grant,0)=1 ORDER BY updated_at DESC LIMIT 40")
+    users = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM pulse_premium_entitlements ORDER BY updated_at DESC, created_at DESC LIMIT 60")
+    entitlements = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM pulse_premium_feature_flags ORDER BY flag_key")
+    flags = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    registry = premium_capability_engine.capability_summary()
+    caps = "".join(f"<article class='card'><h2>{clean_html(item['label'])}</h2><p><span class='pill'>{clean_html(item['status'])}</span></p><p>{clean_html(item['user_facing_availability'])}</p></article>" for item in registry["capabilities"].values())
+    user_rows = "".join(f"<tr><td>{int(u.get('user_id') or 0)}</td><td>{clean_html(u.get('display_name') or u.get('username') or u.get('email') or '')}</td><td>{clean_html(u.get('premium_status') or '')}</td><td>{int(u.get('lifetime_premium') or 0)}</td></tr>" for u in users) or "<tr><td colspan='4'>No premium grants yet.</td></tr>"
+    entitlement_rows = "".join(f"<tr><td>{int(e.get('user_id') or 0)}</td><td>{clean_html(e.get('entitlement_key') or '')}</td><td>{clean_html(e.get('status') or '')}</td><td>{clean_html(e.get('source') or '')}</td></tr>" for e in entitlements) or "<tr><td colspan='4'>No entitlements yet.</td></tr>"
+    flag_rows = "".join(f"<tr><td>{clean_html(f.get('flag_key') or '')}</td><td>{'Enabled' if int(f.get('enabled') or 0) else 'Disabled'}</td><td>{clean_html(f.get('description') or '')}</td></tr>" for f in flags)
+    body = f"""
+    <section class='card'><h1>Premium Command</h1><p class='muted'>Capability registry, entitlement grants, feature flags, and safely scaffolded premium promises.</p>{f"<p>{clean_html(message)}</p>" if message else ""}</section>
+    <section class='grid'><article class='card'><h2>Capabilities</h2><p class='metric'>{registry['total']}</p><p>{clean_html(json.dumps(registry['status_counts']))}</p></article><article class='card'><h2>Premium Users</h2><p class='metric'>{len(users)}</p><p>Manual and founder grants.</p></article><article class='card'><h2>Feature Flags</h2><p class='metric'>{len(flags)}</p><p>Safe visibility controls.</p></article></section>
+    <section class='card'><h2>Manual Grant / Revoke</h2><form method='post'><input type='hidden' name='csrf_token' value='{get_csrf_token()}'><p><input name='user_id' inputmode='numeric' placeholder='User ID'></p><p><select name='action'><option value='grant'>Grant Premium</option><option value='revoke'>Revoke Premium</option></select></p><button type='submit'>Apply</button></form></section>
+    <section class='grid'>{caps}</section>
+    <section class='card table-wrap'><h2>Premium Users</h2><table><tr><th>User ID</th><th>Name</th><th>Status</th><th>Lifetime</th></tr>{user_rows}</table></section>
+    <section class='card table-wrap'><h2>Entitlements</h2><table><tr><th>User ID</th><th>Entitlement</th><th>Status</th><th>Source</th></tr>{entitlement_rows}</table></section>
+    <section class='card table-wrap'><h2>Flags</h2><table><tr><th>Flag</th><th>Status</th><th>Description</th></tr>{flag_rows}</table></section>
+    """
+    return admin_page_html("Premium Command", body, admin)
+
+
+@webhook_app.route("/admin/mobile-audit", methods=["GET"])
+def admin_mobile_audit_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    body = """
+    <section class='card'><h1>Mobile Audit</h1><p class='muted'>Viewport, overflow, fixed element, safe-area, and clipping diagnostics for the current admin browser.</p><button type='button' id='runMobileAudit'>Run Audit</button></section>
+    <section class='grid' id='mobileAuditCards'></section>
+    <section class='card'><h2>Details</h2><pre id='mobileAuditOutput' style='white-space:pre-wrap'></pre></section>
+    <script>
+    function runMobileAudit(){
+      const doc=document.documentElement;
+      const all=[...document.querySelectorAll('body *')];
+      const vw=window.innerWidth;
+      const vh=window.innerHeight;
+      const horizontal=doc.scrollWidth>vw+1;
+      const clipped=all.filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&(r.right>vw+2||r.left<-2)}).slice(0,30).map(el=>({tag:el.tagName,cls:el.className,text:(el.textContent||'').trim().slice(0,60),right:Math.round(el.getBoundingClientRect().right)}));
+      const fixed=all.filter(el=>getComputedStyle(el).position==='fixed').map(el=>({tag:el.tagName,cls:el.className,z:getComputedStyle(el).zIndex,bottom:getComputedStyle(el).bottom}));
+      const cards=document.getElementById('mobileAuditCards');
+      cards.innerHTML=[
+        ['Viewport',`${vw} x ${vh}`],
+        ['Horizontal scroll',horizontal?'Needs attention':'Clear'],
+        ['Clipped candidates',clipped.length],
+        ['Fixed elements',fixed.length]
+      ].map(([k,v])=>`<article class='card'><h2>${k}</h2><p class='metric'>${v}</p></article>`).join('');
+      document.getElementById('mobileAuditOutput').textContent=JSON.stringify({viewport:{vw,vh,scrollWidth:doc.scrollWidth},horizontal,clipped,fixed},null,2);
+    }
+    document.getElementById('runMobileAudit')?.addEventListener('click',runMobileAudit);
+    runMobileAudit();
+    </script>
+    """
+    return admin_page_html("Mobile Audit", body, admin)
 
 
 @webhook_app.route("/pulse/courses", methods=["GET"])
@@ -35225,6 +35530,190 @@ def init_db():
         ("last_seen_at", "TEXT"),
         ("device_json", "TEXT"),
     ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_premium_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        tier TEXT DEFAULT 'premium',
+        aura_style TEXT DEFAULT 'founder_gold',
+        badge_style TEXT DEFAULT 'elite_creator',
+        profile_glow INTEGER DEFAULT 1,
+        chat_theme TEXT DEFAULT 'glass_premium',
+        live_entrance_effect TEXT DEFAULT 'prestige_glow',
+        creator_rank_label TEXT DEFAULT 'Elite Creator',
+        status TEXT DEFAULT 'active',
+        granted_by INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_profile_themes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        theme_key TEXT DEFAULT 'midnight_elite',
+        accent_color TEXT DEFAULT '#ffd166',
+        background_style TEXT DEFAULT 'premium_gradient',
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, theme_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_identity_effects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        effect_key TEXT UNIQUE,
+        label TEXT,
+        effect_type TEXT,
+        premium_only INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'active',
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_creator_analytics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        metric_key TEXT,
+        metric_value REAL DEFAULT 0,
+        metric_json TEXT,
+        source TEXT DEFAULT 'pulse',
+        captured_at TEXT,
+        UNIQUE(user_id, metric_key, captured_at)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_reel_retention_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reel_id INTEGER,
+        user_id INTEGER,
+        event_type TEXT,
+        second_mark REAL DEFAULT 0,
+        watch_ms INTEGER DEFAULT 0,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_creator_audience_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        creator_user_id INTEGER,
+        segment_key TEXT,
+        label TEXT,
+        score REAL DEFAULT 0,
+        metadata_json TEXT,
+        updated_at TEXT,
+        UNIQUE(creator_user_id, segment_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_content_sentiment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content_type TEXT,
+        content_id INTEGER,
+        sentiment_score REAL DEFAULT 0,
+        trust_score REAL DEFAULT 0,
+        safety_score REAL DEFAULT 100,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_creator_energy_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        energy_score REAL DEFAULT 0,
+        trust_score REAL DEFAULT 0,
+        consistency_score REAL DEFAULT 0,
+        educational_value_score REAL DEFAULT 0,
+        metadata_json TEXT,
+        captured_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        plan_key TEXT DEFAULT 'pulse_premium',
+        status TEXT DEFAULT 'inactive',
+        provider TEXT,
+        provider_subscription_id TEXT,
+        started_at TEXT,
+        expires_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_premium_entitlements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        entitlement_key TEXT,
+        source TEXT DEFAULT 'manual',
+        status TEXT DEFAULT 'active',
+        granted_by INTEGER DEFAULT 0,
+        starts_at TEXT,
+        expires_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, entitlement_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_payment_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        provider TEXT,
+        event_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'usd',
+        status TEXT,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_premium_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_id INTEGER DEFAULT 0,
+        target_user_id INTEGER DEFAULT 0,
+        action TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_premium_feature_flags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        flag_key TEXT UNIQUE,
+        enabled INTEGER DEFAULT 1,
+        description TEXT,
+        updated_at TEXT
+    )
+    """)
+    premium_effects = [
+        ("founder_gold", "Founder Gold", "profile_aura"),
+        ("luxury_skin", "Luxury Skin", "camera_filter"),
+        ("glass_premium", "Glass Premium", "theme"),
+        ("ai_studio", "AI Studio", "studio_preset"),
+        ("creator_glow", "Creator Glow", "profile_aura"),
+        ("midnight_elite", "Midnight Elite", "theme"),
+        ("arena_fire", "Arena Fire", "reaction_effect"),
+    ]
+    for key, label, effect_type in premium_effects:
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_identity_effects (effect_key, label, effect_type, premium_only, status, metadata_json, created_at) VALUES (?, ?, ?, 1, 'active', ?, ?)",
+            (key, label, effect_type, json.dumps({"source": "premium_foundation"}), datetime.utcnow().isoformat(timespec="seconds")),
+        )
+    for flag_key, enabled in premium_capability_engine.premium_feature_flags().items():
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_premium_feature_flags (flag_key, enabled, description, updated_at) VALUES (?, ?, ?, ?)",
+            (flag_key, int(bool(enabled)), "Premium visibility and feature safety flag.", datetime.utcnow().isoformat(timespec="seconds")),
+        )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_premium_entitlements_user ON pulse_premium_entitlements(user_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_creator_energy_user ON pulse_creator_energy_snapshots(user_id, captured_at)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_moderation (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
