@@ -15898,6 +15898,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 
 		.pulse-shell{width:100%;max-width:100vw;overflow-x:hidden}.pulse-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}.pulse-actions{display:flex;gap:8px;flex-wrap:wrap;max-width:100%}.success-panel{display:none}.success-panel.show{display:block}.post h2,.post p,.card h1,.card h2,.card p{overflow-wrap:anywhere}.feed,.post,.card,.composer,.side,.intel-item{min-width:0}.tabs,.pulse-nav{-webkit-overflow-scrolling:touch}.tabs button,.pulse-nav-link{flex:0 0 auto}input[type=file]{max-width:100%;font-size:14px}.composer .actions .button,.composer .actions button{flex:1 1 160px}.media-grid img,.media-grid video,img,video{max-width:100%;height:auto}.toast{pointer-events:none}.toast.show{pointer-events:auto}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{display:none!important}
 	.post-tools{display:flex;align-items:center;gap:8px}.post-menu-btn{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}.post-sheet{display:none;position:absolute;right:12px;top:62px;z-index:12;width:min(260px,calc(100vw - 34px));border:1px solid rgba(110,223,246,.22);border-radius:16px;background:rgba(7,19,33,.98);box-shadow:0 24px 70px rgba(0,0,0,.5);padding:8px}.post-sheet.open{display:grid;gap:6px}.post-sheet button,.post-sheet .button{width:100%;justify-content:flex-start;border-radius:12px;min-height:40px}
+	.pulse-media-wrap{position:relative;overflow:hidden;border-radius:12px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.13),transparent 12rem),linear-gradient(145deg,rgba(7,19,33,.92),rgba(4,9,17,.94));border:1px solid rgba(110,223,246,.14);min-height:180px}.pulse-media-wrap img,.pulse-media-wrap video{display:block;border:0!important;border-radius:0!important}.pulse-media-fallback{position:absolute;inset:0;display:none;place-items:center;text-align:center;padding:18px;color:#dffcff;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));backdrop-filter:blur(3px)}.pulse-media-fallback strong{display:block;margin-bottom:5px}.pulse-media-fallback button{margin-top:8px;min-height:34px;border-radius:999px;padding:6px 12px}.pulse-media-wrap.is-broken .pulse-media-fallback{display:grid}.pulse-media-wrap.is-broken img,.pulse-media-wrap.is-broken video{opacity:.08;filter:blur(4px)}
 	.reaction-strip{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;padding:2px 0 4px;scrollbar-width:none}.reaction-strip::-webkit-scrollbar{display:none}.reaction-pill{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px;font-weight:950;background:rgba(255,255,255,.045);transition:transform .14s ease,background .14s ease,border-color .14s ease}.reaction-pill b{font-size:12px}.reaction-pill.active{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.58);box-shadow:0 0 0 1px rgba(54,229,143,.12),0 0 24px rgba(54,229,143,.16);transform:translateY(-1px)}
 	.quick-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);padding:7px 0}.quick-action{min-height:36px;border:0;background:transparent;border-radius:10px;padding:6px 5px;color:#dffcff;font-size:13px}.quick-action:active{background:rgba(110,223,246,.1)}
 	.inline-comments{display:grid;gap:7px;padding-top:2px}.comments{display:grid;gap:7px;max-height:220px;overflow:auto}.comment{border-left:0;border-radius:12px;background:rgba(255,255,255,.045);padding:8px 10px}.comment p{margin:3px 0}.comment-preview-toggle{min-height:32px;justify-content:flex-start;border:0;background:transparent;color:#b9f7ff;padding:3px 0}.comment-composer{display:grid;grid-template-columns:34px minmax(0,1fr) 36px 38px;gap:6px;align-items:center}.comment-avatar{width:34px;height:34px;border-radius:999px}.comment-input{min-height:38px;border-radius:999px;padding:9px 13px}.comment-send,.comment-emoji{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0}.typing{min-height:18px;color:#b9f7ff;font-size:12px}.live-enter{animation:pulseIn .28s ease-out}@keyframes pulseIn{from{opacity:.2;transform:translateY(-8px)}to{opacity:1;transform:none}}
@@ -15929,7 +15930,9 @@ const smartTimeHtml=(ts,suffix='')=>window.CoinPilotTime?window.CoinPilotTime.el
 function toast(m,key=''){const t=document.getElementById('toast');if(!t)return;const message=String(m||'Pulse activity updated.');const now=Date.now();const storageKey=key?`pulse-toast:${key}`:'';if(storageKey){const seen=Number(localStorage.getItem(storageKey)||0);if(seen&&now-seen<86400000)return;localStorage.setItem(storageKey,String(now))}if(!storageKey&&state.lastToast.message===message&&now-state.lastToast.at<12000)return;state.lastToast={message,at:now};t.textContent=message;t.classList.add('show');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove('show'),3400)}
 const drawer=document.getElementById('pulseDrawer'),sheet=document.getElementById('createSheet');function setDrawer(open){document.body.classList.toggle('drawer-open',open);drawer?.setAttribute('aria-hidden',open?'false':'true')}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{if(e.target.closest('a'))setDrawer(false)});let sx=0,sy=0;document.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)},{passive:true});document.getElementById('pulseFab')?.addEventListener('click',()=>sheet?.classList.toggle('open'));document.addEventListener('click',e=>{if(sheet?.classList.contains('open')&&!e.target.closest('#createSheet,#pulseFab'))sheet.classList.remove('open');const b=e.target.closest('[data-sheet-type]');if(!b)return;document.getElementById('postType').value=b.dataset.sheetType;sheet.classList.remove('open');document.getElementById('postBody').focus();window.scrollTo({top:document.querySelector('.composer').offsetTop-70,behavior:'smooth'})});
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
-function mediaHtml(items){return (items||[]).map(m=>m.media_type==='video'?`<video src="${esc(m.media_url)}" poster="${esc(m.thumbnail_url||'')}" muted controls playsinline preload="metadata"></video>`:`<img src="${esc(m.thumbnail_url||m.media_url)}" alt="Pulse media" loading="lazy">`).join('')}
+function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/'))return url;return '/'+url.replace(/^\\/+/, '')}
+function mediaFallbackHtml(m){return `<div class="pulse-media-fallback"><div><strong>Media loading...</strong><span class="muted">This Pulse asset is being recovered.</span><br><button type="button" data-retry-media>Retry</button></div></div>`}
+function mediaHtml(items){return (items||[]).map(m=>{const src=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url)||src;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||'',src}).slice(0,500));return m.media_type==='video'?`<div class="pulse-media-wrap" data-media-diag="${diag}"><video src="${esc(src)}" poster="${esc(thumb)}" muted controls playsinline preload="metadata" onerror="this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)"></video>${mediaFallbackHtml(m)}</div>`:`<div class="pulse-media-wrap" data-media-diag="${diag}"><img src="${esc(thumb)}" data-full-src="${esc(src)}" alt="Pulse media" loading="lazy" onerror="if(this.dataset.fullSrc&&this.src!==new URL(this.dataset.fullSrc,location.origin).href){this.src=this.dataset.fullSrc}else{this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)}">${mediaFallbackHtml(m)}</div>`}).join('')}
 function premiumMarkHtml(author){const mark=author&&author.premium_mark;if(!mark)return '';return `<span class="premium-glow-mark ${esc(mark.type||'star')}" title="Premium Verified" aria-label="Premium Verified">${esc(mark.symbol||'✦')}</span>`}
 		function reactionHtml(p){return Object.entries(reactions).slice(0,6).map(([k,label])=>`<button class="reaction-pill ${p.viewer_reaction===k?'active':''}" title="${esc(label)}" data-react="${k}" data-post="${p.id}" data-count="${Number((p.reaction_counts||{})[k]||0)}"><span>${reactionIcons[k]||'•'}</span> <b data-reaction-count>${Number((p.reaction_counts||{})[k]||0)}</b></button>`).join('')}
         function postHtml(p){const author=p.author||{};const label=author.primary_label||author.rank||(author.badges||['Member'])[0]||'Member';const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const canDelete=!!p.can_delete;const follow=(!canDelete&&author.public_player_id)?`<button data-follow-public="${esc(author.public_player_id)}">Follow</button>`:'';const msg=(!canDelete&&author.public_player_id)?`<button data-message="${esc(author.public_player_id)}">Message creator</button>`:'';const del=canDelete?`<button data-delete-post="${p.id}">Delete post</button>`:'';const rep=!canDelete?`<button data-report="post" data-id="${p.id}">Report</button>`:'';const module=p.post_type==='scam_report'?`<div class="intel-item"><strong>Scam Shield pulse</strong><br><span class="muted">Risk score ${Number(p.risk_score||0)}. Community-generated warning, educational only.</span></div>`:p.post_type==='poll'?`<div class="intel-item"><strong>Question pulse</strong><br><span class="muted">Educators and community members can answer below.</span></div>`:'';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="card post live-enter" data-post-id="${p.id}"><div class="author"><div class="author-main"><span class="avatar">${avatar}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'Pulse creator')}${premiumMarkHtml(author)}</div><span class="badge">${esc(label)}</span></div></div><div class="post-tools"><button class="post-menu-btn" data-post-menu="${p.id}" aria-label="Post actions">•••</button></div><div class="post-sheet" data-post-sheet="${p.id}">${follow}${msg}<a class="button" href="${esc(p.permalink)}">View post</a><a class="button" href="${profile}">View profile</a><button data-share="${esc(p.permalink)}">Share post</button>${del}${rep}</div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${module}${p.media&&p.media.length?`<div class="media-grid">${mediaHtml(p.media)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${smartTimeHtml(p.created_at)} <span class="time-dot">•</span> ${esc(p.post_type||'post')} <span class="time-dot">•</span> <span data-comment-count="${p.id}">${Number(p.comments_count||p.comment_count||0)}</span> comments <span class="time-dot">•</span> <span data-reaction-total="${p.id}">${Number(p.reactions_count||0)}</span> reactions</p><div class="reaction-strip">${reactionHtml(p)}</div><div class="quick-actions"><button class="quick-action" data-quick-like="${p.id}">Like</button><button class="quick-action" data-open-comments="${p.id}">Comment</button><button class="quick-action" data-share="${esc(p.permalink)}">Share</button><button class="quick-action" data-save-post="${p.id}">Save</button><button class="quick-action" data-post-menu="${p.id}">More</button></div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><button class="comment-preview-toggle" data-view-comments="${p.id}" hidden>View comments</button><div class="comment-composer"><span class="avatar comment-avatar">${avatar}</span><input class="comment-input" data-comment-input="${p.id}" placeholder="Write comment..."><button class="comment-emoji" data-comment-emoji="${p.id}" type="button">☺</button><button class="comment-send" data-send-comment="${p.id}" type="button">➤</button></div></section></article>`}
@@ -15954,7 +15957,7 @@ const composer=document.getElementById('pulseComposer');const expandComposer=()=
 document.querySelectorAll('[data-type]').forEach(b=>b.addEventListener('click',()=>{document.getElementById('postType').value=b.dataset.type;document.querySelectorAll('[data-type]').forEach(x=>x.classList.toggle('active',x===b));expandComposer()}));
 document.getElementById('aiBtn').addEventListener('click',()=>{const body=document.getElementById('postBody');if(!body.value.trim()){body.value='Question for Pulse: ';document.getElementById('postType').value='poll';body.focus();return}body.value=body.value.trim()+"\\n\\n#CoinPilotXAI #MarketPsychology";toast('AI clarity pass added tags.')});
 document.getElementById('publishBtn').addEventListener('click',async()=>{const btn=document.getElementById('publishBtn');btn.disabled=true;const mediaIds=[];try{const files=[...document.getElementById('postMedia').files].slice(0,4);for(const file of files){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');const d=await api('/api/media/upload',{method:'POST',body:fd});mediaIds.push(d.media.id)}const d=await api('/api/pulse/posts',{method:'POST',body:JSON.stringify({body:document.getElementById('postBody').value,title:document.getElementById('postTitle').value,post_type:document.getElementById('postType').value,media_ids:mediaIds})});const next=d.next_url||`/pulse/post/${d.post_id}`;document.getElementById('successView').href=next;document.getElementById('publishSuccess').classList.add('show');document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';if(d.post)applyLiveEvents([{event_type:'new_post',id:state.lastEventId||0,post_id:d.post_id,payload:{post:d.post}}]);toast('Post published.')}catch(e){toast(e.message)}finally{btn.disabled=false}});
-	document.addEventListener('click',async e=>{const menu=e.target.closest('[data-post-menu]');if(menu){const id=menu.dataset.postMenu;document.querySelectorAll('.post-sheet.open').forEach(s=>{if(s.dataset.postSheet!==id)s.classList.remove('open')});document.querySelector(`[data-post-sheet="${id}"]`)?.classList.toggle('open');return}if(!e.target.closest('.post-sheet,.post-menu-btn'))document.querySelectorAll('.post-sheet.open').forEach(s=>s.classList.remove('open'));const quick=e.target.closest('[data-quick-like]');if(quick){document.querySelector(`[data-post="${quick.dataset.quickLike}"][data-react="fire"]`)?.click();return}const view=e.target.closest('[data-view-comments],[data-open-comments]');if(view){const id=view.dataset.viewComments||view.dataset.openComments;loadComments(id,true);document.querySelector(`[data-comment-input="${id}"]`)?.focus();return}const emoji=e.target.closest('[data-comment-emoji]');if(emoji){const input=document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);if(input){input.value=(input.value||'')+' 🔥';input.focus()}return}const save=e.target.closest('[data-save-post]');if(save){try{const d=await api(`/api/pulse/posts/${save.dataset.savePost}/save`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Saved.')}catch(err){toast(err.message)}return}const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(countEl)countEl.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this Pulse post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});document.querySelector(`[data-post-id="${del.dataset.deletePost}"]`)?.remove();toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({public_player_id:msg.dataset.message})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'CoinPilotXAI Pulse',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
+	document.addEventListener('click',async e=>{const retry=e.target.closest('[data-retry-media]');if(retry){const wrap=retry.closest('.pulse-media-wrap');const media=wrap?.querySelector('img,video');wrap?.classList.remove('is-broken');if(media){const base=(media.dataset.fullSrc||media.currentSrc||media.src||'').split('?')[0];media.src=base+(base.includes('?')?'&':'?')+'retry='+Date.now();media.load?.()}return}const menu=e.target.closest('[data-post-menu]');if(menu){const id=menu.dataset.postMenu;document.querySelectorAll('.post-sheet.open').forEach(s=>{if(s.dataset.postSheet!==id)s.classList.remove('open')});document.querySelector(`[data-post-sheet="${id}"]`)?.classList.toggle('open');return}if(!e.target.closest('.post-sheet,.post-menu-btn'))document.querySelectorAll('.post-sheet.open').forEach(s=>s.classList.remove('open'));const quick=e.target.closest('[data-quick-like]');if(quick){document.querySelector(`[data-post="${quick.dataset.quickLike}"][data-react="fire"]`)?.click();return}const view=e.target.closest('[data-view-comments],[data-open-comments]');if(view){const id=view.dataset.viewComments||view.dataset.openComments;loadComments(id,true);document.querySelector(`[data-comment-input="${id}"]`)?.focus();return}const emoji=e.target.closest('[data-comment-emoji]');if(emoji){const input=document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);if(input){input.value=(input.value||'')+' 🔥';input.focus()}return}const save=e.target.closest('[data-save-post]');if(save){try{const d=await api(`/api/pulse/posts/${save.dataset.savePost}/save`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Saved.')}catch(err){toast(err.message)}return}const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(countEl)countEl.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this Pulse post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});document.querySelector(`[data-post-id="${del.dataset.deletePost}"]`)?.remove();toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({public_player_id:msg.dataset.message})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'CoinPilotXAI Pulse',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
 document.addEventListener('focusin',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;const postId=input.dataset.commentInput;loadComments(postId);api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{})});
 document.addEventListener('input',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;clearTimeout(input._typingTimer);const postId=input.dataset.commentInput;api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{});input._typingTimer=setTimeout(()=>api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{}),2400)});
 document.addEventListener('keydown',e=>{const input=e.target.closest('[data-comment-input]');if(input&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendComment(input.dataset.commentInput)}});
@@ -19530,7 +19533,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         )
         active_conversation = dict(cur.fetchone() or {})
         conn.close()
-        if active_conversation and (active_conversation.get("conversation_type") or "direct") != "direct":
+        if active_conversation:
             active_pulse_conversation_id = active_thread_id
             active_thread_id = 0
     main = """
@@ -20005,7 +20008,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           const lastDivider = thread.querySelector(".unified-date-divider:last-of-type");
           const needsDivider = key && (!lastDivider || lastDivider.dataset.dateDivider !== key);
           thread.insertAdjacentHTML("beforeend", `${needsDivider ? `<div class="unified-date-divider" data-date-divider="${esc(key)}">${esc(dividerLabel(message.created_at))}</div>` : ""}${bubble(message, previous)}`);
-          state.lastMessageId = Math.max(state.lastMessageId, Number(message.message_id || message.id || 0));
+          const numericId = Number(message.message_id || message.id || 0);
+          if (Number.isFinite(numericId)) state.lastMessageId = Math.max(state.lastMessageId, numericId);
         });
         if ((messages || []).length && nearBottom) thread.scrollTop = thread.scrollHeight;
       };
@@ -20066,7 +20070,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
 	        if (state.voiceRecorder && state.voiceRecorder.state === "recording") state.voiceRecorder.stop();
 	      };
       const openCapture = async mode => {
-        if ((state.mode === "direct" && !state.activeThread) || (state.mode !== "direct" && !state.activePulseConversation)) { toast("Choose a chat first."); return; }
+        if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
         state.captureMode = mode;
         state.capturedBlob = null;
         const modal = document.querySelector("[data-capture-modal]");
@@ -20122,13 +20126,14 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const box = document.querySelector("[data-unified-conversations]");
         box.innerHTML = '<div class="unified-empty">Loading conversations...</div>';
         try {
-          const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
+          const response = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
           const data = await response.json();
           if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load conversations.");
-          box.innerHTML = (data.conversations || []).map(item => {
+          const direct = (data.conversations || []).filter(item => (item.conversation_type || "direct") === "direct");
+          box.innerHTML = direct.map(item => {
             const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
             return `
-            <button class="unified-row" type="button" data-open-thread="${item.id}" data-other-user-id="${item.other_user_id || ""}">
+            <button class="unified-row" type="button" data-open-pulse-conversation="${item.conversation_id || item.id}" data-conversation-type="direct" data-other-user-id="${item.other_user_id || ""}">
               <strong>${esc(item.title || "Pulse user")}${Number(item.unread_count || 0) ? `<span class="unread-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
               <span class="${typing ? "typing-preview" : ""}">${esc(typing || item.latest_message || "No messages yet.")}</span>
               <span>${friendlyTime(item.last_message_at || item.updated_at)}</span>
@@ -20188,40 +20193,18 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         }
       }
       async function openThread(id) {
-        state.mode = "direct";
-        state.activeThread = Number(id || 0);
-        state.activePulseConversation = 0;
-        state.activeRoomId = "";
-        renderPresence(null);
-        setThreadChrome("Private conversation", "Direct");
-        document.querySelector("[data-unified-sidebar]").classList.add("is-thread-open");
-        document.querySelector("[data-unified-thread-pane]").classList.add("is-open");
-        document.querySelectorAll("[data-open-thread]").forEach(button => button.classList.toggle("is-active", Number(button.dataset.openThread) === state.activeThread));
-        const thread = document.querySelector("[data-unified-thread]");
-        thread.innerHTML = '<div class="unified-empty">Loading messages...</div>';
-        try {
-          const response = await fetch("/api/chat/thread/" + state.activeThread, { cache: "no-store", credentials: "same-origin" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load messages.");
-          state.currentUserId = data.me?.user_id || 0;
-          setThreadChrome(data.thread?.title || data.other_user?.display_name || "Private conversation", "Direct");
-          renderMessages(data.messages || []);
-          setComposerEnabled(true);
-          history.replaceState(null, "", "/pulse/messages/" + state.activeThread);
-          loadThreads();
-        } catch (error) {
-          thread.innerHTML = `<div class="unified-empty">${esc(error.message || "Unable to load this conversation.")}</div>`;
-        }
+        return openPulseConversation(id, "", "direct");
       }
-      async function openPulseConversation(conversationId, roomId = "") {
-        state.mode = roomId ? "room" : "group";
+      async function openPulseConversation(conversationId, roomId = "", modeOverride = "") {
+        state.mode = modeOverride || (roomId ? "room" : "group");
         state.activePulseConversation = Number(conversationId || 0);
         state.activeRoomId = roomId || "";
         state.activeRoomName = state.activeRoomName || "";
         state.activeThread = 0;
-        setThreadChrome(roomId ? "Pulse room" : "Group chat", roomId ? "Room" : "Group");
+        setThreadChrome(roomId ? "Pulse room" : state.mode === "direct" ? "Private conversation" : "Group chat", roomId ? "Room" : state.mode === "direct" ? "Direct" : "Group");
         document.querySelector("[data-unified-sidebar]").classList.add("is-thread-open");
         document.querySelector("[data-unified-thread-pane]").classList.add("is-open");
+        document.querySelectorAll("[data-open-pulse-conversation]").forEach(button => button.classList.toggle("is-active", Number(button.dataset.openPulseConversation) === state.activePulseConversation));
         const thread = document.querySelector("[data-unified-thread]");
         thread.innerHTML = '<div class="unified-empty">Loading messages...</div>';
         try {
@@ -20231,29 +20214,34 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load messages.");
           state.activePulseConversation = Number(data.conversation_id || state.activePulseConversation);
           state.currentUserId = Number(root.dataset.currentUser || 0);
-          const title = data.conversation?.title || (roomId ? (state.activeRoomName || "Pulse room") : "Group chat");
-          setThreadChrome(title, roomId ? "Room" : "Group");
+          const convoType = data.conversation?.conversation_type || state.mode;
+          state.mode = roomId ? "room" : (convoType === "direct" ? "direct" : "group");
+          const title = data.conversation?.title || (roomId ? (state.activeRoomName || "Pulse room") : state.mode === "direct" ? "Private conversation" : "Group chat");
+          setThreadChrome(title, roomId ? "Room" : state.mode === "direct" ? "Direct" : "Group");
           const notice = data.pinned_notice ? [{id:0, body:data.pinned_notice, status:"pinned", created_at:""}] : [];
           renderMessages(notice.concat(data.messages || []));
           setComposerEnabled(true, state.mode);
           refreshPresence();
           if (state.mode === "room") loadRooms();
           if (state.mode === "group") loadGroups();
-          history.replaceState(null, "", "/pulse/messages?conversation=" + state.activePulseConversation);
+          if (state.mode === "direct") loadThreads();
+          history.replaceState(null, "", "/pulse/messages/" + state.activePulseConversation);
         } catch (error) {
           console.error("Open Pulse conversation failed", error);
-          thread.innerHTML = `<div class="unified-empty">${esc(error.message || "Unable to load this chat.")}</div>`;
+          state.activePulseConversation = 0;
+          setComposerEnabled(false, state.mode);
+          thread.innerHTML = `<div class="unified-empty">${esc(error.message || "This conversation is no longer available.")}</div>`;
         }
       }
       async function pollThread() {
         if (state.live && state.live.readyState === EventSource.OPEN) return;
         if (state.polling || document.hidden) return;
-        if (state.mode === "direct" && !state.activeThread) return;
+        if (state.mode === "direct" && !state.activePulseConversation) return;
         if (state.mode !== "direct" && !state.activePulseConversation && !state.activeRoomId) return;
         state.polling = true;
         try {
           const url = state.mode === "direct"
-            ? `/api/chat/thread/${state.activeThread}/new?after_id=${state.lastMessageId}`
+            ? `/api/pulse/messages/${state.activePulseConversation}/messages`
             : state.mode === "room"
               ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
               : `/api/pulse/messages/${state.activePulseConversation}/messages`;
@@ -20376,7 +20364,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           return;
         }
 	        if (event.target.closest("[data-toggle-media-tray]")) {
-	          if ((state.mode === "direct" && !state.activeThread) || (state.mode !== "direct" && !state.activePulseConversation)) { toast("Choose a chat first."); return; }
+	          if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
 	          document.querySelector("[data-media-tray]")?.classList.toggle("is-open");
 	          return;
 	        }
@@ -20447,7 +20435,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         }
         const uploadKind = event.target.closest("[data-upload-kind]");
         if (uploadKind) {
-          if ((state.mode === "direct" && !state.activeThread) || (state.mode !== "direct" && !state.activePulseConversation)) { toast("Choose a chat first."); return; }
+          if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
           if (uploadKind.dataset.uploadKind === "gif") {
             document.querySelector("[data-gif-modal]").classList.add("is-open");
             document.querySelector("[data-gif-modal]").setAttribute("aria-hidden", "false");
@@ -20559,7 +20547,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           return;
         }
         const pulseRow = event.target.closest("[data-open-pulse-conversation]");
-        if (pulseRow) { openPulseConversation(pulseRow.dataset.openPulseConversation); return; }
+        if (pulseRow) { openPulseConversation(pulseRow.dataset.openPulseConversation, "", pulseRow.dataset.conversationType || ""); return; }
         const selectUser = event.target.closest("[data-select-group-user]");
         if (selectUser) {
           const id = String(selectUser.dataset.selectGroupUser || "");
@@ -20624,7 +20612,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (message) {
           try {
             const result = await pulseApi("/api/pulse/messages/start", { method: "POST", body: JSON.stringify({ target_user_id: message.dataset.messageUser }) });
-            await openThread(result.thread_id || result.conversation_id);
+            await openPulseConversation(result.conversation_id || result.thread_id, "", "direct");
           } catch (error) { toast(error.message); }
         }
       });
@@ -20693,8 +20681,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       document.querySelector("[data-message-file]").addEventListener("change", async event => {
         const file = event.target.files?.[0];
         if (!file) return;
-        if (state.mode === "direct" && !state.activeThread) { toast("Choose a chat first."); event.target.value = ""; return; }
-        if (state.mode !== "direct" && !state.activePulseConversation) { toast("Choose a chat first."); event.target.value = ""; return; }
+        if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); event.target.value = ""; return; }
         const preview = document.querySelector("[data-media-preview]");
         const progress = document.querySelector("[data-upload-progress]");
         const bar = progress.querySelector("span");
@@ -20738,11 +20725,12 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const body = input.value.trim();
         const mediaDraft = state.mediaDraft;
         if (!body && !mediaDraft) return;
-        if (state.mode === "direct" && !state.activeThread) { toast("Choose a chat first."); return; }
-        if (state.mode !== "direct" && !state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
+        if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
         input.value = "";
         const button = event.target.querySelector('button[type="submit"]');
         button.disabled = true;
+        const tempId = "temp-" + Date.now();
+        appendMessages([{ id: tempId, message_id: tempId, conversation_id: state.activePulseConversation, sender_user_id: state.currentUserId, body, content: body, message_type: mediaDraft?.message_type || "text", media_url: mediaDraft?.media_url || "", thumbnail_url: mediaDraft?.thumbnail_url || "", status: "sending", delivery_status: "sending", created_at: new Date().toISOString(), is_mine: true }]);
         try {
 	          const url = state.mode === "direct"
 	            ? `/api/pulse/messages/send`
@@ -20750,12 +20738,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
 	              ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
 	              : `/api/pulse/messages/${state.activePulseConversation}/send`;
 	          const payload = { message: body, reply_to_id: state.replyToId || 0 };
-	          if (state.mode === "direct") payload.thread_id = state.activeThread;
+	          if (state.activePulseConversation) payload.conversation_id = state.activePulseConversation;
 	          if (mediaDraft) Object.assign(payload, mediaDraft);
           const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
           const data = await response.json();
           if (!response.ok || data.ok === false) throw new Error(data.message || "Could not send message.");
           const sentMessage = (data.data && typeof data.data === "object") ? data.data : (data.message && typeof data.message === "object") ? data.message : null;
+          document.querySelector(`[data-message-id="${CSS.escape(tempId)}"]`)?.remove();
           if (sentMessage) appendMessages([sentMessage]);
           state.mediaDraft = null;
           state.replyToId = 0;
@@ -20769,6 +20758,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           refreshPresence();
         } catch (error) {
           console.error("Send failed", error);
+          const temp = document.querySelector(`[data-message-id="${CSS.escape(tempId)}"]`);
+          if (temp) temp.querySelector("small").textContent = "failed";
           input.value = body;
           toast(error.message || "Could not send message.");
         } finally {
@@ -20788,7 +20779,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       document.addEventListener("keydown", event => { if (event.key === "Escape") showMenu(false); });
       setComposerEnabled(false);
       loadThreads().then(() => {
-        if (state.activePulseConversation) { setTab("groups"); openPulseConversation(state.activePulseConversation); }
+        if (state.activePulseConversation) { openPulseConversation(state.activePulseConversation); }
         else if (state.activeThread) openThread(state.activeThread);
       });
       startLiveStream();
@@ -22460,9 +22451,18 @@ def api_pulse_message_send():
         return jsonify({"ok": False, "message": "Write a message or attach media before sending."}), 400
     if media_url and message_type == "text":
         message_type = "link" if media_url.startswith(("http://", "https://", "/pulse/")) and not media_url.startswith("/static/") else "image"
+    trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     conversation_id = int(payload.get("conversation_id") or 0)
     thread_id = int(payload.get("thread_id") or 0)
+    logging.info(
+        "PULSE_MESSAGE_SEND_START trace_id=%s user_id=%s conversation_id=%s thread_id=%s type=%s",
+        trace_id,
+        user.get("user_id"),
+        conversation_id,
+        thread_id,
+        message_type,
+    )
     if conversation_id and not thread_id:
         cur.execute("SELECT * FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
         conversation = dict(cur.fetchone() or {})
@@ -22525,12 +22525,42 @@ def api_pulse_message_send():
             (conversation_id, user["user_id"], receiver_id, receiver_id, user["user_id"]),
         )
         thread_id = int(dict(cur.fetchone() or {}).get("id") or 0)
+        if not thread_id and receiver_id:
+            bridge_result, bridge_status = pulse_start_conversation(cur, user["user_id"], target_user_id=receiver_id)
+            if not bridge_result.get("ok"):
+                logging.warning("PULSE_MESSAGE_SEND_DIRECT_BRIDGE_FAILED trace_id=%s user_id=%s conversation_id=%s receiver_id=%s status=%s result=%s", trace_id, user.get("user_id"), conversation_id, receiver_id, bridge_status, bridge_result)
+                conn.close()
+                return jsonify({**bridge_result, "trace_id": bridge_result.get("trace_id") or trace_id}), bridge_status
+            conversation_id = int(bridge_result.get("conversation_id") or conversation_id)
+            thread_id = int(bridge_result.get("thread_id") or 0)
     if thread_id:
         cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
         thread = dict(cur.fetchone() or {})
         if not thread:
-            conn.close()
-            return jsonify({"ok": False, "message": "Thread not found."}), 404
+            cur.execute(
+                """
+                SELECT cm.user_id
+                FROM conversation_members cm
+                WHERE cm.conversation_id=? AND cm.user_id!=?
+                LIMIT 1
+                """,
+                (thread_id, user["user_id"]),
+            )
+            old_peer_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
+            if old_peer_id:
+                bridge_result, bridge_status = pulse_start_conversation(cur, user["user_id"], target_user_id=old_peer_id)
+                if bridge_result.get("ok"):
+                    conversation_id = int(bridge_result.get("conversation_id") or 0)
+                    thread_id = int(bridge_result.get("thread_id") or 0)
+                    cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
+                    thread = dict(cur.fetchone() or {})
+                    logging.info("PULSE_MESSAGE_SEND_BRIDGED_OLD_THREAD trace_id=%s user_id=%s old_thread_id=%s pulse_conversation_id=%s pulse_thread_id=%s", trace_id, user.get("user_id"), payload.get("thread_id"), conversation_id, thread_id)
+                else:
+                    logging.warning("PULSE_MESSAGE_SEND_BRIDGE_FAILED trace_id=%s user_id=%s submitted_thread_id=%s status=%s result=%s", trace_id, user.get("user_id"), thread_id, bridge_status, bridge_result)
+            if not thread:
+                logging.warning("PULSE_MESSAGE_SEND_NOT_FOUND trace_id=%s user_id=%s submitted_conversation_id=%s submitted_thread_id=%s reason=pulse_thread_missing", trace_id, user.get("user_id"), payload.get("conversation_id"), payload.get("thread_id"))
+                conn.close()
+                return jsonify({"ok": False, "message": "This conversation is no longer available.", "trace_id": trace_id}), 404
         receiver_id = int(thread.get("user_two_id") if int(thread.get("user_one_id") or 0) == int(user["user_id"]) else thread.get("user_one_id"))
         conversation_id = conversation_id or int(thread.get("conversation_id") or 0)
     else:
@@ -22538,7 +22568,8 @@ def api_pulse_message_send():
         result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=receiver_id)
         if not result.get("ok"):
             conn.close()
-            return jsonify(result), status
+            logging.warning("PULSE_MESSAGE_SEND_START_CONVERSATION_FAILED trace_id=%s user_id=%s result=%s", trace_id, user.get("user_id"), result)
+            return jsonify({**result, "trace_id": result.get("trace_id") or trace_id}), status
         receiver_id = int(result["target_user_id"])
         thread_id = int(result["thread_id"])
         conversation_id = int(result["conversation_id"])
@@ -22576,6 +22607,7 @@ def api_pulse_message_send():
     cur.execute("SELECT * FROM pulse_messages WHERE id=? LIMIT 1", (message_id,))
     message_payload = _pulse_message_payload(cur.fetchone(), user["user_id"])
     conn.commit(); conn.close()
+    logging.info("PULSE_MESSAGE_SEND_OK trace_id=%s user_id=%s conversation_id=%s thread_id=%s conversation_type=direct message_id=%s", trace_id, user.get("user_id"), conversation_id, thread_id, message_id)
     event = {"message": message_payload, "thread_id": thread_id, "conversation_id": conversation_id, "target_user_id": receiver_id, "message_id": message_id, "message_type": message_type, "media_url": media_url}
     pulse_emit_event("pulse_message_sent", event, user["user_id"], 0)
     pulse_emit_event("message_created", event, user["user_id"], 0)
@@ -22644,16 +22676,13 @@ def api_pulse_message_start():
         return jsonify({"ok": False, "message": "Pulse user not found."}), 404
     if int(target_user_id) == int(user["user_id"]):
         return jsonify({"ok": False, "message": "You cannot message yourself."}), 400
-    conversation_id = direct_conversation_between(user["user_id"], target_user_id)
-    result = {
-        "ok": True,
-        "conversation_id": conversation_id,
-        "thread_id": conversation_id,
-        "target_user_id": target_user_id,
-        "next_url": f"/pulse/messages/{conversation_id}",
-    }
-    log_product_event(user["user_id"], "pulse_message_thread_started", {"thread_id": conversation_id, "target_user_id": target_user_id, "source": "dashboard_private_chat"})
-    return jsonify(result), 200
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id)
+    if result.get("ok"):
+        conn.commit()
+    conn.close()
+    log_product_event(user["user_id"], "pulse_message_thread_started", {"conversation_id": result.get("conversation_id"), "thread_id": result.get("thread_id"), "target_user_id": target_user_id, "source": "pulse_messenger"})
+    return jsonify(result), status
 
 
 @webhook_app.route("/api/pulse/users/search", methods=["GET"])
@@ -23264,10 +23293,20 @@ def api_pulse_conversation_messages(conversation_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
-    if not cur.fetchone():
+    cur.execute(
+        """
+        SELECT c.*
+        FROM pulse_conversations c
+        JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
+        WHERE c.id=? AND COALESCE(c.status,'active')='active'
+        LIMIT 1
+        """,
+        (user["user_id"], conversation_id),
+    )
+    conversation = dict(cur.fetchone() or {})
+    if not conversation:
         conn.close()
-        return jsonify({"ok": False, "message": "Conversation not found."}), 404
+        return jsonify({"ok": False, "message": "This conversation is no longer available."}), 404
     cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 300", (conversation_id,))
     messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
     messages = pulse_attach_reply_previews(cur, messages)
@@ -23289,9 +23328,18 @@ def api_pulse_conversation_messages(conversation_id):
                 (m["id"], conversation_id, user["user_id"], now, now),
             )
     pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
+    convo_type = conversation.get("conversation_type") or "direct"
+    title = conversation.get("title") or ""
+    avatar_url = conversation.get("avatar_url") or ""
+    if convo_type == "direct":
+        cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+        other_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
+        other = pulse_identity_for_user(cur, other_id) if other_id else {}
+        title = other.get("name") or "Private conversation"
+        avatar_url = other.get("avatar_url") or ""
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "conversation_id": conversation_id, "messages": messages})
+    return jsonify({"ok": True, "conversation_id": conversation_id, "conversation": {"id": conversation_id, "conversation_id": conversation_id, "conversation_type": convo_type, "title": title or "Pulse chat", "avatar_url": avatar_url, "member_count": int(conversation.get("member_count") or (2 if convo_type == "direct" else 1))}, "messages": messages})
 
 
 @webhook_app.route("/api/pulse/messages/<int:message_id>/react", methods=["POST"])
