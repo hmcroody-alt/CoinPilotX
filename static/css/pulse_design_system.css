@@ -224,6 +224,9 @@ a[href="/pulse/premium"] {
 .premium-promo-card {
   min-width: 0;
   overflow-wrap: anywhere;
+  content-visibility: auto;
+  contain: layout paint;
+  contain-intrinsic-size: auto 260px;
 }
 
 .card:hover,
@@ -282,5 +285,31 @@ a[href="/pulse/premium"] {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+@media (max-width: 768px), (prefers-reduced-motion: reduce) {
+  body {
+    background:
+      radial-gradient(circle at 14% 0, rgba(110, 223, 246, 0.08), transparent 22rem),
+      linear-gradient(145deg, #050b14, #081421 62%, #04070d) !important;
+  }
+
+  .pulse-premium-sheen::before,
+  .premium-promo-card::before,
+  .elite-card::before,
+  .premium-glow-mark,
+  .prestige-card::before,
+  .elite-mark {
+    animation: none !important;
+  }
+
+  .card,
+  .glass-panel,
+  .lux-card,
+  .premium-promo-card,
+  .premium-analytics-preview {
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22) !important;
+    backdrop-filter: none !important;
   }
 }

@@ -4541,7 +4541,7 @@
       function startHealthMonitor() {
         verifyConnection();
         if (!healthTimer) {
-          healthTimer = window.setInterval(verifyConnection, 5000);
+          healthTimer = window.setInterval(verifyConnection, 15000);
         }
       }
 

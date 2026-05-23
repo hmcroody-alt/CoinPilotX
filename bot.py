@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import quote, urlparse
-from flask import Flask, request, render_template, send_from_directory, send_file, jsonify, Response, session, redirect, url_for, has_request_context, abort
+from flask import Flask, request, render_template, send_from_directory, send_file, jsonify, Response, session, redirect, url_for, has_request_context, abort, g
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -69,6 +69,7 @@ from services import (
     audio_intelligence_engine,
     civilization_ai_engine,
     camera_filter_engine,
+    cache_engine,
     chat_realtime_service,
     community_governance_engine,
     conversion_funnel_engine,
@@ -109,6 +110,7 @@ from services import (
     intelligence as intelligence_service,
     market_data as market_data_service,
     media_service,
+    media_storage,
     mobile_ux_engine,
     news_service,
     notification_service,
@@ -296,8 +298,40 @@ logging.basicConfig(
 # =========================
 DB_FILE = "coinpilotx.db"
 
+PERFORMANCE_SLOW_MS = int(os.getenv("PERFORMANCE_SLOW_MS", "500"))
+PERFORMANCE_CRITICAL_MS = int(os.getenv("PERFORMANCE_CRITICAL_MS", "1500"))
+INIT_DB_COMPLETED = False
+
+
+def _performance_query_observer(sql, params=None):
+    if not has_request_context():
+        return
+    try:
+        g.db_query_count = int(getattr(g, "db_query_count", 0) or 0) + 1
+        normalized = " ".join(str(sql or "").strip().split())[:220]
+        if normalized:
+            signatures = getattr(g, "db_query_signatures", None)
+            if signatures is None:
+                signatures = {}
+                g.db_query_signatures = signatures
+            signatures[normalized] = signatures.get(normalized, 0) + 1
+    except Exception:
+        pass
+
+
+db_service.set_query_observer(_performance_query_observer)
+
+
 def db():
-    return db_service.connect()
+    conn = db_service.connect()
+    if has_request_context():
+        try:
+            g.db_connection_count = int(getattr(g, "db_connection_count", 0) or 0) + 1
+            if db_service.ENGINE_NAME == "sqlite" and hasattr(conn, "set_trace_callback"):
+                conn.set_trace_callback(lambda sql: _performance_query_observer(sql, ()))
+        except Exception:
+            pass
+    return conn
 
 
 def normalize_email(email):
@@ -545,6 +579,9 @@ def seed_education_knowledge_bank(cur):
 
 
 def init_db():
+    global INIT_DB_COMPLETED
+    if INIT_DB_COMPLETED and os.getenv("FORCE_INIT_DB", "").strip().lower() not in {"1", "true", "yes"}:
+        return
     conn = db()
     cur = conn.cursor()
 
@@ -1867,6 +1904,53 @@ def reset_pwa_page():
     return response
 
 
+@webhook_app.before_request
+def start_performance_trace():
+    g.performance_trace_id = request.headers.get("X-Trace-Id") or secrets.token_hex(6)
+    g.performance_start = time.perf_counter()
+    g.db_query_count = 0
+    g.db_connection_count = 0
+    g.db_query_signatures = {}
+    return None
+
+
+def record_performance_trace(path, method, status, duration_ms, db_queries, response_size, trace_id, level):
+    try:
+        if duration_ms < PERFORMANCE_SLOW_MS and level != "critical":
+            return
+        conn = db()
+        cur = conn.cursor()
+        duplicates = {
+            key: count for key, count in (getattr(g, "db_query_signatures", {}) or {}).items()
+            if int(count or 0) > 1
+        }
+        cur.execute(
+            """
+            INSERT INTO performance_traces
+            (trace_id, path, method, status_code, duration_ms, db_query_count, db_connection_count, response_size, user_id, level, duplicate_queries_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                trace_id,
+                str(path or "")[:500],
+                str(method or "")[:12],
+                int(status or 0),
+                int(duration_ms or 0),
+                int(db_queries or 0),
+                int(getattr(g, "db_connection_count", 0) or 0),
+                int(response_size or 0),
+                int(account_user_id() or 0),
+                level,
+                json.dumps(duplicates)[:4000],
+                datetime.utcnow().isoformat(timespec="seconds"),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logging.debug("performance trace store skipped path=%s error=%s", path, exc)
+
+
 @webhook_app.after_request
 def add_pwa_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -1908,6 +1992,35 @@ def add_pwa_headers(response):
                 response.headers.pop("Content-Length", None)
         except Exception as exc:
             logging.info("GLOBAL_FAVICON_INJECT_SKIPPED path=%s error=%s", request.path, exc)
+    try:
+        duration_ms = int((time.perf_counter() - float(getattr(g, "performance_start", time.perf_counter()))) * 1000)
+        response_size = response.calculate_content_length()
+        if response_size is None:
+            response_size = len(response.get_data()) if not response.direct_passthrough else 0
+        db_queries = int(getattr(g, "db_query_count", 0) or 0)
+        trace_id = getattr(g, "performance_trace_id", secrets.token_hex(6))
+        level = "critical" if duration_ms >= PERFORMANCE_CRITICAL_MS else "warning" if duration_ms >= PERFORMANCE_SLOW_MS else "info"
+        response.headers.setdefault("X-Trace-Id", trace_id)
+        response.headers.setdefault("X-Response-Time-Ms", str(duration_ms))
+        response.headers.setdefault("X-DB-Query-Count", str(db_queries))
+        logging.log(
+            logging.ERROR if level == "critical" else logging.WARNING if level == "warning" else logging.INFO,
+            "PERF_REQUEST trace_id=%s method=%s path=%s status=%s duration_ms=%s db_queries=%s db_connections=%s user_id=%s response_size=%s level=%s",
+            trace_id,
+            request.method,
+            request.path,
+            response.status_code,
+            duration_ms,
+            db_queries,
+            int(getattr(g, "db_connection_count", 0) or 0),
+            account_user_id() or 0,
+            response_size,
+            level,
+        )
+        if level in {"warning", "critical"}:
+            record_performance_trace(request.path, request.method, response.status_code, duration_ms, db_queries, response_size, trace_id, level)
+    except Exception as exc:
+        logging.debug("PERF_REQUEST_LOG_SKIPPED path=%s error=%s", request.path, exc)
     return response
 
 
@@ -4687,6 +4800,7 @@ def admin_page_html(title, body, admin=None):
         "<a href='/admin/unmatched-payments'>Unmatched</a>"
         "<a href='/admin/security'>Security</a>"
         "<a href='/admin/system'>System</a>"
+        "<a href='/admin/performance'>Performance</a>"
         "<a href='/admin/audit-logs'>Audit</a>"
         "<a href='/admin/logout'>Logout</a>"
     )
@@ -17236,7 +17350,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     )
     premium_side = premium_visibility_engine.prompt_html("dashboard", user)
     default_side = side_html or f"<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulse_realtime.js" defer></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -19142,6 +19256,36 @@ def admin_mobile_audit_page():
     </script>
     """
     return admin_page_html("Mobile Audit", body, admin)
+
+
+@webhook_app.route("/admin/performance", methods=["GET"])
+def admin_performance_page():
+    init_db()
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT path, COUNT(*) AS hits, ROUND(AVG(duration_ms),0) AS avg_ms, MAX(duration_ms) AS max_ms, ROUND(AVG(db_query_count),0) AS avg_queries, ROUND(AVG(response_size),0) AS avg_size FROM performance_traces WHERE created_at >= ? GROUP BY path ORDER BY max_ms DESC LIMIT 30", ((datetime.utcnow() - timedelta(hours=24)).isoformat(timespec="seconds"),))
+    slow = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM performance_traces ORDER BY created_at DESC LIMIT 30")
+    traces = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    slow_rows = "".join(f"<tr><td>{clean_html(r.get('path'))}</td><td>{int(r.get('hits') or 0)}</td><td>{int(r.get('avg_ms') or 0)}</td><td>{int(r.get('max_ms') or 0)}</td><td>{int(r.get('avg_queries') or 0)}</td><td>{int(r.get('avg_size') or 0)}</td></tr>" for r in slow) or "<tr><td colspan='6'>No slow traces recorded yet.</td></tr>"
+    trace_rows = "".join(f"<tr><td>{clean_html(t.get('trace_id'))}</td><td>{clean_html(t.get('level'))}</td><td>{clean_html(t.get('method'))}</td><td>{clean_html(t.get('path'))}</td><td>{int(t.get('duration_ms') or 0)}</td><td>{int(t.get('db_query_count') or 0)}</td><td>{int(t.get('response_size') or 0)}</td><td>{smart_time_html(t.get('created_at'))}</td></tr>" for t in traces) or "<tr><td colspan='8'>No traces yet.</td></tr>"
+    cache_status = cache_engine.cache_status()
+    media_status = media_storage.storage_status()
+    body = f"""
+    <section class='card'><h1>Performance Command</h1><p class='muted'>Route latency, DB pressure, cache readiness, media storage readiness, and latest slow traces.</p></section>
+    <section class='grid'>
+      <article class='card'><h2>Cache</h2><p class='metric'>{clean_html(cache_status.get('provider'))}</p><p>{'Ready' if cache_status.get('ok') else 'Needs attention'}</p></article>
+      <article class='card'><h2>Media Storage</h2><p class='metric'>{clean_html(media_status.get('provider'))}</p><p>{'Configured' if media_status.get('configured') else 'Configure R2/S3 env vars'}</p></article>
+      <article class='card'><h2>Slow Threshold</h2><p class='metric'>{PERFORMANCE_SLOW_MS}ms</p><p>Critical at {PERFORMANCE_CRITICAL_MS}ms.</p></article>
+    </section>
+    <section class='card table-wrap'><h2>Slowest Routes - 24h</h2><table><tr><th>Path</th><th>Hits</th><th>Avg ms</th><th>Max ms</th><th>Avg DB</th><th>Avg bytes</th></tr>{slow_rows}</table></section>
+    <section class='card table-wrap'><h2>Latest Slow Traces</h2><table><tr><th>Trace</th><th>Level</th><th>Method</th><th>Path</th><th>ms</th><th>DB</th><th>Bytes</th><th>Time</th></tr>{trace_rows}</table></section>
+    <section class='card'><h2>Railway Production Shape</h2><p><code>gunicorn bot:app --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -</code></p><p class='muted'>Redis and Cloudflare are optional accelerators; private authenticated HTML must stay uncached.</p></section>
+    """
+    return admin_page_html("Performance", body, admin)
 
 
 @webhook_app.route("/pulse/courses", methods=["GET"])
@@ -33102,6 +33246,9 @@ def safe_create_index(cur, conn, statement):
 
 
 def init_db():
+    global INIT_DB_COMPLETED
+    if INIT_DB_COMPLETED and os.getenv("FORCE_INIT_DB", "").strip().lower() not in {"1", "true", "yes"}:
+        return
     conn = db()
     if db_service.IS_POSTGRES and hasattr(conn, "set_autocommit"):
         conn.set_autocommit(True)
@@ -38563,12 +38710,45 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS performance_traces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trace_id TEXT,
+        path TEXT,
+        method TEXT,
+        status_code INTEGER,
+        duration_ms INTEGER DEFAULT 0,
+        db_query_count INTEGER DEFAULT 0,
+        db_connection_count INTEGER DEFAULT 0,
+        response_size INTEGER DEFAULT 0,
+        user_id INTEGER DEFAULT 0,
+        level TEXT DEFAULT 'info',
+        duplicate_queries_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS background_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_type TEXT,
+        status TEXT DEFAULT 'queued',
+        payload_json TEXT,
+        attempts INTEGER DEFAULT 0,
+        locked_at TEXT,
+        run_after TEXT,
+        last_error TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
     try:
         conn.commit()
     except Exception as exc:
         _rollback_failed_migration(conn, "pre_index_schema_commit", exc)
     index_statements = [
         "CREATE INDEX IF NOT EXISTS idx_notifications_user_type_status ON notifications(user_id, notification_type, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created ON notifications(user_id, is_read, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_user_id ON alert_rules(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_status ON alert_rules(status)",
         "CREATE INDEX IF NOT EXISTS idx_alert_rules_symbol_status ON alert_rules(symbol, status)",
@@ -38617,7 +38797,9 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_arena_replays_match_id ON arena_replays(match_id)",
         "CREATE INDEX IF NOT EXISTS idx_arena_highlights_match_created ON arena_highlights(match_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conversations_type_updated ON conversations(conversation_type, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_chat_participants_user ON conversation_members(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_participants_conversation ON conversation_members(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_private_messages_thread_id ON private_messages(conversation_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_private_messages_thread_created ON private_messages(conversation_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_private_messages_conversation_id_id ON private_messages(conversation_id, id)",
@@ -38631,8 +38813,14 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_chat_media_created ON chat_media_uploads(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_feed ON pulse_posts(visibility, moderation_status, engagement_score, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_user_created ON pulse_posts(user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_posts_status_created ON pulse_posts(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_posts_category_created ON pulse_posts(category, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_posts_trust_energy ON pulse_posts(trust_score, energy_score)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_public_player ON pulse_posts(public_player_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_posts_type_created ON pulse_posts(post_type, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_reels_category_status ON pulse_reels(category, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_reels_status_created ON pulse_reels(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_reels_trust_energy ON pulse_reels(safety_score, educational_value, reel_score)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_comments_post_created ON pulse_comments(post_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_reactions_post ON pulse_reactions(post_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_follows_follower ON pulse_follows(follower_user_id)",
@@ -38647,6 +38835,26 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_ad_placements_status ON ad_placements(status, page_context)",
         "CREATE INDEX IF NOT EXISTS idx_admin_tasks_department_status ON admin_tasks(department, status)",
         "CREATE INDEX IF NOT EXISTS idx_moderation_cases_status ON moderation_cases(status, priority)",
+        "CREATE INDEX IF NOT EXISTS idx_marketplace_listings_merchant_status ON marketplace_listings(merchant_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_marketplace_listings_category_status ON marketplace_listings(category, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_marketplace_product_media_product ON marketplace_product_media(product_id, position)",
+        "CREATE INDEX IF NOT EXISTS idx_marketplace_merchant_docs_merchant ON marketplace_merchant_documents(merchant_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_merchant_applications_user_status ON marketplace_merchant_applications(user_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_merchant_documents_user_status ON marketplace_merchant_documents(user_id, review_status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_marketplace_sellers_user_status ON marketplace_sellers(user_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_teacher_apps_user_status ON pulse_teacher_applications(user_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_teacher_apps_user_status ON teacher_applications(user_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_space_members_slug_user ON pulse_space_members(space_slug, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_space_members_user ON pulse_space_members(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_groups_slug_status ON pulse_groups(slug, status)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_groups_category_status ON pulse_groups(category, status)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversations_type_activity ON pulse_conversations(conversation_type, last_activity_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_conversation ON pulse_conversation_participants(conversation_id, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_notifications_user_read_created ON pulse_notifications(user_id, is_read, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_performance_traces_created ON performance_traces(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_performance_traces_path_created ON performance_traces(path, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_performance_traces_level_duration ON performance_traces(level, duration_ms)",
+        "CREATE INDEX IF NOT EXISTS idx_background_jobs_status_run ON background_jobs(status, run_after)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_channel_id ON live_events(channel, id)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_dedupe ON live_events(channel, dedupe_key, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_live_ops_plans_date ON live_ops_plans(plan_date)",
@@ -38930,6 +39138,7 @@ def init_db():
 
     conn.commit()
     conn.close()
+    INIT_DB_COMPLETED = True
     print("DB init complete", flush=True)
     logging.info("DB init complete; MIGRATION_COMPLETE engine=%s tables_checked=production_saas", db_service.ENGINE_NAME)
 

@@ -102,6 +102,7 @@ def main():
         "/admin/group-chat-health",
         "/admin/messages-health",
         "/admin/reels-health",
+        "/admin/performance",
         "/admin/system-audit",
     ]
     failed = 0

@@ -40,6 +40,22 @@ def _normalize_engine_url(url):
 ENGINE_URL = _normalize_engine_url(_raw_database_url())
 IS_POSTGRES = ENGINE_URL.startswith("postgresql")
 ENGINE_NAME = "postgresql" if IS_POSTGRES else "sqlite"
+QUERY_OBSERVER = None
+
+
+def set_query_observer(callback):
+    global QUERY_OBSERVER
+    QUERY_OBSERVER = callback
+
+
+def notify_query(sql, params=None):
+    callback = QUERY_OBSERVER
+    if not callback:
+        return
+    try:
+        callback(str(sql or ""), tuple(params or ()))
+    except Exception:
+        pass
 
 
 def masked_database_url():
@@ -270,6 +286,8 @@ AUTO_PK_TABLES = {
     "pulse_payment_events": "id",
     "pulse_premium_audit_logs": "id",
     "pulse_premium_feature_flags": "id",
+    "performance_traces": "id",
+    "background_jobs": "id",
     "pulse_teacher_reviews": "id",
     "platform_fee_rules": "id",
     "seller_payout_accounts": "id",
@@ -408,6 +426,7 @@ class CompatCursor:
     def execute(self, sql, params=None):
         translated = _translate_sql(sql)
         params = tuple(params or ())
+        notify_query(sql, params)
         table = _insert_table(translated)
         append_do_nothing = re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", str(sql), flags=re.I) and not _has_conflict_clause(translated)
         returning_pk = None

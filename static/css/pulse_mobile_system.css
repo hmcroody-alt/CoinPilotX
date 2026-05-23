@@ -108,6 +108,9 @@ a[role="button"] {
   .premium-analytics-preview {
     border-radius: 18px !important;
     padding: 14px !important;
+    content-visibility: auto;
+    contain: layout paint;
+    contain-intrinsic-size: auto 240px;
   }
 
   .actions {
@@ -210,6 +213,7 @@ a[role="button"] {
     overflow-y: auto;
     border-radius: 22px 22px 0 0 !important;
     padding-bottom: calc(16px + var(--mobile-safe-bottom)) !important;
+    backdrop-filter: none !important;
   }
 
   .reels-shell,

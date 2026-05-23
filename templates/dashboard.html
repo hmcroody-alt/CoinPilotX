@@ -1205,7 +1205,7 @@
     window.setInterval(function () { loadDashboard().catch(function () {}); loadAccountStatus(); loadRetentionPanels(); loadLiveOps(); }, 60000);
     loadChatConversations().catch(function () {});
     window.setInterval(function () { if (!chatState.open) loadChatConversations().catch(function () {}); }, 30000);
-    window.setInterval(function () { pollActiveConversation().catch(function () {}); }, 1500);
+    window.setInterval(function () { pollActiveConversation().catch(function () {}); }, 15000);
     document.addEventListener("visibilitychange", function () { if (!document.hidden) pollActiveConversation().catch(function () {}); });
     function danceAlerts() {
       document.querySelectorAll("[data-alerts-button]").forEach(button => {
