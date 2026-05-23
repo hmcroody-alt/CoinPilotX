@@ -80,6 +80,9 @@ def main():
     _expect(status == 200 and data.get("ok") is True and int(data.get("conversation_id") or 0) > 0, "start direct chat", str(data))
     direct_conversation_id = int(data["conversation_id"])
 
+    status, reuse_data = _json_response(client, "POST", "/api/pulse/messages/start", {"target_user_id": other_user_id})
+    _expect(status == 200 and reuse_data.get("ok") is True and int(reuse_data.get("conversation_id") or 0) == direct_conversation_id, "reuse direct chat", str(reuse_data))
+
     status, data = _json_response(client, "POST", "/api/pulse/messages/send", {"conversation_id": direct_conversation_id, "message": "Messenger audit direct ping"})
     _expect(status == 200 and data.get("ok") is True and int(data.get("message_id") or 0) > 0, "send direct message", str(data))
 
@@ -88,6 +91,23 @@ def main():
 
     status, data = _json_response(client, "POST", "/api/pulse/chatrooms/general-pulse/messages", {"message": "Messenger audit room ping"})
     _expect(status == 200 and data.get("ok") is True and int(data.get("message_id") or 0) > 0, "send room message", str(data))
+
+    for room_key in [
+        "general-pulse",
+        "crypto-education",
+        "ai-builders",
+        "cybersecurity",
+        "creator-lounge",
+        "marketplace-help",
+        "reels-music",
+        "live-stage",
+    ]:
+        status, data = _json_response(client, "POST", f"/api/pulse/chatrooms/{room_key}/join", {})
+        _expect(status == 200 and data.get("ok") is True and int(data.get("conversation_id") or 0) > 0, f"open room {room_key}", str(data))
+        status, data = _json_response(client, "GET", f"/api/pulse/chatrooms/{room_key}/messages")
+        _expect(status == 200 and data.get("ok") is True and isinstance(data.get("messages"), list), f"load room messages {room_key}", str(data))
+        status, data = _json_response(client, "POST", f"/api/pulse/chatrooms/{room_key}/messages", {"message": f"Messenger audit room ping {room_key}"})
+        _expect(status == 200 and data.get("ok") is True and int(data.get("message_id") or 0) > 0, f"send room message {room_key}", str(data))
 
     status, data = _json_response(
         client,

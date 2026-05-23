@@ -16429,14 +16429,18 @@ def pulse_get_or_create_room_conversation(cur, current_user_id, room_key="pulse-
     cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
     member_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("UPDATE pulse_conversations SET member_count=?, updated_at=?, last_activity_at=? WHERE id=?", (member_count, now, now, conversation_id))
-    cur.execute(
-        """
-        INSERT INTO pulse_chat_room_members (room_key, conversation_id, user_id, role, joined_at, last_seen_at)
-        VALUES (?, ?, ?, 'member', ?, ?)
-        ON CONFLICT(room_key, user_id) DO UPDATE SET conversation_id=excluded.conversation_id, last_seen_at=excluded.last_seen_at
-        """,
-        (room_key, conversation_id, current_user_id, now, now),
-    )
+    cur.execute("SELECT id FROM pulse_chat_room_members WHERE room_key=? AND user_id=? LIMIT 1", (room_key, current_user_id))
+    room_member = dict(cur.fetchone() or {})
+    if room_member:
+        cur.execute(
+            "UPDATE pulse_chat_room_members SET conversation_id=?, role=COALESCE(role,'member'), last_seen_at=? WHERE id=?",
+            (conversation_id, now, int(room_member.get("id") or 0)),
+        )
+    else:
+        cur.execute(
+            "INSERT INTO pulse_chat_room_members (room_key, conversation_id, user_id, role, joined_at, last_seen_at) VALUES (?, ?, ?, 'member', ?, ?)",
+            (room_key, conversation_id, current_user_id, now, now),
+        )
     return {
         "ok": True,
         "conversation_id": conversation_id,
@@ -16469,6 +16473,26 @@ PULSE_CHAT_ROOMS = [
 
 def ensure_pulse_messenger_schema(cur, conn=None):
     """Keep Messenger reads survivable when a production DB is one migration behind."""
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_threads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_one_id INTEGER,
+        user_two_id INTEGER,
+        source_context TEXT DEFAULT 'pulse',
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_message_threads", [
+        ("user_one_id", "INTEGER"),
+        ("user_two_id", "INTEGER"),
+        ("conversation_id", "INTEGER"),
+        ("source_context", "TEXT DEFAULT 'pulse'"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16689,6 +16713,8 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         "CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_messages_room ON pulse_chat_room_messages(room_key, message_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_room_members_room ON pulse_room_members(room_id, user_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_room_messages_room ON pulse_room_messages(room_id, message_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_message_threads_users ON pulse_message_threads(user_one_id, user_two_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_message_threads_conversation ON pulse_message_threads(conversation_id)",
     ]:
         try:
             cur.execute(statement)
@@ -16912,20 +16938,25 @@ def pulse_ensure_default_rooms(cur, current_user_id):
             conversation = result.get("conversation") or {}
             conversation_id = int(result.get("conversation_id") or conversation.get("id") or 0)
             now = datetime.utcnow().isoformat(timespec="seconds")
-            cur.execute(
-                """
-                INSERT INTO pulse_chat_rooms (room_key, name, description, notice, conversation_id, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-                ON CONFLICT(room_key) DO UPDATE SET
-                  name=excluded.name,
-                  description=excluded.description,
-                  notice=excluded.notice,
-                  conversation_id=excluded.conversation_id,
-                  status='active',
-                  updated_at=excluded.updated_at
-                """,
-                (room["key"], room["name"], room["description"], room["notice"], conversation_id, now, now),
-            )
+            cur.execute("SELECT id FROM pulse_chat_rooms WHERE room_key=? LIMIT 1", (room["key"],))
+            room_row = dict(cur.fetchone() or {})
+            if room_row:
+                cur.execute(
+                    """
+                    UPDATE pulse_chat_rooms
+                    SET name=?, description=?, notice=?, conversation_id=?, status='active', updated_at=?
+                    WHERE id=?
+                    """,
+                    (room["name"], room["description"], room["notice"], conversation_id, now, int(room_row.get("id") or 0)),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO pulse_chat_rooms (room_key, name, description, notice, conversation_id, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                    """,
+                    (room["key"], room["name"], room["description"], room["notice"], conversation_id, now, now),
+                )
             cur.execute(
                 """
                 SELECT m.body, m.created_at
@@ -23214,6 +23245,7 @@ def api_pulse_message_start():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
+    trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
     query = clean_html(
         payload.get("query")
@@ -23226,25 +23258,42 @@ def api_pulse_message_start():
     target_user_id = safe_int(payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"), 0)
     if not query and not target_user_id:
         return jsonify({"ok": False, "message": "Search by name or public Pulse ID."}), 400
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    if not target_user_id:
-        matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
-        for match in matches:
-            if not match.get("is_self"):
-                target_user_id = int(match.get("user_id") or 0)
-                break
-    conn.close()
-    if not target_user_id:
-        return jsonify({"ok": False, "message": "Pulse user not found."}), 404
-    if int(target_user_id) == int(user["user_id"]):
-        return jsonify({"ok": False, "message": "You cannot message yourself."}), 400
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id)
-    if result.get("ok"):
-        conn.commit()
-    conn.close()
-    log_product_event(user["user_id"], "pulse_message_thread_started", {"conversation_id": result.get("conversation_id"), "thread_id": result.get("thread_id"), "target_user_id": target_user_id, "source": "pulse_messenger"})
-    return jsonify(result), status
+    conn = None
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        ensure_pulse_messenger_schema(cur, conn)
+        if not target_user_id:
+            matches = pulse_search_users(cur, query, viewer_user_id=user["user_id"], limit=8, allow_email=bool(user.get("is_admin") or user.get("is_owner")))
+            for match in matches:
+                if not match.get("is_self"):
+                    target_user_id = int(match.get("user_id") or 0)
+                    break
+        if not target_user_id:
+            conn.close()
+            logging.warning("PULSE_MESSAGE_START_NO_TARGET trace_id=%s user_id=%s payload=%s query=%s", trace_id, user.get("user_id"), payload, query)
+            return jsonify({"ok": False, "message": "Pulse user not found.", "trace_id": trace_id}), 404
+        if int(target_user_id) == int(user["user_id"]):
+            conn.close()
+            return jsonify({"ok": False, "message": "You cannot message yourself.", "trace_id": trace_id}), 400
+        result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id)
+        result["trace_id"] = trace_id
+        if result.get("ok"):
+            conn.commit()
+            logging.info("PULSE_MESSAGE_START_OK trace_id=%s user_id=%s target_user_id=%s conversation_id=%s thread_id=%s", trace_id, user.get("user_id"), target_user_id, result.get("conversation_id"), result.get("thread_id"))
+        else:
+            conn.rollback()
+            logging.warning("PULSE_MESSAGE_START_REJECTED trace_id=%s user_id=%s target_user_id=%s status=%s result=%s", trace_id, user.get("user_id"), target_user_id, status, result)
+        conn.close()
+        log_product_event(user["user_id"], "pulse_message_thread_started", {"conversation_id": result.get("conversation_id"), "thread_id": result.get("thread_id"), "target_user_id": target_user_id, "source": "pulse_messenger", "trace_id": trace_id})
+        return jsonify(result), status
+    except Exception as exc:
+        try:
+            if conn:
+                conn.rollback(); conn.close()
+        except Exception:
+            pass
+        logging.exception("PULSE_MESSAGE_START_FAILED trace_id=%s user_id=%s payload=%s target_user_id=%s", trace_id, user.get("user_id"), payload, target_user_id)
+        return jsonify({"ok": False, "message": "Direct chat could not be opened.", "error": str(exc), "trace_id": trace_id, "error_type": exc.__class__.__name__}), 500
 
 
 @webhook_app.route("/api/pulse/users/search", methods=["GET"])
@@ -26055,6 +26104,75 @@ def admin_pulse_feed_health_page():
         f"<p class='muted'>Last checked {clean_html(now)}.</p>"
     )
     return admin_page_html("Pulse Feed Health", body, admin)
+
+
+@webhook_app.route("/admin/pulse-visibility-health", methods=["GET", "POST"])
+def admin_pulse_visibility_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    post_id = safe_int(request.values.get("post_id"), 0)
+    viewer_user_id = safe_int(request.values.get("viewer_user_id"), 0)
+    explanation = {}
+    if post_id:
+        try:
+            explanation = pulse_feed_engine.explain_visibility(post_id, viewer_user_id=viewer_user_id)
+            for media in explanation.get("media") or []:
+                media["exists"] = pulse_media_exists(media.get("media_url") or media.get("thumbnail_url") or "")
+        except Exception as exc:
+            logging.exception("PULSE_VISIBILITY_HEALTH_EXPLAIN_FAILED post_id=%s viewer_user_id=%s", post_id, viewer_user_id)
+            explanation = {"ok": False, "post_id": post_id, "viewer_user_id": viewer_user_id, "visible": False, "reason": exc.__class__.__name__}
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    public_approved = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_posts WHERE deleted_at IS NULL AND COALESCE(visibility,'public')='public' AND COALESCE(moderation_status,'approved')='approved'")
+    author_only = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_posts WHERE deleted_at IS NULL AND COALESCE(visibility,'public')='public' AND COALESCE(moderation_status,'approved')!='approved'")
+    broken_media = 0
+    media_rows = []
+    try:
+        cur.execute(
+            """
+            SELECT id, media_url, thumbnail_url, context_type, context_id, media_type, moderation_status, created_at
+            FROM chat_media_uploads
+            WHERE COALESCE(moderation_status,'approved')!='blocked'
+              AND context_type IN ('pulse','pulse_post')
+            ORDER BY id DESC
+            LIMIT 80
+            """
+        )
+        for row in cur.fetchall():
+            item = dict(row)
+            url = item.get("thumbnail_url") or item.get("media_url") or ""
+            item["public_url"] = pulse_media_url(url)
+            item["exists"] = pulse_media_exists(url)
+            if not item["exists"]:
+                broken_media += 1
+            media_rows.append(item)
+    except Exception:
+        logging.exception("PULSE_VISIBILITY_HEALTH_MEDIA_SCAN_FAILED")
+    conn.close()
+    decision_rows = []
+    if explanation:
+        fields = explanation.get("fields") or {}
+        decision_rows = [
+            {"field": "visible", "value": str(explanation.get("visible"))},
+            {"field": "reason", "value": explanation.get("reason") or ""},
+            {"field": "post_user_id", "value": fields.get("user_id")},
+            {"field": "visibility", "value": fields.get("visibility")},
+            {"field": "moderation_status", "value": fields.get("moderation_status")},
+            {"field": "status", "value": fields.get("status")},
+            {"field": "deleted_at", "value": fields.get("deleted_at")},
+            {"field": "media_ids_json", "value": fields.get("media_ids_json")},
+        ]
+    body = f"""
+    <h1>Pulse Visibility Health</h1>
+    <p class='muted'>Explain exactly why a Pulse post is or is not visible to a viewer, and verify public media access.</p>
+    <section class='grid'><div class='card'><h2>Public Approved Posts</h2><p class='metric'>{public_approved}</p></div><div class='card'><h2>Public Not Approved</h2><p class='metric'>{author_only}</p><p class='muted'>These no longer appear in global feeds for only the author.</p></div><div class='card'><h2>Recent Broken Media</h2><p class='metric'>{broken_media}</p></div></section>
+    <section class='card'><h2>Explain Visibility</h2><form method='get' class='admin-inline-form'><input name='post_id' placeholder='Pulse ID' value='{post_id or ""}'><input name='viewer_user_id' placeholder='Viewer user ID' value='{viewer_user_id or ""}'><button class='primary'>Explain</button></form>{admin_rows_table(decision_rows, [('field','Field'),('value','Value')]) if decision_rows else '<p class="muted">Enter a Pulse ID and optional viewer user ID.</p>'}</section>
+    <section class='card'><h2>Post Media Decision</h2>{admin_rows_table(explanation.get('media') or [], [('id','ID'),('media_type','Type'),('media_url','Media URL'),('thumbnail_url','Thumbnail'),('exists','Exists')]) if explanation else '<p class="muted">Run a visibility check to inspect this post media.</p>'}</section>
+    <section class='card'><h2>Recent Pulse Media</h2>{admin_rows_table(media_rows, [('id','ID'),('context_type','Context'),('context_id','Context ID'),('media_type','Type'),('public_url','Public URL'),('exists','Exists'),('created_at','Created')])}</section>
+    <p><a class='button' href='/admin/pulse-feed-health'>Feed Health</a> <a class='button' href='/admin/media'>Media Diagnostics</a></p>
+    """
+    return admin_page_html("Pulse Visibility Health", body, admin)
 
 
 @webhook_app.route("/admin/pulse-analytics", methods=["GET"])
@@ -35962,6 +36080,7 @@ def init_db():
         ("pinned_at", "TEXT"),
         ("pinned_by", "INTEGER"),
         ("repost_of_post_id", "INTEGER"),
+        ("status", "TEXT DEFAULT 'published'"),
         ("edited_at", "TEXT"),
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),

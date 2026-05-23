@@ -101,6 +101,43 @@ def _public_media_url(url):
     return value if value.startswith("/") else "/" + value
 
 
+def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
+    """Canonical public Pulse visibility rule used by feeds, audits, and refresh paths."""
+    item = dict(post or {})
+    viewer_id = int(viewer_user_id or 0)
+    author_id = int(item.get("user_id") or 0)
+    moderation_status = str(item.get("moderation_status") or "approved").lower()
+    visibility = str(item.get("visibility") or "public").lower()
+    status = str(item.get("status") or "published").lower()
+    if item.get("deleted_at") or str(item.get("is_deleted") or "").lower() in {"1", "true", "yes"}:
+        return False, "deleted"
+    if status in {"deleted", "removed", "archived"}:
+        return False, f"status:{status}"
+    if moderation_status in {"blocked", "rejected", "deleted", "removed"}:
+        return False, f"moderation:{moderation_status}"
+    if moderation_status != "approved":
+        if include_private and viewer_id and author_id == viewer_id:
+            return True, "owner_private_review"
+        return False, f"moderation:{moderation_status}"
+    if visibility == "public":
+        return True, "public_approved"
+    if include_private and viewer_id and author_id == viewer_id:
+        return True, "owner_private"
+    if visibility == "followers" and viewer_id:
+        return False, "followers_not_expanded"
+    return False, f"visibility:{visibility}"
+
+
+def _public_feed_where(alias="p"):
+    prefix = f"{alias}." if alias else ""
+    return [
+        f"{prefix}deleted_at IS NULL",
+        f"COALESCE({prefix}visibility,'public')='public'",
+        f"COALESCE({prefix}moderation_status,'approved')='approved'",
+        f"COALESCE({prefix}status,'published') NOT IN ('deleted','removed','archived')",
+    ]
+
+
 def _public_author(row):
     item = dict(row or {})
     public_player_id = row.get("public_player_id") or row.get("author_public_player_id") or ""
@@ -173,20 +210,38 @@ def _media_for_posts(post_ids):
     cur = conn.cursor()
     placeholders = ",".join(["?"] * len(post_ids))
     try:
+        cur.execute(f"SELECT id, media_ids_json FROM pulse_posts WHERE id IN ({placeholders})", [int(x) for x in post_ids])
+        media_id_to_post = {}
+        for post_row in cur.fetchall():
+            post = dict(post_row)
+            post_id = int(post.get("id") or 0)
+            for media_id in _normalize_media_ids(post.get("media_ids_json")):
+                media_id_to_post[int(media_id)] = post_id
+        media_ids = sorted(media_id_to_post)
+        id_clause = ""
+        params = [str(x) for x in post_ids]
+        if media_ids:
+            id_placeholders = ",".join(["?"] * len(media_ids))
+            id_clause = f" OR id IN ({id_placeholders})"
+            params.extend(media_ids)
         cur.execute(
             f"""
             SELECT * FROM chat_media_uploads
-            WHERE context_type='pulse' AND context_id IN ({placeholders}) AND COALESCE(moderation_status,'approved')!='blocked'
+            WHERE ((context_type IN ('pulse','pulse_post') AND context_id IN ({placeholders})){id_clause})
+              AND COALESCE(moderation_status,'approved')!='blocked'
             ORDER BY id ASC
             """,
-            [str(x) for x in post_ids],
+            params,
         )
         media = {}
         for row in cur.fetchall():
             item = dict(row)
+            post_id = media_id_to_post.get(int(item.get("id") or 0), int(item.get("context_id") or 0))
+            if post_id not in {int(x) for x in post_ids}:
+                continue
             media_url = _public_media_url(item.get("media_url"))
             thumbnail_url = _public_media_url(item.get("thumbnail_url") or item.get("media_url"))
-            media.setdefault(int(item.get("context_id") or 0), []).append({
+            media.setdefault(post_id, []).append({
                 "id": item.get("id"),
                 "media_type": item.get("media_type"),
                 "media_url": media_url,
@@ -437,10 +492,8 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     if not row:
         conn.close()
         return None
-    if not include_private and row.get("visibility") != "public" and int(row.get("user_id") or 0) != int(viewer_user_id or 0):
-        conn.close()
-        return None
-    if row.get("moderation_status") != "approved" and int(row.get("user_id") or 0) != int(viewer_user_id or 0):
+    visible, _reason = pulse_visibility_decision(row, viewer_user_id=viewer_user_id, include_private=include_private)
+    if not visible:
         conn.close()
         return None
     post_ids = [int(post_id)]
@@ -462,12 +515,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     limit = max(1, min(int(limit or 20), 40))
     offset = max(0, int(offset or 0))
     params = []
-    where = ["p.deleted_at IS NULL", "p.visibility='public'"]
-    if viewer_user_id:
-        where.append("(p.moderation_status='approved' OR p.user_id=?)")
-        params.append(int(viewer_user_id))
-    else:
-        where.append("p.moderation_status='approved'")
+    where = _public_feed_where("p")
     if feed == "following" and viewer_user_id:
         where.append("p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?)")
         params.append(int(viewer_user_id))
@@ -569,6 +617,35 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
+
+
+def explain_visibility(post_id, viewer_user_id=None):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_posts WHERE id=? LIMIT 1", (int(post_id or 0),))
+    post = _row(cur.fetchone())
+    if not post:
+        conn.close()
+        return {"ok": False, "post_id": int(post_id or 0), "visible": False, "reason": "post_not_found", "media": []}
+    visible, reason = pulse_visibility_decision(post, viewer_user_id=viewer_user_id)
+    media = _media_for_posts([int(post_id or 0)]).get(int(post_id or 0), [])
+    conn.close()
+    return {
+        "ok": True,
+        "post_id": int(post_id or 0),
+        "viewer_user_id": int(viewer_user_id or 0),
+        "visible": visible,
+        "reason": reason,
+        "fields": {
+            "user_id": post.get("user_id"),
+            "visibility": post.get("visibility"),
+            "moderation_status": post.get("moderation_status"),
+            "status": post.get("status"),
+            "deleted_at": post.get("deleted_at"),
+            "media_ids_json": post.get("media_ids_json"),
+        },
+        "media": media,
+    }
 
 
 def _empty_intelligence(topic=""):
