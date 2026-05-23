@@ -2136,6 +2136,59 @@ def save_private_verification_document(user_id, file_storage, document_type):
     }
 
 
+def save_teacher_private_document(user_id, file_storage, document_type):
+    allowed = {"jpg", "jpeg", "png", "pdf", "webp"}
+    if not file_storage or not file_storage.filename:
+        return None
+    original = secure_filename(file_storage.filename)
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in allowed:
+        raise ValueError("Teacher documents must be JPG, PNG, WEBP, or PDF.")
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size > 8 * 1024 * 1024:
+        raise ValueError("Teacher documents must be under 8 MB.")
+    root = os.path.join("instance", "private_uploads", "teacher_verification", str(int(user_id or 0)))
+    os.makedirs(root, exist_ok=True)
+    stored = f"{datetime.utcnow().strftime('%Y%m%d')}_{document_type}_{secrets.token_urlsafe(12)}.{ext}"
+    path = os.path.join(root, stored)
+    file_storage.save(path)
+    return {
+        "document_type": document_type,
+        "original_filename": original,
+        "stored_path": path,
+        "mime_type": file_storage.mimetype or "application/octet-stream",
+        "file_size": int(size),
+        "private": True,
+        "admin_only": True,
+        "scanner_status": "queued_for_internal_review",
+    }
+
+
+def parse_price_label_to_cents(value, default_currency="USD"):
+    text = (value or "").strip()
+    if not text or text.lower() in {"free", "request access", "paid later", "premium later"}:
+        return 0, default_currency
+    match = re.search(r"([A-Z]{3})?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)", text.upper())
+    if not match:
+        return 0, default_currency
+    currency = (match.group(1) or default_currency or "USD").upper()
+    return int(round(float(match.group(2)) * 100)), currency
+
+
+def notify_user(cur, user_id, note_type, title, body, target_url="/pulse"):
+    if not user_id:
+        return
+    try:
+        cur.execute(
+            "INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (int(user_id), note_type, title[:160], body[:500], target_url[:500], datetime.utcnow().isoformat(timespec="seconds")),
+        )
+    except Exception:
+        logging.exception("PULSE_NOTIFICATION_INSERT_FAILED user_id=%s type=%s", user_id, note_type)
+
+
 def load_account_by_id(user_id):
     if not user_id:
         return None
@@ -18305,8 +18358,57 @@ def pulse_merchant_dashboard_page():
             msg = "Apply and complete verification before merchant tools unlock."
         return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{clean_html(msg)}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Safety</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Safety</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
+
+
+def seller_payouts_page(seller_type):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    approved = approved_teacher_for_user(cur, user["user_id"]) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, user["user_id"])
+    account = seller_payout_account(cur, user["user_id"], seller_type)
+    fee_bps = seller_fee_bps(cur, seller_type)
+    cur.execute("SELECT * FROM seller_transactions WHERE seller_user_id=? AND seller_type=? ORDER BY id DESC LIMIT 30", (user["user_id"], seller_type))
+    transactions = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM seller_payouts WHERE user_id=? AND seller_type=? ORDER BY id DESC LIMIT 20", (user["user_id"], seller_type))
+    payouts = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    if not approved:
+        target = "/pulse/teachers" if seller_type == "teacher" else "/pulse/merchant/apply"
+        return pulse_social_shell(f"{seller_type.title()} Payouts", "Approval is required before payout onboarding.", f"<section class='card'><h2>Approval Required</h2><p>Approved {seller_type}s can connect Stripe and receive net payouts after platform fees.</p><a class='button primary' href='{target}'>Open Application</a></section>")
+    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{(int(t.get('seller_net_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
+    payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{(int(p.get('amount_cents') or 0)/100):.2f} {clean_html(p.get('currency') or 'USD')}</td><td>{clean_html(p.get('status') or '')}</td><td>{clean_html(p.get('provider_payout_id') or '')}</td></tr>" for p in payouts)
+    main = f"""
+    <section class='grid'><div class='card'><h2>Platform Fee</h2><p class='metric'>{fee_bps/100:.0f}%</p></div><div class='card'><h2>Onboarding</h2><p class='metric'>{clean_html(account.get('onboarding_status') or 'not started')}</p></div><div class='card'><h2>Payouts</h2><p class='metric'>{'Enabled' if account.get('payouts_enabled') else 'Setup'}</p></div></section>
+    <section class='card'><h2>Stripe Connect Payouts</h2><p class='muted'>CoinPilotXAI collects payment, deducts the platform fee, and sends the net amount to your connected Stripe account. Card numbers are never stored by CoinPilotXAI.</p><button class='primary' id='connectPayouts'>Connect Stripe Account</button><p id='payoutStatus' class='muted'></p></section>
+    <section class='card'><h2>Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Gross</th><th>Fee</th><th>Net</th><th>Status</th></tr>{tx_rows or '<tr><td colspan=6>No transactions yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Payout History</h2><table class='table'><tr><th>ID</th><th>Amount</th><th>Status</th><th>Provider</th></tr>{payout_rows or '<tr><td colspan=4>No payouts yet.</td></tr>'}</table></section>
+    """
+    script = f"document.getElementById('connectPayouts').addEventListener('click',async()=>{{const out=document.getElementById('payoutStatus');try{{const d=await pulseApi('/api/pulse/payouts/connect',{{method:'POST',body:JSON.stringify({{seller_type:'{seller_type}'}})}});out.textContent=d.message||'Onboarding ready.';if(d.onboarding_url)location.href=d.onboarding_url;}}catch(err){{out.textContent=err.message;toast(err.message)}}}});"
+    return pulse_social_shell(f"{seller_type.title()} Payouts", "Stripe Connect onboarding, balances, fees, transactions, and payout readiness.", main, "", script)
+
+
+@webhook_app.route("/pulse/merchant/payouts", methods=["GET"])
+def pulse_merchant_payouts_page():
+    return seller_payouts_page("merchant")
+
+
+@webhook_app.route("/pulse/teacher/payouts", methods=["GET"])
+def pulse_teacher_payouts_page():
+    return seller_payouts_page("teacher")
+
+
+@webhook_app.route("/pulse/payments/success", methods=["GET"])
+def pulse_payment_success_page():
+    return pulse_social_shell("Payment Complete", "Your payment was received. Access and seller payout status update through Stripe webhooks.", "<section class='card'><h2>Payment received</h2><p>Thank you. If this was a course or product, access will update shortly.</p><a class='button primary' href='/pulse'>Back to Pulse</a></section>")
+
+
+@webhook_app.route("/pulse/payments/cancel", methods=["GET"])
+def pulse_payment_cancel_page():
+    return pulse_social_shell("Payment Canceled", "No card was charged.", "<section class='card'><h2>Checkout canceled</h2><p>No payment was completed.</p><a class='button primary' href='/pulse'>Back to Pulse</a></section>")
 
 
 @webhook_app.route("/pulse/merchant/<username>", methods=["GET"])
@@ -18575,7 +18677,41 @@ def pulse_course_detail_page(course_id):
     return pulse_social_shell(course.get("title") or "Course", "Teacher course detail and lesson foundation.", main)
 
 
+@webhook_app.route("/pulse/teachers/<teacher_id>", methods=["GET"])
+def pulse_teacher_public_profile_page(teacher_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if str(teacher_id).isdigit():
+        cur.execute("SELECT p.*, u.username, u.avatar_url FROM pulse_teacher_profiles p LEFT JOIN users u ON u.user_id=p.user_id WHERE p.user_id=? OR p.id=? LIMIT 1", (int(teacher_id), int(teacher_id)))
+    else:
+        cur.execute("SELECT p.*, u.username, u.avatar_url FROM pulse_teacher_profiles p LEFT JOIN users u ON u.user_id=p.user_id WHERE p.public_slug=? LIMIT 1", (clean_html(teacher_id),))
+    teacher = dict(cur.fetchone() or {})
+    if not teacher or teacher.get("status") != "approved":
+        conn.close()
+        return pulse_social_shell("Teacher Not Found", "This teacher profile is not available.", "<section class='card'><a class='button primary' href='/pulse/teachers'>Back to Teachers</a></section>"), 404
+    uid = int(teacher.get("user_id") or 0)
+    cur.execute("SELECT * FROM pulse_courses WHERE teacher_user_id=? AND status IN ('published','review_ready','approved','draft') ORDER BY id DESC LIMIT 20", (uid,))
+    courses = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM pulse_teacher_reviews WHERE teacher_user_id=? AND status='visible' ORDER BY id DESC LIMIT 12", (uid,))
+    reviews = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    course_cards = "".join(f"<article class='card'><h2>{clean_html(c.get('title') or '')}</h2><p>{clean_html(c.get('description') or '')}</p><p><span class='pill'>{clean_html(c.get('category') or '')}</span> <span class='pill'>{clean_html(c.get('price_label') or 'Free')}</span></p><a class='button primary' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
+    review_cards = "".join(f"<article class='card'><strong>{int(r.get('rating') or 0)}/5</strong><p>{clean_html(r.get('review_body') or '')}</p></article>" for r in reviews)
+    avatar = f"<img src='{clean_html(teacher.get('avatar_url') or '')}' alt=''>" if teacher.get("avatar_url") else clean_html((teacher.get("display_name") or "T")[:1])
+    main = f"""
+    <section class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(teacher.get('display_name') or 'Pulse Teacher')}</h2><p>{clean_html(teacher.get('bio') or '')}</p></div></div><p><span class='pill'>{clean_html(teacher.get('expertise') or 'Education')}</span> <span class='pill'>{clean_html(teacher.get('languages') or 'Languages pending')}</span> <span class='pill'>Safety {int(teacher.get('safety_score') or 0)}</span> <span class='pill'>Trust {int(teacher.get('trust_score') or 0)}</span></p><div class='actions'><button data-teacher-message='{uid}'>Message Teacher</button><button>Follow</button></div></section>
+    <section class='grid'>{course_cards or '<article class="card"><h2>No courses yet.</h2><p>This approved teacher is preparing lessons.</p></article>'}</section>
+    <section class='card'><h2>Reviews</h2>{review_cards or '<p class="muted">Reviews will appear after students complete lessons.</p>'}</section>
+    """
+    script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-teacher-message]');if(!b)return;try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:b.dataset.teacherMessage})});location.href=d.next_url}catch(err){toast(err.message)}});"
+    return pulse_social_shell(teacher.get("display_name") or "Pulse Teacher", "Approved teacher profile, courses, lessons, safety badge, and student trust.", main, "", script)
+
+
 @webhook_app.route("/pulse/teacher-dashboard", methods=["GET"])
+@webhook_app.route("/pulse/teacher/dashboard", methods=["GET"])
 def pulse_teacher_dashboard_page():
     init_db()
     user = require_account()
@@ -18583,22 +18719,41 @@ def pulse_teacher_dashboard_page():
         return redirect(url_for("login_page", next=request.path))
     uid = int(user["user_id"])
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (uid,))
+    cur.execute("SELECT * FROM pulse_teacher_profiles WHERE user_id=? LIMIT 1", (uid,))
     teacher = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM pulse_teacher_applications WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,))
+    application = dict(cur.fetchone() or {})
     cur.execute("SELECT * FROM pulse_courses WHERE teacher_user_id=? ORDER BY id DESC LIMIT 30", (uid,))
     courses = [dict(row) for row in cur.fetchall()]
-    cur.execute("SELECT * FROM teacher_lessons WHERE teacher_user_id=? ORDER BY id DESC LIMIT 30", (uid,))
+    cur.execute("SELECT * FROM pulse_lessons WHERE teacher_user_id=? ORDER BY id DESC LIMIT 30", (uid,))
     lessons = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_student_enrollments WHERE teacher_user_id=?", (uid,))
+    student_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT * FROM pulse_live_classes WHERE teacher_user_id=? ORDER BY id DESC LIMIT 12", (uid,))
+    live_classes = [dict(row) for row in cur.fetchall()]
     conn.close()
+    if teacher.get("status") != "approved":
+        status = clean_html(application.get("status") or teacher.get("status") or "not applied")
+        main = f"""
+        <section class='card'><h2>Teacher Review Status</h2><p class='metric'>{status}</p><p class='muted'>Full teacher tools unlock after admin approval. You can update your application while review is pending.</p><div class='actions'><a class='button primary' href='/pulse/teachers'>Open Teacher Application</a><a class='button' href='/pulse/courses'>Browse Courses</a></div></section>
+        <section class='grid'><div class='card'><h2>Completeness</h2><p class='metric'>{int(application.get('completeness') or 0)}%</p></div><div class='card'><h2>Safety Score</h2><p class='metric'>{int(application.get('safety_score') or 0)}</p></div><div class='card'><h2>Next Step</h2><p>Add credentials or wait for admin review.</p></div></section>
+        """
+        return pulse_social_shell("Teacher Dashboard", "Teacher application status and approval path.", main)
     course_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('title') or '')}</td><td>{clean_html(c.get('status') or '')}</td><td>{clean_html(c.get('price_label') or '')}</td></tr>" for c in courses)
     lesson_rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{clean_html(l.get('access_level') or '')}</td></tr>" for l in lessons)
+    live_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('title') or '')}</td><td>{clean_html(c.get('scheduled_at') or '')}</td><td>{clean_html(c.get('status') or '')}</td></tr>" for c in live_classes)
     main = f"""
-    <section class='grid'><div class='card'><h2>Teacher Status</h2><p class='metric'>{clean_html(teacher.get('verification_status') or 'not applied')}</p></div><div class='card'><h2>Courses</h2><p class='metric'>{len(courses)}</p></div><div class='card'><h2>Lessons</h2><p class='metric'>{len(lessons)}</p></div></section>
-    <section class='card'><h2>Teaching Tools</h2><p>Course storefront, lesson builder, student messaging, live class tools, and teacher analytics are staged safely. Paid access stays disabled until review.</p><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teachers'>Teacher Profile</a></div></section>
+    <style>.teacher-tools{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}.teacher-tools article{{border:1px solid rgba(110,223,246,.14);border-radius:18px;padding:14px;background:rgba(255,255,255,.035)}}.teacher-create{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}@media(max-width:760px){{.teacher-create{{grid-template-columns:1fr}}}}</style>
+    <section class='grid'><div class='card'><h2>Teacher Level</h2><p class='metric'>{clean_html(teacher.get('teacher_level') or 'Approved')}</p></div><div class='card'><h2>Students</h2><p class='metric'>{student_count}</p></div><div class='card'><h2>Courses</h2><p class='metric'>{len(courses)}</p></div><div class='card'><h2>Lessons</h2><p class='metric'>{len(lessons)}</p></div><div class='card'><h2>Trust</h2><p class='metric'>{int(teacher.get('trust_score') or 0)}</p></div><div class='card'><h2>Safety</h2><p class='metric'>{int(teacher.get('safety_score') or 0)}</p></div></section>
+    <section class='card'><h2>Teacher Command Center</h2><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher/payouts'>Payouts</a><a class='button' href='/pulse/teachers/{uid}'>Public Profile</a></div></section>
+    <section class='teacher-tools'><article><h3>AI Teacher Tools</h3><p>Lesson outline generator, quiz builder, title optimizer, description polish, safety checker, and student question summarizer are ready as guided tools.</p></article><article><h3>Analytics</h3><p>Lesson views, completion rate, saves, comments, ratings, and engagement will appear as students enroll.</p></article><article><h3>Safety</h3><p>Flagged lessons, student reports, and compliance reminders stay visible before content can be monetized.</p></article><article><h3>Live Classes</h3><p>Schedule live classes, start class sessions, and attach replays after review.</p></article></section>
+    <section class='card'><h2>Create Lesson</h2><div class='teacher-create'><input id='lessonTitle' placeholder='Lesson title'><select id='lessonCourse'><option value='0'>Standalone lesson</option>{''.join(f"<option value='{int(c.get('id') or 0)}'>{clean_html(c.get('title') or '')}</option>" for c in courses)}</select><textarea id='lessonDescription' placeholder='Lesson description and learning outcome'></textarea><select id='lessonType'><option>video</option><option>pdf</option><option>image</option><option>quiz</option><option>resource</option></select></div><button class='primary' id='lessonCreate'>Create Lesson Draft</button></section>
     <section class='card'><h2>Courses</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Price</th></tr>{course_rows or '<tr><td colspan=4>No courses yet.</td></tr>'}</table></section>
     <section class='card'><h2>Lessons</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Access</th></tr>{lesson_rows or '<tr><td colspan=4>No lessons yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Live Classes</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Scheduled</th><th>Status</th></tr>{live_rows or '<tr><td colspan=4>No live classes scheduled yet.</td></tr>'}</table></section>
     """
-    return pulse_social_shell("Teacher Dashboard", "Prepare courses, lessons, live classes, and student messaging without enabling unsafe payouts.", main)
+    script = "document.getElementById('lessonCreate')?.addEventListener('click',async()=>{try{const d=await pulseApi('/api/pulse/teacher/lessons/create',{method:'POST',body:JSON.stringify({title:document.getElementById('lessonTitle').value,description:document.getElementById('lessonDescription').value,course_id:document.getElementById('lessonCourse').value,lesson_type:document.getElementById('lessonType').value})});toast(d.message||'Lesson created.');setTimeout(()=>location.reload(),500)}catch(err){toast(err.message)}});"
+    return pulse_social_shell("Teacher Dashboard", "Courses, lessons, students, live classes, AI tools, safety, analytics, and payouts for approved teachers.", main, "", script)
 
 
 @webhook_app.route("/pulse/notifications", methods=["GET"])
@@ -19914,15 +20069,47 @@ def pulse_teachers_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM teacher_profiles ORDER BY id DESC LIMIT 30")
+    cur.execute("SELECT * FROM pulse_teacher_applications WHERE user_id=? ORDER BY id DESC LIMIT 1", (user["user_id"],))
+    latest_app = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM pulse_teacher_profiles WHERE status='approved' ORDER BY id DESC LIMIT 30")
     teachers = [dict(row) for row in cur.fetchall()]
     conn.close()
     cats = ["Beginner Crypto", "Scam Prevention", "Wallet Safety", "Market Psychology", "Technical Analysis Basics", "AI Tools", "Alpha Arena Training", "Roast Battle Performance", "Cybersecurity Basics"]
     cat_options = "".join(f"<option>{clean_html(c)}</option>" for c in cats)
-    teacher_html = "".join(f"<article class='card'><h2>{clean_html(t.get('display_name') or 'Pulse Teacher')}</h2><p>{clean_html(t.get('bio') or '')}</p><p><span class='pill'>{clean_html(t.get('category') or 'Education')}</span> <span class='pill'>{clean_html(t.get('verification_status') or 'pending')}</span></p><button data-teacher-message='{int(t.get('user_id') or 0)}'>Message Teacher</button></article>" for t in teachers)
-    main = f"""<section class='card'><h2>Apply to Teach</h2><input id='teacherName' placeholder='Teacher display name'><select id='teacherCategory'>{cat_options}</select><textarea id='teacherPitch' placeholder='What will you teach, and how will you keep learners safe?'></textarea><button class='primary' id='teacherApply'>Apply as Teacher</button></section><section class='grid'>{teacher_html or '<article class="card"><h2>Teachers are warming up.</h2><p>Apply to teach wallet safety, scam prevention, AI tools, or Arena training.</p></article>'}</section>"""
-    script = "document.getElementById('teacherApply').addEventListener('click',async()=>{try{await pulseApi('/api/pulse/teachers/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('teacherName').value,category:document.getElementById('teacherCategory').value,pitch:document.getElementById('teacherPitch').value})});toast('Teacher application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});document.addEventListener('click',async e=>{const b=e.target.closest('[data-teacher-message]');if(!b)return;try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:b.dataset.teacherMessage})});location.href=d.next_url}catch(err){toast(err.message)}});"
-    return pulse_social_shell("Crypto Teachers", "Teacher signup, learning paths, free lessons, and paid-course-ready architecture for safe crypto education.", main, "", script)
+    status_panel = ""
+    if latest_app:
+        status_panel = f"<section class='card teacher-status'><h2>Application Status</h2><p class='metric'>{clean_html(latest_app.get('status') or 'submitted')}</p><p class='muted'>Completeness {int(latest_app.get('completeness') or 0)}% · Safety {int(latest_app.get('safety_score') or 0)}</p><a class='button primary' href='/pulse/teacher/dashboard'>Open Teacher Dashboard</a></section>"
+    teacher_html = "".join(f"<article class='card'><h2>{clean_html(t.get('display_name') or 'Pulse Teacher')}</h2><p>{clean_html(t.get('bio') or '')}</p><p><span class='pill'>{clean_html(t.get('expertise') or 'Education')}</span> <span class='pill'>{clean_html(t.get('teacher_level') or 'Approved Teacher')}</span> <span class='pill'>Safety {int(t.get('safety_score') or 0)}</span></p><div class='actions'><a class='button primary' href='/pulse/teachers/{int(t.get('user_id') or 0)}'>View Profile</a><button data-teacher-message='{int(t.get('user_id') or 0)}'>Message</button></div></article>" for t in teachers)
+    main = f"""
+    <style>
+    .teacher-application{{display:grid;gap:14px}}.teacher-application section{{border:1px solid rgba(110,223,246,.14);border-radius:18px;padding:14px;background:rgba(255,255,255,.035)}}
+    .teacher-application .two{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}.teacher-application label{{display:grid;gap:6px;color:var(--muted);font-weight:800}}.teacher-application label input,.teacher-application label select,.teacher-application label textarea{{color:var(--text)}}
+    .teacher-application .check-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.teacher-application .check-grid label{{display:flex;gap:8px;align-items:flex-start;white-space:normal}}
+    .teacher-status{{border-color:rgba(54,229,143,.35)!important}}@media(max-width:720px){{.teacher-application .two,.teacher-application .check-grid{{grid-template-columns:1fr}}}}
+    </style>
+    {status_panel}
+    <form class='card teacher-application' id='teacherApplicationForm' enctype='multipart/form-data'>
+      <h2>Teacher Application</h2><p class='muted'>CoinPilotXAI teachers are reviewed for trust, clarity, learner safety, and educational quality before full dashboard tools unlock.</p>
+      <section><h3>Basic Info</h3><div class='two'><label>Teacher display name<input name='teacher_display_name' required value='{clean_html(user.get('display_name') or user.get('username') or '')}'></label><label>Legal name/private<input name='legal_name' required></label><label>Email<input name='email' type='email' required value='{clean_html(user.get('email') or '')}'></label><label>Phone optional<input name='phone'></label><label>Country<input name='country' required></label><label>Languages spoken<input name='languages' placeholder='English, Haitian Creole, French'></label><label>Timezone<input name='timezone' placeholder='America/New_York'></label></div></section>
+      <section><h3>Teaching Profile</h3><div class='two'><label>Teaching category<select name='teaching_category'>{cat_options}</select></label><label>Skill level taught<select name='skill_level'><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Mixed</option></select></label><label>Teaching style<input name='teaching_style' placeholder='Calm, tactical, workshop, cohort...'></label><label>Years of experience<input name='years_experience'></label><label>Audience type<input name='audience_type' placeholder='Beginners, creators, sellers, builders...'></label><label>Sample lesson title<input name='sample_lesson_title' required></label></div><label>Sample lesson description<textarea name='sample_lesson_description' required></textarea></label><label>Why should students trust you?<textarea name='trust_reason' required></textarea></label></section>
+      <section><h3>Safety + Compliance</h3><div class='check-grid'><label><input type='checkbox' name='no_financial_advice' required> I will not present lessons as financial advice.</label><label><input type='checkbox' name='no_guaranteed_profits' required> I will not promise guaranteed profits.</label><label><input type='checkbox' name='no_scam_promotion' required> I will not promote scams or deceptive products.</label><label><input type='checkbox' name='no_income_claims' required> I will not make misleading income claims.</label></div><label>How do you keep learners safe?<textarea name='learner_safety_plan' required></textarea></label></section>
+      <section><h3>Credentials</h3><div class='two'><label>Certificates optional<input type='file' name='certificate' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Resume / CV optional<input type='file' name='resume' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Portfolio proof optional<input type='file' name='portfolio' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Website optional<input name='website'></label></div><label>Social links optional<textarea name='social_links'></textarea></label></section>
+      <section><h3>Verification</h3><div class='two'><label>ID upload optional/required for paid teachers<input type='file' name='id_document' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Selfie verification optional/required for paid teachers<input type='file' name='selfie' accept='.jpg,.jpeg,.png,.webp,image/*' capture='user'></label></div><label><input type='checkbox' name='teacher_agreement' required> I agree to the teacher standards, safety rules, and review process.</label></section>
+      <section><button class='primary' id='teacherSubmitBtn'>Submit Teacher Application</button><p id='teacherApplyError' class='muted'></p></section>
+    </form>
+    <section class='grid'>{teacher_html or '<article class="card"><h2>Teachers are warming up.</h2><p>Apply to teach wallet safety, scam prevention, AI tools, cybersecurity, or creator skills.</p></article>'}</section>
+    """
+    script = """
+    document.getElementById('teacherApplicationForm').addEventListener('submit',async e=>{
+      e.preventDefault();const form=e.currentTarget,btn=document.getElementById('teacherSubmitBtn'),err=document.getElementById('teacherApplyError');btn.disabled=true;btn.textContent='Submitting...';err.textContent='';
+      try{const fd=new FormData(form);const payload={};fd.forEach((v,k)=>{if(v instanceof File){return} payload[k]=v==='on'?true:v});
+        const res=await pulseApi('/api/pulse/teachers/apply',{method:'POST',body:JSON.stringify(payload)});
+        const appId=res.application_id;for(const key of ['certificate','resume','portfolio','id_document','selfie']){const f=form.elements[key]?.files?.[0];if(f&&appId){const dfd=new FormData();dfd.append('file',f);dfd.append('document_type',key);dfd.append('application_id',appId);const r=await fetch('/api/pulse/teachers/documents/upload',{method:'POST',credentials:'same-origin',body:dfd});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Document upload failed.')}}toast('Teacher application submitted.');location.href='/pulse/teacher/dashboard';}
+      catch(ex){console.error('Teacher application failed',ex);err.textContent=ex.message;toast(ex.message)}finally{btn.disabled=false;btn.textContent='Submit Teacher Application'}
+    });
+    document.addEventListener('click',async e=>{const b=e.target.closest('[data-teacher-message]');if(!b)return;try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:b.dataset.teacherMessage})});location.href=d.next_url}catch(err){toast(err.message)}});
+    """
+    return pulse_social_shell("Crypto Teachers", "Trusted teacher onboarding, approval, courses, lessons, live classes, and safe education tools.", main, "", script)
 
 
 @webhook_app.route("/pulse/topic/<topic>", methods=["GET"])
@@ -22476,6 +22663,188 @@ def approved_marketplace_seller_for_user(cur, user_id):
     return seller if seller.get("status") == "approved" else {}
 
 
+def approved_teacher_for_user(cur, user_id):
+    cur.execute("SELECT * FROM pulse_teacher_profiles WHERE user_id=? LIMIT 1", (int(user_id or 0),))
+    teacher = dict(cur.fetchone() or {})
+    return teacher if teacher.get("status") == "approved" else {}
+
+
+def seller_fee_bps(cur, seller_type):
+    cur.execute("SELECT fee_bps FROM platform_fee_rules WHERE seller_type=? AND status='active' LIMIT 1", (seller_type,))
+    row = dict(cur.fetchone() or {})
+    return int(row.get("fee_bps") or (1500 if seller_type == "teacher" else 1000))
+
+
+def seller_payout_account(cur, user_id, seller_type):
+    cur.execute("SELECT * FROM seller_payout_accounts WHERE user_id=? AND seller_type=? LIMIT 1", (int(user_id or 0), seller_type))
+    return dict(cur.fetchone() or {})
+
+
+@webhook_app.route("/api/pulse/payouts/connect", methods=["POST"])
+def api_pulse_payouts_connect():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    seller_type = payload.get("seller_type") if payload.get("seller_type") in {"merchant", "teacher"} else "merchant"
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    approved = approved_teacher_for_user(cur, user["user_id"]) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not approved:
+        conn.close()
+        return api_error(f"Approved {seller_type} status is required before payout onboarding.", 403)
+    account = seller_payout_account(cur, user["user_id"], seller_type)
+    connected_account_id = account.get("connected_account_id") or ""
+    try:
+        if STRIPE_SECRET_KEY:
+            if not connected_account_id:
+                stripe_account = stripe.Account.create(
+                    type="express",
+                    country="US",
+                    email=user.get("email") or None,
+                    capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
+                    metadata={"user_id": str(user["user_id"]), "seller_type": seller_type},
+                )
+                connected_account_id = stripe_account.get("id") or ""
+            cur.execute(
+                """
+                INSERT INTO seller_payout_accounts
+                (user_id, seller_type, provider, connected_account_id, onboarding_status, payouts_enabled, charges_enabled, last_checked_at, created_at, updated_at)
+                VALUES (?, ?, 'stripe', ?, 'onboarding_started', 0, 0, ?, ?, ?)
+                ON CONFLICT(user_id, seller_type) DO UPDATE SET connected_account_id=excluded.connected_account_id,
+                  onboarding_status='onboarding_started', last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
+                """,
+                (user["user_id"], seller_type, connected_account_id, now, now, now),
+            )
+            conn.commit()
+            base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+            link = stripe.AccountLink.create(
+                account=connected_account_id,
+                refresh_url=f"{base}/pulse/{seller_type}/payouts",
+                return_url=f"{base}/pulse/{seller_type}/payouts",
+                type="account_onboarding",
+            )
+            conn.close()
+            return jsonify({"ok": True, "message": "Stripe onboarding ready.", "onboarding_url": link.get("url"), "connected_account_id": connected_account_id})
+        cur.execute(
+            """
+            INSERT INTO seller_payout_accounts
+            (user_id, seller_type, provider, onboarding_status, payouts_enabled, charges_enabled, missing_requirements_json, last_checked_at, created_at, updated_at)
+            VALUES (?, ?, 'stripe', 'stripe_not_configured', 0, 0, ?, ?, ?, ?)
+            ON CONFLICT(user_id, seller_type) DO UPDATE SET onboarding_status='stripe_not_configured',
+              missing_requirements_json=excluded.missing_requirements_json, last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
+            """,
+            (user["user_id"], seller_type, json.dumps(["STRIPE_SECRET_KEY required for live Connect onboarding"]), now, now, now),
+        )
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "message": "Payout profile saved. Stripe Connect is not configured yet, so bank onboarding cannot open in this environment."})
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        logging.exception("SELLER_PAYOUT_CONNECT_FAILED trace_id=%s user_id=%s seller_type=%s", trace_id, user["user_id"], seller_type)
+        conn.rollback(); conn.close()
+        return api_error("Payout onboarding failed. Please try again.", 500, trace_id, error=str(exc))
+
+
+@webhook_app.route("/api/pulse/payments/checkout", methods=["POST"])
+def api_pulse_payments_checkout():
+    init_db()
+    buyer = api_account_user()
+    if not buyer:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    item_type = payload.get("item_type") if payload.get("item_type") in {"marketplace_product", "course", "lesson", "live_class"} else ""
+    item_id = safe_int(payload.get("item_id"), 0)
+    if not item_type or not item_id:
+        return api_error("Choose an item to buy.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    item = {}
+    seller_type = "merchant"
+    if item_type == "marketplace_product":
+        cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (item_id,))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("seller_user_id") or 0)
+        amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", item.get("currency") or "USD")
+        title = item.get("title") or "Marketplace product"
+        seller_type = "merchant"
+    elif item_type == "course":
+        cur.execute("SELECT * FROM pulse_courses WHERE id=? LIMIT 1", (item_id,))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("teacher_user_id") or 0)
+        amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", "USD")
+        title = item.get("title") or "Pulse course"
+        seller_type = "teacher"
+    elif item_type == "lesson":
+        cur.execute("SELECT * FROM pulse_lessons WHERE id=? LIMIT 1", (item_id,))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("teacher_user_id") or 0)
+        amount_cents, currency = parse_price_label_to_cents(payload.get("price_label") or "0", "USD")
+        title = item.get("title") or "Pulse lesson"
+        seller_type = "teacher"
+    else:
+        cur.execute("SELECT * FROM pulse_live_classes WHERE id=? LIMIT 1", (item_id,))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("teacher_user_id") or 0)
+        amount_cents, currency = parse_price_label_to_cents(payload.get("price_label") or "0", "USD")
+        title = item.get("title") or "Pulse live class"
+        seller_type = "teacher"
+    if not item or not seller_user_id:
+        conn.close()
+        return api_error("Item not found.", 404)
+    if seller_user_id == int(buyer["user_id"]):
+        conn.close()
+        return api_error("You cannot buy your own item.", 400)
+    if amount_cents <= 0:
+        conn.close()
+        return api_error("This item is currently free or not priced for checkout.", 400)
+    approved = approved_teacher_for_user(cur, seller_user_id) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, seller_user_id)
+    if not approved:
+        conn.close()
+        return api_error("Seller is not approved for payments.", 403)
+    payout = seller_payout_account(cur, seller_user_id, seller_type)
+    fee_bps = seller_fee_bps(cur, seller_type)
+    platform_fee = int(round(amount_cents * fee_bps / 10000))
+    seller_net = amount_cents - platform_fee
+    cur.execute(
+        """
+        INSERT INTO seller_transactions
+        (buyer_user_id, seller_user_id, seller_type, item_type, item_id, amount_cents, currency,
+         platform_fee_cents, seller_net_cents, status, metadata_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
+        """,
+        (buyer["user_id"], seller_user_id, seller_type, item_type, item_id, amount_cents, currency, platform_fee, seller_net, json.dumps({"title": title}, default=str), now, now),
+    )
+    tx_id = int(cur.lastrowid)
+    if not STRIPE_SECRET_KEY:
+        cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
+        conn.commit(); conn.close()
+        return api_error("Stripe checkout is not configured yet. No card was charged.", 503, transaction_id=tx_id)
+    if not payout.get("connected_account_id"):
+        cur.execute("UPDATE seller_transactions SET status='blocked_payout_onboarding_required', updated_at=? WHERE id=?", (now, tx_id))
+        conn.commit(); conn.close()
+        return api_error("Seller payout onboarding is required before checkout.", 409, transaction_id=tx_id)
+    try:
+        base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+        session_obj = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{"price_data": {"currency": currency.lower(), "unit_amount": amount_cents, "product_data": {"name": title[:120]}}, "quantity": 1}],
+            success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}",
+            cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
+            payment_intent_data={"application_fee_amount": platform_fee, "transfer_data": {"destination": payout.get("connected_account_id")}},
+            metadata={"seller_transaction_id": str(tx_id), "seller_type": seller_type, "item_type": item_type, "item_id": str(item_id), "buyer_user_id": str(buyer["user_id"]), "seller_user_id": str(seller_user_id)},
+        )
+        cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_obj.get("id"), now, tx_id))
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id, "platform_fee_cents": platform_fee, "seller_net_cents": seller_net})
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        logging.exception("SELLER_CHECKOUT_CREATE_FAILED trace_id=%s tx_id=%s", trace_id, tx_id)
+        cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id))
+        conn.commit(); conn.close()
+        return api_error("Checkout could not be created.", 500, trace_id, error=str(exc))
+
+
 @webhook_app.route("/api/pulse/marketplace/media/upload", methods=["POST"])
 def api_pulse_marketplace_media_upload():
     init_db()
@@ -22645,6 +23014,11 @@ def api_pulse_course_create():
     review = revenue_safety_engine.score_text(title, description, category)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); cur = conn.cursor()
+    cur.execute("SELECT status FROM pulse_teacher_profiles WHERE user_id=? LIMIT 1", (user["user_id"],))
+    pulse_teacher = dict(cur.fetchone() or {})
+    if pulse_teacher and pulse_teacher.get("status") != "approved":
+        conn.close()
+        return api_error("Teacher approval is required before creating courses.", 403)
     cur.execute("SELECT id FROM teacher_profiles WHERE user_id=? LIMIT 1", (user["user_id"],))
     if not cur.fetchone():
         cur.execute(
@@ -22668,6 +23042,55 @@ def api_pulse_course_create():
     return jsonify({"ok": True, "course_id": course_id, "next_url": f"/pulse/courses/{course_id}", "message": "Course draft created."})
 
 
+@webhook_app.route("/api/pulse/teacher/lessons/create", methods=["POST"])
+def api_pulse_teacher_lesson_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    title = clean_html(payload.get("title") or "")[:180]
+    description = clean_html(payload.get("description") or "")[:1800]
+    course_id = safe_int(payload.get("course_id"), 0)
+    lesson_type = clean_html(payload.get("lesson_type") or "video")[:40]
+    if lesson_type not in {"video", "pdf", "image", "quiz", "resource", "text"}:
+        lesson_type = "video"
+    if not title or not description:
+        return api_error("Add a lesson title and description.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    review = revenue_safety_engine.score_text(title, description, lesson_type)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_teacher_profiles WHERE user_id=? LIMIT 1", (user["user_id"],))
+    teacher = dict(cur.fetchone() or {})
+    if teacher.get("status") != "approved":
+        conn.close()
+        return api_error("Teacher approval is required before creating lessons.", 403)
+    if course_id:
+        cur.execute("SELECT id FROM pulse_courses WHERE id=? AND teacher_user_id=? LIMIT 1", (course_id, user["user_id"]))
+        if not cur.fetchone():
+            conn.close()
+            return api_error("Course not found for this teacher.", 404)
+    cur.execute(
+        """
+        INSERT INTO pulse_lessons
+        (course_id, teacher_user_id, title, description, lesson_type, status, safety_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+        """,
+        (course_id, user["user_id"], title, description, lesson_type, int(review.get("risk_score") or 0), now, now),
+    )
+    lesson_id = int(cur.lastrowid)
+    cur.execute(
+        """
+        INSERT INTO teacher_lessons (teacher_user_id, course_id, title, description, category, visibility, access_level, price_label, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'public', 'free', 'Free', 'draft', ?, ?)
+        """,
+        (user["user_id"], course_id, title, description, lesson_type, now, now),
+    )
+    cur.execute("UPDATE pulse_teacher_profiles SET lesson_count=(SELECT COUNT(*) FROM pulse_lessons WHERE teacher_user_id=?), updated_at=? WHERE user_id=?", (user["user_id"], now, user["user_id"]))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Lesson draft created.", "lesson_id": lesson_id})
+
+
 @webhook_app.route("/api/pulse/teachers/apply", methods=["POST"])
 def api_pulse_teacher_apply():
     init_db()
@@ -22675,24 +23098,115 @@ def api_pulse_teacher_apply():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
-    display = clean_html(payload.get("display_name") or "")[:80]
-    category = clean_html(payload.get("category") or "")[:100]
-    pitch = clean_html(payload.get("pitch") or "")[:1500]
-    if not display or not category or not pitch:
-        return jsonify({"ok": False, "message": "Add your teacher name, category, and teaching pitch."}), 400
+    display = clean_html(payload.get("teacher_display_name") or payload.get("display_name") or "")[:100]
+    legal_name = clean_html(payload.get("legal_name") or "")[:140]
+    email = clean_html(payload.get("email") or user.get("email") or "")[:160]
+    country = clean_html(payload.get("country") or "")[:100]
+    category = clean_html(payload.get("teaching_category") or payload.get("category") or "")[:100]
+    lesson_title = clean_html(payload.get("sample_lesson_title") or "")[:180]
+    lesson_description = clean_html(payload.get("sample_lesson_description") or payload.get("pitch") or "")[:1800]
+    trust_reason = clean_html(payload.get("trust_reason") or "")[:1600]
+    safety_plan = clean_html(payload.get("learner_safety_plan") or "")[:1800]
+    required_checks = ["no_financial_advice", "no_guaranteed_profits", "no_scam_promotion", "no_income_claims", "teacher_agreement"]
+    safety_ack = {key: bool(payload.get(key)) for key in required_checks}
+    if not display or not legal_name or not email or not country or not category or not lesson_title or not lesson_description or not trust_reason or not safety_plan:
+        return jsonify({"ok": False, "message": "Complete the basic, teaching, trust, and learner-safety fields before submitting."}), 400
+    if not all(safety_ack.values()):
+        return jsonify({"ok": False, "message": "Acknowledge every teacher safety and compliance rule before submitting."}), 400
     now = datetime.utcnow().isoformat(timespec="seconds")
-    conn = db(); cur = conn.cursor()
-    cur.execute("INSERT INTO teacher_applications (user_id, category, pitch, status, created_at, updated_at) VALUES (?, ?, ?, 'submitted', ?, ?)", (user["user_id"], category, pitch, now, now))
+    completeness = 100
+    review = revenue_safety_engine.score_text(lesson_title, lesson_description + "\n" + trust_reason + "\n" + safety_plan, category)
+    safety_score = max(0, 100 - int(review.get("risk_score") or 0))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO pulse_teacher_applications
+        (user_id, teacher_display_name, legal_name, email, phone, country, languages, timezone,
+         teaching_category, skill_level, teaching_style, years_experience, audience_type,
+         sample_lesson_title, sample_lesson_description, trust_reason, safety_ack_json,
+         learner_safety_plan, credentials_json, social_links, website, verification_json,
+         status, completeness, safety_score, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)
+        """,
+        (
+            user["user_id"], display, legal_name, email, clean_html(payload.get("phone") or "")[:80],
+            country, clean_html(payload.get("languages") or "")[:200], clean_html(payload.get("timezone") or "")[:80],
+            category, clean_html(payload.get("skill_level") or "Beginner")[:80],
+            clean_html(payload.get("teaching_style") or "")[:200],
+            clean_html(payload.get("years_experience") or "")[:80],
+            clean_html(payload.get("audience_type") or "")[:140],
+            lesson_title, lesson_description, trust_reason, json.dumps(safety_ack, default=str),
+            safety_plan,
+            json.dumps({"documents_expected": ["certificate", "resume", "portfolio", "id_document", "selfie"]}, default=str),
+            clean_html(payload.get("social_links") or "")[:1200],
+            clean_html(payload.get("website") or "")[:500],
+            json.dumps({"paid_teacher_verification": "optional_until_paid_courses"}, default=str),
+            completeness, safety_score, now, now,
+        ),
+    )
+    application_id = int(cur.lastrowid)
+    cur.execute("INSERT INTO teacher_applications (user_id, category, pitch, status, created_at, updated_at) VALUES (?, ?, ?, 'submitted', ?, ?)", (user["user_id"], category, lesson_description, now, now))
     cur.execute(
         """
         INSERT INTO teacher_profiles (user_id, display_name, category, bio, verification_status, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'pending', ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name, category=excluded.category, bio=excluded.bio, updated_at=excluded.updated_at
         """,
-        (user["user_id"], display, category, pitch, now, now),
+        (user["user_id"], display, category, trust_reason, now, now),
     )
+    slug = re.sub(r"[^a-z0-9]+", "-", (display or f"teacher-{user['user_id']}").lower()).strip("-")[:80] or f"teacher-{user['user_id']}"
+    cur.execute(
+        """
+        INSERT INTO pulse_teacher_profiles
+        (user_id, application_id, display_name, bio, expertise, languages, country, timezone, teacher_level,
+         status, trust_score, safety_score, public_slug, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Applicant', 'pending', 70, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET application_id=excluded.application_id, display_name=excluded.display_name,
+          bio=excluded.bio, expertise=excluded.expertise, languages=excluded.languages, country=excluded.country,
+          timezone=excluded.timezone, status='pending', safety_score=excluded.safety_score, updated_at=excluded.updated_at
+        """,
+        (user["user_id"], application_id, display, trust_reason, category, clean_html(payload.get("languages") or "")[:200], country, clean_html(payload.get("timezone") or "")[:80], safety_score, slug, now, now),
+    )
+    notify_user(cur, user["user_id"], "teacher_application", "Teacher application submitted", "Your teacher application is now waiting for admin review.", "/pulse/teacher/dashboard")
     conn.commit(); conn.close()
-    return jsonify({"ok": True, "message": "Teacher application saved."})
+    return jsonify({"ok": True, "message": "Teacher application submitted.", "application_id": application_id, "status": "submitted", "next_url": "/pulse/teacher/dashboard"})
+
+
+@webhook_app.route("/api/pulse/teachers/documents/upload", methods=["POST"])
+def api_pulse_teacher_document_upload():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    application_id = safe_int(request.form.get("application_id"), 0)
+    document_type = clean_html(request.form.get("document_type") or "document")[:60]
+    if document_type not in {"certificate", "resume", "portfolio", "id_document", "selfie"}:
+        return api_error("Choose a valid teacher document type.", 400)
+    try:
+        saved = save_teacher_private_document(user["user_id"], request.files.get("file"), document_type)
+    except ValueError as exc:
+        return api_error(str(exc), 400)
+    if not saved:
+        return api_error("Choose a document to upload.", 400)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    if application_id:
+        cur.execute("SELECT id FROM pulse_teacher_applications WHERE id=? AND user_id=? LIMIT 1", (application_id, user["user_id"]))
+        if not cur.fetchone():
+            conn.close()
+            return api_error("Teacher application not found for this upload.", 404)
+    cur.execute(
+        """
+        INSERT INTO pulse_teacher_documents
+        (application_id, user_id, document_type, original_filename, stored_path, mime_type, file_size,
+         private_access, scan_status, review_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 'pending', ?, ?)
+        """,
+        (application_id, user["user_id"], document_type, saved["original_filename"], saved["stored_path"], saved["mime_type"], saved["file_size"], saved["scanner_status"], now, now),
+    )
+    doc_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "message": "Teacher document uploaded.", "document_id": doc_id, "document_type": document_type})
 
 
 @webhook_app.route("/api/pulse/groups/create", methods=["POST"])
@@ -24788,6 +25302,47 @@ def admin_payments_health_page():
     return admin_page_html("Payments Health", body, admin)
 
 
+@webhook_app.route("/admin/payments", methods=["GET", "POST"])
+def admin_payments_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    counts = {}
+    for key, sql in {
+        "total_volume_cents": "SELECT COALESCE(SUM(amount_cents),0) AS total FROM seller_transactions WHERE status IN ('paid','checkout_completed','succeeded')",
+        "fees_cents": "SELECT COALESCE(SUM(platform_fee_cents),0) AS total FROM seller_transactions WHERE status IN ('paid','checkout_completed','succeeded')",
+        "merchant_transactions": "SELECT COUNT(*) AS total FROM seller_transactions WHERE seller_type='merchant'",
+        "teacher_transactions": "SELECT COUNT(*) AS total FROM seller_transactions WHERE seller_type='teacher'",
+        "failed_payments": "SELECT COUNT(*) AS total FROM seller_transactions WHERE status LIKE '%failed%' OR status LIKE 'blocked%'",
+        "accounts_missing_onboarding": "SELECT COUNT(*) AS total FROM seller_payout_accounts WHERE COALESCE(payouts_enabled,0)=0 OR onboarding_status!='complete'",
+    }.items():
+        try:
+            cur.execute(sql)
+            counts[key] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            counts[key] = 0
+    cur.execute("SELECT t.*, COALESCE(b.display_name,b.username,'Buyer') AS buyer_name, COALESCE(s.display_name,s.username,'Seller') AS seller_name FROM seller_transactions t LEFT JOIN users b ON b.user_id=t.buyer_user_id LEFT JOIN users s ON s.user_id=t.seller_user_id ORDER BY t.id DESC LIMIT 100")
+    transactions = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM seller_payout_accounts ORDER BY updated_at DESC, id DESC LIMIT 80")
+    accounts = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    cards = "".join(
+        f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{(f'${v/100:.2f}' if k.endswith('_cents') else v)}</p></div>"
+        for k, v in counts.items()
+    )
+    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('buyer_name') or '')}</td><td>{clean_html(t.get('seller_name') or '')}</td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
+    acct_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{int(a.get('user_id') or 0)}</td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('onboarding_status') or '')}</td><td>{'yes' if a.get('charges_enabled') else 'no'}</td><td>{'yes' if a.get('payouts_enabled') else 'no'}</td><td>{clean_html(a.get('connected_account_id') or '')}</td></tr>" for a in accounts)
+    body = f"""
+    <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments: gross volume, CoinPilotXAI platform fees, seller net payouts, failed payments, disputes, refunds, and onboarding readiness.</p>
+    <section class='grid'>{cards}</section>
+    <section class='card'><h2>Seller Transactions</h2><table class='table'><tr><th>ID</th><th>Buyer</th><th>Seller</th><th>Type</th><th>Item</th><th>Gross</th><th>Fee</th><th>Status</th></tr>{tx_rows or '<tr><td colspan=8>No seller transactions yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Payout Accounts</h2><table class='table'><tr><th>ID</th><th>User</th><th>Seller Type</th><th>Onboarding</th><th>Charges</th><th>Payouts</th><th>Stripe Account</th></tr>{acct_rows or '<tr><td colspan=7>No payout accounts yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("Payments", body, admin)
+
+
 @webhook_app.route("/admin/sponsorships", methods=["GET", "POST"])
 def admin_sponsorships_page():
     admin, denied = require_admin_page("monetization.manage")
@@ -25371,6 +25926,97 @@ def admin_merchant_applications_page():
     </script>
     """
     return admin_page_html("Merchant Applications", body, admin)
+
+
+@webhook_app.route("/admin/teacher-applications", methods=["GET", "POST"])
+def admin_teacher_applications_page():
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    message = ""
+    if request.method == "POST":
+        app_id = safe_int(request.form.get("application_id"), 0)
+        action = clean_html(request.form.get("action") or "")[:40]
+        note = clean_html(request.form.get("note") or "")[:1200]
+        allowed = {"approve": "approved", "reject": "rejected", "more_info": "needs_more_info", "review": "under_review", "suspend": "suspended"}
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute("SELECT * FROM pulse_teacher_applications WHERE id=? LIMIT 1", (app_id,))
+        app_row = dict(cur.fetchone() or {})
+        if app_row and action in allowed:
+            status = allowed[action]
+            cur.execute("UPDATE pulse_teacher_applications SET status=?, reviewer_id=?, internal_notes=?, reviewed_at=?, updated_at=? WHERE id=?", (status, admin.get("id"), note, now, now, app_id))
+            profile_status = "approved" if status == "approved" else "suspended" if status == "suspended" else "pending"
+            cur.execute(
+                """
+                INSERT INTO pulse_teacher_profiles
+                (user_id, application_id, display_name, bio, expertise, languages, country, timezone, teacher_level,
+                 status, trust_score, safety_score, public_slug, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 85, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET application_id=excluded.application_id, display_name=excluded.display_name,
+                  bio=excluded.bio, expertise=excluded.expertise, languages=excluded.languages, country=excluded.country,
+                  timezone=excluded.timezone, teacher_level=excluded.teacher_level, status=excluded.status,
+                  trust_score=excluded.trust_score, safety_score=excluded.safety_score, updated_at=excluded.updated_at
+                """,
+                (
+                    app_row.get("user_id"), app_id, app_row.get("teacher_display_name"), app_row.get("trust_reason"),
+                    app_row.get("teaching_category"), app_row.get("languages"), app_row.get("country"), app_row.get("timezone"),
+                    "Verified Teacher" if status == "approved" else "Applicant", profile_status,
+                    int(app_row.get("safety_score") or 85),
+                    re.sub(r"[^a-z0-9]+", "-", (app_row.get("teacher_display_name") or f"teacher-{app_row.get('user_id')}").lower()).strip("-")[:80] or f"teacher-{app_row.get('user_id')}",
+                    now, now,
+                ),
+            )
+            cur.execute("UPDATE teacher_profiles SET verification_status=?, updated_at=? WHERE user_id=?", ("approved" if status == "approved" else profile_status, now, app_row.get("user_id")))
+            notify_user(cur, app_row.get("user_id"), "teacher_review", f"Teacher application {status.replace('_',' ')}", "Your teacher application review status changed.", "/pulse/teacher/dashboard")
+            conn.commit()
+            log_admin_audit(admin.get("id"), "teacher_application_reviewed", "teacher_application", str(app_id), {"action": action, "status": status})
+            message = "Teacher application updated."
+        conn.close()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT a.*, u.username, u.display_name AS account_name FROM pulse_teacher_applications a LEFT JOIN users u ON u.user_id=a.user_id ORDER BY CASE a.status WHEN 'submitted' THEN 0 WHEN 'under_review' THEN 1 WHEN 'needs_more_info' THEN 2 ELSE 3 END, a.id DESC LIMIT 120")
+    apps = [dict(row) for row in cur.fetchall()]
+    app_ids = [int(a.get("id") or 0) for a in apps]
+    docs_by_app = {}
+    if app_ids:
+        placeholders = ",".join(["?"] * len(app_ids))
+        cur.execute(f"SELECT * FROM pulse_teacher_documents WHERE application_id IN ({placeholders}) ORDER BY id ASC", app_ids)
+        for row in cur.fetchall():
+            d = dict(row)
+            docs_by_app.setdefault(int(d.get("application_id") or 0), []).append(d)
+    conn.close()
+    rows = ""
+    for app_row in apps:
+        docs = docs_by_app.get(int(app_row.get("id") or 0), [])
+        doc_html = "".join(f"<a class='doc-card' href='/admin/teacher-document/{int(d.get('id') or 0)}' target='_blank'><strong>{clean_html((d.get('document_type') or 'document').replace('_',' ').title())}</strong><small>{clean_html(d.get('original_filename') or '')}</small><em>{clean_html(d.get('review_status') or 'pending')}</em></a>" for d in docs) or "<span class='muted'>No documents</span>"
+        rows += f"<tr><td>{app_row.get('id')}</td><td>{clean_html(app_row.get('teacher_display_name') or app_row.get('account_name') or '')}<br><small>{clean_html(app_row.get('email') or '')}</small></td><td>{clean_html(app_row.get('teaching_category') or '')}</td><td>{clean_html(app_row.get('status') or '')}</td><td>{int(app_row.get('completeness') or 0)}%</td><td>{int(app_row.get('safety_score') or 0)}</td><td>{doc_html}</td><td><details><summary>Safety Answers</summary><p>{clean_html(app_row.get('learner_safety_plan') or '')}</p><p>{clean_html(app_row.get('trust_reason') or '')}</p></details><form method='post'><input type='hidden' name='application_id' value='{int(app_row.get('id') or 0)}'><input name='note' placeholder='Internal note'><button name='action' value='review'>Under Review</button><button name='action' value='approve'>Approve</button><button name='action' value='more_info'>Request Info</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button></form></td></tr>"
+    body = f"""
+    <style>.doc-card{{display:grid;gap:3px;padding:9px;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:rgba(255,255,255,.045);text-decoration:none;color:#f2fbff;margin:4px 0}}.doc-card small,.doc-card em{{color:#9fb5c0}}</style>
+    <h1>Teacher Applications</h1><p class='muted'>Review teaching quality, safety answers, identity/credential documents, public reputation, and course readiness before approving teacher tools.</p><p>{clean_html(message)}</p>
+    <section class='card'><table class='table'><tr><th>ID</th><th>Teacher</th><th>Category</th><th>Status</th><th>Complete</th><th>Safety</th><th>Documents</th><th>Review</th></tr>{rows or '<tr><td colspan=8>No teacher applications yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("Teacher Applications", body, admin)
+
+
+@webhook_app.route("/admin/teacher-document/<int:doc_id>", methods=["GET"])
+def admin_teacher_document_file(doc_id):
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        abort(403)
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_teacher_documents WHERE id=? LIMIT 1", (doc_id,))
+    doc = dict(cur.fetchone() or {})
+    conn.close()
+    if not doc:
+        abort(404)
+    root = os.path.abspath(os.path.join("instance", "private_uploads", "teacher_verification"))
+    full_path = os.path.abspath(doc.get("stored_path") or "")
+    if not full_path.startswith(root + os.sep) or not os.path.exists(full_path):
+        logging.warning("TEACHER_DOCUMENT_MISSING doc_id=%s path=%s", doc_id, doc.get("stored_path"))
+        abort(404)
+    return send_file(full_path, mimetype=doc.get("mime_type") or None, as_attachment=bool(request.args.get("download")), download_name=doc.get("original_filename") or f"teacher-document-{doc_id}", max_age=0)
 
 
 def merchant_doc_label(document_type):
@@ -28116,6 +28762,25 @@ def stripe_webhook():
         subscription_id = session.get("subscription")
         customer_id = session.get("customer")
         metadata = session.get("metadata") or {}
+        if metadata.get("seller_transaction_id"):
+            tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+            tx = dict(cur.fetchone() or {})
+            if tx:
+                status = "checkout_completed" if payment_status in {"paid", "no_payment_required"} else f"checkout_{payment_status or 'completed'}"
+                cur.execute(
+                    "UPDATE seller_transactions SET status=?, stripe_checkout_session_id=?, stripe_payment_intent_id=?, updated_at=? WHERE id=?",
+                    (status, session_id, session.get("payment_intent") or "", now, tx_id),
+                )
+                notify_user(cur, tx.get("seller_user_id"), "seller_payment", "Payment received", "A buyer completed checkout. Your payout status will update after Stripe settlement.", "/admin/payments" if False else f"/pulse/{tx.get('seller_type')}/payouts")
+                notify_user(cur, tx.get("buyer_user_id"), "purchase", "Payment complete", "Your purchase was completed successfully.", "/pulse")
+                conn.commit()
+                resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
+            conn.close()
+            record_stripe_event(event, "processed", resolved_event_user_id)
+            return "OK", 200
         logging.info(
             "checkout.session.completed received event_id=%s session_id=%s customer_id=%s customer_email=%s client_reference_id=%s metadata_user_id=%s payment_status=%s subscription_id=%s resolved_user_id=%s",
             event_id,
@@ -28292,6 +28957,20 @@ def stripe_webhook():
     if event_type == "payment_intent.succeeded":
         payment_intent = event["data"]["object"]
         metadata = payment_intent.get("metadata") or {}
+        if metadata.get("seller_transaction_id"):
+            tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+            cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+            tx = dict(cur.fetchone() or {})
+            if tx:
+                cur.execute("UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?, updated_at=? WHERE id=?", (payment_intent.get("id") or "", now, tx_id))
+                notify_user(cur, tx.get("seller_user_id"), "seller_payment", "Payment succeeded", "Stripe confirmed a seller payment. Net payout is tracked in your payout dashboard.", f"/pulse/{tx.get('seller_type')}/payouts")
+                resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
+                conn.commit()
+            conn.close()
+            record_stripe_event(event, "processed", resolved_event_user_id)
+            return "OK", 200
         customer_id = payment_intent.get("customer") or ""
         user_id = find_user_by_stripe(
             customer_id=customer_id,
@@ -28336,6 +29015,38 @@ def stripe_webhook():
         else:
             logging.error("STRIPE_USER_NOT_FOUND event_id=%s object_id=%s customer_id=%s", event_id, payment_intent.get("id"), customer_id)
             record_unmatched_payment(event, payment_intent, "payment_intent.succeeded could not resolve local user")
+
+    if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created"}:
+        obj = event["data"]["object"]
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        if event_type == "account.updated":
+            acct = obj.get("id") or ""
+            requirements = (obj.get("requirements") or {}).get("currently_due") or []
+            cur.execute(
+                """
+                UPDATE seller_payout_accounts
+                SET onboarding_status=?, payouts_enabled=?, charges_enabled=?, missing_requirements_json=?, last_checked_at=?, updated_at=?
+                WHERE connected_account_id=?
+                """,
+                ("complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due", 1 if obj.get("payouts_enabled") else 0, 1 if obj.get("charges_enabled") else 0, json.dumps(requirements, default=str), now, now, acct),
+            )
+        elif event_type in {"payout.paid", "payout.failed"}:
+            destination = obj.get("destination") or obj.get("account") or ""
+            cur.execute("SELECT * FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (destination,))
+            account = dict(cur.fetchone() or {})
+            if account:
+                cur.execute(
+                    "INSERT INTO seller_payouts (user_id, seller_type, amount_cents, currency, status, provider, provider_payout_id, failure_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'stripe', ?, ?, ?, ?)",
+                    (account.get("user_id"), account.get("seller_type"), int(obj.get("amount") or 0), (obj.get("currency") or "usd").upper(), "paid" if event_type == "payout.paid" else "failed", obj.get("id") or "", obj.get("failure_message") or "", now, now),
+                )
+        else:
+            metadata = obj.get("metadata") or {}
+            tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+            if tx_id:
+                status = "refunded" if event_type == "charge.refunded" else "dispute_opened"
+                cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=?", (status, now, tx_id))
+        conn.commit(); conn.close()
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     return "OK", 200
@@ -33690,6 +34401,92 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_teacher_applications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        teacher_display_name TEXT,
+        legal_name TEXT,
+        email TEXT,
+        phone TEXT,
+        country TEXT,
+        languages TEXT,
+        timezone TEXT,
+        teaching_category TEXT,
+        skill_level TEXT,
+        teaching_style TEXT,
+        years_experience TEXT,
+        audience_type TEXT,
+        sample_lesson_title TEXT,
+        sample_lesson_description TEXT,
+        trust_reason TEXT,
+        safety_ack_json TEXT,
+        learner_safety_plan TEXT,
+        credentials_json TEXT,
+        social_links TEXT,
+        website TEXT,
+        verification_json TEXT,
+        status TEXT DEFAULT 'submitted',
+        completeness INTEGER DEFAULT 0,
+        safety_score INTEGER DEFAULT 0,
+        reviewer_id INTEGER,
+        internal_notes TEXT,
+        reviewed_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_teacher_applications", [
+        ("status", "TEXT DEFAULT 'submitted'"),
+        ("completeness", "INTEGER DEFAULT 0"),
+        ("safety_score", "INTEGER DEFAULT 0"),
+        ("reviewer_id", "INTEGER"),
+        ("internal_notes", "TEXT"),
+        ("reviewed_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_teacher_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        application_id INTEGER,
+        user_id INTEGER,
+        document_type TEXT,
+        original_filename TEXT,
+        stored_path TEXT,
+        mime_type TEXT,
+        file_size INTEGER DEFAULT 0,
+        private_access INTEGER DEFAULT 1,
+        scan_status TEXT DEFAULT 'queued_for_internal_review',
+        review_status TEXT DEFAULT 'pending',
+        review_notes TEXT,
+        reviewed_by INTEGER,
+        reviewed_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_teacher_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE,
+        application_id INTEGER,
+        display_name TEXT,
+        bio TEXT,
+        expertise TEXT,
+        languages TEXT,
+        country TEXT,
+        timezone TEXT,
+        teacher_level TEXT DEFAULT 'Applicant',
+        status TEXT DEFAULT 'pending',
+        trust_score INTEGER DEFAULT 70,
+        safety_score INTEGER DEFAULT 85,
+        student_count INTEGER DEFAULT 0,
+        course_count INTEGER DEFAULT 0,
+        lesson_count INTEGER DEFAULT 0,
+        public_slug TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS teacher_lessons (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         teacher_user_id INTEGER,
@@ -33723,6 +34520,179 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_courses", [
+        ("difficulty", "TEXT DEFAULT 'Beginner'"),
+        ("language", "TEXT DEFAULT 'English'"),
+        ("thumbnail_url", "TEXT"),
+        ("pricing_mode", "TEXT DEFAULT 'free'"),
+        ("safety_disclaimer", "TEXT"),
+        ("published_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_lessons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER,
+        teacher_user_id INTEGER,
+        title TEXT,
+        description TEXT,
+        lesson_type TEXT DEFAULT 'video',
+        content_body TEXT,
+        media_url TEXT,
+        resource_url TEXT,
+        status TEXT DEFAULT 'draft',
+        scheduled_at TEXT,
+        safety_score INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_lesson_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lesson_id INTEGER,
+        teacher_user_id INTEGER,
+        media_type TEXT,
+        media_url TEXT,
+        thumbnail_url TEXT,
+        original_filename TEXT,
+        file_size INTEGER DEFAULT 0,
+        moderation_status TEXT DEFAULT 'pending_review',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_quizzes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lesson_id INTEGER,
+        course_id INTEGER,
+        teacher_user_id INTEGER,
+        title TEXT,
+        status TEXT DEFAULT 'draft',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_quiz_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER,
+        question TEXT,
+        choices_json TEXT,
+        correct_answer TEXT,
+        explanation TEXT,
+        position INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_student_enrollments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_user_id INTEGER,
+        teacher_user_id INTEGER,
+        course_id INTEGER,
+        progress_percent INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(student_user_id, course_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_classes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_user_id INTEGER,
+        course_id INTEGER,
+        title TEXT,
+        description TEXT,
+        category TEXT,
+        scheduled_at TEXT,
+        replay_url TEXT,
+        status TEXT DEFAULT 'scheduled',
+        attendance_count INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_teacher_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_user_id INTEGER,
+        reviewer_user_id INTEGER,
+        course_id INTEGER,
+        rating INTEGER DEFAULT 0,
+        review_body TEXT,
+        status TEXT DEFAULT 'visible',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_fee_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_type TEXT UNIQUE,
+        fee_bps INTEGER DEFAULT 1000,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS seller_payout_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        seller_type TEXT,
+        provider TEXT DEFAULT 'stripe',
+        connected_account_id TEXT,
+        onboarding_status TEXT DEFAULT 'not_started',
+        payouts_enabled INTEGER DEFAULT 0,
+        charges_enabled INTEGER DEFAULT 0,
+        missing_requirements_json TEXT,
+        last_checked_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, seller_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS seller_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        seller_type TEXT,
+        item_type TEXT,
+        item_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        platform_fee_cents INTEGER DEFAULT 0,
+        seller_net_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'created',
+        stripe_checkout_session_id TEXT,
+        stripe_payment_intent_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS seller_payouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        seller_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'pending',
+        provider TEXT DEFAULT 'stripe',
+        provider_payout_id TEXT,
+        transaction_ids_json TEXT,
+        failure_reason TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    now_seed = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("INSERT OR IGNORE INTO platform_fee_rules (seller_type, fee_bps, currency, status, created_at, updated_at) VALUES ('merchant', 1000, 'USD', 'active', ?, ?)", (now_seed, now_seed))
+    cur.execute("INSERT OR IGNORE INTO platform_fee_rules (seller_type, fee_bps, currency, status, created_at, updated_at) VALUES ('teacher', 1500, 'USD', 'active', ?, ?)", (now_seed, now_seed))
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
