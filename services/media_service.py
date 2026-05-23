@@ -50,6 +50,22 @@ def _media_type(ext):
     return ""
 
 
+def _public_url_for_path(path):
+    resolved = Path(path).resolve()
+    static_root = Path("static").resolve()
+    try:
+        relative = resolved.relative_to(static_root)
+        return "/static/" + str(relative).replace(os.sep, "/")
+    except ValueError:
+        pass
+    try:
+        relative = resolved.relative_to(UPLOAD_ROOT.resolve())
+        return "/uploads/" + str(relative).replace(os.sep, "/")
+    except ValueError:
+        pass
+    return "/" + str(Path(path)).replace(os.sep, "/").lstrip("/")
+
+
 def _image_header_ok(ext, header):
     if ext in {"jpg", "jpeg"}:
         return header.startswith(b"\xff\xd8\xff")
@@ -125,7 +141,7 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     path = UPLOAD_ROOT / stored
     file_storage.save(path)
     mime = file_storage.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
-    url = "/" + str(path).replace(os.sep, "/")
+    url = _public_url_for_path(path)
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(

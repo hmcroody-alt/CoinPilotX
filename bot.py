@@ -26,6 +26,7 @@ print("REDIS_URL present=", bool(os.environ.get("REDIS_URL")), flush=True)
 
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from pathlib import Path
 from urllib.parse import quote, urlparse
 from flask import Flask, request, render_template, send_from_directory, send_file, jsonify, Response, session, redirect, url_for, has_request_context, abort, g
 from werkzeug.exceptions import HTTPException
@@ -8075,6 +8076,28 @@ def service_worker_root():
     return send_from_directory(webhook_app.static_folder, "sw.js", mimetype="application/javascript")
 
 
+@webhook_app.route("/uploads/<path:filename>", methods=["GET"])
+def public_uploads(filename):
+    safe_name = str(filename or "").replace("\\", "/").lstrip("/")
+    if ".." in safe_name.split("/"):
+        abort(404)
+    roots = [
+        Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve(),
+        Path(webhook_app.static_folder or "static").resolve() / "uploads",
+    ]
+    for root in roots:
+        target = root / safe_name
+        try:
+            if target.exists() and target.is_file():
+                response = send_from_directory(str(root), safe_name)
+                response.headers["Cache-Control"] = "public, max-age=86400"
+                return response
+        except Exception:
+            continue
+    logging.warning("PULSE_MEDIA_PUBLIC_MISSING url=/uploads/%s", safe_name)
+    abort(404)
+
+
 @webhook_app.route("/icons/<path:filename>", methods=["GET"])
 def pwa_icons(filename):
     return send_from_directory(os.path.join(webhook_app.static_folder, "icons"), filename)
@@ -15932,7 +15955,7 @@ const drawer=document.getElementById('pulseDrawer'),sheet=document.getElementByI
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/'))return url;return '/'+url.replace(/^\\/+/, '')}
 function mediaFallbackHtml(m){return `<div class="pulse-media-fallback"><div><strong>Media loading...</strong><span class="muted">This Pulse asset is being recovered.</span><br><button type="button" data-retry-media>Retry</button></div></div>`}
-function mediaHtml(items){return (items||[]).map(m=>{const src=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url)||src;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||'',src}).slice(0,500));return m.media_type==='video'?`<div class="pulse-media-wrap" data-media-diag="${diag}"><video src="${esc(src)}" poster="${esc(thumb)}" muted controls playsinline preload="metadata" onerror="this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)"></video>${mediaFallbackHtml(m)}</div>`:`<div class="pulse-media-wrap" data-media-diag="${diag}"><img src="${esc(thumb)}" data-full-src="${esc(src)}" alt="Pulse media" loading="lazy" onerror="if(this.dataset.fullSrc&&this.src!==new URL(this.dataset.fullSrc,location.origin).href){this.src=this.dataset.fullSrc}else{this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)}">${mediaFallbackHtml(m)}</div>`}).join('')}
+function mediaHtml(items){return (items||[]).map(m=>{const src=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url)||src;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||'',src}).slice(0,500));return m.media_type==='video'?`<div class="pulse-media-wrap" data-media-diag="${diag}"><video src="${esc(src)}" poster="${esc(thumb)}" muted controls playsinline preload="metadata" onerror="this.style.visibility='hidden';this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)"></video>${mediaFallbackHtml(m)}</div>`:`<div class="pulse-media-wrap" data-media-diag="${diag}"><img src="${esc(thumb)}" data-full-src="${esc(src)}" alt="Pulse media" loading="lazy" decoding="async" onerror="if(this.dataset.fullSrc&&this.src!==new URL(this.dataset.fullSrc,location.origin).href){this.src=this.dataset.fullSrc}else{this.style.visibility='hidden';this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)}">${mediaFallbackHtml(m)}</div>`}).join('')}
 function premiumMarkHtml(author){const mark=author&&author.premium_mark;if(!mark)return '';return `<span class="premium-glow-mark ${esc(mark.type||'star')}" title="Premium Verified" aria-label="Premium Verified">${esc(mark.symbol||'✦')}</span>`}
 		function reactionHtml(p){return Object.entries(reactions).slice(0,6).map(([k,label])=>`<button class="reaction-pill ${p.viewer_reaction===k?'active':''}" title="${esc(label)}" data-react="${k}" data-post="${p.id}" data-count="${Number((p.reaction_counts||{})[k]||0)}"><span>${reactionIcons[k]||'•'}</span> <b data-reaction-count>${Number((p.reaction_counts||{})[k]||0)}</b></button>`).join('')}
         function postHtml(p){const author=p.author||{};const label=author.primary_label||author.rank||(author.badges||['Member'])[0]||'Member';const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const canDelete=!!p.can_delete;const follow=(!canDelete&&author.public_player_id)?`<button data-follow-public="${esc(author.public_player_id)}">Follow</button>`:'';const msg=(!canDelete&&author.public_player_id)?`<button data-message="${esc(author.public_player_id)}">Message creator</button>`:'';const del=canDelete?`<button data-delete-post="${p.id}">Delete post</button>`:'';const rep=!canDelete?`<button data-report="post" data-id="${p.id}">Report</button>`:'';const module=p.post_type==='scam_report'?`<div class="intel-item"><strong>Scam Shield pulse</strong><br><span class="muted">Risk score ${Number(p.risk_score||0)}. Community-generated warning, educational only.</span></div>`:p.post_type==='poll'?`<div class="intel-item"><strong>Question pulse</strong><br><span class="muted">Educators and community members can answer below.</span></div>`:'';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="card post live-enter" data-post-id="${p.id}"><div class="author"><div class="author-main"><span class="avatar">${avatar}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'Pulse creator')}${premiumMarkHtml(author)}</div><span class="badge">${esc(label)}</span></div></div><div class="post-tools"><button class="post-menu-btn" data-post-menu="${p.id}" aria-label="Post actions">•••</button></div><div class="post-sheet" data-post-sheet="${p.id}">${follow}${msg}<a class="button" href="${esc(p.permalink)}">View post</a><a class="button" href="${profile}">View profile</a><button data-share="${esc(p.permalink)}">Share post</button>${del}${rep}</div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${module}${p.media&&p.media.length?`<div class="media-grid">${mediaHtml(p.media)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${smartTimeHtml(p.created_at)} <span class="time-dot">•</span> ${esc(p.post_type||'post')} <span class="time-dot">•</span> <span data-comment-count="${p.id}">${Number(p.comments_count||p.comment_count||0)}</span> comments <span class="time-dot">•</span> <span data-reaction-total="${p.id}">${Number(p.reactions_count||0)}</span> reactions</p><div class="reaction-strip">${reactionHtml(p)}</div><div class="quick-actions"><button class="quick-action" data-quick-like="${p.id}">Like</button><button class="quick-action" data-open-comments="${p.id}">Comment</button><button class="quick-action" data-share="${esc(p.permalink)}">Share</button><button class="quick-action" data-save-post="${p.id}">Save</button><button class="quick-action" data-post-menu="${p.id}">More</button></div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><button class="comment-preview-toggle" data-view-comments="${p.id}" hidden>View comments</button><div class="comment-composer"><span class="avatar comment-avatar">${avatar}</span><input class="comment-input" data-comment-input="${p.id}" placeholder="Write comment..."><button class="comment-emoji" data-comment-emoji="${p.id}" type="button">☺</button><button class="comment-send" data-send-comment="${p.id}" type="button">➤</button></div></section></article>`}
@@ -17017,17 +17040,82 @@ def pulse_media_url(url):
     value = str(url or "").strip()
     if not value:
         return ""
-    if value.startswith(("http://", "https://", "data:")):
+    value = value.replace("\\", "/")
+    if value.startswith(("http://", "https://", "data:", "blob:")):
         return value
+    static_root = Path(webhook_app.static_folder or "static").resolve()
+    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
+    try:
+        path_value = Path(value).expanduser()
+        if path_value.is_absolute():
+            resolved = path_value.resolve()
+            try:
+                rel = resolved.relative_to(static_root)
+                return "/static/" + str(rel).replace(os.sep, "/")
+            except ValueError:
+                pass
+            try:
+                rel = resolved.relative_to(upload_root)
+                return "/uploads/" + str(rel).replace(os.sep, "/")
+            except ValueError:
+                pass
+    except Exception:
+        pass
+    marker = "/static/uploads/"
+    if marker in value:
+        return value[value.index(marker):]
+    marker = "static/uploads/"
+    if marker in value:
+        return "/" + value[value.index(marker):]
+    marker = "/uploads/"
+    if marker in value:
+        return value[value.index(marker):]
     if value.startswith("/uploads/"):
-        return "/static" + value
+        return value
     if value.startswith("/static/"):
         return value
     if value.startswith("static/"):
         return "/" + value
     if value.startswith("uploads/"):
-        return "/static/" + value
-    return value
+        return "/" + value
+    if "/" not in value and "." in value:
+        return "/static/uploads/" + value
+    return value if value.startswith("/") else "/" + value
+
+
+def pulse_media_local_path(url):
+    value = pulse_media_url(url)
+    if not value or value.startswith(("http://", "https://", "data:", "blob:")):
+        return None
+    parsed = urlparse(value)
+    path = parsed.path or value
+    static_root = Path(webhook_app.static_folder or "static").resolve()
+    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
+    candidates = []
+    if path.startswith("/static/"):
+        candidates.append(static_root / path[len("/static/"):])
+    if path.startswith("/uploads/"):
+        candidates.append(upload_root / path[len("/uploads/"):])
+        candidates.append(static_root / "uploads" / path[len("/uploads/"):])
+    if path.startswith("static/"):
+        candidates.append(Path(path).resolve())
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                return str(candidate)
+        except Exception:
+            continue
+    return str(candidates[0]) if candidates else None
+
+
+def pulse_media_exists(url):
+    if not url:
+        return False
+    value = pulse_media_url(url)
+    if value.startswith(("http://", "https://")):
+        return True
+    path = pulse_media_local_path(value)
+    return bool(path and os.path.exists(path))
 
 
 def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False):
@@ -19654,8 +19742,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       .unified-messenger-body{min-height:0;grid-template-columns:1fr;background:radial-gradient(circle at 84% 8%,rgba(110,223,246,.08),transparent 16rem)}
       .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-head{display:none}
       .unified-messenger:has(.unified-thread-pane.is-open){grid-template-rows:minmax(0,1fr) auto}
-      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-body{height:100%;padding-bottom:calc(58px + env(safe-area-inset-bottom))}
-      .unified-messenger:has(.unified-thread-pane.is-open) .unified-composer{position:fixed;left:0;right:0;bottom:0;z-index:216}
+      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-body{height:100%;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+      .unified-messenger:has(.unified-thread-pane.is-open) .unified-composer{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom);z-index:216}
       .unified-sidebar{padding:10px 12px 18px;border-right:0;gap:9px}
       .unified-sidebar.is-thread-open{display:none}
       .unified-search{grid-template-columns:minmax(0,1fr) 44px;gap:7px}.unified-search button{font-size:0;border-radius:14px;padding:0}.unified-search button:before{content:"⌕";font-size:18px}
@@ -19679,7 +19767,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       .unified-bubble-media{width:min(250px,68vw);max-height:300px;border-radius:13px}
       .unified-file-card{padding:9px;border-radius:13px}
       .unified-reactions{max-width:80%;margin:2px 8px 4px}
-      .unified-composer{position:relative;grid-template-columns:38px minmax(0,1fr) 48px;gap:7px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:rgba(1,7,13,.985);backdrop-filter:blur(12px);box-shadow:0 -8px 28px rgba(0,0,0,.22)}
+      .unified-composer{position:relative;grid-template-columns:38px minmax(0,1fr) 48px;gap:7px;padding:8px 10px;background:rgba(1,7,13,.985);backdrop-filter:blur(12px);box-shadow:0 -8px 28px rgba(0,0,0,.22)}
       .unified-composer textarea{min-height:40px;max-height:104px;border-radius:22px;padding:10px 13px;background:rgba(9,20,34,.92);font-size:15px;line-height:1.25}
       .unified-composer button{width:48px;min-width:48px;min-height:40px;padding:0;border-radius:18px}
       .unified-attach{width:38px!important;min-width:38px!important;border-radius:999px!important;font-size:24px;line-height:1}
@@ -20127,8 +20215,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         box.innerHTML = '<div class="unified-empty">Loading conversations...</div>';
         try {
           const response = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load conversations.");
+          const responseText = await response.text();
+          let data = {};
+          try { data = JSON.parse(responseText || "{}"); } catch (parseError) { throw new Error(`Chats API returned ${response.status}: ${responseText.slice(0, 180)}`); }
+          if (!response.ok || data.ok === false) {
+            console.error("Chats load failed", { status: response.status, responseText, trace_id: data.trace_id });
+            throw new Error(`${data.message || "Unable to load conversations."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
+          }
           const direct = (data.conversations || []).filter(item => (item.conversation_type || "direct") === "direct");
           box.innerHTML = direct.map(item => {
             const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
@@ -20139,7 +20232,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
               <span>${friendlyTime(item.last_message_at || item.updated_at)}</span>
             </button>`}).join("") || '<div class="unified-empty">No private chats yet. Search for a Pulse user to start a conversation.</div>';
         } catch (error) {
-          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Private chat is temporarily unavailable.")}</div>`;
+          console.error("Chats failed", error);
+          box.innerHTML = `<div class="unified-empty"><strong>Chats could not load.</strong><br><span>${esc(error.message || "Private chat is temporarily unavailable.")}</span><br><button type="button" data-retry-list="chats">Tap to retry</button></div>`;
         }
       }
       async function loadGroups() {
@@ -20160,7 +20254,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             </button>`}).join("") || '<div class="unified-empty">No group chats yet. Create one with friends, creators, or your community.</div>';
         } catch (error) {
           console.error("Group chats failed", error);
-          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Group chats are temporarily unavailable.")}</div>`;
+          box.innerHTML = `<div class="unified-empty"><strong>Group chats could not load.</strong><br><span>${esc(error.message || "Group chats are temporarily unavailable.")}</span><br><button type="button" data-retry-list="groups">Tap to retry</button></div>`;
         }
       }
       async function loadRooms() {
@@ -20189,7 +20283,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             </button>`).join("") || '<div class="unified-empty">Rooms are warming up.</div>';
         } catch (error) {
           console.error("Chat room load failed", error);
-          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Chat rooms are temporarily unavailable.")}</div>`;
+          box.innerHTML = `<div class="unified-empty"><strong>Rooms could not load.</strong><br><span>${esc(error.message || "Chat rooms are temporarily unavailable.")}</span><br><button type="button" data-retry-list="rooms">Tap to retry</button></div>`;
         }
       }
       async function openThread(id) {
@@ -20317,6 +20411,14 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         }
       }
       document.addEventListener("click", async event => {
+        const retryList = event.target.closest("[data-retry-list]");
+        if (retryList) {
+          const kind = retryList.dataset.retryList;
+          if (kind === "rooms") loadRooms();
+          else if (kind === "groups") loadGroups();
+          else loadThreads();
+          return;
+        }
         if (event.target.closest("[data-mobile-chat-back]")) {
           document.querySelector("[data-unified-sidebar]").classList.remove("is-thread-open");
           document.querySelector("[data-unified-thread-pane]").classList.remove("is-open");
@@ -22951,7 +23053,16 @@ def api_pulse_message_group_conversations():
     trace_id = secrets.token_hex(6)
     try:
         response = api_pulse_message_conversations()
-        payload = response.get_json() if hasattr(response, "get_json") else {}
+        status_code = 200
+        if isinstance(response, tuple):
+            response_obj = response[0]
+            status_code = int(response[1] or 200)
+        else:
+            response_obj = response
+        payload = response_obj.get_json() if hasattr(response_obj, "get_json") else {}
+        if status_code >= 400 or payload.get("ok") is False:
+            logging.warning("PULSE_GROUP_CONVERSATIONS_SOURCE_FAILED trace_id=%s user_id=%s status=%s payload=%s", trace_id, user.get("user_id"), status_code, payload)
+            return jsonify({"ok": False, "message": payload.get("message") or "Group chats could not be loaded.", "trace_id": payload.get("trace_id") or trace_id}), status_code
         conversations = [
             item for item in (payload.get("conversations") or [])
             if (item.get("conversation_type") or "") in {"group", "community", "community_group", "creator", "live"}
@@ -23136,117 +23247,128 @@ def api_pulse_message_conversations():
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT c.*,
-               mine.unread_count AS my_unread_count,
-               mine.last_read_at AS my_last_read_at,
-               mine.last_read_message_id AS my_last_read_message_id,
-               mine.pinned_at AS my_pinned_at,
-               mine.muted_until AS my_muted_until,
-               MIN(CASE WHEN p.user_id!=? THEN p.user_id END) AS participant_user_id,
-               COUNT(DISTINCT CASE WHEN COALESCE(p.left_at,'')='' THEN p.user_id END) AS live_member_count,
-               lm.body AS latest_message,
-               lm.message_type AS latest_message_type,
-               lm.created_at AS latest_message_created_at
-        FROM pulse_conversations c
-        JOIN pulse_conversation_participants mine
-          ON mine.conversation_id=c.id
-         AND mine.user_id=?
-         AND COALESCE(mine.left_at,'')=''
-        LEFT JOIN pulse_conversation_participants p
-          ON p.conversation_id=c.id
-         AND COALESCE(p.left_at,'')=''
-        LEFT JOIN pulse_messages lm
-          ON lm.id=(
-            SELECT pm.id FROM pulse_messages pm
-            WHERE pm.conversation_id=c.id AND COALESCE(pm.deleted_at,'')=''
-            ORDER BY pm.id DESC LIMIT 1
-          )
-        WHERE COALESCE(c.status,'active')='active'
-        GROUP BY c.id
-        ORDER BY CASE WHEN COALESCE(mine.pinned_at,'')!='' THEN 0 ELSE 1 END,
-                 COALESCE(mine.pinned_at,c.last_message_at,c.last_activity_at,c.updated_at,c.created_at) DESC
-        LIMIT 80
-        """,
-        (user["user_id"], user["user_id"]),
-    )
-    conversations = []
-    for row in cur.fetchall():
-        item = dict(row)
-        convo_type = item.get("conversation_type") or "direct"
-        other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0) if convo_type == "direct" else {"name": item.get("title") or "Group Chat", "avatar_url": item.get("avatar_url") or "", "premium_mark": None}
-        latest = item.get("latest_message") or ("Media message" if item.get("latest_message_type") not in {"", "text", None} else "")
-        unread_count = int(item.get("my_unread_count") or 0)
-        if not unread_count:
+    trace_id = secrets.token_hex(6)
+    conn = None
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT c.*,
+                   mine.unread_count AS my_unread_count,
+                   mine.last_read_at AS my_last_read_at,
+                   mine.last_read_message_id AS my_last_read_message_id,
+                   mine.pinned_at AS my_pinned_at,
+                   mine.muted_until AS my_muted_until,
+                   MIN(CASE WHEN p.user_id!=? THEN p.user_id END) AS participant_user_id,
+                   COUNT(DISTINCT CASE WHEN COALESCE(p.left_at,'')='' THEN p.user_id END) AS live_member_count,
+                   lm.body AS latest_message,
+                   lm.message_type AS latest_message_type,
+                   lm.created_at AS latest_message_created_at
+            FROM pulse_conversations c
+            JOIN pulse_conversation_participants mine
+              ON mine.conversation_id=c.id
+             AND mine.user_id=?
+             AND COALESCE(mine.left_at,'')=''
+            LEFT JOIN pulse_conversation_participants p
+              ON p.conversation_id=c.id
+             AND COALESCE(p.left_at,'')=''
+            LEFT JOIN pulse_messages lm
+              ON lm.id=(
+                SELECT pm.id FROM pulse_messages pm
+                WHERE pm.conversation_id=c.id AND COALESCE(pm.deleted_at,'')=''
+                ORDER BY pm.id DESC LIMIT 1
+              )
+            WHERE COALESCE(c.status,'active')='active'
+            GROUP BY c.id
+            ORDER BY CASE WHEN COALESCE(mine.pinned_at,'')!='' THEN 0 ELSE 1 END,
+                     COALESCE(mine.pinned_at,c.last_message_at,c.last_activity_at,c.updated_at,c.created_at) DESC
+            LIMIT 80
+            """,
+            (user["user_id"], user["user_id"]),
+        )
+        conversations = []
+        for row in cur.fetchall():
+            item = dict(row)
+            convo_type = item.get("conversation_type") or "direct"
+            other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0) if convo_type == "direct" else {"name": item.get("title") or "Group Chat", "avatar_url": item.get("avatar_url") or "", "premium_mark": None}
+            latest = item.get("latest_message") or ("Media message" if item.get("latest_message_type") not in {"", "text", None} else "")
+            unread_count = int(item.get("my_unread_count") or 0)
+            if not unread_count:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS total
+                    FROM pulse_messages
+                    WHERE conversation_id=?
+                      AND sender_user_id!=?
+                      AND COALESCE(deleted_at,'')=''
+                      AND id>COALESCE(?,0)
+                    """,
+                    (int(item.get("id") or 0), user["user_id"], int(item.get("my_last_read_message_id") or 0)),
+                )
+                unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
             cur.execute(
                 """
-                SELECT COUNT(*) AS total
-                FROM pulse_messages
-                WHERE conversation_id=?
-                  AND sender_user_id!=?
-                  AND COALESCE(deleted_at,'')=''
-                  AND id>COALESCE(?,0)
+                SELECT COALESCE(u.display_name,u.username,'Pulse member') AS display_name
+                FROM pulse_conversation_typing t
+                JOIN users u ON u.user_id=t.user_id
+                WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
+                ORDER BY t.updated_at DESC LIMIT 3
                 """,
-                (int(item.get("id") or 0), user["user_id"], int(item.get("my_last_read_message_id") or 0)),
+                (int(item.get("id") or 0), user["user_id"], typing_cutoff),
             )
-            unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-        typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
-        cur.execute(
-            """
-            SELECT COALESCE(u.display_name,u.username,'Pulse member') AS display_name
-            FROM pulse_conversation_typing t
-            JOIN users u ON u.user_id=t.user_id
-            WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
-            ORDER BY t.updated_at DESC LIMIT 3
-            """,
-            (int(item.get("id") or 0), user["user_id"], typing_cutoff),
-        )
-        typing_names = [dict(row).get("display_name") or "Pulse member" for row in cur.fetchall()]
-        cur.execute(
-            """
-            SELECT user_id
-            FROM pulse_conversation_participants
-            WHERE conversation_id=? AND COALESCE(left_at,'')=''
-            ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, joined_at ASC, created_at ASC
-            LIMIT 6
-            """,
-            (int(item.get("id") or 0),),
-        )
-        preview_users = []
-        for preview_row in cur.fetchall():
-            preview_id = int(dict(preview_row).get("user_id") or 0)
-            preview_ident = pulse_identity_for_user(cur, preview_id)
-            preview_users.append({
-                "id": preview_id,
-                "display_name": preview_ident.get("name") or "Pulse user",
-                "avatar_url": preview_ident.get("avatar_url") or "",
-                "public_pulse_id": f"@{preview_ident.get('public_player_id') or pulse_public_id_for_user(preview_id)}",
-                "is_self": preview_id == int(user["user_id"]),
+            typing_names = [dict(row).get("display_name") or "Pulse member" for row in cur.fetchall()]
+            cur.execute(
+                """
+                SELECT user_id
+                FROM pulse_conversation_participants
+                WHERE conversation_id=? AND COALESCE(left_at,'')=''
+                ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, joined_at ASC, created_at ASC
+                LIMIT 6
+                """,
+                (int(item.get("id") or 0),),
+            )
+            preview_users = []
+            for preview_row in cur.fetchall():
+                preview_id = int(dict(preview_row).get("user_id") or 0)
+                preview_ident = pulse_identity_for_user(cur, preview_id)
+                preview_users.append({
+                    "id": preview_id,
+                    "display_name": preview_ident.get("name") or "Pulse user",
+                    "avatar_url": preview_ident.get("avatar_url") or "",
+                    "public_pulse_id": f"@{preview_ident.get('public_player_id') or pulse_public_id_for_user(preview_id)}",
+                    "is_self": preview_id == int(user["user_id"]),
+                })
+            conversations.append({
+                "id": int(item.get("id") or 0),
+                "conversation_id": int(item.get("id") or 0),
+                "conversation_type": convo_type,
+                "other_user_id": int(item.get("participant_user_id") or 0),
+                "title": other.get("name") or "Pulse user",
+                "avatar_url": other.get("avatar_url") or "",
+                "premium_mark": other.get("premium_mark"),
+                "member_count": int(item.get("live_member_count") or item.get("member_count") or (2 if convo_type == "direct" else 1)),
+                "last_message": latest,
+                "latest_message": latest,
+                "updated_at": item.get("updated_at") or item.get("created_at") or "",
+                "last_message_at": item.get("latest_message_created_at") or item.get("last_message_at") or item.get("last_activity_at") or item.get("updated_at") or item.get("created_at") or "",
+                "unread_count": unread_count,
+                "last_read_message_id": int(item.get("my_last_read_message_id") or 0),
+                "pinned": bool(item.get("my_pinned_at")),
+                "muted": bool(item.get("my_muted_until") and str(item.get("my_muted_until")) > datetime.utcnow().isoformat(timespec="seconds")),
+                "typing_users": typing_names,
+                "participants_preview": preview_users,
             })
-        conversations.append({
-            "id": int(item.get("id") or 0),
-            "conversation_id": int(item.get("id") or 0),
-            "conversation_type": convo_type,
-            "other_user_id": int(item.get("participant_user_id") or 0),
-            "title": other.get("name") or "Pulse user",
-            "avatar_url": other.get("avatar_url") or "",
-            "premium_mark": other.get("premium_mark"),
-            "member_count": int(item.get("live_member_count") or item.get("member_count") or (2 if convo_type == "direct" else 1)),
-            "last_message": latest,
-            "latest_message": latest,
-            "updated_at": item.get("updated_at") or item.get("created_at") or "",
-            "last_message_at": item.get("latest_message_created_at") or item.get("last_message_at") or item.get("last_activity_at") or item.get("updated_at") or item.get("created_at") or "",
-            "unread_count": unread_count,
-            "last_read_message_id": int(item.get("my_last_read_message_id") or 0),
-            "pinned": bool(item.get("my_pinned_at")),
-            "muted": bool(item.get("my_muted_until") and str(item.get("my_muted_until")) > datetime.utcnow().isoformat(timespec="seconds")),
-            "typing_users": typing_names,
-            "participants_preview": preview_users,
-        })
-    conn.close()
-    return jsonify({"ok": True, "conversations": conversations})
+        conn.close()
+        return jsonify({"ok": True, "conversations": conversations})
+    except Exception as exc:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+        logging.exception("PULSE_CONVERSATIONS_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
+        return api_error("Chats could not load. Tap to retry.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
 @webhook_app.route("/api/pulse/messages/upload", methods=["POST"])
@@ -27579,6 +27701,58 @@ def admin_media_studio_page():
     <p><a class='button' href='/pulse/camera'>Open Camera Studio</a> <a class='button' href='/admin/groups-health'>Groups Health</a></p>
     """
     return admin_page_html("Media Studio", body, admin)
+
+
+@webhook_app.route("/admin/media", methods=["GET"])
+def admin_media_diagnostics_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, uploader_user_id, context_type, context_id, original_filename, stored_filename,
+               media_url, thumbnail_url, media_type, mime_type, file_size_bytes, moderation_status, created_at
+        FROM chat_media_uploads
+        ORDER BY id DESC LIMIT 120
+        """
+    )
+    rows = []
+    broken = 0
+    for row in cur.fetchall():
+        item = dict(row)
+        public_url = pulse_media_url(item.get("media_url") or "")
+        thumb_url = pulse_media_url(item.get("thumbnail_url") or item.get("media_url") or "")
+        exists = pulse_media_exists(public_url)
+        thumb_exists = pulse_media_exists(thumb_url)
+        if not exists:
+            broken += 1
+        rows.append({
+            "id": item.get("id"),
+            "context": f"{item.get('context_type') or ''}:{item.get('context_id') or ''}",
+            "type": item.get("media_type") or "",
+            "mime": item.get("mime_type") or "",
+            "bytes": item.get("file_size_bytes") or 0,
+            "exists": "yes" if exists else "missing",
+            "thumb": "yes" if thumb_exists else "missing",
+            "url": public_url,
+            "created": item.get("created_at") or "",
+        })
+    total = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads")
+    pulse_total = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE context_type='pulse'")
+    local_warning = ""
+    if os.getenv("MEDIA_STORAGE_PROVIDER", "local").lower() == "local":
+        local_warning = "<p class='muted'>Warning: local media storage is active. Railway disks are not persistent for production uploads; R2/S3 should be attached for durable Pulse media.</p>"
+    conn.close()
+    table = admin_rows_table(rows, [("id", "ID"), ("context", "Context"), ("type", "Type"), ("mime", "MIME"), ("bytes", "Bytes"), ("exists", "File"), ("thumb", "Thumb"), ("url", "Public URL"), ("created", "Created")])
+    body = f"""
+    <h1>Media Diagnostics</h1><p class='muted'>Trace Pulse feed media from stored path to public URL and file availability.</p>{local_warning}
+    <section class='grid'><div class='card'><h2>Total Uploads</h2><p class='metric'>{total}</p></div><div class='card'><h2>Pulse Uploads</h2><p class='metric'>{pulse_total}</p></div><div class='card'><h2>Recent Missing Files</h2><p class='metric'>{broken}</p></div></section>
+    <section class='card'><h2>Recent Upload Path Check</h2>{table}</section>
+    <p><a class='button' href='/admin/media-studio'>Media Studio</a> <a class='button' href='/admin/performance'>Performance</a></p>
+    """
+    return admin_page_html("Media Diagnostics", body, admin)
 
 
 @webhook_app.route("/admin/system-audit", methods=["GET"])

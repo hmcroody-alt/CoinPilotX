@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from . import media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, user_context
 
@@ -60,6 +62,43 @@ def _clean_text(value, limit=4000):
     text = re.sub(r"<[^>]+>", " ", value or "")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit]
+
+
+def _public_media_url(url):
+    value = str(url or "").strip().replace("\\", "/")
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "data:", "blob:")):
+        return value
+    static_root = Path("static").resolve()
+    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
+    try:
+        path_value = Path(value).expanduser()
+        if path_value.is_absolute():
+            resolved = path_value.resolve()
+            try:
+                return "/static/" + str(resolved.relative_to(static_root)).replace(os.sep, "/")
+            except ValueError:
+                pass
+            try:
+                return "/uploads/" + str(resolved.relative_to(upload_root)).replace(os.sep, "/")
+            except ValueError:
+                pass
+    except Exception:
+        pass
+    for marker in ("/static/uploads/", "static/uploads/"):
+        if marker in value:
+            idx = value.index(marker)
+            return value[idx:] if marker.startswith("/") else "/" + value[idx:]
+    if "/uploads/" in value:
+        return value[value.index("/uploads/"):]
+    if value.startswith(("/static/", "/uploads/")):
+        return value
+    if value.startswith("static/"):
+        return "/" + value
+    if value.startswith("uploads/"):
+        return "/" + value
+    return value if value.startswith("/") else "/" + value
 
 
 def _public_author(row):
@@ -145,11 +184,13 @@ def _media_for_posts(post_ids):
         media = {}
         for row in cur.fetchall():
             item = dict(row)
+            media_url = _public_media_url(item.get("media_url"))
+            thumbnail_url = _public_media_url(item.get("thumbnail_url") or item.get("media_url"))
             media.setdefault(int(item.get("context_id") or 0), []).append({
                 "id": item.get("id"),
                 "media_type": item.get("media_type"),
-                "media_url": item.get("media_url"),
-                "thumbnail_url": item.get("thumbnail_url") or item.get("media_url"),
+                "media_url": media_url,
+                "thumbnail_url": thumbnail_url or media_url,
                 "mime_type": item.get("mime_type"),
                 "file_size_bytes": item.get("file_size_bytes"),
             })
