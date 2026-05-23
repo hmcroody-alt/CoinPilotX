@@ -98,6 +98,10 @@ def main():
     _expect(status == 200 and data.get("ok") is True and int(data.get("conversation_id") or 0) > 0, "create group", str(data))
     group_conversation_id = int(data["conversation_id"])
 
+    status, data = _json_response(client, "GET", "/api/pulse/messages/group-conversations")
+    group_ids = {int(item.get("conversation_id") or item.get("id") or 0) for item in data.get("conversations") or data.get("items") or []}
+    _expect(status == 200 and data.get("ok") is True and group_conversation_id in group_ids, "created group appears in group list", str(data))
+
     status, data = _json_response(client, "POST", "/api/pulse/messages/send", {"conversation_id": group_conversation_id, "message": "Messenger audit group ping"})
     _expect(status == 200 and data.get("ok") is True and int(data.get("message_id") or 0) > 0, "send group message", str(data))
 
@@ -114,8 +118,25 @@ def main():
     _expect(status == 200 and data.get("ok") is True, "stale group row does not crash groups API", str(data))
 
     conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
     cur = conn.cursor()
     cur.execute("DELETE FROM pulse_conversations WHERE id=?", (stale_id,))
+    cur.execute("INSERT INTO pulse_conversations (conversation_type, title, status, created_at, updated_at) VALUES ('direct', 'Stale Direct Row', 'active', ?, ?)", (now, now))
+    stale_direct_id = int(cur.lastrowid)
+    cur.execute(
+        "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, joined_at, created_at) VALUES (?, ?, 'member', ?, ?)",
+        (stale_direct_id, user_id, now, now),
+    )
+    conn.commit()
+    conn.close()
+
+    status, data = _json_response(client, "GET", "/api/pulse/messages/conversations")
+    _expect(status == 200 and data.get("ok") is True, "stale direct row does not crash chats API", str(data))
+
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pulse_conversation_participants WHERE conversation_id=?", (stale_direct_id,))
+    cur.execute("DELETE FROM pulse_conversations WHERE id=?", (stale_direct_id,))
     conn.commit()
     conn.close()
     print("messenger api audit ok")
