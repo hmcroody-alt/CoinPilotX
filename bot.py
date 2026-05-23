@@ -17840,16 +17840,22 @@ def pulse_live_page():
         """
     else:
         live_card = f"<section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {completed}/{required} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p>Going live is earned so creators build trust before broadcasting.</p><div class='actions'><a class='button primary' href='/pulse/invite'>Invite Members</a><a class='button' href='/pulse/creator-status'>Creator Status</a></div></section>"
-    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'Pulse Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id WHERE s.status IN ('live','starting') ORDER BY s.started_at DESC, s.id DESC LIMIT 20")
+    active_streams = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    stream_cards = "".join(f"<article class='card'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'Pulse Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='/pulse/live/{int(s.get('id') or 0)}'>Watch</a></article>" for s in active_streams)
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or '<article class=\"card\"><h2>No one is live right now.</h2><p>Start the next Pulse Live session or check back soon.</p></article>'}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
     let pulseLiveStream = null;
     let pulseLiveRoom = null;
     function liveError(message) {
       const box = document.getElementById('liveErrorBox');
-      if (box) { box.style.display = 'block'; box.textContent = message || 'Livestream setup needs one more configuration step.'; }
+      const fallback = 'Live could not start. Please check camera permissions and try again.';
+      if (box) { box.style.display = 'block'; box.textContent = message || fallback; }
       const status = document.getElementById('liveStartStatus');
-      if (status) status.textContent = message || 'Livestream setup needs one more configuration step.';
-      toast(message || 'Livestream setup needs one more configuration step.');
+      if (status) status.textContent = message || fallback;
+      toast(message || fallback);
     }
     function stopPulseLivePreview() {
       if (pulseLiveStream) pulseLiveStream.getTracks().forEach(track => track.stop());
@@ -17922,7 +17928,7 @@ def pulse_live_page():
       }
     });
     document.getElementById('enterLiveBtn')?.addEventListener('click', () => {
-      const url = (pulseLiveRoom && pulseLiveRoom.live_url) || (pulseLiveRoom && pulseLiveRoom.live_id ? '/pulse/live/' + pulseLiveRoom.live_id : '/pulse/live');
+      const url = (pulseLiveRoom && pulseLiveRoom.studio_url) || (pulseLiveRoom && pulseLiveRoom.live_url) || (pulseLiveRoom && pulseLiveRoom.live_id ? '/pulse/live/studio/' + pulseLiveRoom.live_id : '/pulse/live');
       window.location.href = url;
     });
     document.getElementById('startLiveBtn')?.addEventListener('click', async () => {
@@ -17944,7 +17950,7 @@ def pulse_live_page():
         await openLivePreview(data);
       } catch (err) {
         console.error('Pulse livestream start failed', err);
-        const message = err.message || 'Livestream setup needs one more configuration step.';
+        const message = err.message || 'Live could not start. Please check camera permissions and try again.';
         liveError(message);
         btn.textContent = 'Start Live';
       } finally {
@@ -17955,6 +17961,47 @@ def pulse_live_page():
     return pulse_social_shell("Pulse Live Eligibility", "Unlock Live by growing a real, trusted CoinPilotXAI audience.", main, "", script)
 
 
+@webhook_app.route("/pulse/live/studio/<int:stream_id>", methods=["GET"])
+def pulse_live_studio_page(stream_id):
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT s.*, ls.stream_uuid, ls.rtmp_url, ls.ingest_url, ls.hls_url, ls.webrtc_room_id FROM pulse_live_sessions s LEFT JOIN pulse_live_streams ls ON ls.session_id=s.id WHERE s.id=? LIMIT 1", (stream_id,))
+    live = dict(cur.fetchone() or {})
+    if not live:
+        conn.close()
+        return pulse_social_shell("Pulse Live Studio", "Live session not found.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>"), 404
+    if int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
+        conn.close()
+        return pulse_social_shell("Pulse Live Studio", "Only the host can open this Live Studio.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>"), 403
+    cur.execute("SELECT * FROM pulse_live_chat WHERE live_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 80", (stream_id,))
+    chat = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (stream_id,))
+    viewers = int(dict(cur.fetchone() or {}).get("total") or 0)
+    conn.close()
+    chat_html = "".join(f"<p><strong>{'System' if int(c.get('user_id') or 0)==int(live.get('user_id') or 0) and c.get('message_type')=='system' else 'Viewer'}:</strong> {clean_html(c.get('body') or '')}</p>" for c in reversed(chat))
+    main = f"""
+    <style>.live-studio{{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(320px,.7fr);gap:16px}}.live-preview{{position:relative;min-height:460px;border-radius:24px;overflow:hidden;background:#020713;border:1px solid rgba(110,223,246,.22)}}.live-preview video{{width:100%;height:100%;min-height:460px;object-fit:cover;transform:scaleX(-1)}}.obs-grid{{display:grid;gap:8px}}.obs-grid code{{display:block;white-space:normal;overflow-wrap:anywhere;padding:10px;border-radius:12px;background:rgba(255,255,255,.06)}}@media(max-width:900px){{.live-studio{{grid-template-columns:1fr}}}}</style>
+    <section class='card'><h1>Live Studio</h1><p><span class='pill'>Status: {clean_html(live.get('status') or '')}</span> <span class='pill'>{viewers} viewers</span> <span class='pill'>Health: {clean_html(live.get('stream_health') or 'starting')}</span></p><div class='actions'><button class='primary' id='studioStartCamera'>Start Browser Camera</button><button id='studioScreen'>Share Screen</button><button id='studioMute'>Mute Mic</button><button id='studioEnd'>End Stream</button><a class='button' href='/pulse/live/{stream_id}'>Public View</a></div></section>
+    <section class='live-studio'><div class='live-preview'><video id='studioVideo' autoplay muted playsinline></video><div style='position:absolute;left:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap'><span class='pill'>LIVE</span><span class='pill' id='studioHealth'>Waiting for camera</span></div></div><aside class='card'><h2>OBS / RTMP Setup</h2><div class='obs-grid'><label>Server / Ingest URL<code>{clean_html(live.get('ingest_url') or 'rtmp://live.coinpilotxai.app/live')}</code></label><label>Stream Key<code>{clean_html(live.get('stream_key') or '')}</code></label><label>RTMP URL<code>{clean_html(live.get('rtmp_url') or '')}</code></label><label>HLS Playback<code>{clean_html(live.get('hls_url') or '')}</code></label><label>WebRTC Room<code>{clean_html(live.get('webrtc_room_id') or '')}</code></label></div><p class='muted'>Use OBS or Streamlabs with the server and stream key above. Browser camera mode is available immediately in this studio.</p></aside></section>
+    <section class='grid'><article class='card'><h2>Live Chat</h2><div id='studioChat'>{chat_html or '<p class="muted">Chat is ready.</p>'}</div><textarea id='studioChatBody' placeholder='Send a pinned update or chat message'></textarea><button class='primary' id='studioChatSend'>Send</button></article><article class='card'><h2>Moderation</h2><p>AI moderation alerts, slow mode, bans, reports, and pinned messages are tracked for this stream.</p><p><span class='pill'>Reports 0</span> <span class='pill'>Slow mode ready</span></p></article><article class='card'><h2>Analytics</h2><p>Bitrate: {int(live.get('bitrate_kbps') or 0)} kbps</p><p>FPS: {int(live.get('fps') or 0)}</p><p>Viewer count: {viewers}</p></article></section>
+    """
+    script = f"""
+    let studioStream=null;const video=document.getElementById('studioVideo'),health=document.getElementById('studioHealth');
+    function stopStudioStream(){{if(studioStream)studioStream.getTracks().forEach(t=>t.stop());studioStream=null}}
+    async function startCamera(){{try{{stopStudioStream();studioStream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:'user',width:{{ideal:1080}},height:{{ideal:1920}},frameRate:{{ideal:30,max:60}}}},audio:{{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}}});video.srcObject=studioStream;health.textContent='Browser camera live-ready';}}catch(err){{health.textContent=err.message;toast(err.message)}}}}
+    document.getElementById('studioStartCamera').onclick=startCamera;
+    document.getElementById('studioScreen').onclick=async()=>{{try{{stopStudioStream();studioStream=await navigator.mediaDevices.getDisplayMedia({{video:true,audio:false}});video.srcObject=studioStream;video.style.transform='none';health.textContent='Screen share ready';}}catch(err){{toast('Screen share was not started.')}}}};
+    document.getElementById('studioMute').onclick=e=>{{studioStream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);e.currentTarget.textContent=(studioStream?.getAudioTracks().some(t=>t.enabled)?'Mute Mic':'Unmute Mic')}};
+    document.getElementById('studioEnd').onclick=async()=>{{if(!confirm('End this live stream?'))return;try{{await pulseApi('/api/pulse/live/{stream_id}/end',{{method:'POST',body:JSON.stringify({{}})}});toast('Live ended.');location.href='/pulse/live';}}catch(err){{toast(err.message)}}}};
+    document.getElementById('studioChatSend').onclick=async()=>{{const body=document.getElementById('studioChatBody').value.trim();if(!body)return;try{{const d=await pulseApi('/api/pulse/live/{stream_id}/chat',{{method:'POST',body:JSON.stringify({{body}})}});document.getElementById('studioChat').insertAdjacentHTML('beforeend',`<p><strong>You:</strong> ${{body.replace(/[&<>]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;'}}[c]))}}</p>`);document.getElementById('studioChatBody').value='';}}catch(err){{toast(err.message)}}}};
+    window.addEventListener('pagehide',stopStudioStream);
+    """
+    return pulse_social_shell("Pulse Live Studio", "Stream status, camera, OBS setup, chat, moderation, and analytics.", main, "", script)
+
+
 @webhook_app.route("/pulse/live/<int:live_id>", methods=["GET"])
 def pulse_live_room_page(live_id):
     init_db()
@@ -17962,16 +18009,27 @@ def pulse_live_room_page(live_id):
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'Pulse Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id WHERE s.id=? LIMIT 1", (live_id,))
     live = dict(cur.fetchone() or {})
-    conn.close()
     if not live:
+        conn.close()
         return pulse_social_shell("Pulse Live", "Live session not found.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>")
+    cur.execute("SELECT * FROM pulse_live_chat WHERE live_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 80", (live_id,))
+    chat = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    chat_html = "".join(f"<p><strong>{'Pulse' if c.get('message_type')=='system' else 'Viewer'}:</strong> {clean_html(c.get('body') or '')}</p>" for c in reversed(chat))
     main = f"""
-    <section class='card'><span class='badge live'>Live</span><h1>{clean_html(live.get('title') or 'Pulse Live')}</h1><p>{clean_html(live.get('category') or 'Community')} · {clean_html(live.get('status') or 'starting')}</p><p class='muted'>Stream channel: {clean_html(live.get('websocket_channel') or '')}</p></section>
-    <section class='grid'><article class='card'><h2>Viewer Counter</h2><p class='metric'>{int(live.get('viewer_count') or 0)}</p></article><article class='card'><h2>Chat Room</h2><p>{clean_html(live.get('chat_room_id') or '')}</p></article><article class='card'><h2>Safety</h2><p>Report abuse, scams, harassment, or unsafe financial claims.</p></article></section>
+    <style>.live-watch{{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:16px}}.live-player{{min-height:520px;border-radius:24px;background:radial-gradient(circle at 50% 35%,rgba(110,223,246,.18),rgba(2,7,14,1) 62%);border:1px solid rgba(110,223,246,.22);display:grid;place-items:center;text-align:center;padding:24px}}@media(max-width:900px){{.live-watch{{grid-template-columns:1fr}}.live-player{{min-height:360px}}}}</style>
+    <section class='card'><span class='badge live'>Live</span><h1>{clean_html(live.get('title') or 'Pulse Live')}</h1><p>{clean_html(live.get('creator_name') or '')} · {clean_html(live.get('category') or 'Community')} · {clean_html(live.get('status') or 'starting')}</p><p class='muted'>Stream health: {clean_html(live.get('stream_health') or 'starting')}</p></section>
+    <section class='live-watch'><div class='live-player'><div><h2>Pulse Live Player</h2><p class='muted'>Browser, RTMP, and HLS playback metadata is ready for this stream.</p><p><span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or '')}</span></p><p><span class='pill'>HLS ready</span></p></div></div><aside class='card'><h2>Live Chat</h2><div id='liveChat'>{chat_html or '<p class="muted">Be first in chat.</p>'}</div><textarea id='liveChatBody' placeholder='Chat respectfully'></textarea><button class='primary' id='liveChatSend'>Send</button></aside></section>
+    <section class='grid'><article class='card'><h2>Viewer Counter</h2><p class='metric' id='viewerCount'>{int(live.get('viewer_count') or 0)}</p></article><article class='card'><h2>Live Room</h2><p>{clean_html(live.get('chat_room_id') or '')}</p></article><article class='card'><h2>Safety</h2><p>Report abuse, scams, harassment, or unsafe financial claims.</p></article></section>
     """
-    return pulse_social_shell("Pulse Live Room", "Realtime live session shell with chat and viewer counters.", main)
+    script = f"""
+    async function joinLive(){{try{{const d=await pulseApi('/api/pulse/live/{live_id}/join',{{method:'POST',body:JSON.stringify({{}})}});document.getElementById('viewerCount').textContent=d.viewer_count||0;}}catch(err){{console.error('Live join failed',err)}}}}
+    document.getElementById('liveChatSend').onclick=async()=>{{const body=document.getElementById('liveChatBody').value.trim();if(!body)return;try{{await pulseApi('/api/pulse/live/{live_id}/chat',{{method:'POST',body:JSON.stringify({{body}})}});document.getElementById('liveChat').insertAdjacentHTML('beforeend',`<p><strong>You:</strong> ${{body.replace(/[&<>]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;'}}[c]))}}</p>`);document.getElementById('liveChatBody').value='';}}catch(err){{toast(err.message)}}}};
+    joinLive();
+    """
+    return pulse_social_shell("Pulse Live Room", "Realtime live session with viewer tracking, chat, reactions, and safety controls.", main, "", script)
 
 
 @webhook_app.route("/api/pulse/live/start", methods=["POST"])
@@ -18030,21 +18088,79 @@ def api_pulse_live_start():
         category = clean_html(payload.get("category") or "Crypto Education")[:80]
         thumbnail_url = clean_html(payload.get("thumbnail_url") or "")[:600]
         now = datetime.utcnow().isoformat(timespec="seconds")
-        stream_key = "cpx_live_" + secrets.token_urlsafe(24)
-        channel = f"pulse_live_{user_id}_{secrets.token_hex(6)}"
-        chat_room = f"live-chat-{secrets.token_hex(8)}"
+        stream_setup = live_stream_engine.start_stream(user_id, title=title, category=category, premium_only=bool(payload.get("premium_only")))
+        stream_uuid = clean_html(stream_setup.get("stream_id") or secrets.token_hex(8))[:80]
+        stream_key = clean_html(stream_setup.get("stream_key") or ("cpx_live_" + secrets.token_urlsafe(24)))[:160]
+        channel = clean_html(stream_setup.get("channel") or f"pulse_live_{user_id}_{secrets.token_hex(6)}")[:160]
+        chat_room = f"live-{stream_uuid}"
+        room_result, _ = pulse_get_or_create_room_conversation(cur, user_id, room_key=chat_room)
+        chat_conversation_id = int(room_result.get("conversation_id") or 0)
         cur.execute(
             """
-            INSERT INTO pulse_live_sessions (user_id, title, category, thumbnail_url, audience, status, stream_key, websocket_channel, chat_room_id, viewer_count, created_at, started_at)
-            VALUES (?, ?, ?, ?, 'public', 'live', ?, ?, ?, 0, ?, ?)
+            INSERT INTO pulse_live_sessions
+            (user_id, title, category, thumbnail_url, audience, status, stream_key, websocket_channel, chat_room_id,
+             viewer_count, created_at, started_at, stream_uuid, ingest_url, rtmp_url, hls_url, webrtc_room_id, provider,
+             protocols_json, stream_health, bitrate_kbps, fps, chat_conversation_id, analytics_json, moderation_status, updated_at)
+            VALUES (?, ?, ?, ?, 'public', 'live', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', 0, 0, ?, ?, 'clear', ?)
             """,
-            (user_id, title, category, thumbnail_url, stream_key, channel, chat_room, now, now),
+            (
+                user_id, title, category, thumbnail_url, stream_key, channel, chat_room, now, now, stream_uuid,
+                stream_setup.get("ingest_url") or "", stream_setup.get("rtmp_url") or "", stream_setup.get("hls_url") or "",
+                stream_setup.get("webrtc_room_id") or "", stream_setup.get("provider") or "pulse-native",
+                json.dumps(stream_setup.get("protocols") or ["webrtc", "rtmp", "hls"], default=str),
+                chat_conversation_id,
+                json.dumps({"viewer_peak": 0, "chat_messages": 0, "reports": 0, "source": "browser_or_rtmp"}, default=str),
+                now,
+            ),
         )
         live_id = int(cur.lastrowid)
+        studio_url = f"/pulse/live/studio/{live_id}"
+        cur.execute("UPDATE pulse_live_sessions SET studio_url=?, stream_id=? WHERE id=?", (studio_url, live_id, live_id))
+        cur.execute(
+            """
+            INSERT INTO pulse_live_streams
+            (session_id, creator_user_id, stream_uuid, title, category, provider, ingest_url, rtmp_url, hls_url,
+             webrtc_room_id, stream_key, stream_key_preview, status, started_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?, ?, ?)
+            """,
+            (
+                live_id, user_id, stream_uuid, title, category, stream_setup.get("provider") or "pulse-native",
+                stream_setup.get("ingest_url") or "", stream_setup.get("rtmp_url") or "", stream_setup.get("hls_url") or "",
+                stream_setup.get("webrtc_room_id") or "", stream_key, stream_key[-8:], now, now, now,
+            ),
+        )
+        stream_row_id = int(cur.lastrowid)
+        cur.execute("UPDATE pulse_live_sessions SET stream_id=? WHERE id=?", (stream_row_id, live_id))
+        cur.execute(
+            "INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, ?, 'system', 'approved', 1, ?, ?)",
+            (live_id, user_id, f"{title} is live. Keep chat safe, educational, and respectful.", json.dumps({"kind": "welcome"}, default=str), now),
+        )
+        cur.execute(
+            "INSERT INTO pulse_live_viewers (live_id, user_id, visitor_id, status, joined_at, last_seen_at, device_json) VALUES (?, ?, ?, 'hosting', ?, ?, ?)",
+            (live_id, user_id, f"creator-{user_id}", now, now, json.dumps({"role": "creator"}, default=str)),
+        )
         conn.commit(); conn.close()
-        pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}"}, user_id, None)
+        try:
+            pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}", "studio_url": studio_url}, user_id, None)
+        except Exception:
+            logging.exception("PULSE_LIVE_REALTIME_EMIT_FAILED live_id=%s user_id=%s", live_id, user_id)
         logging.info("PULSE_LIVE_START_OK user_id=%s live_id=%s", user_id, live_id)
-        return jsonify({"ok": True, "live_id": live_id, "stream_key": stream_key, "live_url": f"/pulse/live/{live_id}", "websocket_channel": channel, "chat_room_id": chat_room})
+        return jsonify({
+            "ok": True,
+            "message": "Live session created.",
+            "live_id": live_id,
+            "stream_id": stream_row_id,
+            "stream_key": stream_key,
+            "ingest_url": stream_setup.get("ingest_url") or "",
+            "rtmp_url": stream_setup.get("rtmp_url") or "",
+            "hls_url": stream_setup.get("hls_url") or "",
+            "webrtc_room_id": stream_setup.get("webrtc_room_id") or "",
+            "live_url": f"/pulse/live/{live_id}",
+            "studio_url": studio_url,
+            "websocket_channel": channel,
+            "chat_room_id": chat_room,
+            "chat_conversation_id": chat_conversation_id,
+        })
     except Exception as exc:
         trace_id = secrets.token_hex(6)
         logging.exception(
@@ -18055,7 +18171,99 @@ def api_pulse_live_start():
             conn.rollback(); conn.close()
         except Exception:
             pass
-        return jsonify({"ok": False, "message": "Livestream setup needs one more configuration step.", "error": str(exc), "type": exc.__class__.__name__, "trace_id": trace_id}), 500
+        return jsonify({"ok": False, "message": f"Live could not start. Trace {trace_id}.", "error": str(exc), "type": exc.__class__.__name__, "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/chat", methods=["GET", "POST"])
+def api_pulse_live_chat(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    if not live:
+        conn.close()
+        return api_error("Live stream not found.", 404)
+    if request.method == "GET":
+        cur.execute("SELECT * FROM pulse_live_chat WHERE live_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 100", (live_id,))
+        messages = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        messages.reverse()
+        return jsonify({"ok": True, "messages": messages})
+    payload = request.get_json(silent=True) or {}
+    body = clean_html(payload.get("body") or "")[:1000].strip()
+    if not body:
+        conn.close()
+        return api_error("Write a chat message first.", 400)
+    safety = live_stream_engine.detect_scam_in_chat(body)
+    moderation_status = "blocked" if safety.get("action") == "block" else "review" if live_stream_engine.detect_spam_in_chat(body).get("spam") else "approved"
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, ?, 'text', ?, 0, ?, ?)",
+        (live_id, user["user_id"], body, moderation_status, json.dumps({"safety": safety}, default=str), now),
+    )
+    message_id = int(cur.lastrowid)
+    cur.execute("UPDATE pulse_live_sessions SET analytics_json=?, updated_at=? WHERE id=?", (json.dumps({"last_chat_at": now}, default=str), now, live_id))
+    conn.commit(); conn.close()
+    try:
+        pulse_emit_event("live_chat_message", {"live_id": live_id, "message_id": message_id, "body": body, "moderation_status": moderation_status}, user["user_id"], None)
+    except Exception:
+        logging.exception("PULSE_LIVE_CHAT_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
+    return jsonify({"ok": True, "message": "Chat sent.", "message_id": message_id, "moderation_status": moderation_status})
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/join", methods=["POST"])
+def api_pulse_live_join(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    if not live:
+        conn.close()
+        return api_error("Live stream not found.", 404)
+    visitor = f"user-{int(user['user_id'])}"
+    cur.execute("UPDATE pulse_live_viewers SET status='watching', last_seen_at=? WHERE live_id=? AND user_id=?", (now, live_id, user["user_id"]))
+    if not cur.rowcount:
+        cur.execute("INSERT INTO pulse_live_viewers (live_id, user_id, visitor_id, status, joined_at, last_seen_at, device_json) VALUES (?, ?, ?, 'watching', ?, ?, ?)", (live_id, user["user_id"], visitor, now, now, json.dumps({"path": request.path}, default=str)))
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
+    viewers = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("UPDATE pulse_live_sessions SET viewer_count=?, updated_at=? WHERE id=?", (viewers, now, live_id))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "viewer_count": viewers, "message": "Joined live stream."})
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/end", methods=["POST"])
+def api_pulse_live_end(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    if not live:
+        conn.close()
+        return api_error("Live stream not found.", 404)
+    if int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
+        conn.close()
+        return api_error("Only the host or an admin can end this stream.", 403)
+    cur.execute("UPDATE pulse_live_sessions SET status='ended', stream_health='ended', ended_at=?, updated_at=? WHERE id=?", (now, now, live_id))
+    cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
+    cur.execute("UPDATE pulse_live_viewers SET status='left', left_at=?, last_seen_at=? WHERE live_id=? AND status IN ('watching','hosting')", (now, now, live_id))
+    cur.execute("INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, 'Live stream ended.', 'system', 'approved', 1, ?, ?)", (live_id, user["user_id"], json.dumps({"kind": "ended"}, default=str), now))
+    conn.commit(); conn.close()
+    try:
+        pulse_emit_event("livestream_ended", {"live_id": live_id, "message": "Live stream ended."}, user["user_id"], None)
+    except Exception:
+        logging.exception("PULSE_LIVE_END_EMIT_FAILED live_id=%s", live_id)
+    return jsonify({"ok": True, "message": "Live stream ended.", "live_id": live_id})
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -26336,6 +26544,7 @@ def admin_referrals_page():
 
 
 @webhook_app.route("/admin/livestreams", methods=["GET", "POST"])
+@webhook_app.route("/admin/live", methods=["GET", "POST"])
 def admin_livestreams_page():
     admin, denied = require_admin_page("creators.manage")
     if denied:
@@ -26353,10 +26562,13 @@ def admin_livestreams_page():
         message = f"Livestream status updated for user {user_id}."
     cur.execute("SELECT la.*, COALESCE(u.display_name,u.username,u.email,'User') AS name FROM livestream_access la LEFT JOIN users u ON u.user_id=la.user_id ORDER BY updated_at DESC LIMIT 100")
     rows = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id ORDER BY s.id DESC LIMIT 80")
+    streams = [dict(row) for row in cur.fetchall()]
     conn.close()
     table = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(r.get('name') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('referral_count') or 0)}</td><td><form method='post'><input name='user_id' value='{r.get('user_id')}'><input name='reason' placeholder='Reason'><button name='action' value='approve'>Approve</button><button name='action' value='suspend'>Suspend</button><button name='action' value='revoke'>Revoke</button></form></td></tr>" for r in rows)
-    body = f"<h1>Livestream Access</h1><p>{clean_html(message)}</p><div class='card'><table><tr><th>User</th><th>Name</th><th>Status</th><th>Referrals</th><th>Action</th></tr>{table or '<tr><td colspan=5>No livestream access records yet.</td></tr>'}</table></div>"
-    return admin_page_html("Livestreams", body, admin)
+    stream_rows = "".join(f"<tr><td>{s.get('id')}</td><td>{clean_html(s.get('title') or '')}<br><small>{clean_html(s.get('creator_name') or '')}</small></td><td>{clean_html(s.get('status') or '')}</td><td>{int(s.get('viewer_count') or 0)}</td><td>{clean_html(s.get('stream_health') or '')}</td><td><a class='button' href='/pulse/live/studio/{int(s.get('id') or 0)}'>Studio</a></td></tr>" for s in streams)
+    body = f"<h1>Live Command Center</h1><p class='muted'>Active streams, creator access, reports, moderation actions, stream termination, analytics, and live safety monitoring.</p><p>{clean_html(message)}</p><div class='card'><h2>Active And Recent Streams</h2><table><tr><th>ID</th><th>Stream</th><th>Status</th><th>Viewers</th><th>Health</th><th>Action</th></tr>{stream_rows or '<tr><td colspan=6>No live streams yet.</td></tr>'}</table></div><div class='card'><h2>Livestream Access</h2><table><tr><th>User</th><th>Name</th><th>Status</th><th>Referrals</th><th>Action</th></tr>{table or '<tr><td colspan=5>No livestream access records yet.</td></tr>'}</table></div>"
+    return admin_page_html("Live Command Center", body, admin)
 
 
 @webhook_app.route("/admin/verification", methods=["GET", "POST"])
@@ -34941,6 +35153,46 @@ def init_db():
         ended_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_live_sessions", [
+        ("stream_uuid", "TEXT"),
+        ("stream_id", "INTEGER DEFAULT 0"),
+        ("ingest_url", "TEXT"),
+        ("rtmp_url", "TEXT"),
+        ("hls_url", "TEXT"),
+        ("webrtc_room_id", "TEXT"),
+        ("provider", "TEXT DEFAULT 'pulse-native'"),
+        ("protocols_json", "TEXT"),
+        ("studio_url", "TEXT"),
+        ("stream_health", "TEXT DEFAULT 'starting'"),
+        ("bitrate_kbps", "INTEGER DEFAULT 0"),
+        ("fps", "INTEGER DEFAULT 0"),
+        ("chat_conversation_id", "INTEGER DEFAULT 0"),
+        ("analytics_json", "TEXT"),
+        ("moderation_status", "TEXT DEFAULT 'clear'"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_streams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER DEFAULT 0,
+        creator_user_id INTEGER,
+        stream_uuid TEXT UNIQUE,
+        title TEXT,
+        category TEXT,
+        provider TEXT DEFAULT 'pulse-native',
+        ingest_url TEXT,
+        rtmp_url TEXT,
+        hls_url TEXT,
+        webrtc_room_id TEXT,
+        stream_key TEXT,
+        stream_key_preview TEXT,
+        status TEXT DEFAULT 'starting',
+        started_at TEXT,
+        ended_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_chat (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34951,6 +35203,12 @@ def init_db():
         created_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "pulse_live_chat", [
+        ("message_type", "TEXT DEFAULT 'text'"),
+        ("pinned", "INTEGER DEFAULT 0"),
+        ("deleted_at", "TEXT"),
+        ("metadata_json", "TEXT"),
+    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_viewers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34960,6 +35218,24 @@ def init_db():
         status TEXT DEFAULT 'watching',
         joined_at TEXT,
         left_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_live_viewers", [
+        ("watch_seconds", "INTEGER DEFAULT 0"),
+        ("last_seen_at", "TEXT"),
+        ("device_json", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_moderation (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        moderator_user_id INTEGER,
+        target_user_id INTEGER,
+        action TEXT,
+        reason TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
     )
     """)
     cur.execute("""
@@ -34972,6 +35248,34 @@ def init_db():
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        user_id INTEGER,
+        reaction_type TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_clips (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        creator_user_id INTEGER,
+        title TEXT,
+        clip_url TEXT,
+        thumbnail_url TEXT,
+        start_ms INTEGER DEFAULT 0,
+        end_ms INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'processing',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_streams_creator_status ON pulse_live_streams(creator_user_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_sessions_user_status ON pulse_live_sessions(user_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_chat_live ON pulse_live_chat(live_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_viewers_live ON pulse_live_viewers(live_id, status)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_online_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

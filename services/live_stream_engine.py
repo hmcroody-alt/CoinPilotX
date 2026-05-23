@@ -3,17 +3,29 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from uuid import uuid4
 
 
 def start_stream(user_id, title="", category="Crypto Education", premium_only=False):
+    stream_key = "cpx_live_" + uuid4().hex + uuid4().hex[:8]
+    ingest_base = os.getenv("PULSE_RTMP_INGEST_URL", "rtmp://live.coinpilotxai.app/live").rstrip("/")
+    playback_base = os.getenv("PULSE_HLS_PLAYBACK_URL", "https://live.coinpilotxai.app/hls").rstrip("/")
+    stream_id = uuid4().hex[:16]
     return {
         "ok": True,
-        "stream_key": "cpx_live_" + uuid4().hex,
+        "stream_id": stream_id,
+        "stream_key": stream_key,
+        "ingest_url": ingest_base,
+        "rtmp_url": f"{ingest_base}/{stream_key}",
+        "hls_url": f"{playback_base}/{stream_id}.m3u8",
+        "webrtc_room_id": f"pulse-webrtc-{stream_id}",
         "channel": f"pulse_live_{int(user_id or 0)}_{uuid4().hex[:10]}",
         "title": title or "CoinPilotXAI Pulse Live",
         "category": category or "Crypto Education",
         "premium_only": bool(premium_only),
+        "provider": "pulse-native",
+        "protocols": ["webrtc", "rtmp", "hls"],
         "started_at": datetime.utcnow().isoformat(timespec="seconds"),
     }
 
