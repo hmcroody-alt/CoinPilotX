@@ -43,6 +43,11 @@ def main() -> int:
         failures.append("media_worker.py is missing.")
 
     lines.append("Railway worker start command: python media_worker.py")
+    nixpacks_file = ROOT / "nixpacks.toml"
+    nixpacks_text = nixpacks_file.read_text(encoding="utf-8") if nixpacks_file.exists() else ""
+    lines.append(f"nixpacks.toml ffmpeg: {bool(nixpacks_file.exists() and 'ffmpeg' in nixpacks_text)}")
+    if not nixpacks_file.exists() or "ffmpeg" not in nixpacks_text:
+        failures.append("nixpacks.toml must install ffmpeg for the Railway media engine.")
     ffmpeg_path = shutil.which("ffmpeg")
     lines.append(f"ffmpeg available: {bool(ffmpeg_path)}{f' ({ffmpeg_path})' if ffmpeg_path else ''}")
     if not ffmpeg_path:
@@ -57,6 +62,18 @@ def main() -> int:
         "R2_PUBLIC_BASE_URL": bool(os.getenv("R2_PUBLIC_BASE_URL")),
     }
     lines.append("environment: " + json.dumps(env_status, sort_keys=True))
+    running_on_railway = any(
+        os.getenv(name)
+        for name in (
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_SERVICE_NAME",
+        )
+    )
+    if running_on_railway and not env_status["DATABASE_URL"]:
+        failures.append("Missing DATABASE_URL. Attach Postgres variables to coinpilotx-media-engine.")
     if provider in {"r2", "s3"} and not (env_status["R2_BUCKET"] and env_status["R2_PUBLIC_BASE_URL"]):
         failures.append("R2/S3 storage selected but R2_BUCKET or R2_PUBLIC_BASE_URL is missing.")
 

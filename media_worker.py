@@ -14,6 +14,7 @@ import logging
 import os
 import signal
 import shutil
+import sys
 import time
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,24 @@ print("MEDIA_STORAGE_PROVIDER=", os.getenv("MEDIA_STORAGE_PROVIDER", "local"), f
 print("R2_BUCKET present=", bool(os.getenv("R2_BUCKET")), flush=True)
 print("R2_PUBLIC_BASE_URL present=", bool(os.getenv("R2_PUBLIC_BASE_URL")), flush=True)
 print("ffmpeg present=", bool(shutil.which("ffmpeg")), flush=True)
+
+
+def running_on_railway() -> bool:
+    return any(
+        os.getenv(name)
+        for name in (
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_SERVICE_NAME",
+        )
+    )
+
+
+if running_on_railway() and not os.getenv("DATABASE_URL"):
+    print("Missing DATABASE_URL. Attach Postgres variables to coinpilotx-media-engine.", flush=True)
+    sys.exit(78)
 
 try:
     import bot

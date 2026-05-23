@@ -33506,6 +33506,187 @@ def init_db():
         db_service.DATABASE_URL_LOADED,
     )
 
+    # Money tables that receive seed rows must exist before any downstream
+    # creator economy or premium setup can write to them.
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_fee_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_type TEXT NOT NULL,
+        item_type TEXT NOT NULL DEFAULT '',
+        fee_percent REAL NOT NULL DEFAULT 0,
+        fixed_fee_cents INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        fee_bps INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(seller_type, item_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        wallet_type TEXT,
+        currency TEXT DEFAULT 'USD',
+        available_balance_cents INTEGER DEFAULT 0,
+        pending_balance_cents INTEGER DEFAULT 0,
+        lifetime_earnings_cents INTEGER DEFAULT 0,
+        lifetime_fees_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, wallet_type, currency)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_ledger_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wallet_id INTEGER,
+        user_id INTEGER,
+        related_user_id INTEGER,
+        source_type TEXT,
+        source_id TEXT,
+        entry_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'posted',
+        description TEXT,
+        provider TEXT,
+        provider_reference TEXT,
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS seller_payout_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        seller_type TEXT,
+        provider TEXT DEFAULT 'stripe',
+        connected_account_id TEXT,
+        provider_account_id TEXT,
+        onboarding_status TEXT DEFAULT 'not_started',
+        payouts_enabled INTEGER DEFAULT 0,
+        charges_enabled INTEGER DEFAULT 0,
+        missing_requirements_json TEXT,
+        requirements_json TEXT,
+        last_checked_at TEXT,
+        last_synced_at TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, seller_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        seller_type TEXT,
+        item_type TEXT,
+        item_id TEXT,
+        gross_amount_cents INTEGER DEFAULT 0,
+        platform_fee_cents INTEGER DEFAULT 0,
+        provider_fee_cents INTEGER DEFAULT 0,
+        net_amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'pending',
+        provider TEXT DEFAULT 'stripe',
+        provider_payment_id TEXT,
+        provider_checkout_id TEXT,
+        provider_transfer_id TEXT,
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_payouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        wallet_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        provider TEXT DEFAULT 'stripe',
+        provider_payout_id TEXT,
+        status TEXT DEFAULT 'pending',
+        failure_reason TEXT,
+        created_at TEXT,
+        paid_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_user_id INTEGER,
+        action TEXT,
+        entity_type TEXT,
+        entity_id TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        trace_id TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS premium_entitlements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        entitlement_key TEXT,
+        status TEXT DEFAULT 'active',
+        source TEXT DEFAULT 'admin_grant',
+        starts_at TEXT,
+        ends_at TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        plan_key TEXT,
+        provider TEXT DEFAULT 'stripe',
+        provider_subscription_id TEXT,
+        status TEXT DEFAULT 'inactive',
+        current_period_start TEXT,
+        current_period_end TEXT,
+        cancel_at_period_end INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_webhook_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_event_id TEXT UNIQUE,
+        event_type TEXT,
+        processed_at TEXT,
+        status TEXT,
+        error TEXT,
+        raw_json TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_payouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        provider TEXT DEFAULT 'stripe',
+        provider_reference TEXT,
+        status TEXT DEFAULT 'pending',
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
