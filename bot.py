@@ -80,6 +80,7 @@ from services import (
     conversion_funnel_engine,
     ad_policy_engine,
     creator_economy_engine,
+    creator_economy_service,
     creator_monetization_engine,
     creator_ai_copilot,
     crowd_energy_engine,
@@ -125,6 +126,8 @@ from services import (
     predictions_service,
     predictive_ai_engine,
     premium_capability_engine,
+    payment_provider,
+    premium_entitlement_service,
     premium_identity_engine,
     premium_visibility_engine,
     pulse_identity_engine,
@@ -1328,6 +1331,25 @@ def privacy_page():
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
     return render_template("terms.html")
+
+
+def legal_money_page(title, body):
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{clean_html(title)} | CoinPilotXAI</title><style>body{{margin:0;background:#07101d;color:#f4fbff;font-family:Inter,system-ui,sans-serif;line-height:1.6}}main{{width:min(100% - 32px,920px);margin:auto;padding:48px 0}}a{{color:#78e7ff}}.card{{border:1px solid rgba(120,231,255,.22);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}}</style></head><body><main><a href='/pulse'>Pulse</a><section class='card'><h1>{clean_html(title)}</h1>{body}</section></main></body></html>""", mimetype="text/html")
+
+
+@webhook_app.route("/legal/payments", methods=["GET"])
+def legal_payments_page():
+    return legal_money_page("Payments", "<p>CoinPilotXAI is not a bank. Payments, card handling, seller onboarding, and payouts are processed by third-party payment providers such as Stripe. CoinPilotXAI never stores card numbers or raw bank account details.</p><p>Seller balances are tracked through an internal ledger for auditability, while actual funds movement depends on provider confirmation, risk review, refunds, disputes, and platform rules.</p>")
+
+
+@webhook_app.route("/legal/refunds", methods=["GET"])
+def legal_refunds_page():
+    return legal_money_page("Refunds", "<p>Digital products, courses, live classes, marketplace items, and Premium access may have different refund windows and eligibility rules. Refunds can be limited by usage, delivery, abuse prevention, provider rules, and applicable law.</p><p>Refunds and disputes are traceable in CoinPilotXAI records and provider records. Educational and creator content never guarantees profits or outcomes.</p>")
+
+
+@webhook_app.route("/legal/seller-terms", methods=["GET"])
+def legal_seller_terms_page():
+    return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPilotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
 
 
 @webhook_app.route("/about", methods=["GET"])
@@ -18734,13 +18756,38 @@ def pulse_teacher_payouts_page():
 
 
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
+@webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
     return pulse_social_shell("Payment Complete", "Your payment was received. Access and seller payout status update through Stripe webhooks.", "<section class='card'><h2>Payment received</h2><p>Thank you. If this was a course or product, access will update shortly.</p><a class='button primary' href='/pulse'>Back to Pulse</a></section>")
 
 
 @webhook_app.route("/pulse/payments/cancel", methods=["GET"])
+@webhook_app.route("/payments/cancel", methods=["GET"])
 def pulse_payment_cancel_page():
     return pulse_social_shell("Payment Canceled", "No card was charged.", "<section class='card'><h2>Checkout canceled</h2><p>No payment was completed.</p><a class='button primary' href='/pulse'>Back to Pulse</a></section>")
+
+
+@webhook_app.route("/pulse/creator/payouts", methods=["GET"])
+def pulse_creator_payouts_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    wallet = creator_economy_service.ensure_wallet(user["user_id"], "creator", "USD")
+    creator_economy_service.reconcile_wallet(wallet["id"])
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM creator_wallets WHERE id=?", (wallet["id"],))
+    wallet = dict(cur.fetchone() or wallet)
+    cur.execute("SELECT * FROM creator_transactions WHERE seller_user_id=? AND seller_type='creator' ORDER BY id DESC LIMIT 30", (user["user_id"],))
+    transactions = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('item_type') or '')}</td><td>{(int(t.get('gross_amount_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
+    main = f"""
+    <section class='grid'><div class='card'><h2>Available</h2><p class='metric'>${int(wallet.get('available_balance_cents') or 0)/100:.2f}</p></div><div class='card'><h2>Pending</h2><p class='metric'>${int(wallet.get('pending_balance_cents') or 0)/100:.2f}</p></div><div class='card'><h2>Status</h2><p class='metric'>{clean_html(wallet.get('status') or 'active')}</p></div></section>
+    <section class='card'><h2>Creator Payout Foundation</h2><p>Creator earnings are scaffolded for premium content, tips, and subscriptions. Monetization opens only when eligibility, safety, and payout onboarding are complete.</p></section>
+    <section class='card'><h2>Creator Transactions</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Gross</th><th>Status</th></tr>{rows or '<tr><td colspan=4>No creator transactions yet.</td></tr>'}</table></section>
+    """
+    return pulse_social_shell("Creator Payouts", "Creator wallet, future monetization eligibility, and auditable payout readiness.", main)
 
 
 @webhook_app.route("/pulse/merchant/<username>", methods=["GET"])
@@ -23361,32 +23408,27 @@ def api_pulse_payouts_connect():
     try:
         if STRIPE_SECRET_KEY:
             if not connected_account_id:
-                stripe_account = stripe.Account.create(
-                    type="express",
-                    country="US",
-                    email=user.get("email") or None,
-                    capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
-                    metadata={"user_id": str(user["user_id"]), "seller_type": seller_type},
-                )
-                connected_account_id = stripe_account.get("id") or ""
+                stripe_account = payment_provider.create_connected_account(user, seller_type)
+                if not stripe_account.get("ok"):
+                    conn.close()
+                    return jsonify(stripe_account), 503
+                connected_account_id = stripe_account.get("provider_account_id") or ""
             cur.execute(
                 """
                 INSERT INTO seller_payout_accounts
-                (user_id, seller_type, provider, connected_account_id, onboarding_status, payouts_enabled, charges_enabled, last_checked_at, created_at, updated_at)
-                VALUES (?, ?, 'stripe', ?, 'onboarding_started', 0, 0, ?, ?, ?)
+                (user_id, seller_type, provider, connected_account_id, provider_account_id, onboarding_status, payouts_enabled, charges_enabled, last_checked_at, last_synced_at, created_at, updated_at)
+                VALUES (?, ?, 'stripe', ?, ?, 'onboarding_started', 0, 0, ?, ?, ?, ?)
                 ON CONFLICT(user_id, seller_type) DO UPDATE SET connected_account_id=excluded.connected_account_id,
-                  onboarding_status='onboarding_started', last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
+                  provider_account_id=excluded.provider_account_id, onboarding_status='onboarding_started', last_checked_at=excluded.last_checked_at, last_synced_at=excluded.last_synced_at, updated_at=excluded.updated_at
                 """,
-                (user["user_id"], seller_type, connected_account_id, now, now, now),
+                (user["user_id"], seller_type, connected_account_id, connected_account_id, now, now, now, now),
             )
             conn.commit()
             base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
-            link = stripe.AccountLink.create(
-                account=connected_account_id,
-                refresh_url=f"{base}/pulse/{seller_type}/payouts",
-                return_url=f"{base}/pulse/{seller_type}/payouts",
-                type="account_onboarding",
-            )
+            link = payment_provider.create_onboarding_link(connected_account_id, refresh_url=f"{base}/pulse/{seller_type}/payouts", return_url=f"{base}/pulse/{seller_type}/payouts")
+            if not link.get("ok"):
+                conn.close()
+                return jsonify(link), 503
             conn.close()
             return jsonify({"ok": True, "message": "Stripe onboarding ready.", "onboarding_url": link.get("url"), "connected_account_id": connected_account_id})
         cur.execute(
@@ -23505,6 +23547,141 @@ def api_pulse_payments_checkout():
         cur.execute("UPDATE seller_transactions SET status='checkout_failed', metadata_json=?, updated_at=? WHERE id=?", (json.dumps({"error": str(exc), "trace_id": trace_id}, default=str), now, tx_id))
         conn.commit(); conn.close()
         return api_error("Checkout could not be created.", 500, trace_id, error=str(exc))
+
+
+def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):
+    init_db()
+    buyer_id = int((buyer or {}).get("user_id") or 0)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    item = {}
+    seller_user_id = 0
+    seller_type = "merchant"
+    checkout_item_type = item_type
+    title = "CoinPilotXAI purchase"
+    amount_cents = 0
+    currency = "USD"
+    if item_type == "product":
+        cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (int(item_id or 0),))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("seller_user_id") or 0)
+        seller_type = "merchant"
+        checkout_item_type = "product"
+        title = item.get("title") or "Marketplace product"
+        amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", item.get("currency") or "USD")
+        approved = approved_marketplace_seller_for_user(cur, seller_user_id)
+    elif item_type == "course":
+        cur.execute("SELECT * FROM pulse_courses WHERE id=? LIMIT 1", (int(item_id or 0),))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("teacher_user_id") or 0)
+        seller_type = "teacher"
+        checkout_item_type = "course"
+        title = item.get("title") or "Pulse course"
+        amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", "USD")
+        approved = approved_teacher_for_user(cur, seller_user_id)
+    elif item_type == "live_class":
+        cur.execute("SELECT * FROM pulse_live_classes WHERE id=? LIMIT 1", (int(item_id or 0),))
+        item = dict(cur.fetchone() or {})
+        seller_user_id = int(item.get("teacher_user_id") or 0)
+        seller_type = "teacher"
+        checkout_item_type = "live_class"
+        title = item.get("title") or "Pulse live class"
+        amount_cents = creator_economy_service.parse_price_label((item.get("price_label") or "0"))
+        approved = approved_teacher_for_user(cur, seller_user_id)
+    elif item_type == "premium":
+        seller_user_id = 0
+        seller_type = "platform"
+        checkout_item_type = "premium"
+        title = f"Pulse Premium {plan_key or 'plan'}"
+        amount_cents = int(os.getenv("PULSE_PREMIUM_PRICE_CENTS", "1900"))
+        currency = "USD"
+        approved = {"status": "platform"}
+    else:
+        conn.close()
+        return api_error("Unsupported checkout item.", 400)
+    payout = seller_payout_account(cur, seller_user_id, seller_type) if seller_user_id else {}
+    conn.close()
+    if item_type != "premium":
+        if not item or not seller_user_id:
+            return api_error("Item not found.", 404)
+        if seller_user_id == buyer_id:
+            return api_error("You cannot buy your own item.", 400)
+        if not approved:
+            return api_error("Seller is not approved for payments.", 403)
+    if amount_cents <= 0:
+        return api_error("This item is currently free or not priced for checkout.", 400)
+    tx = creator_economy_service.create_transaction(
+        buyer_user_id=buyer_id,
+        seller_user_id=seller_user_id,
+        seller_type=seller_type,
+        item_type=checkout_item_type,
+        item_id=item_id or plan_key or checkout_item_type,
+        gross_amount_cents=amount_cents,
+        currency=currency,
+        metadata={"title": title, "plan_key": plan_key, "source_route": request.path},
+    )
+    if not tx.get("ok"):
+        return api_error(tx.get("message") or "Transaction could not be created.", 500)
+    connected_account_id = payout.get("provider_account_id") or payout.get("connected_account_id") or ""
+    checkout = payment_provider.create_checkout_session(
+        buyer_user_id=buyer_id,
+        seller_user_id=seller_user_id,
+        seller_type=seller_type,
+        item_type=checkout_item_type,
+        item_id=item_id or plan_key or checkout_item_type,
+        title=title,
+        amount_cents=amount_cents,
+        currency=currency,
+        platform_fee_cents=tx.get("platform_fee_cents") or 0,
+        transaction_id=tx["transaction_id"],
+        connected_account_id=connected_account_id,
+        success_url=f"{(APP_BASE_URL or request.url_root.rstrip('/')).rstrip('/')}/payments/success?transaction_id={tx['transaction_id']}",
+        cancel_url=f"{(APP_BASE_URL or request.url_root.rstrip('/')).rstrip('/')}/payments/cancel?transaction_id={tx['transaction_id']}",
+    )
+    if not checkout.get("ok"):
+        return jsonify({**checkout, "transaction_id": tx["transaction_id"]}), 503 if checkout.get("status") == "setup_required" else 400
+    creator_economy_service.attach_checkout(tx["transaction_id"], provider_checkout_id=checkout.get("provider_checkout_id") or "")
+    return jsonify({
+        "ok": True,
+        "checkout_url": checkout.get("checkout_url"),
+        "transaction_id": tx["transaction_id"],
+        "trace_id": tx["trace_id"],
+        "gross_amount_cents": tx["gross_amount_cents"],
+        "platform_fee_cents": tx["platform_fee_cents"],
+        "net_amount_cents": tx["net_amount_cents"],
+    })
+
+
+@webhook_app.route("/api/payments/checkout/product/<int:product_id>", methods=["POST"])
+def api_payments_checkout_product(product_id):
+    buyer = api_account_user()
+    if not buyer:
+        return api_error("Login required.", 401)
+    return _creator_checkout_for_item(buyer, "product", product_id)
+
+
+@webhook_app.route("/api/payments/checkout/course/<int:course_id>", methods=["POST"])
+def api_payments_checkout_course(course_id):
+    buyer = api_account_user()
+    if not buyer:
+        return api_error("Login required.", 401)
+    return _creator_checkout_for_item(buyer, "course", course_id)
+
+
+@webhook_app.route("/api/payments/checkout/live-class/<int:class_id>", methods=["POST"])
+def api_payments_checkout_live_class(class_id):
+    buyer = api_account_user()
+    if not buyer:
+        return api_error("Login required.", 401)
+    return _creator_checkout_for_item(buyer, "live_class", class_id)
+
+
+@webhook_app.route("/api/payments/checkout/premium/<plan_key>", methods=["POST"])
+def api_payments_checkout_premium(plan_key):
+    buyer = api_account_user()
+    if not buyer:
+        return api_error("Login required.", 401)
+    plan_key = clean_html(plan_key or "pulse_premium")[:80]
+    return _creator_checkout_for_item(buyer, "premium", 0, plan_key=plan_key)
 
 
 @webhook_app.route("/api/pulse/marketplace/media/upload", methods=["POST"])
@@ -25970,6 +26147,8 @@ def admin_payments_page():
     if denied:
         return denied
     init_db()
+    creator_summary = creator_economy_service.payment_summary()
+    provider = payment_provider.provider_status()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     counts = {}
     for key, sql in {
@@ -25996,8 +26175,20 @@ def admin_payments_page():
     )
     tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('buyer_name') or '')}</td><td>{clean_html(t.get('seller_name') or '')}</td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
     acct_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{int(a.get('user_id') or 0)}</td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('onboarding_status') or '')}</td><td>{'yes' if a.get('charges_enabled') else 'no'}</td><td>{'yes' if a.get('payouts_enabled') else 'no'}</td><td>{clean_html(a.get('connected_account_id') or '')}</td></tr>" for a in accounts)
+    core = creator_summary.get("summary") or {}
+    core_cards = "".join(
+        f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{(f'${int(v or 0)/100:.2f}' if k.endswith('_cents') else int(v or 0))}</p></div>"
+        for k, v in core.items()
+    )
+    ledger_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('item_type') or '')}</td><td>{int(t.get('buyer_user_id') or 0)}</td><td>{int(t.get('seller_user_id') or 0)}</td><td>${int(t.get('gross_amount_cents') or 0)/100:.2f}</td><td>${int(t.get('platform_fee_cents') or 0)/100:.2f}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('trace_id') or '')}</td></tr>" for t in (creator_summary.get("transactions") or []))
+    wallet_rows = "".join(f"<tr><td>{w.get('id')}</td><td>{int(w.get('user_id') or 0)}</td><td>{clean_html(w.get('wallet_type') or '')}</td><td>${int(w.get('pending_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('available_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('lifetime_fees_cents') or 0)/100:.2f}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (creator_summary.get("wallets") or []))
     body = f"""
-    <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments: gross volume, CoinPilotXAI platform fees, seller net payouts, failed payments, disputes, refunds, and onboarding readiness.</p>
+    <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments backed by internal wallets, append-only ledger entries, webhook idempotency, entitlements, and audit logs.</p>
+    <section class='card'><h2>Provider Status</h2><pre>{clean_html(json.dumps(provider, indent=2, default=str))}</pre></section>
+    <section class='grid'>{core_cards}</section>
+    <section class='card'><h2>Creator Economy Ledger Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Buyer</th><th>Seller</th><th>Gross</th><th>Fee</th><th>Status</th><th>Trace</th></tr>{ledger_rows or '<tr><td colspan=8>No creator economy transactions yet.</td></tr>'}</table></section>
+    <section class='card'><h2>Wallet Balances</h2><table class='table'><tr><th>ID</th><th>User</th><th>Wallet</th><th>Pending</th><th>Available</th><th>Fees</th><th>Status</th></tr>{wallet_rows or '<tr><td colspan=7>No wallets yet.</td></tr>'}</table></section>
+    <h2>Legacy Seller Transaction Compatibility</h2>
     <section class='grid'>{cards}</section>
     <section class='card'><h2>Seller Transactions</h2><table class='table'><tr><th>ID</th><th>Buyer</th><th>Seller</th><th>Type</th><th>Item</th><th>Gross</th><th>Fee</th><th>Status</th></tr>{tx_rows or '<tr><td colspan=8>No seller transactions yet.</td></tr>'}</table></section>
     <section class='card'><h2>Payout Accounts</h2><table class='table'><tr><th>ID</th><th>User</th><th>Seller Type</th><th>Onboarding</th><th>Charges</th><th>Payouts</th><th>Stripe Account</th></tr>{acct_rows or '<tr><td colspan=7>No payout accounts yet.</td></tr>'}</table></section>
@@ -29372,6 +29563,7 @@ def record_unmatched_payment(event, stripe_object, reason):
 @webhook_app.route("/stripe-webhook", methods=["GET"])
 @webhook_app.route("/stripe/webhook", methods=["GET"])
 @webhook_app.route("/webhook/stripe", methods=["GET"])
+@webhook_app.route("/webhooks/stripe", methods=["GET"])
 def stripe_webhook_health():
     return jsonify({
         "ok": True,
@@ -29383,6 +29575,7 @@ def stripe_webhook_health():
 @webhook_app.route("/stripe-webhook", methods=["POST"])
 @webhook_app.route("/stripe/webhook", methods=["POST"])
 @webhook_app.route("/webhook/stripe", methods=["POST"])
+@webhook_app.route("/webhooks/stripe", methods=["POST"])
 def stripe_webhook():
     init_db()
     payload = request.data
@@ -29414,8 +29607,13 @@ def stripe_webhook():
     logging.info("STRIPE_EVENT_TYPE event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
     event_id = event.get("id", "")
+    webhook_record = creator_economy_service.record_webhook_event(event_id, event_type, event, status="received")
+    if webhook_record.get("duplicate"):
+        logging.info("Payment webhook duplicate skipped provider_event_id=%s event_type=%s", event_id, event_type)
+        return "OK", 200
     if stripe_event_processed(event_id):
         logging.info("Stripe webhook duplicate skipped event_id=%s event_type=%s", event_id, event.get("type"))
+        creator_economy_service.update_webhook_event(event_id, "skipped", "legacy stripe_events already processed")
         return "OK", 200
     resolved_event_user_id = None
 
@@ -29428,6 +29626,22 @@ def stripe_webhook():
         subscription_id = session.get("subscription")
         customer_id = session.get("customer")
         metadata = session.get("metadata") or {}
+        if metadata.get("transaction_id"):
+            tx_id = safe_int(metadata.get("transaction_id"), 0)
+            if payment_status in {"paid", "no_payment_required"} and tx_id:
+                creator_economy_service.attach_checkout(tx_id, provider_checkout_id=session_id, provider_payment_id=session.get("payment_intent") or "")
+                creator_economy_service.mark_transaction_paid(tx_id, provider_payment_id=session.get("payment_intent") or "", provider_reference=session_id)
+                if metadata.get("item_type") == "premium" and metadata.get("buyer_user_id"):
+                    premium_entitlement_service.sync_subscription_entitlements(int(metadata.get("buyer_user_id") or 0), metadata.get("item_id") or "pulse_premium", "active", source="stripe_checkout")
+                conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+                if metadata.get("seller_user_id"):
+                    notify_user(cur, int(metadata.get("seller_user_id") or 0), "seller_payment", "Payment received", "A buyer completed checkout. Your pending balance has been updated.", f"/pulse/{metadata.get('seller_type')}/payouts")
+                if metadata.get("buyer_user_id"):
+                    notify_user(cur, int(metadata.get("buyer_user_id") or 0), "purchase", "Payment complete", "Your purchase was completed successfully.", "/pulse")
+                conn.commit(); conn.close()
+            creator_economy_service.update_webhook_event(event_id, "processed")
+            record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
+            return "OK", 200
         if metadata.get("seller_transaction_id"):
             tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
             now = datetime.utcnow().isoformat(timespec="seconds")
@@ -29446,6 +29660,7 @@ def stripe_webhook():
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
             conn.close()
             record_stripe_event(event, "processed", resolved_event_user_id)
+            creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
         logging.info(
             "checkout.session.completed received event_id=%s session_id=%s customer_id=%s customer_email=%s client_reference_id=%s metadata_user_id=%s payment_status=%s subscription_id=%s resolved_user_id=%s",
@@ -29623,6 +29838,14 @@ def stripe_webhook():
     if event_type == "payment_intent.succeeded":
         payment_intent = event["data"]["object"]
         metadata = payment_intent.get("metadata") or {}
+        if metadata.get("transaction_id"):
+            tx_id = safe_int(metadata.get("transaction_id"), 0)
+            if tx_id:
+                creator_economy_service.attach_checkout(tx_id, provider_payment_id=payment_intent.get("id") or "")
+                creator_economy_service.mark_transaction_paid(tx_id, provider_payment_id=payment_intent.get("id") or "", provider_reference=event_id)
+                creator_economy_service.update_webhook_event(event_id, "processed")
+                record_stripe_event(event, "processed", safe_int(metadata.get("buyer_user_id"), 0) or None)
+                return "OK", 200
         if metadata.get("seller_transaction_id"):
             tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
             now = datetime.utcnow().isoformat(timespec="seconds")
@@ -29636,6 +29859,7 @@ def stripe_webhook():
                 conn.commit()
             conn.close()
             record_stripe_event(event, "processed", resolved_event_user_id)
+            creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
         customer_id = payment_intent.get("customer") or ""
         user_id = find_user_by_stripe(
@@ -29708,6 +29932,15 @@ def stripe_webhook():
                 )
         else:
             metadata = obj.get("metadata") or {}
+            if metadata.get("transaction_id"):
+                tx_id = safe_int(metadata.get("transaction_id"), 0)
+                if tx_id:
+                    if event_type == "charge.refunded":
+                        creator_economy_service.handle_refund(tx_id, int(obj.get("amount_refunded") or obj.get("amount") or 0), provider_reference=obj.get("id") or event_id)
+                    elif event_type == "charge.dispute.created":
+                        conn2 = db(); cur2 = conn2.cursor()
+                        cur2.execute("UPDATE creator_transactions SET status='disputed', updated_at=? WHERE id=?", (now, tx_id))
+                        conn2.commit(); conn2.close()
             tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
             if tx_id:
                 status = "refunded" if event_type == "charge.refunded" else "dispute_opened"
@@ -29715,6 +29948,7 @@ def stripe_webhook():
         conn.commit(); conn.close()
 
     record_stripe_event(event, "processed", resolved_event_user_id)
+    creator_economy_service.update_webhook_event(event_id, "processed")
     return "OK", 200
 
 def scan_confirm_menu():
@@ -35359,6 +35593,164 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "platform_fee_rules", [
+        ("item_type", "TEXT DEFAULT ''"),
+        ("fee_percent", "REAL DEFAULT 0"),
+        ("fixed_fee_cents", "INTEGER DEFAULT 0"),
+        ("active", "INTEGER DEFAULT 1"),
+    ], conn=conn)
+    add_columns_if_missing(cur, "seller_payout_accounts", [
+        ("provider_account_id", "TEXT"),
+        ("requirements_json", "TEXT"),
+        ("last_synced_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_wallets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        wallet_type TEXT,
+        currency TEXT DEFAULT 'USD',
+        available_balance_cents INTEGER DEFAULT 0,
+        pending_balance_cents INTEGER DEFAULT 0,
+        lifetime_earnings_cents INTEGER DEFAULT 0,
+        lifetime_fees_cents INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, wallet_type, currency)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_ledger_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        wallet_id INTEGER,
+        user_id INTEGER,
+        related_user_id INTEGER,
+        source_type TEXT,
+        source_id TEXT,
+        entry_type TEXT,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'posted',
+        description TEXT,
+        provider TEXT,
+        provider_reference TEXT,
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_user_id INTEGER,
+        seller_user_id INTEGER,
+        seller_type TEXT,
+        item_type TEXT,
+        item_id TEXT,
+        gross_amount_cents INTEGER DEFAULT 0,
+        platform_fee_cents INTEGER DEFAULT 0,
+        provider_fee_cents INTEGER DEFAULT 0,
+        net_amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        status TEXT DEFAULT 'pending',
+        provider TEXT DEFAULT 'stripe',
+        provider_payment_id TEXT,
+        provider_checkout_id TEXT,
+        provider_transfer_id TEXT,
+        trace_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creator_payouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        wallet_id INTEGER,
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
+        provider TEXT DEFAULT 'stripe',
+        provider_payout_id TEXT,
+        status TEXT DEFAULT 'pending',
+        failure_reason TEXT,
+        created_at TEXT,
+        paid_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_user_id INTEGER,
+        action TEXT,
+        entity_type TEXT,
+        entity_id TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        trace_id TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS premium_entitlements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        entitlement_key TEXT,
+        status TEXT DEFAULT 'active',
+        source TEXT DEFAULT 'admin_grant',
+        starts_at TEXT,
+        ends_at TEXT,
+        metadata_json TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS payment_webhook_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider_event_id TEXT UNIQUE,
+        event_type TEXT,
+        processed_at TEXT,
+        status TEXT,
+        error TEXT,
+        raw_json TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "subscriptions", [
+        ("plan_key", "TEXT"),
+        ("provider", "TEXT"),
+        ("provider_subscription_id", "TEXT"),
+        ("current_period_start", "TEXT"),
+        ("current_period_end", "TEXT"),
+        ("cancel_at_period_end", "INTEGER DEFAULT 0"),
+    ], conn=conn)
+    now_economy_seed = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("""
+        INSERT OR IGNORE INTO platform_fee_rules
+        (seller_type, item_type, fee_percent, fixed_fee_cents, active, created_at, updated_at)
+        VALUES ('merchant', 'product', ?, 0, 1, ?, ?)
+    """, (float(os.getenv("PLATFORM_FEE_MERCHANT_PERCENT", "10")), now_economy_seed, now_economy_seed))
+    cur.execute("""
+        INSERT OR IGNORE INTO platform_fee_rules
+        (seller_type, item_type, fee_percent, fixed_fee_cents, active, created_at, updated_at)
+        VALUES ('teacher', 'course', ?, 0, 1, ?, ?)
+    """, (float(os.getenv("PLATFORM_FEE_TEACHER_PERCENT", "15")), now_economy_seed, now_economy_seed))
+    cur.execute("""
+        INSERT OR IGNORE INTO platform_fee_rules
+        (seller_type, item_type, fee_percent, fixed_fee_cents, active, created_at, updated_at)
+        VALUES ('teacher', 'lesson', ?, 0, 1, ?, ?)
+    """, (float(os.getenv("PLATFORM_FEE_TEACHER_PERCENT", "15")), now_economy_seed, now_economy_seed))
+    cur.execute("""
+        INSERT OR IGNORE INTO platform_fee_rules
+        (seller_type, item_type, fee_percent, fixed_fee_cents, active, created_at, updated_at)
+        VALUES ('teacher', 'live_class', ?, 0, 1, ?, ?)
+    """, (float(os.getenv("PLATFORM_FEE_TEACHER_PERCENT", "15")), now_economy_seed, now_economy_seed))
+    cur.execute("""
+        INSERT OR IGNORE INTO platform_fee_rules
+        (seller_type, item_type, fee_percent, fixed_fee_cents, active, created_at, updated_at)
+        VALUES ('platform', 'premium', 100, 0, 1, ?, ?)
+    """, (now_economy_seed, now_economy_seed))
     now_seed = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute("INSERT OR IGNORE INTO platform_fee_rules (seller_type, fee_bps, currency, status, created_at, updated_at) VALUES ('merchant', 1000, 'USD', 'active', ?, ?)", (now_seed, now_seed))
     cur.execute("INSERT OR IGNORE INTO platform_fee_rules (seller_type, fee_bps, currency, status, created_at, updated_at) VALUES ('teacher', 1500, 'USD', 'active', ?, ?)", (now_seed, now_seed))
@@ -37552,6 +37944,13 @@ def init_db():
         updated_at TEXT
     )
     """)
+    add_columns_if_missing(cur, "subscriptions", [
+        ("plan_key", "TEXT"),
+        ("provider", "TEXT"),
+        ("provider_subscription_id", "TEXT"),
+        ("current_period_start", "TEXT"),
+        ("cancel_at_period_end", "INTEGER DEFAULT 0"),
+    ], conn=conn)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS usage_events (
@@ -38860,6 +39259,20 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_performance_traces_path_created ON performance_traces(path, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_performance_traces_level_duration ON performance_traces(level, duration_ms)",
         "CREATE INDEX IF NOT EXISTS idx_background_jobs_status_run ON background_jobs(status, run_after)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_wallets_user_type ON creator_wallets(user_id, wallet_type, currency)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_ledger_wallet_created ON creator_ledger_entries(wallet_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_ledger_source ON creator_ledger_entries(source_type, source_id)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_ledger_trace ON creator_ledger_entries(trace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_transactions_buyer ON creator_transactions(buyer_user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_transactions_seller ON creator_transactions(seller_user_id, seller_type, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_transactions_provider_checkout ON creator_transactions(provider_checkout_id)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_transactions_provider_payment ON creator_transactions(provider_payment_id)",
+        "CREATE INDEX IF NOT EXISTS idx_creator_payouts_user_status ON creator_payouts(user_id, status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_seller_payout_accounts_user_type ON seller_payout_accounts(user_id, seller_type)",
+        "CREATE INDEX IF NOT EXISTS idx_platform_fee_rules_lookup ON platform_fee_rules(seller_type, item_type, active)",
+        "CREATE INDEX IF NOT EXISTS idx_payment_audit_entity ON payment_audit_logs(entity_type, entity_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_premium_entitlements_user_key ON premium_entitlements(user_id, entitlement_key, status)",
+        "CREATE INDEX IF NOT EXISTS idx_payment_webhook_events_type_status ON payment_webhook_events(event_type, status)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_channel_id ON live_events(channel, id)",
         "CREATE INDEX IF NOT EXISTS idx_live_events_dedupe ON live_events(channel, dedupe_key, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_live_ops_plans_date ON live_ops_plans(plan_date)",
@@ -42373,6 +42786,10 @@ def activate_pro(user_id, payment_type=None, stripe_customer_id=None, stripe_ses
     logging.info("PRO_UPGRADE_COMPLETED user_id=%s status=%s", target_user_id, normalized_status)
     log_product_event(target_user_id, "pro_subscription_active" if normalized_status == "active" else "pro_subscription_updated", {"payment_type": provider, "status": normalized_status})
     log_security_event("pro_access_activated", "success", target_user_id, "/stripe-webhook", {"provider": provider, "status": normalized_status, "subscription_id": stripe_subscription_id or "", "stripe_event_id": stripe_event_id or ""})
+    if normalized_status in {"active", "trialing"}:
+        premium_entitlement_service.grant_entitlement(target_user_id, "pulse_premium", source="subscription" if provider == "stripe" else "admin_grant", ends_at=pro_expires_at or "", metadata={"provider": provider, "stripe_event_id": stripe_event_id or ""})
+    else:
+        premium_entitlement_service.revoke_entitlement(target_user_id, "pulse_premium", reason=f"subscription_{normalized_status}")
     user = load_account_by_id(target_user_id)
     if user:
         sync_brevo_contact_safe({**user, "source": payment_type or "pro_upgrade"}, entity_type="user", entity_id=user.get("user_id") or target_user_id)
