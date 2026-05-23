@@ -15890,17 +15890,19 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         )
         for group, links in drawer_groups
     )
+    chat_icon_svg = "<svg viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M5.5 18.5c-1.7-1.45-2.5-3.24-2.5-5.37C3 8.12 7.03 4.5 12 4.5s9 3.62 9 8.63-4.03 8.62-9 8.62c-1.05 0-2.05-.16-2.98-.47L4.5 22l1-3.5Z'/><path d='M8 12.5h8M8 9.5h6'/></svg>"
+    mobile_bottom_icons = {"chat": chat_icon_svg}
     mobile_bottom_items = [
         ("Home", "/pulse", "⌂"),
         ("Reels", "/pulse/reels", "▶"),
         ("Spaces", "/pulse/spaces", "◇"),
         ("Market", "/pulse/marketplace", "▣"),
         ("Alerts", "/pulse/notifications", "!"),
-        ("Chats", "/pulse/messages", "✉"),
+        ("Chats", "/pulse/messages", "chat"),
         ("Profile", "/pulse/profile", "◉"),
     ]
     mobile_bottom_html = "".join(
-        f"<a href='{clean_html(href)}'><span class='nav-ico' aria-hidden='true'>{clean_html(icon)}</span><span class='nav-label'>{clean_html(label)}</span></a>"
+        f"<a href='{clean_html(href)}'><span class='nav-ico' aria-hidden='true'>{mobile_bottom_icons.get(icon, clean_html(icon))}</span><span class='nav-label'>{clean_html(label)}</span></a>"
         for label, href, icon in mobile_bottom_items
     )
     html = """<!doctype html>
@@ -15915,7 +15917,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 .wrap{width:min(100% - 28px,1200px);margin:auto;padding:18px 0 calc(92px + env(safe-area-inset-bottom))}a{color:inherit}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}.brand img{width:36px;height:36px;border-radius:10px}.actions,.tabs,.reactions{display:flex;gap:8px;flex-wrap:wrap}.button,button,input,select,textarea{font:inherit}.button,button{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);padding:9px 12px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}.primary,button.primary{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}button:disabled{opacity:.55;cursor:not-allowed}
 .pulse-nav{display:flex;gap:8px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none}.pulse-nav::-webkit-scrollbar{display:none}.pulse-nav-link{white-space:nowrap;text-decoration:none;border:1px solid rgba(110,223,246,.18);border-radius:999px;padding:8px 11px;background:rgba(255,255,255,.04);font-weight:850;color:#dffcff}
 .premium-glow-mark{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}.premium-glow-mark.check{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}@keyframes premiumGlow{0%,100%{transform:translateY(0) scale(1);filter:saturate(1)}50%{transform:translateY(-1px) scale(1.06);filter:saturate(1.25)}}
-.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab,.create-sheet{display:none}.mobile-topbar{align-items:center;gap:8px;justify-content:space-between;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(12px);border-bottom:1px solid rgba(110,223,246,.14)}.icon-btn{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}.mobile-brand{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none;min-width:0}.mobile-brand img{width:34px;height:34px;border-radius:10px}.mobile-actions{display:flex;gap:6px;align-items:center}.badge-dot{position:relative}.badge-dot:after{content:"";position:absolute;right:6px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(54,229,143,.8)}.drawer-backdrop{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(4px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}.pulse-drawer{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:18px 0 54px rgba(0,0,0,.38);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}.pulse-drawer header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.pulse-drawer h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9fb5c0;margin:16px 0 8px}.drawer-link{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}.drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}.drawer-open .pulse-drawer{display:block;transform:translate3d(0,0,0)}.mobile-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}.mobile-bottom-nav a{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mobile-bottom-nav .nav-ico{font-size:17px;line-height:1}.mobile-bottom-nav .nav-label{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mobile-bottom-nav a:active{background:rgba(110,223,246,.12)}.pulse-fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}.create-sheet{position:fixed;left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:47;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(8,19,35,.98);box-shadow:0 20px 60px rgba(0,0,0,.44);padding:12px;transform:translateY(120%);transition:transform .22s ease}.create-sheet.open{display:block;transform:translateY(0)}.create-sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.create-sheet-grid button,.create-sheet-grid a{min-height:48px;text-decoration:none}
+.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab,.create-sheet{display:none}.mobile-topbar{align-items:center;gap:8px;justify-content:space-between;position:sticky;top:0;z-index:24;margin:-18px -12px 12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(12px);border-bottom:1px solid rgba(110,223,246,.14)}.icon-btn{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}.icon-btn svg,.mobile-bottom-nav .nav-ico svg{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block}.mobile-brand{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none;min-width:0}.mobile-brand img{width:34px;height:34px;border-radius:10px}.mobile-actions{display:flex;gap:6px;align-items:center}.badge-dot{position:relative}.badge-dot:after{content:"";position:absolute;right:6px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(54,229,143,.8)}.drawer-backdrop{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(4px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}.pulse-drawer{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:18px 0 54px rgba(0,0,0,.38);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}.pulse-drawer header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.pulse-drawer h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9fb5c0;margin:16px 0 8px}.drawer-link{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}.drawer-open .drawer-backdrop{display:block;opacity:1;pointer-events:auto}.drawer-open .pulse-drawer{display:block;transform:translate3d(0,0,0)}.mobile-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}.mobile-bottom-nav a{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mobile-bottom-nav .nav-ico{font-size:17px;line-height:1;display:grid;place-items:center}.mobile-bottom-nav .nav-label{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mobile-bottom-nav a:active{background:rgba(110,223,246,.12)}.pulse-fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}.create-sheet{position:fixed;left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:47;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(8,19,35,.98);box-shadow:0 20px 60px rgba(0,0,0,.44);padding:12px;transform:translateY(120%);transition:transform .22s ease}.create-sheet.open{display:block;transform:translateY(0)}.create-sheet-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.create-sheet-grid button,.create-sheet-grid a{min-height:48px;text-decoration:none}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}.card{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 20px 70px rgba(0,0,0,.25);padding:14px;position:relative;overflow:hidden}.hero{display:flex;justify-content:space-between;gap:14px;align-items:center}.hero h1{font-size:clamp(34px,7vw,66px);line-height:.94;margin:6px 0}.muted,p{color:var(--muted);line-height:1.55}.badge{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;color:#dffcff;font-size:12px;background:rgba(110,223,246,.08);font-weight:850}.live:before{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.9);display:inline-block;margin-right:7px}
 textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px}textarea{min-height:98px;resize:vertical}.composer{display:grid;gap:10px;margin:12px 0}.smart-composer-bar{display:grid;grid-template-columns:40px minmax(0,1fr) 42px 42px;gap:8px;align-items:center}.smart-compose-avatar{width:40px;height:40px;border-radius:13px;background:linear-gradient(135deg,var(--cyan),var(--green));display:grid;place-items:center;color:#06101b;font-weight:950}.smart-composer-bar textarea{min-height:44px;max-height:96px;border-radius:22px;padding:12px 14px;line-height:1.25}.smart-compose-icon{width:42px;min-width:42px;height:42px;min-height:42px;border-radius:999px;padding:0}.composer-advanced{display:grid;gap:10px}.composer-tools{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}.composer-tools::-webkit-scrollbar{display:none}.composer-tools button{flex:0 0 auto;min-height:34px;border-radius:999px;padding:7px 11px}.composer-tools button.active{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}.post-type-select{display:none}.composer-hint{margin:0}.tabs{overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.tabs button{white-space:nowrap}.tabs button.active{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}.feed{display:grid;gap:12px;margin-top:12px}.post{display:grid;gap:10px}.author{display:flex;align-items:center;justify-content:space-between;gap:10px}.author-main{display:flex;align-items:center;gap:10px;min-width:0}.avatar{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--purple));display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden}.avatar img{width:100%;height:100%;object-fit:cover}.author-name{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.media-grid{display:grid;gap:8px}.media-grid img,.media-grid video{width:100%;max-height:520px;object-fit:cover;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#020817}.tags{display:flex;gap:6px;flex-wrap:wrap}.tag{color:#b9f7ff;text-decoration:none;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:4px 8px;font-size:12px}.side{position:sticky;top:12px;display:grid;gap:12px}.intel-list{display:grid;gap:8px}.intel-item{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px;background:rgba(255,255,255,.04);text-decoration:none}.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}.toast.show{display:block}.new-pulses-banner{display:none;position:sticky;top:10px;z-index:15;width:100%;margin:10px 0 2px;border:1px solid rgba(110,223,246,.32);border-radius:999px;background:linear-gradient(135deg,rgba(54,229,143,.94),rgba(110,223,246,.94));color:#06101b;box-shadow:0 14px 38px rgba(54,229,143,.18),0 0 26px rgba(110,223,246,.2)}.new-pulses-banner.show{display:inline-flex}
 
@@ -15933,7 +15935,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">Pulse</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
 <main class="wrap pulse-shell" data-feed="__ACTIVE_FEED__" data-topic="__TOPIC__" data-profile="__PROFILE__">
-<nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button" aria-label="Open Pulse menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><div class="mobile-actions"><a class="icon-btn badge-dot" href="/pulse/notifications" aria-label="Notifications">●</a><a class="icon-btn badge-dot" href="/pulse/messages" aria-label="Messenger">✉</a><a class="avatar" href="/pulse/profile" aria-label="Profile">P</a></div></nav>
+<nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button" aria-label="Open Pulse menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><div class="mobile-actions"><a class="icon-btn badge-dot" href="/pulse/notifications" aria-label="Notifications">●</a><a class="icon-btn badge-dot" href="/pulse/messages" aria-label="Messenger">__CHAT_ICON__</a><a class="avatar" href="/pulse/profile" aria-label="Profile">P</a></div></nav>
 <nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions pulse-actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button primary" href="/pulse/create">Create</a></div></nav>
 <div class="pulse-nav">__NAV__</div>
 <section class="card hero"><div><span class="badge live">Global Pulse Feed</span><h1>__TITLE__</h1><p>Post questions, scam warnings, ideas, and creator updates. New approved posts appear immediately.</p><details><summary>Learn more</summary><p class="muted">__DISCLAIMER__</p></details></div></section>
@@ -15996,6 +15998,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)retu
         .replace("__PROFILE__", profile_id)
         .replace("__NAV__", nav_html)
         .replace("__DRAWER__", drawer_html)
+        .replace("__CHAT_ICON__", chat_icon_svg)
         .replace("__MOBILE_BOTTOM__", mobile_bottom_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
     )
@@ -16457,6 +16460,405 @@ PULSE_CHAT_ROOMS = [
 ]
 
 
+def ensure_pulse_messenger_schema(cur, conn=None):
+    """Keep Messenger reads survivable when a production DB is one migration behind."""
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_type TEXT DEFAULT 'direct',
+        created_by_user_id INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        last_message_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_conversations", [
+        ("conversation_type", "TEXT DEFAULT 'direct'"),
+        ("created_by_user_id", "INTEGER"),
+        ("group_id", "INTEGER"),
+        ("linked_group_id", "INTEGER"),
+        ("linked_space_id", "TEXT"),
+        ("linked_live_id", "INTEGER"),
+        ("title", "TEXT"),
+        ("description", "TEXT"),
+        ("avatar_url", "TEXT"),
+        ("owner_user_id", "INTEGER"),
+        ("privacy", "TEXT DEFAULT 'private'"),
+        ("member_count", "INTEGER DEFAULT 0"),
+        ("is_public", "INTEGER DEFAULT 0"),
+        ("participant_limit", "INTEGER DEFAULT 250"),
+        ("last_activity_at", "TEXT"),
+        ("last_message_at", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("updated_at", "TEXT"),
+        ("created_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_conversation_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        muted INTEGER DEFAULT 0,
+        archived INTEGER DEFAULT 0,
+        last_read_at TEXT,
+        created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_conversation_participants", [
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("role", "TEXT DEFAULT 'member'"),
+        ("muted", "INTEGER DEFAULT 0"),
+        ("archived", "INTEGER DEFAULT 0"),
+        ("muted_until", "TEXT"),
+        ("joined_at", "TEXT"),
+        ("left_at", "TEXT"),
+        ("last_read_at", "TEXT"),
+        ("last_seen_at", "TEXT"),
+        ("last_read_message_id", "INTEGER DEFAULT 0"),
+        ("unread_count", "INTEGER DEFAULT 0"),
+        ("pinned_at", "TEXT"),
+        ("pinned_rank", "INTEGER DEFAULT 0"),
+        ("created_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id INTEGER,
+        conversation_id INTEGER,
+        sender_user_id INTEGER,
+        receiver_user_id INTEGER,
+        body TEXT,
+        read_at TEXT,
+        created_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_messages", [
+        ("thread_id", "INTEGER"),
+        ("conversation_id", "INTEGER"),
+        ("sender_user_id", "INTEGER"),
+        ("receiver_user_id", "INTEGER"),
+        ("body", "TEXT"),
+        ("read_at", "TEXT"),
+        ("reply_to_id", "INTEGER"),
+        ("media_url", "TEXT"),
+        ("thumbnail_url", "TEXT"),
+        ("message_type", "TEXT DEFAULT 'text'"),
+        ("media_metadata", "TEXT"),
+        ("file_size", "INTEGER DEFAULT 0"),
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("delivery_status", "TEXT DEFAULT 'sent'"),
+        ("status", "TEXT DEFAULT 'sent'"),
+        ("edited_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        reaction_type TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(message_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        conversation_id INTEGER,
+        reporter_user_id INTEGER,
+        reason TEXT,
+        status TEXT DEFAULT 'open',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_message_receipts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        status TEXT DEFAULT 'seen',
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(message_id, user_id, status)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_conversation_typing (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        typing_until TEXT,
+        updated_at TEXT,
+        UNIQUE(conversation_id, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT UNIQUE,
+        name TEXT,
+        description TEXT,
+        notice TEXT,
+        conversation_id INTEGER,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_chat_rooms", [
+        ("room_key", "TEXT"),
+        ("name", "TEXT"),
+        ("description", "TEXT"),
+        ("notice", "TEXT"),
+        ("conversation_id", "INTEGER"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_room_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        joined_at TEXT,
+        last_seen_at TEXT,
+        UNIQUE(room_key, user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_room_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT,
+        conversation_id INTEGER,
+        message_id INTEGER,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_room_members (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id TEXT,
+        conversation_id INTEGER,
+        user_id INTEGER,
+        role TEXT DEFAULT 'member',
+        joined_at TEXT,
+        last_seen_at TEXT,
+        status TEXT DEFAULT 'active'
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_room_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id TEXT,
+        conversation_id INTEGER,
+        message_id INTEGER,
+        user_id INTEGER,
+        body TEXT,
+        message_type TEXT DEFAULT 'text',
+        created_at TEXT
+    )
+    """)
+    for statement in [
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_conversation ON pulse_conversation_participants(conversation_id, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversations_type_activity ON pulse_conversations(conversation_type, last_activity_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_id ON pulse_messages(conversation_id, id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_chat_rooms_key ON pulse_chat_rooms(room_key)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_members_room ON pulse_chat_room_members(room_key, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_messages_room ON pulse_chat_room_messages(room_key, message_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_room_members_room ON pulse_room_members(room_id, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_room_messages_room ON pulse_room_messages(room_id, message_id)",
+    ]:
+        try:
+            cur.execute(statement)
+        except Exception as exc:
+            logging.warning("Messenger schema index skipped safely: %s", exc)
+
+
+def pulse_default_room_cards():
+    return [
+        {
+            "id": room["key"],
+            "room_id": room["key"],
+            "energy": 42,
+            "conversation_id": 0,
+            "name": room["name"],
+            "title": room["name"],
+            "description": room["description"],
+            "pinned_notice": room["notice"],
+            "online_count": 0,
+            "unread_count": 0,
+            "last_message": "",
+            "last_message_at": "",
+        }
+        for room in PULSE_CHAT_ROOMS
+    ]
+
+
+def pulse_conversation_summaries(cur, user_id, include_types=None, limit=80, trace_id=""):
+    user_id = int(user_id or 0)
+    include_types = set(include_types or [])
+    limit = max(1, min(int(limit or 80), 120))
+    params = [user_id, user_id]
+    type_filter = ""
+    if include_types:
+        placeholders = ",".join(["?"] * len(include_types))
+        type_filter = f"AND COALESCE(c.conversation_type,'direct') IN ({placeholders})"
+        params.extend(sorted(include_types))
+    params.append(limit)
+    cur.execute(
+        f"""
+        SELECT c.*,
+               mine.unread_count AS my_unread_count,
+               mine.last_read_at AS my_last_read_at,
+               mine.last_read_message_id AS my_last_read_message_id,
+               mine.pinned_at AS my_pinned_at,
+               mine.muted_until AS my_muted_until,
+               MIN(CASE WHEN p.user_id!=? THEN p.user_id END) AS participant_user_id,
+               COUNT(DISTINCT CASE WHEN COALESCE(p.left_at,'')='' THEN p.user_id END) AS live_member_count,
+               lm.body AS latest_message,
+               lm.message_type AS latest_message_type,
+               lm.created_at AS latest_message_created_at
+        FROM pulse_conversations c
+        JOIN pulse_conversation_participants mine
+          ON mine.conversation_id=c.id
+         AND mine.user_id=?
+         AND COALESCE(mine.left_at,'')=''
+        LEFT JOIN pulse_conversation_participants p
+          ON p.conversation_id=c.id
+         AND COALESCE(p.left_at,'')=''
+        LEFT JOIN pulse_messages lm
+          ON lm.id=(
+            SELECT pm.id FROM pulse_messages pm
+            WHERE pm.conversation_id=c.id AND COALESCE(pm.deleted_at,'')=''
+            ORDER BY pm.id DESC LIMIT 1
+          )
+        WHERE COALESCE(c.status,'active')='active' {type_filter}
+        GROUP BY c.id
+        ORDER BY CASE WHEN COALESCE(mine.pinned_at,'')!='' THEN 0 ELSE 1 END,
+                 COALESCE(mine.pinned_at,c.last_message_at,c.last_activity_at,c.updated_at,c.created_at) DESC
+        LIMIT ?
+        """,
+        params,
+    )
+    conversations = []
+    skipped = []
+    typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    for row in cur.fetchall():
+        try:
+            item = dict(row)
+            conversation_id = int(item.get("id") or 0)
+            if not conversation_id:
+                skipped.append({"id": 0, "reason": "missing_conversation_id"})
+                continue
+            convo_type = item.get("conversation_type") or "direct"
+            if convo_type == "direct":
+                try:
+                    other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0)
+                except Exception:
+                    logging.exception("PULSE_CONVERSATION_IDENTITY_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+                    other = {"name": "Pulse user", "avatar_url": "", "premium_mark": None}
+            else:
+                other = {"name": item.get("title") or ("Pulse Room" if convo_type == "room" else "Group Chat"), "avatar_url": item.get("avatar_url") or "", "premium_mark": None}
+            latest = item.get("latest_message") or ("Media message" if item.get("latest_message_type") not in {"", "text", None} else "")
+            unread_count = int(item.get("my_unread_count") or 0)
+            if not unread_count:
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS total
+                        FROM pulse_messages
+                        WHERE conversation_id=?
+                          AND sender_user_id!=?
+                          AND COALESCE(deleted_at,'')=''
+                          AND id>COALESCE(?,0)
+                        """,
+                        (conversation_id, user_id, int(item.get("my_last_read_message_id") or 0)),
+                    )
+                    unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+                except Exception:
+                    logging.exception("PULSE_CONVERSATION_UNREAD_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+            typing_names = []
+            try:
+                cur.execute(
+                    """
+                    SELECT COALESCE(u.display_name,u.username,'Pulse member') AS display_name
+                    FROM pulse_conversation_typing t
+                    JOIN users u ON u.user_id=t.user_id
+                    WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
+                    ORDER BY t.updated_at DESC LIMIT 3
+                    """,
+                    (conversation_id, user_id, typing_cutoff),
+                )
+                typing_names = [dict(row).get("display_name") or "Pulse member" for row in cur.fetchall()]
+            except Exception:
+                logging.exception("PULSE_CONVERSATION_TYPING_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+            preview_users = []
+            try:
+                cur.execute(
+                    """
+                    SELECT user_id
+                    FROM pulse_conversation_participants
+                    WHERE conversation_id=? AND COALESCE(left_at,'')=''
+                    ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, joined_at ASC, created_at ASC
+                    LIMIT 6
+                    """,
+                    (conversation_id,),
+                )
+                for preview_row in cur.fetchall():
+                    preview_id = int(dict(preview_row).get("user_id") or 0)
+                    try:
+                        preview_ident = pulse_identity_for_user(cur, preview_id)
+                    except Exception:
+                        preview_ident = {"name": "Pulse user", "avatar_url": "", "public_player_id": pulse_public_id_for_user(preview_id)}
+                    preview_users.append({
+                        "id": preview_id,
+                        "display_name": preview_ident.get("name") or "Pulse user",
+                        "avatar_url": preview_ident.get("avatar_url") or "",
+                        "public_pulse_id": f"@{preview_ident.get('public_player_id') or pulse_public_id_for_user(preview_id)}",
+                        "is_self": preview_id == user_id,
+                    })
+            except Exception:
+                logging.exception("PULSE_CONVERSATION_PREVIEW_FAILED trace_id=%s conversation_id=%s", trace_id, conversation_id)
+            conversations.append({
+                "id": conversation_id,
+                "conversation_id": conversation_id,
+                "conversation_type": convo_type,
+                "other_user_id": int(item.get("participant_user_id") or 0),
+                "title": other.get("name") or "Pulse user",
+                "avatar_url": other.get("avatar_url") or "",
+                "premium_mark": other.get("premium_mark"),
+                "member_count": int(item.get("live_member_count") or item.get("member_count") or (2 if convo_type == "direct" else 1)),
+                "last_message": latest,
+                "latest_message": latest,
+                "updated_at": item.get("updated_at") or item.get("created_at") or "",
+                "last_message_at": item.get("latest_message_created_at") or item.get("last_message_at") or item.get("last_activity_at") or item.get("updated_at") or item.get("created_at") or "",
+                "unread_count": unread_count,
+                "last_read_message_id": int(item.get("my_last_read_message_id") or 0),
+                "pinned": bool(item.get("my_pinned_at")),
+                "muted": bool(item.get("my_muted_until") and str(item.get("my_muted_until")) > now),
+                "typing_users": typing_names,
+                "participants_preview": preview_users,
+            })
+        except Exception as exc:
+            skipped.append({"id": safe_int(dict(row).get("id") if row else 0, 0), "reason": exc.__class__.__name__})
+            logging.exception("PULSE_CONVERSATION_ROW_SKIPPED trace_id=%s row=%s", trace_id, dict(row) if row else {})
+    return conversations, skipped
+
+
 def pulse_room_definition(room_id):
     key = clean_html(str(room_id or "general-pulse")).strip().lower().replace("_", "-")
     aliases = {"pulse-general": "general-pulse", "general": "general-pulse"}
@@ -16470,62 +16872,81 @@ def pulse_room_definition(room_id):
 def pulse_ensure_default_rooms(cur, current_user_id):
     rooms = []
     for room in PULSE_CHAT_ROOMS:
-        result, _ = pulse_get_or_create_room_conversation(cur, current_user_id, room_key=room["key"])
-        conversation = result.get("conversation") or {}
-        conversation_id = int(result.get("conversation_id") or conversation.get("id") or 0)
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        cur.execute(
-            """
-            INSERT INTO pulse_chat_rooms (room_key, name, description, notice, conversation_id, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-            ON CONFLICT(room_key) DO UPDATE SET
-              name=excluded.name,
-              description=excluded.description,
-              notice=excluded.notice,
-              conversation_id=excluded.conversation_id,
-              status='active',
-              updated_at=excluded.updated_at
-            """,
-            (room["key"], room["name"], room["description"], room["notice"], conversation_id, now, now),
-        )
-        cur.execute(
-            """
-            SELECT m.body, m.created_at
-            FROM pulse_messages m
-            WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')=''
-            ORDER BY m.id DESC LIMIT 1
-            """,
-            (conversation_id,),
-        )
-        last = dict(cur.fetchone() or {})
-        cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
-        online_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-        cur.execute("SELECT COALESCE(unread_count,0) AS unread_count, COALESCE(last_read_message_id,0) AS last_read_message_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, current_user_id))
-        mine = dict(cur.fetchone() or {})
-        unread_count = int(mine.get("unread_count") or 0)
-        if not unread_count:
+        try:
+            result, _ = pulse_get_or_create_room_conversation(cur, current_user_id, room_key=room["key"])
+            conversation = result.get("conversation") or {}
+            conversation_id = int(result.get("conversation_id") or conversation.get("id") or 0)
+            now = datetime.utcnow().isoformat(timespec="seconds")
             cur.execute(
                 """
-                SELECT COUNT(*) AS total FROM pulse_messages
-                WHERE conversation_id=? AND sender_user_id!=? AND COALESCE(deleted_at,'')='' AND id>COALESCE(?,0)
+                INSERT INTO pulse_chat_rooms (room_key, name, description, notice, conversation_id, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                ON CONFLICT(room_key) DO UPDATE SET
+                  name=excluded.name,
+                  description=excluded.description,
+                  notice=excluded.notice,
+                  conversation_id=excluded.conversation_id,
+                  status='active',
+                  updated_at=excluded.updated_at
                 """,
-                (conversation_id, current_user_id, int(mine.get("last_read_message_id") or 0)),
+                (room["key"], room["name"], room["description"], room["notice"], conversation_id, now, now),
             )
-            unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-        rooms.append({
-            "id": room["key"],
-            "room_id": room["key"],
-            "energy": min(99, 42 + online_count * 3),
-            "conversation_id": conversation_id,
-            "name": room["name"],
-            "title": room["name"],
-            "description": room["description"],
-            "pinned_notice": room["notice"],
-            "online_count": online_count,
-            "unread_count": unread_count,
-            "last_message": last.get("body") or "",
-            "last_message_at": last.get("created_at") or conversation.get("last_activity_at") or "",
-        })
+            cur.execute(
+                """
+                SELECT m.body, m.created_at
+                FROM pulse_messages m
+                WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')=''
+                ORDER BY m.id DESC LIMIT 1
+                """,
+                (conversation_id,),
+            )
+            last = dict(cur.fetchone() or {})
+            cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=? AND COALESCE(left_at,'')=''", (conversation_id,))
+            online_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            cur.execute("SELECT COALESCE(unread_count,0) AS unread_count, COALESCE(last_read_message_id,0) AS last_read_message_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, current_user_id))
+            mine = dict(cur.fetchone() or {})
+            unread_count = int(mine.get("unread_count") or 0)
+            if not unread_count:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS total FROM pulse_messages
+                    WHERE conversation_id=? AND sender_user_id!=? AND COALESCE(deleted_at,'')='' AND id>COALESCE(?,0)
+                    """,
+                    (conversation_id, current_user_id, int(mine.get("last_read_message_id") or 0)),
+                )
+                unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+            rooms.append({
+                "id": room["key"],
+                "room_id": room["key"],
+                "energy": min(99, 42 + online_count * 3),
+                "conversation_id": conversation_id,
+                "name": room["name"],
+                "title": room["name"],
+                "description": room["description"],
+                "pinned_notice": room["notice"],
+                "online_count": online_count,
+                "unread_count": unread_count,
+                "last_message": last.get("body") or "",
+                "last_message_at": last.get("created_at") or conversation.get("last_activity_at") or "",
+            })
+        except Exception:
+            logging.exception("PULSE_DEFAULT_ROOM_SKIPPED room_key=%s user_id=%s", room.get("key"), current_user_id)
+            rooms.append({
+                "id": room["key"],
+                "room_id": room["key"],
+                "energy": 42,
+                "conversation_id": 0,
+                "name": room["name"],
+                "title": room["name"],
+                "description": room["description"],
+                "pinned_notice": room["notice"],
+                "online_count": 0,
+                "unread_count": 0,
+                "last_message": "",
+                "last_message_at": "",
+                "partial": True,
+            })
+            continue
     return rooms
 
 
@@ -17473,13 +17894,15 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     ]
     nav_html = "".join(f"<a class='button {'primary' if request.path == href else ''}' href='{href}'>{label}</a>" for label, href in nav)
     drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in nav + [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera"), ("Settings", "/pulse/profile/edit"), ("Help", "/help"), ("Logout", "/logout")])
+    chat_icon_svg = "<svg viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M5.5 18.5c-1.7-1.45-2.5-3.24-2.5-5.37C3 8.12 7.03 4.5 12 4.5s9 3.62 9 8.63-4.03 8.62-9 8.62c-1.05 0-2.05-.16-2.98-.47L4.5 22l1-3.5Z'/><path d='M8 12.5h8M8 9.5h6'/></svg>"
+    mobile_bottom_icons = {"chat": chat_icon_svg}
     mobile_bottom_html = "".join(
-        f"<a href='{href}'><span class='nav-ico' aria-hidden='true'>{icon}</span><span class='nav-label'>{label}</span></a>"
-        for label, href, icon in [("Home", "/pulse", "⌂"), ("Reels", "/pulse/reels", "▶"), ("Spaces", "/pulse/spaces", "◇"), ("Market", "/pulse/marketplace", "▣"), ("Alerts", "/pulse/notifications", "!"), ("Chats", "/pulse/messages", "✉"), ("Profile", "/pulse/profile", "◉")]
+        f"<a href='{href}'><span class='nav-ico' aria-hidden='true'>{mobile_bottom_icons.get(icon, icon)}</span><span class='nav-label'>{label}</span></a>"
+        for label, href, icon in [("Home", "/pulse", "⌂"), ("Reels", "/pulse/reels", "▶"), ("Spaces", "/pulse/spaces", "◇"), ("Market", "/pulse/marketplace", "▣"), ("Alerts", "/pulse/notifications", "!"), ("Chats", "/pulse/messages", "chat"), ("Profile", "/pulse/profile", "◉")]
     )
     premium_side = premium_visibility_engine.prompt_html("dashboard", user)
     default_side = side_html or f"<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulse_realtime.js" defer></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.mobile-bottom-nav .nav-ico svg{{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulse_realtime.js" defer></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -20222,7 +20645,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             console.error("Chats load failed", { status: response.status, responseText, trace_id: data.trace_id });
             throw new Error(`${data.message || "Unable to load conversations."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
           }
-          const direct = (data.conversations || []).filter(item => (item.conversation_type || "direct") === "direct");
+          const direct = (data.conversations || data.items || []).filter(item => (item.conversation_type || "direct") === "direct");
           box.innerHTML = direct.map(item => {
             const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
             return `
@@ -20243,7 +20666,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           const response = await fetch("/api/pulse/messages/group-conversations", { cache: "no-store", credentials: "same-origin" });
           const data = await response.json();
           if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load group chats.");
-          const groups = data.conversations || [];
+          const groups = data.conversations || data.items || [];
           box.innerHTML = groups.map(item => {
             const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
             return `
@@ -20269,14 +20692,15 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             console.error("Chat room load failed", { status: response.status, responseText, trace_id: data.trace_id });
             throw new Error(`${data.message || "Unable to load chat rooms."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
           }
-          box.innerHTML = (data.rooms || []).map(room => `
+          const rooms = data.rooms || data.items || [];
+          box.innerHTML = rooms.map(room => `
             <button class="unified-row" type="button" data-open-room="${room.room_id || room.id}" data-room-name="${esc(room.name || "Pulse Room")}">
               <strong>${esc(room.name || "Pulse Room")}<span class="pill">${Number(room.online_count || 0)} online</span>${Number(room.unread_count || 0) ? `<span class="unread-badge">${Number(room.unread_count || 0)}</span>` : ""}</strong>
               <span>${esc(room.description || "")}</span>
               <span>${esc(room.last_message || room.pinned_notice || "No messages yet.")}</span>
               <span>${friendlyTime(room.last_message_at)}</span>
             </button>`).join("") || '<div class="unified-empty">No rooms are available right now.</div>';
-          document.querySelector("[data-smart-rooms]").innerHTML = (data.rooms || []).slice(0,4).map(room => `
+          document.querySelector("[data-smart-rooms]").innerHTML = rooms.slice(0,4).map(room => `
             <button class="unified-row" type="button" data-open-room="${room.room_id || room.id}" data-room-name="${esc(room.name || "Pulse Room")}">
               <strong>${esc(room.name)}<span class="pill">Pulse ${Math.min(99, 55 + Number(room.online_count || 0) * 3)}%</span></strong>
               <span>${esc(room.pinned_notice || room.description || "")}</span>
@@ -22555,6 +22979,7 @@ def api_pulse_message_send():
         message_type = "link" if media_url.startswith(("http://", "https://", "/pulse/")) and not media_url.startswith("/static/") else "image"
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    ensure_pulse_messenger_schema(cur, conn)
     conversation_id = int(payload.get("conversation_id") or 0)
     thread_id = int(payload.get("thread_id") or 0)
     logging.info(
@@ -22856,6 +23281,7 @@ def api_pulse_message_group_create():
         return jsonify({"ok": False, "message": "At least one other participant is required.", "trace_id": trace_id}), 400
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         group = {}
         if group_id or group_slug:
             cur.execute("SELECT * FROM pulse_groups WHERE id=? OR slug=? LIMIT 1", (group_id, group_slug))
@@ -22905,6 +23331,7 @@ def api_pulse_message_room_open():
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room_key)
         if result.get("ok"):
             conn.commit()
@@ -22919,6 +23346,7 @@ def api_pulse_message_room_open():
 
 
 @webhook_app.route("/api/pulse/chatrooms", methods=["GET"])
+@webhook_app.route("/api/pulse/messages/rooms", methods=["GET"])
 def api_pulse_chatrooms():
     init_db()
     user = api_account_user()
@@ -22927,11 +23355,26 @@ def api_pulse_chatrooms():
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         rooms = pulse_ensure_default_rooms(cur, user["user_id"])
         conn.commit(); conn.close()
-        return jsonify({"ok": True, "rooms": rooms})
+        return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "cached": False})
     except Exception as exc:
-        conn.rollback(); conn.close()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            ensure_pulse_messenger_schema(cur, conn)
+            rooms = pulse_default_room_cards()
+            conn.commit(); conn.close()
+            logging.exception("PULSE_CHATROOMS_PARTIAL_DEFAULTS trace_id=%s user_id=%s", trace_id, user.get("user_id"))
+            return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "cached": False, "partial": True, "message": "Rooms loaded while storage repairs."})
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
         logging.exception("PULSE_CHATROOMS_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
         return api_error("Chat rooms could not be loaded. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
@@ -22948,6 +23391,7 @@ def api_pulse_chatroom_join(room_id):
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room["key"])
         conn.commit(); conn.close()
         if result.get("ok"):
@@ -22971,6 +23415,7 @@ def api_pulse_chatroom_messages(room_id):
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room["key"])
         if not result.get("ok"):
             conn.close()
@@ -23021,6 +23466,7 @@ def api_pulse_message_presence(conversation_id):
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         cur.execute(
             """
             SELECT 1
@@ -23051,24 +23497,25 @@ def api_pulse_message_group_conversations():
     if not user:
         return api_error("Login required.", 401)
     trace_id = secrets.token_hex(6)
+    conn = None
     try:
-        response = api_pulse_message_conversations()
-        status_code = 200
-        if isinstance(response, tuple):
-            response_obj = response[0]
-            status_code = int(response[1] or 200)
-        else:
-            response_obj = response
-        payload = response_obj.get_json() if hasattr(response_obj, "get_json") else {}
-        if status_code >= 400 or payload.get("ok") is False:
-            logging.warning("PULSE_GROUP_CONVERSATIONS_SOURCE_FAILED trace_id=%s user_id=%s status=%s payload=%s", trace_id, user.get("user_id"), status_code, payload)
-            return jsonify({"ok": False, "message": payload.get("message") or "Group chats could not be loaded.", "trace_id": payload.get("trace_id") or trace_id}), status_code
-        conversations = [
-            item for item in (payload.get("conversations") or [])
-            if (item.get("conversation_type") or "") in {"group", "community", "community_group", "creator", "live"}
-        ]
-        return jsonify({"ok": True, "conversations": conversations})
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        ensure_pulse_messenger_schema(cur, conn)
+        conversations, skipped = pulse_conversation_summaries(
+            cur,
+            user["user_id"],
+            include_types={"group", "community", "community_group", "creator", "live"},
+            limit=80,
+            trace_id=trace_id,
+        )
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "items": conversations, "conversations": conversations, "trace_id": trace_id, "cached": False, "partial": bool(skipped), "skipped": len(skipped)})
     except Exception as exc:
+        try:
+            if conn:
+                conn.rollback(); conn.close()
+        except Exception:
+            pass
         logging.exception("PULSE_GROUP_CONVERSATIONS_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
         return api_error("Group chats could not be loaded. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
@@ -23080,6 +23527,7 @@ def api_pulse_conversation_detail(conversation_id):
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    ensure_pulse_messenger_schema(cur, conn)
     cur.execute(
         """
         SELECT c.*
@@ -23113,6 +23561,7 @@ def api_pulse_conversation_send(conversation_id):
     trace_id = secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        ensure_pulse_messenger_schema(cur, conn)
         result, status = pulse_send_conversation_message(
             cur,
             user,
@@ -23251,120 +23700,14 @@ def api_pulse_message_conversations():
     conn = None
     try:
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT c.*,
-                   mine.unread_count AS my_unread_count,
-                   mine.last_read_at AS my_last_read_at,
-                   mine.last_read_message_id AS my_last_read_message_id,
-                   mine.pinned_at AS my_pinned_at,
-                   mine.muted_until AS my_muted_until,
-                   MIN(CASE WHEN p.user_id!=? THEN p.user_id END) AS participant_user_id,
-                   COUNT(DISTINCT CASE WHEN COALESCE(p.left_at,'')='' THEN p.user_id END) AS live_member_count,
-                   lm.body AS latest_message,
-                   lm.message_type AS latest_message_type,
-                   lm.created_at AS latest_message_created_at
-            FROM pulse_conversations c
-            JOIN pulse_conversation_participants mine
-              ON mine.conversation_id=c.id
-             AND mine.user_id=?
-             AND COALESCE(mine.left_at,'')=''
-            LEFT JOIN pulse_conversation_participants p
-              ON p.conversation_id=c.id
-             AND COALESCE(p.left_at,'')=''
-            LEFT JOIN pulse_messages lm
-              ON lm.id=(
-                SELECT pm.id FROM pulse_messages pm
-                WHERE pm.conversation_id=c.id AND COALESCE(pm.deleted_at,'')=''
-                ORDER BY pm.id DESC LIMIT 1
-              )
-            WHERE COALESCE(c.status,'active')='active'
-            GROUP BY c.id
-            ORDER BY CASE WHEN COALESCE(mine.pinned_at,'')!='' THEN 0 ELSE 1 END,
-                     COALESCE(mine.pinned_at,c.last_message_at,c.last_activity_at,c.updated_at,c.created_at) DESC
-            LIMIT 80
-            """,
-            (user["user_id"], user["user_id"]),
-        )
-        conversations = []
-        for row in cur.fetchall():
-            item = dict(row)
-            convo_type = item.get("conversation_type") or "direct"
-            other = pulse_identity_for_user(cur, item.get("participant_user_id") or 0) if convo_type == "direct" else {"name": item.get("title") or "Group Chat", "avatar_url": item.get("avatar_url") or "", "premium_mark": None}
-            latest = item.get("latest_message") or ("Media message" if item.get("latest_message_type") not in {"", "text", None} else "")
-            unread_count = int(item.get("my_unread_count") or 0)
-            if not unread_count:
-                cur.execute(
-                    """
-                    SELECT COUNT(*) AS total
-                    FROM pulse_messages
-                    WHERE conversation_id=?
-                      AND sender_user_id!=?
-                      AND COALESCE(deleted_at,'')=''
-                      AND id>COALESCE(?,0)
-                    """,
-                    (int(item.get("id") or 0), user["user_id"], int(item.get("my_last_read_message_id") or 0)),
-                )
-                unread_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-            typing_cutoff = (datetime.utcnow() - timedelta(seconds=8)).isoformat(timespec="seconds")
-            cur.execute(
-                """
-                SELECT COALESCE(u.display_name,u.username,'Pulse member') AS display_name
-                FROM pulse_conversation_typing t
-                JOIN users u ON u.user_id=t.user_id
-                WHERE t.conversation_id=? AND t.user_id!=? AND t.typing_until>=?
-                ORDER BY t.updated_at DESC LIMIT 3
-                """,
-                (int(item.get("id") or 0), user["user_id"], typing_cutoff),
-            )
-            typing_names = [dict(row).get("display_name") or "Pulse member" for row in cur.fetchall()]
-            cur.execute(
-                """
-                SELECT user_id
-                FROM pulse_conversation_participants
-                WHERE conversation_id=? AND COALESCE(left_at,'')=''
-                ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, joined_at ASC, created_at ASC
-                LIMIT 6
-                """,
-                (int(item.get("id") or 0),),
-            )
-            preview_users = []
-            for preview_row in cur.fetchall():
-                preview_id = int(dict(preview_row).get("user_id") or 0)
-                preview_ident = pulse_identity_for_user(cur, preview_id)
-                preview_users.append({
-                    "id": preview_id,
-                    "display_name": preview_ident.get("name") or "Pulse user",
-                    "avatar_url": preview_ident.get("avatar_url") or "",
-                    "public_pulse_id": f"@{preview_ident.get('public_player_id') or pulse_public_id_for_user(preview_id)}",
-                    "is_self": preview_id == int(user["user_id"]),
-                })
-            conversations.append({
-                "id": int(item.get("id") or 0),
-                "conversation_id": int(item.get("id") or 0),
-                "conversation_type": convo_type,
-                "other_user_id": int(item.get("participant_user_id") or 0),
-                "title": other.get("name") or "Pulse user",
-                "avatar_url": other.get("avatar_url") or "",
-                "premium_mark": other.get("premium_mark"),
-                "member_count": int(item.get("live_member_count") or item.get("member_count") or (2 if convo_type == "direct" else 1)),
-                "last_message": latest,
-                "latest_message": latest,
-                "updated_at": item.get("updated_at") or item.get("created_at") or "",
-                "last_message_at": item.get("latest_message_created_at") or item.get("last_message_at") or item.get("last_activity_at") or item.get("updated_at") or item.get("created_at") or "",
-                "unread_count": unread_count,
-                "last_read_message_id": int(item.get("my_last_read_message_id") or 0),
-                "pinned": bool(item.get("my_pinned_at")),
-                "muted": bool(item.get("my_muted_until") and str(item.get("my_muted_until")) > datetime.utcnow().isoformat(timespec="seconds")),
-                "typing_users": typing_names,
-                "participants_preview": preview_users,
-            })
-        conn.close()
-        return jsonify({"ok": True, "conversations": conversations})
+        ensure_pulse_messenger_schema(cur, conn)
+        conversations, skipped = pulse_conversation_summaries(cur, user["user_id"], limit=80, trace_id=trace_id)
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "items": conversations, "conversations": conversations, "trace_id": trace_id, "cached": False, "partial": bool(skipped), "skipped": len(skipped)})
     except Exception as exc:
         try:
             if conn:
-                conn.close()
+                conn.rollback(); conn.close()
         except Exception:
             pass
         logging.exception("PULSE_CONVERSATIONS_FAILED trace_id=%s user_id=%s", trace_id, user.get("user_id"))
@@ -23415,6 +23758,7 @@ def api_pulse_conversation_messages(conversation_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    ensure_pulse_messenger_schema(cur, conn)
     cur.execute(
         """
         SELECT c.*
@@ -27175,6 +27519,22 @@ def admin_messages_health_page():
         return denied
     init_db()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    ensure_pulse_messenger_schema(cur, conn)
+    conn.commit()
+    table_health = {
+        "pulse_conversations": table_exists(cur, "pulse_conversations"),
+        "pulse_conversation_participants": table_exists(cur, "pulse_conversation_participants"),
+        "pulse_messages": table_exists(cur, "pulse_messages"),
+        "pulse_chat_rooms": table_exists(cur, "pulse_chat_rooms"),
+        "pulse_chat_room_members": table_exists(cur, "pulse_chat_room_members"),
+        "pulse_message_reactions": table_exists(cur, "pulse_message_reactions"),
+        "pulse_message_reports": table_exists(cur, "pulse_message_reports"),
+    }
+    endpoint_status = {
+        "Chats API": "ready" if table_health["pulse_conversations"] and table_health["pulse_conversation_participants"] else "schema_attention",
+        "Rooms API": "ready" if table_health["pulse_chat_rooms"] else "schema_attention",
+        "Groups API": "ready" if table_health["pulse_conversations"] and table_health["pulse_conversation_participants"] else "schema_attention",
+    }
     message_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages")
     media_messages = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_messages WHERE COALESCE(media_url,'')!=''")
     upload_count = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE context_type='pulse_message'")
@@ -27196,9 +27556,13 @@ def admin_messages_health_page():
     conn.close()
     latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('conversation_id')}</td><td>{r.get('sender_user_id')}</td><td>{r.get('receiver_user_id')}</td><td>{clean_html(r.get('message_type') or '')}</td><td>{clean_html(r.get('delivery_status') or r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in rows)
     latest_groups = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('conversation_type') or '')}</td><td>{clean_html(r.get('title') or 'Group Chat')}</td><td>{r.get('owner_user_id') or ''}</td><td>{r.get('member_count') or 0}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in group_rows)
+    endpoint_cards = "".join(f"<div class='card'><h2>{clean_html(name)}</h2><p class='metric'>{clean_html(status)}</p></div>" for name, status in endpoint_status.items())
+    table_rows = "".join(f"<tr><td>{clean_html(name)}</td><td>{'ok' if ok else 'missing'}</td></tr>" for name, ok in table_health.items())
     body = f"""
     <h1>Messages Health</h1><p class='muted'>Pulse Messenger delivery, schema, media upload, and realtime readiness.</p>
+    <section class='grid'>{endpoint_cards}</section>
     <section class='grid'><div class='card'><h2>/pulse/messages</h2><p class='metric'>ready</p><p class='muted'>Standalone Messenger home, tab filtering, search, room entry, and group creation are monitored here.</p></div><div class='card'><h2>Default Rooms</h2><p class='metric'>{default_rooms}</p></div><div class='card'><h2>Conversations</h2><p class='metric'>{conversations}</p></div><div class='card'><h2>Direct Chats</h2><p class='metric'>{direct_chats}</p></div><div class='card'><h2>Room Chats</h2><p class='metric'>{room_chats}</p></div><div class='card'><h2>Group Chats</h2><p class='metric'>{group_chats}</p></div><div class='card'><h2>Hidden Conversations</h2><p class='metric'>{hidden_conversations}</p></div><div class='card'><h2>No Participants</h2><p class='metric'>{conversations_without_participants}</p></div><div class='card'><h2>Orphan Group Chats</h2><p class='metric'>{orphan_chats}</p></div><div class='card'><h2>Missing Owner Participant</h2><p class='metric'>{missing_owner}</p></div><div class='card'><h2>Messages</h2><p class='metric'>{message_count}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_messages}</p></div><div class='card'><h2>Uploads</h2><p class='metric'>{upload_count}</p></div><div class='card'><h2>Pending Media Review</h2><p class='metric'>{pending_media}</p></div><div class='card'><h2>Missing Columns</h2><p>{clean_html(', '.join(missing_cols) or 'none')}</p></div></section>
+    <section class='card'><h2>Schema Readiness</h2><table class='table'><tr><th>Table</th><th>Status</th></tr>{table_rows}</table></section>
     <section class='card'><h2>Latest Group Chat Creations</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Title</th><th>Owner</th><th>Members</th><th>Created</th></tr>{latest_groups or '<tr><td colspan=6>No group chats yet.</td></tr>'}</table></section>
     <section class='card'><h2>Latest Messages</h2><table class='table'><tr><th>ID</th><th>Conversation</th><th>Sender</th><th>Receiver</th><th>Type</th><th>Status</th><th>Time</th></tr>{latest or '<tr><td colspan=7>No messages yet.</td></tr>'}</table></section>
     <p><a class='button' href='/pulse/messages'>Open Messenger</a> <a class='button' href='/admin/system-audit'>System Audit</a></p>
@@ -35991,6 +36355,10 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_chat_rooms_key ON pulse_chat_rooms(room_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_members_room ON pulse_chat_room_members(room_key, user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_messages_room ON pulse_chat_room_messages(room_key, message_id)")
+    try:
+        ensure_pulse_messenger_schema(cur, conn)
+    except Exception as exc:
+        logging.warning("Pulse Messenger schema guard skipped safely during init: %s", exc)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_created_at ON pulse_posts(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_posts_user_created ON pulse_posts(user_id, created_at)")
     cur.execute("""
