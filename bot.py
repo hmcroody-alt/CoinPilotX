@@ -19557,22 +19557,30 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-row .unread-badge{min-width:24px;height:24px;display:inline-grid;place-items:center;border-radius:999px;color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));font-size:12px;font-weight:950;box-shadow:0 0 18px rgba(110,223,246,.34)}
     .unified-row .typing-preview{color:#8fffd0}
     .unified-empty{border:1px dashed rgba(110,223,246,.24);border-radius:18px;padding:18px;color:var(--muted);text-align:center;background:rgba(255,255,255,.035)}
-    .unified-thread{min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
+    .unified-thread{min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:4px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
     .unified-load-older{align-self:center;min-height:34px;padding:6px 12px;border-radius:999px;font-size:12px}
-    .unified-system{justify-self:center;max-width:min(86%,640px);padding:8px 12px;border-radius:999px;background:rgba(110,223,246,.1);color:var(--muted);font-size:13px}
-    .unified-bubble{position:relative;max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:17px;background:rgba(255,255,255,.07);box-shadow:0 14px 42px rgba(0,0,0,.14);animation:msgIn .18s ease-out}
-    .unified-bubble.me{align-self:flex-end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}
-    .unified-bubble.them{align-self:flex-start}
-    .unified-bubble small{display:block;margin-top:6px;opacity:.72;color:inherit}
-    .unified-bubble-media{display:block;width:min(320px,70vw);max-height:360px;border-radius:14px;object-fit:cover;margin-top:8px;background:#020713}
+    .unified-system,.unified-date-divider{align-self:center;max-width:min(86%,640px);padding:6px 11px;border-radius:999px;background:rgba(110,223,246,.1);color:var(--muted);font-size:12px;font-weight:850}
+    .unified-date-divider{margin:12px 0 8px;background:transparent;color:rgba(213,239,245,.62);font-weight:900}
+    .unified-typing-bubble{align-self:flex-start;display:inline-flex;gap:4px;align-items:center;width:auto;padding:9px 12px;border-radius:18px 18px 18px 6px;background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.065));border:1px solid rgba(255,255,255,.1)}
+    .unified-typing-bubble i{width:6px;height:6px;border-radius:999px;background:#b9f7ff;animation:typingDot 1s ease-in-out infinite}.unified-typing-bubble i:nth-child(2){animation-delay:.15s}.unified-typing-bubble i:nth-child(3){animation-delay:.3s}
+    .unified-bubble{position:relative;max-width:min(78%,620px);padding:9px 12px;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(255,255,255,.07);box-shadow:0 14px 42px rgba(0,0,0,.14);animation:msgIn .18s ease-out;overflow-wrap:anywhere;line-height:1.38}
+    .unified-bubble.me{align-self:flex-end;color:#f7fdff;background:linear-gradient(135deg,#1a92ff,#5ed7ff 48%,#80a8ff);border-color:rgba(255,255,255,.12);border-bottom-right-radius:6px}
+    .unified-bubble.me:after{content:"";position:absolute;right:-5px;bottom:-1px;width:14px;height:16px;background:linear-gradient(135deg,#5ed7ff,#80a8ff);border-bottom-left-radius:14px;clip-path:polygon(0 0,100% 100%,0 100%)}
+    .unified-bubble.them{align-self:flex-start;background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.065));border-color:rgba(255,255,255,.1);border-bottom-left-radius:6px}
+    .unified-bubble.them:after{content:"";position:absolute;left:-5px;bottom:-1px;width:14px;height:16px;background:rgba(255,255,255,.075);border-bottom-right-radius:14px;clip-path:polygon(100% 0,100% 100%,0 100%)}
+    .unified-bubble.is-grouped{margin-top:1px}.unified-bubble.is-grouped.me{border-top-right-radius:14px}.unified-bubble.is-grouped.them{border-top-left-radius:14px}
+    .unified-bubble small{display:block;margin-top:4px;opacity:.72;color:inherit;font-size:11px;text-align:right}
+    .unified-bubble.them small{text-align:left;color:rgba(213,239,245,.58)}
+    .unified-bubble-media{display:block;width:min(320px,70vw);max-height:360px;border-radius:14px;object-fit:cover;margin-top:7px;background:#020713}
     .unified-reply-preview{display:block;margin-bottom:7px;padding:7px 9px;border-left:3px solid rgba(110,223,246,.62);border-radius:10px;background:rgba(5,11,20,.22);font-size:12px;color:inherit;opacity:.86}
     .unified-bubble video.unified-bubble-media{aspect-ratio:9/16}
     .unified-file-card{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;padding:10px;border-radius:14px;background:rgba(255,255,255,.08);color:inherit;text-decoration:none}
-    .unified-bubble-actions{display:flex;gap:4px;align-items:center;margin-top:8px;opacity:0;transition:opacity .16s ease}
-    .unified-bubble:hover .unified-bubble-actions,.unified-bubble:focus-within .unified-bubble-actions{opacity:1}
-    .unified-bubble-actions button{min-height:28px;padding:4px 8px;border-radius:999px;font-size:12px}
-    .unified-reactions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
-    .unified-reaction-pill{font-size:12px;border-radius:999px;padding:3px 7px;background:rgba(255,255,255,.12)}
+    .unified-voice-card{display:grid;grid-template-columns:28px minmax(90px,1fr);gap:8px;align-items:center;margin-top:7px;min-width:min(250px,64vw);padding:8px;border-radius:14px;background:rgba(5,11,20,.22);border:1px solid rgba(255,255,255,.12)}
+    .voice-play{width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:12px}.voice-wave{height:26px;border-radius:999px;background:repeating-linear-gradient(90deg,rgba(242,251,255,.85) 0 3px,transparent 3px 9px);mask-image:linear-gradient(90deg,transparent,black 8%,black 92%,transparent);opacity:.78}.unified-voice-card audio{grid-column:1/-1;width:100%;height:32px}
+    .unified-bubble-actions{display:none}
+    .unified-reactions{display:flex;gap:4px;flex-wrap:wrap;margin:4px 8px 2px;max-width:min(78%,620px)}
+    .unified-bubble.me + .unified-reactions{align-self:flex-end;justify-content:flex-end}.unified-bubble.them + .unified-reactions{align-self:flex-start}
+    .unified-reaction-pill{font-size:11px;border-radius:999px;padding:3px 7px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 18px rgba(0,0,0,.16)}
     .unified-composer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96);backdrop-filter:blur(18px)}
     .unified-composer textarea{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:16px;background:#081323;color:var(--text);padding:12px;font:inherit}
     .unified-attach{width:48px;min-width:48px;padding:0}
@@ -19596,6 +19604,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-modal{position:fixed;inset:0;z-index:10000;display:none;place-items:end center;background:rgba(0,0,0,.54);backdrop-filter:blur(9px);padding:16px}
     .unified-modal.is-open{display:grid}
     .unified-sheet{width:min(620px,100%);max-height:min(780px,88dvh);overflow:auto;border:1px solid var(--line);border-radius:24px;background:#071321;box-shadow:0 30px 90px rgba(0,0,0,.55);padding:16px;display:grid;gap:12px}
+    .unified-message-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.unified-message-actions button{min-width:0}
     .unified-selected{display:flex;flex-wrap:wrap;gap:6px}
     .unified-selected .pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden}
     .unified-selected .pill button{min-height:24px;min-width:24px;width:24px;padding:0;border-radius:999px}
@@ -19604,25 +19613,52 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-recorder-status{display:flex;align-items:center;gap:8px;color:var(--muted)}
     .unified-record-dot{width:10px;height:10px;border-radius:999px;background:#ff335f;box-shadow:0 0 18px rgba(255,51,95,.9);animation:msgIn .65s ease-in-out infinite alternate}
     @media(max-width:900px){
-      body:has(.unified-messenger){overflow:hidden}
-      body:has(.unified-messenger) .wrap{padding:0}
+      body:has(.unified-messenger){overflow:hidden;background:radial-gradient(circle at 50% -10%,rgba(110,223,246,.2),transparent 22rem),linear-gradient(180deg,#071423,#03070d)}
+      body:has(.unified-messenger) .wrap{padding:0!important;width:100%!important;max-width:100%!important}
       body:has(.unified-messenger) .layout{display:block}
       body:has(.unified-messenger) .layout>aside,body:has(.unified-messenger) .wrap>section.card:not(.unified-messenger){display:none}
-      .unified-messenger{position:fixed;inset:0;z-index:210;height:100dvh;min-height:0;border-radius:0;border:0}
-      .unified-messenger-body{grid-template-columns:1fr}
-      .unified-sidebar.is-thread-open{display:none}
-      .unified-thread-pane:not(.is-open){display:none}
-      .unified-tabs button{font-size:0}
-      .unified-tabs button::after{font-size:12px}
+      .unified-messenger{position:fixed;inset:0;z-index:210;height:100dvh;min-height:0;border-radius:0;border:0;background:linear-gradient(180deg,rgba(8,20,34,.98),rgba(3,8,15,.99));display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+      .unified-messenger-head{padding:calc(10px + env(safe-area-inset-top)) 14px 10px;gap:10px;background:linear-gradient(180deg,rgba(7,17,31,.97),rgba(7,17,31,.86));box-shadow:0 12px 32px rgba(0,0,0,.18)}
+      .unified-messenger-title{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+      .unified-messenger-title h2{font-size:22px;letter-spacing:-.01em}.unified-messenger-title p{display:none}
+      .unified-messenger-title .actions{display:flex;gap:7px;flex-wrap:nowrap}
+      .unified-messenger-title .actions .button{width:42px;min-width:42px;height:42px;min-height:42px;border-radius:15px;padding:0;font-size:0;background:rgba(255,255,255,.055);border-color:rgba(110,223,246,.18)}
+      .unified-messenger-title .actions .button[href="/pulse"]::before{content:"‹";font-size:24px;line-height:1}
+      .unified-messenger-title [data-unified-menu-toggle]::before{content:"⋯";font-size:25px;line-height:1}
+      .unified-messenger-title h2:after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:999px;background:#35f2a8;box-shadow:0 0 14px rgba(53,242,168,.9)}
+      .unified-tabs{gap:7px;padding:2px;border:1px solid rgba(110,223,246,.14);border-radius:999px;background:rgba(255,255,255,.045)}
+      .unified-tabs button{min-height:38px;border-radius:999px;border:0;background:transparent;font-size:0;padding:0 8px;color:#dffcff}
+      .unified-tabs button::after{font-size:13px;font-weight:950}
       .unified-tabs [data-tab="chats"]::after{content:"Chats"}
       .unified-tabs [data-tab="rooms"]::after{content:"Rooms"}
       .unified-tabs [data-tab="groups"]::after{content:"Groups"}
-      .unified-thread-top{padding-top:calc(12px + env(safe-area-inset-top))}
-      .unified-composer{grid-template-columns:46px minmax(0,1fr) 54px}
-      .unified-composer button{width:56px;min-width:56px;padding:0}
-      .unified-attach{width:46px!important;min-width:46px!important}
+      .unified-tabs button.is-active{box-shadow:0 10px 24px rgba(54,229,143,.18)}
+      .unified-messenger-body{min-height:0;grid-template-columns:1fr;background:radial-gradient(circle at 84% 8%,rgba(110,223,246,.08),transparent 16rem)}
+      .unified-sidebar{padding:10px 12px 18px;border-right:0;gap:9px}
+      .unified-sidebar.is-thread-open{display:none}
+      .unified-search{grid-template-columns:minmax(0,1fr) 44px;gap:7px}.unified-search button{font-size:0;border-radius:14px;padding:0}.unified-search button:before{content:"⌕";font-size:18px}
+      .unified-row{border-radius:18px;padding:12px;background:rgba(255,255,255,.055)}
+      .unified-thread-pane{grid-template-rows:auto auto minmax(0,1fr);min-height:0}
+      .unified-thread-pane:not(.is-open){display:none}
+      .unified-thread-top{padding:9px 14px 8px;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,13,24,.78);backdrop-filter:blur(12px)}
+      .unified-thread-title strong{font-size:17px}.unified-thread-title span{display:flex;align-items:center;gap:5px}.unified-thread-title [data-pin-active-chat]{display:none!important}
+      .unified-presence{font-size:12px;min-height:18px}.presence-dot{width:7px;height:7px}
+      .unified-room-banner{margin:8px 12px 0;padding:10px 12px;border-radius:16px}
+      .unified-thread{padding:12px 10px 14px;gap:3px;background:linear-gradient(180deg,rgba(7,17,31,.18),rgba(2,7,13,.1))}
+      .unified-empty{padding:14px;border-radius:16px}
+      .unified-bubble{max-width:82%;padding:8px 11px;border-radius:17px;font-size:15px;line-height:1.36;box-shadow:0 8px 22px rgba(0,0,0,.16)}
+      .unified-bubble.me{max-width:80%;border-bottom-right-radius:5px}.unified-bubble.them{max-width:80%;border-bottom-left-radius:5px}
+      .unified-bubble small{font-size:10px;margin-top:3px}.unified-date-divider{font-size:11px;margin:10px 0 7px}
+      .unified-bubble-media{width:min(250px,68vw);max-height:300px;border-radius:13px}
+      .unified-file-card{padding:9px;border-radius:13px}
+      .unified-reactions{max-width:80%;margin:2px 8px 4px}
+      .unified-composer{position:relative;grid-template-columns:44px minmax(0,1fr) 54px;gap:8px;padding:9px 12px calc(9px + env(safe-area-inset-bottom));background:rgba(2,8,15,.98);backdrop-filter:blur(14px);box-shadow:0 -10px 32px rgba(0,0,0,.24)}
+      .unified-composer textarea{min-height:44px;max-height:106px;border-radius:22px;padding:11px 14px;background:rgba(9,20,34,.92);font-size:15px}
+      .unified-composer button{width:54px;min-width:54px;min-height:44px;padding:0;border-radius:18px}
+      .unified-attach{width:44px!important;min-width:44px!important;border-radius:16px!important}
+      .unified-media-preview,.unified-reply-bar,.unified-upload-progress{grid-column:1/-1}
       .unified-media-tray button{width:auto!important;min-width:0!important;padding:8px!important}
-      .unified-media-tray{grid-template-columns:repeat(3,minmax(0,1fr));bottom:calc(76px + env(safe-area-inset-bottom))}
+      .unified-media-tray{position:fixed;left:10px;right:10px;grid-template-columns:repeat(3,minmax(0,1fr));bottom:calc(72px + env(safe-area-inset-bottom));border-radius:22px}
       .unified-menu{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;border-radius:26px 26px 0 0;padding:12px 12px calc(14px + env(safe-area-inset-bottom));animation:unifiedSheetIn .22s cubic-bezier(.18,.9,.2,1)}
       .unified-menu::before{content:"";display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}
       .unified-modal{padding:0}
@@ -19631,6 +19667,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     }
     @keyframes unifiedSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
     @keyframes msgIn{from{transform:translateY(4px);opacity:.72}to{transform:translateY(0);opacity:1}}
+    @keyframes typingDot{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
     </style>
     <section class="card unified-messenger" data-unified-messenger data-active-thread="__ACTIVE_THREAD_ID__" data-active-pulse-conversation="__ACTIVE_PULSE_CONVERSATION_ID__" data-current-user="__CURRENT_USER_ID__">
       <header class="unified-messenger-head">
@@ -19742,12 +19779,26 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         </div>
       </div>
     </section>
+    <section class="unified-modal" data-message-actions-modal aria-hidden="true">
+      <div class="unified-sheet" role="dialog" aria-modal="true" aria-label="Message Actions">
+        <h2>Message</h2>
+        <div class="unified-message-actions">
+          <button type="button" data-sheet-reaction="🔥">🔥 Fire</button>
+          <button type="button" data-sheet-reaction="👍">👍 Like</button>
+          <button type="button" data-sheet-reaction="💡">💡 Smart</button>
+          <button type="button" data-sheet-reply>Reply</button>
+          <button type="button" data-sheet-report>Report</button>
+          <button type="button" data-sheet-delete>Delete</button>
+        </div>
+        <button type="button" data-close-message-actions>Close</button>
+      </div>
+    </section>
     """.replace("__ACTIVE_THREAD_ID__", str(active_thread_id)).replace("__ACTIVE_PULSE_CONVERSATION_ID__", str(active_pulse_conversation_id)).replace("__CURRENT_USER_ID__", str(int(user["user_id"])))
     script = """
     (() => {
       const root = document.querySelector("[data-unified-messenger]");
       if (!root) return;
-	      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: Number(root.dataset.activePulseConversation || 0), activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null, creatingGroup: false, captureStream: null, captureRecorder: null, captureChunks: [], captureMode: "photo", capturedBlob: null, voiceRecorder: null, voiceStream: null, voiceChunks: [] };
+	      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: Number(root.dataset.activePulseConversation || 0), activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null, creatingGroup: false, captureStream: null, captureRecorder: null, captureChunks: [], captureMode: "photo", capturedBlob: null, voiceRecorder: null, voiceStream: null, voiceChunks: [], selectedMessageId: "" };
       const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
       const friendlyTime = value => {
         if (!value) return "";
@@ -19761,10 +19812,34 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (hours < 24) return hours + "h ago";
         return Math.floor(hours / 24) + "d ago";
       };
+      const dividerLabel = value => {
+        const date = value ? new Date(value) : new Date();
+        if (Number.isNaN(date.getTime())) return "";
+        const today = new Date();
+        const yesterday = new Date();
+        yesterday.setDate(today.getDate() - 1);
+        const sameDay = (a,b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+        const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        if (sameDay(date, today)) return `Today ${time}`;
+        if (sameDay(date, yesterday)) return `Yesterday ${time}`;
+        return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+      };
+      const dateKey = value => {
+        const date = value ? new Date(value) : new Date();
+        if (Number.isNaN(date.getTime())) return "";
+        return `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
+      };
       const showMenu = open => {
         document.querySelector("[data-unified-menu]").hidden = !open;
         document.querySelector("[data-unified-menu-backdrop]").hidden = !open;
         document.querySelector("[data-unified-menu-toggle]").setAttribute("aria-expanded", open ? "true" : "false");
+      };
+      const showMessageActions = (messageId, open = true) => {
+        state.selectedMessageId = open ? String(messageId || "") : "";
+        const modal = document.querySelector("[data-message-actions-modal]");
+        if (!modal) return;
+        modal.classList.toggle("is-open", open);
+        modal.setAttribute("aria-hidden", open ? "false" : "true");
       };
       const clearThread = message => {
         state.activeThread = 0;
@@ -19798,7 +19873,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const type = message.message_type || message.type || "text";
         if (!url) return "";
         if (type === "video") return `<video class="unified-bubble-media" controls playsinline preload="metadata" poster="${esc(thumb)}"><source src="${esc(url)}"></video>`;
-        if (type === "voice" || type === "audio") return `<audio class="unified-bubble-media" controls preload="metadata" src="${esc(url)}"></audio>`;
+        if (type === "voice" || type === "audio") return `<div class="unified-voice-card"><span class="voice-play">▶</span><span class="voice-wave"></span><audio controls preload="metadata" src="${esc(url)}"></audio></div>`;
         if (type === "file") return `<a class="unified-file-card" href="${esc(url)}" download><span>Attachment</span><span>Open</span></a>`;
         if (type === "link" || type.endsWith("_share")) return `<a class="unified-file-card" href="${esc(url)}"><span>${esc(message.body || message.content || "Shared from Pulse")}</span><span>Open</span></a>`;
         return `<img class="unified-bubble-media" src="${esc(thumb)}" alt="Message media" loading="lazy">`;
@@ -19808,29 +19883,44 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (!entries.length) return "";
         return `<div class="unified-reactions">${entries.map(([type,count]) => `<span class="unified-reaction-pill">${esc(type)} ${Number(count||0)}</span>`).join("")}</div>`;
       };
-      const bubble = message => {
+      const setTypingBubble = active => {
+        const thread = document.querySelector("[data-unified-thread]");
+        const existing = thread?.querySelector("[data-typing-bubble]");
+        if (!thread) return;
+        if (!active) { existing?.remove(); return; }
+        if (!existing) thread.insertAdjacentHTML("beforeend", '<div class="unified-typing-bubble" data-typing-bubble aria-label="Someone is typing"><i></i><i></i><i></i></div>');
+        thread.scrollTop = thread.scrollHeight;
+      };
+      const bubble = (message, previous = null) => {
         if (message.status === "system" || message.message_type === "system") return `<div class="unified-system">${esc(message.body || message.content || "Pulse update")}</div>`;
         const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_user_id || message.sender_id || 0) === Number(state.currentUserId);
         const body = esc(message.body || message.content || "");
         const id = esc(message.message_id || message.id || "");
+        const previousSender = previous ? Number(previous.sender_user_id || previous.sender_id || 0) : 0;
+        const senderId = Number(message.sender_user_id || message.sender_id || 0);
+        const grouped = previous && previousSender === senderId && dateKey(previous.created_at) === dateKey(message.created_at);
         const reply = message.reply_to ? `<button type="button" class="unified-reply-preview" data-jump-message="${esc(message.reply_to.id || "")}"><strong>${esc(message.reply_to.sender_name || "Reply")}</strong><br>${esc(message.reply_to.body || "Media message")}</button>` : "";
-        return `<div class="unified-bubble ${mine ? "me" : "them"}" data-message-id="${id}">
+        const status = mine ? (message.delivery_status || message.status || "sent") : "";
+        const meta = mine ? status : friendlyTime(message.created_at);
+        return `<div class="unified-bubble ${mine ? "me" : "them"} ${grouped ? "is-grouped" : ""}" data-message-id="${id}" data-message-actions="${id}" tabindex="0">
           ${reply}
           ${body ? `<div>${body}</div>` : ""}
           ${mediaMarkup(message)}
-          ${reactionMarkup(message.reactions)}
-          <small>${friendlyTime(message.created_at)}${message.delivery_status || message.status ? " • " + esc(message.delivery_status || message.status) : ""}</small>
-          <div class="unified-bubble-actions">
-            ${["🔥","👍","💡"].map(r => `<button type="button" data-react-message="${id}" data-reaction="${r}">${r}</button>`).join("")}
-            <button type="button" data-reply-message="${id}">Reply</button>
-            <button type="button" data-report-message="${id}">Report</button>
-            ${mine ? `<button type="button" data-delete-message="${id}">Delete</button>` : ""}
-          </div>
-        </div>`;
+          <small>${esc(meta)}</small>
+        </div>${reactionMarkup(message.reactions)}`;
       };
       const renderMessages = messages => {
         const thread = document.querySelector("[data-unified-thread]");
-        const body = (messages || []).map(bubble).join("") || '<div class="unified-empty">No messages yet. Send the first one.</div>';
+        let lastDay = "";
+        let previous = null;
+        const body = (messages || []).map(message => {
+          const key = dateKey(message.created_at);
+          const divider = key && key !== lastDay ? `<div class="unified-date-divider" data-date-divider="${esc(key)}">${esc(dividerLabel(message.created_at))}</div>` : "";
+          if (key) lastDay = key;
+          const html = divider + bubble(message, previous);
+          previous = message;
+          return html;
+        }).join("") || '<div class="unified-empty">No messages yet. Send the first one.</div>';
 	        const older = (messages || []).length >= 300 ? '<button type="button" class="unified-load-older" data-load-older>Load older messages</button>' : "";
 	        thread.innerHTML = `${older}${body}`;
         state.lastMessageId = Math.max(0, ...(messages || []).map(m => Number(m.message_id || m.id || 0) || 0));
@@ -19843,7 +19933,12 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         (messages || []).forEach(message => {
           const id = String(message.message_id || message.id || "");
           if (id && seen.has(id)) return;
-          thread.insertAdjacentHTML("beforeend", bubble(message));
+          const last = thread.querySelector(".unified-bubble:last-of-type");
+          const previous = last ? { sender_user_id: last.classList.contains("me") ? state.currentUserId : -1, created_at: message.created_at } : null;
+          const key = dateKey(message.created_at);
+          const lastDivider = thread.querySelector(".unified-date-divider:last-of-type");
+          const needsDivider = key && (!lastDivider || lastDivider.dataset.dateDivider !== key);
+          thread.insertAdjacentHTML("beforeend", `${needsDivider ? `<div class="unified-date-divider" data-date-divider="${esc(key)}">${esc(dividerLabel(message.created_at))}</div>` : ""}${bubble(message, previous)}`);
           state.lastMessageId = Math.max(state.lastMessageId, Number(message.message_id || message.id || 0));
         });
         if ((messages || []).length && nearBottom) thread.scrollTop = thread.scrollHeight;
@@ -20106,9 +20201,10 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             const bar = document.querySelector("[data-presence]");
             if (payload.typing) {
               bar.innerHTML = `<span class="presence-dot"></span><span>${esc(payload.display_name || "Someone")} is typing...</span>`;
+              setTypingBubble(true);
               clearTimeout(state.typingTimer);
-              state.typingTimer = setTimeout(refreshPresence, 1800);
-            } else refreshPresence();
+              state.typingTimer = setTimeout(() => { setTypingBubble(false); refreshPresence(); }, 1800);
+            } else { setTypingBubble(false); refreshPresence(); }
           }
           if (["room_message_created","group_message_created","pulse_message_sent"].includes(type) && conversationId === Number(state.activePulseConversation || 0) && payload.message) {
             appendMessages([payload.message]);
@@ -20195,6 +20291,23 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
 	        if (event.target.closest("[data-load-older]")) { toast("Latest message history is loaded. Older pagination is ready when this thread grows past the current window."); return; }
         if (event.target.closest("[data-close-gif-modal]") || event.target === document.querySelector("[data-gif-modal]")) { document.querySelector("[data-gif-modal]").classList.remove("is-open"); document.querySelector("[data-gif-modal]").setAttribute("aria-hidden", "true"); return; }
         if (event.target.closest("[data-capture-close]") || event.target === document.querySelector("[data-capture-modal]")) { closeCapture(); return; }
+        if (event.target.closest("[data-close-message-actions]") || event.target === document.querySelector("[data-message-actions-modal]")) { showMessageActions("", false); return; }
+        const sheetReaction = event.target.closest("[data-sheet-reaction]");
+        if (sheetReaction && state.selectedMessageId) {
+          try {
+            const result = await pulseApi(`/api/pulse/messages/${state.selectedMessageId}/react`, { method: "POST", body: JSON.stringify({ reaction_type: sheetReaction.dataset.sheetReaction }) });
+            const node = document.querySelector(`[data-message-id="${CSS.escape(state.selectedMessageId)}"]`);
+            node?.nextElementSibling?.classList?.contains("unified-reactions") && node.nextElementSibling.remove();
+            node?.insertAdjacentHTML("afterend", reactionMarkup(result.reactions || {}));
+          } catch (error) { toast(error.message); }
+          showMessageActions("", false);
+          return;
+        }
+        if (event.target.closest("[data-sheet-reply]") && state.selectedMessageId) { state.replyToId = Number(state.selectedMessageId || 0); const bar = document.querySelector("[data-reply-bar]"); bar.textContent = "Replying to message #" + state.replyToId + "  ×"; bar.classList.add("is-on"); document.querySelector("[data-unified-send-form] textarea").focus(); showMessageActions("", false); return; }
+        if (event.target.closest("[data-sheet-report]") && state.selectedMessageId) { const reason = prompt("Report reason: spam, scam, harassment, unsafe link, or other", "spam"); if (reason) { try { const result = await pulseApi(`/api/pulse/messages/${state.selectedMessageId}/report`, { method: "POST", body: JSON.stringify({ reason }) }); toast(result.message || "Report submitted."); } catch (error) { toast(error.message); } } showMessageActions("", false); return; }
+        if (event.target.closest("[data-sheet-delete]") && state.selectedMessageId) { if (confirm("Delete this message?")) { try { await pulseApi(`/api/pulse/messages/${state.selectedMessageId}/delete`, { method: "POST", body: JSON.stringify({}) }); document.querySelector(`[data-message-id="${CSS.escape(state.selectedMessageId)}"]`)?.remove(); toast("Message deleted."); } catch (error) { toast(error.message); } } showMessageActions("", false); return; }
+        const messageBubble = event.target.closest("[data-message-actions]");
+        if (messageBubble && window.matchMedia("(max-width: 900px)").matches && !event.target.closest("a,button,video,audio")) { showMessageActions(messageBubble.dataset.messageActions, true); return; }
         if (event.target.closest("[data-capture-retake]")) { closeCapture(); openCapture(state.captureMode).catch(error => toast(error.message)); return; }
         if (event.target.closest("[data-capture-use]")) {
           try {
@@ -20591,7 +20704,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       setInterval(refreshPresence, 15000);
     })();
     """
-    return pulse_social_shell("Pulse Messenger", "One working private chat system shared with the dashboard.", main, "", script)
+    return pulse_social_shell("Pulse Messenger", "Secure Pulse conversations, rooms, and group chats in one calm realtime hub.", main, "", script)
 
 
 @webhook_app.route("/pulse/messages", methods=["GET"])
