@@ -19612,6 +19612,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-camera-preview{width:100%;max-height:54dvh;border-radius:18px;background:#020713;object-fit:cover}
     .unified-recorder-status{display:flex;align-items:center;gap:8px;color:var(--muted)}
     .unified-record-dot{width:10px;height:10px;border-radius:999px;background:#ff335f;box-shadow:0 0 18px rgba(255,51,95,.9);animation:msgIn .65s ease-in-out infinite alternate}
+    .unified-back{display:none}
+    .unified-thread-avatar{width:38px;height:38px;flex:0 0 auto;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(110,223,246,.96),rgba(54,229,143,.82));color:#06101b;font-weight:950;box-shadow:0 0 22px rgba(110,223,246,.2)}
+    .unified-thread-copy{min-width:0;display:grid;gap:2px}.unified-thread-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.unified-thread-status{font-size:12px;color:rgba(213,239,245,.66);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .unified-thread-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+    .unified-icon-button{width:36px;min-width:36px;height:36px;min-height:36px;padding:0;border-radius:999px;display:grid;place-items:center}
     @media(max-width:900px){
       body:has(.unified-messenger){overflow:hidden;background:radial-gradient(circle at 50% -10%,rgba(110,223,246,.2),transparent 22rem),linear-gradient(180deg,#071423,#03070d)}
       body:has(.unified-messenger) .wrap{padding:0!important;width:100%!important;max-width:100%!important}
@@ -19634,17 +19639,24 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       .unified-tabs [data-tab="groups"]::after{content:"Groups"}
       .unified-tabs button.is-active{box-shadow:0 10px 24px rgba(54,229,143,.18)}
       .unified-messenger-body{min-height:0;grid-template-columns:1fr;background:radial-gradient(circle at 84% 8%,rgba(110,223,246,.08),transparent 16rem)}
+      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-head{display:none}
+      .unified-messenger:has(.unified-thread-pane.is-open){grid-template-rows:minmax(0,1fr) auto}
       .unified-sidebar{padding:10px 12px 18px;border-right:0;gap:9px}
       .unified-sidebar.is-thread-open{display:none}
       .unified-search{grid-template-columns:minmax(0,1fr) 44px;gap:7px}.unified-search button{font-size:0;border-radius:14px;padding:0}.unified-search button:before{content:"⌕";font-size:18px}
       .unified-row{border-radius:18px;padding:12px;background:rgba(255,255,255,.055)}
-      .unified-thread-pane{grid-template-rows:auto auto minmax(0,1fr);min-height:0}
+      .unified-thread-pane{grid-template-rows:auto auto minmax(0,1fr);min-height:0;background:linear-gradient(180deg,rgba(7,17,31,.38),rgba(2,7,13,.12))}
       .unified-thread-pane:not(.is-open){display:none}
-      .unified-thread-top{padding:9px 14px 8px;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,13,24,.78);backdrop-filter:blur(12px)}
-      .unified-thread-title strong{font-size:17px}.unified-thread-title span{display:flex;align-items:center;gap:5px}.unified-thread-title [data-pin-active-chat]{display:none!important}
-      .unified-presence{font-size:12px;min-height:18px}.presence-dot{width:7px;height:7px}
+      .unified-thread-top{padding:calc(8px + env(safe-area-inset-top)) 10px 8px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(3,10,19,.86);backdrop-filter:blur(12px);box-shadow:0 10px 28px rgba(0,0,0,.2)}
+      .unified-thread-title{display:flex;align-items:center;gap:9px;min-width:0}
+      .unified-back{display:grid;place-items:center;width:36px;min-width:36px;height:36px;min-height:36px;border-radius:999px;padding:0;font-size:23px;background:rgba(255,255,255,.055);border-color:rgba(110,223,246,.13)}
+      .unified-thread-avatar{width:34px;height:34px;border-radius:13px}
+      .unified-thread-copy strong{font-size:16px;line-height:1.1}.unified-thread-status{font-size:11px}
+      .unified-thread-title [data-pin-active-chat],.unified-thread-title [data-thread-mode]{display:none!important}
+      .unified-thread-actions{gap:5px}.unified-icon-button{width:34px;min-width:34px;height:34px;min-height:34px;font-size:13px;background:rgba(255,255,255,.04);border-color:rgba(110,223,246,.13)}
+      .unified-presence{display:none}
       .unified-room-banner{margin:8px 12px 0;padding:10px 12px;border-radius:16px}
-      .unified-thread{padding:12px 10px 14px;gap:3px;background:linear-gradient(180deg,rgba(7,17,31,.18),rgba(2,7,13,.1))}
+      .unified-thread{padding:13px 10px 12px;gap:3px;background:transparent}
       .unified-empty{padding:14px;border-radius:16px}
       .unified-bubble{max-width:82%;padding:8px 11px;border-radius:17px;font-size:15px;line-height:1.36;box-shadow:0 8px 22px rgba(0,0,0,.16)}
       .unified-bubble.me{max-width:80%;border-bottom-right-radius:5px}.unified-bubble.them{max-width:80%;border-bottom-left-radius:5px}
@@ -19652,10 +19664,10 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       .unified-bubble-media{width:min(250px,68vw);max-height:300px;border-radius:13px}
       .unified-file-card{padding:9px;border-radius:13px}
       .unified-reactions{max-width:80%;margin:2px 8px 4px}
-      .unified-composer{position:relative;grid-template-columns:44px minmax(0,1fr) 54px;gap:8px;padding:9px 12px calc(9px + env(safe-area-inset-bottom));background:rgba(2,8,15,.98);backdrop-filter:blur(14px);box-shadow:0 -10px 32px rgba(0,0,0,.24)}
-      .unified-composer textarea{min-height:44px;max-height:106px;border-radius:22px;padding:11px 14px;background:rgba(9,20,34,.92);font-size:15px}
-      .unified-composer button{width:54px;min-width:54px;min-height:44px;padding:0;border-radius:18px}
-      .unified-attach{width:44px!important;min-width:44px!important;border-radius:16px!important}
+      .unified-composer{position:relative;grid-template-columns:38px minmax(0,1fr) 48px;gap:7px;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:rgba(1,7,13,.985);backdrop-filter:blur(12px);box-shadow:0 -8px 28px rgba(0,0,0,.22)}
+      .unified-composer textarea{min-height:40px;max-height:104px;border-radius:22px;padding:10px 13px;background:rgba(9,20,34,.92);font-size:15px;line-height:1.25}
+      .unified-composer button{width:48px;min-width:48px;min-height:40px;padding:0;border-radius:18px}
+      .unified-attach{width:38px!important;min-width:38px!important;border-radius:999px!important;font-size:24px;line-height:1}
       .unified-media-preview,.unified-reply-bar,.unified-upload-progress{grid-column:1/-1}
       .unified-media-tray button{width:auto!important;min-width:0!important;padding:8px!important}
       .unified-media-tray{position:fixed;left:10px;right:10px;grid-template-columns:repeat(3,minmax(0,1fr));bottom:calc(72px + env(safe-area-inset-bottom));border-radius:22px}
@@ -19710,7 +19722,12 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         </aside>
         <main class="unified-thread-pane" data-unified-thread-pane>
           <div class="unified-thread-top">
-            <div class="unified-thread-title"><strong data-thread-title>Choose a chat</strong><span><button type="button" data-pin-active-chat hidden>Pin</button> <span class="pill" data-thread-mode>Idle</span></span></div>
+            <div class="unified-thread-title">
+              <button class="unified-back" type="button" data-mobile-chat-back aria-label="Back to chats">‹</button>
+              <span class="unified-thread-avatar" data-thread-avatar>PM</span>
+              <span class="unified-thread-copy"><strong data-thread-title>Choose a chat</strong><span class="unified-thread-status" data-thread-status>Open a room or chat to see live presence.</span></span>
+              <span class="unified-thread-actions"><button class="unified-icon-button" type="button" aria-label="Voice call">☎</button><button class="unified-icon-button" type="button" aria-label="Video call">◉</button><button class="unified-icon-button" type="button" aria-label="Chat options">⋯</button><button type="button" data-pin-active-chat hidden>Pin</button> <span class="pill" data-thread-mode>Idle</span></span>
+            </div>
             <div class="unified-presence" data-presence><span class="presence-dot"></span><span>Open a room or chat to see live presence.</span></div>
           </div>
           <div class="unified-room-banner" data-room-banner hidden>
@@ -19952,8 +19969,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         form.message.placeholder = enabled ? (mode === "room" && state.activeRoomId ? `Message ${state.activeRoomName || "this room"}...` : "Write a message...") : label;
       };
       const setThreadChrome = (title, mode) => {
-        document.querySelector("[data-thread-title]").textContent = title || "Pulse Messenger";
-        document.querySelector("[data-thread-mode]").textContent = mode || "Live";
+        const cleanTitle = title || "Pulse Messenger";
+        const cleanMode = mode || "Live";
+        document.querySelector("[data-thread-title]").textContent = cleanTitle;
+        document.querySelector("[data-thread-mode]").textContent = cleanMode;
+        document.querySelector("[data-thread-avatar]").textContent = (cleanTitle.trim()[0] || "P").toUpperCase();
+        const statusText = cleanMode === "Room" ? "Live room • active now" : cleanMode === "Group" ? "Group chat • recently active" : cleanMode === "Direct" ? "recently active" : "secure Pulse chat";
+        document.querySelector("[data-thread-status]").textContent = statusText;
         document.querySelector("[data-pin-active-chat]").hidden = !state.activePulseConversation;
       };
       const closeCapture = () => {
@@ -20257,6 +20279,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         }
       }
       document.addEventListener("click", async event => {
+        if (event.target.closest("[data-mobile-chat-back]")) {
+          document.querySelector("[data-unified-sidebar]").classList.remove("is-thread-open");
+          document.querySelector("[data-unified-thread-pane]").classList.remove("is-open");
+          return;
+        }
         const tab = event.target.closest("[data-tab],[data-switch-tab]");
         if (tab) { setTab(tab.dataset.tab || tab.dataset.switchTab); showMenu(false); return; }
         if (event.target.closest("[data-unified-menu-toggle]")) { showMenu(document.querySelector("[data-unified-menu]").hidden); return; }
