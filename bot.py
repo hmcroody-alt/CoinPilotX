@@ -19,6 +19,11 @@ import smtplib
 import time
 import xml.etree.ElementTree as ET
 
+print("CoinPilotX web boot starting", flush=True)
+print("PORT=", os.environ.get("PORT"), flush=True)
+print("DATABASE_URL present=", bool(os.environ.get("DATABASE_URL")), flush=True)
+print("REDIS_URL present=", bool(os.environ.get("REDIS_URL")), flush=True)
+
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import quote, urlparse
@@ -40999,7 +41004,7 @@ def admin_summary():
 
 @webhook_app.route("/health", methods=["GET"])
 def health_check():
-    response = jsonify({"ok": True, "status": "online"})
+    response = jsonify({"ok": True, "service": "coinpilotx-web"})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response, 200
 
@@ -43359,3 +43364,5 @@ def main():
 if __name__ == "__main__":
     threading.Thread(target=run_webhook, daemon=True).start()
     main()
+
+print("CoinPilotX web boot complete", flush=True)
