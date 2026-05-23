@@ -19321,9 +19321,15 @@ def admin_performance_page():
     slow = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM performance_traces ORDER BY created_at DESC LIMIT 30")
     traces = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name IN ('coinpilotx-media-engine','media_worker') ORDER BY last_seen_at DESC LIMIT 2")
+    media_worker_heartbeats = [dict(row) for row in cur.fetchall()]
     conn.close()
     slow_rows = "".join(f"<tr><td>{clean_html(r.get('path'))}</td><td>{int(r.get('hits') or 0)}</td><td>{int(r.get('avg_ms') or 0)}</td><td>{int(r.get('max_ms') or 0)}</td><td>{int(r.get('avg_queries') or 0)}</td><td>{int(r.get('avg_size') or 0)}</td></tr>" for r in slow) or "<tr><td colspan='6'>No slow traces recorded yet.</td></tr>"
     trace_rows = "".join(f"<tr><td>{clean_html(t.get('trace_id'))}</td><td>{clean_html(t.get('level'))}</td><td>{clean_html(t.get('method'))}</td><td>{clean_html(t.get('path'))}</td><td>{int(t.get('duration_ms') or 0)}</td><td>{int(t.get('db_query_count') or 0)}</td><td>{int(t.get('response_size') or 0)}</td><td>{smart_time_html(t.get('created_at'))}</td></tr>" for t in traces) or "<tr><td colspan='8'>No traces yet.</td></tr>"
+    media_worker_rows = "".join(
+        f"<tr><td>{clean_html(row.get('worker_name'))}</td><td>{clean_html(row.get('status'))}</td><td>{smart_time_html(row.get('last_seen_at'))}</td><td>{clean_html(row.get('last_error') or '')}</td><td><code>{clean_html((row.get('metadata_json') or '')[:320])}</code></td></tr>"
+        for row in media_worker_heartbeats
+    ) or "<tr><td colspan='5'>No media engine heartbeat has been recorded yet.</td></tr>"
     cache_status = cache_engine.cache_status()
     media_status = media_storage.storage_status()
     body = f"""
@@ -19335,6 +19341,7 @@ def admin_performance_page():
     </section>
     <section class='card table-wrap'><h2>Slowest Routes - 24h</h2><table><tr><th>Path</th><th>Hits</th><th>Avg ms</th><th>Max ms</th><th>Avg DB</th><th>Avg bytes</th></tr>{slow_rows}</table></section>
     <section class='card table-wrap'><h2>Latest Slow Traces</h2><table><tr><th>Trace</th><th>Level</th><th>Method</th><th>Path</th><th>ms</th><th>DB</th><th>Bytes</th><th>Time</th></tr>{trace_rows}</table></section>
+    <section class='card table-wrap'><h2>Media Engine Heartbeat</h2><p class='muted'>Railway worker start command: <code>python media_worker.py</code></p><table><tr><th>Worker</th><th>Status</th><th>Last Seen</th><th>Last Error</th><th>Details</th></tr>{media_worker_rows}</table></section>
     <section class='card'><h2>Railway Production Shape</h2><p><code>gunicorn bot:app --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -</code></p><p class='muted'>Redis and Cloudflare are optional accelerators; private authenticated HTML must stay uncached.</p></section>
     """
     return admin_page_html("Performance", body, admin)

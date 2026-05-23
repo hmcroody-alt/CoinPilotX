@@ -13,14 +13,29 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import shutil
 import time
-from datetime import datetime, timedelta
+import traceback
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import bot
+print("CoinPilotX media engine boot starting", flush=True)
+print("DATABASE_URL present=", bool(os.getenv("DATABASE_URL")), flush=True)
+print("REDIS_URL present=", bool(os.getenv("REDIS_URL")), flush=True)
+print("MEDIA_STORAGE_PROVIDER=", os.getenv("MEDIA_STORAGE_PROVIDER", "local"), flush=True)
+print("R2_BUCKET present=", bool(os.getenv("R2_BUCKET")), flush=True)
+print("R2_PUBLIC_BASE_URL present=", bool(os.getenv("R2_PUBLIC_BASE_URL")), flush=True)
+print("ffmpeg present=", bool(shutil.which("ffmpeg")), flush=True)
+
+try:
+    import bot
+except Exception as exc:
+    print("CoinPilotX media engine import failed", repr(exc), flush=True)
+    traceback.print_exc()
+    raise
 
 
-WORKER_NAME = "media_worker"
+WORKER_NAME = "coinpilotx-media-engine"
 INTERVAL_SECONDS = max(5, int(os.getenv("MEDIA_WORKER_INTERVAL_SECONDS", "20")))
 BATCH_SIZE = max(1, min(int(os.getenv("MEDIA_WORKER_BATCH_SIZE", "25")), 100))
 MAX_ATTEMPTS = max(1, int(os.getenv("MEDIA_WORKER_MAX_ATTEMPTS", "3")))
@@ -29,12 +44,48 @@ RUNNING = True
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _handle_stop(_signum, _frame) -> None:
     global RUNNING
     RUNNING = False
+
+
+def dependency_snapshot() -> dict:
+    storage_provider = os.getenv("MEDIA_STORAGE_PROVIDER", "local").strip().lower() or "local"
+    r2_bucket = bool(os.getenv("R2_BUCKET"))
+    r2_public_base_url = bool(os.getenv("R2_PUBLIC_BASE_URL"))
+    storage_configured = True
+    if storage_provider in {"r2", "s3"}:
+        storage_configured = r2_bucket and r2_public_base_url
+    return {
+        "database_url_present": bool(os.getenv("DATABASE_URL")),
+        "redis_url_present": bool(os.getenv("REDIS_URL")),
+        "media_storage_provider": storage_provider,
+        "storage_configured": storage_configured,
+        "r2_bucket_present": r2_bucket,
+        "r2_public_base_url_present": r2_public_base_url,
+        "ffmpeg_present": bool(shutil.which("ffmpeg")),
+        "batch_size": BATCH_SIZE,
+        "interval_seconds": INTERVAL_SECONDS,
+    }
+
+
+def log_boot_diagnostics() -> None:
+    details = dependency_snapshot()
+    logging.info(
+        "MEDIA_ENGINE_BOOT_CHECK database_url=%s redis_url=%s provider=%s storage_configured=%s ffmpeg=%s",
+        details["database_url_present"],
+        details["redis_url_present"],
+        details["media_storage_provider"],
+        details["storage_configured"],
+        details["ffmpeg_present"],
+    )
+    if details["media_storage_provider"] in {"r2", "s3"} and not details["storage_configured"]:
+        logging.warning("MEDIA_ENGINE_STORAGE_CONFIG_INCOMPLETE provider=%s", details["media_storage_provider"])
+    if not details["ffmpeg_present"]:
+        logging.warning("MEDIA_ENGINE_FFMPEG_MISSING thumbnails/transcoding will use safe fallbacks until ffmpeg is installed")
 
 
 def _media_path(media_url: str) -> Path | None:
@@ -124,7 +175,7 @@ def _fail_or_retry_job(cur, job, error: Exception) -> None:
     attempts = int(job.get("attempts") or 0) + 1
     max_attempts = int(job.get("max_attempts") or MAX_ATTEMPTS)
     status = "failed" if attempts >= max_attempts else "pending"
-    run_after = (datetime.utcnow() + timedelta(seconds=min(900, 30 * attempts))).isoformat(timespec="seconds")
+    run_after = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=min(900, 30 * attempts))).isoformat(timespec="seconds")
     cur.execute(
         "UPDATE pulse_jobs SET status=?, attempts=?, error_message=?, run_after=?, updated_at=? WHERE id=?",
         (status, attempts, str(error)[:1000], run_after, _now(), int(job.get("id") or 0)),
@@ -203,7 +254,12 @@ def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
+    log_boot_diagnostics()
     bot.init_db()
+    try:
+        bot.record_worker_heartbeat(WORKER_NAME, "booting", metadata=dependency_snapshot())
+    except Exception:
+        logging.exception("Media worker boot heartbeat failed")
     logging.info(
         "MEDIA_WORKER_START database_url=%s provider=%s batch_size=%s interval=%s",
         bool(os.getenv("DATABASE_URL")),
@@ -211,15 +267,17 @@ def main() -> None:
         BATCH_SIZE,
         INTERVAL_SECONDS,
     )
+    print("CoinPilotX media engine boot complete", flush=True)
     while RUNNING:
         try:
             result = run_cycle()
+            result["dependencies"] = dependency_snapshot()
             bot.record_worker_heartbeat(WORKER_NAME, "healthy", metadata=result)
             logging.info("MEDIA_WORKER_CYCLE uploads=%s jobs=%s", result.get("uploads"), result.get("jobs"))
         except Exception as exc:
             logging.exception("MEDIA_WORKER_CYCLE_FAILED error=%s", exc)
             try:
-                bot.record_worker_heartbeat(WORKER_NAME, "error", str(exc), {"batch_size": BATCH_SIZE})
+                bot.record_worker_heartbeat(WORKER_NAME, "error", str(exc), dependency_snapshot())
             except Exception:
                 logging.exception("Media worker heartbeat failed")
         for _ in range(INTERVAL_SECONDS):
