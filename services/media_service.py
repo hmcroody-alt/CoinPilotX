@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from werkzeug.utils import secure_filename
 
@@ -109,6 +110,30 @@ def normalize_url(url):
     return value if value.startswith("/") else "/" + value
 
 
+def cdn_url_for_key(storage_key):
+    """Return the canonical CDN URL for an object-storage key."""
+    key = str(storage_key or "").strip().replace("\\", "/").lstrip("/")
+    if not key:
+        return ""
+    base = os.getenv("R2_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if not base:
+        return ""
+    return f"{base}/{key}"
+
+
+def validate_remote_url(url, timeout=2.5):
+    """Fast HEAD validation for audits and admin diagnostics, not hot rendering."""
+    value = normalize_url(url)
+    if not value.startswith(("http://", "https://")):
+        return _url_available(value), "local"
+    try:
+        req = Request(value, method="HEAD", headers={"User-Agent": "CoinPilotX-MediaAudit/1.0"})
+        with urlopen(req, timeout=float(timeout or 2.5)) as resp:
+            return 200 <= int(getattr(resp, "status", 200)) < 400, str(getattr(resp, "status", "ok"))
+    except Exception as exc:
+        return False, exc.__class__.__name__
+
+
 def local_path_for_url(url):
     value = normalize_url(url)
     if not value or value.startswith(("http://", "https://", "data:", "blob:")):
@@ -159,12 +184,20 @@ def _orientation(width, height, ratio):
 
 def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_type="", check_remote=False):
     item = dict(media or {})
-    source = url or item.get("public_url") or item.get("media_url") or item.get("valid_url") or ""
+    storage_key = item.get("storage_key") or item.get("stored_filename") or ""
+    canonical_cdn_url = cdn_url_for_key(storage_key)
+    source = url or item.get("public_url") or item.get("media_url") or item.get("valid_url") or canonical_cdn_url or ""
     thumb = thumbnail_url or item.get("thumbnail_url") or item.get("medium_url") or item.get("small_url") or source
     poster = poster_url or item.get("poster_url") or thumb
     source = normalize_url(source)
+    if source.startswith("/static/uploads/") and canonical_cdn_url and media_storage.provider() in {"r2", "s3"}:
+        source = canonical_cdn_url
     thumb = normalize_url(thumb)
+    if thumb.startswith("/static/uploads/") and canonical_cdn_url and media_storage.provider() in {"r2", "s3"}:
+        thumb = canonical_cdn_url
     poster = normalize_url(poster)
+    if poster.startswith("/static/uploads/") and canonical_cdn_url and media_storage.provider() in {"r2", "s3"}:
+        poster = canonical_cdn_url
     width = int(float(item.get("width") or 0) or 0)
     height = int(float(item.get("height") or 0) or 0)
     ratio = item.get("aspect_ratio")
@@ -183,10 +216,13 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             kind = "audio"
         else:
             kind = "image"
-    provider = item.get("storage_provider") or item.get("provider") or ("remote" if source.startswith(("http://", "https://")) else media_storage.provider())
+    provider = item.get("storage_provider") or item.get("provider") or ("r2" if canonical_cdn_url else "remote" if source.startswith(("http://", "https://")) else media_storage.provider())
     available = item.get("is_available")
     if available is None:
-        available = _url_available(source, provider=provider)
+        if check_remote and source.startswith(("http://", "https://")):
+            available, _ = validate_remote_url(source)
+        else:
+            available = _url_available(source, provider=provider)
     else:
         available = bool(int(available)) if str(available).isdigit() else bool(available)
     srcset = item.get("srcset") or ""
@@ -209,6 +245,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     return {
         "id": item.get("id"),
         "valid_url": source if available else "",
+        "cdn_url": canonical_cdn_url,
         "media_url": source,
         "thumbnail_url": thumb or source,
         "poster_url": poster or thumb or source,
@@ -222,12 +259,15 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "orientation": _orientation(width, height, ratio),
         "is_available": bool(available),
         "storage_provider": provider,
-        "storage_key": item.get("storage_key") or "",
+        "storage_key": storage_key,
+        "hydration_state": "ready" if available else ("restoring" if source else "missing"),
+        "content_type_verified": bool(item.get("mime_type") or mimetypes.guess_type(source)[0]),
         "srcset": srcset,
         "sizes": item.get("sizes") or "(max-width: 760px) 100vw, (max-width: 1400px) 760px, 900px",
         "variants": variants,
         "diagnostics": {
             "source": source,
+            "cdn_url": canonical_cdn_url,
             "thumbnail": thumb,
             "provider": provider,
             "local_path": local_path_for_url(source) if source and not source.startswith(("http://", "https://")) else "",

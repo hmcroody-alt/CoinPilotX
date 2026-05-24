@@ -43,7 +43,7 @@ def main():
     bot.init_db()
     user_id = ensure_user()
     conn = bot.db(); cur = conn.cursor()
-    for table in ["pulse_status", "pulse_status_views", "pulse_status_reactions", "pulse_status_music", "pulse_status_media", "pulse_status_live"]:
+    for table in ["pulse_status", "pulse_statuses", "pulse_status_views", "pulse_status_reactions", "pulse_status_replies", "pulse_status_music", "pulse_status_media", "pulse_status_live"]:
         expect(table_exists(cur, table), f"{table} exists")
     conn.close()
     client = bot.webhook_app.test_client()
@@ -59,11 +59,10 @@ def main():
     expect((client.post(f"/api/pulse/status/{status_id}/view").get_json() or {}).get("ok") is True, "status view API works")
     expect((client.post(f"/api/pulse/status/{status_id}/react", json={"reaction_type": "fire"}).get_json() or {}).get("ok") is True, "status reaction API works")
     html = client.get("/pulse").get_data(as_text=True)
-    for token in ["pulse-status-rail", "pulse-status-viewer", "data-status-card"]:
+    for token in ["pulse-status-rail", "pulse-status-viewer", "data-status-card", "pulseStatusForm", "pulseStatusMedia", "pulseStatusSound", "/pulse/camera?target=status"]:
         expect(token in html, f"status UI contains {token}")
     print("pulse status audit ok")
 
 
 if __name__ == "__main__":
     main()
-
