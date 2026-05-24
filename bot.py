@@ -139,6 +139,7 @@ from services import (
     pro_access as pro_access_service,
     pulse_feed_engine,
     pulse_feed_ranking_engine,
+    chat_health_service,
     pulse_moderation_engine,
     pulse_search_engine,
     privilege_engine,
@@ -3434,6 +3435,9 @@ def friendly_internal_error(error):
     trace_id = secrets.token_hex(6)
     logging.exception("HTTP_500 trace_id=%s path=%s method=%s", trace_id, request.path, request.method)
     if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
+        if request.path.startswith(("/api/pulse/messages", "/api/pulse/chatrooms")):
+            payload = chat_health_service.chat_recovery_payload(trace_id, mode="syncing", message="Messages syncing. Tap to retry.")
+            return jsonify({"ok": False, **payload}), 500
         return jsonify({"ok": False, "message": "Something needs attention. Please try again.", "trace_id": trace_id}), 500
     body = (
         "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -17138,6 +17142,28 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         created_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_health_traces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trace_id TEXT,
+        user_id INTEGER,
+        endpoint TEXT,
+        status TEXT,
+        details_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_chat_recovery_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trace_id TEXT,
+        user_id INTEGER,
+        conversation_id INTEGER,
+        event_type TEXT,
+        details_json TEXT,
+        created_at TEXT
+    )
+    """)
     for statement in [
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_conversation ON pulse_conversation_participants(conversation_id, user_id)",
@@ -17158,6 +17184,8 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         "CREATE INDEX IF NOT EXISTS idx_pulse_room_messages_room ON pulse_room_messages(room_id, message_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_message_threads_users ON pulse_message_threads(user_one_id, user_two_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_message_threads_conversation ON pulse_message_threads(conversation_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_chat_health_traces_trace ON pulse_chat_health_traces(trace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_chat_recovery_user ON pulse_chat_recovery_events(user_id, conversation_id, created_at)",
     ]:
         try:
             cur.execute(statement)
@@ -20976,7 +21004,39 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     (() => {
       const root = document.querySelector("[data-unified-messenger]");
       if (!root) return;
-	      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: Number(root.dataset.activePulseConversation || 0), activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null, creatingGroup: false, captureStream: null, captureRecorder: null, captureChunks: [], captureMode: "photo", capturedBlob: null, voiceRecorder: null, voiceStream: null, voiceChunks: [], selectedMessageId: "" };
+	      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: Number(root.dataset.activePulseConversation || 0), activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null, creatingGroup: false, captureStream: null, captureRecorder: null, captureChunks: [], captureMode: "photo", capturedBlob: null, voiceRecorder: null, voiceStream: null, voiceChunks: [], selectedMessageId: "", pendingFlush: false, pendingRetryTimer: 0, offline: !navigator.onLine };
+      const pendingKey = "pulseMessengerPendingV2";
+      const draftsKey = "pulseMessengerDraftsV2";
+      const cacheKey = name => "pulseMessengerCacheV2:" + name;
+      const safeJson = (value, fallback) => { try { return JSON.parse(value || ""); } catch (error) { return fallback; } };
+      const readPending = () => safeJson(localStorage.getItem(pendingKey), []);
+      const writePending = items => localStorage.setItem(pendingKey, JSON.stringify((items || []).slice(-60)));
+      const cacheList = (name, data) => { try { localStorage.setItem(cacheKey(name), JSON.stringify({ at: Date.now(), data })); } catch (error) {} };
+      const readCachedList = name => {
+        const cached = safeJson(localStorage.getItem(cacheKey(name)), null);
+        if (!cached || Date.now() - Number(cached.at || 0) > 120000) return null;
+        return cached.data || null;
+      };
+      const saveDraft = () => {
+        try {
+          const textarea = document.querySelector("[data-unified-send-form] textarea");
+          const drafts = safeJson(localStorage.getItem(draftsKey), {});
+          if (state.activePulseConversation && textarea) drafts[String(state.activePulseConversation)] = textarea.value || "";
+          localStorage.setItem(draftsKey, JSON.stringify(drafts));
+        } catch (error) {}
+      };
+      const restoreDraft = () => {
+        try {
+          const textarea = document.querySelector("[data-unified-send-form] textarea");
+          const drafts = safeJson(localStorage.getItem(draftsKey), {});
+          if (state.activePulseConversation && textarea && !textarea.value) textarea.value = drafts[String(state.activePulseConversation)] || "";
+        } catch (error) {}
+      };
+      const setNetworkStatus = (mode, copy) => {
+        const bar = document.querySelector("[data-presence]");
+        const messages = { reconnecting: "Reconnecting securely…", offline: "Offline temporarily. Messages will send when you are back online.", syncing: "Messages syncing…", retrying: "Retrying connection…" };
+        if (bar) bar.innerHTML = `<span class="presence-dot"></span><span>${esc(copy || messages[mode] || "Messages syncing…")}</span>`;
+      };
       const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
       const friendlyTime = value => {
         if (!value) return "";
@@ -21255,7 +21315,12 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       }
       async function loadThreads() {
         const box = document.querySelector("[data-unified-conversations]");
-        box.innerHTML = '<div class="unified-empty">Loading conversations...</div>';
+        const cached = readCachedList("chats");
+        if (cached) {
+          box.innerHTML = cached;
+        } else {
+          box.innerHTML = '<div class="unified-empty">Loading conversations...</div>';
+        }
         try {
           const response = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
           const responseText = await response.text();
@@ -21274,14 +21339,18 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
               <span class="${typing ? "typing-preview" : ""}">${esc(typing || item.latest_message || "No messages yet.")}</span>
               <span>${friendlyTime(item.last_message_at || item.updated_at)}</span>
             </button>`}).join("") || '<div class="unified-empty">No private chats yet. Search for a Pulse user to start a conversation.</div>';
+          cacheList("chats", box.innerHTML);
         } catch (error) {
           console.error("Chats failed", error);
-          box.innerHTML = `<div class="unified-empty"><strong>Chats could not load.</strong><br><span>${esc(error.message || "Private chat is temporarily unavailable.")}</span><br><button type="button" data-retry-list="chats">Tap to retry</button></div>`;
+          if (!cached) box.innerHTML = `<div class="unified-empty"><strong>Reconnecting securely…</strong><br><span>${esc(error.message || "Private chat is temporarily unavailable.")}</span><br><button type="button" data-retry-list="chats">Tap to retry</button></div>`;
+          setNetworkStatus("retrying");
         }
       }
       async function loadGroups() {
         const box = document.querySelector("[data-unified-groups]");
-        box.innerHTML = '<div class="unified-empty">Loading group chats...</div>';
+        const cached = readCachedList("groups");
+        if (cached) box.innerHTML = cached;
+        else box.innerHTML = '<div class="unified-empty">Loading group chats...</div>';
         try {
           const response = await fetch("/api/pulse/messages/group-conversations", { cache: "no-store", credentials: "same-origin" });
           const data = await response.json();
@@ -21295,14 +21364,18 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
               <span class="${typing ? "typing-preview" : ""}">${esc(typing || item.latest_message || "No messages yet.")}</span>
               <span>${esc(item.conversation_type || "group")} • ${Number(item.member_count || 0)} members • ${friendlyTime(item.last_message_at || item.updated_at)}</span>
             </button>`}).join("") || '<div class="unified-empty">No group chats yet. Create one with friends, creators, or your community.</div>';
+          cacheList("groups", box.innerHTML);
         } catch (error) {
           console.error("Group chats failed", error);
-          box.innerHTML = `<div class="unified-empty"><strong>Group chats could not load.</strong><br><span>${esc(error.message || "Group chats are temporarily unavailable.")}</span><br><button type="button" data-retry-list="groups">Tap to retry</button></div>`;
+          if (!cached) box.innerHTML = `<div class="unified-empty"><strong>Reconnecting securely…</strong><br><span>${esc(error.message || "Group chats are temporarily unavailable.")}</span><br><button type="button" data-retry-list="groups">Tap to retry</button></div>`;
+          setNetworkStatus("retrying");
         }
       }
       async function loadRooms() {
         const box = document.querySelector("[data-unified-rooms]");
-        box.innerHTML = '<div class="unified-empty">Loading chat rooms...</div>';
+        const cached = readCachedList("rooms");
+        if (cached) box.innerHTML = cached;
+        else box.innerHTML = '<div class="unified-empty">Loading chat rooms...</div>';
         try {
           const response = await fetch("/api/pulse/chatrooms", { cache: "no-store", credentials: "same-origin" });
           const responseText = await response.text();
@@ -21325,9 +21398,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
               <strong>${esc(room.name)}<span class="pill">Pulse ${Math.min(99, 55 + Number(room.online_count || 0) * 3)}%</span></strong>
               <span>${esc(room.pinned_notice || room.description || "")}</span>
             </button>`).join("") || '<div class="unified-empty">Rooms are warming up.</div>';
+          cacheList("rooms", box.innerHTML);
         } catch (error) {
           console.error("Chat room load failed", error);
-          box.innerHTML = `<div class="unified-empty"><strong>Rooms could not load.</strong><br><span>${esc(error.message || "Chat rooms are temporarily unavailable.")}</span><br><button type="button" data-retry-list="rooms">Tap to retry</button></div>`;
+          if (!cached) box.innerHTML = `<div class="unified-empty"><strong>Reconnecting securely…</strong><br><span>${esc(error.message || "Chat rooms are temporarily unavailable.")}</span><br><button type="button" data-retry-list="rooms">Tap to retry</button></div>`;
+          setNetworkStatus("retrying");
         }
       }
       async function openThread(id) {
@@ -21364,11 +21439,14 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           if (state.mode === "group") loadGroups();
           if (state.mode === "direct") loadThreads();
           history.replaceState(null, "", "/pulse/messages/" + state.activePulseConversation);
+          restoreDraft();
+          flushPendingMessages();
         } catch (error) {
           console.error("Open Pulse conversation failed", error);
           state.activePulseConversation = 0;
           setComposerEnabled(false, state.mode);
-          thread.innerHTML = `<div class="unified-empty">${esc(error.message || "This conversation is no longer available.")}</div>`;
+          thread.innerHTML = `<div class="unified-empty"><strong>Messages syncing…</strong><br><span>${esc(error.message || "This conversation is no longer available.")}</span><br><button type="button" data-retry-open="${esc(conversationId)}" data-retry-room="${esc(roomId)}" data-retry-mode="${esc(modeOverride)}">Tap to retry</button></div>`;
+          setNetworkStatus("retrying");
         }
       }
       async function pollThread() {
@@ -21430,6 +21508,60 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           }
         });
       }
+      function buildSendRequest(body, mediaDraft, clientId, createdAt) {
+        const url = state.mode === "direct"
+          ? `/api/pulse/messages/send`
+          : state.mode === "room"
+            ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
+            : `/api/pulse/messages/${state.activePulseConversation}/send`;
+        const payload = {
+          message: body,
+          reply_to_id: state.replyToId || 0,
+          client_message_id: clientId,
+          local_created_at: createdAt
+        };
+        if (state.activePulseConversation) payload.conversation_id = state.activePulseConversation;
+        if (mediaDraft) Object.assign(payload, mediaDraft);
+        return { url, payload };
+      }
+      async function sendRequest(item) {
+        const response = await fetch(item.url, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(item.payload) });
+        const data = await response.json().catch(() => ({ ok: false, message: "Server returned an unreadable response." }));
+        if (!response.ok || data.ok === false) throw new Error(data.message || "Could not send message.");
+        return data;
+      }
+      function enqueuePending(item) {
+        const pending = readPending().filter(existing => existing.client_id !== item.client_id);
+        pending.push({ ...item, attempts: Number(item.attempts || 0), queued_at: Date.now() });
+        writePending(pending);
+      }
+      async function flushPendingMessages() {
+        if (state.pendingFlush || !navigator.onLine) return;
+        const pending = readPending();
+        if (!pending.length) return;
+        state.pendingFlush = true;
+        setNetworkStatus("syncing");
+        const remaining = [];
+        for (const item of pending) {
+          try {
+            const data = await sendRequest(item);
+            const sentMessage = (data.data && typeof data.data === "object") ? data.data : (data.message && typeof data.message === "object") ? data.message : null;
+            document.querySelector(`[data-message-id="${CSS.escape(String(item.temp_id || item.client_id))}"]`)?.remove();
+            if (Number(item.conversation_id || 0) === Number(state.activePulseConversation || 0) && sentMessage) appendMessages([sentMessage]);
+          } catch (error) {
+            if (Number(item.attempts || 0) < 6) remaining.push({ ...item, attempts: Number(item.attempts || 0) + 1 });
+          }
+        }
+        writePending(remaining);
+        state.pendingFlush = false;
+        if (remaining.length) {
+          clearTimeout(state.pendingRetryTimer);
+          state.pendingRetryTimer = setTimeout(flushPendingMessages, Math.min(30000, 1500 * Math.pow(1.7, Math.min(remaining[0].attempts || 1, 6))));
+          setNetworkStatus("retrying");
+        } else if (state.activePulseConversation) {
+          refreshPresence();
+        }
+      }
       function startLiveStream() {
         if (!window.EventSource) return;
         try {
@@ -21446,6 +21578,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             state.live?.close?.();
             state.live = null;
             state.liveBackoff = Math.min(15000, (state.liveBackoff || 1500) * 1.6);
+            setNetworkStatus("reconnecting");
             setTimeout(startLiveStream, state.liveBackoff || 2500);
           };
         } catch (error) {
@@ -21453,6 +21586,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         }
       }
       document.addEventListener("click", async event => {
+        const retryOpen = event.target.closest("[data-retry-open]");
+        if (retryOpen) {
+          await openPulseConversation(retryOpen.dataset.retryOpen, retryOpen.dataset.retryRoom || "", retryOpen.dataset.retryMode || "");
+          return;
+        }
         const retryList = event.target.closest("[data-retry-list]");
         if (retryList) {
           const kind = retryList.dataset.retryList;
@@ -21871,22 +22009,16 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (!body && !mediaDraft) return;
         if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
         input.value = "";
+        saveDraft();
         const button = event.target.querySelector('button[type="submit"]');
         button.disabled = true;
+        const createdAt = new Date().toISOString();
         const tempId = "temp-" + Date.now();
+        const clientId = "local-" + state.currentUserId + "-" + Date.now() + "-" + Math.random().toString(16).slice(2);
         appendMessages([{ id: tempId, message_id: tempId, conversation_id: state.activePulseConversation, sender_user_id: state.currentUserId, body, content: body, message_type: mediaDraft?.message_type || "text", media_url: mediaDraft?.media_url || "", thumbnail_url: mediaDraft?.thumbnail_url || "", status: "sending", delivery_status: "sending", created_at: new Date().toISOString(), is_mine: true }]);
         try {
-	          const url = state.mode === "direct"
-	            ? `/api/pulse/messages/send`
-	            : state.mode === "room"
-	              ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
-	              : `/api/pulse/messages/${state.activePulseConversation}/send`;
-	          const payload = { message: body, reply_to_id: state.replyToId || 0 };
-	          if (state.activePulseConversation) payload.conversation_id = state.activePulseConversation;
-	          if (mediaDraft) Object.assign(payload, mediaDraft);
-          const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Could not send message.");
+          const item = { ...buildSendRequest(body, mediaDraft, clientId, createdAt), client_id: clientId, temp_id: tempId, conversation_id: state.activePulseConversation, mode: state.mode, room_id: state.activeRoomId };
+          const data = await sendRequest(item);
           const sentMessage = (data.data && typeof data.data === "object") ? data.data : (data.message && typeof data.message === "object") ? data.message : null;
           document.querySelector(`[data-message-id="${CSS.escape(tempId)}"]`)?.remove();
           if (sentMessage) appendMessages([sentMessage]);
@@ -21903,9 +22035,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         } catch (error) {
           console.error("Send failed", error);
           const temp = document.querySelector(`[data-message-id="${CSS.escape(tempId)}"]`);
-          if (temp) temp.querySelector("small").textContent = "failed";
-          input.value = body;
-          toast(error.message || "Could not send message.");
+          if (temp) temp.querySelector("small").textContent = navigator.onLine ? "retrying" : "offline";
+          const item = { ...buildSendRequest(body, mediaDraft, clientId, createdAt), client_id: clientId, temp_id: tempId, conversation_id: state.activePulseConversation, mode: state.mode, room_id: state.activeRoomId };
+          enqueuePending(item);
+          input.value = "";
+          setNetworkStatus(navigator.onLine ? "retrying" : "offline");
+          toast(navigator.onLine ? "Message queued. Retrying securely…" : "Offline temporarily. Message queued.");
+          flushPendingMessages();
         } finally {
           button.disabled = false;
           input.focus();
@@ -21915,18 +22051,23 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.target.form.requestSubmit(); }
       });
       document.querySelector("[data-unified-send-form] textarea").addEventListener("input", () => {
+        saveDraft();
         if (!state.activePulseConversation) return;
         clearTimeout(state.typingTimer);
         fetch(`/api/pulse/messages/${state.activePulseConversation}/typing`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ typing:true }) }).catch(()=>{});
         state.typingTimer = setTimeout(() => fetch(`/api/pulse/messages/${state.activePulseConversation}/typing`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ typing:false }) }).catch(()=>{}), 1600);
       });
       document.addEventListener("keydown", event => { if (event.key === "Escape") showMenu(false); });
+      window.addEventListener("online", () => { state.offline = false; setNetworkStatus("syncing"); startLiveStream(); flushPendingMessages(); pollThread(); });
+      window.addEventListener("offline", () => { state.offline = true; setNetworkStatus("offline"); });
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) { startLiveStream(); flushPendingMessages(); pollThread(); } });
       setComposerEnabled(false);
       loadThreads().then(() => {
         if (state.activePulseConversation) { openPulseConversation(state.activePulseConversation); }
         else if (state.activeThread) openThread(state.activeThread);
       });
       startLiveStream();
+      flushPendingMessages();
       setInterval(pollThread, 8000);
       setInterval(refreshPresence, 15000);
     })();
@@ -23820,6 +23961,7 @@ def api_pulse_message_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     payload = request.get_json(silent=True) or {}
     query = clean_html(
         payload.get("query")
@@ -23852,9 +23994,11 @@ def api_pulse_message_start():
         result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id)
         result["trace_id"] = trace_id
         if result.get("ok"):
+            chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/direct/open", "ok", trace_id, {"target_user_id": target_user_id, "conversation_id": result.get("conversation_id"), "latency_ms": int((time.perf_counter() - started) * 1000)})
             conn.commit()
             logging.info("PULSE_MESSAGE_START_OK trace_id=%s user_id=%s target_user_id=%s conversation_id=%s thread_id=%s", trace_id, user.get("user_id"), target_user_id, result.get("conversation_id"), result.get("thread_id"))
         else:
+            chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/direct/open", "rejected", trace_id, {"target_user_id": target_user_id, "status": status, "latency_ms": int((time.perf_counter() - started) * 1000)})
             conn.rollback()
             logging.warning("PULSE_MESSAGE_START_REJECTED trace_id=%s user_id=%s target_user_id=%s status=%s result=%s", trace_id, user.get("user_id"), target_user_id, status, result)
         conn.close()
@@ -24013,10 +24157,12 @@ def api_pulse_chatrooms():
     if not user:
         return api_error("Login required.", 401)
     trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         ensure_pulse_messenger_schema(cur, conn)
         rooms = pulse_ensure_default_rooms(cur, user["user_id"])
+        chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/rooms", "ok", trace_id, {"items": len(rooms), "latency_ms": int((time.perf_counter() - started) * 1000)})
         conn.commit(); conn.close()
         return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "cached": False})
     except Exception as exc:
@@ -24027,6 +24173,7 @@ def api_pulse_chatrooms():
         try:
             ensure_pulse_messenger_schema(cur, conn)
             rooms = pulse_default_room_cards()
+            chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/rooms", "partial", trace_id, {"error_type": exc.__class__.__name__, "latency_ms": int((time.perf_counter() - started) * 1000)})
             conn.commit(); conn.close()
             logging.exception("PULSE_CHATROOMS_PARTIAL_DEFAULTS trace_id=%s user_id=%s", trace_id, user.get("user_id"))
             return jsonify({"ok": True, "items": rooms, "rooms": rooms, "trace_id": trace_id, "cached": False, "partial": True, "message": "Rooms loaded while storage repairs."})
@@ -24075,6 +24222,7 @@ def api_pulse_chatroom_messages(room_id):
     if not room:
         return api_error("Chat room not found.", 404, secrets.token_hex(6))
     trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         ensure_pulse_messenger_schema(cur, conn)
@@ -24101,6 +24249,7 @@ def api_pulse_chatroom_messages(room_id):
                 payload.get("local_created_at") or "",
             )
             if send_result.get("ok"):
+                chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/rooms/{room['key']}/messages", "sent", trace_id, {"conversation_id": conversation_id, "message_id": send_result.get("message_id"), "latency_ms": int((time.perf_counter() - started) * 1000)})
                 conn.commit(); conn.close()
                 event = {"conversation_id": conversation_id, "room_id": room["key"], "message": send_result.get("data"), "message_id": send_result.get("message_id")}
                 pulse_emit_event("room_message_created", event, user["user_id"], conversation_id)
@@ -24117,11 +24266,16 @@ def api_pulse_chatroom_messages(room_id):
         messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
         messages = pulse_attach_reply_previews(cur, messages)
         pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
+        chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/rooms/{room['key']}/messages", "ok", trace_id, {"conversation_id": conversation_id, "messages": len(messages), "latency_ms": int((time.perf_counter() - started) * 1000)})
         conn.commit(); conn.close()
         pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "room_id": room["key"], "user_id": user["user_id"]}, user["user_id"], conversation_id)
         return jsonify({"ok": True, "room_id": room["key"], "conversation_id": conversation_id, "messages": messages, "pinned_notice": room["notice"]})
     except Exception as exc:
-        conn.rollback(); conn.close()
+        try:
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/rooms/{room.get('key','')}/messages", "exception", trace_id, {"room_id": room_id, "error_type": exc.__class__.__name__, "latency_ms": int((time.perf_counter() - started) * 1000)})
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
         logging.exception("PULSE_CHATROOM_MESSAGES_FAILED trace_id=%s user_id=%s room_id=%s", trace_id, user.get("user_id"), room_id)
         return api_error("Chat room messages could not be loaded. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
@@ -24166,6 +24320,7 @@ def api_pulse_message_group_conversations():
     if not user:
         return api_error("Login required.", 401)
     trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     conn = None
     try:
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -24177,11 +24332,13 @@ def api_pulse_message_group_conversations():
             limit=80,
             trace_id=trace_id,
         )
+        chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/group-conversations", "ok", trace_id, {"items": len(conversations), "skipped": len(skipped), "latency_ms": int((time.perf_counter() - started) * 1000)})
         conn.commit(); conn.close()
         return jsonify({"ok": True, "items": conversations, "conversations": conversations, "trace_id": trace_id, "cached": False, "partial": bool(skipped), "skipped": len(skipped)})
     except Exception as exc:
         try:
             if conn:
+                chat_health_service.record_trace(conn.cursor(), user["user_id"], "/api/pulse/messages/group-conversations", "exception", trace_id, {"error_type": exc.__class__.__name__, "latency_ms": int((time.perf_counter() - started) * 1000)})
                 conn.rollback(); conn.close()
         except Exception:
             pass
@@ -24195,9 +24352,12 @@ def api_pulse_conversation_detail(conversation_id):
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    ensure_pulse_messenger_schema(cur, conn)
-    cur.execute(
+    try:
+        ensure_pulse_messenger_schema(cur, conn)
+        cur.execute(
         """
         SELECT c.*
         FROM pulse_conversations c
@@ -24206,23 +24366,29 @@ def api_pulse_conversation_detail(conversation_id):
         LIMIT 1
         """,
         (user["user_id"], conversation_id),
-    )
-    conversation = dict(cur.fetchone() or {})
-    if not conversation:
-        conn.close()
-        return api_error("Conversation not found.", 404)
-    limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
-    before_id = safe_int(request.args.get("before_id"), 0)
-    if before_id:
-        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
-    else:
-        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " ORDER BY id DESC LIMIT ?", (conversation_id, limit))
-    messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
-    messages = pulse_attach_reply_previews(cur, messages)
-    pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
-    conn.commit(); conn.close()
-    pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "user_id": user["user_id"]}, user["user_id"], conversation_id)
-    return jsonify({"ok": True, "conversation": conversation, "conversation_id": conversation_id, "messages": messages})
+        )
+        conversation = dict(cur.fetchone() or {})
+        if not conversation:
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "not_found", trace_id, {"conversation_id": conversation_id})
+            conn.commit(); conn.close()
+            return api_error("This conversation is no longer available.", 404, trace_id)
+        limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
+        before_id = safe_int(request.args.get("before_id"), 0)
+        if before_id:
+            cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
+        else:
+            cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " ORDER BY id DESC LIMIT ?", (conversation_id, limit))
+        messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
+        messages = pulse_attach_reply_previews(cur, messages)
+        pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
+        chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "ok", trace_id, {"conversation_id": conversation_id, "messages": len(messages), "latency_ms": int((time.perf_counter() - started) * 1000)})
+        conn.commit(); conn.close()
+        pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "user_id": user["user_id"]}, user["user_id"], conversation_id)
+        return jsonify({"ok": True, "trace_id": trace_id, "conversation": conversation, "conversation_id": conversation_id, "messages": messages})
+    except Exception as exc:
+        conn.rollback(); conn.close()
+        logging.exception("PULSE_CONVERSATION_DETAIL_FAILED trace_id=%s user_id=%s conversation_id=%s", trace_id, user.get("user_id"), conversation_id)
+        return api_error("Messages syncing. Tap to retry.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
 @webhook_app.route("/api/pulse/messages/<int:conversation_id>/send", methods=["POST"])
@@ -24233,6 +24399,7 @@ def api_pulse_conversation_send(conversation_id):
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         ensure_pulse_messenger_schema(cur, conn)
@@ -24251,7 +24418,9 @@ def api_pulse_conversation_send(conversation_id):
             payload.get("client_message_id") or payload.get("local_id") or "",
             payload.get("local_created_at") or "",
         )
+        result["trace_id"] = trace_id
         if result.get("ok"):
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}/send", "sent", trace_id, {"conversation_id": conversation_id, "message_id": result.get("message_id"), "latency_ms": int((time.perf_counter() - started) * 1000)})
             conn.commit(); conn.close()
             event = {"conversation_id": conversation_id, "message": result.get("data"), "message_id": result.get("message_id")}
             pulse_emit_event(result.get("event_name") or "group_message_created", event, user["user_id"], conversation_id)
@@ -24260,7 +24429,11 @@ def api_pulse_conversation_send(conversation_id):
         conn.rollback(); conn.close()
         return jsonify(result), status
     except Exception as exc:
-        conn.rollback(); conn.close()
+        try:
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}/send", "exception", trace_id, {"conversation_id": conversation_id, "error_type": exc.__class__.__name__, "latency_ms": int((time.perf_counter() - started) * 1000)})
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
         logging.exception("PULSE_CONVERSATION_SEND_FAILED trace_id=%s user_id=%s conversation_id=%s", trace_id, user.get("user_id"), conversation_id)
         return api_error("Message could not be sent. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
@@ -24373,6 +24546,7 @@ def api_pulse_message_conversations():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
     conn = None
     try:
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
@@ -24384,11 +24558,13 @@ def api_pulse_message_conversations():
             limit=80,
             trace_id=trace_id,
         )
+        chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/conversations", "ok", trace_id, {"items": len(conversations), "skipped": len(skipped), "latency_ms": int((time.perf_counter() - started) * 1000)})
         conn.commit(); conn.close()
         return jsonify({"ok": True, "items": conversations, "conversations": conversations, "trace_id": trace_id, "cached": False, "partial": bool(skipped), "skipped": len(skipped)})
     except Exception as exc:
         try:
             if conn:
+                chat_health_service.record_trace(conn.cursor(), user["user_id"], "/api/pulse/messages/conversations", "exception", trace_id, {"error_type": exc.__class__.__name__, "latency_ms": int((time.perf_counter() - started) * 1000)})
                 conn.rollback(); conn.close()
         except Exception:
             pass

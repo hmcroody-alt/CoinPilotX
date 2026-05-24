@@ -57,6 +57,60 @@ def record_trace(cur, user_id: int, endpoint: str, status: str, trace: str, deta
         logging.exception("CHAT_HEALTH_TRACE_FAILED trace_id=%s endpoint=%s", trace, endpoint)
 
 
+def record_recovery_event(cur, user_id: int, conversation_id: int = 0, event_type: str = "recovery", details=None) -> dict:
+    event_trace = trace_id()
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pulse_chat_recovery_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trace_id TEXT,
+                user_id INTEGER,
+                conversation_id INTEGER,
+                event_type TEXT,
+                details_json TEXT,
+                created_at TEXT
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO pulse_chat_recovery_events
+            (trace_id, user_id, conversation_id, event_type, details_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_trace,
+                int(user_id or 0),
+                int(conversation_id or 0),
+                str(event_type or "recovery")[:80],
+                json.dumps(details or {}, default=str)[:2000],
+                _now(),
+            ),
+        )
+        return {"ok": True, "trace_id": event_trace}
+    except Exception:
+        logging.exception("CHAT_RECOVERY_EVENT_FAILED user_id=%s conversation_id=%s", user_id, conversation_id)
+        return {"ok": False, "trace_id": event_trace}
+
+
+def chat_recovery_payload(trace: str | None = None, mode: str = "syncing", message: str | None = None) -> dict:
+    copy = {
+        "loading": "Loading conversation...",
+        "syncing": "Messages syncing...",
+        "reconnecting": "Reconnecting securely...",
+        "offline": "Offline temporarily.",
+        "retrying": "Retrying connection...",
+    }
+    return {
+        "trace_id": trace or trace_id(),
+        "recovery_mode": mode,
+        "message": message or copy.get(mode, "Messages syncing..."),
+        "retryable": True,
+        "fallback_polling": True,
+    }
+
+
 def monitor_chat_tables(cur) -> dict:
     return {
         "conversations": safe_count(cur, "SELECT COUNT(*) AS total FROM pulse_conversations"),
@@ -81,6 +135,15 @@ def monitor_chat_tables(cur) -> dict:
             WHERE COALESCE(m.conversation_id,0)!=0 AND c.id IS NULL
             """,
         ),
+        "recent_failures": safe_count(
+            cur,
+            """
+            SELECT COUNT(*) AS total
+            FROM pulse_chat_health_traces
+            WHERE status IN ('error','failed','exception')
+            """,
+        ),
+        "recovery_events": safe_count(cur, "SELECT COUNT(*) AS total FROM pulse_chat_recovery_events"),
     }
 
 
@@ -99,6 +162,28 @@ def repair_stale_sessions(cur) -> dict:
         repaired += int(getattr(cur, "rowcount", 0) or 0)
     except Exception:
         logging.exception("CHAT_HEALTH_TYPING_REPAIR_FAILED")
+    try:
+        cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat(timespec="seconds")
+        cur.execute(
+            """
+            UPDATE pulse_messages
+            SET deleted_at=COALESCE(NULLIF(deleted_at,''), ?), status='hidden', delivery_status='hidden'
+            WHERE COALESCE(deleted_at,'')=''
+              AND COALESCE(message_type,'') IN ('system','system_join','chat_event')
+              AND lower(COALESCE(body,'')) LIKE '% joined'
+            """,
+            (_now(),),
+        )
+        repaired += int(getattr(cur, "rowcount", 0) or 0)
+        cur.execute(
+            """
+            DELETE FROM pulse_chat_recovery_events
+            WHERE COALESCE(created_at,'') < ?
+            """,
+            (cutoff,),
+        )
+    except Exception:
+        logging.exception("CHAT_HEALTH_LEGACY_REPAIR_FAILED")
     return {"ok": True, "repaired": repaired}
 
 

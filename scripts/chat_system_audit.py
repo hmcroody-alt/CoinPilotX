@@ -22,14 +22,21 @@ def expect(ok, label, details=""):
 
 def main():
     bot.init_db(); bot.init_db()
+    bot_source = (ROOT / "bot.py").read_text()
+    expect("pulseMessengerPendingV2" in bot_source, "mobile pending send queue exists")
+    expect("Reconnecting securely" in bot_source and "Messages syncing" in bot_source, "dead chat recovery copy exists")
+    expect("Something needs attention. Please try again." not in bot_source[bot_source.find("data-unified-messenger"):], "messenger does not use generic failure copy")
     result = subprocess.run([sys.executable, str(ROOT / "scripts/messenger_core_audit.py")], cwd=str(ROOT), text=True, capture_output=True)
     expect(result.returncode == 0, "canonical messenger core audit", result.stdout + result.stderr)
     conn = bot.db(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
     bot.ensure_pulse_messenger_schema(cur, conn)
     summary = chat_health_service.health_summary(cur)
+    recovery = chat_health_service.chat_recovery_payload(mode="reconnecting")
+    chat_health_service.record_recovery_event(cur, 930000, 0, "audit_reconnect", {"source": "chat_system_audit"})
     repair = chat_health_service.repair_stale_sessions(cur)
     conn.commit(); conn.close()
     expect("tables" in summary and summary["tables"].get("conversations", 0) >= 0, "chat health summary available", str(summary))
+    expect(recovery.get("fallback_polling") is True and recovery.get("retryable") is True, "chat recovery payload supports polling fallback", str(recovery))
     expect(repair.get("ok") is True, "stale session repair runs", str(repair))
     print("chat system audit ok")
 
