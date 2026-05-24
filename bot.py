@@ -15962,20 +15962,35 @@ def pulse_status_rail_html():
         "<div class='pulse-status-head'><h2>Pulse Status</h2><a class='button' href='/pulse/status'>View all</a></div>"
         f"<div class='pulse-status-strip' data-status-strip>{card_html}</div>"
         "</section>"
-        "<section class='pulse-status-viewer' id='pulseStatusViewer' aria-hidden='true'>"
-        "<div class='pulse-status-stage'><div class='pulse-status-progress'><span></span></div>"
-        "<div class='pulse-status-content'><span class='badge live'>Pulse Status</span><h2 id='pulseStatusTitle'>Create Status</h2>"
-        "<p id='pulseStatusMeta' class='muted'>Camera, upload, music, text, live, and AI story formats are status-ready.</p>"
-        "<form class='pulse-status-form' id='pulseStatusForm'>"
-        "<input id='pulseStatusMode' name='status_type' type='hidden' value='text'>"
-        "<textarea id='pulseStatusBody' name='body' placeholder='Share a status update...'></textarea>"
-        "<input id='pulseStatusMedia' type='file' accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime'>"
-        "<input id='pulseStatusSound' type='file' accept='audio/mpeg,audio/mp4,audio/wav,audio/ogg'>"
-        "<div class='actions'><select id='pulseStatusPrivacy'><option value='public'>Public</option><option value='followers'>Followers</option><option value='private'>Private preview</option></select>"
-        "<select id='pulseStatusDuration'><option value='24'>24 hours</option><option value='6'>6 hours</option><option value='48'>48 hours</option></select></div>"
-        "<div class='pulse-status-preview' id='pulseStatusPreview'>Preview appears here before publish.</div>"
-        "<div class='pulse-status-actions'><button class='primary' type='submit'>Publish Status</button><a class='button' href='/pulse/camera?target=status'>Open Camera</a><button class='button' type='button' data-close-status-viewer>Done</button></div>"
-        "</form></div></div></section>"
+        "<input id='pulseStatusMedia' class='pulse-status-file-input' type='file' accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime' multiple>"
+        "<input id='pulseStatusSound' class='pulse-status-file-input' type='file' accept='audio/mpeg,audio/mp4,audio/wav,audio/ogg'>"
+        "<section class='pulse-status-viewer pulse-status-editor' id='pulseStatusViewer' data-status-editor aria-hidden='true'>"
+        "<form class='pulse-status-stage pulse-status-form' id='pulseStatusForm'>"
+        "<input id='pulseStatusMode' name='status_type' type='hidden' value='image'>"
+        "<button class='pulse-status-back' type='button' data-status-back aria-label='Back'>‹</button>"
+        "<div class='pulse-status-progress'><span></span></div>"
+        "<div class='pulse-status-preview pulse-status-editor-preview' id='pulseStatusPreview' data-status-preview-stage><span>Select media to preview your status.</span></div>"
+        "<div class='pulse-status-caption-layer'><textarea id='pulseStatusBody' name='body' placeholder='Add a caption...'></textarea></div>"
+        "<aside class='pulse-status-tool-rail' aria-label='Status tools'>"
+        "<button type='button' data-status-tool='stickers'><span>☺</span><b>Stickers</b></button>"
+        "<button type='button' data-status-tool='text'><span>Aa</span><b>Text</b></button>"
+        "<button type='button' data-status-tool='music'><span>♪</span><b>Music</b></button>"
+        "<button type='button' data-status-tool='filters'><span>✦</span><b>Filters</b></button>"
+        "<button type='button' data-status-tool='mention'><span>@</span><b>Mention</b></button>"
+        "<button type='button' data-status-tool='links'><span>↗</span><b>Links</b></button>"
+        "</aside>"
+        "<div class='pulse-status-overlay-layer' data-status-overlays></div>"
+        "<div class='pulse-status-effects-tray' data-status-effects-tray>"
+        "<button type='button' data-status-effect='natural'>Natural</button><button type='button' data-status-effect='glow'>Glow</button><button type='button' data-status-effect='cinematic'>Cinematic</button><button type='button' data-status-effect='warm'>Warm</button><button type='button' data-status-effect='mono'>Mono</button>"
+        "</div>"
+        "<div class='pulse-status-bottom-bar'>"
+        "<select id='pulseStatusPrivacy' aria-label='Audience selector'><option value='public'>For you</option><option value='followers'>Followers</option><option value='private'>Private preview</option></select>"
+        "<select id='pulseStatusDuration' aria-label='Status duration'><option value='24'>24h</option><option value='6'>6h</option><option value='48'>48h</option></select>"
+        "<button class='button' type='button' data-status-tool='choose'>Choose again</button>"
+        "<button class='primary pulse-status-share' type='submit'>Share</button>"
+        "</div>"
+        "<div class='pulse-status-upload-progress' data-upload-progress data-upload-state='idle'><span data-upload-progress-bar role='progressbar' aria-valuemin='0' aria-valuemax='100' aria-valuenow='0'></span><b data-upload-progress-text>Choose media to create a Status.</b></div>"
+        "</form></section>"
     )
 
 
@@ -16216,12 +16231,18 @@ const cssEsc=v=>(window.CSS&&CSS.escape)?CSS.escape(String(v||'')):String(v||'')
 const smartTimeHtml=(ts,suffix='')=>window.CoinPilotTime?window.CoinPilotTime.element(ts,suffix):esc(ts||'Recently');
 function toast(m,key=''){const t=document.getElementById('toast');if(!t)return;const message=String(m||'Pulse activity updated.');const now=Date.now();const storageKey=key?`pulse-toast:${key}`:'';if(storageKey){const seen=Number(localStorage.getItem(storageKey)||0);if(seen&&now-seen<86400000)return;localStorage.setItem(storageKey,String(now))}if(!storageKey&&state.lastToast.message===message&&now-state.lastToast.at<12000)return;state.lastToast={message,at:now};t.textContent=message;t.classList.add('show');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove('show'),3400)}
 const drawer=document.getElementById('pulseDrawer'),sheet=document.getElementById('createSheet');function setDrawer(open){document.body.classList.toggle('drawer-open',open);drawer?.setAttribute('aria-hidden',open?'false':'true')}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{if(e.target.closest('a'))setDrawer(false)});let sx=0,sy=0;document.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)},{passive:true});document.getElementById('pulseFab')?.addEventListener('click',()=>sheet?.classList.toggle('open'));document.addEventListener('click',e=>{if(sheet?.classList.contains('open')&&!e.target.closest('#createSheet,#pulseFab'))sheet.classList.remove('open');const b=e.target.closest('[data-sheet-type]');if(!b)return;document.getElementById('postType').value=b.dataset.sheetType;sheet.classList.remove('open');document.getElementById('postBody').focus();window.scrollTo({top:document.querySelector('.composer').offsetTop-70,behavior:'smooth'})});
-const statusViewer=document.getElementById('pulseStatusViewer'),statusForm=document.getElementById('pulseStatusForm');
-async function hydrateStatusRail(){try{const d=await api('/api/pulse/status/rail');const strip=document.querySelector('[data-status-strip]');if(!strip)return;const real=(d.items||[]).slice(0,12);if(!real.length){strip.insertAdjacentHTML('beforeend','<button class="pulse-status-card" type="button" data-status-card data-status-mode="create" data-status-title="Create the first Pulse Status" data-status-meta="Text, image, video, music, or camera"><span class="pulse-status-avatar-ring">+</span><span><span class="pulse-status-title">Create the first Pulse Status</span><span class="pulse-status-meta">Publish something real</span></span></button>');return}strip.insertAdjacentHTML('beforeend',real.map(s=>`<button class="pulse-status-card ${s.viewed?'is-viewed':''}" type="button" data-open-status-id="${s.id}" data-status-title="${esc(s.author_name||'Pulse Status')}" data-status-meta="${esc(s.body||s.status_type||'Tap to view')}"><span class="pulse-status-avatar-ring">${esc((s.author_name||'P').slice(0,1))}</span><span><span class="pulse-status-title">${esc(s.author_name||'Pulse member')}</span><span class="pulse-status-meta">${esc(s.status_type||'status')} · ${s.viewed?'seen':'new'}</span></span></button>`).join(''))}catch(e){console.warn('Pulse Status rail hydrate failed',e)}}
-document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card&&statusViewer){const mode=card.dataset.statusMode||'text';if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}document.getElementById('pulseStatusMode').value=mode==='music'?'music':mode==='ai'?'ai':'text';document.getElementById('pulseStatusTitle').textContent=card.dataset.statusTitle||'Pulse Status';document.getElementById('pulseStatusMeta').textContent=card.dataset.statusMeta||'Pulse Status is ready.';document.getElementById('pulseStatusSound').style.display=mode==='music'?'block':'none';statusViewer.classList.add('open');statusViewer.setAttribute('aria-hidden','false');return}const openStatus=e.target.closest('[data-open-status-id]');if(openStatus&&statusViewer){document.getElementById('pulseStatusTitle').textContent=openStatus.dataset.statusTitle||'Pulse Status';document.getElementById('pulseStatusMeta').textContent=openStatus.dataset.statusMeta||'Viewing status';document.getElementById('pulseStatusMode').value='reply';statusViewer.classList.add('open');statusViewer.setAttribute('aria-hidden','false');api(`/api/pulse/status/${openStatus.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).catch(()=>{});return}if(e.target.closest('[data-close-status-viewer]')||e.target===statusViewer){statusViewer?.classList.remove('open');statusViewer?.setAttribute('aria-hidden','true')}});
-document.getElementById('pulseStatusMedia')?.addEventListener('change',e=>{const f=e.target.files[0];document.getElementById('pulseStatusPreview').textContent=f?`Ready to publish ${f.name}`:'Preview appears here before publish.'});
-document.getElementById('pulseStatusSound')?.addEventListener('change',e=>{const f=e.target.files[0];if(f)document.getElementById('pulseStatusPreview').textContent=`Sound selected: ${f.name}`});
-statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(btn)btn.disabled=true;try{const mediaIds=[];const mediaFile=document.getElementById('pulseStatusMedia').files[0];if(mediaFile){const fd=new FormData();fd.append('file',mediaFile);fd.append('context_type','pulse_status');fd.append('context_id','draft');toast(mediaFile.type?.startsWith('video/')?'Uploading video... 0%':'Uploading image... 0%');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:mediaFile,button:btn,lockKey:'pulse-status-media',onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)mediaIds.push(up.media.id)}let soundMediaId=0;const soundFile=document.getElementById('pulseStatusSound').files[0];if(soundFile){const fd=new FormData();fd.append('file',soundFile);fd.append('context_type','pulse_status_music');fd.append('context_id','draft');const up=await api('/api/pulse/media/upload',{method:'POST',body:fd});soundMediaId=up.media?.id||0}toast('Processing media...');const payload={status_type:document.getElementById('pulseStatusMode').value||'text',body:document.getElementById('pulseStatusBody').value,visibility:document.getElementById('pulseStatusPrivacy').value,duration_hours:Number(document.getElementById('pulseStatusDuration').value||24),media_ids:mediaIds,music_media_id:soundMediaId};toast('Publishing...');const created=await api('/api/pulse/status',{method:'POST',body:JSON.stringify(payload)});toast('Posted successfully');statusViewer?.classList.remove('open');statusForm.reset();hydrateStatusRail();if(created.status?.id)location.href='/pulse/status'}catch(err){toast((err.message||'Status publish failed.')+' Tap publish to retry.')}finally{if(btn)btn.disabled=false}});
+const statusViewer=document.getElementById('pulseStatusViewer'),statusForm=document.getElementById('pulseStatusForm'),statusMediaInput=document.getElementById('pulseStatusMedia'),statusSoundInput=document.getElementById('pulseStatusSound'),statusPreview=document.getElementById('pulseStatusPreview'),statusProgress=document.querySelector('#pulseStatusForm [data-upload-progress]');
+const statusDraft={files:[],urls:[],mediaIds:[],soundFile:null,soundMediaId:0,effect:'natural',sticker:'',link:'',publishing:false};
+function resetStatusPreviewUrls(){(statusDraft.urls||[]).forEach(u=>URL.revokeObjectURL(u));statusDraft.urls=[]}
+function openStatusEditor(){statusViewer?.classList.add('open');statusViewer?.setAttribute('aria-hidden','false');document.body.classList.add('status-editor-open')}
+function closeStatusEditor(){statusViewer?.classList.remove('open');statusViewer?.setAttribute('aria-hidden','true');document.body.classList.remove('status-editor-open')}
+function clearStatusDraft(){resetStatusPreviewUrls();statusDraft.files=[];statusDraft.mediaIds=[];statusDraft.soundFile=null;statusDraft.soundMediaId=0;statusDraft.sticker='';statusDraft.link='';statusDraft.effect='natural';if(statusMediaInput)statusMediaInput.value='';if(statusSoundInput)statusSoundInput.value='';document.getElementById('pulseStatusBody').value='';document.querySelector('[data-status-overlays]').innerHTML='';statusPreview.innerHTML='<span>Select media to preview your status.</span>';statusPreview.dataset.effect='natural';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose media to create a Status.'})}
+function renderStatusPreview(){resetStatusPreviewUrls();const file=statusDraft.files[0];if(!statusPreview)return;if(!file){statusPreview.innerHTML='<span>Select media to preview your status.</span>';return}const url=URL.createObjectURL(file);statusDraft.urls.push(url);const safeName=esc(file.name||'Pulse Status media');statusPreview.dataset.effect=statusDraft.effect||'natural';statusPreview.innerHTML=file.type?.startsWith('video/')?`<video src="${url}" playsinline controls muted loop aria-label="${safeName}"></video>`:`<img src="${url}" alt="${safeName}" decoding="async">`;document.getElementById('pulseStatusMode').value=file.type?.startsWith('video/')?'video':'image';document.querySelector('[data-status-overlays]').innerHTML=statusDraft.sticker?`<span class="pulse-status-sticker">${esc(statusDraft.sticker)}</span>`:'';openStatusEditor();window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Ready to publish ${safeName}`})}
+async function hydrateStatusRail(){try{const d=await api('/api/pulse/status/rail');const strip=document.querySelector('[data-status-strip]');if(!strip)return;strip.querySelectorAll('[data-status-dynamic]').forEach(x=>x.remove());const real=(d.items||[]).slice(0,12);if(!real.length){strip.insertAdjacentHTML('beforeend','<button class="pulse-status-card" type="button" data-status-card data-status-dynamic data-status-mode="create" data-status-title="Create the first Pulse Status" data-status-meta="Text, image, video, music, or camera"><span class="pulse-status-avatar-ring">+</span><span><span class="pulse-status-title">Create the first Pulse Status</span><span class="pulse-status-meta">Publish something real</span></span></button>');return}strip.insertAdjacentHTML('beforeend',real.map(s=>`<button class="pulse-status-card ${s.viewed?'is-viewed':''}" type="button" data-status-dynamic data-open-status-id="${s.id}" data-status-title="${esc(s.author_name||'Pulse Status')}" data-status-meta="${esc(s.body||s.status_type||'Tap to view')}"><span class="pulse-status-avatar-ring">${esc((s.author_name||'P').slice(0,1))}</span><span><span class="pulse-status-title">${esc(s.author_name||'Pulse member')}</span><span class="pulse-status-meta">${esc(s.status_type||'status')} · ${s.viewed?'seen':'new'}</span></span></button>`).join(''))}catch(e){console.warn('Pulse Status rail hydrate failed',e)}}
+document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card){const mode=card.dataset.statusMode||'create';if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}if(mode==='music'){statusSoundInput?.click();statusMediaInput?.click();return}statusMediaInput?.click();return}const openStatus=e.target.closest('[data-open-status-id]');if(openStatus&&statusViewer){toast(openStatus.dataset.statusMeta||'Opening status.');api(`/api/pulse/status/${openStatus.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).catch(()=>{});return}const back=e.target.closest('[data-status-back]');if(back){closeStatusEditor();return}const tool=e.target.closest('[data-status-tool]');if(tool){const name=tool.dataset.statusTool;if(name==='choose'){statusMediaInput?.click();return}if(name==='music'){statusSoundInput?.click();return}if(name==='text'){document.getElementById('pulseStatusBody')?.focus();toast('Add text over your Status.');return}if(name==='stickers'){const stickers=['❤️','🔥','✨','📸','🎉','💯'];const next=stickers[(stickers.indexOf(statusDraft.sticker)+1)%stickers.length]||stickers[0];statusDraft.sticker=next;renderStatusPreview();toast('Sticker added.');return}if(name==='filters'){document.querySelector('[data-status-effects-tray]')?.classList.toggle('open');return}if(name==='mention'){const mention=prompt('Mention a Pulse creator');if(mention){const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+' ':'')+(mention.startsWith('@')?mention:'@'+mention);body.focus()}return}if(name==='links'){const link=prompt('Add a link');if(link){statusDraft.link=link;const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+'\\n':'')+link;toast('Link added.')}return}}const effect=e.target.closest('[data-status-effect]');if(effect){statusDraft.effect=effect.dataset.statusEffect||'natural';document.querySelectorAll('[data-status-effect]').forEach(b=>b.classList.toggle('active',b===effect));if(statusPreview)statusPreview.dataset.effect=statusDraft.effect;toast(`${effect.textContent.trim()} filter applied.`);return}if(e.target===statusViewer){closeStatusEditor()}});
+statusMediaInput?.addEventListener('change',e=>{statusDraft.files=[...e.target.files].slice(0,8);statusDraft.mediaIds=[];if(statusDraft.files.length)renderStatusPreview()});
+statusSoundInput?.addEventListener('change',e=>{statusDraft.soundFile=e.target.files[0]||null;if(statusDraft.soundFile){toast(`Music selected: ${statusDraft.soundFile.name}`);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Music selected: ${statusDraft.soundFile.name}`})}});
+statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(statusDraft.publishing)return;if(!statusDraft.files.length){statusMediaInput?.click();toast('Choose an image or video first.');return}statusDraft.publishing=true;if(btn)btn.disabled=true;try{statusDraft.mediaIds=[];for(const [index,file] of statusDraft.files.entries()){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_status');fd.append('context_id','draft');fd.append('effect_name',statusDraft.effect||'natural');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:statusProgress,lockKey:`pulse-status-media-${index}-${file.name}`,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)statusDraft.mediaIds.push(up.media.id)}if(statusDraft.soundFile){const fd=new FormData();fd.append('file',statusDraft.soundFile);fd.append('context_type','pulse_status_music');fd.append('context_id','draft');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:statusDraft.soundFile,button:btn,progressTarget:statusProgress,lockKey:'pulse-status-sound'}):await api('/api/pulse/media/upload',{method:'POST',body:fd});statusDraft.soundMediaId=up.media?.id||0}window.PulseUploadManager?.render(statusProgress,{stage:'publishing',percent:96,message:'Publishing...'});const payload={status_type:document.getElementById('pulseStatusMode').value||'image',body:document.getElementById('pulseStatusBody').value,visibility:document.getElementById('pulseStatusPrivacy').value,duration_hours:Number(document.getElementById('pulseStatusDuration').value||24),media_ids:statusDraft.mediaIds,music_media_id:statusDraft.soundMediaId,effect_name:statusDraft.effect,sticker:statusDraft.sticker,link_url:statusDraft.link};const created=await api('/api/pulse/status',{method:'POST',body:JSON.stringify(payload)});window.PulseUploadManager?.render(statusProgress,{stage:'success',percent:100,message:'Posted successfully'});toast('Posted successfully');closeStatusEditor();clearStatusDraft();await hydrateStatusRail();if(created.status?.id){document.querySelector(`[data-open-status-id="${created.status.id}"]`)?.classList.add('just-created')}}catch(err){window.PulseUploadManager?.render(statusProgress,{stage:'failed',percent:0,message:(err.message||'Status publish failed.')+' Tap Share to retry.'});toast((err.message||'Status publish failed.')+' Tap Share to retry.')}finally{statusDraft.publishing=false;if(btn)btn.disabled=false}});
 hydrateStatusRail();
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/')||url.startsWith('data:')||url.startsWith('blob:'))return url;return '/'+url.replace(new RegExp('^/+'), '')}
@@ -16320,6 +16341,11 @@ def pulse_status_payload(row, viewer_user_id=0):
     except Exception:
         media_ids = []
     media_items = []
+    ai_context = {}
+    try:
+        ai_context = json.loads(item.get("ai_context_json") or "{}")
+    except Exception:
+        ai_context = {}
     if media_ids:
         try:
             conn = db()
@@ -16343,6 +16369,8 @@ def pulse_status_payload(row, viewer_user_id=0):
         "expires_at": item.get("expires_at") or "",
         "viewed": bool(item.get("viewer_viewed")),
         "media": media_items,
+        "ai_context": ai_context,
+        "status_tools": ai_context.get("status_tools") or {},
         "adaptive": {"fit_mode": "smart", "preload": "nearby", "weak_network": "poster_first"},
     }
 
@@ -16409,6 +16437,16 @@ def api_pulse_status_create():
         now = datetime.utcnow()
         duration_hours = max(1, min(int(payload.get("duration_hours") or 24), 168))
         expires = (now + timedelta(hours=duration_hours)).isoformat(timespec="seconds")
+        ai_context = payload.get("ai_context") or {}
+        if not isinstance(ai_context, dict):
+            ai_context = {}
+        tool_context = {
+            "effect_name": clean_html(payload.get("effect_name") or "natural")[:80],
+            "sticker": clean_html(payload.get("sticker") or "")[:80],
+            "link_url": clean_html(payload.get("link_url") or "")[:500],
+            "source": "create_status_editor",
+        }
+        ai_context["status_tools"] = {key: value for key, value in tool_context.items() if value}
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -16422,7 +16460,7 @@ def api_pulse_status_create():
                 body,
                 json.dumps([int(x) for x in (media_ids or []) if str(x).isdigit()][:8]),
                 clean_html(payload.get("visibility") or "public")[:40],
-                json.dumps(payload.get("ai_context") or {}, default=str)[:3000],
+                json.dumps(ai_context, default=str)[:3000],
                 now.isoformat(timespec="seconds"),
                 expires,
             ),
@@ -16450,7 +16488,7 @@ def api_pulse_status_create():
                 ),
             )
         music_media_id = safe_int(payload.get("music_media_id"), 0)
-        if status_type == "music" and music_media_id:
+        if music_media_id:
             cur.execute("SELECT * FROM chat_media_uploads WHERE id=? LIMIT 1", (music_media_id,))
             media_row = dict(cur.fetchone() or {})
             cur.execute(
