@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from . import live_destination_service
 
@@ -43,41 +44,60 @@ def prepare_restream_targets(cur, *, live_id: int, user_id: int, destinations=No
     now = now_iso()
     targets = []
     for destination in normalize_destinations(destinations):
-        platform = destination["platform"]
-        rtmp_url = destination.get("rtmp_url") or ""
-        stream_key = destination.get("stream_key") or ""
-        if platform == "custom_rtmp" and custom_rtmp_url:
-            rtmp_url = custom_rtmp_url
-            stream_key = custom_stream_key or stream_key
-        status = "live" if platform == "pulse" else "connecting"
-        error = ""
-        if platform == "custom_rtmp":
-            valid, error = live_destination_service.validate_rtmp_url(rtmp_url)
-            status = "connecting" if valid else "failed"
-        destination_id = 0
-        if platform != "pulse":
-            destination_id = live_destination_service.upsert_destination(
-                cur,
-                user_id=user_id,
-                platform=platform,
-                label=destination.get("label") or platform,
-                rtmp_url=rtmp_url,
-                stream_key=stream_key,
+        try:
+            platform = destination["platform"]
+            rtmp_url = destination.get("rtmp_url") or ""
+            stream_key = destination.get("stream_key") or ""
+            if platform == "custom_rtmp" and custom_rtmp_url:
+                rtmp_url = custom_rtmp_url
+                stream_key = custom_stream_key or stream_key
+            status = "live" if platform == "pulse" else "connecting"
+            error = ""
+            if platform in {"facebook", "youtube", "twitch", "tiktok"} and not stream_key and not rtmp_url:
+                status = "failed"
+                error = "Destination is selected but no OAuth or stream key is configured."
+            if platform == "custom_rtmp":
+                valid, error = live_destination_service.validate_rtmp_url(rtmp_url)
+                status = "connecting" if valid else "failed"
+            destination_id = 0
+            if platform != "pulse":
+                destination_id = live_destination_service.upsert_destination(
+                    cur,
+                    user_id=user_id,
+                    platform=platform,
+                    label=destination.get("label") or platform,
+                    rtmp_url=rtmp_url,
+                    stream_key=stream_key,
+                )
+            cur.execute(
+                """
+                INSERT INTO pulse_live_restream_targets
+                (live_id, destination_id, platform, status, last_error, retry_count, started_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (int(live_id), int(destination_id), platform, status, error, now, now),
             )
-        cur.execute(
-            """
-            INSERT INTO pulse_live_restream_targets
-            (live_id, destination_id, platform, status, last_error, retry_count, started_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-            """,
-            (int(live_id), int(destination_id), platform, status, error, now, now),
-        )
-        targets.append({
-            "platform": platform,
-            "status": status,
-            "destination_id": destination_id,
-            "message": error or ("Pulse Live is primary." if platform == "pulse" else "Connection is queued."),
-        })
+            targets.append({
+                "platform": platform,
+                "status": status,
+                "destination_id": destination_id,
+                "message": error or ("Pulse Live is primary." if platform == "pulse" else "Connection is queued."),
+            })
+        except Exception as exc:
+            platform = live_destination_service.normalize_platform(destination.get("platform") if isinstance(destination, dict) else destination)
+            logging.exception("PULSE_LIVE_RESTREAM_TARGET_FAILED live_id=%s user_id=%s platform=%s", live_id, user_id, platform)
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO pulse_live_restream_targets
+                    (live_id, destination_id, platform, status, last_error, retry_count, started_at, updated_at)
+                    VALUES (?, 0, ?, 'failed', ?, 0, ?, ?)
+                    """,
+                    (int(live_id), platform, str(exc)[:500], now, now),
+                )
+            except Exception:
+                logging.exception("PULSE_LIVE_RESTREAM_FAILURE_LOG_FAILED live_id=%s platform=%s", live_id, platform)
+            targets.append({"platform": platform, "status": "failed", "destination_id": 0, "message": str(exc)[:180]})
     return targets
 
 

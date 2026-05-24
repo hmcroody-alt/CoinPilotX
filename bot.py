@@ -19517,8 +19517,14 @@ def api_pulse_live_start():
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     payload = request.get_json(silent=True) or {}
+    trace_id = request.headers.get("X-Trace-Id") or secrets.token_hex(6)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
+        selected_destinations = payload.get("destinations") or ["pulse"]
+        logging.info(
+            "PULSE_LIVE_START_TRACE trace_id=%s step=received user_id=%s destinations=%s title=%s category=%s custom_rtmp=%s",
+            trace_id, user.get("user_id"), selected_destinations, payload.get("title"), payload.get("category"), bool(payload.get("custom_rtmp_url")),
+        )
         user_id = safe_int(user.get("user_id"), 0)
         if not user_id:
             conn.rollback(); conn.close()
@@ -19566,13 +19572,19 @@ def api_pulse_live_start():
         category = clean_html(payload.get("category") or "Crypto Education")[:80]
         thumbnail_url = clean_html(payload.get("thumbnail_url") or "")[:600]
         now = datetime.utcnow().isoformat(timespec="seconds")
+        logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=rtmp_bootstrap user_id=%s", trace_id, user_id)
         stream_setup = live_stream_engine.start_stream(user_id, title=title, category=category, premium_only=bool(payload.get("premium_only")))
         stream_uuid = clean_html(stream_setup.get("stream_id") or secrets.token_hex(8))[:80]
         stream_key = clean_html(stream_setup.get("stream_key") or ("cpx_live_" + secrets.token_urlsafe(24)))[:160]
         channel = clean_html(stream_setup.get("channel") or f"pulse_live_{user_id}_{secrets.token_hex(6)}")[:160]
         chat_room = f"live-{stream_uuid}"
+        logging.info(
+            "PULSE_LIVE_START_TRACE trace_id=%s step=stream_setup_ok stream_uuid=%s hls=%s webrtc=%s rtmp=%s",
+            trace_id, stream_uuid, bool(stream_setup.get("hls_url")), bool(stream_setup.get("webrtc_room_id")), bool(stream_setup.get("rtmp_url")),
+        )
         room_result, _ = pulse_get_or_create_room_conversation(cur, user_id, room_key=chat_room)
         chat_conversation_id = int(room_result.get("conversation_id") or 0)
+        logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=chat_room_ok conversation_id=%s", trace_id, chat_conversation_id)
         cur.execute(
             """
             INSERT INTO pulse_live_sessions
@@ -19592,6 +19604,7 @@ def api_pulse_live_start():
             ),
         )
         live_id = int(cur.lastrowid)
+        logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=session_insert_ok live_id=%s", trace_id, live_id)
         studio_url = f"/pulse/live/studio/{live_id}"
         cur.execute("UPDATE pulse_live_sessions SET studio_url=?, stream_id=? WHERE id=?", (studio_url, live_id, live_id))
         cur.execute(
@@ -19609,6 +19622,7 @@ def api_pulse_live_start():
         )
         stream_row_id = int(cur.lastrowid)
         cur.execute("UPDATE pulse_live_sessions SET stream_id=? WHERE id=?", (stream_row_id, live_id))
+        logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=stream_record_ok stream_row_id=%s", trace_id, stream_row_id)
         playback_url = stream_setup.get("hls_url") or ""
         feed_post_id = live_feed_service.ensure_live_feed_post(
             cur,
@@ -19620,14 +19634,23 @@ def api_pulse_live_start():
             preview_url=thumbnail_url,
             viewer_count=0,
         )
-        restream_targets = live_restream_service.prepare_restream_targets(
-            cur,
-            live_id=live_id,
-            user_id=user_id,
-            destinations=payload.get("destinations") or ["pulse"],
-            custom_rtmp_url=clean_html(payload.get("custom_rtmp_url") or "")[:700],
-            custom_stream_key=clean_html(payload.get("custom_stream_key") or "")[:700],
-        )
+        logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=feed_post_ok feed_post_id=%s", trace_id, feed_post_id)
+        try:
+            restream_targets = live_restream_service.prepare_restream_targets(
+                cur,
+                live_id=live_id,
+                user_id=user_id,
+                destinations=selected_destinations,
+                custom_rtmp_url=clean_html(payload.get("custom_rtmp_url") or "")[:700],
+                custom_stream_key=clean_html(payload.get("custom_stream_key") or "")[:700],
+            )
+        except Exception as restream_exc:
+            logging.exception(
+                "PULSE_LIVE_START_RESTREAM_NONBLOCKING_FAILED trace_id=%s live_id=%s user_id=%s destinations=%s error=%s",
+                trace_id, live_id, user_id, selected_destinations, restream_exc,
+            )
+            restream_targets = [{"platform": "pulse", "status": "live", "message": "Pulse Live is primary."}]
+        logging.info("PULSE_LIVE_START_TRACE trace_id=%s step=restream_prepared targets=%s", trace_id, restream_targets)
         cur.execute(
             """
             UPDATE pulse_live_sessions
@@ -19644,12 +19667,16 @@ def api_pulse_live_start():
             "INSERT INTO pulse_live_viewers (live_id, user_id, visitor_id, status, joined_at, last_seen_at, device_json) VALUES (?, ?, ?, 'hosting', ?, ?, ?)",
             (live_id, user_id, f"creator-{user_id}", now, now, json.dumps({"role": "creator"}, default=str)),
         )
+        cur.execute(
+            "INSERT INTO pulse_live_events (event_type, actor_user_id, post_id, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("live_start_trace", user_id, feed_post_id, json.dumps({"trace_id": trace_id, "live_id": live_id, "destinations": restream_targets}, default=str), now),
+        )
         conn.commit(); conn.close()
         try:
             pulse_emit_event("livestream_started", {"live_id": live_id, "title": title, "live_url": f"/pulse/live/{live_id}", "studio_url": studio_url}, user_id, None)
         except Exception:
             logging.exception("PULSE_LIVE_REALTIME_EMIT_FAILED live_id=%s user_id=%s", live_id, user_id)
-        logging.info("PULSE_LIVE_START_OK user_id=%s live_id=%s", user_id, live_id)
+        logging.info("PULSE_LIVE_START_OK trace_id=%s user_id=%s live_id=%s feed_post_id=%s", trace_id, user_id, live_id, feed_post_id)
         return jsonify({
             "ok": True,
             "message": "Live session created.",
@@ -19668,12 +19695,13 @@ def api_pulse_live_start():
             "websocket_channel": channel,
             "chat_room_id": chat_room,
             "chat_conversation_id": chat_conversation_id,
+            "trace_id": trace_id,
         })
     except Exception as exc:
-        trace_id = secrets.token_hex(6)
         logging.exception(
-            "LIVESTREAM_START_FAILED trace_id=%s user_id=%s title=%s category=%s thumbnail=%s auth=%s db_connected=%s error=%s",
-            trace_id, user.get("user_id"), payload.get("title"), payload.get("category"), payload.get("thumbnail_url"), bool(user), bool(conn), exc,
+            "LIVESTREAM_START_FAILED trace_id=%s user_id=%s title=%s category=%s thumbnail=%s destinations=%s custom_rtmp=%s auth=%s db_connected=%s error_type=%s error=%s",
+            trace_id, user.get("user_id"), payload.get("title"), payload.get("category"), payload.get("thumbnail_url"),
+            payload.get("destinations"), bool(payload.get("custom_rtmp_url")), bool(user), bool(conn), exc.__class__.__name__, exc,
         )
         try:
             conn.rollback(); conn.close()
