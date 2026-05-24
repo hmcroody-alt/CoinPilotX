@@ -1,13 +1,15 @@
-"""Secure local/S3-ready media upload scaffold for chat and Arena comments."""
+"""Canonical durable media service for Pulse, Messenger, Reels, and uploads."""
 
 import mimetypes
 import os
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
 
+from . import media_storage
 from . import user_context
 
 
@@ -18,6 +20,8 @@ VIDEO_EXTS = {"mp4", "webm", "mov"}
 AUDIO_EXTS = {"mp3", "m4a", "wav", "ogg"}
 FILE_EXTS = {"pdf", "txt", "doc", "docx"}
 UPLOAD_ROOT = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads/chat_media"))
+STATIC_ROOT = Path(os.getenv("STATIC_ROOT", "static")).resolve()
+FALLBACK_URL = "/static/img/media-unavailable.svg"
 
 
 def _now():
@@ -66,6 +70,171 @@ def _public_url_for_path(path):
     return "/" + str(Path(path)).replace(os.sep, "/").lstrip("/")
 
 
+def normalize_url(url):
+    value = str(url or "").strip().replace("\\", "/")
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "data:", "blob:")):
+        return value
+    for marker in ("/static/uploads/", "static/uploads/"):
+        if marker in value:
+            found = value[value.index(marker):]
+            return found if found.startswith("/") else "/" + found
+    for marker in ("/uploads/", "uploads/"):
+        if marker in value:
+            found = value[value.index(marker):]
+            return found if found.startswith("/") else "/" + found
+    if value.startswith("/static/") or value.startswith("/uploads/"):
+        return value
+    if value.startswith("static/") or value.startswith("uploads/"):
+        return "/" + value
+    try:
+        path_value = Path(value).expanduser()
+        if path_value.is_absolute():
+            resolved = path_value.resolve()
+            try:
+                rel = resolved.relative_to(STATIC_ROOT)
+                return "/static/" + str(rel).replace(os.sep, "/")
+            except ValueError:
+                pass
+            try:
+                rel = resolved.relative_to(Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve())
+                return "/uploads/" + str(rel).replace(os.sep, "/")
+            except ValueError:
+                pass
+    except Exception:
+        pass
+    if "/" not in value and "." in value:
+        return "/static/uploads/" + value
+    return value if value.startswith("/") else "/" + value
+
+
+def local_path_for_url(url):
+    value = normalize_url(url)
+    if not value or value.startswith(("http://", "https://", "data:", "blob:")):
+        return None
+    parsed = urlparse(value)
+    path = parsed.path or value
+    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
+    candidates = []
+    if path.startswith("/static/"):
+        candidates.append(STATIC_ROOT / path[len("/static/"):])
+    if path.startswith("/uploads/"):
+        candidates.append(upload_root / path[len("/uploads/"):])
+        candidates.append(STATIC_ROOT / "uploads" / path[len("/uploads/"):])
+    if path.startswith("static/"):
+        candidates.append(Path(path).resolve())
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                return str(candidate)
+        except Exception:
+            continue
+    return str(candidates[0]) if candidates else None
+
+
+def _url_available(url, provider=""):
+    value = normalize_url(url)
+    if not value:
+        return False
+    if value.startswith(("data:", "blob:")):
+        return True
+    if value.startswith(("http://", "https://")):
+        return True
+    path = local_path_for_url(value)
+    return bool(path and os.path.exists(path))
+
+
+def _orientation(width, height, ratio):
+    try:
+        ratio = float(ratio or 0) or (float(width) / float(height) if width and height else 0)
+    except Exception:
+        ratio = 0
+    if not ratio:
+        return "unknown"
+    if abs(ratio - 1) < 0.08:
+        return "square"
+    return "landscape" if ratio > 1 else "portrait"
+
+
+def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_type="", check_remote=False):
+    item = dict(media or {})
+    source = url or item.get("public_url") or item.get("media_url") or item.get("valid_url") or ""
+    thumb = thumbnail_url or item.get("thumbnail_url") or item.get("medium_url") or item.get("small_url") or source
+    poster = poster_url or item.get("poster_url") or thumb
+    source = normalize_url(source)
+    thumb = normalize_url(thumb)
+    poster = normalize_url(poster)
+    width = int(float(item.get("width") or 0) or 0)
+    height = int(float(item.get("height") or 0) or 0)
+    ratio = item.get("aspect_ratio")
+    try:
+        ratio = round(float(ratio or 0), 4)
+    except Exception:
+        ratio = 0
+    if not ratio and width and height:
+        ratio = round(float(width) / float(height), 4)
+    kind = (media_type or item.get("media_type") or "").lower()
+    if not kind:
+        lowered = source.lower()
+        if any(lowered.endswith(ext) for ext in (".mp4", ".webm", ".mov", ".m4v")):
+            kind = "video"
+        elif any(lowered.endswith(ext) for ext in (".mp3", ".m4a", ".wav", ".ogg")):
+            kind = "audio"
+        else:
+            kind = "image"
+    provider = item.get("storage_provider") or item.get("provider") or ("remote" if source.startswith(("http://", "https://")) else media_storage.provider())
+    available = item.get("is_available")
+    if available is None:
+        available = _url_available(source, provider=provider)
+    else:
+        available = bool(int(available)) if str(available).isdigit() else bool(available)
+    srcset = item.get("srcset") or ""
+    variants = {
+        "thumbnail": normalize_url(item.get("thumbnail_url") or thumb),
+        "small": normalize_url(item.get("small_url") or thumb),
+        "medium": normalize_url(item.get("medium_url") or source),
+        "large": normalize_url(item.get("large_url") or source),
+        "original": source,
+    }
+    if not srcset and source and kind in {"image", "gif"}:
+        srcset = ", ".join(
+            f"{v} {w}w" for v, w in [
+                (variants["thumbnail"], 320),
+                (variants["medium"], 960),
+                (variants["large"], 1440),
+                (variants["original"], 2048),
+            ] if v
+        )
+    return {
+        "id": item.get("id"),
+        "valid_url": source if available else "",
+        "media_url": source,
+        "thumbnail_url": thumb or source,
+        "poster_url": poster or thumb or source,
+        "fallback_url": FALLBACK_URL,
+        "media_type": kind,
+        "mime_type": item.get("mime_type") or mimetypes.guess_type(source)[0] or "",
+        "file_size_bytes": item.get("file_size_bytes") or item.get("file_size") or 0,
+        "width": width,
+        "height": height,
+        "aspect_ratio": ratio,
+        "orientation": _orientation(width, height, ratio),
+        "is_available": bool(available),
+        "storage_provider": provider,
+        "storage_key": item.get("storage_key") or "",
+        "srcset": srcset,
+        "sizes": item.get("sizes") or "(max-width: 760px) 100vw, (max-width: 1400px) 760px, 900px",
+        "variants": variants,
+        "diagnostics": {
+            "source": source,
+            "thumbnail": thumb,
+            "provider": provider,
+            "local_path": local_path_for_url(source) if source and not source.startswith(("http://", "https://")) else "",
+        },
+    }
+
+
 def _image_header_ok(ext, header):
     if ext in {"jpg", "jpeg"}:
         return header.startswith(b"\xff\xd8\xff")
@@ -90,16 +259,26 @@ def _public(row):
             aspect_ratio = round(float(width) / float(height), 4)
     except Exception:
         aspect_ratio = None
+    resolved = resolve_media(item)
     return {
         "id": item.get("id"),
-        "media_url": item.get("media_url"),
-        "thumbnail_url": item.get("thumbnail_url") or item.get("media_url"),
-        "media_type": item.get("media_type"),
-        "mime_type": item.get("mime_type"),
+        "media_url": resolved["media_url"],
+        "valid_url": resolved["valid_url"],
+        "thumbnail_url": resolved["thumbnail_url"],
+        "poster_url": resolved["poster_url"],
+        "fallback_url": resolved["fallback_url"],
+        "media_type": resolved["media_type"],
+        "mime_type": resolved["mime_type"],
         "file_size_bytes": item.get("file_size_bytes"),
         "width": width,
         "height": height,
-        "aspect_ratio": aspect_ratio,
+        "aspect_ratio": aspect_ratio or resolved["aspect_ratio"],
+        "orientation": resolved["orientation"],
+        "is_available": resolved["is_available"],
+        "storage_provider": resolved["storage_provider"],
+        "storage_key": resolved["storage_key"],
+        "srcset": resolved["srcset"],
+        "sizes": resolved["sizes"],
         "moderation_status": item.get("moderation_status") or "pending",
     }
 
@@ -156,15 +335,16 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         file_storage.stream.seek(0)
         if not _image_header_ok(ext, header):
             return {"ok": False, "message": "This image or GIF could not be verified safely."}, 400
-    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    stored = f"{datetime.utcnow().strftime('%Y%m%d')}_{secrets.token_urlsafe(16)}.{ext}"
-    path = UPLOAD_ROOT / stored
-    file_storage.save(path)
+    folder = "pulse_media" if str(context_type or "").startswith("pulse") else "chat_media"
+    storage = media_storage.save_public_file(file_storage, folder=folder)
+    path = Path(storage.get("local_path") or "")
+    stored = storage.get("storage_key") or f"{datetime.utcnow().strftime('%Y%m%d')}_{secrets.token_urlsafe(16)}.{ext}"
     mime = file_storage.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
     width = height = None
     if media_type in {"image", "gif"}:
         width, height = _image_dimensions(path)
-    url = _public_url_for_path(path)
+    url = storage.get("media_url") or _public_url_for_path(path)
+    thumbnail_url = url if media_type != "video" else storage.get("local_url", "")
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
@@ -181,16 +361,37 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
             original,
             stored,
             url,
-            url if media_type != "video" else "",
+            thumbnail_url,
             media_type,
-            mime,
-            int(size),
+            storage.get("mime_type") or mime,
+            int(storage.get("file_size") or size),
             width,
             height,
             _now(),
         ),
     )
     media_id = int(cur.lastrowid)
+    try:
+        cur.execute(
+            """
+            UPDATE chat_media_uploads
+            SET storage_provider=?, storage_key=?, public_url=?, poster_url=?, small_url=?, medium_url=?, large_url=?,
+                is_available=1, processing_status='ready'
+            WHERE id=?
+            """,
+            (
+                storage.get("provider") or media_storage.provider(),
+                storage.get("storage_key") or stored,
+                url,
+                thumbnail_url,
+                thumbnail_url,
+                url,
+                url,
+                media_id,
+            ),
+        )
+    except Exception:
+        pass
     conn.commit()
     cur.execute("SELECT * FROM chat_media_uploads WHERE id=?", (media_id,))
     row = cur.fetchone()

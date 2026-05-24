@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import bot  # noqa: E402
-from services import pulse_feed_engine  # noqa: E402
+from services import media_service, media_storage, pulse_feed_engine  # noqa: E402
 
 
 def expect(ok, label, details=""):
@@ -23,19 +23,38 @@ def expect(ok, label, details=""):
 def main():
     bot.init_db()
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    service = (ROOT / "services/media_service.py").read_text(encoding="utf-8")
+    storage = (ROOT / "services/media_storage.py").read_text(encoding="utf-8")
     for token in [
         "Media could not load.",
+        "Media is being restored.",
         "data-retry-media",
         "loading=\"lazy\"",
         "decoding=\"async\"",
         "preload=\"metadata\"",
         "data-fit=\"smart\"",
-        "object-fit:contain",
+        "srcset",
     ]:
-        expect(token in source, f"media rendering rule present: {token}")
+        expect(token in source + service, f"media rendering rule present: {token}")
+    for token in [
+        "def resolve_media",
+        "def normalize_url",
+        "def local_path_for_url",
+        "is_available",
+        "fallback_url",
+        "R2_PUBLIC_BASE_URL",
+        "CacheControl",
+        "MEDIA_REQUIRE_DURABLE_UPLOAD",
+    ]:
+        expect(token in service + storage, f"canonical durable media primitive present: {token}")
+    resolved = media_service.resolve_media({"media_url": "/definitely/missing/pulse-media.jpg", "media_type": "image"})
+    expect(resolved["is_available"] is False, "missing local media resolves unavailable")
+    expect(resolved["fallback_url"].endswith("media-unavailable.svg"), "fallback asset returned")
+    expect(media_storage.storage_status().get("provider") in {"local", "r2", "s3"}, "storage provider status loads")
     media_css = (ROOT / "static/css/pulse_reels_experience.css").read_text(encoding="utf-8")
     for token in ["poster first", "object-fit: contain", "data-orientation", "Adaptive playback"]:
         expect(token in source + media_css, f"adaptive media/Reels rule present: {token}")
+    expect("@webhook_app.route(\"/admin/media-health\"" in source, "admin media health route exists")
     visible, reason = pulse_feed_engine.pulse_visibility_decision({"visibility": "public", "moderation_status": "approved", "status": "published", "deleted_at": None})
     expect(visible and reason == "public_approved", "canonical public visibility allows approved public posts")
     hidden, reason = pulse_feed_engine.pulse_visibility_decision({"visibility": "public", "moderation_status": "approved", "status": "published", "deleted_at": "2026-01-01"})
@@ -45,4 +64,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

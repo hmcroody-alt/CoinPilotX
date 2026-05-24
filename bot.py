@@ -15900,6 +15900,7 @@ def pulse_desktop_left_rail_html(is_admin=False):
         "<span class='avatar'>P</span><span><strong>Your Pulse OS</strong><small class='muted'>Navigate, create, learn, and connect.</small></span>"
         "</section>"
         f"<section class='desktop-rail-card'>{links}</section>"
+        f"{premium_promo_card(compact=True)}"
         "<section class='desktop-rail-card'>"
         "<h3>Fast Lanes</h3>"
         "<a class='desktop-module-link' href='/pulse/messages'><span class='desktop-rail-ico'>💬</span><span><strong>Messenger</strong><small class='muted'>Chats, groups, and rooms</small></span></a>"
@@ -15942,6 +15943,77 @@ def pulse_status_rail_html():
     )
 
 
+def promotion_card(title, body, href, cta, icon="✦", kind="intelligence", compact=False):
+    compact_class = " is-compact" if compact else ""
+    return (
+        f"<section class='desktop-rail-card pulse-promo-card promo-{clean_html(kind)}{compact_class}' data-promotion-card='{clean_html(kind)}' loading='lazy'>"
+        f"<span class='desktop-signal-pill'><span>{clean_html(icon)}</span>{clean_html(title)}</span>"
+        f"<p class='muted'>{clean_html(body)}</p>"
+        f"<a class='button primary pulse-promo-cta' href='{clean_html(href)}'>{clean_html(cta)}</a>"
+        "</section>"
+    )
+
+
+def premium_promo_card(compact=False):
+    return promotion_card(
+        "Pulse Premium",
+        "Unlock identity effects, creator intelligence, and premium analytics without weakening free discovery.",
+        "/pulse/premium",
+        "Upgrade",
+        "◆",
+        "premium",
+        compact,
+    )
+
+
+def creator_promo_card(compact=False):
+    return promotion_card(
+        "Creator Economy",
+        "Turn audience energy into courses, products, live sessions, and payout-ready creator tools.",
+        "/pulse/creator/dashboard",
+        "Open Creator Studio",
+        "✦",
+        "creator",
+        compact,
+    )
+
+
+def marketplace_promo_card(compact=False):
+    return promotion_card(
+        "Marketplace",
+        "Discover trusted sellers, creator products, and commerce signals inside the Pulse economy.",
+        "/pulse/marketplace",
+        "Explore Marketplace",
+        "▣",
+        "marketplace",
+        compact,
+    )
+
+
+def intelligence_promo_card(compact=False):
+    return promotion_card(
+        "Scam Shield",
+        "Safety intelligence tracks scams, risky claims, and community reports before they become noise.",
+        "/pulse/assistant",
+        "Open Intelligence",
+        "🛡",
+        "intelligence",
+        compact,
+    )
+
+
+def teacher_promo_card(compact=False):
+    return promotion_card(
+        "Teacher Network",
+        "Build courses, host live classes, and earn through verified education-first creator tools.",
+        "/pulse/teachers",
+        "Become a Teacher",
+        "T",
+        "teacher",
+        compact,
+    )
+
+
 def pulse_desktop_right_rail_html():
     return (
         "<aside class='pulse-desktop-right' aria-label='Pulse intelligence rail'>"
@@ -15952,6 +16024,7 @@ def pulse_desktop_right_rail_html():
         "<div class='desktop-energy-meter' aria-hidden='true'><span data-desktop-energy style='--energy:58%'></span></div>"
         "<p class='muted' data-desktop-suggested-action>Signals are loading quietly so the feed stays fast.</p>"
         "</section>"
+        f"{creator_promo_card()}"
         "<section class='desktop-rail-card'><h3>Trending Topics</h3><div class='desktop-intel-grid' data-desktop-trending>"
         "<a class='desktop-intel-row' href='/pulse/topic/scamshield'><span class='desktop-rail-ico'>#</span><span><strong>#scamshield</strong><small class='muted'>Safety intelligence</small></span></a>"
         "</div></section>"
@@ -15970,15 +16043,18 @@ def pulse_desktop_right_rail_html():
         "<section class='desktop-rail-card'><h3>Safety Watch</h3><div class='desktop-intel-grid' data-desktop-scams>"
         "<div class='desktop-intel-row'><span class='desktop-rail-ico'>!</span><span><strong>Scam Shield calm</strong><small class='muted'>No active warnings loaded.</small></span></div>"
         "</div></section>"
+        f"{marketplace_promo_card()}"
         "<section class='desktop-rail-card'><h3>Active Conversations</h3><div class='desktop-intel-grid' data-desktop-active-convos>"
         "<a class='desktop-intel-row' href='/pulse/messages'><span class='desktop-rail-ico'>💬</span><span><strong>Messenger pulse</strong><small class='muted'>Chats hydrate quietly.</small></span></a>"
         "</div></section>"
         "<section class='desktop-rail-card'><h3>Trusted Educators</h3><div class='desktop-intel-grid' data-desktop-educators>"
         "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span><span><strong>Teacher network</strong><small class='muted'>Verified lessons and safety-first learning.</small></span></a>"
         "</div></section>"
+        f"{teacher_promo_card()}"
         "<section class='desktop-rail-card'><h3>Market Intelligence</h3><div class='desktop-intel-grid' data-desktop-market-intel>"
         "<div class='desktop-intel-row'><span class='desktop-rail-ico'>◎</span><span><strong>Context mode</strong><small class='muted'>Watch sentiment, scams, and creator momentum.</small></span></div>"
         "</div></section>"
+        f"{intelligence_promo_card()}"
         "</aside>"
     )
 
@@ -16105,9 +16181,9 @@ function toast(m,key=''){const t=document.getElementById('toast');if(!t)return;c
 const drawer=document.getElementById('pulseDrawer'),sheet=document.getElementById('createSheet');function setDrawer(open){document.body.classList.toggle('drawer-open',open);drawer?.setAttribute('aria-hidden',open?'false':'true')}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{if(e.target.closest('a'))setDrawer(false)});let sx=0,sy=0;document.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)},{passive:true});document.getElementById('pulseFab')?.addEventListener('click',()=>sheet?.classList.toggle('open'));document.addEventListener('click',e=>{if(sheet?.classList.contains('open')&&!e.target.closest('#createSheet,#pulseFab'))sheet.classList.remove('open');const b=e.target.closest('[data-sheet-type]');if(!b)return;document.getElementById('postType').value=b.dataset.sheetType;sheet.classList.remove('open');document.getElementById('postBody').focus();window.scrollTo({top:document.querySelector('.composer').offsetTop-70,behavior:'smooth'})});
 const statusViewer=document.getElementById('pulseStatusViewer');document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card&&statusViewer){document.getElementById('pulseStatusTitle').textContent=card.dataset.statusTitle||'Pulse Status';document.getElementById('pulseStatusMeta').textContent=card.dataset.statusMeta||'Pulse Status is ready.';statusViewer.classList.add('open');statusViewer.setAttribute('aria-hidden','false');return}if(e.target.closest('[data-close-status-viewer]')||e.target===statusViewer){statusViewer?.classList.remove('open');statusViewer?.setAttribute('aria-hidden','true')}});
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
-function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/'))return url;return '/'+url.replace(/^\\/+/, '')}
-function mediaFallbackHtml(m){return `<div class="pulse-media-fallback"><div><strong>Media could not load.</strong><span class="muted">Tap to retry.</span><br><button type="button" data-retry-media>Retry</button></div></div>`}
-function mediaHtml(items){return (items||[]).map(m=>{const src=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url)||src;const w=Number(m.width||0),h=Number(m.height||0);const ratio=w>0&&h>0?(w/h):Number(m.aspect_ratio||0);const orient=m.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');const style=ratio?` style="--media-ratio:${ratio}"`:'';const dims=w>0&&h>0?` width="${w}" height="${h}"`:'';const mediaType=String(m.media_type||'image').toLowerCase();const cls=`pulse-media-wrap is-${esc(orient)} media-kind-${esc(mediaType)}`;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||'',src,width:w,height:h}).slice(0,500));const onerr=`this.style.visibility='hidden';this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)`;return mediaType==='video'?`<div class="${cls}" data-fit="smart" data-open-media-lightbox data-media-type="video" data-media-src="${esc(src)}" data-media-poster="${esc(thumb)}" data-media-diag="${diag}"${style}><video src="${esc(src)}" poster="${esc(thumb)}" muted controls playsinline preload="metadata" ${dims} onerror="${onerr}"></video>${mediaFallbackHtml(m)}</div>`:`<div class="${cls}" data-fit="smart" data-open-media-lightbox data-media-type="image" data-media-src="${esc(src)}" data-media-diag="${diag}"${style}><img src="${esc(thumb)}" data-full-src="${esc(src)}" alt="Pulse media" loading="lazy" decoding="async" ${dims} onerror="if(this.dataset.fullSrc&&this.src!==new URL(this.dataset.fullSrc,location.origin).href){this.src=this.dataset.fullSrc}else{${onerr}}">${mediaFallbackHtml(m)}</div>`}).join('')}
+function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/')||url.startsWith('data:')||url.startsWith('blob:'))return url;return '/'+url.replace(new RegExp('^/+'), '')}
+function mediaFallbackHtml(m){const id=m.id||m.media_id||'';return `<div class="pulse-media-fallback" data-media-fallback="${esc(id)}"><div><strong>${m.is_available===false?'Media is being restored.':'Media could not load.'}</strong><span class="muted">Tap to retry. Trace media-${esc(id||'unknown')}</span><br><button type="button" data-retry-media>Retry</button></div></div>`}
+function mediaHtml(items){return (items||[]).map(m=>{const src=mediaUrl(m.valid_url||m.media_url);const raw=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url)||src;const poster=mediaUrl(m.poster_url)||thumb;const available=m.is_available!==false&&!!src;const w=Number(m.width||0),h=Number(m.height||0);const ratio=w>0&&h>0?(w/h):Number(m.aspect_ratio||0);const orient=m.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');const style=ratio?` style="--media-ratio:${ratio}"`:'';const dims=w>0&&h>0?` width="${w}" height="${h}"`:'';const mediaType=String(m.media_type||'image').toLowerCase();const cls=`pulse-media-wrap is-${esc(orient)} media-kind-${esc(mediaType)} ${available?'':'is-broken'}`;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||'',src:src||raw,width:w,height:h,available}).slice(0,500));const srcset=m.srcset?` srcset="${esc(m.srcset)}"`:'';const sizes=m.sizes?` sizes="${esc(m.sizes)}"`:' sizes="(max-width: 760px) 100vw, 760px"';const onerr=`this.style.visibility='hidden';this.closest('.pulse-media-wrap')?.classList.add('is-broken');console.warn('Pulse media failed',this.closest('.pulse-media-wrap')?.dataset.mediaDiag)`;if(!available)return `<div class="${cls}" data-fit="smart" data-media-type="${esc(mediaType)}" data-media-src="${esc(raw)}" data-media-diag="${diag}"${style}>${mediaFallbackHtml(m)}</div>`;return mediaType==='video'?`<div class="${cls}" data-fit="smart" data-open-media-lightbox data-media-type="video" data-media-src="${esc(src)}" data-media-poster="${esc(poster)}" data-media-diag="${diag}"${style}><video src="${esc(src)}" poster="${esc(poster)}" muted controls playsinline preload="metadata" ${dims} onerror="${onerr}"></video>${mediaFallbackHtml(m)}</div>`:`<div class="${cls}" data-fit="smart" data-open-media-lightbox data-media-type="image" data-media-src="${esc(src)}" data-media-diag="${diag}"${style}><img src="${esc(thumb||src)}" data-full-src="${esc(src)}" alt="Pulse media" loading="lazy" decoding="async" ${dims}${srcset}${sizes} onerror="if(this.dataset.fullSrc&&this.src!==new URL(this.dataset.fullSrc,location.origin).href){this.src=this.dataset.fullSrc}else{${onerr}}">${mediaFallbackHtml(m)}</div>`}).join('')}
 function premiumMarkHtml(author){const mark=author&&author.premium_mark;if(!mark)return '';return `<span class="premium-glow-mark ${esc(mark.type||'star')}" title="Premium Verified" aria-label="Premium Verified">${esc(mark.symbol||'✦')}</span>`}
 		function reactionHtml(p){const counts=p.reaction_counts||{};const preferred=['like','love','fire','funny','wow','rocket','clap','hundred','target','smart','fast_signal','shield'];const active=p.viewer_reaction&&!preferred.includes(p.viewer_reaction)?[p.viewer_reaction]:[];return [...preferred,...active].map(k=>{const label=reactions[k]||k;return `<button class="reaction-pill ${p.viewer_reaction===k?'active':''}" title="${esc(label)}" aria-label="${esc(label)} reaction" data-react="${k}" data-post="${p.id}" data-count="${Number(counts[k]||0)}"><span>${reactionIcons[k]||'•'}</span> <b data-reaction-count>${Number(counts[k]||0)}</b></button>`}).join('')}
         function postHtml(p){if(isDeletedPost(p))return '';const author=p.author||{};const label=author.primary_label||author.rank||(author.badges||['Member'])[0]||'Member';const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const canDelete=!!p.can_delete;const follow=(!canDelete&&author.public_player_id)?`<button data-follow-public="${esc(author.public_player_id)}">Follow</button>`:'';const msg=(!canDelete&&author.public_player_id)?`<button data-message="${esc(author.public_player_id)}">Message creator</button>`:'';const del=canDelete?`<button data-delete-post="${p.id}">Delete post</button>`:'';const rep=!canDelete?`<button data-report="post" data-id="${p.id}">Report</button>`:'';const mediaItems=p.media||[];const primaryMedia=mediaItems[0]||{};const mediaType=String(primaryMedia.media_type||'').toLowerCase();const postType=String(p.post_type||'post').toLowerCase();const comments=Number(p.comments_count||p.comment_count||0);const reactionsTotal=Number(p.reactions_count||0);const classSafe=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'post';const ratio=Number(primaryMedia.aspect_ratio||0)||((Number(primaryMedia.width||0)>0&&Number(primaryMedia.height||0)>0)?Number(primaryMedia.width)/Number(primaryMedia.height):0);const orientation=primaryMedia.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'none');const intelligenceClass=[comments>=3?'is-discussion':'',reactionsTotal>=5?'is-trending':'',reactionsTotal>=8?'reaction-heat-high':'',author.premium_mark||author.primary_label?'is-creator-forward':''].filter(Boolean).join(' ');const layoutClass=[mediaItems.length?'has-media':'is-text',mediaType==='video'?'is-video':mediaItems.length>1?'is-carousel':mediaItems.length?'is-image':'',`type-${classSafe(postType)}`,`media-${classSafe(orientation)}`,intelligenceClass].filter(Boolean).join(' ');const module=p.post_type==='scam_report'?`<div class="intel-item"><strong>Scam Shield pulse</strong><br><span class="muted">Risk score ${Number(p.risk_score||0)}. Community-generated warning, educational only.</span></div>`:p.post_type==='poll'?`<div class="intel-item"><strong>Question pulse</strong><br><span class="muted">Educators and community members can answer below.</span></div>`:comments>=3?`<div class="intel-item"><strong>Discussion heat</strong><br><span class="muted">${comments} replies. Open comments to follow the thread.</span></div>`:'';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="card post live-enter ${layoutClass}" data-post-id="${p.id}" data-post-type="${esc(postType)}" data-media-count="${mediaItems.length}" data-media-orientation="${esc(orientation)}" data-engagement-heat="${comments+reactionsTotal}"><div class="author"><div class="author-main"><span class="avatar">${avatar}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'Pulse creator')}${premiumMarkHtml(author)}</div><span class="badge">${esc(label)}</span></div></div><div class="post-tools"><button class="post-menu-btn" data-post-menu="${p.id}" aria-label="Post actions">•••</button></div><div class="post-sheet" data-post-sheet="${p.id}">${follow}${msg}<a class="button" href="${esc(p.permalink)}">View post</a><a class="button" href="${profile}">View profile</a><button data-share="${esc(p.permalink)}">Share post</button>${del}${rep}</div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${module}${mediaItems.length?`<div class="media-grid">${mediaHtml(mediaItems)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${smartTimeHtml(p.created_at)} <span class="time-dot">•</span> ${esc(p.post_type||'post')} <span class="time-dot">•</span> <span data-comment-count="${p.id}">${comments}</span> comments <span class="time-dot">•</span> <span data-reaction-total="${p.id}">${reactionsTotal}</span> reactions</p><div class="reaction-strip">${reactionHtml(p)}</div><div class="quick-actions"><button class="quick-action" data-quick-like="${p.id}">Like</button><button class="quick-action" data-open-comments="${p.id}">Comment</button><button class="quick-action" data-share="${esc(p.permalink)}">Share</button><button class="quick-action" data-save-post="${p.id}">Save</button><button class="quick-action" data-post-menu="${p.id}">More</button></div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><button class="comment-preview-toggle" data-view-comments="${p.id}" hidden>View comments</button><div class="comment-composer"><span class="avatar comment-avatar">${avatar}</span><input class="comment-input" data-comment-input="${p.id}" placeholder="Write comment..."><button class="comment-emoji" data-comment-emoji="${p.id}" type="button">☺</button><button class="comment-send" data-send-comment="${p.id}" type="button">➤</button></div></section></article>`}
@@ -17855,85 +17931,17 @@ def pulse_public_id_for_user(user_id):
 
 
 def pulse_media_url(url):
-    value = str(url or "").strip()
-    if not value:
-        return ""
-    value = value.replace("\\", "/")
-    if value.startswith(("http://", "https://", "data:", "blob:")):
-        return value
-    static_root = Path(webhook_app.static_folder or "static").resolve()
-    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
-    try:
-        path_value = Path(value).expanduser()
-        if path_value.is_absolute():
-            resolved = path_value.resolve()
-            try:
-                rel = resolved.relative_to(static_root)
-                return "/static/" + str(rel).replace(os.sep, "/")
-            except ValueError:
-                pass
-            try:
-                rel = resolved.relative_to(upload_root)
-                return "/uploads/" + str(rel).replace(os.sep, "/")
-            except ValueError:
-                pass
-    except Exception:
-        pass
-    marker = "/static/uploads/"
-    if marker in value:
-        return value[value.index(marker):]
-    marker = "static/uploads/"
-    if marker in value:
-        return "/" + value[value.index(marker):]
-    marker = "/uploads/"
-    if marker in value:
-        return value[value.index(marker):]
-    if value.startswith("/uploads/"):
-        return value
-    if value.startswith("/static/"):
-        return value
-    if value.startswith("static/"):
-        return "/" + value
-    if value.startswith("uploads/"):
-        return "/" + value
-    if "/" not in value and "." in value:
-        return "/static/uploads/" + value
-    return value if value.startswith("/") else "/" + value
+    return media_service.normalize_url(url)
 
 
 def pulse_media_local_path(url):
-    value = pulse_media_url(url)
-    if not value or value.startswith(("http://", "https://", "data:", "blob:")):
-        return None
-    parsed = urlparse(value)
-    path = parsed.path or value
-    static_root = Path(webhook_app.static_folder or "static").resolve()
-    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
-    candidates = []
-    if path.startswith("/static/"):
-        candidates.append(static_root / path[len("/static/"):])
-    if path.startswith("/uploads/"):
-        candidates.append(upload_root / path[len("/uploads/"):])
-        candidates.append(static_root / "uploads" / path[len("/uploads/"):])
-    if path.startswith("static/"):
-        candidates.append(Path(path).resolve())
-    for candidate in candidates:
-        try:
-            if candidate.exists():
-                return str(candidate)
-        except Exception:
-            continue
-    return str(candidates[0]) if candidates else None
+    return media_service.local_path_for_url(url)
 
 
 def pulse_media_exists(url):
     if not url:
         return False
-    value = pulse_media_url(url)
-    if value.startswith(("http://", "https://")):
-        return True
-    path = pulse_media_local_path(value)
-    return bool(path and os.path.exists(path))
+    return bool(media_service.resolve_media({"media_url": url}).get("is_available"))
 
 
 def pulse_search_users(cur, query, viewer_user_id=0, limit=12, allow_email=False):
@@ -18483,9 +18491,11 @@ def pulse_reels_page():
     @media(max-width:900px){body:has(.reels-immersive){overflow:hidden}body:has(.reels-immersive) .wrap{width:100%;max-width:100vw;margin:0;padding:0}body:has(.reels-immersive) .wrap>section.card,body:has(.reels-immersive) .layout>aside,body:has(.reels-immersive) .nav,body:has(.reels-immersive) .mobile-topbar,body:has(.reels-immersive) .mobile-bottom-nav,body:has(.reels-immersive) .pulse-fab{display:none!important}body:has(.reels-immersive) .layout{display:block}body:has(.reels-immersive) .layout>div{min-height:100dvh}.reels-shell{width:100vw;height:100dvh;max-height:none;aspect-ratio:auto;border-radius:0;border:0;box-shadow:none}.reels-shell:before{background:radial-gradient(circle at 50% 40%,rgba(110,223,246,.08),transparent 30rem)}.reels-immersive,.reel-card{height:100dvh;min-height:100dvh;border-radius:0;border:0}.reel-scrim{background:linear-gradient(180deg,rgba(0,0,0,.48),transparent 18%,transparent 58%,rgba(0,0,0,.86))}.reels-rail{top:calc(7px + env(safe-area-inset-top));left:50%;right:auto;transform:translateX(-50%);width:auto;max-width:calc(100% - 92px);border-radius:999px;padding:3px;background:rgba(3,8,17,.28);backdrop-filter:none;border-color:rgba(255,255,255,.075);box-shadow:0 10px 28px rgba(0,0,0,.12)}.reels-rail button{height:28px;min-height:28px;padding:0 9px;font-size:11px}.reel-top{padding:calc(46px + env(safe-area-inset-top)) 10px 8px}.reel-avatar{width:36px;height:36px;border-radius:13px}.reel-creator{gap:8px;max-width:calc(100% - 84px)}.reel-creator strong{font-size:13px}.reel-creator small{font-size:11px}.reel-follow{min-height:28px;font-size:11px;padding:5px 9px;background:rgba(255,255,255,.09);backdrop-filter:none}.reel-actions{right:8px;top:50%;transform:translateY(-34%);gap:12px}.reel-action{width:40px;height:40px;min-height:40px;border-radius:999px;background:rgba(3,8,15,.24);backdrop-filter:none;border-color:rgba(255,255,255,.09);box-shadow:none;font-size:17px}.reel-action small{font-size:8px;max-width:34px;margin-top:-6px;color:rgba(244,252,255,.72)}.reel-caption{left:13px;right:60px;bottom:calc(72px + env(safe-area-inset-bottom));max-width:calc(100% - 74px);gap:6px}.reel-caption h2{font-size:clamp(20px,6.5vw,29px);line-height:1.05}.reel-caption p{font-size:13px;-webkit-line-clamp:2;color:rgba(239,251,255,.88)}.reel-ai-hint{max-width:96%;font-size:10px;padding:4px 7px;background:rgba(3,10,18,.28)}.reel-tags{max-height:28px}.reel-tags span{font-size:10px;padding:4px 7px;background:rgba(3,10,18,.28);backdrop-filter:none}.reel-tags span:nth-child(n+4){display:none}.reel-music{max-width:100%;overflow:hidden}.reel-music .button{min-height:28px;padding:5px 8px;font-size:11px;background:rgba(3,10,18,.28);border-color:rgba(255,255,255,.1)}.reel-music .button:nth-child(2){display:none}.reel-frame-toggle{display:none}.reels-toolbar{left:auto;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:7px;width:auto;max-width:none;padding:0;border:0;background:transparent;backdrop-filter:none;box-shadow:none}.reels-toolbar a,.reels-toolbar button{display:none;width:46px;height:46px;min-width:46px;min-height:46px;border-radius:999px;padding:0;font-size:0;background:rgba(4,12,22,.7);border-color:rgba(110,223,246,.18);box-shadow:0 12px 34px rgba(0,0,0,.32)}.reels-toolbar [data-open-reel-camera]{display:grid;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b}.reels-toolbar [data-open-reel-camera]::before{content:"+";font-size:29px;line-height:1;font-weight:900}.reels-toolbar.is-open{right:10px;left:10px;bottom:calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:8px;border:1px solid rgba(110,223,246,.16);border-radius:24px;background:rgba(4,11,20,.86);box-shadow:0 18px 55px rgba(0,0,0,.36)}.reels-toolbar.is-open a,.reels-toolbar.is-open button{display:flex;width:100%;height:42px;min-width:0;min-height:42px;border-radius:18px;font-size:12px;padding:0 8px}.reels-toolbar.is-open [data-open-reel-camera]::before{content:none}.reel-card{scroll-snap-stop:always;content-visibility:auto;contain-intrinsic-size:100dvh}.reels-modal{padding:0;align-items:end;backdrop-filter:none}.reels-sheet{border-radius:26px 26px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom))}}
     @media(max-width:380px){.reel-action{width:38px;height:38px;min-height:38px;font-size:16px}.reel-action small{font-size:7px;max-width:32px}.reel-caption{right:56px}.reels-rail{max-width:calc(100% - 82px)}.reels-rail button{height:27px;min-height:27px;padding:0 8px;font-size:10px}.reels-toolbar [data-open-reel-camera]{width:44px;height:44px;min-height:44px}}
     </style>
-    <section class='reels-shell' data-reels-adaptive-shell>
-      <div class='reel-top-shell'><button class='icon-btn' type='button' onclick='history.back()' aria-label='Back'>‹</button><span class='reel-top-title'>Pulse Reels</span><a class='icon-btn' href='/pulse/search' aria-label='Search'>⌕</a></div>
-      <nav class='reels-rail' id='reelsRail' aria-label='Reel discovery tabs'></nav>
+    <section class='reels-shell' data-reels-adaptive-shell data-reels-mobile-shell>
+      <div class='reels-top' data-reels-top>
+        <div class='reels-topbar reel-top-shell' data-reels-topbar><button class='icon-btn' type='button' onclick='history.back()' aria-label='Back'>‹</button><span class='reel-top-title'>Pulse Reels</span><a class='icon-btn' href='/pulse/search' aria-label='Search'>⌕</a></div>
+        <nav class='reels-tabs reels-rail' id='reelsRail' aria-label='Reel discovery tabs' data-reels-tabs></nav>
+      </div>
       <section class='reels-immersive' id='reelsFeed' aria-live='polite'></section>
       <div class='reels-loading' id='reelsLoading' aria-hidden='true'><span class='reels-loader'></span></div>
       <span class='reels-network-chip'>Adaptive playback · poster first</span>
@@ -18515,7 +18525,7 @@ def pulse_reels_page():
     const reelTabs=[['for_you','For You'],['following','Following'],['trending','Trending'],['new_creators','New Creators'],['ai_picks','AI Picks'],['local','Local'],['global','Global'],['educational','Educational'],['music','Music'],['live','Live']];
     const emptyCopy={for_you:['Reels are warming up.','Post the first short clip, add a sound, or turn a livestream highlight into a Reel.'],following:['No followed creator Reels yet.','Follow creators from Pulse, then their clips will land here first.'],trending:['No trending Reels yet.','Reels with strong watch energy and healthy engagement will rise here.'],new_creators:['New creators are warming up.','Fresh Pulse creators will appear here as they post vertical clips.'],ai_picks:['AI Picks are calibrating.','Pulse AI highlights original, trustworthy, high-quality clips here.'],local:['Local Reels are warming up.','As profiles add region signals, nearby creator clips will appear here.'],global:['Global Reels are warming up.','Worldwide creator clips will appear here as the network grows.'],educational:['No educational Reels yet.','Safety lessons, market education, and creator tutorials will appear here.'],music:['No sound-powered Reels yet.','Clips with original audio or saved sounds will appear here.'],live:['No live clips yet.','Livestream highlights and event clips will appear here.']};
     function reelHtml(reel){
-      const author=reel.author||{},media=(reel.media||[])[0]||{},src=media.media_url||reel.video_url||'',poster=media.thumbnail_url||reel.poster_url||'',id=reel.reel_id||reel.id;
+      const author=reel.author||{},media=(reel.media||[])[0]||{},src=(media.is_available===false?'':(media.valid_url||media.media_url||reel.video_url||'')),poster=media.poster_url||media.thumbnail_url||reel.poster_url||'',id=reel.reel_id||reel.id;
       const tags=(reel.ai_tags||reel.tags||[]).slice(0,5),audio=reel.audio||{},music=audio.title?`${audio.title}${audio.artist?' · '+audio.artist:''}`:'Original Pulse sound';
       const insight=(reel.ai_summary||reel.why_this_matters||reel.category||tags[0]||'Creator signal').toString().slice(0,88);
       const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));
@@ -18524,7 +18534,7 @@ def pulse_reels_page():
       const mediaEl=src?(mt==='image'||mt==='gif'?`<img class="reel-media" src="${esc(src)}" alt="${esc(reel.title||'Pulse Reel')}" loading="lazy" decoding="async" onerror="${onerr}">`:`<video class="reel-media" src="${esc(src)}" poster="${esc(poster)}" muted playsinline loop preload="metadata" onerror="${onerr}"></video>`):'';
       const blurEl=src?(mt==='image'||mt==='gif'?`<img class="reel-blur-bg" src="${esc(src)}" alt="" aria-hidden="true">`:`<video class="reel-blur-bg" src="${esc(src)}" muted playsinline loop preload="metadata" aria-hidden="true"></video>`):'';
       const ratio=Number(media.aspect_ratio||0),orientation=media.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');
-      return `<article class="reel-card ${frameMode==='fill'?'fill':frameMode==='blur'?'blur':'smart'} ${src?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}">${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">Media could not load. Tap to retry.</span></div><div class="reel-scrim"></div><div class="reel-frame-toggle" aria-label="Frame fit"><button class="${frameMode==='smart'?'active':''}" data-frame-mode="smart">Smart</button><button class="${frameMode==='fill'?'active':''}" data-frame-mode="fill">Fill</button><button class="${frameMode==='fit'?'active':''}" data-frame-mode="fit">Fit</button><button class="${frameMode==='blur'?'active':''}" data-frame-mode="blur">Blur</button></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reel-actions"><button class="reel-action" data-reel-react="${id}" aria-label="Fire">🔥<small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reel-caption"><div class="reel-ai-hint">Pulse AI · ${esc(insight)}</div><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`;
+      return `<article class="reel-card ${frameMode==='fill'?'fill':frameMode==='blur'?'blur':'smart'} ${src?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}"><div class="reels-media-stage" data-reels-media-stage>${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">Media could not load. Tap to retry.</span></div><div class="reel-scrim"></div></div><div class="reel-frame-toggle" aria-label="Frame fit"><button class="${frameMode==='smart'?'active':''}" data-frame-mode="smart">Smart</button><button class="${frameMode==='fill'?'active':''}" data-frame-mode="fill">Fill</button><button class="${frameMode==='fit'?'active':''}" data-frame-mode="fit">Fit</button><button class="${frameMode==='blur'?'active':''}" data-frame-mode="blur">Blur</button></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reels-action-rail reel-actions" data-reels-action-rail><button class="reel-action" data-reel-react="${id}" aria-label="Fire">🔥<small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reels-caption-overlay reel-caption" data-reels-caption-overlay><div class="reel-ai-hint">Pulse AI · ${esc(insight)}</div><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`;
     }
     function applyFrameMode(mode){frameMode=mode||'smart';document.querySelectorAll('.reel-card').forEach(c=>{c.classList.toggle('fill',frameMode==='fill');c.classList.toggle('fit',frameMode==='fit');c.classList.toggle('blur',frameMode==='blur');c.classList.toggle('smart',frameMode==='smart')});document.querySelectorAll('[data-frame-mode]').forEach(b=>b.classList.toggle('active',b.dataset.frameMode===frameMode))}
     function syncPlayback(){const cards=[...document.querySelectorAll('.reel-card')];const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;card.querySelectorAll('video').forEach(v=>{v.muted=true;if(v.classList.contains('reel-media'))v.muted=reelsMuted;if(visible)v.play().catch(()=>{});else v.pause();});});if(active){const next=active.nextElementSibling?.querySelector('video');if(next)next.load();}}
@@ -28852,6 +28862,67 @@ def admin_media_diagnostics_page():
     return admin_page_html("Media Diagnostics", body, admin)
 
 
+@webhook_app.route("/admin/media-health", methods=["GET"])
+def admin_media_health_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    init_db()
+    status = media_storage.storage_status()
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, uploader_user_id, context_type, context_id, media_url, thumbnail_url, poster_url,
+               media_type, mime_type, file_size_bytes, width, height, storage_provider, storage_key,
+               is_available, availability_error, created_at
+        FROM chat_media_uploads
+        WHERE deleted_at IS NULL
+        ORDER BY id DESC LIMIT 200
+        """
+    )
+    rows = []
+    broken = missing_thumbs = missing_posters = 0
+    for row in cur.fetchall():
+        item = dict(row)
+        resolved = media_service.resolve_media(item)
+        is_ok = bool(resolved.get("is_available"))
+        if not is_ok:
+            broken += 1
+        if not resolved.get("thumbnail_url"):
+            missing_thumbs += 1
+        if resolved.get("media_type") == "video" and not resolved.get("poster_url"):
+            missing_posters += 1
+        rows.append({
+            "id": item.get("id"),
+            "context": f"{item.get('context_type') or ''}:{item.get('context_id') or ''}",
+            "type": resolved.get("media_type") or "",
+            "provider": resolved.get("storage_provider") or "",
+            "available": "yes" if is_ok else "restoring",
+            "dimensions": f"{resolved.get('width') or 0}x{resolved.get('height') or 0}",
+            "url": resolved.get("media_url") or "",
+            "error": item.get("availability_error") or "",
+        })
+    total = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE deleted_at IS NULL")
+    conn.close()
+    required = status.get("required") or {}
+    env_rows = "".join(f"<tr><td>{clean_html(k)}</td><td>{'present' if v else 'missing'}</td></tr>" for k, v in required.items())
+    if not env_rows:
+        env_rows = "<tr><td>Local provider</td><td>active</td></tr>"
+    table = admin_rows_table(rows, [("id", "ID"), ("context", "Context"), ("type", "Type"), ("provider", "Provider"), ("available", "Available"), ("dimensions", "Size"), ("url", "URL"), ("error", "Error")])
+    local_warning = ""
+    if status.get("provider") == "local":
+        local_warning = "<section class='card'><h2>Production Warning</h2><p class='muted'>Local storage is active. Railway container storage is not durable after redeploy unless a volume is mounted. Attach R2/S3 for permanent Pulse media.</p></section>"
+    body = f"""
+    <h1>Media Health</h1><p class='muted'>Durable storage, URL resolution, fallback safety, and Pulse media availability.</p>
+    {local_warning}
+    <section class='grid'><div class='card'><h2>Total Active Media</h2><p class='metric'>{total}</p></div><div class='card'><h2>Broken / Restoring</h2><p class='metric'>{broken}</p></div><div class='card'><h2>Missing Thumbnails</h2><p class='metric'>{missing_thumbs}</p></div><div class='card'><h2>Missing Posters</h2><p class='metric'>{missing_posters}</p></div></section>
+    <section class='card'><h2>Storage Provider</h2><p class='muted'>{clean_html(status.get('provider'))} · configured={bool(status.get('configured'))}</p><table class='table'><tr><th>Variable</th><th>Status</th></tr>{env_rows}</table></section>
+    <section class='card'><h2>Recent Media Resolution</h2>{table}</section>
+    <p><a class='button primary' href='/admin/media'>Open Media Diagnostics</a> <a class='button' href='/admin/performance'>Performance</a></p>
+    """
+    return admin_page_html("Media Health", body, admin)
+
+
 @webhook_app.route("/admin/system-audit", methods=["GET"])
 def admin_system_audit_page():
     admin, denied = require_admin_page("system.view")
@@ -36543,6 +36614,17 @@ def init_db():
         ("height", "INTEGER"),
         ("moderation_status", "TEXT DEFAULT 'pending'"),
         ("moderation_reason", "TEXT"),
+        ("storage_provider", "TEXT"),
+        ("storage_key", "TEXT"),
+        ("public_url", "TEXT"),
+        ("poster_url", "TEXT"),
+        ("small_url", "TEXT"),
+        ("medium_url", "TEXT"),
+        ("large_url", "TEXT"),
+        ("is_available", "INTEGER DEFAULT 1"),
+        ("availability_checked_at", "TEXT"),
+        ("availability_error", "TEXT"),
+        ("processing_status", "TEXT DEFAULT 'ready'"),
         ("created_at", "TEXT"),
         ("deleted_at", "TEXT"),
     ], conn=conn)

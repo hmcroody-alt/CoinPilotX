@@ -65,40 +65,7 @@ def _clean_text(value, limit=4000):
 
 
 def _public_media_url(url):
-    value = str(url or "").strip().replace("\\", "/")
-    if not value:
-        return ""
-    if value.startswith(("http://", "https://", "data:", "blob:")):
-        return value
-    static_root = Path("static").resolve()
-    upload_root = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads")).resolve()
-    try:
-        path_value = Path(value).expanduser()
-        if path_value.is_absolute():
-            resolved = path_value.resolve()
-            try:
-                return "/static/" + str(resolved.relative_to(static_root)).replace(os.sep, "/")
-            except ValueError:
-                pass
-            try:
-                return "/uploads/" + str(resolved.relative_to(upload_root)).replace(os.sep, "/")
-            except ValueError:
-                pass
-    except Exception:
-        pass
-    for marker in ("/static/uploads/", "static/uploads/"):
-        if marker in value:
-            idx = value.index(marker)
-            return value[idx:] if marker.startswith("/") else "/" + value[idx:]
-    if "/uploads/" in value:
-        return value[value.index("/uploads/"):]
-    if value.startswith(("/static/", "/uploads/")):
-        return value
-    if value.startswith("static/"):
-        return "/" + value
-    if value.startswith("uploads/"):
-        return "/" + value
-    return value if value.startswith("/") else "/" + value
+    return media_service.normalize_url(url)
 
 
 def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
@@ -240,38 +207,27 @@ def _media_for_posts(post_ids):
             post_id = media_id_to_post.get(int(item.get("id") or 0), int(item.get("context_id") or 0))
             if post_id not in post_id_set:
                 continue
-            media_url = _public_media_url(item.get("media_url"))
-            thumbnail_url = _public_media_url(item.get("thumbnail_url") or item.get("media_url"))
-            width = item.get("width")
-            height = item.get("height")
-            aspect_ratio = None
-            orientation = "unknown"
-            try:
-                width_i = int(width or 0)
-                height_i = int(height or 0)
-                if width_i > 0 and height_i > 0:
-                    aspect_ratio = round(width_i / height_i, 4)
-                    if abs(aspect_ratio - 1) < 0.08:
-                        orientation = "square"
-                    elif aspect_ratio > 1:
-                        orientation = "landscape"
-                    else:
-                        orientation = "portrait"
-            except Exception:
-                width_i = height_i = 0
+            resolved = media_service.resolve_media(item)
             media.setdefault(post_id, []).append({
                 "id": item.get("id"),
-                "media_type": item.get("media_type"),
-                "media_url": media_url,
-                "thumbnail_url": thumbnail_url or media_url,
-                "mime_type": item.get("mime_type"),
-                "file_size_bytes": item.get("file_size_bytes"),
-                "width": width,
-                "height": height,
-                "aspect_ratio": aspect_ratio,
-                "orientation": orientation,
+                "media_type": resolved.get("media_type"),
+                "media_url": resolved.get("media_url"),
+                "valid_url": resolved.get("valid_url"),
+                "thumbnail_url": resolved.get("thumbnail_url"),
+                "poster_url": resolved.get("poster_url"),
+                "fallback_url": resolved.get("fallback_url"),
+                "mime_type": resolved.get("mime_type"),
+                "file_size_bytes": resolved.get("file_size_bytes"),
+                "width": resolved.get("width"),
+                "height": resolved.get("height"),
+                "aspect_ratio": resolved.get("aspect_ratio"),
+                "orientation": resolved.get("orientation"),
+                "is_available": resolved.get("is_available"),
+                "storage_provider": resolved.get("storage_provider"),
+                "storage_key": resolved.get("storage_key"),
                 "fit_mode": "smart",
-                "srcset": [],
+                "srcset": resolved.get("srcset"),
+                "sizes": resolved.get("sizes"),
             })
         return media
     except Exception as exc:
