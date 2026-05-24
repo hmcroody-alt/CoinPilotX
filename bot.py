@@ -16703,9 +16703,13 @@ def ensure_pulse_messenger_schema(cur, conn=None):
     for statement in [
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user ON pulse_conversation_participants(user_id, conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_conversation ON pulse_conversation_participants(conversation_id, user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_user_only ON pulse_conversation_participants(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversation_participants_conversation_only ON pulse_conversation_participants(conversation_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversations_type_activity ON pulse_conversations(conversation_type, last_activity_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_conversations_type_updated ON pulse_conversations(conversation_type, updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_conversations_updated ON pulse_conversations(updated_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_created ON pulse_messages(conversation_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_id ON pulse_messages(conversation_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_chat_rooms_key ON pulse_chat_rooms(room_key)",
@@ -17080,7 +17084,13 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
     cur.execute("UPDATE pulse_conversations SET member_count=? WHERE id=?", (member_count, conversation_id))
     cur.execute("SELECT * FROM pulse_messages WHERE id=? LIMIT 1", (message_id,))
     message_payload = _pulse_message_payload(cur.fetchone(), user["user_id"])
-    event_name = "room_message_created" if (conversation.get("conversation_type") or "") in {"room", "chat_room"} else "group_message_created"
+    conversation_type = conversation.get("conversation_type") or "direct"
+    if conversation_type in {"room", "chat_room"}:
+        event_name = "room_message_created"
+    elif conversation_type in {"group", "community", "community_group", "creator", "live"}:
+        event_name = "group_message_created"
+    else:
+        event_name = "pulse_message_sent"
     return {
         "ok": True,
         "message": "Message sent.",
@@ -23066,76 +23076,51 @@ def api_pulse_message_send():
         thread_id,
         message_type,
     )
-    if conversation_id and not thread_id:
-        cur.execute("SELECT * FROM pulse_conversations WHERE id=? LIMIT 1", (conversation_id,))
-        conversation = dict(cur.fetchone() or {})
-        cur.execute("SELECT 1 FROM pulse_conversation_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (conversation_id, user["user_id"]))
-        if not cur.fetchone():
-            conn.close()
-            return jsonify({"ok": False, "message": "Conversation not found."}), 404
-        if (conversation.get("conversation_type") or "direct") != "direct":
-            now = datetime.utcnow().isoformat(timespec="seconds")
-            cur.execute(
-                """
-                INSERT INTO pulse_messages
-                (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, delivery_status, status, created_at)
-                VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
-                """,
-                (
-                    conversation_id,
-                    user["user_id"],
-                    message,
-                    message_type,
-                    media_url,
-                    thumbnail_url,
-                    json.dumps(metadata, default=str)[:4000],
-                    int(payload.get("file_size") or 0),
-                    float(payload.get("duration") or payload.get("duration_seconds") or 0),
-                    reply_to_id or None,
-                    now,
-                ),
+    if conversation_id:
+        try:
+            result, status = pulse_send_conversation_message(
+                cur,
+                user,
+                conversation_id,
+                message,
+                message_type,
+                media_url,
+                thumbnail_url,
+                metadata,
+                reply_to_id,
+                safe_int(payload.get("file_size"), 0),
+                float(payload.get("duration") or payload.get("duration_seconds") or 0),
             )
-            message_id = int(cur.lastrowid)
-            if media_url:
-                cur.execute("UPDATE chat_media_uploads SET message_id=?, context_type='pulse_message', context_id=? WHERE uploader_user_id=? AND media_url=? AND message_id IS NULL", (message_id, str(conversation_id), user["user_id"], media_url))
-            cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=?, last_activity_at=? WHERE id=?", (now, now, now, conversation_id))
-            cur.execute("UPDATE pulse_conversation_participants SET unread_count=COALESCE(unread_count,0)+1 WHERE conversation_id=? AND user_id!=? AND COALESCE(left_at,'')=''", (conversation_id, user["user_id"]))
-            cur.execute("UPDATE pulse_conversation_participants SET last_read_at=?, last_seen_at=?, last_read_message_id=?, unread_count=0 WHERE conversation_id=? AND user_id=?", (now, now, message_id, conversation_id, user["user_id"]))
-            cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=?", (conversation_id, user["user_id"]))
-            recipient_ids = [int(dict(row).get("user_id") or 0) for row in cur.fetchall()]
-            for recipient_id in recipient_ids[:250]:
-                cur.execute(
-                    "INSERT INTO pulse_notifications (user_id, type, title, body, target_url, created_at) VALUES (?, 'message', 'New group message', 'A Pulse group chat has a new message.', ?, ?)",
-                    (recipient_id, f"/pulse/messages/{conversation_id}", now),
-                )
-            cur.execute("SELECT * FROM pulse_messages WHERE id=? LIMIT 1", (message_id,))
-            message_payload = _pulse_message_payload(cur.fetchone(), user["user_id"])
-            conn.commit(); conn.close()
-            event = {"message": message_payload, "thread_id": 0, "conversation_id": conversation_id, "target_user_ids": recipient_ids, "message_id": message_id, "message_type": message_type, "media_url": media_url}
-            pulse_emit_event("pulse_message_sent", event, user["user_id"], 0)
-            pulse_emit_event("group_message_created", event, user["user_id"], 0)
-            pulse_emit_event("conversation_updated", event, user["user_id"], 0)
-            return jsonify({"ok": True, "thread_id": 0, "conversation_id": conversation_id, "redirect_url": f"/pulse/messages/{conversation_id}", "next_url": f"/pulse/messages/{conversation_id}", "message": "Message sent.", "message_id": message_id, "message_type": message_type, "data": message_payload})
-        cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? LIMIT 1", (conversation_id, user["user_id"]))
-        receiver_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
-        cur.execute(
-            """
-            SELECT id FROM pulse_message_threads
-            WHERE conversation_id=?
-              AND ((user_one_id=? AND user_two_id=?) OR (user_one_id=? AND user_two_id=?))
-            ORDER BY id DESC LIMIT 1
-            """,
-            (conversation_id, user["user_id"], receiver_id, receiver_id, user["user_id"]),
-        )
-        thread_id = int(dict(cur.fetchone() or {}).get("id") or 0)
-        if not thread_id and receiver_id:
-            bridge_result, bridge_status = pulse_start_conversation(cur, user["user_id"], target_user_id=receiver_id)
-            if not bridge_result.get("ok"):
-                logging.warning("PULSE_MESSAGE_SEND_DIRECT_BRIDGE_FAILED trace_id=%s user_id=%s conversation_id=%s receiver_id=%s status=%s result=%s", trace_id, user.get("user_id"), conversation_id, receiver_id, bridge_status, bridge_result)
-                conn.close()
-                return jsonify({**bridge_result, "trace_id": bridge_result.get("trace_id") or trace_id}), bridge_status
-            conversation_id = int(bridge_result.get("conversation_id") or conversation_id)
-            thread_id = int(bridge_result.get("thread_id") or 0)
+            result["trace_id"] = trace_id
+            if result.get("ok"):
+                if media_url:
+                    cur.execute(
+                        "UPDATE chat_media_uploads SET message_id=?, context_type='pulse_message', context_id=? WHERE uploader_user_id=? AND media_url=? AND message_id IS NULL",
+                        (int(result.get("message_id") or 0), str(conversation_id), user["user_id"], media_url),
+                    )
+                conn.commit(); conn.close()
+                event = {
+                    "message": result.get("data"),
+                    "thread_id": 0,
+                    "conversation_id": conversation_id,
+                    "message_id": result.get("message_id"),
+                    "message_type": message_type,
+                    "media_url": media_url,
+                }
+                pulse_emit_event(result.get("event_name") or "pulse_message_sent", event, user["user_id"], conversation_id)
+                pulse_emit_event("conversation_updated", event, user["user_id"], conversation_id)
+                logging.info("PULSE_MESSAGE_SEND_OK trace_id=%s user_id=%s conversation_id=%s canonical=1 message_id=%s", trace_id, user.get("user_id"), conversation_id, result.get("message_id"))
+            else:
+                conn.rollback(); conn.close()
+                logging.warning("PULSE_MESSAGE_SEND_REJECTED trace_id=%s user_id=%s conversation_id=%s status=%s result=%s", trace_id, user.get("user_id"), conversation_id, status, result)
+            return jsonify(result), status
+        except Exception as exc:
+            try:
+                conn.rollback(); conn.close()
+            except Exception:
+                pass
+            logging.exception("PULSE_MESSAGE_SEND_CANONICAL_FAILED trace_id=%s user_id=%s conversation_id=%s", trace_id, user.get("user_id"), conversation_id)
+            return jsonify({"ok": False, "message": "Message could not be sent.", "trace_id": trace_id, "error": str(exc), "error_type": exc.__class__.__name__}), 500
     if thread_id:
         cur.execute("SELECT * FROM pulse_message_threads WHERE id=? AND (user_one_id=? OR user_two_id=?) LIMIT 1", (thread_id, user["user_id"], user["user_id"]))
         thread = dict(cur.fetchone() or {})
@@ -23249,6 +23234,7 @@ def _pulse_message_payload(row, current_user_id=0):
     }
 
 
+@webhook_app.route("/api/pulse/messages/direct/open", methods=["POST"])
 @webhook_app.route("/api/pulse/messages/start", methods=["POST"])
 def api_pulse_message_start():
     init_db()
@@ -23332,6 +23318,7 @@ def api_pulse_users_search():
         return api_error("Search failed. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
+@webhook_app.route("/api/pulse/messages/groups/create", methods=["POST"])
 @webhook_app.route("/api/pulse/messages/group/create", methods=["POST"])
 def api_pulse_message_group_create():
     init_db()
@@ -23474,6 +23461,7 @@ def api_pulse_chatrooms():
         return api_error("Chat rooms could not be loaded. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
+@webhook_app.route("/api/pulse/messages/rooms/<room_id>/join", methods=["POST"])
 @webhook_app.route("/api/pulse/chatrooms/<room_id>/join", methods=["POST"])
 def api_pulse_chatroom_join(room_id):
     init_db()
@@ -23498,6 +23486,7 @@ def api_pulse_chatroom_join(room_id):
         return api_error("Chat room could not be opened. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
+@webhook_app.route("/api/pulse/messages/rooms/<room_id>/messages", methods=["GET", "POST"])
 @webhook_app.route("/api/pulse/chatrooms/<room_id>/messages", methods=["GET", "POST"])
 def api_pulse_chatroom_messages(room_id):
     init_db()
