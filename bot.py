@@ -3442,8 +3442,21 @@ def friendly_internal_error(error):
     logging.exception("HTTP_500 trace_id=%s path=%s method=%s", trace_id, request.path, request.method)
     if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
         if request.path.startswith(("/api/pulse/messages", "/api/pulse/chatrooms")):
-            payload = chat_health_service.chat_recovery_payload(trace_id, mode="syncing", message="Messages syncing. Tap to retry.")
-            return jsonify({"ok": False, **payload}), 500
+            logging.error(
+                "PULSE_CHAT_HTTP_500 trace_id=%s endpoint=%s method=%s remote=%s",
+                trace_id,
+                request.path,
+                request.method,
+                request.headers.get("X-Forwarded-For") or request.remote_addr or "",
+            )
+            return jsonify({
+                "ok": False,
+                "message": "Messenger request failed.",
+                "trace_id": trace_id,
+                "endpoint": request.path,
+                "method": request.method,
+                "retriable": True,
+            }), 500
         return jsonify({"ok": False, "message": "Something needs attention. Please try again.", "trace_id": trace_id}), 500
     body = (
         "<!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -21291,6 +21304,77 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (bar) bar.innerHTML = `<span class="presence-dot"></span><span>${esc(copy || messages[mode] || "Messages syncing…")}</span>`;
       };
       const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+      const chatDebug = (label, detail = {}) => {
+        const payload = {
+          label,
+          user_id: state.currentUserId,
+          selected_tab: state.mode,
+          conversation_id: state.activePulseConversation,
+          room_id: state.activeRoomId,
+          group_id: state.mode === "group" ? state.activePulseConversation : 0,
+          online: navigator.onLine,
+          ...detail
+        };
+        console.info("[PulseMessenger]", payload);
+        return payload;
+      };
+      async function chatFetchJson(endpointName, url, options = {}) {
+        const started = performance.now();
+        const response = await fetch(url, { cache: "no-store", credentials: "same-origin", ...options });
+        const responseBody = await response.text();
+        let data = {};
+        try { data = JSON.parse(responseBody || "{}"); }
+        catch (error) { data = { ok: false, message: responseBody || "Server returned an unreadable response.", parse_error: error.message }; }
+        const detail = { endpoint: endpointName, url, status: response.status, response_body: responseBody.slice(0, 900), trace_id: data.trace_id || "", latency_ms: Math.round(performance.now() - started) };
+        if (!response.ok || data.ok === false) {
+          console.error("[PulseMessenger] request failed", detail);
+          const error = new Error(`${data.message || `${endpointName} failed.`}${data.trace_id ? " Trace " + data.trace_id : ""}`);
+          error.detail = detail;
+          error.status = response.status;
+          error.response = data;
+          throw error;
+        }
+        chatDebug("request ok", detail);
+        return data;
+      }
+      function normalizeMessageResponse(data) {
+        const conversation = data.conversation || {};
+        const type = conversation.conversation_type || data.conversation_type || state.mode || "direct";
+        return {
+          conversation_id: Number(data.conversation_id || conversation.conversation_id || conversation.id || state.activePulseConversation || 0),
+          conversation,
+          messages: data.messages || data.items || [],
+          pinned_notice: data.pinned_notice || conversation.pinned_notice || "",
+          conversation_type: type
+        };
+      }
+      async function loadConversationMessages(conversationId, modeOverride = "") {
+        if (!Number(conversationId || 0)) throw new Error("No conversation selected.");
+        const data = await chatFetchJson("loadConversationMessages", `/api/pulse/messages/${Number(conversationId)}/messages?limit=80`);
+        const normalized = normalizeMessageResponse(data);
+        if (modeOverride) normalized.conversation_type = modeOverride;
+        return normalized;
+      }
+      async function loadRoomMessages(roomId) {
+        if (!roomId) throw new Error("No room selected.");
+        const data = await chatFetchJson("loadRoomMessages", `/api/pulse/chatrooms/${encodeURIComponent(roomId)}/messages?limit=80`);
+        const normalized = normalizeMessageResponse(data);
+        normalized.conversation_type = "room";
+        return normalized;
+      }
+      async function loadGroupMessages(conversationId) {
+        const normalized = await loadConversationMessages(conversationId, "group");
+        normalized.conversation_type = "group";
+        return normalized;
+      }
+      async function retryMessageLoad() {
+        if (state.mode === "room" && state.activeRoomId) return openPulseConversation(state.activePulseConversation, state.activeRoomId, "room");
+        if (state.mode === "group" && state.activePulseConversation) return openPulseConversation(state.activePulseConversation, "", "group");
+        if (state.activePulseConversation) return openPulseConversation(state.activePulseConversation, "", "direct");
+      }
+      async function fallbackPollMessages() {
+        return pollThread(true);
+      }
       const friendlyTime = value => {
         if (!value) return "";
         const date = new Date(value);
@@ -21675,14 +21759,14 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const thread = document.querySelector("[data-unified-thread]");
         thread.innerHTML = '<div class="unified-empty">Loading messages...</div>';
         try {
-          const url = roomId ? `/api/pulse/chatrooms/${encodeURIComponent(roomId)}/messages` : `/api/pulse/messages/${state.activePulseConversation}/messages`;
-          const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load messages.");
+          chatDebug("open conversation start", { requested_conversation_id: conversationId, requested_room_id: roomId, mode_override: modeOverride });
+          const data = roomId
+            ? await loadRoomMessages(roomId)
+            : (modeOverride === "group" ? await loadGroupMessages(state.activePulseConversation) : await loadConversationMessages(state.activePulseConversation, modeOverride || ""));
           state.activePulseConversation = Number(data.conversation_id || state.activePulseConversation);
           state.currentUserId = Number(root.dataset.currentUser || 0);
           const convoType = data.conversation?.conversation_type || state.mode;
-          state.mode = roomId ? "room" : (convoType === "direct" ? "direct" : "group");
+          state.mode = roomId || convoType === "room" || convoType === "chat_room" ? "room" : (convoType === "direct" ? "direct" : "group");
           const title = data.conversation?.title || (roomId ? (state.activeRoomName || "Pulse room") : state.mode === "direct" ? "Private conversation" : "Group chat");
           setThreadChrome(title, roomId ? "Room" : state.mode === "direct" ? "Direct" : "Group");
           const notice = data.pinned_notice ? [{id:0, body:data.pinned_notice, status:"pinned", created_at:""}] : [];
@@ -21695,16 +21779,17 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           history.replaceState(null, "", "/pulse/messages/" + state.activePulseConversation);
           restoreDraft();
           flushPendingMessages();
+          chatDebug("open conversation ok", { loaded_messages: (data.messages || []).length, conversation_type: state.mode });
         } catch (error) {
-          console.error("Open Pulse conversation failed", error);
+          console.error("Open Pulse conversation failed", error.detail || error);
           state.activePulseConversation = 0;
           setComposerEnabled(false, state.mode);
-          thread.innerHTML = `<div class="unified-empty"><strong>Messages syncing…</strong><br><span>${esc(error.message || "This conversation is no longer available.")}</span><br><button type="button" data-retry-open="${esc(conversationId)}" data-retry-room="${esc(roomId)}" data-retry-mode="${esc(modeOverride)}">Tap to retry</button></div>`;
-          setNetworkStatus("retrying");
+          thread.innerHTML = `<div class="unified-empty"><strong>Messages could not load.</strong><br><span>${esc(error.message || "This conversation is no longer available.")}</span><br><button type="button" data-retry-open="${esc(conversationId)}" data-retry-room="${esc(roomId)}" data-retry-mode="${esc(modeOverride)}">Retry message load</button></div>`;
+          setNetworkStatus("retrying", "Message loading failed. Retry is ready.");
         }
       }
-      async function pollThread() {
-        if (state.live && state.live.readyState === EventSource.OPEN) return;
+      async function pollThread(force = false) {
+        if (!force && state.live && state.live.readyState === EventSource.OPEN) return;
         if (state.polling || document.hidden) return;
         if (state.mode === "direct" && !state.activePulseConversation) return;
         if (state.mode !== "direct" && !state.activePulseConversation && !state.activeRoomId) return;
@@ -21715,9 +21800,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             : state.mode === "room"
               ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
               : `/api/pulse/messages/${state.activePulseConversation}/messages`;
-          const response = await fetch(url, { cache: "no-store", credentials: "same-origin" });
-          const data = await response.json();
-          if (response.ok && data.ok) appendMessages(data.messages || []);
+          const data = await chatFetchJson("fallbackPollMessages", url);
+          appendMessages(data.messages || []);
+          setNetworkStatus("syncing", "Messages restored locally.");
+        } catch (error) {
+          console.error("Fallback message poll failed", error.detail || error);
         } finally {
           state.polling = false;
         }
@@ -21763,11 +21850,9 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         });
       }
       function buildSendRequest(body, mediaDraft, clientId, createdAt) {
-        const url = state.mode === "direct"
-          ? `/api/pulse/messages/send`
-          : state.mode === "room"
-            ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
-            : `/api/pulse/messages/${state.activePulseConversation}/send`;
+        const url = state.mode === "room"
+          ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
+          : `/api/pulse/messages/${Number(state.activePulseConversation || 0)}/send`;
         const payload = {
           message: body,
           reply_to_id: state.replyToId || 0,
@@ -21778,11 +21863,19 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (mediaDraft) Object.assign(payload, mediaDraft);
         return { url, payload };
       }
+      function sendPrivateMessage(item) {
+        return chatFetchJson("sendPrivateMessage", item.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload) });
+      }
+      function sendRoomMessage(item) {
+        return chatFetchJson("sendRoomMessage", item.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload) });
+      }
+      function sendGroupMessage(item) {
+        return chatFetchJson("sendGroupMessage", item.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload) });
+      }
       async function sendRequest(item) {
-        const response = await fetch(item.url, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(item.payload) });
-        const data = await response.json().catch(() => ({ ok: false, message: "Server returned an unreadable response." }));
-        if (!response.ok || data.ok === false) throw new Error(data.message || "Could not send message.");
-        return data;
+        if (item.mode === "room") return sendRoomMessage(item);
+        if (item.mode === "group") return sendGroupMessage(item);
+        return sendPrivateMessage(item);
       }
       function enqueuePending(item) {
         const pending = readPending().filter(existing => existing.client_id !== item.client_id);
@@ -21833,11 +21926,19 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
             state.live = null;
             state.liveBackoff = Math.min(15000, (state.liveBackoff || 1500) * 1.6);
             setNetworkStatus("reconnecting");
+            fallbackPollMessages();
             setTimeout(startLiveStream, state.liveBackoff || 2500);
           };
         } catch (error) {
           console.warn("Messenger live stream unavailable", error);
         }
+      }
+      function reconnectSocket() {
+        state.live?.close?.();
+        state.live = null;
+        state.liveBackoff = 0;
+        startLiveStream();
+        fallbackPollMessages();
       }
       document.addEventListener("click", async event => {
         const retryOpen = event.target.closest("[data-retry-open]");
@@ -22147,7 +22248,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const message = event.target.closest("[data-message-user]");
         if (message) {
           try {
-            const result = await pulseApi("/api/pulse/messages/start", { method: "POST", body: JSON.stringify({ target_user_id: message.dataset.messageUser }) });
+            const result = await pulseApi("/api/pulse/messages/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: message.dataset.messageUser }) });
             await openPulseConversation(result.conversation_id || result.thread_id, "", "direct");
           } catch (error) { toast(error.message); }
         }
@@ -22312,9 +22413,9 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         state.typingTimer = setTimeout(() => fetch(`/api/pulse/messages/${state.activePulseConversation}/typing`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ typing:false }) }).catch(()=>{}), 1600);
       });
       document.addEventListener("keydown", event => { if (event.key === "Escape") showMenu(false); });
-      window.addEventListener("online", () => { state.offline = false; setNetworkStatus("syncing"); startLiveStream(); flushPendingMessages(); pollThread(); });
+      window.addEventListener("online", () => { state.offline = false; setNetworkStatus("syncing"); reconnectSocket(); flushPendingMessages(); });
       window.addEventListener("offline", () => { state.offline = true; setNetworkStatus("offline"); });
-      document.addEventListener("visibilitychange", () => { if (!document.hidden) { startLiveStream(); flushPendingMessages(); pollThread(); } });
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) { reconnectSocket(); flushPendingMessages(); } });
       setComposerEnabled(false);
       loadThreads().then(() => {
         if (state.activePulseConversation) { openPulseConversation(state.activePulseConversation); }
@@ -24392,6 +24493,7 @@ def api_pulse_message_room_open():
         ensure_pulse_messenger_schema(cur, conn)
         result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room_key)
         if result.get("ok"):
+            result["trace_id"] = trace_id
             conn.commit()
         conn.close()
         if result.get("ok"):
@@ -24455,6 +24557,8 @@ def api_pulse_chatroom_join(room_id):
     try:
         ensure_pulse_messenger_schema(cur, conn)
         result, status = pulse_get_or_create_room_conversation(cur, user["user_id"], room_key=room["key"])
+        if result.get("ok"):
+            result["trace_id"] = trace_id
         conn.commit(); conn.close()
         if result.get("ok"):
             pulse_emit_event("participant_joined", {"conversation_id": result.get("conversation_id"), "room_id": room["key"], "user_id": user["user_id"], "display_name": user.get("display_name") or user.get("username") or "Pulse member"}, user["user_id"], int(result.get("conversation_id") or 0))
@@ -24503,6 +24607,8 @@ def api_pulse_chatroom_messages(room_id):
                 payload.get("local_created_at") or "",
             )
             if send_result.get("ok"):
+                send_result["trace_id"] = trace_id
+                send_result["endpoint"] = f"/api/pulse/chatrooms/{room['key']}/messages"
                 chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/rooms/{room['key']}/messages", "sent", trace_id, {"conversation_id": conversation_id, "message_id": send_result.get("message_id"), "latency_ms": int((time.perf_counter() - started) * 1000)})
                 conn.commit(); conn.close()
                 event = {"conversation_id": conversation_id, "room_id": room["key"], "message": send_result.get("data"), "message_id": send_result.get("message_id")}
@@ -24523,7 +24629,25 @@ def api_pulse_chatroom_messages(room_id):
         chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/rooms/{room['key']}/messages", "ok", trace_id, {"conversation_id": conversation_id, "messages": len(messages), "latency_ms": int((time.perf_counter() - started) * 1000)})
         conn.commit(); conn.close()
         pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "room_id": room["key"], "user_id": user["user_id"]}, user["user_id"], conversation_id)
-        return jsonify({"ok": True, "room_id": room["key"], "conversation_id": conversation_id, "messages": messages, "pinned_notice": room["notice"]})
+        return jsonify({
+            "ok": True,
+            "trace_id": trace_id,
+            "endpoint": f"/api/pulse/chatrooms/{room['key']}/messages",
+            "room_id": room["key"],
+            "conversation_id": conversation_id,
+            "conversation": {
+                "id": conversation_id,
+                "conversation_id": conversation_id,
+                "conversation_type": "room",
+                "room_id": room["key"],
+                "title": room["name"],
+                "pinned_notice": room["notice"],
+            },
+            "messages": messages,
+            "items": messages,
+            "pinned_notice": room["notice"],
+            "poll_interval_ms": 2500,
+        })
     except Exception as exc:
         try:
             chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/rooms/{room.get('key','')}/messages", "exception", trace_id, {"room_id": room_id, "error_type": exc.__class__.__name__, "latency_ms": int((time.perf_counter() - started) * 1000)})
@@ -24531,7 +24655,16 @@ def api_pulse_chatroom_messages(room_id):
         except Exception:
             pass
         logging.exception("PULSE_CHATROOM_MESSAGES_FAILED trace_id=%s user_id=%s room_id=%s", trace_id, user.get("user_id"), room_id)
-        return api_error("Chat room messages could not be loaded. The team can trace this safely.", 500, trace_id, error_type=exc.__class__.__name__)
+        return jsonify({
+            "ok": False,
+            "message": "Chat room messages could not load.",
+            "trace_id": trace_id,
+            "endpoint": f"/api/pulse/chatrooms/{room_id}/messages",
+            "room_id": room_id,
+            "error_type": exc.__class__.__name__,
+            "debug": str(exc)[:500],
+            "retriable": True,
+        }), 500
 
 
 @webhook_app.route("/api/pulse/messages/<int:conversation_id>/presence", methods=["GET"])
@@ -24642,7 +24775,7 @@ def api_pulse_conversation_detail(conversation_id):
     except Exception as exc:
         conn.rollback(); conn.close()
         logging.exception("PULSE_CONVERSATION_DETAIL_FAILED trace_id=%s user_id=%s conversation_id=%s", trace_id, user.get("user_id"), conversation_id)
-        return api_error("Messages syncing. Tap to retry.", 500, trace_id, error_type=exc.__class__.__name__)
+        return api_error("Messages could not load.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
 @webhook_app.route("/api/pulse/messages/<int:conversation_id>/send", methods=["POST"])
@@ -24869,60 +25002,88 @@ def api_pulse_conversation_messages(conversation_id):
     user = api_account_user()
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    ensure_pulse_messenger_schema(cur, conn)
-    cur.execute(
-        """
-        SELECT c.*
-        FROM pulse_conversations c
-        JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
-        WHERE c.id=? AND COALESCE(c.status,'active')='active'
-        LIMIT 1
-        """,
-        (user["user_id"], conversation_id),
-    )
-    conversation = dict(cur.fetchone() or {})
-    if not conversation:
-        conn.close()
-        return jsonify({"ok": False, "message": "This conversation is no longer available."}), 404
-    limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
-    before_id = safe_int(request.args.get("before_id"), 0)
-    if before_id:
-        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL " + PULSE_VISIBLE_MESSAGE_FILTER + " AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
-    else:
-        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL " + PULSE_VISIBLE_MESSAGE_FILTER + " ORDER BY id DESC LIMIT ?", (conversation_id, limit))
-    messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
-    messages = pulse_attach_reply_previews(cur, messages)
-    message_ids = [m["id"] for m in messages]
-    if message_ids:
-        placeholders = ",".join(["?"] * len(message_ids))
-        cur.execute(f"SELECT message_id, reaction_type, COUNT(*) AS total FROM pulse_message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id, reaction_type", message_ids)
-        by_message = {}
-        for row in cur.fetchall():
-            r = dict(row)
-            by_message.setdefault(int(r.get("message_id") or 0), {})[r.get("reaction_type") or ""] = int(r.get("total") or 0)
-        for m in messages:
-            m["reactions"] = by_message.get(m["id"], {})
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    for m in messages[-100:]:
-        if not m.get("is_mine"):
-            cur.execute(
-                "INSERT OR IGNORE INTO pulse_message_receipts (message_id, conversation_id, user_id, status, created_at, updated_at) VALUES (?, ?, ?, 'seen', ?, ?)",
-                (m["id"], conversation_id, user["user_id"], now, now),
-            )
-    pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
-    convo_type = conversation.get("conversation_type") or "direct"
-    title = conversation.get("title") or ""
-    avatar_url = conversation.get("avatar_url") or ""
-    if convo_type == "direct":
-        cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
-        other_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
-        other = pulse_identity_for_user(cur, other_id) if other_id else {}
-        title = other.get("name") or "Private conversation"
-        avatar_url = other.get("avatar_url") or ""
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "conversation_id": conversation_id, "conversation": {"id": conversation_id, "conversation_id": conversation_id, "conversation_type": convo_type, "title": title or "Pulse chat", "avatar_url": avatar_url, "member_count": int(conversation.get("member_count") or (2 if convo_type == "direct" else 1))}, "messages": messages})
+    trace_id = secrets.token_hex(6)
+    started = time.perf_counter()
+    conn = None
+    endpoint = f"/api/pulse/messages/{conversation_id}/messages"
+    try:
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        ensure_pulse_messenger_schema(cur, conn)
+        cur.execute(
+            """
+            SELECT c.*
+            FROM pulse_conversations c
+            JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
+            WHERE c.id=? AND COALESCE(c.status,'active')='active'
+            LIMIT 1
+            """,
+            (user["user_id"], conversation_id),
+        )
+        conversation = dict(cur.fetchone() or {})
+        if not conversation:
+            chat_health_service.record_trace(cur, user["user_id"], endpoint, "not_found", trace_id, {"conversation_id": conversation_id, "http_status": 404})
+            conn.commit(); conn.close()
+            logging.warning("PULSE_MESSAGE_LOAD_NOT_FOUND trace_id=%s user_id=%s conversation_id=%s endpoint=%s", trace_id, user.get("user_id"), conversation_id, endpoint)
+            return jsonify({"ok": False, "message": "This conversation is no longer available.", "trace_id": trace_id, "endpoint": endpoint}), 404
+        limit = max(1, min(safe_int(request.args.get("limit"), 30), 100))
+        before_id = safe_int(request.args.get("before_id"), 0)
+        if before_id:
+            cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
+        else:
+            cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' " + PULSE_VISIBLE_MESSAGE_FILTER + " ORDER BY id DESC LIMIT ?", (conversation_id, limit))
+        messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
+        messages = pulse_attach_reply_previews(cur, messages)
+        message_ids = [m["id"] for m in messages]
+        if message_ids:
+            placeholders = ",".join(["?"] * len(message_ids))
+            cur.execute(f"SELECT message_id, reaction_type, COUNT(*) AS total FROM pulse_message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id, reaction_type", message_ids)
+            by_message = {}
+            for row in cur.fetchall():
+                r = dict(row)
+                by_message.setdefault(int(r.get("message_id") or 0), {})[r.get("reaction_type") or ""] = int(r.get("total") or 0)
+            for m in messages:
+                m["reactions"] = by_message.get(m["id"], {})
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        for m in messages[-100:]:
+            if not m.get("is_mine"):
+                cur.execute(
+                    "INSERT OR IGNORE INTO pulse_message_receipts (message_id, conversation_id, user_id, status, created_at, updated_at) VALUES (?, ?, ?, 'seen', ?, ?)",
+                    (m["id"], conversation_id, user["user_id"], now, now),
+                )
+        pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
+        convo_type = conversation.get("conversation_type") or "direct"
+        title = conversation.get("title") or ""
+        avatar_url = conversation.get("avatar_url") or ""
+        if convo_type == "direct":
+            cur.execute("SELECT user_id FROM pulse_conversation_participants WHERE conversation_id=? AND user_id!=? AND COALESCE(left_at,'')='' LIMIT 1", (conversation_id, user["user_id"]))
+            other_id = int(dict(cur.fetchone() or {}).get("user_id") or 0)
+            other = pulse_identity_for_user(cur, other_id) if other_id else {}
+            title = other.get("name") or "Private conversation"
+            avatar_url = other.get("avatar_url") or ""
+        payload = {
+            "ok": True,
+            "trace_id": trace_id,
+            "endpoint": endpoint,
+            "conversation_id": conversation_id,
+            "conversation": {"id": conversation_id, "conversation_id": conversation_id, "conversation_type": convo_type, "title": title or "Pulse chat", "avatar_url": avatar_url, "member_count": int(conversation.get("member_count") or (2 if convo_type == "direct" else 1))},
+            "messages": messages,
+            "items": messages,
+            "poll_interval_ms": 2500,
+        }
+        chat_health_service.record_trace(cur, user["user_id"], endpoint, "ok", trace_id, {"conversation_id": conversation_id, "conversation_type": convo_type, "messages": len(messages), "http_status": 200, "latency_ms": int((time.perf_counter() - started) * 1000)})
+        conn.commit(); conn.close()
+        logging.info("PULSE_MESSAGE_LOAD_OK trace_id=%s user_id=%s conversation_id=%s type=%s messages=%s endpoint=%s", trace_id, user.get("user_id"), conversation_id, convo_type, len(messages), endpoint)
+        return jsonify(payload)
+    except Exception as exc:
+        try:
+            if conn:
+                cur = conn.cursor()
+                chat_health_service.record_trace(cur, user["user_id"], endpoint, "exception", trace_id, {"conversation_id": conversation_id, "error_type": exc.__class__.__name__, "http_status": 500, "latency_ms": int((time.perf_counter() - started) * 1000)})
+                conn.rollback(); conn.close()
+        except Exception:
+            pass
+        logging.exception("PULSE_MESSAGE_LOAD_FAILED trace_id=%s user_id=%s conversation_id=%s endpoint=%s", trace_id, user.get("user_id"), conversation_id, endpoint)
+        return jsonify({"ok": False, "message": "Messages could not load.", "trace_id": trace_id, "endpoint": endpoint, "error_type": exc.__class__.__name__, "debug": str(exc)[:500]}), 500
 
 
 @webhook_app.route("/api/pulse/messages/<int:message_id>/react", methods=["POST"])
