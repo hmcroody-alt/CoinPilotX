@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 from urllib.parse import urlparse
 
-SUPPORTED_PLATFORMS = {"pulse", "facebook", "youtube", "twitch", "custom_rtmp", "tiktok"}
+SUPPORTED_PLATFORMS = {"pulse", "facebook", "youtube", "twitch", "kick", "custom_rtmp", "tiktok", "x_twitter", "linkedin"}
 
 
 def now_iso() -> str:

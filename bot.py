@@ -74,6 +74,7 @@ from services import (
     analytics_intelligence_engine,
     admin_ai_assistant,
     audio_intelligence_engine,
+    audio_engine,
     civilization_ai_engine,
     camera_filter_engine,
     pulse_lens_engine,
@@ -120,13 +121,16 @@ from services import (
     live_archive_service,
     live_archive_share_service,
     live_destination_service,
+    live_discovery_service,
     live_distribution_service,
     live_feed_service,
     live_health_service,
     live_ops_engine,
     live_presence_engine,
     live_restream_service,
+    live_scene_engine,
     live_stream_health_service,
+    multistream_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
     media_service,
@@ -19090,6 +19094,10 @@ def pulse_live_page():
             <label><input type='checkbox' data-live-destination value='facebook'> Facebook Live</label>
             <label><input type='checkbox' data-live-destination value='youtube'> YouTube Live</label>
             <label><input type='checkbox' data-live-destination value='twitch'> Twitch</label>
+            <label><input type='checkbox' data-live-destination value='kick'> Kick</label>
+            <label><input type='checkbox' data-live-destination value='tiktok'> TikTok</label>
+            <label><input type='checkbox' data-live-destination value='x_twitter'> X/Twitter</label>
+            <label><input type='checkbox' data-live-destination value='linkedin'> LinkedIn</label>
             <label><input type='checkbox' data-live-destination value='custom_rtmp'> Custom RTMP</label>
             <input id='customRtmpUrl' placeholder='Custom RTMP URL (optional)'>
             <input id='customStreamKey' placeholder='Custom stream key (stored securely)' type='password'>
@@ -19590,8 +19598,10 @@ def api_pulse_live_start():
             INSERT INTO pulse_live_sessions
             (user_id, title, category, thumbnail_url, audience, status, stream_key, websocket_channel, chat_room_id,
              viewer_count, created_at, started_at, stream_uuid, ingest_url, rtmp_url, hls_url, webrtc_room_id, provider,
-             protocols_json, stream_health, bitrate_kbps, fps, chat_conversation_id, analytics_json, moderation_status, updated_at)
-            VALUES (?, ?, ?, ?, 'public', 'live', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', 0, 0, ?, ?, 'clear', ?)
+             protocols_json, stream_health, bitrate_kbps, fps, chat_conversation_id, recording_status, active_scene,
+             audio_chain_json, destinations_json, analytics_json, moderation_status, updated_at)
+            VALUES (?, ?, ?, ?, 'public', 'live', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', 0, 0, ?,
+                    'recording', 'camera_only', ?, ?, ?, 'clear', ?)
             """,
             (
                 user_id, title, category, thumbnail_url, stream_key, channel, chat_room, now, now, stream_uuid,
@@ -19599,6 +19609,8 @@ def api_pulse_live_start():
                 stream_setup.get("webrtc_room_id") or "", stream_setup.get("provider") or "pulse-native",
                 json.dumps(stream_setup.get("protocols") or ["webrtc", "rtmp", "hls"], default=str),
                 chat_conversation_id,
+                json.dumps(audio_engine.default_audio_chain(), default=str),
+                json.dumps(selected_destinations, default=str)[:2500],
                 json.dumps({"viewer_peak": 0, "chat_messages": 0, "reports": 0, "source": "browser_or_rtmp"}, default=str),
                 now,
             ),
@@ -19696,6 +19708,10 @@ def api_pulse_live_start():
             "chat_room_id": chat_room,
             "chat_conversation_id": chat_conversation_id,
             "trace_id": trace_id,
+            "audio": audio_engine.score_audio_health({"rms_db": -28, "sync_drift_ms": 0}),
+            "scenes": live_scene_engine.default_scene_state("camera_only"),
+            "discovery": live_discovery_service.live_card({"id": live_id, "title": title, "category": category, "viewer_count": 0, "playback_url": playback_url}, fresh.get("display_name") or "Pulse Creator"),
+            "multistream_health": multistream_service.health_summary(restream_targets),
         })
     except Exception as exc:
         logging.exception(
@@ -19866,6 +19882,12 @@ def api_pulse_live_state(live_id):
     presence = live_presence_engine.stream_energy_state(live, messages, reactions, [{"id": i} for i in range(viewer_count)])
     playback = live_distribution_service.playback_manifest(live)
     archive = live_archive_service.replay_manifest(live, messages)
+    audio = audio_engine.score_audio_health({
+        "muted": int(live.get("audio_tracks") or 0) <= 0 and (live.get("status") or "") == "live",
+        "rms_db": -28,
+        "sync_drift_ms": 0,
+    })
+    scenes = live_scene_engine.default_scene_state(live.get("active_scene") or "camera_only")
     restream_targets = live_restream_service.destination_statuses(cur, live_id=live_id)
     archive_shares = live_archive_share_service.public_share_options(cur, live_id=live_id)
     conn.close()
@@ -19880,6 +19902,9 @@ def api_pulse_live_state(live_id):
         "presence": presence,
         "playback": playback,
         "archive": archive,
+        "audio": audio,
+        "scenes": scenes,
+        "discovery": live_discovery_service.live_card(live),
         "destinations": restream_targets,
         "post_live_options": archive_shares,
         "reaction_cloud": live_presence_engine.reaction_cloud(reactions),
@@ -19961,8 +19986,8 @@ def api_pulse_live_end(live_id):
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
     viewer_count = int(live.get("viewer_count") or 0)
     cur.execute(
-        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', replay_url=?, ended_at=?, updated_at=? WHERE id=?",
-        (replay_url, now, now, live_id),
+        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', replay_url=?, recording_status=?, ended_at=?, updated_at=? WHERE id=?",
+        (replay_url, "ready" if replay_url else "processing", now, now, live_id),
     )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
     cur.execute("UPDATE pulse_live_viewers SET status='left', left_at=?, last_seen_at=? WHERE live_id=? AND status IN ('watching','hosting')", (now, now, live_id))
@@ -39358,6 +39383,13 @@ def init_db():
         ("publish_state", "TEXT DEFAULT 'idle'"),
         ("audio_tracks", "INTEGER DEFAULT 0"),
         ("video_tracks", "INTEGER DEFAULT 0"),
+        ("peak_viewers", "INTEGER DEFAULT 0"),
+        ("replay_asset_id", "INTEGER DEFAULT 0"),
+        ("recording_status", "TEXT DEFAULT 'pending'"),
+        ("engagement_score", "INTEGER DEFAULT 0"),
+        ("active_scene", "TEXT DEFAULT 'camera_only'"),
+        ("audio_chain_json", "TEXT"),
+        ("destinations_json", "TEXT"),
         ("analytics_json", "TEXT"),
         ("moderation_status", "TEXT DEFAULT 'clear'"),
         ("updated_at", "TEXT"),
@@ -39674,6 +39706,32 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_scene_presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        scene_key TEXT,
+        label TEXT,
+        layout_json TEXT,
+        active INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, scene_key)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_audio_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        profile_key TEXT DEFAULT 'creator_voice',
+        chain_json TEXT,
+        monitoring_json TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, profile_key)
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_clips (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         live_id INTEGER,
@@ -39695,6 +39753,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_destinations_user ON pulse_live_destinations(user_id, platform, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_restream_live ON pulse_live_restream_targets(live_id, platform, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_archive_shares_live ON pulse_live_archive_shares(live_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_sessions_discovery ON pulse_live_sessions(status, viewer_count, started_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_scene_presets_user ON pulse_live_scene_presets(user_id, active)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_audio_profiles_user ON pulse_live_audio_profiles(user_id, active)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_online_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

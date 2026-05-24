@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import bot  # noqa: E402
-from services import db as db_service  # noqa: E402
+from services import db as db_service, multistream_service  # noqa: E402
 
 
 def require(condition, message):
@@ -51,6 +51,8 @@ def main():
     destinations = data.get("destinations") or []
     require(any(d.get("platform") == "pulse" and d.get("status") == "live" for d in destinations), "Pulse destination remains live")
     require(any(d.get("platform") in {"facebook", "youtube", "custom_rtmp"} and d.get("status") == "failed" for d in destinations), "external destination failures are isolated")
+    require({"facebook", "youtube", "twitch", "kick", "tiktok", "x_twitter", "linkedin", "custom_rtmp"}.issubset(set(multistream_service.supported_platforms())), "multistream service supports major creator platforms")
+    require(multistream_service.health_summary(destinations)["pulse_safe"], "multistream health confirms Pulse is safe")
     require(data.get("live_url"), "live URL is exposed after multistream setup")
     print("live multistream audit ok")
 

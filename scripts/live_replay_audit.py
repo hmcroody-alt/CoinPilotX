@@ -28,6 +28,7 @@ def main():
     payload = live_archive_service.publish_replay_payload({**live, "duration_seconds": 1800}, peak_viewers=21, engagement=74)
     require(payload["visibility"] == "public", "replay publish payload preserves public visibility")
     require(payload["peak_viewers"] == 21 and payload["engagement_score"] == 74, "replay payload preserves performance metadata")
+    require({"publish_replay", "save_private", "clip_highlights", "convert_to_reels", "download_mp4", "delete_replay"}.issubset(set(live_archive_service.post_live_actions())), "post-live workflow exposes replay actions")
     print("live replay audit ok")
 
 

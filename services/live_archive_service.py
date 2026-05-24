@@ -29,3 +29,15 @@ def publish_replay_payload(session=None, peak_viewers=0, engagement=0):
         "engagement_score": int(engagement or 0),
         "visibility": "public" if (session.get("audience") or "public") == "public" else "scoped",
     }
+
+
+def post_live_actions():
+    return [
+        "publish_replay",
+        "save_private",
+        "clip_highlights",
+        "convert_to_reels",
+        "post_to_groups",
+        "download_mp4",
+        "delete_replay",
+    ]

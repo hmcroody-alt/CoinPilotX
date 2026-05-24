@@ -53,7 +53,7 @@ def prepare_restream_targets(cur, *, live_id: int, user_id: int, destinations=No
                 stream_key = custom_stream_key or stream_key
             status = "live" if platform == "pulse" else "connecting"
             error = ""
-            if platform in {"facebook", "youtube", "twitch", "tiktok"} and not stream_key and not rtmp_url:
+            if platform in {"facebook", "youtube", "twitch", "kick", "tiktok", "x_twitter", "linkedin"} and not stream_key and not rtmp_url:
                 status = "failed"
                 error = "Destination is selected but no OAuth or stream key is configured."
             if platform == "custom_rtmp":

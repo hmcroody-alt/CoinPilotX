@@ -9,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from services import live_distribution_service  # noqa: E402
+from services import live_discovery_service, live_distribution_service  # noqa: E402
 
 
 def require(condition, message):
@@ -37,6 +37,9 @@ def main():
     card = live_distribution_service.discovery_card(session, "Creator")
     require(card["playback"]["hls_url"].endswith(".m3u8"), "live discovery carries playback manifest")
     require(card["viewer_count"] == 9, "live discovery carries viewer count")
+    social_card = live_discovery_service.live_card(session, "Creator")
+    require({"pulse_feed", "creator_profile", "reels_live", "live_discovery", "notifications"}.issubset(set(social_card["surfaces"])), "live distributes to feed, profile, reels/live discovery, and notifications")
+    require(social_card["autoplay_preview"], "live discovery supports autoplay preview when playback exists")
     print("live distribution audit ok")
 
 
