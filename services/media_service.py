@@ -82,6 +82,14 @@ def _public(row):
     if not row:
         return None
     item = dict(row)
+    width = item.get("width")
+    height = item.get("height")
+    aspect_ratio = None
+    try:
+        if width and height:
+            aspect_ratio = round(float(width) / float(height), 4)
+    except Exception:
+        aspect_ratio = None
     return {
         "id": item.get("id"),
         "media_url": item.get("media_url"),
@@ -89,10 +97,22 @@ def _public(row):
         "media_type": item.get("media_type"),
         "mime_type": item.get("mime_type"),
         "file_size_bytes": item.get("file_size_bytes"),
-        "width": item.get("width"),
-        "height": item.get("height"),
+        "width": width,
+        "height": height,
+        "aspect_ratio": aspect_ratio,
         "moderation_status": item.get("moderation_status") or "pending",
     }
+
+
+def _image_dimensions(path):
+    try:
+        from PIL import Image
+
+        with Image.open(path) as img:
+            width, height = img.size
+            return int(width or 0), int(height or 0)
+    except Exception:
+        return None, None
 
 
 def rate_limited(user_id, media_type):
@@ -141,6 +161,9 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     path = UPLOAD_ROOT / stored
     file_storage.save(path)
     mime = file_storage.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
+    width = height = None
+    if media_type in {"image", "gif"}:
+        width, height = _image_dimensions(path)
     url = _public_url_for_path(path)
     conn = user_context.connect()
     cur = conn.cursor()
@@ -148,10 +171,24 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         """
         INSERT INTO chat_media_uploads
         (uploader_user_id, context_type, context_id, original_filename, stored_filename, media_url, thumbnail_url,
-         media_type, mime_type, file_size_bytes, moderation_status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)
+         media_type, mime_type, file_size_bytes, width, height, moderation_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)
         """,
-        (int(user_id), context_type, str(context_id or ""), original, stored, url, url if media_type != "video" else "", media_type, mime, int(size), _now()),
+        (
+            int(user_id),
+            context_type,
+            str(context_id or ""),
+            original,
+            stored,
+            url,
+            url if media_type != "video" else "",
+            media_type,
+            mime,
+            int(size),
+            width,
+            height,
+            _now(),
+        ),
     )
     media_id = int(cur.lastrowid)
     conn.commit()

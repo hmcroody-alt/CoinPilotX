@@ -234,13 +234,31 @@ def _media_for_posts(post_ids):
             params,
         )
         media = {}
+        post_id_set = {int(x) for x in post_ids}
         for row in cur.fetchall():
             item = dict(row)
             post_id = media_id_to_post.get(int(item.get("id") or 0), int(item.get("context_id") or 0))
-            if post_id not in {int(x) for x in post_ids}:
+            if post_id not in post_id_set:
                 continue
             media_url = _public_media_url(item.get("media_url"))
             thumbnail_url = _public_media_url(item.get("thumbnail_url") or item.get("media_url"))
+            width = item.get("width")
+            height = item.get("height")
+            aspect_ratio = None
+            orientation = "unknown"
+            try:
+                width_i = int(width or 0)
+                height_i = int(height or 0)
+                if width_i > 0 and height_i > 0:
+                    aspect_ratio = round(width_i / height_i, 4)
+                    if abs(aspect_ratio - 1) < 0.08:
+                        orientation = "square"
+                    elif aspect_ratio > 1:
+                        orientation = "landscape"
+                    else:
+                        orientation = "portrait"
+            except Exception:
+                width_i = height_i = 0
             media.setdefault(post_id, []).append({
                 "id": item.get("id"),
                 "media_type": item.get("media_type"),
@@ -248,6 +266,12 @@ def _media_for_posts(post_ids):
                 "thumbnail_url": thumbnail_url or media_url,
                 "mime_type": item.get("mime_type"),
                 "file_size_bytes": item.get("file_size_bytes"),
+                "width": width,
+                "height": height,
+                "aspect_ratio": aspect_ratio,
+                "orientation": orientation,
+                "fit_mode": "smart",
+                "srcset": [],
             })
         return media
     except Exception as exc:
@@ -588,21 +612,27 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         return {"ok": False, "feed": "my_posts", "topic": "", "posts": [], "next_offset": 0, "has_more": False, "intelligence": safe_intelligence_panel("")}
     limit = max(1, min(int(limit or 20), 40))
     offset = max(0, int(offset or 0))
+    viewer_is_owner = bool(viewer_user_id and int(viewer_user_id or 0) == int(user_id or 0))
+    where = ["p.deleted_at IS NULL", "p.user_id=?"]
+    params = [int(user_id)]
+    if not viewer_is_owner:
+        where = [f"p.user_id=?", *_public_feed_where("p")]
+        params = [int(user_id)]
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
-        """
+        f"""
         SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
                u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
                ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
-        WHERE p.deleted_at IS NULL AND p.user_id=?
+        WHERE {" AND ".join(where)}
         ORDER BY p.created_at DESC, p.id DESC
         LIMIT ? OFFSET ?
         """,
-        (int(user_id), limit, offset),
+        (*params, limit, offset),
     )
     rows = [_row(row) for row in cur.fetchall()]
     post_ids = [int(row["id"]) for row in rows]
