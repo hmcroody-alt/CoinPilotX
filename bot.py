@@ -76,6 +76,7 @@ from services import (
     audio_intelligence_engine,
     civilization_ai_engine,
     camera_filter_engine,
+    pulse_lens_engine,
     cache_engine,
     chat_realtime_service,
     community_governance_engine,
@@ -1985,7 +1986,10 @@ def record_performance_trace(path, method, status, duration_ms, db_queries, resp
 def add_pwa_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.path.startswith(("/pulse/camera", "/pulse/live")):
+        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
+    else:
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     if request.headers.get("X-Forwarded-Proto", request.scheme) == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -19533,6 +19537,112 @@ def pulse_camera_studio_page():
     user = require_account()
     if not user:
         return redirect(url_for("login_page", next=request.path))
+    is_premium = premium_identity_engine.user_has_premium_mark(user)
+    mode = "video" if request.path.endswith("/video") else "reel" if request.path.endswith("/reel") else "photo"
+    target = clean_html(request.args.get("target") or "feed")
+    group = clean_html(request.args.get("group") or "")
+    conversation_id = safe_int(request.args.get("conversation_id") or 0, 0)
+    lenses = pulse_lens_engine.lens_catalog(is_premium)
+    beauty_modes = pulse_lens_engine.beauty_catalog()
+    mode_label = "Reel" if mode == "reel" else "Video" if mode == "video" else "Photo"
+    lens_buttons = "".join(
+        f"<button class='pulse-lens-chip pulse-camera-glass {'is-active' if i == 0 else ''}' type='button' data-lens-key='{clean_html(lens['key'])}' {'disabled' if lens.get('locked') else ''}><span class='pulse-lens-dot'></span>{clean_html(lens['label'])}{' Locked' if lens.get('locked') else ''}</button>"
+        for i, lens in enumerate(lenses)
+    )
+    beauty_buttons = "".join(
+        f"<button class='pulse-beauty-chip pulse-camera-glass {'is-active' if i == 0 else ''}' type='button' data-beauty-key='{clean_html(item['key'])}'>{clean_html(item['label'])}</button>"
+        for i, item in enumerate(beauty_modes)
+    )
+    mode_buttons = "".join(
+        f"<button class='pulse-mode-chip pulse-camera-glass {'is-active' if key == mode else ''}' type='button' data-camera-mode='{key}'>{label}</button>"
+        for key, label in [("photo", "Photo"), ("video", "Video"), ("status", "Status"), ("reel", "Reel")]
+    )
+    camera_config = {
+        "target": target,
+        "group": group,
+        "conversationId": conversation_id,
+        "mode": mode,
+        "closeUrl": "/pulse/messages" if target == "message" else "/pulse/reels" if target == "reel" else "/pulse/status" if target == "status" else "/pulse",
+        "lenses": lenses,
+        "beautyModes": beauty_modes,
+    }
+    camera_config_json = json.dumps(camera_config, separators=(",", ":")).replace("</", "<\\/")
+    message_button = (
+        "<button class='button' type='button' data-publish-destination='message'>Send to Chat</button>"
+        if conversation_id
+        else "<a class='button' href='/pulse/messages'>Messenger</a>"
+    )
+    main = f"""
+    <link rel="stylesheet" href="/static/css/pulse_camera_engine.css">
+    <section class="pulse-camera-engine is-front" data-pulse-camera-engine data-camera-kit-ready data-mediapipe-ready data-tensorflow-fallback-ready data-webrtc-get-user-media data-webgl-effects>
+      <video class="pulse-camera-preview" id="pulseCameraPreview" autoplay muted playsinline></video>
+      <canvas class="pulse-camera-canvas" id="pulseCameraCanvas" hidden></canvas>
+      <div class="pulse-camera-overlay" aria-hidden="true"></div>
+      <div class="pulse-camera-particles" id="pulseCameraParticles" aria-hidden="true"></div>
+      <div class="pulse-camera-vignette" aria-hidden="true"></div>
+      <div class="pulse-camera-focus-ring" id="pulseCameraFocusRing" aria-hidden="true"></div>
+
+      <header class="pulse-camera-top">
+        <button class="pulse-camera-icon pulse-camera-glass" id="pulseCameraClose" type="button" aria-label="Close camera">×</button>
+        <div class="pulse-camera-title pulse-camera-glass">Pulse Camera · {clean_html(mode_label)}</div>
+        <div class="pulse-camera-top-actions">
+          <button class="pulse-camera-icon pulse-camera-glass" id="pulseCameraFlip" type="button" aria-label="Flip camera">↻</button>
+        </div>
+      </header>
+
+      <div class="pulse-camera-permission pulse-camera-glass" id="pulseCameraPermission">
+        Camera opens only on this screen. Front camera is mirrored for preview; hold capture for video, pinch to zoom, double tap to flip.
+      </div>
+
+      <aside class="pulse-camera-side-tools" aria-label="Camera tools">
+        <button class="pulse-camera-icon pulse-camera-glass" id="pulseCameraMic" type="button" aria-label="Toggle microphone">🎙</button>
+        <button class="pulse-camera-icon pulse-camera-glass" id="pulseCameraLight" type="button" aria-label="Toggle light">⚡</button>
+      </aside>
+
+      <div class="pulse-camera-bottom">
+        <div class="pulse-camera-modes" aria-label="Capture modes">{mode_buttons}</div>
+        <div class="pulse-camera-lenses" aria-label="Pulse lenses">{lens_buttons}</div>
+        <div class="pulse-camera-beauty" aria-label="Beauty modes">{beauty_buttons}</div>
+        <label class="pulse-camera-intensity pulse-camera-glass">Enhancement <input id="pulseCameraIntensity" type="range" min="0" max="100" value="72"></label>
+        <div class="pulse-camera-capture-row">
+          <button class="pulse-camera-gallery pulse-camera-glass" id="pulseCameraGallery" type="button" aria-label="Open gallery">▧</button>
+          <span class="pulse-camera-timer pulse-camera-glass" id="pulseCameraTimer">00:00</span>
+          <button class="pulse-camera-capture" id="pulseCameraCapture" type="button" aria-label="Capture"></button>
+          <button class="button primary pulse-camera-use" id="pulseCameraUse" type="button" disabled>Send</button>
+        </div>
+        <p class="pulse-camera-status" id="pulseCameraStatus"></p>
+      </div>
+
+      <input id="pulseCameraFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime">
+
+      <div class="pulse-camera-sheet" id="pulseCameraSheet" aria-hidden="true">
+        <section class="pulse-camera-panel pulse-camera-glass">
+          <h2>Share your capture</h2>
+          <p class="muted">Media is uploaded through the R2/CDN media service, validated, then published safely.</p>
+          <label class="pill"><input id="pulseUnmirrorFinal" type="checkbox"> Save selfie unmirrored</label>
+          <div class="pulse-camera-destination-grid">
+            <button class="primary" type="button" data-publish-destination="status">Pulse Status</button>
+            <button class="primary" type="button" data-publish-destination="reel">Pulse Reels</button>
+            <button class="button" type="button" data-publish-destination="feed">Pulse Feed</button>
+            {message_button}
+            <button class="button" type="button" data-publish-destination="draft">Save Draft</button>
+            <button class="button" type="button" data-close-camera-sheet>Retake</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="pulse-camera-processing" id="pulseCameraProcessing">
+        <section class="pulse-camera-panel pulse-camera-glass">
+          <div class="pulse-camera-spinner"></div>
+          <h2>Preparing your media</h2>
+          <p class="muted">Compressing, uploading to durable storage, validating the CDN URL, and hydrating the safe media record.</p>
+        </section>
+      </div>
+      <script id="pulseCameraConfig" type="application/json">{camera_config_json}</script>
+      <script src="/static/js/pulse_camera_engine.js" defer></script>
+    </section>
+    """
+    return pulse_social_shell("Pulse Camera", "Snap-style mirrored capture, gesture controls, beauty modes, lenses, and instant Pulse publishing.", main, "", "")
     is_premium = premium_identity_engine.user_has_premium_mark(user)
     catalog = camera_filter_engine.filter_catalog(is_premium)
     mode = "video" if request.path.endswith("/video") else "reel" if request.path.endswith("/reel") else "photo"
@@ -40175,6 +40285,7 @@ def init_db():
         updated_at TEXT
     )
     """)
+    pulse_lens_engine.seed_lenses(cur)
     for name, ftype, required in [
         ("Beauty Glow", "image", "Active Member"), ("Smooth Skin", "image", "Active Member"),
         ("Bright Eyes", "image", "Active Member"), ("Cyber Neon", "image", "Creator"),

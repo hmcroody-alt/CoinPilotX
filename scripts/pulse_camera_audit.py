@@ -35,8 +35,14 @@ def main():
         expect(table_exists(cur, table), f"{table} exists")
     conn.close()
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
-    for token in ["/pulse/camera", "navigator.mediaDevices.getUserMedia", "target}'==='status", "pulse_camera_captures", "pulse_media_assets", "/api/pulse/media/upload"]:
+    js = (ROOT / "static/js/pulse_camera_engine.js").read_text(encoding="utf-8")
+    css = (ROOT / "static/css/pulse_camera_engine.css").read_text(encoding="utf-8")
+    for token in ["/pulse/camera", "pulse-camera-engine", "pulse_lens_engine", "pulse_camera_captures", "pulse_media_assets", "/api/pulse/media/upload"]:
         expect(token in source, f"camera integration token present: {token}")
+    for token in ["navigator.mediaDevices.getUserMedia", "MediaRecorder", "data-publish-destination=\"status\"", "pulseCameraConfig"]:
+        expect(token in source + js, f"camera engine token present: {token}")
+    for token in ["100dvh", "env(safe-area-inset-bottom", "pulse-camera-capture", "pulse-camera-lenses"]:
+        expect(token in css, f"camera CSS token present: {token}")
     client = bot.webhook_app.test_client()
     response = client.get("/pulse/camera?target=status")
     expect(response.status_code in {200, 302}, "camera route loads or redirects to login")

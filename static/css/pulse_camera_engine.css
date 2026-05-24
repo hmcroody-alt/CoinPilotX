@@ -1,0 +1,464 @@
+:root {
+  --pulse-camera-safe-top: env(safe-area-inset-top, 0px);
+  --pulse-camera-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body.pulse-camera-active {
+  background: #02050b !important;
+  overscroll-behavior: none;
+}
+
+body:has(.pulse-camera-engine) .wrap {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+body:has(.pulse-camera-engine) .nav,
+body:has(.pulse-camera-engine) .wrap > section.card,
+body:has(.pulse-camera-engine) aside,
+body:has(.pulse-camera-engine) .mobile-topbar,
+body:has(.pulse-camera-engine) .mobile-bottom-nav,
+body:has(.pulse-camera-engine) .pulse-fab {
+  display: none !important;
+}
+
+body:has(.pulse-camera-engine) .layout {
+  display: block;
+  margin: 0;
+}
+
+body:has(.pulse-camera-engine) .layout > div {
+  min-height: 100dvh;
+}
+
+.pulse-camera-engine {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  color: #f5fdff;
+  background: #02050b;
+  touch-action: none;
+  user-select: none;
+}
+
+.pulse-camera-preview,
+.pulse-camera-canvas,
+.pulse-camera-media-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #02050b;
+  filter: var(--pulse-camera-filter, brightness(1.04) contrast(1.04) saturate(1.05));
+  transform: translateZ(0) scale(var(--pulse-camera-zoom, 1));
+  transform-origin: var(--pulse-focus-x, 50%) var(--pulse-focus-y, 50%);
+  will-change: transform, filter;
+}
+
+.pulse-camera-engine.is-front .pulse-camera-preview,
+.pulse-camera-engine.is-front .pulse-camera-canvas,
+.pulse-camera-engine.is-front .pulse-camera-media-preview {
+  transform: scaleX(-1) scale(var(--pulse-camera-zoom, 1));
+}
+
+.pulse-camera-engine.is-final-unmirrored .pulse-camera-media-preview {
+  transform: scale(var(--pulse-camera-zoom, 1));
+}
+
+.pulse-camera-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    var(--pulse-lens-overlay, transparent),
+    radial-gradient(circle at 50% 38%, transparent 30%, rgba(0,0,0,.2) 70%),
+    linear-gradient(180deg, rgba(0,0,0,.58), transparent 22%, transparent 58%, rgba(0,0,0,.72));
+  mix-blend-mode: screen;
+}
+
+.pulse-camera-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 38%, transparent 34%, rgba(0,0,0,.42) 100%),
+    linear-gradient(180deg, rgba(0,0,0,.52), transparent 22%, transparent 62%, rgba(0,0,0,.74));
+}
+
+.pulse-camera-glass {
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(5, 13, 25, .42);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 60px rgba(0,0,0,.34), 0 0 22px rgba(110,223,246,.12);
+}
+
+.pulse-camera-top {
+  position: absolute;
+  top: calc(10px + var(--pulse-camera-safe-top));
+  left: 14px;
+  right: 14px;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.pulse-camera-title {
+  min-width: 0;
+  border-radius: 999px;
+  padding: 10px 13px;
+  font-weight: 950;
+  letter-spacing: .01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pulse-camera-top-actions,
+.pulse-camera-side-tools {
+  display: flex;
+  gap: 9px;
+}
+
+.pulse-camera-side-tools {
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  z-index: 6;
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+.pulse-camera-icon {
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  border-radius: 999px;
+  padding: 0;
+  color: #f5fdff;
+  font-size: 19px;
+}
+
+.pulse-camera-permission {
+  position: absolute;
+  top: calc(68px + var(--pulse-camera-safe-top));
+  left: 14px;
+  right: 76px;
+  z-index: 5;
+  border-radius: 18px;
+  padding: 11px 13px;
+  color: #dffcff;
+  font-size: 13px;
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.pulse-camera-permission.is-hidden {
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+
+.pulse-camera-focus-ring {
+  position: absolute;
+  z-index: 7;
+  width: 74px;
+  height: 74px;
+  margin: -37px 0 0 -37px;
+  border: 2px solid rgba(110,223,246,.96);
+  border-radius: 50%;
+  box-shadow: 0 0 24px rgba(110,223,246,.4);
+  transform: scale(.86);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pulse-camera-focus-ring.is-on {
+  animation: pulseFocus .72s ease forwards;
+}
+
+.pulse-camera-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  display: grid;
+  gap: 12px;
+  padding: 0 14px calc(14px + var(--pulse-camera-safe-bottom));
+  pointer-events: none;
+}
+
+.pulse-camera-bottom > * {
+  pointer-events: auto;
+}
+
+.pulse-camera-lenses,
+.pulse-camera-beauty,
+.pulse-camera-modes {
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+  padding: 5px 4px;
+}
+
+.pulse-camera-lenses::-webkit-scrollbar,
+.pulse-camera-beauty::-webkit-scrollbar,
+.pulse-camera-modes::-webkit-scrollbar {
+  display: none;
+}
+
+.pulse-lens-chip,
+.pulse-beauty-chip,
+.pulse-mode-chip {
+  flex: 0 0 auto;
+  scroll-snap-align: center;
+  border-radius: 999px;
+  min-height: 42px;
+  color: #f5fdff;
+  font-weight: 900;
+  background: rgba(4,10,20,.46);
+}
+
+.pulse-lens-chip {
+  min-width: 118px;
+  justify-content: flex-start;
+}
+
+.pulse-lens-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #36e58f, #6edff6, #9b5cff);
+  box-shadow: 0 0 18px rgba(110,223,246,.28);
+}
+
+.pulse-lens-chip.is-active,
+.pulse-beauty-chip.is-active,
+.pulse-mode-chip.is-active {
+  border-color: rgba(110,223,246,.68);
+  box-shadow: 0 0 24px rgba(110,223,246,.22);
+  transform: translateY(-1px);
+}
+
+.pulse-lens-chip:disabled {
+  opacity: .55;
+}
+
+.pulse-camera-intensity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(520px, 92vw);
+  margin: auto;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.pulse-camera-intensity input {
+  accent-color: #6edff6;
+}
+
+.pulse-camera-capture-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(520px, 96vw);
+  min-height: 88px;
+  margin: auto;
+}
+
+.pulse-camera-gallery {
+  position: absolute;
+  left: 0;
+  width: 54px;
+  height: 54px;
+  min-height: 54px;
+  border-radius: 18px;
+  padding: 0;
+}
+
+.pulse-camera-use {
+  position: absolute;
+  right: 0;
+  min-width: 124px;
+  min-height: 52px;
+  border-radius: 999px;
+}
+
+.pulse-camera-capture {
+  width: 84px;
+  height: 84px;
+  min-height: 84px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,.96);
+  background: radial-gradient(circle, #fff 0 29%, #6edff6 31%, #36e58f 72%);
+  box-shadow: 0 0 0 8px rgba(255,255,255,.08), 0 0 40px rgba(110,223,246,.44);
+  animation: cameraPulse 2.4s ease-in-out infinite;
+}
+
+.pulse-camera-capture.is-recording {
+  background: radial-gradient(circle, #ff4f61 0 30%, #a70f25 33%, #24040a 70%);
+  box-shadow: 0 0 0 10px rgba(255,79,97,.16), 0 0 48px rgba(255,79,97,.55);
+}
+
+.pulse-camera-timer {
+  position: absolute;
+  left: 64px;
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: #ffd6dc;
+  display: none;
+}
+
+.pulse-camera-timer.is-on {
+  display: inline-flex;
+}
+
+.pulse-camera-status {
+  min-height: 20px;
+  text-align: center;
+  color: rgba(223,252,255,.78);
+  margin: 0;
+  font-size: 13px;
+}
+
+#pulseCameraFile {
+  display: none;
+}
+
+.pulse-camera-sheet,
+.pulse-camera-processing {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: none;
+  place-items: end center;
+  background: rgba(0,0,0,.58);
+  backdrop-filter: blur(10px);
+  padding: 18px;
+}
+
+.pulse-camera-processing {
+  place-items: center;
+}
+
+.pulse-camera-sheet.is-on,
+.pulse-camera-processing.is-on {
+  display: grid;
+}
+
+.pulse-camera-panel {
+  width: min(520px, 94vw);
+  border-radius: 28px;
+  background: rgba(7,16,31,.92);
+  padding: 16px;
+}
+
+.pulse-camera-destination-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pulse-camera-destination-grid button,
+.pulse-camera-destination-grid a {
+  border-radius: 16px;
+  min-height: 54px;
+}
+
+.pulse-camera-spinner {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,.18);
+  border-top-color: #6edff6;
+  animation: spin .8s linear infinite;
+}
+
+.pulse-camera-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .64;
+}
+
+.pulse-camera-particles::before,
+.pulse-camera-particles::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6edff6;
+  box-shadow: 24vw 18vh #36e58f, 52vw 24vh #ffd166, 76vw 36vh #9b5cff, 36vw 62vh #6edff6, 84vw 72vh #36e58f;
+  animation: particles 6s ease-in-out infinite;
+}
+
+.pulse-camera-particles::after {
+  animation-delay: -2s;
+  transform: translate(12vw, 18vh) scale(.72);
+}
+
+@keyframes cameraPulse {
+  50% { transform: scale(1.045); box-shadow: 0 0 0 12px rgba(255,255,255,.06), 0 0 52px rgba(110,223,246,.54); }
+}
+
+@keyframes pulseFocus {
+  0% { opacity: 0; transform: scale(1.18); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: scale(.84); }
+}
+
+@keyframes particles {
+  50% { transform: translateY(-18px) translateX(10px); opacity: .85; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (orientation: landscape) and (max-height: 620px) {
+  .pulse-camera-lenses,
+  .pulse-camera-beauty {
+    display: none;
+  }
+  .pulse-camera-capture {
+    width: 70px;
+    height: 70px;
+    min-height: 70px;
+  }
+  .pulse-camera-capture-row {
+    min-height: 74px;
+  }
+}
+
+@media (max-width: 420px) {
+  .pulse-camera-use {
+    min-width: 104px;
+    padding-inline: 12px;
+  }
+  .pulse-camera-title {
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-camera-engine *,
+  .pulse-camera-engine *::before,
+  .pulse-camera-engine *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
