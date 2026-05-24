@@ -38,7 +38,7 @@ FEED_ALIASES = {
     "my-posts": "my_posts",
 }
 POST_TYPE_ALIASES = {"scam_warning": "scam_report", "question": "poll", "roast": "roast_clip", "roast_battle": "roast_clip"}
-POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result", "roast_clip"}
+POST_TYPES = {"text", "image", "video", "gif", "poll", "replay", "scam_report", "arena_result", "roast_clip", "live"}
 
 
 def _now():
@@ -288,6 +288,18 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
     reaction_counts = reactions or {}
     reaction_total = sum(int(v or 0) for v in reaction_counts.values())
     can_delete = bool(viewer_user_id and int(item.get("user_id") or 0) == int(viewer_user_id or 0))
+    live_session_id = int(item.get("live_session_id") or 0)
+    live_payload = {}
+    if (item.get("post_type") or "") == "live" or live_session_id:
+        live_payload = {
+            "live_session_id": live_session_id,
+            "status": item.get("live_status") or item.get("status") or "live",
+            "playback_url": item.get("playback_url") or "",
+            "preview_url": item.get("preview_url") or "",
+            "replay_url": item.get("replay_url") or "",
+            "viewer_count": int(item.get("live_viewer_count") or 0),
+            "live_url": f"/pulse/live/{live_session_id}" if live_session_id else f"/pulse/post/{item.get('id')}",
+        }
     return {
         "id": item.get("id"),
         "post_type": item.get("post_type") or "text",
@@ -314,7 +326,8 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "comments_count": comments,
         "viewer_reaction": viewer_reaction,
         "can_delete": can_delete,
-        "permalink": f"/pulse/post/{item.get('id')}",
+        "live": live_payload,
+        "permalink": live_payload.get("live_url") or f"/pulse/post/{item.get('id')}",
     }
 
 

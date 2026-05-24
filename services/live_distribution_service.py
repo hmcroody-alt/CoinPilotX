@@ -7,7 +7,7 @@ import os
 
 def playback_manifest(session=None):
     session = session or {}
-    hls_url = session.get("hls_url") or ""
+    hls_url = session.get("playback_url") or session.get("hls_url") or ""
     stream_uuid = session.get("stream_uuid") or ""
     if not hls_url and stream_uuid:
         base = os.getenv("PULSE_HLS_PLAYBACK_URL", "https://live.coinpilotxai.app/hls").rstrip("/")
@@ -17,6 +17,7 @@ def playback_manifest(session=None):
         "live_id": int(session.get("id") or session.get("live_id") or 0),
         "status": session.get("status") or "starting",
         "hls_url": hls_url,
+        "playback_url": hls_url,
         "webrtc_room_id": session.get("webrtc_room_id") or "",
         "rtmp_url": session.get("rtmp_url") or "",
         "poster_url": session.get("thumbnail_url") or "",
@@ -24,6 +25,7 @@ def playback_manifest(session=None):
         "supports_webrtc": bool(session.get("webrtc_room_id")),
         "latency_mode": "low-latency",
         "fallback_mode": "ambient-ready-state",
+        "state_machine": session.get("publish_state") or session.get("status") or "idle",
     }
 
 

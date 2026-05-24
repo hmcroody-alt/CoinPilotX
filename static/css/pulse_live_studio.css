@@ -129,6 +129,57 @@
   transform: none;
 }
 
+.live-public-video {
+  background: #020712;
+  z-index: 1;
+}
+
+.live-unmute-button {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  border: 0;
+  color: #06101b;
+  background: linear-gradient(135deg, #36e58f, #6edff6);
+  box-shadow: 0 14px 36px rgba(54, 229, 143, 0.26);
+}
+
+.live-destination-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid rgba(110, 223, 246, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.live-destination-picker legend {
+  padding: 0 8px;
+  font-weight: 950;
+  color: #dffcff;
+}
+
+.live-destination-picker label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  color: #dffcff;
+  font-weight: 850;
+}
+
+.live-destination-picker input[type="checkbox"] {
+  width: auto;
+}
+
+.live-destination-picker input:not([type="checkbox"]),
+.live-destination-picker .muted {
+  grid-column: 1 / -1;
+}
+
 .live-ready-state {
   position: absolute;
   inset: 0;

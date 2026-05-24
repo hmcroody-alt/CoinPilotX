@@ -129,6 +129,34 @@
     const video = qs(root, "[data-live-camera]");
     if (!video || !navigator.mediaDevices?.getUserMedia) return;
     let stream = null;
+    async function publishTracks(kind) {
+      const id = root?.dataset?.liveId;
+      if (!id || !stream) return;
+      const audioTracks = stream.getAudioTracks().filter((track) => track.readyState === "live").length;
+      const videoTracks = stream.getVideoTracks().filter((track) => track.readyState === "live").length;
+      try {
+        await fetch(`/api/pulse/live/${id}/browser-publish`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source: kind || "browser_camera",
+            audio_tracks: audioTracks,
+            video_tracks: videoTracks,
+            muted: !stream.getAudioTracks().some((track) => track.enabled),
+          }),
+        }).then(async (response) => {
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false) throw new Error(data.message || "Live media publish failed.");
+          return data;
+        });
+        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Camera and microphone publishing" : "No tracks detected");
+        await fetchState(root);
+      } catch (error) {
+        setText(root, "[data-live-camera-state]", "Publishing needs attention");
+        if (window.toast) window.toast(error.message);
+      }
+    }
     const stop = () => {
       if (stream) stream.getTracks().forEach((track) => track.stop());
       stream = null;
@@ -142,7 +170,8 @@
         });
         video.srcObject = stream;
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Camera live-ready");
+        setText(root, "[data-live-camera-state]", "Camera live-ready. Publishing tracks...");
+        await publishTracks("browser_camera");
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Camera needs permission");
         if (window.toast) window.toast(error.message);
@@ -161,7 +190,8 @@
         video.srcObject = stream;
         video.style.transform = "none";
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Screen share live-ready");
+        setText(root, "[data-live-camera-state]", "Screen share live-ready. Publishing tracks...");
+        await publishTracks("screen_share");
       } catch {
         if (window.toast) window.toast("Screen share was not started.");
       }
@@ -180,6 +210,13 @@
     });
     qsa(root, "[data-live-reaction]").forEach((button) => {
       button.addEventListener("click", () => sendReaction(root, button.dataset.liveReaction || "🔥"));
+    });
+    qs(root, "[data-live-unmute]")?.addEventListener("click", async (event) => {
+      const player = qs(root, "[data-live-player]");
+      if (!player) return;
+      player.muted = false;
+      try { await player.play(); } catch (_) {}
+      event.currentTarget.hidden = true;
     });
   }
 

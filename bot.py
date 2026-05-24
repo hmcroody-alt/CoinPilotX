@@ -118,10 +118,14 @@ from services import (
     telegram_text_router,
     live_market_service,
     live_archive_service,
+    live_archive_share_service,
+    live_destination_service,
     live_distribution_service,
+    live_feed_service,
     live_health_service,
     live_ops_engine,
     live_presence_engine,
+    live_restream_service,
     live_stream_health_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
@@ -19080,6 +19084,17 @@ def pulse_live_page():
           <input id='liveTitle' placeholder='Live title' value='CoinPilotXAI Pulse Live'>
           <select id='liveCategory'><option>Crypto Education</option><option>Scam Shield Lesson</option><option>Arena Training</option><option>Market Psychology</option></select>
           <input id='liveThumb' placeholder='Optional thumbnail URL'>
+          <fieldset class='live-destination-picker'>
+            <legend>Go live to...</legend>
+            <label><input type='checkbox' data-live-destination value='pulse' checked disabled> Pulse Live</label>
+            <label><input type='checkbox' data-live-destination value='facebook'> Facebook Live</label>
+            <label><input type='checkbox' data-live-destination value='youtube'> YouTube Live</label>
+            <label><input type='checkbox' data-live-destination value='twitch'> Twitch</label>
+            <label><input type='checkbox' data-live-destination value='custom_rtmp'> Custom RTMP</label>
+            <input id='customRtmpUrl' placeholder='Custom RTMP URL (optional)'>
+            <input id='customStreamKey' placeholder='Custom stream key (stored securely)' type='password'>
+            <p class='muted'>Pulse stays live even if an external destination fails.</p>
+          </fieldset>
           <p class='muted'>Live safety rules: no financial advice, no doxxing, no harassment, no scam promotion.</p>
           <button class='primary' id='startLiveBtn'>Start Live</button>
           <p class='muted' id='liveStartStatus'>Ready to validate your creator access.</p>
@@ -19209,7 +19224,15 @@ def pulse_live_page():
         setState('Checking eligibility...');
         await new Promise(resolve => setTimeout(resolve, 120));
         setState('Preparing livestream...');
-        const payload = { title: document.getElementById('liveTitle')?.value || '', category: document.getElementById('liveCategory')?.value || '', thumbnail_url: document.getElementById('liveThumb')?.value || '' };
+        const destinations = [...document.querySelectorAll('[data-live-destination]')].filter(input => input.checked).map(input => ({ platform: input.value }));
+        const payload = {
+          title: document.getElementById('liveTitle')?.value || '',
+          category: document.getElementById('liveCategory')?.value || '',
+          thumbnail_url: document.getElementById('liveThumb')?.value || '',
+          destinations,
+          custom_rtmp_url: document.getElementById('customRtmpUrl')?.value || '',
+          custom_stream_key: document.getElementById('customStreamKey')?.value || ''
+        };
         setState('Creating live room...');
         const data = await pulseApi('/api/pulse/live/start', { method:'POST', body: JSON.stringify(payload) });
         if (status) status.textContent = 'Live room ready. Starting camera preview...';
@@ -19271,6 +19294,27 @@ def pulse_live_studio_page(stream_id):
     reaction_cloud = live_presence_engine.reaction_cloud(reactions)
     reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{clean_html(r.get('emoji') or '🔥')}</span>" for r in reaction_cloud)
     health_score = int(health.get("score") or 0)
+    live_status = clean_html(live.get("status") or "idle")
+    playback_url = clean_html(playback.get("playback_url") or playback.get("hls_url") or "")
+    poster_url = clean_html(playback.get("poster_url") or live.get("thumbnail_url") or "")
+    is_active_live = live_status in {"live", "publishing", "reconnecting"} and (playback_url or live.get("webrtc_room_id"))
+    if is_active_live:
+        player_inner = (
+            f"<video class='live-public-video' data-live-player src='{playback_url}' poster='{poster_url}' "
+            "controls autoplay muted playsinline preload='metadata'></video>"
+            "<button class='live-unmute-button' type='button' data-live-unmute>Tap to unmute</button>"
+        )
+    else:
+        player_inner = f"""
+          <div class='live-ready-state'>
+            <div>
+              <h2>{clean_html(live_status or 'waiting')} stream</h2>
+              <p class='muted'>Pulse is waiting for the creator camera or reconnecting the broadcast.</p>
+              <p><span class='pill'>HLS {clean_html('ready' if playback.get('supports_hls') else 'pending')}</span> <span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or 'ready')}</span></p>
+              <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          </div>
+        """
     main = f"""
     <link rel='stylesheet' href='/static/css/pulse_live_studio.css'>
     <section class='pulse-live-surface live-command-shell' data-pulse-live-shell data-live-id='{stream_id}' data-live-poll-ms='3500'>
@@ -19402,6 +19446,22 @@ def pulse_live_room_page(live_id):
     reaction_cloud = live_presence_engine.reaction_cloud(reactions)
     reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{clean_html(r.get('emoji') or '🔥')}</span>" for r in reaction_cloud)
     health_score = int(health.get("score") or 0)
+    live_status = clean_html(live.get("status") or "idle")
+    playback_url = clean_html(playback.get("playback_url") or playback.get("hls_url") or "")
+    poster_url = clean_html(playback.get("poster_url") or live.get("preview_url") or live.get("thumbnail_url") or "")
+    is_active_live = live_status in {"live", "publishing", "reconnecting"} and bool(playback_url or live.get("webrtc_room_id"))
+    if is_active_live:
+        player_inner = (
+            f"<video class='live-public-video' data-live-player src='{playback_url}' poster='{poster_url}' "
+            "controls autoplay muted playsinline preload='metadata'></video>"
+            "<button class='live-unmute-button' type='button' data-live-unmute>Tap to unmute</button>"
+        )
+    else:
+        player_inner = (
+            "<div class='live-ready-state'><div><div class='live-ready-orb'>●</div>"
+            f"<h2>{clean_html(live.get('title') or 'Pulse Live')}</h2>"
+            "<p>Stream is waiting for camera, reconnecting, or preparing playback.</p></div></div>"
+        )
     main = f"""
     <link rel='stylesheet' href='/static/css/pulse_live_studio.css'>
     <section class='pulse-live-surface live-view-shell' data-pulse-live-shell data-live-id='{live_id}' data-live-poll-ms='3200'>
@@ -19419,15 +19479,7 @@ def pulse_live_room_page(live_id):
       </div>
       <section class='live-studio-grid'>
         <div class='live-public-player'>
-          <div class='live-ready-state'>
-            <div>
-              <div class='live-ready-orb'>{clean_html((live.get('creator_name') or 'P')[:1].upper())}</div>
-              <h2>{clean_html(live.get('status') or 'Live')} broadcast</h2>
-              <p class='muted'>Pulse is preparing the public stream. HLS and WebRTC metadata are attached for playback recovery.</p>
-              <p><span class='pill'>HLS {clean_html('ready' if playback.get('supports_hls') else 'pending')}</span> <span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or 'ready')}</span></p>
-              <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
-            </div>
-          </div>
+          {player_inner}
           <div class='live-stage-overlay'>
             <div class='live-mode-row'><span class='pill'>{clean_html(live.get('category') or 'Community')}</span><span class='pill'>Score <span data-live-score>{health_score}</span></span></div>
             <div class='live-mode-row'><span class='pill' data-live-bitrate>{int(health.get('bitrate_kbps') or 0)} kbps</span><span class='pill' data-live-fps>{int(health.get('fps') or 0)} FPS</span></div>
@@ -19557,6 +19609,33 @@ def api_pulse_live_start():
         )
         stream_row_id = int(cur.lastrowid)
         cur.execute("UPDATE pulse_live_sessions SET stream_id=? WHERE id=?", (stream_row_id, live_id))
+        playback_url = stream_setup.get("hls_url") or ""
+        feed_post_id = live_feed_service.ensure_live_feed_post(
+            cur,
+            user_id=user_id,
+            live_id=live_id,
+            title=title,
+            category=category,
+            playback_url=playback_url,
+            preview_url=thumbnail_url,
+            viewer_count=0,
+        )
+        restream_targets = live_restream_service.prepare_restream_targets(
+            cur,
+            live_id=live_id,
+            user_id=user_id,
+            destinations=payload.get("destinations") or ["pulse"],
+            custom_rtmp_url=clean_html(payload.get("custom_rtmp_url") or "")[:700],
+            custom_stream_key=clean_html(payload.get("custom_stream_key") or "")[:700],
+        )
+        cur.execute(
+            """
+            UPDATE pulse_live_sessions
+            SET feed_post_id=?, playback_url=?, preview_url=?, publish_state='publishing', updated_at=?
+            WHERE id=?
+            """,
+            (feed_post_id, playback_url, thumbnail_url, now, live_id),
+        )
         cur.execute(
             "INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, ?, 'system', 'approved', 1, ?, ?)",
             (live_id, user_id, f"{title} is live. Keep chat safe, educational, and respectful.", json.dumps({"kind": "welcome"}, default=str), now),
@@ -19580,7 +19659,10 @@ def api_pulse_live_start():
             "ingest_url": stream_setup.get("ingest_url") or "",
             "rtmp_url": stream_setup.get("rtmp_url") or "",
             "hls_url": stream_setup.get("hls_url") or "",
+            "playback_url": playback_url,
             "webrtc_room_id": stream_setup.get("webrtc_room_id") or "",
+            "feed_post_id": feed_post_id,
+            "destinations": restream_targets,
             "live_url": f"/pulse/live/{live_id}",
             "studio_url": studio_url,
             "websocket_channel": channel,
@@ -19598,6 +19680,85 @@ def api_pulse_live_start():
         except Exception:
             pass
         return jsonify({"ok": False, "message": f"Live could not start. Trace {trace_id}.", "error": str(exc), "type": exc.__class__.__name__, "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/browser-publish", methods=["POST"])
+def api_pulse_live_browser_publish(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        if int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
+            conn.close()
+            return api_error("Only the host can publish this stream.", 403)
+        audio_tracks = max(0, safe_int(payload.get("audio_tracks"), 0))
+        video_tracks = max(0, safe_int(payload.get("video_tracks"), 0))
+        if audio_tracks <= 0 and video_tracks <= 0:
+            conn.close()
+            return jsonify({"ok": False, "message": "No camera or microphone tracks were detected.", "trace_id": trace_id}), 400
+        playback_url = live.get("playback_url") or live.get("hls_url") or ""
+        preview_url = live.get("preview_url") or live.get("thumbnail_url") or ""
+        feed_post_id = int(live.get("feed_post_id") or 0)
+        if not feed_post_id:
+            feed_post_id = live_feed_service.ensure_live_feed_post(
+                cur,
+                user_id=int(live.get("user_id") or user["user_id"]),
+                live_id=live_id,
+                title=live.get("title") or "Pulse Live",
+                category=live.get("category") or "Community",
+                playback_url=playback_url,
+                preview_url=preview_url,
+                viewer_count=int(live.get("viewer_count") or 0),
+            )
+        cur.execute(
+            """
+            UPDATE pulse_live_sessions
+            SET status='live', publish_state='live', stream_health='stable', audio_tracks=?, video_tracks=?,
+                feed_post_id=?, playback_url=?, preview_url=?, updated_at=?
+            WHERE id=?
+            """,
+            (audio_tracks, video_tracks, feed_post_id, playback_url, preview_url, now, live_id),
+        )
+        cur.execute(
+            """
+            UPDATE pulse_posts
+            SET live_status='live', live_viewer_count=?, playback_url=?, preview_url=?, updated_at=?
+            WHERE id=?
+            """,
+            (int(live.get("viewer_count") or 0), playback_url, preview_url, now, feed_post_id),
+        )
+        conn.commit(); conn.close()
+        try:
+            pulse_emit_event("livestream_media_published", {"live_id": live_id, "post_id": feed_post_id, "audio_tracks": audio_tracks, "video_tracks": video_tracks}, user["user_id"], None)
+        except Exception:
+            logging.exception("PULSE_LIVE_BROWSER_PUBLISH_EMIT_FAILED live_id=%s trace_id=%s", live_id, trace_id)
+        return jsonify({
+            "ok": True,
+            "message": "Browser camera and microphone are publishing.",
+            "trace_id": trace_id,
+            "live_id": live_id,
+            "feed_post_id": feed_post_id,
+            "audio_tracks": audio_tracks,
+            "video_tracks": video_tracks,
+            "playback": live_distribution_service.playback_manifest({**live, "playback_url": playback_url}),
+        })
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_BROWSER_PUBLISH_FAILED trace_id=%s live_id=%s user_id=%s error=%s", trace_id, live_id, user.get("user_id"), exc)
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "message": "Live media could not publish.", "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/chat", methods=["GET", "POST"])
@@ -19673,21 +19834,26 @@ def api_pulse_live_state(live_id):
     viewer_count = int(dict(cur.fetchone() or {}).get("total") or live.get("viewer_count") or 0)
     cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 24", (live_id,))
     reactions = [dict(row) for row in cur.fetchall()]
-    conn.close()
     health = live_health_service.health_snapshot(live, viewer_count=viewer_count, chat_count=len(messages))
     presence = live_presence_engine.stream_energy_state(live, messages, reactions, [{"id": i} for i in range(viewer_count)])
     playback = live_distribution_service.playback_manifest(live)
     archive = live_archive_service.replay_manifest(live, messages)
+    restream_targets = live_restream_service.destination_statuses(cur, live_id=live_id)
+    archive_shares = live_archive_share_service.public_share_options(cur, live_id=live_id)
+    conn.close()
     return jsonify({
         "ok": True,
         "live_id": live_id,
         "status": live.get("status") or "starting",
+        "publish_state": live.get("publish_state") or live.get("status") or "idle",
         "viewer_count": viewer_count,
         "messages": messages,
         "health": health,
         "presence": presence,
         "playback": playback,
         "archive": archive,
+        "destinations": restream_targets,
+        "post_live_options": archive_shares,
         "reaction_cloud": live_presence_engine.reaction_cloud(reactions),
     })
 
@@ -19741,6 +19907,9 @@ def api_pulse_live_join(live_id):
     cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
     viewers = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("UPDATE pulse_live_sessions SET viewer_count=?, updated_at=? WHERE id=?", (viewers, now, live_id))
+    feed_post_id = int(live.get("feed_post_id") or 0)
+    if feed_post_id:
+        cur.execute("UPDATE pulse_posts SET live_viewer_count=?, updated_at=? WHERE id=?", (viewers, now, feed_post_id))
     conn.commit(); conn.close()
     return jsonify({"ok": True, "viewer_count": viewers, "message": "Joined live stream."})
 
@@ -19761,16 +19930,24 @@ def api_pulse_live_end(live_id):
     if int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
         conn.close()
         return api_error("Only the host or an admin can end this stream.", 403)
-    cur.execute("UPDATE pulse_live_sessions SET status='ended', stream_health='ended', ended_at=?, updated_at=? WHERE id=?", (now, now, live_id))
+    replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
+    viewer_count = int(live.get("viewer_count") or 0)
+    cur.execute(
+        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', replay_url=?, ended_at=?, updated_at=? WHERE id=?",
+        (replay_url, now, now, live_id),
+    )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
     cur.execute("UPDATE pulse_live_viewers SET status='left', left_at=?, last_seen_at=? WHERE live_id=? AND status IN ('watching','hosting')", (now, now, live_id))
+    feed_post_id = live_feed_service.mark_live_feed_ended(cur, live_id=live_id, replay_url=replay_url, viewer_count=viewer_count)
+    live_restream_service.mark_targets_ended(cur, live_id=live_id)
+    share_options = live_archive_share_service.create_post_live_options(cur, live_id=live_id, replay_url=replay_url)
     cur.execute("INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, 'Live stream ended.', 'system', 'approved', 1, ?, ?)", (live_id, user["user_id"], json.dumps({"kind": "ended"}, default=str), now))
     conn.commit(); conn.close()
     try:
         pulse_emit_event("livestream_ended", {"live_id": live_id, "message": "Live stream ended."}, user["user_id"], None)
     except Exception:
         logging.exception("PULSE_LIVE_END_EMIT_FAILED live_id=%s", live_id)
-    return jsonify({"ok": True, "message": "Live stream ended.", "live_id": live_id})
+    return jsonify({"ok": True, "message": "Live stream ended.", "live_id": live_id, "feed_post_id": feed_post_id, "post_live_options": share_options})
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -37582,6 +37759,12 @@ def init_db():
         ("pinned_at", "TEXT"),
         ("pinned_by", "INTEGER"),
         ("repost_of_post_id", "INTEGER"),
+        ("live_session_id", "INTEGER DEFAULT 0"),
+        ("live_status", "TEXT"),
+        ("live_viewer_count", "INTEGER DEFAULT 0"),
+        ("playback_url", "TEXT"),
+        ("preview_url", "TEXT"),
+        ("replay_url", "TEXT"),
         ("status", "TEXT DEFAULT 'published'"),
         ("edited_at", "TEXT"),
         ("created_at", "TEXT"),
@@ -39140,6 +39323,13 @@ def init_db():
         ("bitrate_kbps", "INTEGER DEFAULT 0"),
         ("fps", "INTEGER DEFAULT 0"),
         ("chat_conversation_id", "INTEGER DEFAULT 0"),
+        ("feed_post_id", "INTEGER DEFAULT 0"),
+        ("playback_url", "TEXT"),
+        ("preview_url", "TEXT"),
+        ("replay_url", "TEXT"),
+        ("publish_state", "TEXT DEFAULT 'idle'"),
+        ("audio_tracks", "INTEGER DEFAULT 0"),
+        ("video_tracks", "INTEGER DEFAULT 0"),
         ("analytics_json", "TEXT"),
         ("moderation_status", "TEXT DEFAULT 'clear'"),
         ("updated_at", "TEXT"),
@@ -39415,6 +39605,47 @@ def init_db():
     )
     """)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_destinations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        platform TEXT,
+        label TEXT,
+        rtmp_url TEXT,
+        stream_key_encrypted TEXT,
+        oauth_token_encrypted TEXT,
+        status TEXT DEFAULT 'connected',
+        disconnected_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_restream_targets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        destination_id INTEGER DEFAULT 0,
+        platform TEXT,
+        status TEXT DEFAULT 'connecting',
+        last_error TEXT,
+        retry_count INTEGER DEFAULT 0,
+        started_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_archive_shares (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        platform TEXT,
+        action TEXT,
+        status TEXT DEFAULT 'waiting_for_replay',
+        target_url TEXT,
+        error_message TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_live_clips (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         live_id INTEGER,
@@ -39433,6 +39664,9 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_sessions_user_status ON pulse_live_sessions(user_id, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_chat_live ON pulse_live_chat(live_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_viewers_live ON pulse_live_viewers(live_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_destinations_user ON pulse_live_destinations(user_id, platform, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_restream_live ON pulse_live_restream_targets(live_id, platform, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_archive_shares_live ON pulse_live_archive_shares(live_id, status)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_online_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
