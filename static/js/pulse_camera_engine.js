@@ -18,6 +18,14 @@
   const captureBtn = document.getElementById("pulseCameraCapture");
   const useBtn = document.getElementById("pulseCameraUse");
   const particles = document.getElementById("pulseCameraParticles");
+  const previewFlow = document.getElementById("pulseCameraPreviewFlow");
+  const previewStage = document.getElementById("pulsePreviewStage");
+  const previewTitle = document.getElementById("pulsePreviewTitle");
+  const previewMeta = document.getElementById("pulsePreviewMeta");
+  const previewStatus = document.getElementById("pulsePreviewStatus");
+  const previewPublish = document.getElementById("pulsePreviewPublish");
+  const previewCaption = document.getElementById("pulsePreviewCaption");
+  const previewPrivacy = document.getElementById("pulsePreviewPrivacy");
 
   let stream = null;
   let recorder = null;
@@ -37,9 +45,39 @@
   let recordingStartedAt = 0;
   let recordingTimer = null;
   let holdStartY = 0;
+  let stagedDestination = "";
+  let stagedMedia = null;
+  let stagedPreviewToken = "";
+  let localPreviewUrl = "";
+  let busy = false;
+  let idleTimer = null;
+  let smoothedLight = 0.62;
+  let smoothedMotion = 0;
+  let lastFrameSample = null;
 
   function setStatus(message) {
     if (statusEl) statusEl.textContent = message || "";
+  }
+
+  function setPreviewStatus(message) {
+    if (previewStatus) previewStatus.textContent = message || "";
+  }
+
+  function setBusy(isBusy, message = "") {
+    busy = Boolean(isBusy);
+    document.querySelectorAll("[data-preview-destination], [data-publish-destination], #pulsePreviewPublish").forEach((button) => {
+      if (button) button.disabled = busy;
+    });
+    if (message) {
+      setStatus(message);
+      setPreviewStatus(message);
+    }
+  }
+
+  function wakeHud() {
+    root.classList.remove("is-idle");
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => root.classList.add("is-idle"), 2600);
   }
 
   function vibrate(ms = 12) {
@@ -81,6 +119,7 @@
       video.srcObject = stream;
       root.classList.toggle("is-front", facingMode === "user");
       permissionTip?.classList.add("is-hidden");
+      startIntelligenceLoop();
       setStatus("Ready");
       setTimeout(() => setStatus(""), 800);
     } catch (error) {
@@ -107,9 +146,47 @@
     const intensity = Number(document.getElementById("pulseCameraIntensity")?.value || 72) / 100;
     const beauty = activeBeauty?.css_filter || "brightness(1.04) contrast(1.04) saturate(1.05)";
     const lens = activeLens?.css_filter || "";
-    root.style.setProperty("--pulse-camera-filter", `${beauty} ${lens} opacity(${0.78 + intensity * 0.22})`);
+    const lowLightBoost = smoothedLight < 0.42 ? ` brightness(${1.08 + (0.42 - smoothedLight) * 0.42}) contrast(1.08)` : "";
+    const motionSharpness = smoothedMotion > 24 ? " blur(.18px)" : " sharpen(0)";
+    root.style.setProperty("--pulse-camera-filter", `${beauty} ${lens}${lowLightBoost} ${motionSharpness} opacity(${0.78 + intensity * 0.22})`);
     root.style.setProperty("--pulse-lens-overlay", activeLens?.overlay || "transparent");
+    root.style.setProperty("--pulse-light-level", String(smoothedLight.toFixed(3)));
     if (particles) particles.hidden = !activeLens || activeLens.particles === "none";
+  }
+
+  function startIntelligenceLoop() {
+    const intelligenceCanvas = document.createElement("canvas");
+    intelligenceCanvas.width = 28;
+    intelligenceCanvas.height = 28;
+    const ctx = intelligenceCanvas.getContext("2d", { willReadFrequently: true });
+    let lastRun = 0;
+    function tick(ts) {
+      if (!stream || document.hidden) return;
+      if (ts - lastRun > 700 && video.readyState >= 2) {
+        lastRun = ts;
+        try {
+          ctx.drawImage(video, 0, 0, intelligenceCanvas.width, intelligenceCanvas.height);
+          const data = ctx.getImageData(0, 0, intelligenceCanvas.width, intelligenceCanvas.height).data;
+          let total = 0;
+          let diff = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            const luma = (data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722) / 255;
+            total += luma;
+            if (lastFrameSample) diff += Math.abs(luma - lastFrameSample[i / 4]);
+          }
+          const sample = [];
+          for (let i = 0; i < data.length; i += 4) sample.push((data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722) / 255);
+          smoothedLight = smoothedLight * 0.82 + (total / sample.length) * 0.18;
+          smoothedMotion = smoothedMotion * 0.78 + (lastFrameSample ? diff / sample.length * 100 : 0) * 0.22;
+          lastFrameSample = sample;
+          root.classList.toggle("is-low-light", smoothedLight < 0.38);
+          root.classList.toggle("is-motion", smoothedMotion > 18);
+          applyEffect();
+        } catch (_) {}
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
   }
 
   function selectLens(key) {
@@ -197,6 +274,7 @@
     useBtn.disabled = false;
     vibrate(18);
     setStatus("Captured. Choose a destination.");
+    localPreviewUrl = URL.createObjectURL(capturedBlob);
     sheet?.classList.add("is-on");
   }
 
@@ -212,6 +290,7 @@
       capturedBlob = new Blob(chunks, { type: "video/webm" });
       capturedMime = "video/webm";
       useBtn.disabled = false;
+      localPreviewUrl = URL.createObjectURL(capturedBlob);
       sheet?.classList.add("is-on");
       setStatus("Video ready. Choose a destination.");
     };
@@ -239,7 +318,7 @@
     vibrate(18);
   }
 
-  async function uploadCapture() {
+  async function uploadCapture(retries = 1) {
     const fallback = fileInput.files?.[0];
     const file = fallback || capturedBlob;
     if (!file) {
@@ -255,31 +334,103 @@
     fd.append("mode", activeMode);
     fd.append("filter_name", activeBeauty?.key || "natural");
     fd.append("effect_key", activeLens?.key || "pulse_glow");
-    const response = await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd });
-    const data = await response.json().catch(() => ({ ok: false, message: "Upload returned an unreadable response." }));
-    if (!response.ok || data.ok === false) throw new Error(data.message || "Upload failed.");
-    return data.media || {};
+    try {
+      setBusy(true, "Uploading...");
+      const response = await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd });
+      const data = await response.json().catch(() => ({ ok: false, message: "Upload returned an unreadable response." }));
+      if (!response.ok || data.ok === false) throw new Error(data.message || "Upload failed.");
+      const media = data.media || {};
+      if (!media.media_url) throw new Error("Upload did not return a media URL.");
+      return media;
+    } catch (error) {
+      if (retries > 0) {
+        setStatus("Upload interrupted. Retrying...");
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        return uploadCapture(retries - 1);
+      }
+      throw error;
+    }
+  }
+
+  function previewMarkup(destination, sourceUrl, isVideo) {
+    const safeCaption = (previewCaption?.value || "Created with Pulse Camera").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+    const mediaHtml = isVideo
+      ? `<video src="${sourceUrl}" autoplay muted loop playsinline controls></video>`
+      : `<img src="${sourceUrl}" alt="Pulse Camera preview" decoding="async">`;
+    if (destination === "status") {
+      return `<article class="pulse-preview-status">${mediaHtml}<div class="pulse-preview-progress"></div><div class="pulse-preview-copy"><strong>Your Pulse Status</strong><span>${safeCaption}</span></div></article>`;
+    }
+    if (destination === "reel") {
+      return `<article class="pulse-preview-reel">${mediaHtml}<aside><span>🔥</span><span>💬</span><span>↗</span></aside><div class="pulse-preview-copy"><strong>@you · Pulse Reel</strong><span>${safeCaption}</span><small>Original Pulse sound</small></div></article>`;
+    }
+    return `<article class="pulse-preview-feed-card"><header><span class="pulse-preview-avatar">P</span><div><strong>Pulse Camera</strong><small>Public · preview</small></div></header>${mediaHtml}<p>${safeCaption}</p><footer><span>Like</span><span>Comment</span><span>Share</span></footer></article>`;
+  }
+
+  async function openPreview(destination) {
+    if (busy) return;
+    const fallback = fileInput.files?.[0];
+    if (!capturedBlob && !fallback) {
+      setStatus("Capture or choose media first.");
+      return;
+    }
+    stagedDestination = destination;
+    stagedMedia = null;
+    stagedPreviewToken = "";
+    sheet?.classList.remove("is-on");
+    const file = fallback || capturedBlob;
+    if (!localPreviewUrl || fallback) localPreviewUrl = URL.createObjectURL(file);
+    const isVideo = (fallback?.type || capturedMime || "").startsWith("video/");
+    previewFlow?.classList.add("is-on");
+    previewFlow?.setAttribute("aria-hidden", "false");
+    previewTitle.textContent = destination === "status" ? "Status Preview" : destination === "reel" ? "Reel Preview" : "Pulse Post Preview";
+    previewMeta.textContent = destination === "status" ? "Fullscreen story preview with privacy and duration." : destination === "reel" ? "Immersive vertical preview matching Reels placement." : "Feed card preview before publishing.";
+    previewStage.innerHTML = previewMarkup(destination, localPreviewUrl, isVideo);
+    setPreviewStatus("Preview ready. Publish when it looks right.");
   }
 
   async function publish(destination) {
     try {
       processing?.classList.add("is-on");
+      setBusy(true, "Uploading...");
       const media = await uploadCapture();
       if (!media?.id) throw new Error("Media upload did not return a valid asset.");
+      stagedMedia = media;
+      setBusy(true, "Preparing preview record...");
+      const previewResponse = await fetch("/api/pulse/camera/preview", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          destination,
+          media,
+          caption: previewCaption?.value || "Created with Pulse Camera",
+          privacy: previewPrivacy?.value || "public",
+          effect_key: activeLens?.key || "",
+          beauty_key: activeBeauty?.key || "",
+        }),
+      });
+      const previewData = await previewResponse.json().catch(() => ({ ok: false, message: "Preview could not be saved." }));
+      if (!previewResponse.ok || previewData.ok === false) throw new Error(previewData.message || "Preview could not be saved.");
+      stagedPreviewToken = previewData.preview_token || "";
+      setBusy(true, "Publishing...");
       const mediaType = media.media_type === "video" ? "video" : "image";
       if (destination === "status") {
-        const payload = { status_type: mediaType, body: "Captured with Pulse Camera", media_ids: [media.id], visibility: "public", duration_hours: 24 };
+        const payload = { status_type: mediaType, body: previewCaption?.value || "Captured with Pulse Camera", media_ids: [media.id], visibility: previewPrivacy?.value || "public", duration_hours: 24 };
         const response = await fetch("/api/pulse/status", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(data.message || "Status publish failed.");
+        await markPreviewPublished("status", data.status?.id || 0);
+        setBusy(true, "Published.");
         location.href = "/pulse/status";
         return;
       }
       if (destination === "reel") {
-        const payload = { title: "Camera Reel", caption: "Created with Pulse Camera", category: "Community", visibility: "public", post_type: mediaType, media_ids: [media.id] };
+        const payload = { title: "Camera Reel", caption: previewCaption?.value || "Created with Pulse Camera", category: "Community", visibility: previewPrivacy?.value || "public", post_type: mediaType, media_ids: [media.id] };
         const response = await fetch("/api/pulse/reels/create", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(data.message || "Reel publish failed.");
+        await markPreviewPublished("reel", data.reel?.id || data.reel_id || 0);
+        setBusy(true, "Published.");
         location.href = data.next_url || "/pulse/reels";
         return;
       }
@@ -297,18 +448,33 @@
         processing?.classList.remove("is-on");
         return;
       }
-      const payload = { media_id: media.id, media_url: media.media_url, title: "Pulse Camera", body: "Created with Pulse Camera", post_type: mediaType };
+      const payload = { media_id: media.id, media_url: media.media_url, title: "Pulse Camera", body: previewCaption?.value || "Created with Pulse Camera", post_type: mediaType };
       const response = await fetch("/api/pulse/posts/create-from-camera", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (!response.ok || data.ok === false) throw new Error(data.message || "Pulse post failed.");
+      await markPreviewPublished("pulse_post", data.post_id || data.id || 0);
+      setBusy(true, "Published.");
       location.href = data.next_url || "/pulse";
     } catch (error) {
       processing?.classList.remove("is-on");
+      setBusy(false);
       setStatus(error.message);
+      setPreviewStatus(error.message + " You can retry without losing the capture.");
     }
   }
 
+  async function markPreviewPublished(entityType, entityId) {
+    if (!stagedPreviewToken) return;
+    await fetch("/api/pulse/camera/preview/mark-published", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preview_token: stagedPreviewToken, entity_type: entityType, entity_id: entityId || 0 }),
+    }).catch(() => {});
+  }
+
   root.addEventListener("touchstart", (event) => {
+    wakeHud();
     if (event.touches.length === 2) {
       initialPinchDistance = distance(event.touches[0], event.touches[1]);
       initialZoom = zoom;
@@ -346,6 +512,7 @@
   }, { passive: true });
 
   root.addEventListener("click", (event) => {
+    wakeHud();
     if (event.target.closest("button,a,input,label,.pulse-camera-sheet")) return;
     const now = Date.now();
     if (now - lastTap < 320) {
@@ -394,16 +561,24 @@
   document.querySelectorAll("[data-lens-key]").forEach((button) => button.addEventListener("click", () => selectLens(button.dataset.lensKey)));
   document.querySelectorAll("[data-beauty-key]").forEach((button) => button.addEventListener("click", () => selectBeauty(button.dataset.beautyKey)));
   document.querySelectorAll("[data-camera-mode]").forEach((button) => button.addEventListener("click", () => selectMode(button.dataset.cameraMode)));
+  document.querySelectorAll("[data-preview-destination]").forEach((button) => button.addEventListener("click", () => openPreview(button.dataset.previewDestination)));
   document.querySelectorAll("[data-publish-destination]").forEach((button) => button.addEventListener("click", () => publish(button.dataset.publishDestination)));
   document.querySelectorAll("[data-close-camera-sheet]").forEach((button) => button.addEventListener("click", () => sheet?.classList.remove("is-on")));
+  document.querySelectorAll("[data-close-preview]").forEach((button) => button.addEventListener("click", () => {
+    previewFlow?.classList.remove("is-on");
+    previewFlow?.setAttribute("aria-hidden", "true");
+    sheet?.classList.add("is-on");
+  }));
+  previewPublish?.addEventListener("click", () => publish(stagedDestination || "feed"));
 
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (!file) return;
     capturedBlob = null;
     capturedMime = file.type || "application/octet-stream";
+    localPreviewUrl = URL.createObjectURL(file);
     useBtn.disabled = false;
-    sheet?.classList.add("is-on");
+    openPreview(activeMode === "reel" ? "reel" : config.target === "status" ? "status" : "feed");
     setStatus("Gallery media ready.");
   });
 
@@ -420,5 +595,6 @@
   selectBeauty(activeBeauty?.key || "natural");
   selectLens(activeLens?.key || "pulse_glow");
   selectMode(activeMode);
+  wakeHud();
   startCamera();
 })();

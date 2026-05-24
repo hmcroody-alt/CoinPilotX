@@ -77,6 +77,7 @@ from services import (
     civilization_ai_engine,
     camera_filter_engine,
     pulse_lens_engine,
+    preview_service,
     cache_engine,
     chat_realtime_service,
     community_governance_engine,
@@ -19621,13 +19622,29 @@ def pulse_camera_studio_page():
           <p class="muted">Media is uploaded through the R2/CDN media service, validated, then published safely.</p>
           <label class="pill"><input id="pulseUnmirrorFinal" type="checkbox"> Save selfie unmirrored</label>
           <div class="pulse-camera-destination-grid">
-            <button class="primary" type="button" data-publish-destination="status">Pulse Status</button>
-            <button class="primary" type="button" data-publish-destination="reel">Pulse Reels</button>
-            <button class="button" type="button" data-publish-destination="feed">Pulse Feed</button>
+            <button class="primary" type="button" data-preview-destination="status">Publish Status</button>
+            <button class="primary" type="button" data-preview-destination="reel">Publish Reels</button>
+            <button class="button" type="button" data-preview-destination="feed">Publish Pulse</button>
             {message_button}
             <button class="button" type="button" data-publish-destination="draft">Save Draft</button>
             <button class="button" type="button" data-close-camera-sheet>Retake</button>
           </div>
+        </section>
+      </div>
+
+      <div class="pulse-camera-preview-flow" id="pulseCameraPreviewFlow" aria-hidden="true">
+        <section class="pulse-camera-preview-card pulse-camera-glass" data-preview-kind="feed">
+          <header class="pulse-camera-preview-head">
+            <button class="pulse-camera-icon pulse-camera-glass" type="button" data-close-preview aria-label="Back to camera">‹</button>
+            <div><h2 id="pulsePreviewTitle">Preview</h2><p class="muted" id="pulsePreviewMeta">See exactly how this will publish.</p></div>
+            <button class="primary" type="button" id="pulsePreviewPublish">Publish</button>
+          </header>
+          <div class="pulse-preview-stage" id="pulsePreviewStage"></div>
+          <div class="pulse-preview-editbar">
+            <input id="pulsePreviewCaption" placeholder="Add caption, context, or hashtags">
+            <select id="pulsePreviewPrivacy"><option value="public">Public</option><option value="followers">Followers</option><option value="private">Private draft</option></select>
+          </div>
+          <p class="pulse-camera-status" id="pulsePreviewStatus"></p>
         </section>
       </div>
 
@@ -30962,6 +30979,47 @@ def api_pulse_media_process():
     return jsonify({"ok": True, "message": "Media accepted for safe processing.", "status": "queued"})
 
 
+@webhook_app.route("/api/pulse/camera/preview", methods=["POST"])
+def api_pulse_camera_preview_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    media = payload.get("media") if isinstance(payload.get("media"), dict) else {}
+    destination = clean_html(payload.get("destination") or "feed")[:40]
+    if not safe_int(media.get("id"), 0) and not media.get("media_url"):
+        return api_error("Upload media before opening preview.", 400)
+    preview = preview_service.create_preview(
+        int(user["user_id"]),
+        destination,
+        media,
+        {
+            "caption": clean_html(payload.get("caption") or "")[:1000],
+            "privacy": clean_html(payload.get("privacy") or "public")[:40],
+            "effect_key": clean_html(payload.get("effect_key") or "")[:80],
+            "beauty_key": clean_html(payload.get("beauty_key") or "")[:80],
+        },
+    )
+    return jsonify(preview)
+
+
+@webhook_app.route("/api/pulse/camera/preview/mark-published", methods=["POST"])
+def api_pulse_camera_preview_mark_published():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    result = preview_service.mark_published(
+        clean_html(payload.get("preview_token") or "")[:120],
+        int(user["user_id"]),
+        clean_html(payload.get("entity_type") or "")[:80],
+        safe_int(payload.get("entity_id"), 0),
+    )
+    return jsonify(result), (200 if result.get("ok") else 404)
+
+
 @webhook_app.route("/api/pulse/posts/create-from-camera", methods=["POST"])
 def api_pulse_post_from_camera():
     init_db()
@@ -40271,6 +40329,24 @@ def init_db():
         filter_name TEXT,
         effect_key TEXT,
         created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_camera_previews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        preview_token TEXT UNIQUE,
+        user_id INTEGER,
+        destination TEXT,
+        media_id INTEGER,
+        media_url TEXT,
+        thumbnail_url TEXT,
+        payload_json TEXT,
+        status TEXT DEFAULT 'draft',
+        published_entity_type TEXT,
+        published_entity_id INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        expires_at TEXT
     )
     """)
     cur.execute("""

@@ -39,7 +39,7 @@ def main():
     css = (ROOT / "static/css/pulse_camera_engine.css").read_text(encoding="utf-8")
     for token in ["/pulse/camera", "pulse-camera-engine", "pulse_lens_engine", "pulse_camera_captures", "pulse_media_assets", "/api/pulse/media/upload"]:
         expect(token in source, f"camera integration token present: {token}")
-    for token in ["navigator.mediaDevices.getUserMedia", "MediaRecorder", "data-publish-destination=\"status\"", "pulseCameraConfig"]:
+    for token in ["navigator.mediaDevices.getUserMedia", "MediaRecorder", "data-preview-destination=\"status\"", "pulseCameraConfig"]:
         expect(token in source + js, f"camera engine token present: {token}")
     for token in ["100dvh", "env(safe-area-inset-bottom", "pulse-camera-capture", "pulse-camera-lenses"]:
         expect(token in css, f"camera CSS token present: {token}")
