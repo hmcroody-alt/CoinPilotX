@@ -15852,6 +15852,97 @@ PULSE_SPACES = [
     {'slug': 'ai-startup-lab', 'name': 'AI Startup Lab', 'description': 'AI startup ideas, MVPs, product-market learning, and founder support.', 'category': 'AI', 'region': 'Global', 'tags': ['ai startup', 'business'], 'featured': False, 'trust_score': 89, 'energy_score': 79, 'member_count': 277, 'creator_level': 'rising'},
 ]
 
+def pulse_desktop_top_nav_html():
+    nav = [
+        ("Home", "/pulse"),
+        ("Reels", "/pulse/reels"),
+        ("Spaces", "/pulse/spaces"),
+        ("Marketplace", "/pulse/marketplace"),
+        ("Groups", "/pulse/groups"),
+        ("Notifications", "/pulse/notifications"),
+        ("Messenger", "/pulse/messages"),
+        ("Profile", "/pulse/profile"),
+    ]
+    nav_html = "".join(f"<a href='{clean_html(href)}'>{clean_html(label)}</a>" for label, href in nav)
+    return (
+        "<header class='pulse-desktop-topbar' data-desktop-feed-nav>"
+        "<a class='pulse-desktop-brand' href='/pulse'><img src='/static/Coinpilot%20Logo/NewLogo.png' alt='CoinPilotXAI logo'>CoinPilotXAI</a>"
+        "<div class='pulse-desktop-nav' aria-label='Pulse desktop navigation'>"
+        f"{nav_html}"
+        "</div>"
+        "<div class='pulse-desktop-actions'><input class='pulse-desktop-search' type='search' placeholder='Search Pulse'><a class='button primary' href='/pulse/create'>Create</a></div>"
+        "</header>"
+    )
+
+
+def pulse_desktop_left_rail_html(is_admin=False):
+    items = [
+        ("Profile", "/pulse/profile", "P"),
+        ("Pulse Home", "/pulse", "⌂"),
+        ("Friends", "/pulse/friends", "◎"),
+        ("Groups", "/pulse/groups", "◇"),
+        ("Marketplace", "/pulse/marketplace", "▣"),
+        ("Teachers", "/pulse/teachers", "T"),
+        ("Saved", "/pulse/saved", "★"),
+        ("Creator Studio", "/pulse/creator/dashboard", "✦"),
+        ("Premium", "/pulse/premium", "◆"),
+    ]
+    if is_admin:
+        items.append(("Admin", "/admin/global-command", "!"))
+    links = "".join(
+        f"<a class='desktop-rail-link' href='{clean_html(href)}'><span class='desktop-rail-ico'>{clean_html(icon)}</span><span>{clean_html(label)}</span></a>"
+        for label, href, icon in items
+    )
+    return f"<aside class='pulse-desktop-left' aria-label='Pulse navigation rail'><section class='desktop-rail-card'>{links}</section></aside>"
+
+
+def pulse_status_rail_html():
+    cards = [
+        ("Create Status", "Camera, text, upload", "+"),
+        ("Music", "Sound-first story", "♪"),
+        ("Camera", "Capture now", "◎"),
+        ("Live", "Go live", "●"),
+        ("AI Story", "Prompt to story", "AI"),
+        ("Following", "Creators you follow", "F"),
+        ("Trending", "Global pulse", "↗"),
+        ("Global", "Worldwide stories", "G"),
+    ]
+    card_html = "".join(
+        "<button class='pulse-status-card' type='button' data-status-card "
+        f"data-status-title='{clean_html(title)}' data-status-meta='{clean_html(meta)}'>"
+        f"<span class='pulse-status-avatar-ring'>{clean_html(icon)}</span><span><span class='pulse-status-title'>{clean_html(title)}</span>"
+        f"<span class='pulse-status-meta'>{clean_html(meta)}</span></span></button>"
+        for title, meta, icon in cards
+    )
+    return (
+        "<section class='pulse-status-rail' data-pulse-status-rail>"
+        "<div class='pulse-status-head'><h2>Pulse Status</h2><a class='button' href='/pulse/status'>View all</a></div>"
+        f"<div class='pulse-status-strip'>{card_html}</div>"
+        "</section>"
+        "<section class='pulse-status-viewer' id='pulseStatusViewer' aria-hidden='true'>"
+        "<div class='pulse-status-stage'><div class='pulse-status-progress'><span></span></div>"
+        "<div class='pulse-status-content'><span class='badge live'>Pulse Status</span><h2 id='pulseStatusTitle'>Create Status</h2>"
+        "<p id='pulseStatusMeta' class='muted'>Camera, upload, music, text, live, and AI story formats are status-ready.</p>"
+        "<div class='pulse-status-actions'><button class='primary' type='button' data-close-status-viewer>Done</button>"
+        "<a class='button' href='/pulse/create'>Create Pulse</a></div></div></div></section>"
+    )
+
+
+def pulse_desktop_right_rail_html():
+    rows = [
+        ("Pulse Intelligence", "Market mood, creator signals, and safety context update live."),
+        ("Trending Topics", "#scamshield · #creatorstrategy · #marketpsychology"),
+        ("Suggested Creators", "Follow educators and builders with strong trust signals."),
+        ("Rooms & Live", "Join General Pulse, AI Builders, or Crypto Education."),
+        ("Premium Lens", "Presentation polish, analytics previews, and creator intelligence."),
+    ]
+    content = "".join(
+        f"<div class='desktop-intel-row'><span class='desktop-rail-ico'>{idx}</span><span><strong>{clean_html(title)}</strong><br><small class='muted'>{clean_html(body)}</small></span></div>"
+        for idx, (title, body) in enumerate(rows, start=1)
+    )
+    return f"<aside class='pulse-desktop-right' aria-label='Pulse intelligence rail'><section class='desktop-rail-card'>{content}</section></aside>"
+
+
 def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     user = require_account()
     if not user:
@@ -15906,12 +15997,18 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         f"<a href='{clean_html(href)}'><span class='nav-ico' aria-hidden='true'>{mobile_bottom_icons.get(icon, clean_html(icon))}</span><span class='nav-label'>{clean_html(label)}</span></a>"
         for label, href, icon in mobile_bottom_items
     )
+    desktop_top_nav_html = pulse_desktop_top_nav_html()
+    desktop_left_rail_html = pulse_desktop_left_rail_html(bool(session.get("admin_user_id")))
+    desktop_right_rail_html = pulse_desktop_right_rail_html()
+    status_rail_html = pulse_status_rail_html()
     html = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>__TITLE__ | CoinPilotXAI</title>
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png">
+<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css">
+<link rel="stylesheet" href="/static/css/pulse_status_system.css">
 <style>
 :root{color-scheme:dark;--bg:#050b14;--panel:#0d1627;--line:rgba(110,223,246,.22);--text:#f2fbff;--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a;--purple:#9b5cff}
 *{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),radial-gradient(circle at 90% 0,rgba(155,92,255,.12),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}
@@ -15934,18 +16031,27 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	@media(max-width:430px){.wrap,.pulse-shell{padding-left:10px;padding-right:10px}.top .actions,.pulse-actions,.composer-tools{grid-template-columns:1fr!important}.badge{max-width:100%;white-space:normal}.card{padding:11px}.hero h1{font-size:30px}.button,button{padding:9px 10px}.comment-composer{grid-template-columns:30px minmax(0,1fr) 34px 36px}.comment-avatar{width:30px;height:30px}.quick-action{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
+__DESKTOP_TOP_NAV__
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">Pulse</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
 <main class="wrap pulse-shell" data-feed="__ACTIVE_FEED__" data-topic="__TOPIC__" data-profile="__PROFILE__">
 <nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button" aria-label="Open Pulse menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><div class="mobile-actions"><a class="icon-btn badge-dot" href="/pulse/notifications" aria-label="Notifications">●</a><a class="icon-btn badge-dot" href="/pulse/messages" aria-label="Messenger">__CHAT_ICON__</a><a class="avatar" href="/pulse/profile" aria-label="Profile">P</a></div></nav>
 <nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions pulse-actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button primary" href="/pulse/create">Create</a></div></nav>
 <div class="pulse-nav">__NAV__</div>
+<section class="pulse-desktop-layout">
+__DESKTOP_LEFT_RAIL__
+<div class="pulse-desktop-center">
 <section class="card hero"><div><span class="badge live">Global Pulse Feed</span><h1>__TITLE__</h1><p>Post questions, scam warnings, ideas, and creator updates. New approved posts appear immediately.</p><details><summary>Learn more</summary><p class="muted">__DISCLAIMER__</p></details></div></section>
 <section class="layout pulse-grid"><div>
+__PULSE_STATUS_RAIL__
 <section class="card composer" id="pulseComposer"><div class="smart-composer-bar"><span class="smart-compose-avatar">P</span><textarea id="postBody" placeholder="What's happening in crypto today?"></textarea><button class="smart-compose-icon" type="button" id="aiBtn" aria-label="Enhance with AI">AI</button><button class="smart-compose-icon" type="button" data-open-media aria-label="Add media">+</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" placeholder="Optional title"><select id="postType" class="post-type-select"><option value="text">Text</option><option value="poll">Question</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="roast_clip">Roast Clip</option><option value="replay">Replay Card</option></select><div class="composer-tools"><button class="active" type="button" data-type="text">Text</button><button type="button" data-type="poll">Question</button><button type="button" data-type="scam_report">Scam</button><button type="button" data-type="roast_clip">Roast</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button></div><input id="postMedia" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="actions pulse-actions"><button class="primary" id="publishBtn">Publish Pulse</button><a class="button" href="/scam-shield/scan">Run Scam Shield</a><button type="button" data-collapse-composer>Done</button></div><p class="muted composer-hint" id="composeMsg">Links are scanned by Scam Shield. Unsafe posts go to review.</p></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your Pulse is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="/pulse/create">Create Another</a><a class="button" href="/pulse">Pulse Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
-<aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section></main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create Pulse">+</button><section class="create-sheet" id="createSheet"><h3>Create Pulse</h3><div class="create-sheet-grid"><button data-sheet-type="text">Text post</button><button data-sheet-type="poll">Question</button><button data-sheet-type="scam_report">Scam warning</button><button data-sheet-type="video">Reel upload</button><a class="button" href="/pulse/marketplace">Marketplace listing</a><a class="button" href="/pulse/teachers">Teacher lesson</a><a class="button" href="/pulse/groups">Group post</a><a class="button primary" href="/pulse/create">Full composer</a></div></section><div class="toast" id="toast"></div>
+<aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section>
+</div>
+__DESKTOP_RIGHT_RAIL__
+</section>
+</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create Pulse">+</button><section class="create-sheet" id="createSheet"><h3>Create Pulse</h3><div class="create-sheet-grid"><button data-sheet-type="text">Text post</button><button data-sheet-type="poll">Question</button><button data-sheet-type="scam_report">Scam warning</button><button data-sheet-type="video">Reel upload</button><a class="button" href="/pulse/marketplace">Marketplace listing</a><a class="button" href="/pulse/teachers">Teacher lesson</a><a class="button" href="/pulse/groups">Group post</a><a class="button primary" href="/pulse/create">Full composer</a></div></section><div class="toast" id="toast"></div>
 <script src="/static/js/time.js"></script>
 <script>
 const main=document.querySelector('main');const state={feed:main.dataset.feed||'for_you',topic:main.dataset.topic||'',profile:main.dataset.profile||'',offset:0,loading:false,pendingPosts:[],pendingPostIds:new Set(),deletedPostIds:new Set(JSON.parse(sessionStorage.getItem('pulseDeletedPostIds')||'[]')),lastUserScrollAt:Date.now(),checkingFeed:false,lastToast:{message:'',at:0}};
@@ -15957,6 +16063,7 @@ const cssEsc=v=>(window.CSS&&CSS.escape)?CSS.escape(String(v||'')):String(v||'')
 const smartTimeHtml=(ts,suffix='')=>window.CoinPilotTime?window.CoinPilotTime.element(ts,suffix):esc(ts||'Recently');
 function toast(m,key=''){const t=document.getElementById('toast');if(!t)return;const message=String(m||'Pulse activity updated.');const now=Date.now();const storageKey=key?`pulse-toast:${key}`:'';if(storageKey){const seen=Number(localStorage.getItem(storageKey)||0);if(seen&&now-seen<86400000)return;localStorage.setItem(storageKey,String(now))}if(!storageKey&&state.lastToast.message===message&&now-state.lastToast.at<12000)return;state.lastToast={message,at:now};t.textContent=message;t.classList.add('show');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove('show'),3400)}
 const drawer=document.getElementById('pulseDrawer'),sheet=document.getElementById('createSheet');function setDrawer(open){document.body.classList.toggle('drawer-open',open);drawer?.setAttribute('aria-hidden',open?'false':'true')}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{if(e.target.closest('a'))setDrawer(false)});let sx=0,sy=0;document.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});document.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)},{passive:true});document.getElementById('pulseFab')?.addEventListener('click',()=>sheet?.classList.toggle('open'));document.addEventListener('click',e=>{if(sheet?.classList.contains('open')&&!e.target.closest('#createSheet,#pulseFab'))sheet.classList.remove('open');const b=e.target.closest('[data-sheet-type]');if(!b)return;document.getElementById('postType').value=b.dataset.sheetType;sheet.classList.remove('open');document.getElementById('postBody').focus();window.scrollTo({top:document.querySelector('.composer').offsetTop-70,behavior:'smooth'})});
+const statusViewer=document.getElementById('pulseStatusViewer');document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card&&statusViewer){document.getElementById('pulseStatusTitle').textContent=card.dataset.statusTitle||'Pulse Status';document.getElementById('pulseStatusMeta').textContent=card.dataset.statusMeta||'Pulse Status is ready.';statusViewer.classList.add('open');statusViewer.setAttribute('aria-hidden','false');return}if(e.target.closest('[data-close-status-viewer]')||e.target===statusViewer){statusViewer?.classList.remove('open');statusViewer?.setAttribute('aria-hidden','true')}});
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/'))return url;return '/'+url.replace(/^\\/+/, '')}
 function mediaFallbackHtml(m){return `<div class="pulse-media-fallback"><div><strong>Media could not load.</strong><span class="muted">Tap to retry.</span><br><button type="button" data-retry-media>Retry</button></div></div>`}
@@ -16007,6 +16114,10 @@ let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)retu
         .replace("__DRAWER__", drawer_html)
         .replace("__CHAT_ICON__", chat_icon_svg)
         .replace("__MOBILE_BOTTOM__", mobile_bottom_html)
+        .replace("__DESKTOP_TOP_NAV__", desktop_top_nav_html)
+        .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
+        .replace("__PULSE_STATUS_RAIL__", status_rail_html)
+        .replace("__DESKTOP_RIGHT_RAIL__", desktop_right_rail_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
     )
 
@@ -16038,6 +16149,144 @@ def pulse_page():
     else:
         feed = request.args.get("feed") or "for_you"
     return pulse_page_html("My Pulse Posts" if feed == "my_posts" else "Global Pulse Feed", feed, topic=request.args.get("topic") or "", profile_id=request.args.get("profile") or "")
+
+
+def pulse_status_payload(row, viewer_user_id=0):
+    item = dict(row or {})
+    media_ids = []
+    try:
+        media_ids = json.loads(item.get("media_ids_json") or "[]")
+    except Exception:
+        media_ids = []
+    return {
+        "id": int(item.get("id") or 0),
+        "user_id": int(item.get("user_id") or 0),
+        "status_type": item.get("status_type") or "image",
+        "body": item.get("body") or "",
+        "visibility": item.get("visibility") or "public",
+        "media_ids": media_ids,
+        "created_at": item.get("created_at") or "",
+        "expires_at": item.get("expires_at") or "",
+        "viewed": bool(item.get("viewer_viewed")),
+        "media": [],
+        "adaptive": {"fit_mode": "smart", "preload": "nearby", "weak_network": "poster_first"},
+    }
+
+
+@webhook_app.route("/pulse/status", methods=["GET"])
+def pulse_status_page():
+    cards = [
+        {"title": "Create Status", "description": "Camera, upload, music, text, live, and AI story creation are status-ready.", "href": "/pulse/create", "cta": "Create Status"},
+        {"title": "Viewer", "description": "Fullscreen status viewing uses progress bars, tap navigation, pause, replies, and adaptive media fitting.", "href": "/pulse", "cta": "Open Pulse"},
+        {"title": "Discovery", "description": "Following, For You, Trending, Music, Global, AI Picks, and Live status lanes are scaffolded safely.", "href": "/pulse", "cta": "Explore Feed"},
+    ]
+    return pulse_section_shell("Pulse Status", "Immersive adaptive stories and status updates for creators, educators, live rooms, and the global Pulse network.", cards)
+
+
+@webhook_app.route("/api/pulse/status/rail", methods=["GET"])
+def api_pulse_status_rail():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    trace_id = secrets.token_hex(6)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT s.*, CASE WHEN v.id IS NULL THEN 0 ELSE 1 END AS viewer_viewed
+            FROM pulse_status s
+            LEFT JOIN pulse_status_views v ON v.status_id=s.id AND v.viewer_user_id=?
+            WHERE s.deleted_at IS NULL
+              AND COALESCE(s.visibility,'public')='public'
+              AND (s.expires_at IS NULL OR s.expires_at='' OR s.expires_at>?)
+            ORDER BY s.created_at DESC
+            LIMIT 40
+            """,
+            (int(user["user_id"]), now),
+        )
+        items = [pulse_status_payload(row, user["user_id"]) for row in cur.fetchall()]
+        conn.close()
+        return jsonify({"ok": True, "items": items, "trace_id": trace_id, "lanes": ["following", "for_you", "trending", "global", "ai_picks", "music", "live"]})
+    except Exception as exc:
+        logging.exception("PULSE_STATUS_RAIL_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
+        return jsonify({"ok": False, "message": "Pulse Status could not load.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/status", methods=["POST"])
+def api_pulse_status_create():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
+    try:
+        body = clean_html(payload.get("body") or "")[:1200]
+        status_type = clean_html(payload.get("status_type") or payload.get("type") or "text")[:40]
+        media_ids = payload.get("media_ids") or []
+        if not body and not media_ids and status_type not in {"live", "ai", "music", "text"}:
+            return jsonify({"ok": False, "message": "Add text, media, music, AI, or live context first.", "trace_id": trace_id}), 400
+        now = datetime.utcnow()
+        expires = (now + timedelta(hours=24)).isoformat(timespec="seconds")
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO pulse_status (user_id, status_type, body, media_ids_json, visibility, ai_context_json, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(user["user_id"]),
+                status_type,
+                body,
+                json.dumps([int(x) for x in (media_ids or []) if str(x).isdigit()][:8]),
+                clean_html(payload.get("visibility") or "public")[:40],
+                json.dumps(payload.get("ai_context") or {}, default=str)[:3000],
+                now.isoformat(timespec="seconds"),
+                expires,
+            ),
+        )
+        status_id = int(cur.lastrowid)
+        conn.commit()
+        cur.execute("SELECT * FROM pulse_status WHERE id=? LIMIT 1", (status_id,))
+        status = pulse_status_payload(cur.fetchone(), user["user_id"])
+        conn.close()
+        return jsonify({"ok": True, "status": status, "status_id": status_id, "trace_id": trace_id})
+    except Exception as exc:
+        logging.exception("PULSE_STATUS_CREATE_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
+        return jsonify({"ok": False, "message": "Pulse Status could not be created.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/status/<int:status_id>/view", methods=["POST"])
+def api_pulse_status_view(status_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    conn = db(); cur = conn.cursor()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("INSERT OR IGNORE INTO pulse_status_views (status_id, viewer_user_id, viewed_at) VALUES (?, ?, ?)", (int(status_id), int(user["user_id"]), now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "status_id": int(status_id)})
+
+
+@webhook_app.route("/api/pulse/status/<int:status_id>/react", methods=["POST"])
+def api_pulse_status_react(status_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    reaction = clean_html(payload.get("reaction_type") or "fire")[:40]
+    conn = db(); cur = conn.cursor()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute("INSERT OR IGNORE INTO pulse_status_reactions (status_id, user_id, reaction_type, created_at) VALUES (?, ?, ?, ?)", (int(status_id), int(user["user_id"]), reaction, now))
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "status_id": int(status_id), "reaction_type": reaction})
 
 
 def pulse_section_shell(title, description, cards=None, primary_href="/pulse/create", primary_label="Create Pulse"):
@@ -17978,7 +18227,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     )
     premium_side = premium_visibility_engine.prompt_html("dashboard", user)
     default_side = side_html or f"<article class='card'><h2>Pulse Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.mobile-bottom-nav .nav-ico svg{{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulse_realtime.js" defer></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | CoinPilotXAI Pulse</title><link rel="stylesheet" href="/static/css/pulse_design_system.css"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><style>:root{{color-scheme:dark;--line:rgba(110,223,246,.22);--muted:#9fb5c0;--cyan:#6edff6;--green:#36e58f;--gold:#ffd166;--red:#ff6b7a}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}h2,h3{{margin:.2rem 0;overflow-wrap:anywhere}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar{{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--cyan),#9b5cff);display:grid;place-items:center;color:#06101b;font-weight:950;overflow:hidden;flex:0 0 auto}}.avatar img{{width:100%;height:100%;object-fit:cover}}.person{{display:flex;gap:10px;align-items:center;min-width:0}}.person>div{{min-width:0}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.smart-time{{color:rgba(213,239,245,.72);font-size:.86em;white-space:nowrap}}.time-dot{{opacity:.5;margin:0 3px}}.premium-glow-mark{{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:5px;border-radius:999px;font-size:12px;font-weight:950;vertical-align:middle;color:#06101b;background:radial-gradient(circle at 35% 25%,#fff7bf,#ffd166 48%,#36e58f 100%);box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 12px rgba(255,209,102,.72),0 0 24px rgba(54,229,143,.3);animation:premiumGlow 2.6s ease-in-out infinite}}.premium-glow-mark.check{{background:radial-gradient(circle at 35% 25%,#f4fdff,#6edff6 52%,#36e58f 100%)}}.profile-hero{{padding:0;overflow:hidden;border-radius:22px}}.profile-cover{{height:230px;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.32),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,rgba(9,26,45,.98),rgba(18,33,59,.92))}}.profile-main{{display:grid;grid-template-columns:128px minmax(0,1fr);gap:16px;align-items:end;padding:0 18px 18px;margin-top:-64px}}.profile-avatar{{width:120px;height:120px;border-radius:30px;border:3px solid rgba(5,11,20,.95);box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 34px rgba(110,223,246,.2)}}.profile-title h2{{font-size:clamp(30px,6vw,48px);line-height:1;margin:0 0 6px}}.profile-badges,.profile-stats{{display:flex;gap:7px;flex-wrap:wrap}}.profile-stat{{min-width:88px;border:1px solid rgba(255,255,255,.1);border-radius:13px;background:rgba(255,255,255,.045);padding:8px 10px}}.profile-stat strong{{display:block;font-size:20px;color:#f2fbff}}@keyframes premiumGlow{{0%,100%{{transform:translateY(0) scale(1)}}50%{{transform:translateY(-1px) scale(1.06)}}}}@media(max-width:620px){{.profile-cover{{height:180px}}.profile-main{{grid-template-columns:1fr;text-align:center;justify-items:center;margin-top:-58px}}.profile-badges,.profile-stats{{justify-content:center}}.profile-avatar{{width:108px;height:108px}}}}.table{{width:100%;border-collapse:collapse}}.table td,.table th{{border-bottom:1px solid rgba(255,255,255,.08);padding:8px;text-align:left;vertical-align:top}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a{{min-width:0;min-height:50px;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.mobile-bottom-nav .nav-ico svg{{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block}}.mobile-bottom-nav .nav-label{{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:grid;place-items:center}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout,.grid{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}@media(max-width:520px){{.actions{{display:grid;grid-template-columns:1fr 1fr}}.actions .button,.actions button{{width:100%}}}}</style></head><body><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">Pulse</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside><main class="wrap"><nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><a class="avatar" href="/pulse/profile">P</a></nav><nav class="nav">{nav_html}</nav><section class="card"><span class="pill">Pulse Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="layout"><div>{main_html}</div><aside>{default_side}</aside></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse/create" aria-label="Create Pulse">+</a><div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulse_realtime.js" defer></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});let sx=0,sy=0;document.addEventListener('touchstart',e=>{{sx=e.touches[0].clientX;sy=e.touches[0].clientY}},{{passive:true}});document.addEventListener('touchend',e=>{{const dx=e.changedTouches[0].clientX-sx,dy=Math.abs(e.changedTouches[0].clientY-sy);if(dy>60)return;if(sx<26&&dx>70)setDrawer(true);if(document.body.classList.contains('drawer-open')&&dx<-70)setDrawer(false)}},{{passive:true}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'Request failed.');return d}}{script_html};window.CoinPilotTime?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -18144,10 +18393,12 @@ def pulse_reels_page():
     @media(max-width:900px){body:has(.reels-immersive){overflow:hidden}body:has(.reels-immersive) .wrap{width:100%;max-width:100vw;margin:0;padding:0}body:has(.reels-immersive) .wrap>section.card,body:has(.reels-immersive) .layout>aside,body:has(.reels-immersive) .nav,body:has(.reels-immersive) .mobile-topbar,body:has(.reels-immersive) .mobile-bottom-nav,body:has(.reels-immersive) .pulse-fab{display:none!important}body:has(.reels-immersive) .layout{display:block}body:has(.reels-immersive) .layout>div{min-height:100dvh}.reels-shell{width:100vw;height:100dvh;max-height:none;aspect-ratio:auto;border-radius:0;border:0;box-shadow:none}.reels-shell:before{background:radial-gradient(circle at 50% 40%,rgba(110,223,246,.08),transparent 30rem)}.reels-immersive,.reel-card{height:100dvh;min-height:100dvh;border-radius:0;border:0}.reel-scrim{background:linear-gradient(180deg,rgba(0,0,0,.48),transparent 18%,transparent 58%,rgba(0,0,0,.86))}.reels-rail{top:calc(7px + env(safe-area-inset-top));left:50%;right:auto;transform:translateX(-50%);width:auto;max-width:calc(100% - 92px);border-radius:999px;padding:3px;background:rgba(3,8,17,.28);backdrop-filter:none;border-color:rgba(255,255,255,.075);box-shadow:0 10px 28px rgba(0,0,0,.12)}.reels-rail button{height:28px;min-height:28px;padding:0 9px;font-size:11px}.reel-top{padding:calc(46px + env(safe-area-inset-top)) 10px 8px}.reel-avatar{width:36px;height:36px;border-radius:13px}.reel-creator{gap:8px;max-width:calc(100% - 84px)}.reel-creator strong{font-size:13px}.reel-creator small{font-size:11px}.reel-follow{min-height:28px;font-size:11px;padding:5px 9px;background:rgba(255,255,255,.09);backdrop-filter:none}.reel-actions{right:8px;top:50%;transform:translateY(-34%);gap:12px}.reel-action{width:40px;height:40px;min-height:40px;border-radius:999px;background:rgba(3,8,15,.24);backdrop-filter:none;border-color:rgba(255,255,255,.09);box-shadow:none;font-size:17px}.reel-action small{font-size:8px;max-width:34px;margin-top:-6px;color:rgba(244,252,255,.72)}.reel-caption{left:13px;right:60px;bottom:calc(72px + env(safe-area-inset-bottom));max-width:calc(100% - 74px);gap:6px}.reel-caption h2{font-size:clamp(20px,6.5vw,29px);line-height:1.05}.reel-caption p{font-size:13px;-webkit-line-clamp:2;color:rgba(239,251,255,.88)}.reel-ai-hint{max-width:96%;font-size:10px;padding:4px 7px;background:rgba(3,10,18,.28)}.reel-tags{max-height:28px}.reel-tags span{font-size:10px;padding:4px 7px;background:rgba(3,10,18,.28);backdrop-filter:none}.reel-tags span:nth-child(n+4){display:none}.reel-music{max-width:100%;overflow:hidden}.reel-music .button{min-height:28px;padding:5px 8px;font-size:11px;background:rgba(3,10,18,.28);border-color:rgba(255,255,255,.1)}.reel-music .button:nth-child(2){display:none}.reel-frame-toggle{display:none}.reels-toolbar{left:auto;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;gap:7px;width:auto;max-width:none;padding:0;border:0;background:transparent;backdrop-filter:none;box-shadow:none}.reels-toolbar a,.reels-toolbar button{display:none;width:46px;height:46px;min-width:46px;min-height:46px;border-radius:999px;padding:0;font-size:0;background:rgba(4,12,22,.7);border-color:rgba(110,223,246,.18);box-shadow:0 12px 34px rgba(0,0,0,.32)}.reels-toolbar [data-open-reel-camera]{display:grid;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b}.reels-toolbar [data-open-reel-camera]::before{content:"+";font-size:29px;line-height:1;font-weight:900}.reels-toolbar.is-open{right:10px;left:10px;bottom:calc(12px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:8px;border:1px solid rgba(110,223,246,.16);border-radius:24px;background:rgba(4,11,20,.86);box-shadow:0 18px 55px rgba(0,0,0,.36)}.reels-toolbar.is-open a,.reels-toolbar.is-open button{display:flex;width:100%;height:42px;min-width:0;min-height:42px;border-radius:18px;font-size:12px;padding:0 8px}.reels-toolbar.is-open [data-open-reel-camera]::before{content:none}.reel-card{scroll-snap-stop:always;content-visibility:auto;contain-intrinsic-size:100dvh}.reels-modal{padding:0;align-items:end;backdrop-filter:none}.reels-sheet{border-radius:26px 26px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom))}}
     @media(max-width:380px){.reel-action{width:38px;height:38px;min-height:38px;font-size:16px}.reel-action small{font-size:7px;max-width:32px}.reel-caption{right:56px}.reels-rail{max-width:calc(100% - 82px)}.reels-rail button{height:27px;min-height:27px;padding:0 8px;font-size:10px}.reels-toolbar [data-open-reel-camera]{width:44px;height:44px;min-height:44px}}
     </style>
-    <section class='reels-shell'>
+    <section class='reels-shell' data-reels-adaptive-shell>
+      <div class='reel-top-shell'><button class='icon-btn' type='button' onclick='history.back()' aria-label='Back'>‹</button><span class='reel-top-title'>Pulse Reels</span><a class='icon-btn' href='/pulse/search' aria-label='Search'>⌕</a></div>
       <nav class='reels-rail' id='reelsRail' aria-label='Reel discovery tabs'></nav>
       <section class='reels-immersive' id='reelsFeed' aria-live='polite'></section>
       <div class='reels-loading' id='reelsLoading' aria-hidden='true'><span class='reels-loader'></span></div>
+      <span class='reels-network-chip'>Adaptive playback · poster first</span>
       <section class='reels-empty' id='reelsEmpty'><div class='card'><h2>Reels are warming up.</h2><p>Post the first short clip, add a sound, or turn a livestream highlight into a Reel.</p><div class='actions'><button class='button primary' type='button' data-open-reel-camera>Open Camera</button><button class='button' type='button' data-open-upload>Upload Reel</button></div></div></section>
       <div class='reels-toolbar'><button class='button primary' type='button' data-open-reel-camera>Camera</button><button class='button' type='button' data-open-upload>Upload</button><button class='button' type='button' data-open-sounds>Sound</button><button class='button' type='button' data-open-live-camera>Live</button></div>
     </section>
@@ -18169,7 +18420,7 @@ def pulse_reels_page():
     """
     side = "<article class='card'><h2>Reel Intelligence</h2><p>Ranking blends retention, trust, originality, educational value, report history, and creator loyalty. Ragebait stays below quality.</p></article><article class='card'><h2>Creator Tools</h2><p>Camera, filters, sound reuse, caption AI, hook ideas, and thumbnail selection are wired into the Reels creation flow.</p></article>"
     script = """
-    const reelsFeed=document.getElementById('reelsFeed'),reelsEmpty=document.getElementById('reelsEmpty'),rail=document.getElementById('reelsRail'),reelsLoading=document.getElementById('reelsLoading'),comments=document.getElementById('reelComments'),commentList=document.getElementById('reelCommentsList'),commentBody=document.getElementById('reelCommentBody'),uploadModal=document.getElementById('reelUploadModal'),soundModal=document.getElementById('reelSoundModal'),soundList=document.getElementById('soundList'),cameraOverlay=document.getElementById('reelCameraOverlay'),cameraPreview=document.getElementById('reelCameraPreview'),liveOverlay=document.getElementById('reelLiveOverlay'),livePreview=document.getElementById('reelLivePreview');let reelsMuted=true,currentCommentReel=0,currentLane='for_you',selectedSoundId=0,selectedSoundLabel='',frameMode='fit',soundCategory='',reelCameraStream=null,reelLiveStream=null,reelFacing='user',liveFacing='user',reelRecorder=null,reelChunks=[],cameraBlob=null,cameraMime='image/jpeg',lowLight=false;
+    const reelsFeed=document.getElementById('reelsFeed'),reelsEmpty=document.getElementById('reelsEmpty'),rail=document.getElementById('reelsRail'),reelsLoading=document.getElementById('reelsLoading'),comments=document.getElementById('reelComments'),commentList=document.getElementById('reelCommentsList'),commentBody=document.getElementById('reelCommentBody'),uploadModal=document.getElementById('reelUploadModal'),soundModal=document.getElementById('reelSoundModal'),soundList=document.getElementById('soundList'),cameraOverlay=document.getElementById('reelCameraOverlay'),cameraPreview=document.getElementById('reelCameraPreview'),liveOverlay=document.getElementById('reelLiveOverlay'),livePreview=document.getElementById('reelLivePreview');let reelsMuted=true,currentCommentReel=0,currentLane='for_you',selectedSoundId=0,selectedSoundLabel='',frameMode='smart',soundCategory='',reelCameraStream=null,reelLiveStream=null,reelFacing='user',liveFacing='user',reelRecorder=null,reelChunks=[],cameraBlob=null,cameraMime='image/jpeg',lowLight=false;
     const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const reelTabs=[['for_you','For You'],['following','Following'],['trending','Trending'],['new_creators','New Creators'],['ai_picks','AI Picks'],['local','Local'],['global','Global'],['educational','Educational'],['music','Music'],['live','Live']];
     const emptyCopy={for_you:['Reels are warming up.','Post the first short clip, add a sound, or turn a livestream highlight into a Reel.'],following:['No followed creator Reels yet.','Follow creators from Pulse, then their clips will land here first.'],trending:['No trending Reels yet.','Reels with strong watch energy and healthy engagement will rise here.'],new_creators:['New creators are warming up.','Fresh Pulse creators will appear here as they post vertical clips.'],ai_picks:['AI Picks are calibrating.','Pulse AI highlights original, trustworthy, high-quality clips here.'],local:['Local Reels are warming up.','As profiles add region signals, nearby creator clips will appear here.'],global:['Global Reels are warming up.','Worldwide creator clips will appear here as the network grows.'],educational:['No educational Reels yet.','Safety lessons, market education, and creator tutorials will appear here.'],music:['No sound-powered Reels yet.','Clips with original audio or saved sounds will appear here.'],live:['No live clips yet.','Livestream highlights and event clips will appear here.']};
@@ -18182,9 +18433,10 @@ def pulse_reels_page():
       const onerr=`this.closest('.reel-card')?.classList.add('is-broken');console.warn('Pulse reel media failed',{id:'${id}',src:'${esc(src)}'})`;
       const mediaEl=src?(mt==='image'||mt==='gif'?`<img class="reel-media" src="${esc(src)}" alt="${esc(reel.title||'Pulse Reel')}" loading="lazy" decoding="async" onerror="${onerr}">`:`<video class="reel-media" src="${esc(src)}" poster="${esc(poster)}" muted playsinline loop preload="metadata" onerror="${onerr}"></video>`):'';
       const blurEl=src?(mt==='image'||mt==='gif'?`<img class="reel-blur-bg" src="${esc(src)}" alt="" aria-hidden="true">`:`<video class="reel-blur-bg" src="${esc(src)}" muted playsinline loop preload="metadata" aria-hidden="true"></video>`):'';
-      return `<article class="reel-card ${frameMode==='fill'?'fill':frameMode==='blur'?'blur':'fit'} ${src?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}">${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">Media could not load. Tap to retry.</span></div><div class="reel-scrim"></div><div class="reel-frame-toggle" aria-label="Frame fit"><button class="${frameMode==='fill'?'active':''}" data-frame-mode="fill">Fill</button><button class="${frameMode==='fit'?'active':''}" data-frame-mode="fit">Fit</button><button class="${frameMode==='blur'?'active':''}" data-frame-mode="blur">Blur</button></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reel-actions"><button class="reel-action" data-reel-react="${id}" aria-label="Fire">🔥<small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reel-caption"><div class="reel-ai-hint">Pulse AI · ${esc(insight)}</div><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`;
+      const ratio=Number(media.aspect_ratio||0),orientation=media.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');
+      return `<article class="reel-card ${frameMode==='fill'?'fill':frameMode==='blur'?'blur':'smart'} ${src?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}">${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">Media could not load. Tap to retry.</span></div><div class="reel-scrim"></div><div class="reel-frame-toggle" aria-label="Frame fit"><button class="${frameMode==='smart'?'active':''}" data-frame-mode="smart">Smart</button><button class="${frameMode==='fill'?'active':''}" data-frame-mode="fill">Fill</button><button class="${frameMode==='fit'?'active':''}" data-frame-mode="fit">Fit</button><button class="${frameMode==='blur'?'active':''}" data-frame-mode="blur">Blur</button></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reel-actions"><button class="reel-action" data-reel-react="${id}" aria-label="Fire">🔥<small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reel-caption"><div class="reel-ai-hint">Pulse AI · ${esc(insight)}</div><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`;
     }
-    function applyFrameMode(mode){frameMode=mode||'fit';document.querySelectorAll('.reel-card').forEach(c=>{c.classList.toggle('fill',frameMode==='fill');c.classList.toggle('fit',frameMode==='fit');c.classList.toggle('blur',frameMode==='blur')});document.querySelectorAll('[data-frame-mode]').forEach(b=>b.classList.toggle('active',b.dataset.frameMode===frameMode))}
+    function applyFrameMode(mode){frameMode=mode||'smart';document.querySelectorAll('.reel-card').forEach(c=>{c.classList.toggle('fill',frameMode==='fill');c.classList.toggle('fit',frameMode==='fit');c.classList.toggle('blur',frameMode==='blur');c.classList.toggle('smart',frameMode==='smart')});document.querySelectorAll('[data-frame-mode]').forEach(b=>b.classList.toggle('active',b.dataset.frameMode===frameMode))}
     function syncPlayback(){const cards=[...document.querySelectorAll('.reel-card')];const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;card.querySelectorAll('video').forEach(v=>{v.muted=true;if(v.classList.contains('reel-media'))v.muted=reelsMuted;if(visible)v.play().catch(()=>{});else v.pause();});});if(active){const next=active.nextElementSibling?.querySelector('video');if(next)next.load();}}
     function renderRail(activeLane='for_you',categories=[]){const seen=new Set();const tabs=[...reelTabs,...(categories||[]).map(c=>['category:'+c,c])].filter(([key])=>{if(seen.has(key))return false;seen.add(key);return true});rail.innerHTML=tabs.map(([key,label])=>`<button class="${key===activeLane?'active':''}" data-reel-lane="${esc(key)}" aria-pressed="${key===activeLane?'true':'false'}">${esc(label)}</button>`).join('');rail.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'center'});}
     function setEmpty(lane){const copy=emptyCopy[lane]||['No Reels in this lane yet.','Creators are still warming this category up.'];reelsEmpty.querySelector('h2').textContent=copy[0];reelsEmpty.querySelector('p').textContent=copy[1];}
@@ -39358,6 +39610,79 @@ def init_db():
         user_id INTEGER,
         reaction_type TEXT,
         created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_status (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        status_type TEXT DEFAULT 'image',
+        body TEXT,
+        media_ids_json TEXT,
+        visibility TEXT DEFAULT 'public',
+        music_track_id INTEGER,
+        live_stream_id INTEGER,
+        ai_context_json TEXT,
+        created_at TEXT,
+        expires_at TEXT,
+        deleted_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_status_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        status_id INTEGER,
+        viewer_user_id INTEGER,
+        viewed_at TEXT,
+        UNIQUE(status_id, viewer_user_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_status_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        status_id INTEGER,
+        user_id INTEGER,
+        reaction_type TEXT,
+        created_at TEXT,
+        UNIQUE(status_id, user_id, reaction_type)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_status_music (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        status_id INTEGER,
+        audio_track_id INTEGER,
+        title TEXT,
+        artist TEXT,
+        waveform_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_status_media (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        status_id INTEGER,
+        media_id INTEGER,
+        media_url TEXT,
+        thumbnail_url TEXT,
+        media_type TEXT,
+        width INTEGER,
+        height INTEGER,
+        aspect_ratio REAL,
+        fit_mode TEXT DEFAULT 'smart',
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_status_live (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        status_id INTEGER,
+        stream_id INTEGER,
+        live_url TEXT,
+        viewer_count INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'scheduled',
+        created_at TEXT,
+        updated_at TEXT
     )
     """)
     for name, ftype, required in [

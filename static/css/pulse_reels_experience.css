@@ -1,0 +1,113 @@
+body:has(.reels-immersive) {
+  overscroll-behavior: none;
+}
+
+.reels-shell {
+  --reel-safe-bottom: env(safe-area-inset-bottom);
+}
+
+.reel-card {
+  will-change: transform;
+}
+
+.reel-media {
+  image-rendering: auto;
+}
+
+.reel-card.fit .reel-media,
+.reel-card.smart .reel-media {
+  object-fit: contain;
+}
+
+.reel-card.smart .reel-blur-bg,
+.reel-card.fit .reel-blur-bg {
+  opacity: .46;
+}
+
+.reel-card[data-orientation="portrait"] .reel-media {
+  object-fit: cover;
+}
+
+.reel-card[data-orientation="landscape"] .reel-media,
+.reel-card[data-orientation="square"] .reel-media {
+  object-fit: contain;
+}
+
+.reel-top-shell {
+  position: absolute;
+  z-index: 9;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.reel-top-shell > * {
+  pointer-events: auto;
+}
+
+.reel-top-title {
+  font-weight: 950;
+  text-shadow: 0 10px 32px rgba(0, 0, 0, .5);
+}
+
+.reels-network-chip {
+  position: absolute;
+  z-index: 9;
+  left: 14px;
+  bottom: calc(52px + env(safe-area-inset-bottom));
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: rgba(235, 250, 255, .76);
+  background: rgba(2, 7, 13, .32);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+@media (min-width: 901px) {
+  body:has(.reels-immersive) .layout > div {
+    grid-template-columns: minmax(0, auto) 320px;
+    gap: 18px;
+  }
+
+  .reels-shell {
+    width: min(82vw, 520px) !important;
+    max-height: min(88dvh, 920px) !important;
+  }
+
+  .reels-desktop-intel {
+    display: grid;
+    gap: 12px;
+    width: min(320px, 24vw);
+  }
+}
+
+@media (max-width: 900px) {
+  .reel-top-shell {
+    top: calc(8px + env(safe-area-inset-top));
+  }
+
+  .reel-top-title {
+    font-size: 14px;
+  }
+
+  .reels-network-chip {
+    left: 12px;
+    bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reel-card,
+  .reel-action,
+  .reels-loader::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+

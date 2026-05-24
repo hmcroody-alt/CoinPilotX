@@ -184,7 +184,7 @@ def main():
         "loading=\"lazy\"",
         "decoding=\"async\"",
         "pulse-media-wrap",
-        "frameMode='fit'",
+        "frameMode='smart'",
     ]:
         expect(token in bot_source, f"mobile/PWA rendering rule present: {token}")
 
