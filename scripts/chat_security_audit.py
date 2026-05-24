@@ -36,6 +36,9 @@ def client(uid=None):
 
 def main():
     bot.init_db(); ensure_user(932101, "chat_sec_one"); ensure_user(932102, "chat_sec_two"); ensure_user(932103, "chat_sec_intruder")
+    bot_source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    expect("message size is capped" not in bot_source.lower() or "[:2000]" in bot_source or "body[:2000]" in bot_source, "message size cap path is present")
+    expect("credentials:'same-origin'" in bot_source or 'credentials:"same-origin"' in bot_source, "chat fetches use same-origin credentials")
     anon = client()
     expect(anon.get("/api/pulse/messages/conversations").status_code == 401, "anonymous conversations blocked")
     owner = client(932101); intruder = client(932103)

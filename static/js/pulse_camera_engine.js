@@ -335,12 +335,28 @@
     fd.append("filter_name", activeBeauty?.key || "natural");
     fd.append("effect_key", activeLens?.key || "pulse_glow");
     try {
-      setBusy(true, "Uploading...");
-      const response = await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd });
-      const data = await response.json().catch(() => ({ ok: false, message: "Upload returned an unreadable response." }));
-      if (!response.ok || data.ok === false) throw new Error(data.message || "Upload failed.");
+      setBusy(true, isVideo ? "Uploading video... 0%" : "Uploading image... 0%");
+      const data = window.PulseUploadManager
+        ? await window.PulseUploadManager.upload({
+            url: "/api/pulse/media/upload",
+            formData: fd,
+            file,
+            lockKey: "pulse-camera-upload",
+            progressTarget: processing,
+            mediaType: isVideo ? "video/mp4" : "image/jpeg",
+            onProgress: (state) => {
+              setStatus(state.message);
+              setPreviewStatus(state.message);
+            },
+          })
+        : await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd }).then(async (response) => {
+            const payload = await response.json().catch(() => ({ ok: false, message: "Upload returned an unreadable response." }));
+            if (!response.ok || payload.ok === false) throw new Error(payload.message || "Upload failed.");
+            return payload;
+          });
       const media = data.media || {};
       if (!media.media_url) throw new Error("Upload did not return a media URL.");
+      setStatus("Processing media...");
       return media;
     } catch (error) {
       if (retries > 0) {
@@ -413,6 +429,7 @@
       if (!previewResponse.ok || previewData.ok === false) throw new Error(previewData.message || "Preview could not be saved.");
       stagedPreviewToken = previewData.preview_token || "";
       setBusy(true, "Publishing...");
+      window.PulseUploadManager?.render(processing, { stage: "publishing", percent: 96, message: "Publishing..." });
       const mediaType = media.media_type === "video" ? "video" : "image";
       if (destination === "status") {
         const payload = { status_type: mediaType, body: previewCaption?.value || "Captured with Pulse Camera", media_ids: [media.id], visibility: previewPrivacy?.value || "public", duration_hours: 24 };
@@ -420,7 +437,8 @@
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(data.message || "Status publish failed.");
         await markPreviewPublished("status", data.status?.id || 0);
-        setBusy(true, "Published.");
+        setBusy(true, "Posted successfully");
+        window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
         location.href = "/pulse/status";
         return;
       }
@@ -430,7 +448,8 @@
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(data.message || "Reel publish failed.");
         await markPreviewPublished("reel", data.reel?.id || data.reel_id || 0);
-        setBusy(true, "Published.");
+        setBusy(true, "Posted successfully");
+        window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
         location.href = data.next_url || "/pulse/reels";
         return;
       }
@@ -453,7 +472,8 @@
       const data = await response.json();
       if (!response.ok || data.ok === false) throw new Error(data.message || "Pulse post failed.");
       await markPreviewPublished("pulse_post", data.post_id || data.id || 0);
-      setBusy(true, "Published.");
+      setBusy(true, "Posted successfully");
+      window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
       location.href = data.next_url || "/pulse";
     } catch (error) {
       processing?.classList.remove("is-on");

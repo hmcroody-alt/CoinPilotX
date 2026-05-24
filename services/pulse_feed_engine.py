@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, user_context
+from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, user_context
 
 
 REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
@@ -66,6 +66,51 @@ def _clean_text(value, limit=4000):
 
 def _public_media_url(url):
     return media_service.normalize_url(url)
+
+
+def _canonical_media_payload(item, resolved, *, index=0, embed=None):
+    """Return the one media schema used by all Pulse feed renderers."""
+    payload = dict(embed or {})
+    media_type = (resolved.get("media_type") or item.get("media_type") or payload.get("media_type") or payload.get("type") or "image")
+    media_url = resolved.get("media_url") or payload.get("media_url") or ""
+    valid_url = resolved.get("valid_url") or payload.get("valid_url") or media_url
+    thumb = resolved.get("thumbnail_url") or payload.get("thumbnail_url") or valid_url
+    poster = resolved.get("poster_url") or payload.get("poster_url") or thumb
+    width = int(float(resolved.get("width") or payload.get("width") or 0) or 0)
+    height = int(float(resolved.get("height") or payload.get("height") or 0) or 0)
+    ratio = resolved.get("aspect_ratio") or payload.get("aspect_ratio") or 0
+    try:
+        ratio = round(float(ratio or 0), 4)
+    except Exception:
+        ratio = 0
+    if not ratio and width and height:
+        ratio = round(width / height, 4)
+    return {
+        "id": item.get("id") or payload.get("id"),
+        "type": media_type,
+        "media_type": media_type,
+        "media_url": media_url,
+        "valid_url": valid_url,
+        "thumbnail_url": thumb,
+        "poster_url": poster,
+        "fallback_url": resolved.get("fallback_url") or payload.get("fallback_url") or media_service.FALLBACK_URL,
+        "width": width,
+        "height": height,
+        "aspect_ratio": ratio,
+        "mime_type": resolved.get("mime_type") or payload.get("mime_type") or "",
+        "embed_type": item.get("embed_type") or payload.get("embed_type") or "upload",
+        "source_platform": item.get("source_platform") or payload.get("source_platform") or "coinpilotx",
+        "preload_priority": "high" if index == 0 else "lazy",
+        "orientation": resolved.get("orientation") or payload.get("orientation") or "unknown",
+        "is_available": bool(resolved.get("is_available") if "is_available" in resolved else payload.get("is_available")),
+        "storage_provider": resolved.get("storage_provider") or payload.get("storage_provider") or "",
+        "storage_key": resolved.get("storage_key") or payload.get("storage_key") or "",
+        "fit_mode": "smart",
+        "srcset": resolved.get("srcset") or payload.get("srcset") or "",
+        "sizes": resolved.get("sizes") or payload.get("sizes") or "(max-width: 760px) 100vw, (max-width: 1400px) 760px, 900px",
+        "hydration_state": resolved.get("hydration_state") or payload.get("hydration_state") or ("ready" if valid_url else "missing"),
+        "source_url": payload.get("source_url") or "",
+    }
 
 
 def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
@@ -208,27 +253,7 @@ def _media_for_posts(post_ids):
             if post_id not in post_id_set:
                 continue
             resolved = media_service.resolve_media(item)
-            media.setdefault(post_id, []).append({
-                "id": item.get("id"),
-                "media_type": resolved.get("media_type"),
-                "media_url": resolved.get("media_url"),
-                "valid_url": resolved.get("valid_url"),
-                "thumbnail_url": resolved.get("thumbnail_url"),
-                "poster_url": resolved.get("poster_url"),
-                "fallback_url": resolved.get("fallback_url"),
-                "mime_type": resolved.get("mime_type"),
-                "file_size_bytes": resolved.get("file_size_bytes"),
-                "width": resolved.get("width"),
-                "height": resolved.get("height"),
-                "aspect_ratio": resolved.get("aspect_ratio"),
-                "orientation": resolved.get("orientation"),
-                "is_available": resolved.get("is_available"),
-                "storage_provider": resolved.get("storage_provider"),
-                "storage_key": resolved.get("storage_key"),
-                "fit_mode": "smart",
-                "srcset": resolved.get("srcset"),
-                "sizes": resolved.get("sizes"),
-            })
+            media.setdefault(post_id, []).append(_canonical_media_payload(item, resolved, index=len(media.get(post_id, []))))
         return media
     except Exception as exc:
         logging.warning("Pulse media hydration skipped: %s", exc)
