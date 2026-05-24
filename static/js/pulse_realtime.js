@@ -9,7 +9,12 @@
     connected: false,
     attempts: 0,
     url: "/api/pulse/live/stream",
-    timer: 0
+    timer: 0,
+    seen: new Set(),
+    queue: [],
+    flushTimer: 0,
+    maxSeen: 800,
+    lastEventId: 0
   };
 
   function emit(type, payload) {
@@ -21,6 +26,30 @@
     all.forEach((handler) => {
       try { handler(type, payload); } catch (error) { console.error("Pulse realtime wildcard failed", error); }
     });
+  }
+
+  function enqueue(type, payload) {
+    const eventId = payload && (payload.id || payload.event_id || payload.message_id && `${type}:${payload.message_id}`);
+    if (eventId) {
+      const key = String(eventId);
+      if (state.seen.has(key)) return;
+      state.seen.add(key);
+      if (state.seen.size > state.maxSeen) {
+        state.seen = new Set(Array.from(state.seen).slice(-Math.floor(state.maxSeen / 2)));
+      }
+    }
+    state.queue.push([type, payload]);
+    if (state.flushTimer) return;
+    state.flushTimer = window.requestAnimationFrame ? window.requestAnimationFrame(flush) : window.setTimeout(flush, 16);
+  }
+
+  function flush() {
+    state.flushTimer = 0;
+    const batch = state.queue.splice(0, 80);
+    batch.forEach(function (item) { emit(item[0], item[1]); });
+    if (state.queue.length) {
+      state.flushTimer = window.requestAnimationFrame ? window.requestAnimationFrame(flush) : window.setTimeout(flush, 16);
+    }
   }
 
   function connect(url) {
@@ -36,25 +65,28 @@
       state.source.onmessage = function (event) {
         try {
           const data = JSON.parse(event.data || "{}");
-          emit(data.event_type || data.type || "message", data);
+          if (data.id) state.lastEventId = Math.max(state.lastEventId, Number(data.id) || 0);
+          enqueue(data.event_type || data.type || "message", data);
         } catch (error) {
-          emit("message", { raw: event.data });
+          enqueue("message", { raw: event.data });
         }
       };
       state.source.addEventListener("pulse", function (event) {
         try {
           const data = JSON.parse(event.data || "{}");
+          if (data.latest_event_id) state.lastEventId = Math.max(state.lastEventId, Number(data.latest_event_id) || 0);
           (data.events || []).forEach(function (item) {
-            emit(item.event_type || item.type || "pulse", item);
+            enqueue(item.event_type || item.type || "pulse", item);
           });
-          emit("pulse", data);
+          enqueue("pulse", data);
         } catch (error) {
-          emit("pulse", { raw: event.data });
+          enqueue("pulse", { raw: event.data });
         }
       });
       state.source.onerror = function () {
         disconnect();
-        const delay = Math.min(30000, 1000 * Math.pow(1.6, state.attempts++));
+        const jitter = Math.floor(Math.random() * 700);
+        const delay = Math.min(30000, 1000 * Math.pow(1.6, state.attempts++)) + jitter;
         state.timer = window.setTimeout(function () { connect(state.url); }, delay);
         emit("reconnecting", { delay });
       };
@@ -65,7 +97,12 @@
 
   function disconnect() {
     if (state.timer) window.clearTimeout(state.timer);
+    if (state.flushTimer) {
+      if (window.cancelAnimationFrame) window.cancelAnimationFrame(state.flushTimer);
+      else window.clearTimeout(state.flushTimer);
+    }
     state.timer = 0;
+    state.flushTimer = 0;
     if (state.source) {
       try { state.source.close(); } catch (error) {}
     }
@@ -88,6 +125,8 @@
     if (!state.source) connect(state.url);
   });
 
+  window.addEventListener("online", function () { connect(state.url); emit("online", {}); });
+  window.addEventListener("offline", function () { emit("offline", {}); });
   window.addEventListener("pagehide", disconnect);
 
   window.PulseRealtime = { connect, disconnect, on, emit, state };

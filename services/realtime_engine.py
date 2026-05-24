@@ -13,10 +13,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import Any
+import hashlib
+import json
+import time
 
 
 MAX_EVENTS_PER_CHANNEL = 500
 ONLINE_WINDOW_SECONDS = 120
+COALESCE_WINDOW_SECONDS = 1.25
+MAX_PAYLOAD_CHARS = 8000
 
 
 @dataclass
@@ -34,6 +39,8 @@ _channels: dict[str, deque[RealtimeEnvelope]] = defaultdict(lambda: deque(maxlen
 _sessions: dict[str, dict[str, Any]] = {}
 _failed_broadcasts = 0
 _reconnect_count = 0
+_coalesced_events = 0
+_last_publish_by_key: dict[str, float] = {}
 
 
 def _now() -> datetime:
@@ -48,18 +55,69 @@ def _session_key(user_id: int | str = 0, session_id: str = "") -> str:
     return f"{int(user_id or 0)}:{str(session_id or 'anonymous')[:160]}"
 
 
+def _compact_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep realtime envelopes small enough for mobile SSE without hiding data."""
+    clean = dict(payload or {})
+    try:
+        encoded = json.dumps(clean, default=str)
+    except Exception:
+        return {"raw": str(clean)[:MAX_PAYLOAD_CHARS], "payload_compacted": True}
+    if len(encoded) <= MAX_PAYLOAD_CHARS:
+        return clean
+    for key in ("html", "body", "content", "caption", "description", "media_metadata"):
+        if key in clean and isinstance(clean.get(key), str):
+            clean[key] = clean[key][:800]
+    clean["payload_compacted"] = True
+    encoded = json.dumps(clean, default=str)
+    if len(encoded) > MAX_PAYLOAD_CHARS:
+        digest = hashlib.sha1(encoded.encode("utf-8", "ignore")).hexdigest()[:12]
+        return {
+            "payload_compacted": True,
+            "payload_digest": digest,
+            "id": clean.get("id"),
+            "message_id": clean.get("message_id"),
+            "conversation_id": clean.get("conversation_id"),
+            "post_id": clean.get("post_id"),
+        }
+    return clean
+
+
+def _coalesce_key(channel: str, event_type: str, payload: dict[str, Any]) -> str:
+    event_type = str(event_type or "")
+    if not any(token in event_type for token in ("typing", "presence", "heartbeat", "online")):
+        return ""
+    identity = payload.get("user_id") or payload.get("actor_user_id") or payload.get("session_id") or ""
+    scope = payload.get("conversation_id") or payload.get("room_id") or payload.get("post_id") or payload.get("path") or ""
+    return f"{channel}:{event_type}:{identity}:{scope}"
+
+
 def publish_event(channel: str, event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _event_id, _failed_broadcasts
+    global _event_id, _failed_broadcasts, _coalesced_events
     clean_channel = str(channel or "pulse:global")[:120]
     clean_type = str(event_type or "event")[:100]
+    clean_payload = _compact_payload(payload)
     try:
         with _lock:
+            key = _coalesce_key(clean_channel, clean_type, clean_payload)
+            now_float = time.time()
+            if key:
+                previous = _last_publish_by_key.get(key, 0)
+                if now_float - previous < COALESCE_WINDOW_SECONDS:
+                    _coalesced_events += 1
+                    return {
+                        "ok": True,
+                        "coalesced": True,
+                        "channel": clean_channel,
+                        "event_type": clean_type,
+                        "payload": clean_payload,
+                    }
+                _last_publish_by_key[key] = now_float
             _event_id += 1
             event = RealtimeEnvelope(
                 id=_event_id,
                 channel=clean_channel,
                 event_type=clean_type,
-                payload=dict(payload or {}),
+                payload=clean_payload,
                 created_at=_now_iso(),
             )
             _channels[clean_channel].append(event)
@@ -147,6 +205,7 @@ def health_snapshot() -> dict[str, Any]:
         "active_realtime_clients": active_clients,
         "events_buffered": events_total,
         "failed_broadcasts": _failed_broadcasts,
+        "coalesced_events": _coalesced_events,
         "reconnect_count": _reconnect_count,
         "transport": "sse_polling_ready",
     }

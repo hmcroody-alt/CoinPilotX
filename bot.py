@@ -17,6 +17,7 @@ import threading
 import stripe
 import smtplib
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 
 print("CoinPilotX web boot starting", flush=True)
@@ -16829,6 +16830,10 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         ("media_metadata", "TEXT"),
         ("file_size", "INTEGER DEFAULT 0"),
         ("duration_seconds", "REAL DEFAULT 0"),
+        ("client_message_id", "TEXT"),
+        ("local_created_at", "TEXT"),
+        ("delivered_at", "TEXT"),
+        ("seen_at", "TEXT"),
         ("delivery_status", "TEXT DEFAULT 'sent'"),
         ("status", "TEXT DEFAULT 'sent'"),
         ("edited_at", "TEXT"),
@@ -16961,6 +16966,7 @@ def ensure_pulse_messenger_schema(cur, conn=None):
         "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_created ON pulse_messages(conversation_id, created_at)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_id ON pulse_messages(conversation_id, id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pulse_messages_client_id ON pulse_messages(conversation_id, sender_user_id, client_message_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_chat_rooms_key ON pulse_chat_rooms(room_key)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_members_room ON pulse_chat_room_members(room_key, user_id)",
         "CREATE INDEX IF NOT EXISTS idx_pulse_chat_room_messages_room ON pulse_chat_room_messages(room_key, message_id)",
@@ -17269,7 +17275,7 @@ def pulse_ensure_default_rooms(cur, current_user_id):
     return rooms
 
 
-def pulse_send_conversation_message(cur, user, conversation_id, body, message_type="text", media_url="", thumbnail_url="", metadata=None, reply_to_id=0, file_size=0, duration_seconds=0):
+def pulse_send_conversation_message(cur, user, conversation_id, body, message_type="text", media_url="", thumbnail_url="", metadata=None, reply_to_id=0, file_size=0, duration_seconds=0, client_message_id="", local_created_at=""):
     conversation_id = int(conversation_id or 0)
     body = clean_html(body or "")[:2000].strip()
     message_type = clean_html(message_type or "text")[:40]
@@ -17277,6 +17283,8 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
     thumbnail_url = clean_html(thumbnail_url or media_url)[:1000]
     metadata = metadata if isinstance(metadata, dict) else {}
     reply_to_id = safe_int(reply_to_id, 0)
+    client_message_id = clean_html(client_message_id or metadata.get("client_message_id") or "")[:120]
+    local_created_at = clean_html(local_created_at or metadata.get("local_created_at") or "")[:80]
     allowed_types = {"text", "image", "gif", "video", "voice", "audio", "file", "system", "reaction", "call_event", "link", "post_share", "reel_share", "group_share", "marketplace_share", "live_share"}
     if message_type not in allowed_types:
         message_type = "text"
@@ -17299,14 +17307,36 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
             "INSERT INTO pulse_conversation_participants (conversation_id, user_id, role, muted, archived, joined_at, created_at) VALUES (?, ?, 'member', 0, 0, ?, ?)",
             (conversation_id, user["user_id"], now_join, now_join),
         )
+    if client_message_id:
+        cur.execute(
+            """
+            SELECT * FROM pulse_messages
+            WHERE conversation_id=? AND sender_user_id=? AND client_message_id=? AND COALESCE(deleted_at,'')=''
+            ORDER BY id DESC LIMIT 1
+            """,
+            (conversation_id, user["user_id"], client_message_id),
+        )
+        existing = cur.fetchone()
+        if existing:
+            message_payload = _pulse_message_payload(existing, user["user_id"])
+            return {
+                "ok": True,
+                "message": "Message already sent.",
+                "conversation_id": conversation_id,
+                "message_id": int(message_payload.get("id") or 0),
+                "data": message_payload,
+                "delivery_status": message_payload.get("status") or "sent",
+                "idempotent": True,
+                "event_name": "message_sync",
+            }, 200
     now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
         """
         INSERT INTO pulse_messages
-        (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, delivery_status, status, created_at)
-        VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
+        (thread_id, conversation_id, sender_user_id, receiver_user_id, body, message_type, media_url, thumbnail_url, media_metadata, file_size, duration_seconds, reply_to_id, client_message_id, local_created_at, delivered_at, delivery_status, status, created_at)
+        VALUES (0, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'sent', ?)
         """,
-        (conversation_id, user["user_id"], body, message_type, media_url, thumbnail_url, json.dumps(metadata, default=str)[:4000], int(file_size or 0), float(duration_seconds or 0), reply_to_id or None, now),
+        (conversation_id, user["user_id"], body, message_type, media_url, thumbnail_url, json.dumps(metadata, default=str)[:4000], int(file_size or 0), float(duration_seconds or 0), reply_to_id or None, client_message_id, local_created_at, now, now),
     )
     message_id = int(cur.lastrowid)
     cur.execute("UPDATE pulse_conversations SET updated_at=?, last_message_at=?, last_activity_at=? WHERE id=?", (now, now, now, conversation_id))
@@ -17347,6 +17377,7 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
         "message_id": message_id,
         "data": message_payload,
         "event_name": event_name,
+        "delivery_status": "sent",
     }, 200
 
 
@@ -18233,6 +18264,13 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
     try:
         init_db()
+        raw_type = str(event_type or "")
+        payload = payload or {}
+        # Room joins/leaves are presence signals, not durable content.
+        # They should move UI state quietly without replaying as "someone joined"
+        # spam after reconnect.
+        silent_presence_events = {"chat_room_joined", "participant_joined", "participant_removed"}
+        persist_event = raw_type not in silent_presence_events
         canonical_type = {
             "new_comment": "pulse_comment_created",
             "reaction_added": "pulse_reaction_updated",
@@ -18246,10 +18284,21 @@ def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
             "pulse_reel_created": "pulse_reel_created",
             "pulse_reel_reaction_updated": "pulse_reel_reaction_updated",
             "pulse_reel_comment_created": "pulse_reel_comment_created",
-        }.get(str(event_type or ""), str(event_type or "event"))
-        realtime_engine.publish_event("pulse:global", canonical_type, payload or {})
-        event_bus_engine.publish("pulse:global", canonical_type, payload or {}, priority="live")
-        distributed_realtime_engine.publish("pulse:global", canonical_type, payload or {})
+        }.get(raw_type, raw_type or "event")
+        realtime_engine.publish_event("pulse:global", canonical_type, payload)
+        conversation_channel_id = safe_int((payload or {}).get("conversation_id"), 0)
+        if conversation_channel_id:
+            realtime_engine.publish_event(f"pulse:conversation:{conversation_channel_id}", canonical_type, payload)
+        event_bus_engine.publish("pulse:global", canonical_type, payload, priority="live")
+        distributed_realtime_engine.publish("pulse:global", canonical_type, payload)
+        if raw_type in {"typing_start", "typing_stop", "pulse_typing"}:
+            scope_id = safe_int((payload or {}).get("conversation_id") or (payload or {}).get("post_id"), 0)
+            coalesce_key = f"pulse:typing:{raw_type}:{scope_id}:{safe_int((payload or {}).get('user_id') or actor_user_id, 0)}"
+            if cache_engine.cache_get(coalesce_key):
+                return 0
+            cache_engine.cache_set(coalesce_key, True, ttl_seconds=2)
+        if not persist_event:
+            return 0
         conn = db()
         cur = conn.cursor()
         cur.execute(
@@ -23342,6 +23391,8 @@ def api_pulse_message_send():
                 reply_to_id,
                 safe_int(payload.get("file_size"), 0),
                 float(payload.get("duration") or payload.get("duration_seconds") or 0),
+                payload.get("client_message_id") or payload.get("local_id") or "",
+                payload.get("local_created_at") or "",
             )
             result["trace_id"] = trace_id
             if result.get("ok"):
@@ -23477,13 +23528,48 @@ def _pulse_message_payload(row, current_user_id=0):
         "duration_seconds": float(item.get("duration_seconds") or 0),
         "file_size": int(item.get("file_size") or 0),
         "reply_to_id": int(item.get("reply_to_id") or 0),
+        "client_message_id": item.get("client_message_id") or "",
+        "local_created_at": item.get("local_created_at") or "",
         "reactions": {},
         "status": item.get("delivery_status") or item.get("status") or "sent",
+        "delivery_status": item.get("delivery_status") or item.get("status") or "sent",
         "created_at": item.get("created_at") or "",
+        "delivered_at": item.get("delivered_at") or "",
+        "seen_at": item.get("seen_at") or "",
         "edited_at": item.get("edited_at") or "",
         "deleted_at": item.get("deleted_at") or "",
         "is_mine": int(item.get("sender_user_id") or 0) == int(current_user_id or 0),
     }
+
+
+def pulse_normalize_emoji_reaction(value):
+    aliases = {
+        "heart": "❤️",
+        "like": "👍",
+        "thumbs_up": "👍",
+        "fire": "🔥",
+        "laugh": "😂",
+        "wow": "😮",
+        "sad": "😢",
+        "angry": "😡",
+        "pray": "🙏",
+        "rocket": "🚀",
+    }
+    raw = str(value or "").strip()
+    raw = aliases.get(raw.lower(), raw)
+    # Keep one Unicode emoji cluster, including common variation selectors,
+    # zero-width joiners, and skin tone modifiers. This lets the platform
+    # support the standard emoji keyboard without licensing a proprietary set.
+    cleaned = "".join(ch for ch in raw[:16] if unicodedata.category(ch)[0] != "C" or ch == "\u200d")
+    if not cleaned:
+        return ""
+    has_emoji_codepoint = any(
+        0x1F000 <= ord(ch) <= 0x1FAFF
+        or 0x2600 <= ord(ch) <= 0x27BF
+        or ord(ch) in {0x2764, 0xFE0F, 0x200D}
+        for ch in cleaned
+    )
+    return cleaned[:16] if has_emoji_codepoint else ""
 
 
 @webhook_app.route("/api/pulse/messages/direct/open", methods=["POST"])
@@ -23771,6 +23857,8 @@ def api_pulse_chatroom_messages(room_id):
                 safe_int(payload.get("reply_to_id"), 0),
                 safe_int(payload.get("file_size"), 0),
                 float(payload.get("duration") or payload.get("duration_seconds") or 0),
+                payload.get("client_message_id") or payload.get("local_id") or "",
+                payload.get("local_created_at") or "",
             )
             if send_result.get("ok"):
                 conn.commit(); conn.close()
@@ -23780,8 +23868,13 @@ def api_pulse_chatroom_messages(room_id):
                 return jsonify(send_result), send_status
             conn.rollback(); conn.close()
             return jsonify(send_result), send_status
-        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id ASC LIMIT 300", (conversation_id,))
-        messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+        limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
+        before_id = safe_int(request.args.get("before_id"), 0)
+        if before_id:
+            cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
+        else:
+            cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?", (conversation_id, limit))
+        messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
         messages = pulse_attach_reply_previews(cur, messages)
         pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
         conn.commit(); conn.close()
@@ -23878,8 +23971,13 @@ def api_pulse_conversation_detail(conversation_id):
     if not conversation:
         conn.close()
         return api_error("Conversation not found.", 404)
-    cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id ASC LIMIT 300", (conversation_id,))
-    messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+    limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
+    before_id = safe_int(request.args.get("before_id"), 0)
+    if before_id:
+        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
+    else:
+        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?", (conversation_id, limit))
+    messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
     messages = pulse_attach_reply_previews(cur, messages)
     pulse_mark_conversation_read(cur, conversation_id, user["user_id"])
     conn.commit(); conn.close()
@@ -23910,6 +24008,8 @@ def api_pulse_conversation_send(conversation_id):
             safe_int(payload.get("reply_to_id"), 0),
             safe_int(payload.get("file_size"), 0),
             float(payload.get("duration") or payload.get("duration_seconds") or 0),
+            payload.get("client_message_id") or payload.get("local_id") or "",
+            payload.get("local_created_at") or "",
         )
         if result.get("ok"):
             conn.commit(); conn.close()
@@ -24115,8 +24215,13 @@ def api_pulse_conversation_messages(conversation_id):
     if not conversation:
         conn.close()
         return jsonify({"ok": False, "message": "This conversation is no longer available."}), 404
-    cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id ASC LIMIT 300", (conversation_id,))
-    messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+    limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
+    before_id = safe_int(request.args.get("before_id"), 0)
+    if before_id:
+        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL AND id<? ORDER BY id DESC LIMIT ?", (conversation_id, before_id, limit))
+    else:
+        cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id DESC LIMIT ?", (conversation_id, limit))
+    messages = [_pulse_message_payload(row, user["user_id"]) for row in reversed(cur.fetchall())]
     messages = pulse_attach_reply_previews(cur, messages)
     message_ids = [m["id"] for m in messages]
     if message_ids:
@@ -24158,9 +24263,9 @@ def api_pulse_message_react(message_id):
         return api_error("Login required.", 401)
     trace_id = secrets.token_hex(6)
     payload = request.get_json(silent=True) or {}
-    reaction = clean_html(payload.get("reaction_type") or payload.get("reaction") or "heart")[:40]
+    reaction = pulse_normalize_emoji_reaction(payload.get("reaction_type") or payload.get("reaction") or "heart")
     if not reaction:
-        return api_error("Choose a reaction.", 400, trace_id)
+        return api_error("Choose a supported emoji reaction.", 400, trace_id)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT * FROM pulse_messages WHERE id=? AND deleted_at IS NULL LIMIT 1", (message_id,))
     message = dict(cur.fetchone() or {})
@@ -24274,9 +24379,79 @@ def api_pulse_messages_seen(conversation_id):
     ids = [int(dict(row).get("id") or 0) for row in cur.fetchall()]
     for message_id in ids:
         cur.execute("INSERT OR IGNORE INTO pulse_message_receipts (message_id, conversation_id, user_id, status, created_at, updated_at) VALUES (?, ?, ?, 'seen', ?, ?)", (message_id, conversation_id, user["user_id"], now, now))
+    if ids:
+        placeholders = ",".join(["?"] * len(ids))
+        cur.execute(f"UPDATE pulse_messages SET seen_at=?, delivery_status='seen' WHERE id IN ({placeholders}) AND sender_user_id!=?", [now, *ids, user["user_id"]])
     conn.commit(); conn.close()
     pulse_emit_event("pulse_message_seen", {"conversation_id": conversation_id, "user_id": user["user_id"]}, user["user_id"], conversation_id)
     return jsonify({"ok": True, "message": "Seen.", "seen_count": len(ids), "last_read_message_id": last_message_id, "unread_count": 0})
+
+
+@webhook_app.route("/api/pulse/messages/<int:conversation_id>/sync", methods=["GET", "POST"])
+def api_pulse_messages_sync(conversation_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    payload = request.get_json(silent=True) or {}
+    after_id = safe_int(request.args.get("after_id") or payload.get("after_id"), 0)
+    limit = max(1, min(safe_int(request.args.get("limit") or payload.get("limit"), 50), 100))
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        ensure_pulse_messenger_schema(cur, conn)
+        cur.execute(
+            """
+            SELECT c.*
+            FROM pulse_conversations c
+            JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
+            WHERE c.id=? AND COALESCE(c.status,'active')='active'
+            LIMIT 1
+            """,
+            (user["user_id"], conversation_id),
+        )
+        conversation = dict(cur.fetchone() or {})
+        if not conversation:
+            conn.close()
+            return api_error("This conversation is no longer available.", 404, trace_id)
+        cur.execute(
+            """
+            SELECT * FROM pulse_messages
+            WHERE conversation_id=? AND id>? AND COALESCE(deleted_at,'')=''
+            ORDER BY id ASC LIMIT ?
+            """,
+            (conversation_id, after_id, limit),
+        )
+        messages = [_pulse_message_payload(row, user["user_id"]) for row in cur.fetchall()]
+        messages = pulse_attach_reply_previews(cur, messages)
+        message_ids = [m["id"] for m in messages]
+        if message_ids:
+            placeholders = ",".join(["?"] * len(message_ids))
+            cur.execute(f"SELECT message_id, reaction_type, COUNT(*) AS total FROM pulse_message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id, reaction_type", message_ids)
+            reaction_map = {}
+            for row in cur.fetchall():
+                item = dict(row)
+                reaction_map.setdefault(int(item.get("message_id") or 0), {})[item.get("reaction_type") or ""] = int(item.get("total") or 0)
+            for message in messages:
+                message["reactions"] = reaction_map.get(message["id"], {})
+        presence = pulse_conversation_presence_payload(cur, conversation_id, user["user_id"])
+        last_message_id = max([after_id] + [int(m.get("id") or 0) for m in messages])
+        conn.close()
+        events = realtime_engine.poll_events(f"pulse:conversation:{conversation_id}", after_id=0, limit=40)
+        return jsonify({
+            "ok": True,
+            "trace_id": trace_id,
+            "conversation_id": conversation_id,
+            "messages": messages,
+            "last_message_id": last_message_id,
+            "presence": presence,
+            "events": events,
+            "sync_interval_ms": 2500,
+        })
+    except Exception as exc:
+        conn.close()
+        logging.exception("PULSE_MESSAGES_SYNC_FAILED trace_id=%s user_id=%s conversation_id=%s", trace_id, user.get("user_id"), conversation_id)
+        return api_error("Messages could not sync. Tap to retry.", 500, trace_id, error_type=exc.__class__.__name__)
 
 
 @webhook_app.route("/api/pulse/messages/<int:conversation_id>/typing", methods=["POST"])
@@ -36742,6 +36917,10 @@ def init_db():
         ("media_metadata", "TEXT"),
         ("file_size", "INTEGER DEFAULT 0"),
         ("duration_seconds", "REAL DEFAULT 0"),
+        ("client_message_id", "TEXT"),
+        ("local_created_at", "TEXT"),
+        ("delivered_at", "TEXT"),
+        ("seen_at", "TEXT"),
         ("delivery_status", "TEXT DEFAULT 'sent'"),
         ("status", "TEXT DEFAULT 'sent'"),
         ("edited_at", "TEXT"),
@@ -36801,6 +36980,7 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation_id ON pulse_messages(conversation_id, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_sender ON pulse_messages(sender_user_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_messages_client_id ON pulse_messages(conversation_id, sender_user_id, client_message_id)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_message_reactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
