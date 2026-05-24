@@ -117,7 +117,12 @@ from services import (
     realtime_service,
     telegram_text_router,
     live_market_service,
+    live_archive_service,
+    live_distribution_service,
+    live_health_service,
     live_ops_engine,
+    live_presence_engine,
+    live_stream_health_service,
     intelligence as intelligence_service,
     market_data as market_data_service,
     media_service,
@@ -19187,28 +19192,122 @@ def pulse_live_studio_page(stream_id):
     if int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
         conn.close()
         return pulse_social_shell("Pulse Live Studio", "Only the host can open this Live Studio.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>"), 403
-    cur.execute("SELECT * FROM pulse_live_chat WHERE live_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 80", (stream_id,))
+    cur.execute("""
+        SELECT c.*, COALESCE(u.display_name,u.username,'Viewer') AS display_name
+        FROM pulse_live_chat c
+        LEFT JOIN users u ON u.user_id=c.user_id
+        WHERE c.live_id=? AND COALESCE(c.deleted_at,'')=''
+        ORDER BY c.id DESC
+        LIMIT 80
+    """, (stream_id,))
     chat = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (stream_id,))
     viewers = int(dict(cur.fetchone() or {}).get("total") or 0)
+    cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 12", (stream_id,))
+    reactions = [dict(row) for row in cur.fetchall()]
     conn.close()
-    chat_html = "".join(f"<p><strong>{'System' if int(c.get('user_id') or 0)==int(live.get('user_id') or 0) and c.get('message_type')=='system' else 'Viewer'}:</strong> {clean_html(c.get('body') or '')}</p>" for c in reversed(chat))
+    health = live_stream_health_service.score_stream(live, viewer_count=viewers, chat_count=len(chat))
+    presence = live_presence_engine.stream_energy_state(live, chat, reactions, [{"id": i} for i in range(viewers)])
+    replay = live_archive_service.replay_manifest(live, chat)
+    playback = live_distribution_service.playback_manifest(live)
+    chat_html = "".join(
+        f"""<article class='live-chat-message' data-message-id='{int(c.get('id') or 0)}'>
+        <div class='live-chat-avatar'>{clean_html((c.get('display_name') or 'P')[:1].upper())}</div>
+        <div><strong>{clean_html(c.get('display_name') or 'Viewer')}</strong> <span class='pill'>{clean_html(c.get('message_type') or 'Live')}</span><p>{clean_html(c.get('body') or '')}</p></div>
+        </article>"""
+        for c in reversed(chat)
+    )
+    reaction_cloud = live_presence_engine.reaction_cloud(reactions)
+    reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{clean_html(r.get('emoji') or '🔥')}</span>" for r in reaction_cloud)
+    health_score = int(health.get("score") or 0)
     main = f"""
-    <style>.live-studio{{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(320px,.7fr);gap:16px}}.live-preview{{position:relative;min-height:460px;border-radius:24px;overflow:hidden;background:#020713;border:1px solid rgba(110,223,246,.22)}}.live-preview video{{width:100%;height:100%;min-height:460px;object-fit:cover;transform:scaleX(-1)}}.obs-grid{{display:grid;gap:8px}}.obs-grid code{{display:block;white-space:normal;overflow-wrap:anywhere;padding:10px;border-radius:12px;background:rgba(255,255,255,.06)}}@media(max-width:900px){{.live-studio{{grid-template-columns:1fr}}}}</style>
-    <section class='card'><h1>Live Studio</h1><p><span class='pill'>Status: {clean_html(live.get('status') or '')}</span> <span class='pill'>{viewers} viewers</span> <span class='pill'>Health: {clean_html(live.get('stream_health') or 'starting')}</span></p><div class='actions'><button class='primary' id='studioStartCamera'>Start Browser Camera</button><button id='studioScreen'>Share Screen</button><button id='studioMute'>Mute Mic</button><button id='studioEnd'>End Stream</button><a class='button' href='/pulse/live/{stream_id}'>Public View</a></div></section>
-    <section class='live-studio'><div class='live-preview'><video id='studioVideo' autoplay muted playsinline></video><div style='position:absolute;left:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap'><span class='pill'>LIVE</span><span class='pill' id='studioHealth'>Waiting for camera</span></div></div><aside class='card'><h2>OBS / RTMP Setup</h2><div class='obs-grid'><label>Server / Ingest URL<code>{clean_html(live.get('ingest_url') or 'rtmp://live.coinpilotxai.app/live')}</code></label><label>Stream Key<code>{clean_html(live.get('stream_key') or '')}</code></label><label>RTMP URL<code>{clean_html(live.get('rtmp_url') or '')}</code></label><label>HLS Playback<code>{clean_html(live.get('hls_url') or '')}</code></label><label>WebRTC Room<code>{clean_html(live.get('webrtc_room_id') or '')}</code></label></div><p class='muted'>Use OBS or Streamlabs with the server and stream key above. Browser camera mode is available immediately in this studio.</p></aside></section>
-    <section class='grid'><article class='card'><h2>Live Chat</h2><div id='studioChat'>{chat_html or '<p class="muted">Chat is ready.</p>'}</div><textarea id='studioChatBody' placeholder='Send a pinned update or chat message'></textarea><button class='primary' id='studioChatSend'>Send</button></article><article class='card'><h2>Moderation</h2><p>AI moderation alerts, slow mode, bans, reports, and pinned messages are tracked for this stream.</p><p><span class='pill'>Reports 0</span> <span class='pill'>Slow mode ready</span></p></article><article class='card'><h2>Analytics</h2><p>Bitrate: {int(live.get('bitrate_kbps') or 0)} kbps</p><p>FPS: {int(live.get('fps') or 0)}</p><p>Viewer count: {viewers}</p></article></section>
+    <link rel='stylesheet' href='/static/css/pulse_live_studio.css'>
+    <section class='pulse-live-surface live-command-shell' data-pulse-live-shell data-live-id='{stream_id}' data-live-poll-ms='3500'>
+      <div class='live-status-bar'>
+        <div class='live-status-primary'>
+          <span class='live-badge'>LIVE STUDIO</span>
+          <span class='live-metric'>Elapsed <span data-live-elapsed>00:00</span></span>
+          <span class='live-metric'>Health <span data-live-health>{clean_html(health.get('level') or 'ready')}</span></span>
+          <span class='live-metric'>Audience <span data-live-pulse>{clean_html((presence.get('pulse') or {}).get('label') or 'ready')}</span></span>
+        </div>
+        <div class='live-status-metrics'>
+          <span class='live-metric'><span data-live-viewers>{viewers}</span> viewers</span>
+          <span class='live-metric' data-live-bitrate>{int(health.get('bitrate_kbps') or 0)} kbps</span>
+          <span class='live-metric' data-live-fps>{int(health.get('fps') or 0)} FPS</span>
+          <a class='button' href='/pulse/live/{stream_id}'>Public View</a>
+        </div>
+      </div>
+
+      <section class='live-studio-grid'>
+        <div class='live-preview-stage'>
+          <video data-live-camera autoplay muted playsinline></video>
+          <div class='live-ready-state'>
+            <div>
+              <div class='live-ready-orb'>{clean_html((user.get('display_name') or user.get('username') or 'P')[:1].upper())}</div>
+              <h2>Ready to go live</h2>
+              <p class='muted' data-live-camera-state>Camera ready. Start preview or connect OBS.</p>
+              <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          </div>
+          <div class='live-stage-overlay'>
+            <div class='live-mode-row'><span class='pill'>Browser Camera</span><span class='pill'>RTMP</span><span class='pill'>HLS</span></div>
+            <div class='live-mode-row'><span class='pill'>Score <span data-live-score>{health_score}</span></span><span class='pill'>Latency <span data-live-latency>{int(health.get('latency_ms') or 0)} ms</span></span></div>
+          </div>
+          <div class='live-floating-reactions' data-live-reactions>{reaction_html}</div>
+        </div>
+
+        <aside class='live-command-panel'>
+          <div class='live-health-ring'>
+            <div class='live-health-score' style='--score:{health_score}' data-live-score>{health_score}</div>
+            <div><h2>Stream Health Center</h2><p class='muted'>Bitrate, FPS, latency, CDN readiness, websocket health, and recovery guidance stay here.</p></div>
+          </div>
+          <div class='live-command-actions'>
+            <button class='primary' data-live-start-camera type='button'>Start Camera</button>
+            <button data-live-screen type='button'>Share Screen</button>
+            <button data-live-mute type='button'>Mute Mic</button>
+            <button id='studioEnd' type='button'>End Stream</button>
+          </div>
+          <div class='live-analytics-grid'>
+            <div><strong data-live-bitrate>{int(health.get('bitrate_kbps') or 0)} kbps</strong><p class='muted'>Bitrate</p></div>
+            <div><strong data-live-fps>{int(health.get('fps') or 0)} FPS</strong><p class='muted'>Frames</p></div>
+            <div><strong>{clean_html(playback.get('latency_mode') or 'ready')}</strong><p class='muted'>Playback</p></div>
+          </div>
+          <div class='live-graph' aria-hidden='true'></div>
+          <div class='live-advanced'>
+            <details>
+              <summary><strong>Professional Streaming</strong> <span class='pill'>OBS / RTMP</span></summary>
+              <label>Server / Ingest URL<code>{clean_html(live.get('ingest_url') or 'rtmp://live.coinpilotxai.app/live')}</code></label>
+              <label>Stream Key<code>{clean_html(live.get('stream_key') or '')}</code></label>
+              <label>RTMP URL<code>{clean_html(live.get('rtmp_url') or '')}</code></label>
+              <label>HLS Playback<code>{clean_html(playback.get('hls_url') or '')}</code></label>
+              <label>WebRTC Room<code>{clean_html(live.get('webrtc_room_id') or '')}</code></label>
+            </details>
+          </div>
+        </aside>
+      </section>
+
+      <section class='live-chat-panel'>
+        <div class='live-status-primary'><h2>Live Chat</h2><span class='pill'>Animated feed</span><span class='pill'>Pinned updates</span><span class='pill'>Moderator-ready</span></div>
+        <div class='live-chat-feed' data-live-chat-feed>{chat_html or "<article class='live-chat-message'><div class='live-chat-avatar'>P</div><div><strong>Pulse</strong><p>Chat is ready.</p></div></article>"}</div>
+        <div class='live-mode-row' aria-label='Quick reactions'>
+          <button type='button' data-live-reaction='🔥'>🔥</button><button type='button' data-live-reaction='💚'>💚</button><button type='button' data-live-reaction='👏'>👏</button><button type='button' data-live-reaction='🚀'>🚀</button>
+        </div>
+        <div class='live-chat-composer'><textarea data-live-chat-input placeholder='Send a pinned update or chat message'></textarea><button class='primary' data-live-chat-send type='button'>Send</button></div>
+      </section>
+
+      <section class='live-analytics-panel'>
+        <div class='live-analytics-grid'>
+          <div><h2>Audience Pulse</h2><p class='metric'>{int((presence.get('pulse') or {}).get('score') or 0)}</p><p class='muted'>{clean_html((presence.get('pulse') or {}).get('label') or 'ready')}</p></div>
+          <div><h2>Replay</h2><p class='metric'>{clean_html(replay.get('status') or 'pending')}</p><p class='muted'>VOD lifecycle is attached to this session.</p></div>
+          <div><h2>Moderation</h2><p class='metric'>Clear</p><p class='muted'>Scam, spam, slow mode, reports, and pinned messages are tracked.</p></div>
+        </div>
+      </section>
+      <div class='live-mobile-controls'><button class='primary' data-live-start-camera type='button'>Camera</button><button data-live-reaction='🔥' type='button'>React</button><a class='button' href='/pulse/live/{stream_id}'>View</a></div>
+    </section>
+    <script src='/static/js/pulse_live_studio.js' defer></script>
     """
     script = f"""
-    let studioStream=null;const video=document.getElementById('studioVideo'),health=document.getElementById('studioHealth');
-    function stopStudioStream(){{if(studioStream)studioStream.getTracks().forEach(t=>t.stop());studioStream=null}}
-    async function startCamera(){{try{{stopStudioStream();studioStream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:'user',width:{{ideal:1080}},height:{{ideal:1920}},frameRate:{{ideal:30,max:60}}}},audio:{{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}}});video.srcObject=studioStream;health.textContent='Browser camera live-ready';}}catch(err){{health.textContent=err.message;toast(err.message)}}}}
-    document.getElementById('studioStartCamera').onclick=startCamera;
-    document.getElementById('studioScreen').onclick=async()=>{{try{{stopStudioStream();studioStream=await navigator.mediaDevices.getDisplayMedia({{video:true,audio:false}});video.srcObject=studioStream;video.style.transform='none';health.textContent='Screen share ready';}}catch(err){{toast('Screen share was not started.')}}}};
-    document.getElementById('studioMute').onclick=e=>{{studioStream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);e.currentTarget.textContent=(studioStream?.getAudioTracks().some(t=>t.enabled)?'Mute Mic':'Unmute Mic')}};
     document.getElementById('studioEnd').onclick=async()=>{{if(!confirm('End this live stream?'))return;try{{await pulseApi('/api/pulse/live/{stream_id}/end',{{method:'POST',body:JSON.stringify({{}})}});toast('Live ended.');location.href='/pulse/live';}}catch(err){{toast(err.message)}}}};
-    document.getElementById('studioChatSend').onclick=async()=>{{const body=document.getElementById('studioChatBody').value.trim();if(!body)return;try{{const d=await pulseApi('/api/pulse/live/{stream_id}/chat',{{method:'POST',body:JSON.stringify({{body}})}});document.getElementById('studioChat').insertAdjacentHTML('beforeend',`<p><strong>You:</strong> ${{body.replace(/[&<>]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;'}}[c]))}}</p>`);document.getElementById('studioChatBody').value='';}}catch(err){{toast(err.message)}}}};
-    window.addEventListener('pagehide',stopStudioStream);
     """
     return pulse_social_shell("Pulse Live Studio", "Stream status, camera, OBS setup, chat, moderation, and analytics.", main, "", script)
 
@@ -19225,19 +19324,84 @@ def pulse_live_room_page(live_id):
     if not live:
         conn.close()
         return pulse_social_shell("Pulse Live", "Live session not found.", "<section class='card'><a class='button primary' href='/pulse/live'>Back to Live</a></section>")
-    cur.execute("SELECT * FROM pulse_live_chat WHERE live_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 80", (live_id,))
+    cur.execute("""
+        SELECT c.*, COALESCE(u.display_name,u.username,'Viewer') AS display_name
+        FROM pulse_live_chat c
+        LEFT JOIN users u ON u.user_id=c.user_id
+        WHERE c.live_id=? AND COALESCE(c.deleted_at,'')=''
+        ORDER BY c.id DESC
+        LIMIT 80
+    """, (live_id,))
     chat = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
+    viewers = int(dict(cur.fetchone() or {}).get("total") or live.get("viewer_count") or 0)
+    cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 12", (live_id,))
+    reactions = [dict(row) for row in cur.fetchall()]
     conn.close()
-    chat_html = "".join(f"<p><strong>{'Pulse' if c.get('message_type')=='system' else 'Viewer'}:</strong> {clean_html(c.get('body') or '')}</p>" for c in reversed(chat))
+    health = live_stream_health_service.score_stream(live, viewer_count=viewers, chat_count=len(chat))
+    presence = live_presence_engine.stream_energy_state(live, chat, reactions, [{"id": i} for i in range(viewers)])
+    playback = live_distribution_service.playback_manifest(live)
+    chat_html = "".join(
+        f"""<article class='live-chat-message' data-message-id='{int(c.get('id') or 0)}'>
+        <div class='live-chat-avatar'>{clean_html((c.get('display_name') or 'P')[:1].upper())}</div>
+        <div><strong>{clean_html(c.get('display_name') or 'Viewer')}</strong> <span class='pill'>{clean_html(c.get('message_type') or 'Live')}</span><p>{clean_html(c.get('body') or '')}</p></div>
+        </article>"""
+        for c in reversed(chat)
+    )
+    reaction_cloud = live_presence_engine.reaction_cloud(reactions)
+    reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{clean_html(r.get('emoji') or '🔥')}</span>" for r in reaction_cloud)
+    health_score = int(health.get("score") or 0)
     main = f"""
-    <style>.live-watch{{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:16px}}.live-player{{min-height:520px;border-radius:24px;background:radial-gradient(circle at 50% 35%,rgba(110,223,246,.18),rgba(2,7,14,1) 62%);border:1px solid rgba(110,223,246,.22);display:grid;place-items:center;text-align:center;padding:24px}}@media(max-width:900px){{.live-watch{{grid-template-columns:1fr}}.live-player{{min-height:360px}}}}</style>
-    <section class='card'><span class='badge live'>Live</span><h1>{clean_html(live.get('title') or 'Pulse Live')}</h1><p>{clean_html(live.get('creator_name') or '')} · {clean_html(live.get('category') or 'Community')} · {clean_html(live.get('status') or 'starting')}</p><p class='muted'>Stream health: {clean_html(live.get('stream_health') or 'starting')}</p></section>
-    <section class='live-watch'><div class='live-player'><div><h2>Pulse Live Player</h2><p class='muted'>Browser, RTMP, and HLS playback metadata is ready for this stream.</p><p><span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or '')}</span></p><p><span class='pill'>HLS ready</span></p></div></div><aside class='card'><h2>Live Chat</h2><div id='liveChat'>{chat_html or '<p class="muted">Be first in chat.</p>'}</div><textarea id='liveChatBody' placeholder='Chat respectfully'></textarea><button class='primary' id='liveChatSend'>Send</button></aside></section>
-    <section class='grid'><article class='card'><h2>Viewer Counter</h2><p class='metric' id='viewerCount'>{int(live.get('viewer_count') or 0)}</p></article><article class='card'><h2>Live Room</h2><p>{clean_html(live.get('chat_room_id') or '')}</p></article><article class='card'><h2>Safety</h2><p>Report abuse, scams, harassment, or unsafe financial claims.</p></article></section>
+    <link rel='stylesheet' href='/static/css/pulse_live_studio.css'>
+    <section class='pulse-live-surface live-view-shell' data-pulse-live-shell data-live-id='{live_id}' data-live-poll-ms='3200'>
+      <div class='live-status-bar'>
+        <div class='live-status-primary'>
+          <span class='live-badge'>LIVE</span>
+          <strong>{clean_html(live.get('title') or 'Pulse Live')}</strong>
+          <span class='live-metric'>{clean_html(live.get('creator_name') or 'Pulse Creator')}</span>
+        </div>
+        <div class='live-status-metrics'>
+          <span class='live-metric'><span data-live-viewers>{viewers}</span> viewers</span>
+          <span class='live-metric'>Health <span data-live-health>{clean_html(health.get('level') or 'ready')}</span></span>
+          <span class='live-metric'>Pulse <span data-live-pulse>{clean_html((presence.get('pulse') or {}).get('label') or 'ready')}</span></span>
+        </div>
+      </div>
+      <section class='live-studio-grid'>
+        <div class='live-public-player'>
+          <div class='live-ready-state'>
+            <div>
+              <div class='live-ready-orb'>{clean_html((live.get('creator_name') or 'P')[:1].upper())}</div>
+              <h2>{clean_html(live.get('status') or 'Live')} broadcast</h2>
+              <p class='muted'>Pulse is preparing the public stream. HLS and WebRTC metadata are attached for playback recovery.</p>
+              <p><span class='pill'>HLS {clean_html('ready' if playback.get('supports_hls') else 'pending')}</span> <span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or 'ready')}</span></p>
+              <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
+            </div>
+          </div>
+          <div class='live-stage-overlay'>
+            <div class='live-mode-row'><span class='pill'>{clean_html(live.get('category') or 'Community')}</span><span class='pill'>Score <span data-live-score>{health_score}</span></span></div>
+            <div class='live-mode-row'><span class='pill' data-live-bitrate>{int(health.get('bitrate_kbps') or 0)} kbps</span><span class='pill' data-live-fps>{int(health.get('fps') or 0)} FPS</span></div>
+          </div>
+          <div class='live-floating-reactions' data-live-reactions>{reaction_html}</div>
+        </div>
+        <aside class='live-chat-panel'>
+          <div class='live-status-primary'><h2>Live Chat</h2><span class='pill'>Realtime</span><span class='pill'>Safe Mode</span></div>
+          <div class='live-chat-feed' data-live-chat-feed>{chat_html or "<article class='live-chat-message'><div class='live-chat-avatar'>P</div><div><strong>Pulse</strong><p>Be first in chat.</p></div></article>"}</div>
+          <div class='live-mode-row'><button type='button' data-live-reaction='🔥'>🔥</button><button type='button' data-live-reaction='💚'>💚</button><button type='button' data-live-reaction='😂'>😂</button><button type='button' data-live-reaction='👏'>👏</button></div>
+          <div class='live-chat-composer'><textarea data-live-chat-input placeholder='Chat respectfully'></textarea><button class='primary' data-live-chat-send type='button'>Send</button></div>
+        </aside>
+      </section>
+      <section class='live-analytics-panel'>
+        <div class='live-analytics-grid'>
+          <div><h2>Viewer Counter</h2><p class='metric' id='viewerCount' data-live-viewers>{viewers}</p></div>
+          <div><h2>Audience Pulse</h2><p class='metric'>{int((presence.get('pulse') or {}).get('score') or 0)}</p><p class='muted'>{clean_html((presence.get('pulse') or {}).get('label') or 'ready')}</p></div>
+          <div><h2>Safety</h2><p class='metric'>Clear</p><p class='muted'>Report abuse, scams, harassment, or unsafe financial claims.</p></div>
+        </div>
+      </section>
+    </section>
+    <script src='/static/js/pulse_live_studio.js' defer></script>
     """
     script = f"""
     async function joinLive(){{try{{const d=await pulseApi('/api/pulse/live/{live_id}/join',{{method:'POST',body:JSON.stringify({{}})}});document.getElementById('viewerCount').textContent=d.viewer_count||0;}}catch(err){{console.error('Live join failed',err)}}}}
-    document.getElementById('liveChatSend').onclick=async()=>{{const body=document.getElementById('liveChatBody').value.trim();if(!body)return;try{{await pulseApi('/api/pulse/live/{live_id}/chat',{{method:'POST',body:JSON.stringify({{body}})}});document.getElementById('liveChat').insertAdjacentHTML('beforeend',`<p><strong>You:</strong> ${{body.replace(/[&<>]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;'}}[c]))}}</p>`);document.getElementById('liveChatBody').value='';}}catch(err){{toast(err.message)}}}};
     joinLive();
     """
     return pulse_social_shell("Pulse Live Room", "Realtime live session with viewer tracking, chat, reactions, and safety controls.", main, "", script)
@@ -19398,7 +19562,14 @@ def api_pulse_live_chat(live_id):
         conn.close()
         return api_error("Live stream not found.", 404)
     if request.method == "GET":
-        cur.execute("SELECT * FROM pulse_live_chat WHERE live_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT 100", (live_id,))
+        cur.execute("""
+            SELECT c.*, COALESCE(u.display_name,u.username,'Viewer') AS display_name
+            FROM pulse_live_chat c
+            LEFT JOIN users u ON u.user_id=c.user_id
+            WHERE c.live_id=? AND COALESCE(c.deleted_at,'')=''
+            ORDER BY c.id DESC
+            LIMIT 100
+        """, (live_id,))
         messages = [dict(row) for row in cur.fetchall()]
         conn.close()
         messages.reverse()
@@ -19423,6 +19594,80 @@ def api_pulse_live_chat(live_id):
     except Exception:
         logging.exception("PULSE_LIVE_CHAT_EMIT_FAILED live_id=%s message_id=%s", live_id, message_id)
     return jsonify({"ok": True, "message": "Chat sent.", "message_id": message_id, "moderation_status": moderation_status})
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/state", methods=["GET"])
+def api_pulse_live_state(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    live = dict(cur.fetchone() or {})
+    if not live:
+        conn.close()
+        return api_error("Live stream not found.", 404)
+    cur.execute("""
+        SELECT c.*, COALESCE(u.display_name,u.username,'Viewer') AS display_name
+        FROM pulse_live_chat c
+        LEFT JOIN users u ON u.user_id=c.user_id
+        WHERE c.live_id=? AND COALESCE(c.deleted_at,'')=''
+        ORDER BY c.id DESC
+        LIMIT 80
+    """, (live_id,))
+    messages = [dict(row) for row in cur.fetchall()]
+    messages.reverse()
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_live_viewers WHERE live_id=? AND status IN ('watching','hosting')", (live_id,))
+    viewer_count = int(dict(cur.fetchone() or {}).get("total") or live.get("viewer_count") or 0)
+    cur.execute("SELECT reaction_type FROM pulse_live_reactions WHERE live_id=? ORDER BY id DESC LIMIT 24", (live_id,))
+    reactions = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    health = live_health_service.health_snapshot(live, viewer_count=viewer_count, chat_count=len(messages))
+    presence = live_presence_engine.stream_energy_state(live, messages, reactions, [{"id": i} for i in range(viewer_count)])
+    playback = live_distribution_service.playback_manifest(live)
+    archive = live_archive_service.replay_manifest(live, messages)
+    return jsonify({
+        "ok": True,
+        "live_id": live_id,
+        "status": live.get("status") or "starting",
+        "viewer_count": viewer_count,
+        "messages": messages,
+        "health": health,
+        "presence": presence,
+        "playback": playback,
+        "archive": archive,
+        "reaction_cloud": live_presence_engine.reaction_cloud(reactions),
+    })
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/react", methods=["POST"])
+def api_pulse_live_react(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    reaction_type = clean_html(payload.get("reaction_type") or "🔥")[:12]
+    if not reaction_type:
+        reaction_type = "🔥"
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    cur.execute("SELECT id FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+    if not cur.fetchone():
+        conn.close()
+        return api_error("Live stream not found.", 404)
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        "INSERT INTO pulse_live_reactions (live_id, user_id, reaction_type, created_at) VALUES (?, ?, ?, ?)",
+        (live_id, user["user_id"], reaction_type, now),
+    )
+    reaction_id = int(cur.lastrowid)
+    conn.commit(); conn.close()
+    try:
+        pulse_emit_event("live_reaction", {"live_id": live_id, "reaction_id": reaction_id, "reaction_type": reaction_type}, user["user_id"], None)
+    except Exception:
+        logging.exception("PULSE_LIVE_REACTION_EMIT_FAILED live_id=%s reaction_id=%s", live_id, reaction_id)
+    return jsonify({"ok": True, "reaction_id": reaction_id, "reaction_type": reaction_type})
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/join", methods=["POST"])
