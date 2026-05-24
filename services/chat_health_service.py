@@ -97,7 +97,7 @@ def record_recovery_event(cur, user_id: int, conversation_id: int = 0, event_typ
 def chat_recovery_payload(trace: str | None = None, mode: str = "syncing", message: str | None = None) -> dict:
     copy = {
         "loading": "Loading conversation...",
-        "syncing": "Messages syncing...",
+        "syncing": "Loading conversation...",
         "reconnecting": "Reconnecting securely...",
         "offline": "Offline temporarily.",
         "retrying": "Retrying connection...",
@@ -105,7 +105,7 @@ def chat_recovery_payload(trace: str | None = None, mode: str = "syncing", messa
     return {
         "trace_id": trace or trace_id(),
         "recovery_mode": mode,
-        "message": message or copy.get(mode, "Messages syncing..."),
+        "message": message or copy.get(mode, "Loading conversation..."),
         "retryable": True,
         "fallback_polling": True,
     }

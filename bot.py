@@ -21300,8 +21300,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       };
       const setNetworkStatus = (mode, copy) => {
         const bar = document.querySelector("[data-presence]");
-        const messages = { reconnecting: "Reconnecting securely…", offline: "Offline temporarily. Messages will send when you are back online.", syncing: "Messages syncing…", retrying: "Retrying connection…" };
-        if (bar) bar.innerHTML = `<span class="presence-dot"></span><span>${esc(copy || messages[mode] || "Messages syncing…")}</span>`;
+        const messages = { reconnecting: "Reconnecting securely…", offline: "Offline temporarily. Messages will send when you are back online.", syncing: "Loading conversation…", retrying: "Retrying connection…" };
+        if (bar) bar.innerHTML = `<span class="presence-dot"></span><span>${esc(copy || messages[mode] || "Loading conversation…")}</span>`;
       };
       const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
       const chatDebug = (label, detail = {}) => {
@@ -21697,7 +21697,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           box.innerHTML = groups.map(item => {
             const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
             return `
-            <button class="unified-row" type="button" data-open-pulse-conversation="${item.conversation_id || item.id}">
+            <button class="unified-row" type="button" data-open-pulse-conversation="${item.conversation_id || item.id}" data-conversation-type="${esc(item.conversation_type || "group")}">
               <strong>${item.pinned ? "📌 " : ""}${esc(item.title || "Group Chat")}${Number(item.unread_count || 0) ? `<span class="unread-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
               <span class="${typing ? "typing-preview" : ""}">${esc(typing || item.latest_message || "No messages yet.")}</span>
               <span>${esc(item.conversation_type || "group")} • ${Number(item.member_count || 0)} members • ${friendlyTime(item.last_message_at || item.updated_at)}</span>
@@ -21747,12 +21747,13 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         return openPulseConversation(id, "", "direct");
       }
       async function openPulseConversation(conversationId, roomId = "", modeOverride = "") {
-        state.mode = modeOverride || (roomId ? "room" : "group");
+        const requestedMode = modeOverride || (roomId ? "room" : "");
+        state.mode = requestedMode || state.mode || "direct";
         state.activePulseConversation = Number(conversationId || 0);
         state.activeRoomId = roomId || "";
         state.activeRoomName = state.activeRoomName || "";
         state.activeThread = 0;
-        setThreadChrome(roomId ? "Pulse room" : state.mode === "direct" ? "Private conversation" : "Group chat", roomId ? "Room" : state.mode === "direct" ? "Direct" : "Group");
+        setThreadChrome(roomId ? "Pulse room" : requestedMode === "direct" ? "Private conversation" : requestedMode === "group" ? "Group chat" : "Pulse chat", roomId ? "Room" : requestedMode === "direct" ? "Direct" : requestedMode === "group" ? "Group" : "Chat");
         document.querySelector("[data-unified-sidebar]").classList.add("is-thread-open");
         document.querySelector("[data-unified-thread-pane]").classList.add("is-open");
         document.querySelectorAll("[data-open-pulse-conversation]").forEach(button => button.classList.toggle("is-active", Number(button.dataset.openPulseConversation) === state.activePulseConversation));
@@ -21762,7 +21763,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           chatDebug("open conversation start", { requested_conversation_id: conversationId, requested_room_id: roomId, mode_override: modeOverride });
           const data = roomId
             ? await loadRoomMessages(roomId)
-            : (modeOverride === "group" ? await loadGroupMessages(state.activePulseConversation) : await loadConversationMessages(state.activePulseConversation, modeOverride || ""));
+            : await loadConversationMessages(state.activePulseConversation, requestedMode);
           state.activePulseConversation = Number(data.conversation_id || state.activePulseConversation);
           state.currentUserId = Number(root.dataset.currentUser || 0);
           const convoType = data.conversation?.conversation_type || state.mode;
