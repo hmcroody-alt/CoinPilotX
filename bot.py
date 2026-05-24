@@ -28943,17 +28943,23 @@ def admin_media_health_page():
         """
     )
     rows = []
-    broken = missing_thumbs = missing_posters = 0
+    broken = missing_thumbs = missing_posters = local_legacy = missing_objects = repaired_ready = 0
     for row in cur.fetchall():
         item = dict(row)
         resolved = media_service.resolve_media(item)
         is_ok = bool(resolved.get("is_available"))
         if not is_ok:
             broken += 1
+            if item.get("storage_provider") in {"r2", "s3"} or str(resolved.get("media_url") or "").startswith("http"):
+                missing_objects += 1
         if not resolved.get("thumbnail_url"):
             missing_thumbs += 1
         if resolved.get("media_type") == "video" and not resolved.get("poster_url"):
             missing_posters += 1
+        if (item.get("storage_provider") or "local") == "local" or str(item.get("media_url") or "").startswith(("/static/", "/uploads/")):
+            local_legacy += 1
+        if is_ok and resolved.get("storage_provider") in {"r2", "s3"}:
+            repaired_ready += 1
         rows.append({
             "id": item.get("id"),
             "context": f"{item.get('context_type') or ''}:{item.get('context_id') or ''}",
@@ -28977,7 +28983,7 @@ def admin_media_health_page():
     body = f"""
     <h1>Media Health</h1><p class='muted'>Durable storage, URL resolution, fallback safety, and Pulse media availability.</p>
     {local_warning}
-    <section class='grid'><div class='card'><h2>Total Active Media</h2><p class='metric'>{total}</p></div><div class='card'><h2>Broken / Restoring</h2><p class='metric'>{broken}</p></div><div class='card'><h2>Missing Thumbnails</h2><p class='metric'>{missing_thumbs}</p></div><div class='card'><h2>Missing Posters</h2><p class='metric'>{missing_posters}</p></div></section>
+    <section class='grid'><div class='card'><h2>Total Active Media</h2><p class='metric'>{total}</p></div><div class='card'><h2>Broken / Restoring</h2><p class='metric'>{broken}</p></div><div class='card'><h2>Missing Objects</h2><p class='metric'>{missing_objects}</p></div><div class='card'><h2>Legacy Local Media</h2><p class='metric'>{local_legacy}</p></div><div class='card'><h2>Repaired / R2 Ready</h2><p class='metric'>{repaired_ready}</p></div><div class='card'><h2>Missing Thumbnails</h2><p class='metric'>{missing_thumbs}</p></div><div class='card'><h2>Missing Posters</h2><p class='metric'>{missing_posters}</p></div></section>
     <section class='card'><h2>Storage Provider</h2><p class='muted'>{clean_html(status.get('provider'))} · configured={bool(status.get('configured'))}</p><table class='table'><tr><th>Variable</th><th>Status</th></tr>{env_rows}</table></section>
     <section class='card'><h2>Recent Media Resolution</h2>{table}</section>
     <p><a class='button primary' href='/admin/media'>Open Media Diagnostics</a> <a class='button' href='/admin/performance'>Performance</a></p>

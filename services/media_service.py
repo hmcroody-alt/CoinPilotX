@@ -484,3 +484,69 @@ def report_media(user_id, media_id, reason=""):
     conn.commit()
     conn.close()
     return {"ok": True, "message": "Media reported for review."}
+
+
+def migrate_local_media_row(row, *, force=False):
+    """Upload a legacy local media row to durable object storage when possible."""
+    item = dict(row or {})
+    media_id = int(item.get("id") or 0)
+    if not media_id:
+        return {"ok": False, "media_id": 0, "status": "invalid"}
+    current_provider = str(item.get("storage_provider") or "").lower()
+    if current_provider in {"r2", "s3"} and not force:
+        return {"ok": True, "media_id": media_id, "status": "already_durable"}
+    storage_status = media_storage.storage_status()
+    if storage_status.get("provider") not in {"r2", "s3"} or not storage_status.get("configured"):
+        return {"ok": False, "media_id": media_id, "status": "r2_not_configured", "required": storage_status.get("required") or {}}
+    source_url = item.get("media_url") or item.get("public_url") or item.get("thumbnail_url") or ""
+    local_path = local_path_for_url(source_url)
+    if not local_path or not os.path.exists(local_path):
+        return {"ok": False, "media_id": media_id, "status": "local_file_missing", "source_url": source_url}
+    storage_key = str(item.get("storage_key") or item.get("stored_filename") or "").strip().lstrip("/")
+    if not storage_key:
+        extension = Path(local_path).suffix.lower() or mimetypes.guess_extension(item.get("mime_type") or "") or ".bin"
+        storage_key = f"pulse_media/backfill/{datetime.utcnow().strftime('%Y/%m/%d')}/media-{media_id}-{secrets.token_hex(5)}{extension}"
+    mime_type = item.get("mime_type") or mimetypes.guess_type(local_path)[0] or "application/octet-stream"
+    uploaded, error = media_storage._upload_to_object_storage(Path(local_path), storage_key, mime_type)
+    if not uploaded:
+        return {"ok": False, "media_id": media_id, "status": "upload_failed", "error": error}
+    public_url = cdn_url_for_key(storage_key) or media_storage.public_media_url(storage_key)
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE chat_media_uploads
+        SET storage_provider=?, storage_key=?, public_url=?, media_url=?, thumbnail_url=COALESCE(NULLIF(thumbnail_url,''), ?),
+            is_available=1, availability_error='', processing_status='ready'
+        WHERE id=?
+        """,
+        (media_storage.provider(), storage_key, public_url, public_url, public_url, media_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "media_id": media_id, "status": "migrated", "storage_key": storage_key, "public_url": public_url}
+
+
+def repair_media_row(row):
+    """Normalize one media row so renderers receive either a good URL or a fallback state."""
+    item = dict(row or {})
+    media_id = int(item.get("id") or 0)
+    resolved = resolve_media(item, check_remote=False)
+    updates = {}
+    if resolved.get("cdn_url") and media_storage.provider() in {"r2", "s3"}:
+        updates["media_url"] = resolved["cdn_url"]
+        updates["public_url"] = resolved["cdn_url"]
+        updates["storage_provider"] = media_storage.provider()
+    available = bool(resolved.get("is_available"))
+    updates["is_available"] = 1 if available else 0
+    updates["availability_error"] = "" if available else "missing_or_unreachable"
+    if not media_id:
+        return {"ok": False, "status": "invalid"}
+    if updates:
+        conn = user_context.connect()
+        cur = conn.cursor()
+        fields = ", ".join([f"{key}=?" for key in updates])
+        cur.execute(f"UPDATE chat_media_uploads SET {fields} WHERE id=?", [*updates.values(), media_id])
+        conn.commit()
+        conn.close()
+    return {"ok": True, "media_id": media_id, "status": "available" if available else "marked_unavailable", "media_url": updates.get("media_url") or resolved.get("media_url") or ""}
