@@ -16279,7 +16279,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <meta name="robots" content="noindex,nofollow">
 <title>__TITLE__ | CoinPilotXAI</title>
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/Coinpilot%20Logo/NewLogo.png">
-<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css">
+<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=feed-density-20260525b">
 <link rel="stylesheet" href="/static/css/pulse_status_system.css">
 <script src="/static/js/pulse_media_renderer.js" defer></script>
 <style>

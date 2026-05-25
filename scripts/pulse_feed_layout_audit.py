@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse homepage upload controls and Facebook-scale feed layout contracts."""
+"""Audit Pulse homepage upload controls and modern high-density feed layout contracts."""
 
 from __future__ import annotations
 
@@ -65,13 +65,18 @@ def main():
         require(label in html, f"composer action exists: {label}")
     require("smart-compose-icon" not in html[html.find("pulseComposer") : html.find("pulseComposer") + 1200], "composer no longer has duplicate tiny upload icon")
 
-    require("--pulse-feed-column: clamp(1040px" in desktop_css and "--pulse-text-column: 1040px" in desktop_css, "desktop center feed target is doubled from composer down")
-    require("minmax(980px, var(--pulse-feed-column))" in desktop_css, "desktop grid reserves a doubled feed lane")
-    require(".composer.card" in desktop_css and "min-height: 118px" in desktop_css, "composer keeps normal vertical height while widening")
-    require(".post.card" in desktop_css and "padding: clamp(24px" in desktop_css, "post cards keep normal vertical padding while widening")
-    require("max-height: min(88vh, 980px)" in desktop_css, "feed media keeps stable height while cards widen")
-    require(".composer-primary-actions" in desktop_css and "repeat(6" in desktop_css, "desktop composer action row is intentional")
-    require("@media(max-width:900px)" in source and ".composer-primary-actions" in source, "mobile composer action row has responsive rules")
+    feed_widths = [int(v) for v in re.findall(r"--pulse-feed-column:\s*clamp\((\d+)px", desktop_css)]
+    text_widths = [int(v) for v in re.findall(r"--pulse-text-column:\s*(\d+)px", desktop_css)]
+    require(max(feed_widths or [0]) >= 1360 and max(text_widths or [0]) >= 1280, "desktop center feed target is wide enough for modern social cards")
+    require("minmax(0, var(--pulse-feed-column))" in desktop_css, "desktop grid lets the feed dominate without horizontal scroll")
+    require(".pulse-desktop-center > .layout" in desktop_css and ".pulse-desktop-center > .layout > aside.side" in desktop_css, "desktop center feed is not squeezed by legacy inner side rail")
+    require(".composer.card" in desktop_css and "min-height: 72px" in desktop_css, "composer is compact while staying readable")
+    require(".post.card" in desktop_css and "padding: clamp(14px" in desktop_css, "post cards use compact vertical padding")
+    require("contain-intrinsic-size: 430px" in desktop_css, "post cards reserve compact scroll height")
+    require("-webkit-line-clamp: 7" in desktop_css, "long post text is clamped for scan-friendly density")
+    require("max-height: min(62vh, 620px)" in desktop_css, "feed media is wide without becoming overly tall")
+    require(".composer-primary-actions" in desktop_css and "repeat(6, minmax(92px" in desktop_css, "desktop composer action row stays single-line")
+    require("@media (max-width: 1023px)" in desktop_css and ".composer-primary-actions" in desktop_css and "overflow-x: auto" in desktop_css, "mobile composer action row stays responsive")
 
     require("data-live-now-hub" in html and "Realtime Pulse Discovery" in html, "Live Now card renders on homepage")
     live = client.get("/api/pulse/live-now")

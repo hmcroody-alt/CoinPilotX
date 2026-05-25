@@ -125,10 +125,12 @@ def main() -> None:
     require(feed_response.status_code == 200 and created, "attached media post appears in feed after refresh", str(feed_payload)[:500])
     require(len(created.get("media") or []) >= 2, "feed payload preserves image/video attachments after refresh")
 
-    require("--pulse-feed-column: clamp(1040px" in desktop_css and "--pulse-text-column: 1040px" in desktop_css, "desktop feed column is doubled")
-    require("minmax(980px, var(--pulse-feed-column))" in desktop_css, "desktop grid reserves a doubled feed lane")
-    require("min-height: 118px" in desktop_css and "padding: clamp(24px" in desktop_css, "desktop cards widen without extra vertical length")
-    require("max-height: min(88vh, 980px)" in desktop_css, "desktop media keeps stable height while cards widen")
+    feed_widths = [int(v) for v in re.findall(r"--pulse-feed-column:\s*clamp\((\d+)px", desktop_css)]
+    text_widths = [int(v) for v in re.findall(r"--pulse-text-column:\s*(\d+)px", desktop_css)]
+    require(max(feed_widths or [0]) >= 1360 and max(text_widths or [0]) >= 1280, "desktop feed column is wide and social-scale")
+    require("minmax(0, var(--pulse-feed-column))" in desktop_css, "desktop grid reserves a flexible wide feed lane")
+    require("min-height: 72px" in desktop_css and "padding: clamp(14px" in desktop_css, "desktop cards are compact vertically while widened")
+    require("max-height: min(62vh, 620px)" in desktop_css, "desktop media stays wide without excessive height")
 
     print("media attachment audit ok")
 
