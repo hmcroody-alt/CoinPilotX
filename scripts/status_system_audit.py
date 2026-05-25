@@ -19,9 +19,12 @@ def main():
     css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text(encoding="utf-8")
 
     require("🌊 Pulse Waves" in source, "Pulse Waves naming is visible")
-    require("Launch Wave" in source and "Launch Wave 🌊" in source, "Launch Wave CTA exists")
+    require("🌊 Launch Wave" in source, "Launch Wave CTA exists")
     require("pulseCoreLauncher" in source and ".pulse-core-launcher" in css, "Pulse Core launcher exists")
     require("pulseCoreRipple" in css and "prefers-reduced-motion" in css, "Pulse Core motion is lightweight and accessible")
+    require("Create a Wave" in source and "Share your energy with the world" in source, "cinematic Wave selector copy exists")
+    require("pulse-wave-handle" in source and "pulse-wave-mark" in source and "pulse-wave-privacy" in source, "reference-style selector details exist")
+    require("pulse-wave-step" in source and ".pulse-wave-step" in css, "3-step Wave progress indicator exists")
 
     require("Text Wave" in source and "Photo Wave" in source, "only two primary Wave choices exist")
     require(source.count("data-status-start=") == 2, "Wave creation exposes exactly two primary choices", f"found {source.count('data-status-start=')}")
@@ -39,10 +42,15 @@ def main():
     require("/api/pulse/waves/<int:status_id>/reply" in source, "Wave reply endpoint exists")
     require("/api/pulse/waves/<int:status_id>/react" in source, "Wave reaction endpoint exists")
 
+    require("setWaveState" in source, "Wave state machine exists")
+    for state in ["selecting_wave_type", "composing_text", "selecting_photo", "previewing_wave", "publishing_wave"]:
+        require(state in source, f"Wave state exists: {state}")
     require("routeStatusIntent" in source and "openStatusModePicker" in source, "intent router opens fast Wave sheet")
     require("openStatusTextCreator" in source and "pulseStatusBody')?.focus()" in source, "Text Wave opens immersive writing space")
     require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source, "Photo Wave opens gallery picker directly")
     require("Add Music" in source and "Add Voice Note" in source and "statusSoundInput?.click()" in source, "music and voice are subtle optional controls")
+    require("pulse-wave-text-canvas" in source and "What’s on your mind?" in source, "Text Wave renders immersive writing canvas")
+    require("pulse-wave-preview-card" in source and "pulse-wave-media-frame" in source and "data-wave-caption-preview" in source, "Photo Wave renders immersive preview card")
 
     require("context_type','pulse_wave'" in source, "Wave media uploads use Wave context")
     require("context_type','pulse_wave_audio'" in source, "optional Wave audio uploads use audio context")
@@ -58,6 +66,8 @@ def main():
         require(token not in source, f"old visible label removed: {token}")
 
     require(".pulse-wave-sheet" in css, "Wave sheet styling exists")
+    require(".pulse-wave-preview-card" in css and ".pulse-wave-text-canvas" in css, "cinematic Wave composer surfaces are styled")
+    require("pulseWaveAtmosphere" in css and "pulseWaveFloat" in css, "cinematic Wave motion system exists")
     require("grid-template-columns: repeat(2" in css, "desktop Wave actions are strict two-choice layout")
     require(".pulse-wave-secondary-controls" in css, "secondary controls are visually subtle")
     require("grid-template-columns: 1fr" in css, "mobile Wave actions stack cleanly")

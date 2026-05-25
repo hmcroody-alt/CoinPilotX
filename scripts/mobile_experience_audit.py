@@ -38,6 +38,10 @@ def main():
     require(source.count("data-status-start=") == 2, "mobile Wave launcher exposes only two primary choices")
     require("Add Music" in source and "Add Voice Note" in source and ".pulse-wave-secondary-controls" in status_css, "secondary Wave tools stay subtle on mobile")
     require("Voice Wave" not in source and "Mood Wave" not in source and "Live Wave" not in source and "AI Wave" not in source, "old complex Wave actions are not visible")
+    require("pulse-wave-step" in source and ".pulse-wave-step" in status_css, "mobile Wave flow shows step progress")
+    require("pulse-wave-text-canvas" in source and ".pulse-wave-text-canvas" in status_css, "mobile Text Wave uses immersive writing canvas")
+    require("pulse-wave-preview-card" in source and ".pulse-wave-preview-card" in status_css, "mobile Photo Wave uses immersive preview card")
+    require("pulseWaveAtmosphere" in status_css and "pulseWaveFloat" in status_css, "mobile Wave atmosphere uses lightweight motion")
     print("mobile experience audit ok")
 
 
