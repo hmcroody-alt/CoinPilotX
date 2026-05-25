@@ -23,8 +23,21 @@ def expect(ok, label, details=""):
 def main():
     bot.init_db(); bot.init_db()
     bot_source = (ROOT / "bot.py").read_text()
+    recovery_js = (ROOT / "static/js/pulse_chat_recovery.js").read_text()
     expect("pulseMessengerPendingV2" in bot_source, "mobile pending send queue exists")
-    expect("Reconnecting securely" in bot_source and "Messages syncing" in bot_source, "dead chat recovery copy exists")
+    for primitive in [
+        "loadConversationMessages",
+        "loadRoomMessages",
+        "loadGroupMessages",
+        "sendPrivateMessage",
+        "sendRoomMessage",
+        "sendGroupMessage",
+        "retryMessageLoad",
+        "fallbackPollMessages",
+    ]:
+        expect(primitive in bot_source, f"unified chat primitive exists: {primitive}")
+    expect("Messages syncing" not in bot_source and "Messages syncing" not in recovery_js, "fake syncing loop copy removed")
+    expect("Loading latest messages" in recovery_js and "Reconnecting..." in recovery_js, "specific chat recovery states exist")
     expect("Something needs attention. Please try again." not in bot_source[bot_source.find("data-unified-messenger"):], "messenger does not use generic failure copy")
     result = subprocess.run([sys.executable, str(ROOT / "scripts/messenger_core_audit.py")], cwd=str(ROOT), text=True, capture_output=True)
     expect(result.returncode == 0, "canonical messenger core audit", result.stdout + result.stderr)

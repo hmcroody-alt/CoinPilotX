@@ -30,7 +30,7 @@
   function skeleton(copy) {
     return `<div class="unified-empty pulse-chat-skeleton" aria-live="polite">
       <strong>${esc(copy || "Restoring conversation...")}</strong>
-      <span>Messages syncing securely. Recent activity appears as soon as the connection stabilizes.</span>
+      <span>Loading the latest messages. Cached activity appears first, then the thread refreshes.</span>
       <i></i><i></i><i></i>
     </div>`;
   }
@@ -71,10 +71,10 @@
     if (!target) return;
     const text = copy || {
       restoring: "Restoring conversation...",
-      syncing: "Messages syncing...",
-      reconnecting: "Reconnecting securely...",
+      syncing: "Loading latest messages...",
+      reconnecting: "Reconnecting...",
       offline: "Offline temporarily. Messages will send when you are back online.",
-    }[mode] || "Messages syncing...";
+    }[mode] || "Loading latest messages...";
     target.innerHTML = `<span class="presence-dot"></span><span>${esc(text)}</span>`;
   }
 

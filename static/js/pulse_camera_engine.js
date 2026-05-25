@@ -439,6 +439,7 @@
         await markPreviewPublished("status", data.status?.id || 0);
         setBusy(true, "Posted successfully");
         window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
+        setPreviewStatus("Published.");
         location.href = "/pulse/status";
         return;
       }
@@ -450,6 +451,7 @@
         await markPreviewPublished("reel", data.reel?.id || data.reel_id || 0);
         setBusy(true, "Posted successfully");
         window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
+        setPreviewStatus("Published.");
         location.href = data.next_url || "/pulse/reels";
         return;
       }
@@ -474,6 +476,7 @@
       await markPreviewPublished("pulse_post", data.post_id || data.id || 0);
       setBusy(true, "Posted successfully");
       window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });
+      setPreviewStatus("Published.");
       location.href = data.next_url || "/pulse";
     } catch (error) {
       processing?.classList.remove("is-on");
