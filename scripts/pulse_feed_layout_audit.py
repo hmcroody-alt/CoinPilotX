@@ -60,15 +60,15 @@ def main():
     require("Choose File" not in visible_copy and "Choose Files" not in visible_copy, "rendered Pulse homepage exposes no native Choose File copy")
     require("pulse_media_picker.js" in html and "window.PulseMediaPicker" in picker_js, "PulseMediaPicker loads on homepage")
     require("input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source, "native file inputs are globally hidden behind custom controls")
-    require('data-pulse-media-picker="composer"' in html and "data-pulse-media-trigger" in html, "composer uses unified media picker trigger")
+    require('data-pulse-media-picker="composer"' in html and "data-pulse-media-trigger" in html and 'data-expand-composer="pulseComposer"' in html, "composer uses unified media picker trigger")
     for label in ["Media", "Reel", "Live", "Music", "AI", "Audience", "Publish"]:
         require(label in html, f"composer action exists: {label}")
     require("smart-compose-icon" not in html[html.find("pulseComposer") : html.find("pulseComposer") + 1200], "composer no longer has duplicate tiny upload icon")
 
-    require("--pulse-feed-column: clamp(700px" in desktop_css and "--pulse-text-column: 760px" in desktop_css, "desktop center feed target is Facebook-scale")
-    require(".composer.card" in desktop_css and "min-height: 96px" in desktop_css, "composer is larger and content-first on desktop")
-    require(".post.card" in desktop_css and "padding: clamp(18px" in desktop_css, "post cards have larger premium padding")
-    require("max-height: min(82vh, 860px)" in desktop_css, "feed media can render large on desktop")
+    require("--pulse-feed-column: clamp(780px" in desktop_css and "--pulse-text-column: 820px" in desktop_css, "desktop center feed target is Facebook-scale")
+    require(".composer.card" in desktop_css and "min-height: 118px" in desktop_css, "composer is larger and content-first on desktop")
+    require(".post.card" in desktop_css and "padding: clamp(24px" in desktop_css, "post cards have larger premium padding")
+    require("max-height: min(88vh, 980px)" in desktop_css, "feed media can render large on desktop")
     require(".composer-primary-actions" in desktop_css and "repeat(6" in desktop_css, "desktop composer action row is intentional")
     require("@media(max-width:900px)" in source and ".composer-primary-actions" in source, "mobile composer action row has responsive rules")
 

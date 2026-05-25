@@ -17,9 +17,12 @@
   function bindTrigger(button) {
     if (button.dataset.pulsePickerBound === '1') return;
     button.dataset.pulsePickerBound = '1';
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
       const target = button.getAttribute('data-media-input') || button.getAttribute('data-target-input') || 'postMedia';
       const input = document.getElementById(target) || document.querySelector(button.getAttribute('data-media-selector') || '');
+      const composerId = button.getAttribute('data-expand-composer');
+      if (composerId) document.getElementById(composerId)?.classList.add('is-expanded');
       trigger(input, button.getAttribute('data-media-accept') || '');
     });
   }

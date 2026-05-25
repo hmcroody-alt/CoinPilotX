@@ -1,10 +1,10 @@
 :root {
   --pulse-left-rail: clamp(220px, 14vw, 312px);
   --pulse-right-rail: clamp(278px, 18vw, 390px);
-  --pulse-feed-column: clamp(700px, 48vw, 940px);
-  --pulse-text-column: 760px;
-  --pulse-cinematic-column: clamp(780px, 54vw, 1040px);
-  --pulse-shell-max: 1980px;
+  --pulse-feed-column: clamp(780px, 52vw, 1080px);
+  --pulse-text-column: 820px;
+  --pulse-cinematic-column: clamp(860px, 58vw, 1180px);
+  --pulse-shell-max: 2140px;
 }
 
 html,
@@ -103,7 +103,7 @@ body {
     display: grid;
     grid-template-columns:
       minmax(200px, var(--pulse-left-rail))
-      minmax(680px, var(--pulse-feed-column))
+      minmax(720px, var(--pulse-feed-column))
       minmax(260px, var(--pulse-right-rail));
     gap: clamp(14px, 1.25vw, 24px);
     align-items: start;
@@ -343,28 +343,28 @@ body {
     justify-self: center;
     border-radius: 22px;
     margin: 16px auto;
-    padding: clamp(18px, 1.35vw, 24px);
+    padding: clamp(24px, 1.65vw, 32px);
     box-shadow: 0 24px 82px rgba(0, 0, 0, .3), 0 0 36px rgba(110, 223, 246, .06);
   }
 
   .pulse-publisher-card .smart-composer-bar {
-    grid-template-columns: 58px minmax(0, 1fr);
-    gap: 14px;
+    grid-template-columns: 66px minmax(0, 1fr);
+    gap: 16px;
     align-items: start;
   }
 
   .pulse-publisher-card .smart-compose-avatar {
-    width: 58px;
-    height: 58px;
-    border-radius: 18px;
-    font-size: 22px;
+    width: 66px;
+    height: 66px;
+    border-radius: 20px;
+    font-size: 24px;
   }
 
   .pulse-publisher-card .smart-composer-bar textarea {
-    min-height: 96px;
-    border-radius: 22px;
-    padding: 18px 20px;
-    font-size: 18px;
+    min-height: 118px;
+    border-radius: 24px;
+    padding: 20px 22px;
+    font-size: 19px;
     line-height: 1.35;
   }
 
@@ -378,27 +378,61 @@ body {
 
   .composer-primary-actions button,
   .composer-primary-actions .button {
-    min-height: 48px;
-    border-radius: 14px;
+    min-height: 52px;
+    border-radius: 15px;
     white-space: nowrap;
   }
 
   .pulse-media-preview {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
   }
 
-  .pulse-media-preview span {
+  .pulse-media-preview span,
+  .pulse-media-preview .pulse-selected-media {
     display: grid;
-    gap: 3px;
-    min-height: 58px;
+    gap: 8px;
+    min-height: 168px;
     border: 1px solid rgba(110, 223, 246, .16);
     border-radius: 14px;
     background: rgba(255, 255, 255, .045);
     padding: 10px;
     color: #f2fbff;
     font-weight: 850;
+  }
+
+  .pulse-selected-media {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .pulse-selected-media img,
+  .pulse-selected-media video {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    border-radius: 12px;
+    background: #020817;
+  }
+
+  .pulse-selected-media footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .pulse-selected-media strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pulse-selected-media button {
+    min-height: 34px;
+    border-radius: 999px;
+    padding: 6px 10px;
   }
 
   .pulse-media-preview small {
@@ -442,10 +476,10 @@ body {
     width: min(100%, var(--pulse-text-column));
     justify-self: center;
     border-radius: 22px;
-    padding: clamp(18px, 1.35vw, 24px);
-    gap: 12px;
+    padding: clamp(24px, 1.65vw, 32px);
+    gap: 16px;
     content-visibility: auto;
-    contain-intrinsic-size: 680px;
+    contain-intrinsic-size: 820px;
     overflow: visible;
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
   }
@@ -498,14 +532,15 @@ body {
   }
 
   .post h2 {
-    font-size: clamp(27px, 2.35vw, 40px);
+    font-size: clamp(31px, 2.65vw, 46px);
     line-height: 1.08;
     margin: 4px 0 2px;
   }
 
   .post > p {
     margin: 6px 0;
-    font-size: 16px;
+    font-size: 18px;
+    line-height: 1.55;
   }
 
   .media-grid {
@@ -523,17 +558,17 @@ body {
 
   .pulse-media-wrap img,
   .pulse-media-wrap video {
-    max-height: min(82vh, 860px) !important;
+    max-height: min(88vh, 980px) !important;
   }
 
   .post.media-landscape .pulse-media-wrap img,
   .post.media-landscape .pulse-media-wrap video {
-    max-height: min(66vh, 680px) !important;
+    max-height: min(72vh, 820px) !important;
   }
 
   .post.media-portrait .pulse-media-wrap img,
   .post.media-portrait .pulse-media-wrap video {
-    max-height: min(86vh, 920px) !important;
+    max-height: min(90vh, 1040px) !important;
   }
 
   .reaction-strip {
@@ -567,8 +602,13 @@ body {
   }
 
   .quick-actions {
-    padding: 8px 0;
+    padding: 12px 0;
     margin-top: 2px;
+  }
+
+  .quick-action {
+    min-height: 46px;
+    font-size: 15px;
   }
 
   .inline-comments {
@@ -632,8 +672,8 @@ body {
 
 @media (min-width: 1500px) {
   :root {
-    --pulse-feed-column: clamp(780px, 46vw, 1000px);
-    --pulse-cinematic-column: clamp(860px, 52vw, 1120px);
+    --pulse-feed-column: clamp(840px, 48vw, 1120px);
+    --pulse-cinematic-column: clamp(940px, 56vw, 1260px);
     --pulse-left-rail: clamp(250px, 16vw, 330px);
     --pulse-right-rail: clamp(310px, 20vw, 410px);
   }
@@ -645,8 +685,8 @@ body {
 
 @media (min-width: 1280px) and (max-width: 1439px) {
   :root {
-    --pulse-feed-column: clamp(680px, 50vw, 820px);
-    --pulse-cinematic-column: clamp(720px, 54vw, 900px);
+    --pulse-feed-column: clamp(720px, 54vw, 860px);
+    --pulse-cinematic-column: clamp(780px, 58vw, 940px);
     --pulse-left-rail: 220px;
     --pulse-right-rail: 270px;
   }

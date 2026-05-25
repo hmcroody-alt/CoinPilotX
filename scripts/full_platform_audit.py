@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 AUDIT_PLAN = [
     ("database", "database_integrity_audit.py"),
     ("feed layout", "pulse_feed_layout_audit.py"),
+    ("media attachments", "media_attachment_audit.py"),
     ("feed", "pulse_feed_audit.py"),
     ("global feed", "pulse_global_feed_audit.py"),
     ("visibility", "pulse_visibility_audit.py"),
