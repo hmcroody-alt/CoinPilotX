@@ -351,9 +351,12 @@
   align-content: center;
   gap: 26px;
   padding: max(88px, env(safe-area-inset-top) + 68px) 18px max(88px, env(safe-area-inset-bottom) + 72px);
-  background: #eef0f3;
-  color: #26323d;
-  backdrop-filter: none;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(110, 223, 246, .22), transparent 28rem),
+    radial-gradient(circle at 82% 82%, rgba(54, 229, 143, .14), transparent 24rem),
+    linear-gradient(145deg, rgba(5, 11, 20, .98), rgba(8, 20, 34, .98));
+  color: #f2fbff;
+  backdrop-filter: blur(18px);
 }
 
 .pulse-status-mode-picker.is-hidden {
@@ -371,7 +374,7 @@
 .pulse-status-mode-picker p {
   margin: 8px 0 0;
   max-width: 420px;
-  color: #69727c;
+  color: rgba(223, 252, 255, .72);
   font-weight: 750;
   text-align: center;
 }
@@ -384,10 +387,12 @@
 }
 
 .pulse-status-mode-picker button {
-  min-height: clamp(260px, 42vh, 360px);
-  border: 0;
-  border-radius: 10px;
-  background: linear-gradient(145deg, #5939f3 0%, #75d9ff 100%);
+  min-height: clamp(210px, 34vh, 300px);
+  border: 1px solid rgba(110, 223, 246, .22);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgba(12, 27, 49, .86), rgba(8, 18, 31, .72)),
+    radial-gradient(circle at 20% 20%, rgba(110, 223, 246, .22), transparent 60%);
   color: #fff;
   display: grid;
   place-items: center;
@@ -395,7 +400,7 @@
   gap: 14px;
   text-align: center;
   padding: 22px;
-  box-shadow: 0 18px 46px rgba(62, 83, 104, .16);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .28);
   transition: transform .18s ease, box-shadow .18s ease;
 }
 
@@ -406,7 +411,9 @@
 }
 
 .pulse-status-choice-text {
-  background: linear-gradient(145deg, #a945ee 0%, #f14684 100%) !important;
+  background:
+    linear-gradient(145deg, rgba(16, 40, 68, .88), rgba(15, 30, 51, .76)),
+    radial-gradient(circle at 24% 16%, rgba(54, 229, 143, .22), transparent 60%) !important;
 }
 
 .pulse-status-mode-picker button span {
@@ -440,7 +447,7 @@
 }
 
 .pulse-status-form.is-choosing {
-  background: #eef0f3;
+  background: #050b14;
 }
 
 .pulse-status-form.is-choosing .pulse-status-progress,
@@ -448,6 +455,7 @@
 .pulse-status-form.is-choosing .pulse-status-caption-layer,
 .pulse-status-form.is-choosing .pulse-status-tool-rail,
 .pulse-status-form.is-choosing .pulse-status-overlay-layer,
+.pulse-status-form.is-choosing .pulse-wave-secondary-controls,
 .pulse-status-form.is-choosing .pulse-status-effects-tray,
 .pulse-status-form.is-choosing .pulse-status-bottom-bar,
 .pulse-status-form.is-choosing .pulse-status-upload-progress {
@@ -835,7 +843,7 @@ body.status-editor-open {
 .pulse-status-caption-layer {
   position: absolute;
   left: max(18px, env(safe-area-inset-left));
-  right: max(110px, env(safe-area-inset-right) + 94px);
+  right: max(18px, env(safe-area-inset-right));
   bottom: calc(132px + env(safe-area-inset-bottom));
   z-index: 8;
 }
@@ -917,7 +925,7 @@ body.status-editor-open {
   bottom: max(18px, env(safe-area-inset-bottom));
   z-index: 12;
   display: grid;
-  grid-template-columns: minmax(88px, auto) minmax(70px, auto) minmax(104px, auto) minmax(104px, 1fr);
+  grid-template-columns: minmax(90px, auto) minmax(150px, 1fr);
   gap: 10px;
   align-items: center;
 }
@@ -926,6 +934,30 @@ body.status-editor-open {
 .pulse-status-bottom-bar button {
   min-height: 50px;
   border-radius: 18px;
+}
+
+.pulse-wave-secondary-controls {
+  position: absolute;
+  left: max(18px, env(safe-area-inset-left));
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 12;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.pulse-wave-secondary-controls button {
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 223, 246, .18);
+  background: rgba(0, 0, 0, .32);
+  color: rgba(242, 251, 255, .86);
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 850;
+  backdrop-filter: blur(12px);
 }
 
 .pulse-status-bottom-bar select {
@@ -1022,7 +1054,8 @@ body.status-editor-open {
 }
 
 .pulse-wave-sheet .pulse-status-mode-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: min(100%, 680px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .pulse-wave-sheet .pulse-status-choice-card small {
@@ -1105,7 +1138,7 @@ body.status-editor-open {
   }
 
   .pulse-status-bottom-bar {
-    grid-template-columns: minmax(82px, auto) minmax(62px, auto) minmax(0, 1fr);
+    grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
   }
 
   .pulse-status-bottom-bar [data-status-tool="choose"] {
@@ -1132,6 +1165,16 @@ body.status-editor-open {
 
   .pulse-wave-sheet .pulse-status-mode-grid {
     grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .pulse-status-mode-picker button {
+    min-height: 150px;
+    border-radius: 20px;
+  }
+
+  .pulse-wave-secondary-controls {
+    bottom: calc(82px + env(safe-area-inset-bottom));
   }
 }
 

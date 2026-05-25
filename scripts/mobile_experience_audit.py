@@ -28,21 +28,16 @@ def main():
     require("env(safe-area-inset-top)" in combined and "env(safe-area-inset-bottom)" in combined, "mobile safe-area rules are present")
     require("100dvh" in combined, "dynamic viewport height is used for fullscreen mobile surfaces")
     require("pulse-status-mode-picker" in status_css and "pulse-status-bottom-bar" in status_css, "Pulse Waves mobile launcher has immersive controls")
-    require("pulseStatusMedia" in source and "capture" not in source[source.find("pulseStatusMedia") : source.find("pulseStatusMedia") + 320], "Media Wave upload does not force camera capture")
+    require("pulseStatusMedia" in source and "capture" not in source[source.find("pulseStatusMedia") : source.find("pulseStatusMedia") + 320], "Photo Wave upload does not force camera capture")
     require("pulse_environment_engine.js" in source and "prefers-reduced-motion" in env_js, "ambient environment engine is loaded and respects reduced motion")
     require(
         "input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source.replace(" ", ""),
         "homepage raw Choose File controls are globally hidden behind custom triggers",
     )
-    require(
-        "data-status-start='upload'" in source
-        and "data-status-start='voice'" in source
-        and "data-status-start='mood'" in source
-        and "data-status-start='ai'" in source
-        and '"Live Wave", "Start broadcast", "🔴", "live"' in source
-        and "routeStatusIntent" in source,
-        "Pulse Wave actions are real, separated controls",
-    )
+    require("data-status-start='text'" in source and "data-status-start='upload'" in source and "routeStatusIntent" in source, "Pulse Wave creation has the strict Text/Photo choices")
+    require(source.count("data-status-start=") == 2, "mobile Wave launcher exposes only two primary choices")
+    require("Add Music" in source and "Add Voice Note" in source and ".pulse-wave-secondary-controls" in status_css, "secondary Wave tools stay subtle on mobile")
+    require("Voice Wave" not in source and "Mood Wave" not in source and "Live Wave" not in source and "AI Wave" not in source, "old complex Wave actions are not visible")
     print("mobile experience audit ok")
 
 

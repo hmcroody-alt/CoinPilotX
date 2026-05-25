@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,13 +66,20 @@ def assert_ok(status: int, data: dict, label: str) -> None:
 
 
 def assert_round_trip(client, send_path: str, load_path: str, body: str, label: str) -> None:
-    status, data = request_json(client, "POST", send_path, {"message": body, "client_message_id": f"audit-{label}"})
+    unique_body = f"{body} {secrets.token_hex(4)}"
+    client_message_id = f"audit-{label}-{secrets.token_hex(6)}"
+    status, data = request_json(client, "POST", send_path, {"message": unique_body, "client_message_id": client_message_id})
     assert_ok(status, data, f"{label} send")
-    expect(int(data.get("message_id") or (data.get("data") or {}).get("id") or 0) > 0, f"{label} send returns message id", str(data))
+    sent_id = int(data.get("message_id") or (data.get("data") or {}).get("id") or 0)
+    expect(sent_id > 0, f"{label} send returns message id", str(data))
     status, data = request_json(client, "GET", load_path)
     assert_ok(status, data, f"{label} reload")
     messages = data.get("messages") or data.get("items") or []
-    expect(any((m.get("body") or m.get("content") or "") == body for m in messages), f"{label} message appears after reload", str(data))
+    expect(
+        any(int(m.get("id") or m.get("message_id") or 0) == sent_id or (m.get("body") or m.get("content") or "") == unique_body for m in messages),
+        f"{label} message appears after reload",
+        str(data),
+    )
 
 
 def main() -> None:
