@@ -34,7 +34,13 @@ def main():
         "input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source.replace(" ", ""),
         "homepage raw Choose File controls are globally hidden behind custom triggers",
     )
-    require("data-status-start='camera'" in source and "data-status-start='upload'" in source, "Status creator actions are real controls")
+    require(
+        "data-status-start='upload'" in source
+        and "data-status-start='text'" in source
+        and '"Camera", "Capture now", "◎", "camera"' in source
+        and "routeStatusIntent" in source,
+        "Status creator and camera actions are real, separated controls",
+    )
     print("mobile experience audit ok")
 
 

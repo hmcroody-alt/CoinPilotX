@@ -58,8 +58,10 @@ def main():
     status_id = int(data["status_id"])
     expect((client.post(f"/api/pulse/status/{status_id}/view").get_json() or {}).get("ok") is True, "status view API works")
     expect((client.post(f"/api/pulse/status/{status_id}/react", json={"reaction_type": "fire"}).get_json() or {}).get("ok") is True, "status reaction API works")
+    reply_payload = client.post(f"/api/pulse/status/{status_id}/reply", json={"body": "Reply from audit"}).get_json() or {}
+    expect(reply_payload.get("ok") is True and reply_payload.get("reply", {}).get("id"), "status reply API works")
     html = client.get("/pulse").get_data(as_text=True)
-    for token in ["pulse-status-rail", "pulse-status-viewer", "data-status-card", "pulseStatusForm", "pulseStatusMedia", "pulseStatusSound", "/pulse/camera?target=status"]:
+    for token in ["pulse-status-rail", "pulse-status-viewer", "data-status-card", "data-status-story-viewer", "pulseStatusForm", "pulseStatusMedia", "pulseStatusSound", "/pulse/camera?target=status"]:
         expect(token in html, f"status UI contains {token}")
     print("pulse status audit ok")
 
