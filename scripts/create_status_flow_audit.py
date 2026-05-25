@@ -136,6 +136,8 @@ def main():
         "data-status-effect='cinematic'",
         "data-upload-progress",
         "PulseUploadManager.upload",
+        "openStatusGalleryCreator",
+        "Choose an image or video from your gallery.",
         "/api/pulse/status",
     ]
     for token in required_tokens:

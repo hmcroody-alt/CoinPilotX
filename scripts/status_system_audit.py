@@ -39,6 +39,7 @@ def main():
     require("data-status-tool='stickers'" in source and "data-status-tool='music'" in source, "Status editor tools are functional hooks, not dead labels")
     require("data-status-mode-picker" in source and "Create photo or video story" in source and "Create text story" in source, "Create Status opens the two-choice story chooser")
     require("pulse-status-mode-grid" in source and "pulse-status-choice-media" in source and "pulse-status-choice-text" in source, "Create Status chooser matches the two-card reference layout")
+    require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source and "Choose an image or video from your gallery." in source, "Create Status directly opens gallery picker before preview")
     require("statusForm?.classList.toggle('is-choosing'" in source, "Create Status hides editor tools until a story type is selected")
     require(source.count("data-status-start=") == 2, "Create Status entry exposes only photo/video story and text story starts")
     require('"Music", "Sound-first story", "♪", "music"' in source and "openStatusMusicCreator" in source, "Music card opens music-first flow")

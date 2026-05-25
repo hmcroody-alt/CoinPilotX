@@ -19,32 +19,28 @@ def expect(ok: bool, label: str, details: str = "") -> None:
 
 def main() -> None:
     source = (ROOT / "bot.py").read_text()
+    function_start = source.find("def pulse_dashboard_messenger_page")
+    active_return = source.find("return pulse_social_shell(\"Pulse Messenger\", \"Stable Dashboard", function_start)
+    messenger_slice = source[function_start:active_return]
     required_functions = [
-        "loadConversationMessages",
-        "loadRoomMessages",
-        "loadGroupMessages",
-        "sendPrivateMessage",
-        "sendRoomMessage",
-        "sendGroupMessage",
-        "retryMessageLoad",
-        "reconnectSocket",
-        "fallbackPollMessages",
+        "loadConversations",
+        "loadRooms",
+        "loadGroups",
+        "openConversation",
+        "openRoom",
+        "pollActiveConversation",
     ]
     for name in required_functions:
-        expect(re.search(rf"function\s+{name}\s*\(", source) is not None or re.search(rf"async\s+function\s+{name}\s*\(", source) is not None, f"{name} exists")
+        expect(re.search(rf"function\s+{name}\s*\(", messenger_slice) is not None or re.search(rf"async\s+function\s+{name}\s*\(", messenger_slice) is not None, f"{name} exists")
 
-    expect('/api/pulse/messages/${Number(state.activePulseConversation || 0)}/send' in source, "private/group sends use selected conversation id")
-    expect("/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages" in source, "room sends use selected room id")
-    expect("/api/pulse/messages/${Number(conversationId)}/messages?limit=80" in source, "private/group loads use canonical message endpoint")
-    expect("/api/pulse/chatrooms/${encodeURIComponent(roomId)}/messages?limit=80" in source, "room loads use canonical room endpoint")
-    expect('fallbackPollMessages();' in source[source.find("state.live.onerror"):source.find("state.live.onerror") + 500], "websocket failure triggers HTTP fallback polling")
-    expect("if (!force && state.live" not in source, "HTTP fallback polling is not blocked by an open realtime socket")
-    expect("HTTP recovery is active" in source and "setTimeout(() => pollThread(true), 350)" in source, "selected chat keeps HTTP recovery after transient load failure")
-    expect('window.addEventListener("online", () => { state.offline = false; setNetworkStatus("syncing"); reconnectSocket(); flushPendingMessages(); });' in source, "online recovery reconnects and polls")
-    messenger_slice = source[source.find("data-unified-messenger"):]
+    expect('/api/messages/${state.activeConversationId}/send' in messenger_slice, "all sends use Dashboard-compatible selected conversation id")
+    expect("/api/chat-room/${encodeURIComponent(roomId)}/messages?limit=80" in messenger_slice, "room loads use stable room bridge")
+    expect("/api/chat/threads" in messenger_slice and "/api/pulse/messages/conversations" in messenger_slice, "desktop and mobile share same direct chat list loader")
+    expect("setInterval(pollActiveConversation, 1800)" in messenger_slice, "HTTP polling keeps messages fresh")
+    expect("document.addEventListener(\"visibilitychange\"" in messenger_slice, "visibility recovery polls active conversation")
     expect("Something needs attention. Please try again." not in messenger_slice, "messenger UI avoids generic dead error")
-    expect("Messages are reconnecting." in messenger_slice, "messenger transient failure is recoverable")
-    expect("Retry message load" in messenger_slice, "retry copy reflects real retry action")
+    expect("Loading messages..." in messenger_slice, "selected chat shows real loading state")
+    expect("Unable to load messages." in messenger_slice, "load failures report concrete message")
     print("chat desktop mobile parity audit ok")
 
 

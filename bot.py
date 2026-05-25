@@ -16349,6 +16349,7 @@ function closeStatusEditor(){statusViewer?.classList.remove('open');statusViewer
 function closeStatusStoryViewer(){statusStoryViewer?.classList.remove('open');statusStoryViewer?.setAttribute('aria-hidden','true');document.body.classList.remove('status-viewer-open')}
 function setStatusModePicker(show=true){document.querySelector('[data-status-mode-picker]')?.classList.toggle('is-hidden',!show);statusForm?.classList.toggle('is-choosing',!!show)}
 function openStatusModePicker(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(true);window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose photo/video story or text story.'})}
+function openStatusGalleryCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(false);document.getElementById('pulseStatusMode').value='image';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose an image or video from your gallery.'});statusMediaInput?.click()}
 function showStatusMusicPanel(open=true){const panel=document.querySelector('[data-status-music-panel]');if(!panel)return;panel.classList.toggle('open',open);panel.setAttribute('aria-hidden',open?'false':'true');if(open)loadStatusMusic('')}
 function showStatusAiPanel(open=true){const panel=document.querySelector('[data-status-ai-panel]');if(!panel)return;panel.classList.toggle('open',open);panel.setAttribute('aria-hidden',open?'false':'true')}
 function clearStatusDraft(){resetStatusPreviewUrls();statusDraft.files=[];statusDraft.mediaIds=[];statusDraft.soundFile=null;statusDraft.soundMediaId=0;statusDraft.sticker='';statusDraft.link='';statusDraft.effect='natural';if(statusMediaInput)statusMediaInput.value='';if(statusSoundInput)statusSoundInput.value='';document.getElementById('pulseStatusBody').value='';document.querySelector('[data-status-overlays]').innerHTML='';statusPreview.innerHTML='<span>Select media to preview your status.</span>';statusPreview.dataset.effect='natural';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose media to create a Status.'})}
@@ -16360,7 +16361,7 @@ function renderStatusStory(index=0){const items=statusDraft.storyItems||[];if(!i
 async function openStatusViewerFeed(lane='global',statusId=0){closeStatusEditor();try{let items=[];if(statusId){const d=await api('/api/pulse/status/rail?lane=global');items=d.items||[];const target=items.find(x=>Number(x.id)===Number(statusId));if(target)items=[target,...items.filter(x=>Number(x.id)!==Number(statusId))]}else{const d=await api('/api/pulse/status/rail?lane='+encodeURIComponent(lane));items=d.items||[]}if(!items.length){toast(lane==='following'?'No followed stories yet.':'No active stories in this lane yet.');return}statusDraft.storyItems=items;statusStoryViewer?.classList.add('open');statusStoryViewer?.setAttribute('aria-hidden','false');document.body.classList.add('status-viewer-open');renderStatusStory(0)}catch(err){toast(err.message||'Status viewer could not load.')}}
 function openStatusMusicCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(false);document.getElementById('pulseStatusMode').value='music';statusPreview.dataset.effect='cinematic';statusPreview.innerHTML='<div class="pulse-ai-story-preview music-story"><strong>Music Story</strong><small>Choose a creator-safe sound, then add media or text.</small></div>';showStatusMusicPanel(true);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:'Choose a sound to build your Status.'})}
 function openStatusAiCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(false);document.getElementById('pulseStatusMode').value='ai';statusPreview.dataset.effect='cinematic';statusPreview.innerHTML='<div class="pulse-ai-story-preview"><strong>AI Story</strong><small>Describe a visual story and preview it before publishing.</small></div>';showStatusAiPanel(true);window.PulseUploadManager?.render(statusProgress,{stage:'processing',percent:10,message:'AI Story generator ready.'})}
-function routeStatusIntent(intent){const mode=String(intent||'create');if(mode==='create')return openStatusModePicker();if(mode==='music')return openStatusMusicCreator();if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}if(mode==='ai')return openStatusAiCreator();if(['following','trending','global'].includes(mode))return openStatusViewerFeed(mode);return openStatusModePicker()}
+function routeStatusIntent(intent){const mode=String(intent||'create');if(mode==='create')return openStatusGalleryCreator();if(mode==='music')return openStatusMusicCreator();if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}if(mode==='ai')return openStatusAiCreator();if(['following','trending','global'].includes(mode))return openStatusViewerFeed(mode);return openStatusGalleryCreator()}
 document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card){e.preventDefault();e.stopImmediatePropagation();routeStatusIntent(card.dataset.statusIntent||card.dataset.statusMode||'create');return}const openStatus=e.target.closest('[data-open-status-id]');if(openStatus){e.preventDefault();e.stopImmediatePropagation();openStatusViewerFeed('global',openStatus.dataset.openStatusId);return}const storyClose=e.target.closest('[data-status-story-close]');if(storyClose){e.preventDefault();e.stopImmediatePropagation();closeStatusStoryViewer();return}const prev=e.target.closest('[data-status-story-prev]');if(prev){e.preventDefault();e.stopImmediatePropagation();renderStatusStory(statusDraft.storyIndex-1);return}const next=e.target.closest('[data-status-story-next]');if(next){e.preventDefault();e.stopImmediatePropagation();renderStatusStory(statusDraft.storyIndex+1);return}const storyReact=e.target.closest('[data-status-story-react]');if(storyReact&&statusDraft.currentStatusId){e.preventDefault();e.stopImmediatePropagation();api(`/api/pulse/status/${statusDraft.currentStatusId}/react`,{method:'POST',body:JSON.stringify({reaction_type:storyReact.dataset.statusStoryReact})}).then(()=>toast('Reaction sent.')).catch(err=>toast(err.message||'Reaction failed.'));return}const reply=e.target.closest('[data-status-story-send-reply]');if(reply&&statusDraft.currentStatusId){e.preventDefault();e.stopImmediatePropagation();const input=document.querySelector('[data-status-story-reply]');const body=input?.value||'';if(!body.trim()){input?.focus();return}api(`/api/pulse/status/${statusDraft.currentStatusId}/reply`,{method:'POST',body:JSON.stringify({body})}).then(()=>{input.value='';toast('Reply sent.')}).catch(err=>toast(err.message||'Reply failed.'));return}const mute=e.target.closest('[data-status-story-mute]');if(mute){e.preventDefault();e.stopImmediatePropagation();const media=statusStoryViewer?.querySelector('video');if(media){media.muted=!media.muted;toast(media.muted?'Story muted.':'Story unmuted.')}return}if(e.target===statusStoryViewer){e.preventDefault();e.stopImmediatePropagation();closeStatusStoryViewer();return}},true);
 async function generateAiStatusStory(){const prompt=document.querySelector('[data-status-ai-prompt]')?.value||'';if(!prompt.trim()){toast('Describe the AI Story first.');return}try{const d=await api('/api/pulse/status/ai-story',{method:'POST',body:JSON.stringify({prompt,style:'cinematic'})});const story=d.story||{};document.getElementById('pulseStatusMode').value='ai';document.getElementById('pulseStatusBody').value=story.caption||prompt;statusPreview.dataset.effect=story.style||'cinematic';statusPreview.innerHTML=`<div class="pulse-ai-story-preview" style="background:${esc(story.visual?.background||'linear-gradient(145deg,#061426,#02050b)')}"><strong>${esc(story.caption||prompt)}</strong><small>${esc((story.tags||[]).join(' · '))}</small></div>`;document.querySelector('[data-status-ai-result]').innerHTML='<span>AI Story ready. Add music or publish.</span>';setStatusModePicker(false);showStatusAiPanel(false);window.PulseUploadManager?.render(statusProgress,{stage:'processing',percent:64,message:'AI Story preview ready.'})}catch(e){toast(e.message||'AI Story failed.')}}
 document.addEventListener('click',e=>{const starter=e.target.closest('[data-status-start]');if(starter){const mode=starter.dataset.statusStart;if(mode==='upload'){setStatusModePicker(false);statusMediaInput?.click();return}if(mode==='text'){setStatusModePicker(false);document.getElementById('pulseStatusMode').value='text';statusPreview.dataset.effect='cinematic';statusPreview.innerHTML='<div class="pulse-ai-story-preview text-story"><strong>Text Story</strong><small>Write your story below.</small></div>';document.getElementById('pulseStatusBody')?.focus();window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:'Text story ready. Write, preview, then share.'});return}}if(e.target.closest('[data-close-status-music]')){showStatusMusicPanel(false);return}if(e.target.closest('[data-close-status-ai]')){showStatusAiPanel(false);return}if(e.target.closest('[data-generate-ai-story]')){generateAiStatusStory();return}const track=e.target.closest('[data-status-select-track]');if(track){document.getElementById('pulseStatusMusicTrack').value=track.dataset.statusSelectTrack||'';document.getElementById('pulseStatusMode').value='music';document.getElementById('pulseStatusBody').value=document.getElementById('pulseStatusBody').value||`${track.dataset.trackTitle||'Pulse sound'} · ${track.dataset.trackArtist||'Pulse'}`;document.querySelector('[data-status-waveform]').innerHTML='<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>';showStatusMusicPanel(false);toast('Sound attached.');return}const back=e.target.closest('[data-status-back]');if(back){if(statusForm?.classList.contains('is-choosing'))closeStatusEditor();else openStatusModePicker();return}const tool=e.target.closest('[data-status-tool]');if(tool){const name=tool.dataset.statusTool;if(name==='choose'){statusMediaInput?.click();return}if(name==='music'){showStatusMusicPanel(true);return}if(name==='text'){document.getElementById('pulseStatusBody')?.focus();toast('Add text over your Status.');return}if(name==='stickers'){const stickers=['❤️','🔥','✨','📸','🎉','💯'];const next=stickers[(stickers.indexOf(statusDraft.sticker)+1)%stickers.length]||stickers[0];statusDraft.sticker=next;renderStatusPreview();toast('Sticker added.');return}if(name==='filters'){document.querySelector('[data-status-effects-tray]')?.classList.toggle('open');return}if(name==='mention'){const mention=prompt('Mention a Pulse creator');if(mention){const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+' ':'')+(mention.startsWith('@')?mention:'@'+mention);body.focus()}return}if(name==='links'){const link=prompt('Add a link');if(link){statusDraft.link=link;const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+'\\n':'')+link;toast('Link added.')}return}}const effect=e.target.closest('[data-status-effect]');if(effect){statusDraft.effect=effect.dataset.statusEffect||'natural';document.querySelectorAll('[data-status-effect]').forEach(b=>b.classList.toggle('active',b===effect));if(statusPreview)statusPreview.dataset.effect=statusDraft.effect;toast(`${effect.textContent.trim()} filter applied.`);return}if(e.target===statusViewer){closeStatusEditor()}});
@@ -21500,484 +21501,101 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if active_conversation:
             active_pulse_conversation_id = active_thread_id
             active_thread_id = 0
-    main = """
+    restored_active_id = int(active_pulse_conversation_id or active_thread_id or 0)
+    main = f"""
     <style>
-    .unified-messenger{height:min(82dvh,820px);min-height:620px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:0;overflow:hidden;border-radius:24px}
-    .unified-messenger-head{position:relative;z-index:5;display:grid;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 16px 14px;background:rgba(7,17,31,.94);border-bottom:1px solid rgba(255,255,255,.08);backdrop-filter:blur(18px)}
-    .unified-messenger-title{display:flex;align-items:center;justify-content:space-between;gap:12px}
-    .unified-messenger-title h2{margin:0}
-    .unified-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-    .unified-tabs button{min-width:0;min-height:42px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .unified-tabs button.is-active{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}
-    .unified-messenger-body{min-height:0;display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);background:radial-gradient(circle at 80% 0,rgba(110,223,246,.08),transparent 26rem)}
-    .unified-sidebar{min-height:0;overflow:auto;border-right:1px solid rgba(255,255,255,.08);padding:14px;display:grid;align-content:start;gap:12px}
-    .unified-thread-pane{min-height:0;display:grid;grid-template-rows:auto auto minmax(0,1fr)}
-    .unified-thread-top{display:grid;gap:10px;padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(10,23,40,.88),rgba(7,13,24,.66));backdrop-filter:blur(16px)}
-    .unified-thread-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .unified-thread-title strong{font-size:18px}
-    .unified-presence{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:13px}
-    .presence-dot{width:8px;height:8px;border-radius:999px;background:#35f2a8;box-shadow:0 0 16px rgba(53,242,168,.9)}
-    .unified-room-banner{display:grid;gap:8px;padding:12px 14px;border:1px solid rgba(110,223,246,.16);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.11),rgba(119,167,255,.07))}
-    .unified-room-banner[hidden]{display:none}
-    .unified-room-banner strong{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .unified-room-chips{display:flex;gap:6px;flex-wrap:wrap}
-    .unified-sidebar-section{display:grid;gap:8px;margin-top:8px}
-    .unified-sidebar-section h3{margin:0;color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
-    .unified-panel[hidden]{display:none}
-    .unified-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
-    .unified-search input{min-width:0}
-    .unified-results,.unified-list{display:grid;gap:8px}
-    .unified-row{width:100%;display:grid;gap:4px;text-align:left;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(255,255,255,.045);color:var(--text);padding:12px;cursor:pointer}
-    .unified-row:hover,.unified-row.is-active{border-color:rgba(110,223,246,.45);background:rgba(110,223,246,.1)}
-    .unified-row strong{display:flex;align-items:center;justify-content:space-between;gap:8px}
-    .unified-row span{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .unified-row .unread-badge{min-width:24px;height:24px;display:inline-grid;place-items:center;border-radius:999px;color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));font-size:12px;font-weight:950;box-shadow:0 0 18px rgba(110,223,246,.34)}
-    .unified-row .typing-preview{color:#8fffd0}
-    .unified-empty{border:1px dashed rgba(110,223,246,.24);border-radius:18px;padding:18px;color:var(--muted);text-align:center;background:rgba(255,255,255,.035)}
-    .unified-thread{min-height:0;overflow-y:auto;overflow-x:hidden;padding:16px;display:flex;flex-direction:column;gap:4px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
-    .unified-load-older{align-self:center;min-height:34px;padding:6px 12px;border-radius:999px;font-size:12px}
-    .unified-system,.unified-date-divider{align-self:center;max-width:min(86%,640px);padding:6px 11px;border-radius:999px;background:rgba(110,223,246,.1);color:var(--muted);font-size:12px;font-weight:850}
-    .unified-date-divider{margin:12px 0 8px;background:transparent;color:rgba(213,239,245,.62);font-weight:900}
-    .unified-typing-bubble{align-self:flex-start;display:inline-flex;gap:4px;align-items:center;width:auto;padding:9px 12px;border-radius:18px 18px 18px 6px;background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.065));border:1px solid rgba(255,255,255,.1)}
-    .unified-typing-bubble i{width:6px;height:6px;border-radius:999px;background:#b9f7ff;animation:typingDot 1s ease-in-out infinite}.unified-typing-bubble i:nth-child(2){animation-delay:.15s}.unified-typing-bubble i:nth-child(3){animation-delay:.3s}
-    .unified-bubble{position:relative;max-width:min(78%,620px);padding:9px 12px;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(255,255,255,.07);box-shadow:0 14px 42px rgba(0,0,0,.14);animation:msgIn .18s ease-out;overflow-wrap:anywhere;line-height:1.38}
-    .unified-bubble.me{align-self:flex-end;color:#f7fdff;background:linear-gradient(135deg,#1a92ff,#5ed7ff 48%,#80a8ff);border-color:rgba(255,255,255,.12);border-bottom-right-radius:6px}
-    .unified-bubble.me:after{content:"";position:absolute;right:-5px;bottom:-1px;width:14px;height:16px;background:linear-gradient(135deg,#5ed7ff,#80a8ff);border-bottom-left-radius:14px;clip-path:polygon(0 0,100% 100%,0 100%)}
-    .unified-bubble.them{align-self:flex-start;background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.065));border-color:rgba(255,255,255,.1);border-bottom-left-radius:6px}
-    .unified-bubble.them:after{content:"";position:absolute;left:-5px;bottom:-1px;width:14px;height:16px;background:rgba(255,255,255,.075);border-bottom-right-radius:14px;clip-path:polygon(100% 0,100% 100%,0 100%)}
-    .unified-bubble.is-grouped{margin-top:1px}.unified-bubble.is-grouped.me{border-top-right-radius:14px}.unified-bubble.is-grouped.them{border-top-left-radius:14px}
-    .unified-bubble small{display:block;margin-top:4px;opacity:.72;color:inherit;font-size:11px;text-align:right}
-    .unified-bubble.them small{text-align:left;color:rgba(213,239,245,.58)}
-    .unified-bubble-media{display:block;width:min(320px,70vw);max-height:360px;border-radius:14px;object-fit:cover;margin-top:7px;background:#020713}
-    .unified-reply-preview{display:block;margin-bottom:7px;padding:7px 9px;border-left:3px solid rgba(110,223,246,.62);border-radius:10px;background:rgba(5,11,20,.22);font-size:12px;color:inherit;opacity:.86}
-    .unified-bubble video.unified-bubble-media{aspect-ratio:9/16}
-    .unified-file-card{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;padding:10px;border-radius:14px;background:rgba(255,255,255,.08);color:inherit;text-decoration:none}
-    .unified-voice-card{display:grid;grid-template-columns:28px minmax(90px,1fr);gap:8px;align-items:center;margin-top:7px;min-width:min(250px,64vw);padding:8px;border-radius:14px;background:rgba(5,11,20,.22);border:1px solid rgba(255,255,255,.12)}
-    .voice-play{width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:rgba(255,255,255,.18);font-size:12px}.voice-wave{height:26px;border-radius:999px;background:repeating-linear-gradient(90deg,rgba(242,251,255,.85) 0 3px,transparent 3px 9px);mask-image:linear-gradient(90deg,transparent,black 8%,black 92%,transparent);opacity:.78}.unified-voice-card audio{grid-column:1/-1;width:100%;height:32px}
-    .unified-bubble-actions{display:none}
-    .unified-reactions{display:flex;gap:4px;flex-wrap:wrap;margin:4px 8px 2px;max-width:min(78%,620px)}
-    .unified-bubble.me + .unified-reactions{align-self:flex-end;justify-content:flex-end}.unified-bubble.them + .unified-reactions{align-self:flex-start}
-    .unified-reaction-pill{font-size:11px;border-radius:999px;padding:3px 7px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.12);box-shadow:0 8px 18px rgba(0,0,0,.16)}
-    .unified-composer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96);backdrop-filter:blur(18px)}
-    .unified-composer textarea{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:16px;background:#081323;color:var(--text);padding:12px;font:inherit}
-    .unified-attach{width:48px;min-width:48px;padding:0}
-    .unified-media-tray{position:absolute;left:16px;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:20;display:none;gap:8px;padding:10px;border:1px solid rgba(110,223,246,.18);border-radius:18px;background:rgba(7,15,28,.98);box-shadow:0 20px 60px rgba(0,0,0,.42)}
-    .unified-media-tray.is-open{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
-    .unified-media-tray button{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .unified-reply-bar{display:none;grid-column:1/-1;padding:8px 10px;border-radius:12px;background:rgba(110,223,246,.1);color:var(--muted);font-size:13px}
-    .unified-reply-bar.is-on{display:block}
-    .unified-media-preview{display:none;grid-column:1/-1;align-items:center;justify-content:space-between;gap:10px;padding:10px;border-radius:14px;background:rgba(110,223,246,.1);border:1px solid rgba(110,223,246,.18)}
-    .unified-media-preview.is-on{display:flex}
-    .unified-media-preview img,.unified-media-preview video{width:54px;height:54px;border-radius:12px;object-fit:cover;background:#020713}
-    .unified-error{display:none;color:#ffb6b6;background:rgba(255,77,109,.12);border:1px solid rgba(255,77,109,.28);border-radius:14px;padding:10px}
-    .unified-error.is-on{display:block}
-    .unified-upload-progress{display:none;grid-column:1/-1;height:4px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
-    .unified-upload-progress span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan));transition:width .2s ease}
-    .unified-menu-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.46);backdrop-filter:blur(7px)}
-    .unified-menu-backdrop[hidden],.unified-menu[hidden]{display:none}
-    .unified-menu{position:absolute;right:16px;top:58px;z-index:9999;display:grid;gap:6px;min-width:260px;padding:10px;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(8,15,28,.98);box-shadow:0 24px 80px rgba(0,0,0,.48)}
-    .unified-menu button{width:100%;justify-content:flex-start}
-    .unified-menu small{padding:8px 8px 2px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:850}
-    .unified-modal{position:fixed;inset:0;z-index:10000;display:none;place-items:end center;background:rgba(0,0,0,.54);backdrop-filter:blur(9px);padding:16px}
-    .unified-modal.is-open{display:grid}
-    .unified-sheet{width:min(620px,100%);max-height:min(780px,88dvh);overflow:auto;border:1px solid var(--line);border-radius:24px;background:#071321;box-shadow:0 30px 90px rgba(0,0,0,.55);padding:16px;display:grid;gap:12px}
-    .unified-message-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.unified-message-actions button{min-width:0}
-    .unified-selected{display:flex;flex-wrap:wrap;gap:6px}
-    .unified-selected .pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;overflow:hidden}
-    .unified-selected .pill button{min-height:24px;min-width:24px;width:24px;padding:0;border-radius:999px}
-    .unified-room-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-    .unified-camera-preview{width:100%;max-height:54dvh;border-radius:18px;background:#020713;object-fit:cover}
-    .unified-recorder-status{display:flex;align-items:center;gap:8px;color:var(--muted)}
-    .unified-record-dot{width:10px;height:10px;border-radius:999px;background:#ff335f;box-shadow:0 0 18px rgba(255,51,95,.9);animation:msgIn .65s ease-in-out infinite alternate}
-    .unified-back{display:none}
-    .unified-thread-avatar{width:38px;height:38px;flex:0 0 auto;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(110,223,246,.96),rgba(54,229,143,.82));color:#06101b;font-weight:950;box-shadow:0 0 22px rgba(110,223,246,.2)}
-    .unified-thread-copy{min-width:0;display:grid;gap:2px;border:0;background:transparent;color:inherit;padding:0;text-align:left;min-height:0;justify-content:start}.unified-thread-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.unified-thread-status{font-size:12px;color:rgba(213,239,245,.66);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .unified-thread-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
-    .unified-icon-button{width:36px;min-width:36px;height:36px;min-height:36px;padding:0;border-radius:999px;display:grid;place-items:center}
-    @media(max-width:1024px){
-      body:has(.unified-messenger){max-width:100vw;overflow-x:hidden}
-      .unified-messenger,.unified-messenger *{box-sizing:border-box;max-width:100%}
-      .unified-messenger{height:min(78dvh,760px);min-height:560px;border-radius:20px}
-      .unified-messenger-head{padding:calc(10px + env(safe-area-inset-top)) 12px 11px;gap:9px}
-      .unified-messenger-title{gap:8px}.unified-messenger-title h2{font-size:22px;line-height:1.05}.unified-messenger-title p{font-size:13px;line-height:1.28;margin:2px 0 0}
-      .unified-messenger-title .actions{gap:6px;flex-wrap:nowrap}.unified-messenger-title .actions .button,.unified-messenger-title [data-unified-menu-toggle]{min-height:38px;padding:7px 10px;border-radius:12px;font-size:13px}
-      .unified-tabs{display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding-bottom:2px}.unified-tabs::-webkit-scrollbar{display:none}
-      .unified-tabs button{flex:1 0 max(94px,30%);min-height:36px;padding:6px 9px;font-size:13px;border-radius:999px}
-      .unified-messenger-body{grid-template-columns:minmax(240px,300px) minmax(0,1fr)}
-      .unified-sidebar{padding:10px;gap:9px}
-      .unified-sidebar-section{display:none}
-      .unified-search{grid-template-columns:minmax(0,1fr) 72px;gap:6px}.unified-search input{min-height:38px;padding:8px 10px;font-size:13px}.unified-search button{min-height:38px;padding:6px 8px;font-size:12px;border-radius:12px}
-      .unified-row{min-height:62px;padding:9px 10px;border-radius:13px;gap:3px}
-      .unified-row strong{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:1.15;overflow:hidden}.unified-row strong:first-line{min-width:0}
-      .unified-row span{font-size:12px;line-height:1.24;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .unified-row span:nth-of-type(n+3){display:none}
-      .unified-empty{padding:12px;border-radius:14px;font-size:13px;line-height:1.32}
-      .unified-thread-top{padding:10px 12px 8px;gap:7px}.unified-thread-title{gap:7px;min-width:0}.unified-thread-title strong{font-size:16px}.unified-thread-status{font-size:11px}
-      .unified-thread-actions{gap:5px}.unified-icon-button{width:32px;min-width:32px;height:32px;min-height:32px;font-size:12px}
-      .unified-thread{padding:12px;gap:3px}
-      .unified-bubble{font-size:14px;line-height:1.34;padding:8px 10px;border-radius:16px;max-width:min(82%,560px)}
-      .unified-bubble-media{width:min(280px,64vw);max-height:300px;border-radius:12px}
-      .unified-composer{grid-template-columns:40px minmax(0,1fr) 52px;gap:7px;padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
-      .unified-composer textarea{min-height:40px;max-height:88px;border-radius:18px;padding:9px 11px;font-size:14px;line-height:1.24}
-      .unified-composer button{min-height:40px;border-radius:14px;font-size:13px}.unified-attach{width:40px;min-width:40px;font-size:22px}
-      .unified-media-tray{left:10px;right:10px;bottom:calc(62px + env(safe-area-inset-bottom));gap:6px;padding:8px;border-radius:16px}.unified-media-tray.is-open{grid-template-columns:repeat(4,minmax(0,1fr))}.unified-media-tray button{min-height:36px;padding:6px;font-size:12px;border-radius:12px}
-      .messenger-side-tabs,.messenger-mode-rail,.messenger-vertical-tabs,[data-messenger-mode-rail],[data-message-mode-rail]{display:none!important}
-    }
-    @media(max-width:900px){
-      body:has(.unified-messenger){overflow:hidden;background:radial-gradient(circle at 50% -10%,rgba(110,223,246,.2),transparent 22rem),linear-gradient(180deg,#071423,#03070d)}
-      body:has(.unified-messenger) .wrap{padding:0!important;width:100%!important;max-width:100%!important}
-      body:has(.unified-messenger) .layout{display:block}
-      body:has(.unified-messenger) .layout>aside,body:has(.unified-messenger) .wrap>section.card:not(.unified-messenger){display:none}
-      .unified-messenger{position:fixed;inset:0;z-index:210;height:100vh;height:100dvh;min-height:100vh;border-radius:0;border:0;background:linear-gradient(180deg,rgba(8,20,34,.98),rgba(3,8,15,.99));display:grid;grid-template-rows:auto minmax(0,1fr) auto}
-      .unified-messenger-head{padding:calc(10px + env(safe-area-inset-top)) 14px 10px;gap:10px;background:linear-gradient(180deg,rgba(7,17,31,.97),rgba(7,17,31,.86));box-shadow:0 12px 32px rgba(0,0,0,.18)}
-      .unified-messenger-title{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
-      .unified-messenger-title h2{font-size:22px;letter-spacing:-.01em}.unified-messenger-title p{display:none}
-      .unified-messenger-title .actions{display:flex;gap:7px;flex-wrap:nowrap}
-      .unified-messenger-title .actions .button{width:42px;min-width:42px;height:42px;min-height:42px;border-radius:15px;padding:0;font-size:0;background:rgba(255,255,255,.055);border-color:rgba(110,223,246,.18)}
-      .unified-messenger-title .actions .button[href="/pulse"]::before{content:"‹";font-size:24px;line-height:1}
-      .unified-messenger-title [data-unified-menu-toggle]::before{content:"⋯";font-size:25px;line-height:1}
-      .unified-messenger-title h2:after{content:"";display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:999px;background:#35f2a8;box-shadow:0 0 14px rgba(53,242,168,.9)}
-      .unified-tabs{gap:7px;padding:2px;border:1px solid rgba(110,223,246,.14);border-radius:999px;background:rgba(255,255,255,.045)}
-      .unified-tabs button{min-height:38px;border-radius:999px;border:0;background:transparent;font-size:0;padding:0 8px;color:#dffcff}
-      .unified-tabs button::after{font-size:13px;font-weight:950}
-      .unified-tabs [data-tab="chats"]::after{content:"Chats"}
-      .unified-tabs [data-tab="rooms"]::after{content:"Rooms"}
-      .unified-tabs [data-tab="groups"]::after{content:"Groups"}
-      .unified-tabs button.is-active{box-shadow:0 10px 24px rgba(54,229,143,.18)}
-      .unified-messenger-body{min-height:0;grid-template-columns:1fr;background:radial-gradient(circle at 84% 8%,rgba(110,223,246,.08),transparent 16rem)}
-      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-head{display:none}
-      .unified-messenger:has(.unified-thread-pane.is-open){grid-template-rows:minmax(0,1fr) auto}
-      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-body{height:100%;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
-      .unified-messenger:has(.unified-thread-pane.is-open) .unified-composer{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom);z-index:216}
-      .unified-sidebar{padding:10px 12px 18px;border-right:0;gap:9px}
-      .unified-sidebar.is-thread-open{display:none}
-      .unified-search{grid-template-columns:minmax(0,1fr) 44px;gap:7px}.unified-search button{font-size:0;border-radius:14px;padding:0}.unified-search button:before{content:"⌕";font-size:18px}
-      .unified-row{border-radius:18px;padding:12px;background:rgba(255,255,255,.055)}
-      .unified-thread-pane{grid-template-rows:auto auto minmax(0,1fr);min-height:0;background:linear-gradient(180deg,rgba(7,17,31,.38),rgba(2,7,13,.12))}
-      .unified-thread-pane:not(.is-open){display:none}
-      .unified-thread-top{padding:calc(8px + env(safe-area-inset-top)) 10px 8px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(3,10,19,.86);backdrop-filter:blur(12px);box-shadow:0 10px 28px rgba(0,0,0,.2)}
-      .unified-thread-title{display:flex;align-items:center;gap:9px;min-width:0}
-      .unified-back{display:grid;place-items:center;width:36px;min-width:36px;height:36px;min-height:36px;border-radius:999px;padding:0;font-size:23px;background:rgba(255,255,255,.055);border-color:rgba(110,223,246,.13)}
-      .unified-thread-avatar{width:34px;height:34px;border-radius:13px}
-      .unified-thread-copy strong{font-size:16px;line-height:1.1}.unified-thread-status{font-size:11px}
-      .unified-thread-title [data-pin-active-chat],.unified-thread-title [data-thread-mode]{display:none!important}
-      .unified-thread-actions{gap:5px}.unified-icon-button{width:34px;min-width:34px;height:34px;min-height:34px;font-size:13px;background:rgba(255,255,255,.04);border-color:rgba(110,223,246,.13)}
-      .unified-presence{display:none}
-      .unified-room-banner{margin:8px 12px 0;padding:10px 12px;border-radius:16px}
-      .unified-thread{padding:13px 10px 12px;gap:3px;background:transparent}
-      .unified-empty{padding:14px;border-radius:16px}
-      .unified-bubble{max-width:82%;padding:8px 11px;border-radius:17px;font-size:15px;line-height:1.36;box-shadow:0 8px 22px rgba(0,0,0,.16)}
-      .unified-bubble.me{max-width:80%;border-bottom-right-radius:5px}.unified-bubble.them{max-width:80%;border-bottom-left-radius:5px}
-      .unified-bubble small{font-size:10px;margin-top:3px}.unified-date-divider{font-size:11px;margin:10px 0 7px}
-      .unified-bubble-media{width:min(250px,68vw);max-height:300px;border-radius:13px}
-      .unified-file-card{padding:9px;border-radius:13px}
-      .unified-reactions{max-width:80%;margin:2px 8px 4px}
-      .unified-composer{position:relative;grid-template-columns:38px minmax(0,1fr) 48px;gap:7px;padding:8px 10px;background:rgba(1,7,13,.985);backdrop-filter:blur(12px);box-shadow:0 -8px 28px rgba(0,0,0,.22)}
-      .unified-composer textarea{min-height:40px;max-height:104px;border-radius:22px;padding:10px 13px;background:rgba(9,20,34,.92);font-size:15px;line-height:1.25}
-      .unified-composer button{width:48px;min-width:48px;min-height:40px;padding:0;border-radius:18px}
-      .unified-attach{width:38px!important;min-width:38px!important;border-radius:999px!important;font-size:24px;line-height:1}
-      .unified-media-preview,.unified-reply-bar,.unified-upload-progress{grid-column:1/-1}
-      .unified-media-tray button{width:auto!important;min-width:0!important;padding:8px!important}
-      .unified-media-tray{position:fixed;left:10px;right:10px;grid-template-columns:repeat(3,minmax(0,1fr));bottom:calc(72px + env(safe-area-inset-bottom));border-radius:22px}
-      .unified-menu{position:fixed;left:0;right:0;top:auto;bottom:0;width:100%;border-radius:26px 26px 0 0;padding:12px 12px calc(14px + env(safe-area-inset-bottom));animation:unifiedSheetIn .22s cubic-bezier(.18,.9,.2,1)}
-      .unified-menu::before{content:"";display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}
-      .unified-modal{padding:0}
-      .unified-sheet{border-radius:26px 26px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
-      .mobile-bottom-nav,.pulse-fab{display:none!important}
-    }
-    @media(max-width:768px){
-      html,body{max-width:100%;overflow-x:hidden}
-      body:has(.unified-messenger) .wrap,body:has(.unified-messenger) .layout,body:has(.unified-messenger) .layout>div{width:100%!important;max-width:100vw!important;overflow:hidden}
-      .unified-messenger{width:100vw;max-width:100vw;grid-template-rows:auto minmax(0,1fr) auto}
-      .unified-messenger-head{padding:calc(7px + env(safe-area-inset-top)) 10px 8px;gap:7px}
-      .unified-messenger-title h2{font-size:18px;line-height:1}.unified-messenger-title .actions{gap:5px}.unified-messenger-title .actions .button{width:36px;min-width:36px;height:36px;min-height:36px;border-radius:12px}
-      .unified-tabs{gap:5px;padding:2px;max-width:calc(100vw - 20px);overflow-x:auto}
-      .unified-tabs button{flex:0 0 auto;min-width:76px;min-height:32px;padding:4px 9px}
-      .unified-tabs button::after{font-size:12px}
-      .unified-sidebar{padding:8px 9px 12px;gap:7px;max-width:100vw}
-      .unified-search{grid-template-columns:minmax(0,1fr) 38px}.unified-search input{min-height:36px;font-size:13px;border-radius:12px}.unified-search button{min-height:36px;border-radius:12px}
-      .unified-results,.unified-list{gap:6px}
-      .unified-row{min-height:54px;padding:8px 9px;border-radius:12px}
-      .unified-row strong{font-size:13px;line-height:1.12}.unified-row .pill{font-size:10px;padding:2px 5px}.unified-row .unread-badge{min-width:20px;height:20px;font-size:10px}
-      .unified-row span{font-size:11px;line-height:1.22}
-      .unified-thread-top{padding:calc(7px + env(safe-area-inset-top)) 8px 7px}
-      .unified-back{width:32px;min-width:32px;height:32px;min-height:32px;font-size:20px}.unified-thread-avatar{width:30px;height:30px;border-radius:11px;font-size:12px}
-      .unified-thread-copy strong{font-size:14px}.unified-thread-status{font-size:10px}
-      .unified-icon-button{width:30px;min-width:30px;height:30px;min-height:30px}.unified-thread-actions .unified-icon-button:nth-child(2){display:none}
-      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-body{padding-bottom:calc(58px + env(safe-area-inset-bottom))}
-      .unified-thread{padding:9px 8px;gap:2px}
-      .unified-bubble{max-width:84%;font-size:13px;line-height:1.3;padding:7px 9px;border-radius:15px}.unified-bubble.me,.unified-bubble.them{max-width:82%}
-      .unified-bubble small{font-size:9px}.unified-date-divider{font-size:10px;margin:8px 0 5px}
-      .unified-bubble-media{width:min(220px,66vw);max-height:240px}
-      .unified-reactions{max-width:82%;gap:3px}.unified-reaction-pill{font-size:10px;padding:2px 6px}
-      .unified-composer{grid-template-columns:34px minmax(0,1fr) 42px;gap:6px;padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
-      .unified-composer textarea{min-height:34px;max-height:72px;border-radius:17px;padding:8px 10px;font-size:13px;line-height:1.22}
-      .unified-composer button{width:42px;min-width:42px;min-height:34px;border-radius:14px;font-size:12px}.unified-attach{width:34px!important;min-width:34px!important;min-height:34px!important;font-size:20px!important}
-      .unified-media-preview{padding:7px;border-radius:11px;font-size:12px}.unified-media-preview img,.unified-media-preview video{width:40px;height:40px;border-radius:10px}
-      .unified-media-tray{left:8px;right:8px;bottom:calc(54px + env(safe-area-inset-bottom));grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:7px;border-radius:18px}.unified-media-tray.is-open{grid-template-columns:repeat(3,minmax(0,1fr))}.unified-media-tray button{min-height:34px;font-size:11px;padding:5px;border-radius:11px}
-      .unified-menu button,.unified-message-actions button{min-height:38px;font-size:13px}
-    }
-    @keyframes unifiedSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
-    @keyframes msgIn{from{transform:translateY(4px);opacity:.72}to{transform:translateY(0);opacity:1}}
-    @keyframes typingDot{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+    .pulse-dashboard-chat{{height:min(82dvh,820px);min-height:620px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;padding:0;overflow:hidden;border-radius:24px}}
+    .pulse-dashboard-chat *{{box-sizing:border-box;min-width:0}}
+    .pulse-dashboard-chat-head{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 16px 12px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(7,17,31,.94);backdrop-filter:blur(18px)}}
+    .pulse-dashboard-chat-title{{min-width:0}}.pulse-dashboard-chat-title h2{{margin:0;font-size:24px;line-height:1.05}}.pulse-dashboard-chat-title p{{margin:4px 0 0;color:var(--muted);font-size:13px;line-height:1.35}}
+    .pulse-dashboard-chat-tabs{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(5,12,22,.72)}}
+    .pulse-dashboard-chat-tabs button{{min-height:40px;border-radius:999px;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+    .pulse-dashboard-chat-tabs button.is-active{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}
+    .pulse-dashboard-chat-main{{min-height:0;display:grid;grid-template-columns:minmax(270px,360px) minmax(0,1fr);background:radial-gradient(circle at 80% 0,rgba(110,223,246,.08),transparent 26rem)}}
+    .pulse-dashboard-chat-list{{min-height:0;overflow:auto;border-right:1px solid rgba(255,255,255,.08);padding:14px;display:grid;align-content:start;gap:10px}}
+    .pulse-dashboard-chat-search{{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}}.pulse-dashboard-chat-search input{{min-height:40px}}.pulse-dashboard-chat-search button{{min-height:40px}}
+    .pulse-dashboard-chat-section[hidden]{{display:none}}.pulse-dashboard-chat-section{{display:grid;gap:8px}}
+    .pulse-dashboard-row{{width:100%;display:grid;gap:4px;text-align:left;border:1px solid rgba(255,255,255,.08);border-radius:15px;background:rgba(255,255,255,.045);padding:11px 12px;color:var(--text);cursor:pointer}}
+    .pulse-dashboard-row:hover,.pulse-dashboard-row.is-active{{border-color:rgba(110,223,246,.45);background:rgba(110,223,246,.1)}}.pulse-dashboard-row strong{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.pulse-dashboard-row span{{color:var(--muted);font-size:12px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .pulse-dashboard-empty{{border:1px dashed rgba(110,223,246,.24);border-radius:16px;padding:16px;color:var(--muted);text-align:center;background:rgba(255,255,255,.035);line-height:1.38}}
+    .pulse-dashboard-thread-shell{{min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr)}}.pulse-dashboard-thread-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(10,23,40,.88),rgba(7,13,24,.66))}}.pulse-dashboard-thread-head strong{{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.pulse-dashboard-thread-head span{{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .pulse-dashboard-back{{display:none;width:36px;min-width:36px;height:36px;min-height:36px;padding:0;border-radius:999px;font-size:22px}}
+    .pulse-dashboard-thread{{min-height:0;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}}
+    .pulse-dashboard-bubble{{max-width:min(78%,620px);padding:10px 12px;border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.14);overflow-wrap:anywhere;line-height:1.36}}.pulse-dashboard-bubble.me{{align-self:flex-end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.pulse-dashboard-bubble.them{{align-self:flex-start}}.pulse-dashboard-bubble small{{display:block;margin-top:5px;opacity:.72;color:inherit;font-size:11px}}
+    .pulse-dashboard-composer{{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96);backdrop-filter:blur(18px)}}.pulse-dashboard-composer input{{min-height:46px;border-radius:999px}}.pulse-dashboard-composer button{{min-height:46px;border-radius:999px}}
+    .pulse-dashboard-composer[aria-disabled="true"]{{opacity:.68}}.pulse-dashboard-composer[aria-disabled="true"] button{{pointer-events:none;filter:saturate(.45)}}
+    .pulse-dashboard-group-modal{{position:fixed;inset:0;z-index:10000;display:none;place-items:end center;background:rgba(0,0,0,.54);backdrop-filter:blur(8px);padding:16px}}.pulse-dashboard-group-modal.is-open{{display:grid}}.pulse-dashboard-group-sheet{{width:min(620px,100%);max-height:min(760px,88dvh);overflow:auto;border:1px solid var(--line);border-radius:24px;background:#071321;box-shadow:0 30px 90px rgba(0,0,0,.55);padding:16px;display:grid;gap:10px}}
+    @media(max-width:1024px){{.pulse-dashboard-chat{{height:min(78dvh,760px);min-height:560px;border-radius:20px}}.pulse-dashboard-chat-main{{grid-template-columns:minmax(240px,310px) minmax(0,1fr)}}.pulse-dashboard-chat-head{{padding:calc(10px + env(safe-area-inset-top)) 12px 10px}}.pulse-dashboard-chat-title h2{{font-size:22px}}.pulse-dashboard-row{{min-height:60px;padding:9px 10px;border-radius:13px}}.pulse-dashboard-composer{{padding:8px 10px calc(8px + env(safe-area-inset-bottom))}}}}
+    @media(max-width:768px){{body:has(.pulse-dashboard-chat){{overflow:hidden}}body:has(.pulse-dashboard-chat) .wrap{{padding:0!important;width:100%!important;max-width:100vw!important}}body:has(.pulse-dashboard-chat) .layout{{display:block}}body:has(.pulse-dashboard-chat) .layout>aside,body:has(.pulse-dashboard-chat) .wrap>section.card:not(.pulse-dashboard-chat){{display:none}}.pulse-dashboard-chat{{position:fixed;inset:0;z-index:210;width:100vw;max-width:100vw;height:100dvh;min-height:100dvh;border-radius:0;border:0;grid-template-rows:auto auto minmax(0,1fr) auto}}.pulse-dashboard-chat-head{{padding:calc(8px + env(safe-area-inset-top)) 10px 8px}}.pulse-dashboard-chat-title h2{{font-size:18px}}.pulse-dashboard-chat-title p{{display:none}}.pulse-dashboard-chat-head .button{{width:36px;min-width:36px;height:36px;min-height:36px;border-radius:12px;padding:0;font-size:0}}.pulse-dashboard-chat-head .button::before{{content:"‹";font-size:22px}}.pulse-dashboard-chat-tabs{{display:flex;gap:5px;overflow-x:auto;padding:7px 10px;scrollbar-width:none}}.pulse-dashboard-chat-tabs::-webkit-scrollbar{{display:none}}.pulse-dashboard-chat-tabs button{{flex:0 0 auto;min-width:76px;min-height:32px;padding:4px 9px;font-size:12px}}.pulse-dashboard-chat-main{{grid-template-columns:1fr}}.pulse-dashboard-chat-list{{border-right:0;padding:8px 9px 12px;gap:7px}}.pulse-dashboard-chat.is-thread-open .pulse-dashboard-chat-head,.pulse-dashboard-chat.is-thread-open .pulse-dashboard-chat-tabs,.pulse-dashboard-chat.is-thread-open .pulse-dashboard-chat-list{{display:none}}.pulse-dashboard-chat.is-thread-open{{grid-template-rows:minmax(0,1fr) auto}}.pulse-dashboard-chat.is-thread-open .pulse-dashboard-chat-main{{height:100%;padding-bottom:calc(56px + env(safe-area-inset-bottom))}}.pulse-dashboard-chat.is-thread-open .pulse-dashboard-composer{{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom);z-index:216}}.pulse-dashboard-thread-shell:not(.is-open){{display:none}}.pulse-dashboard-thread-head{{padding:calc(7px + env(safe-area-inset-top)) 8px 7px}}.pulse-dashboard-back{{display:grid;place-items:center}}.pulse-dashboard-thread{{padding:9px 8px;gap:5px}}.pulse-dashboard-bubble{{max-width:84%;font-size:13px;line-height:1.3;padding:7px 9px;border-radius:15px}}.pulse-dashboard-composer{{grid-template-columns:minmax(0,1fr) 42px;gap:6px;padding:6px 8px calc(6px + env(safe-area-inset-bottom))}}.pulse-dashboard-composer input{{min-height:34px;border-radius:17px;padding:8px 10px;font-size:13px}}.pulse-dashboard-composer button{{width:42px;min-width:42px;min-height:34px;border-radius:14px;font-size:0}}.pulse-dashboard-composer button::before{{content:"➤";font-size:14px}}.pulse-dashboard-search{{grid-template-columns:minmax(0,1fr) 38px}}.pulse-dashboard-chat-search button{{font-size:0;padding:0}}.pulse-dashboard-chat-search button::before{{content:"⌕";font-size:18px}}.pulse-dashboard-row{{min-height:54px;padding:8px 9px;border-radius:12px}}.pulse-dashboard-row strong{{font-size:13px}}.pulse-dashboard-row span{{font-size:11px}}.mobile-bottom-nav,.pulse-fab{{display:none!important}}}}
     </style>
-    <section class="card unified-messenger" data-unified-messenger data-active-thread="__ACTIVE_THREAD_ID__" data-active-pulse-conversation="__ACTIVE_PULSE_CONVERSATION_ID__" data-current-user="__CURRENT_USER_ID__">
-      <header class="unified-messenger-head">
-        <div class="unified-messenger-title">
-          <div><h2>Pulse Messenger</h2><p class="muted">Secure Pulse conversations, rooms, and group chats in one place.</p></div>
-          <div class="actions"><a class="button" href="/pulse">Pulse</a><button class="button" type="button" data-unified-menu-toggle aria-expanded="false">...</button></div>
-          <div class="unified-menu-backdrop" data-unified-menu-backdrop hidden></div>
-          <div class="unified-menu" data-unified-menu hidden>
-            <button type="button" data-focus-search>New Private Message</button>
-            <button type="button" data-open-group-modal>Create Group Chat</button>
-            <button type="button" data-switch-tab="groups">Group Chats</button>
-            <button type="button" data-switch-tab="rooms">Chat Room</button>
-            <button type="button" data-menu-toast="Message requests are being prepared. Your private conversations are active now.">Message Requests</button>
-            <button type="button" data-menu-toast="Muted chats controls are coming online.">Muted Chats</button>
-            <button type="button" data-menu-toast="Thanks. Use in-chat report controls for urgent safety issues.">Report a Problem</button>
-            <small>Safety & Privacy</small>
-            <button type="button" data-menu-toast="Blocked users management is being prepared inside Safety & Privacy.">Blocked Users</button>
-          </div>
-        </div>
-        <div class="unified-tabs" role="tablist">
-          <button type="button" class="is-active" data-tab="chats">Conversations</button>
-          <button type="button" data-tab="rooms">Chat Room</button>
-          <button type="button" data-tab="groups">Group Chat</button>
-        </div>
+    <section class="card pulse-dashboard-chat" data-dashboard-chat data-active-id="{restored_active_id}">
+      <header class="pulse-dashboard-chat-head">
+        <div class="pulse-dashboard-chat-title"><h2>Pulse Messenger</h2><p>Restored on the stable Dashboard chat foundation.</p></div>
+        <a class="button" href="/pulse">Pulse</a>
       </header>
-      <div class="unified-messenger-body">
-        <aside class="unified-sidebar" data-unified-sidebar>
-          <form class="unified-search" data-unified-search-form>
-            <input name="q" placeholder="Search by name or public Pulse ID" autocomplete="off">
-            <button class="primary" type="submit">Search</button>
-          </form>
-          <div class="unified-results" data-unified-search-results></div>
-          <div class="unified-panel" data-panel="chats"><div class="unified-list" data-unified-conversations><div class="unified-empty">Loading conversations...</div></div></div>
-          <div class="unified-panel" data-panel="rooms" hidden><div class="unified-list" data-unified-rooms><div class="unified-empty">Loading chat rooms...</div></div></div>
-          <div class="unified-panel" data-panel="groups" hidden><button class="primary" type="button" data-open-group-modal>Create Group Chat</button><div class="unified-list" data-unified-groups><div class="unified-empty">Loading group chats...</div></div></div>
-          <div class="unified-sidebar-section">
-            <h3>Room Energy</h3>
-            <div class="unified-list" data-smart-rooms><div class="unified-empty">Open a room to see live energy.</div></div>
-          </div>
+      <nav class="pulse-dashboard-chat-tabs" role="tablist">
+        <button class="is-active" type="button" data-chat-tab="direct">Conversations</button>
+        <button type="button" data-chat-tab="rooms">Chat Room</button>
+        <button type="button" data-chat-tab="groups">Group Chat</button>
+      </nav>
+      <div class="pulse-dashboard-chat-main">
+        <aside class="pulse-dashboard-chat-list">
+          <section class="pulse-dashboard-chat-section" data-panel="direct">
+            <form class="pulse-dashboard-chat-search" data-chat-start-form>
+              <input name="query" type="text" placeholder="Search by name or public Pulse ID" maxlength="160" autocomplete="off">
+              <button class="primary" type="submit">Start</button>
+            </form>
+            <p class="muted" data-chat-start-message></p>
+            <div class="pulse-dashboard-empty">Loading conversations...</div>
+            <div data-chat-conversations></div>
+          </section>
+          <section class="pulse-dashboard-chat-section" data-panel="rooms" hidden>
+            <div class="pulse-dashboard-empty">Loading chat rooms...</div>
+            <div data-chat-rooms></div>
+          </section>
+          <section class="pulse-dashboard-chat-section" data-panel="groups" hidden>
+            <button class="primary" type="button" data-chat-create-group>Create Group Chat</button>
+            <div class="pulse-dashboard-empty">Loading group chats...</div>
+            <div data-chat-groups></div>
+          </section>
         </aside>
-        <main class="unified-thread-pane" data-unified-thread-pane>
-          <div class="unified-thread-top">
-            <div class="unified-thread-title">
-              <button class="unified-back" type="button" data-mobile-chat-back aria-label="Back to chats">‹</button>
-              <button class="unified-thread-avatar" type="button" data-thread-info data-thread-avatar aria-label="Open chat info">PM</button>
-              <button class="unified-thread-copy" type="button" data-thread-info><strong data-thread-title>Choose a chat</strong><span class="unified-thread-status" data-thread-status>Open a room or chat to see live presence.</span></button>
-              <span class="unified-thread-actions"><button class="unified-icon-button" type="button" data-thread-call="voice" aria-label="Voice call">☎</button><button class="unified-icon-button" type="button" data-thread-call="video" aria-label="Video call">◉</button><button class="unified-icon-button" type="button" data-thread-options aria-label="Chat options">⋯</button><button type="button" data-pin-active-chat hidden>Pin</button> <span class="pill" data-thread-mode>Idle</span></span>
-            </div>
-            <div class="unified-presence" data-presence><span class="presence-dot"></span><span>Open a room or chat to see live presence.</span></div>
+        <main class="pulse-dashboard-thread-shell" data-thread-shell>
+          <div class="pulse-dashboard-thread-head">
+            <button class="pulse-dashboard-back" type="button" data-chat-back aria-label="Back to chats">‹</button>
+            <div><strong data-thread-title>Choose a chat</strong><span data-thread-subtitle>Messages load through the stable Dashboard chat pipeline.</span></div>
+            <span class="pill" data-thread-mode>Idle</span>
           </div>
-          <div class="unified-room-banner" data-room-banner hidden>
-            <strong><span data-room-topic>Room intelligence</span><span class="pill" data-room-energy>Pulse 0%</span></strong>
-            <p class="muted" data-room-summary>AI room summary appears after activity starts.</p>
-            <div class="unified-room-chips" data-room-chips></div>
-          </div>
-          <div class="unified-thread" data-unified-thread><div class="unified-empty">Choose a conversation to start messaging.</div></div>
+          <section class="pulse-dashboard-thread" data-chat-thread><div class="pulse-dashboard-empty">Choose a conversation, room, or group to start messaging.</div></section>
         </main>
       </div>
-      <form class="unified-composer" data-unified-send-form>
-        <button class="unified-attach" type="button" data-toggle-media-tray aria-label="Attach media">+</button>
-        <div class="unified-reply-bar" data-reply-bar></div>
-        <div class="unified-media-preview" data-media-preview></div>
-        <div class="unified-upload-progress" data-upload-progress><span></span></div>
-        <textarea name="message" placeholder="Write a message..." autocomplete="off"></textarea>
-        <button class="primary" type="submit">Send</button>
-        <div class="unified-media-tray" data-media-tray>
-          <button type="button" data-upload-kind="image">Image</button>
-          <button type="button" data-upload-kind="video">Video</button>
-          <button type="button" data-upload-kind="gif">GIF</button>
-          <button type="button" data-upload-kind="voice">Voice</button>
-          <button type="button" data-upload-kind="file">File</button>
-          <button type="button" data-upload-kind="camera">Camera</button>
-          <button type="button" data-upload-kind="record">Record Video</button>
-        </div>
-        <input type="file" data-message-file hidden accept="image/*,video/mp4,video/webm,audio/*,.pdf,.txt,.doc,.docx,.zip">
+      <form class="pulse-dashboard-composer" data-chat-send-form aria-disabled="true">
+        <input name="body" placeholder="Choose a chat first." maxlength="2000" autocomplete="off" disabled>
+        <button class="primary" type="submit" disabled>Send</button>
       </form>
     </section>
-    <section class="unified-modal" data-group-modal aria-hidden="true">
-      <div class="unified-sheet" role="dialog" aria-modal="true" aria-label="Create Group Chat">
-        <h2>Create Group Chat</h2>
-        <input data-group-title placeholder="Group chat name">
-        <textarea data-group-description placeholder="Description optional"></textarea>
-        <form class="unified-search" data-group-search-form>
-          <input name="q" placeholder="Add people by name or public Pulse ID" autocomplete="off">
-          <button type="submit">Search</button>
+    <section class="pulse-dashboard-group-modal" data-create-group-modal aria-hidden="true">
+      <div class="pulse-dashboard-group-sheet" role="dialog" aria-modal="true" aria-label="Create Group Chat">
+        <form data-create-group-form>
+          <h2>Create Group Chat</h2>
+          <input name="title" placeholder="Group chat name" maxlength="140" required>
+          <textarea name="description" placeholder="Description optional" maxlength="500"></textarea>
+          <select name="privacy"><option value="private">Private</option><option value="invite_only">Invite Only</option><option value="community">Community</option></select>
+          <p class="muted">This uses the existing Pulse group chat backend and opens in the restored chat view.</p>
+          <div class="actions"><button type="button" data-create-group-cancel>Cancel</button><button class="primary" type="submit">Create Group Chat</button></div>
+          <p class="muted" data-create-group-message></p>
         </form>
-        <div class="unified-results" data-group-search-results></div>
-        <div class="unified-selected" data-group-selected><span class="muted">No members selected yet.</span></div>
-        <div class="unified-error" data-group-create-error></div>
-        <div class="actions"><button type="button" data-close-group-modal>Cancel</button><button class="primary" type="button" data-create-group-chat>Create Group Chat</button></div>
       </div>
     </section>
-    <section class="unified-modal" data-gif-modal aria-hidden="true">
-      <div class="unified-sheet" role="dialog" aria-modal="true" aria-label="GIF Picker">
-        <h2>GIFs</h2>
-        <input data-gif-search placeholder="Search GIFs">
-	        <div class="unified-results" data-gif-results>
-	          <div class="unified-empty">Searchable GIF providers can plug in here. Upload a GIF below to send one now.</div>
-	        </div>
-        <label>Upload GIF fallback<input type="file" data-gif-file accept="image/gif"></label>
-        <div class="actions"><button type="button" data-close-gif-modal>Cancel</button></div>
-      </div>
-    </section>
-    <section class="unified-modal" data-capture-modal aria-hidden="true">
-      <div class="unified-sheet" role="dialog" aria-modal="true" aria-label="Camera">
-        <h2 data-capture-title>Camera</h2>
-        <video class="unified-camera-preview" data-capture-video autoplay playsinline muted></video>
-        <div class="unified-recorder-status" data-capture-status><span class="unified-record-dot"></span><span>Camera ready.</span></div>
-        <div class="actions">
-          <button type="button" data-capture-close>Cancel</button>
-          <button type="button" data-capture-retake hidden>Retake</button>
-          <button type="button" data-capture-shot>Take Photo</button>
-          <button class="primary" type="button" data-capture-use hidden>Use Media</button>
-        </div>
-      </div>
-    </section>
-    <section class="unified-modal" data-message-actions-modal aria-hidden="true">
-      <div class="unified-sheet" role="dialog" aria-modal="true" aria-label="Message Actions">
-        <h2>Message</h2>
-        <div class="unified-message-actions">
-          <button type="button" data-sheet-reaction="🔥">🔥 Fire</button>
-          <button type="button" data-sheet-reaction="👍">👍 Like</button>
-          <button type="button" data-sheet-reaction="💡">💡 Smart</button>
-          <button type="button" data-sheet-reply>Reply</button>
-          <button type="button" data-sheet-report>Report</button>
-          <button type="button" data-sheet-delete>Delete</button>
-        </div>
-        <button type="button" data-close-message-actions>Close</button>
-      </div>
-    </section>
-    <section class="unified-modal" data-thread-actions-modal aria-hidden="true">
-      <div class="unified-sheet" role="dialog" aria-modal="true" aria-label="Chat Actions">
-        <h2 data-thread-sheet-title>Chat options</h2>
-        <p class="muted" data-thread-sheet-copy>Choose an action for this conversation.</p>
-        <div class="unified-message-actions">
-          <button type="button" data-thread-sheet-action="info">View Profile / Group Info</button>
-          <button type="button" data-thread-sheet-action="search">Search Conversation</button>
-          <button type="button" data-thread-sheet-action="mute">Mute</button>
-          <button type="button" data-thread-sheet-action="media">Media, Links, Files</button>
-          <button type="button" data-thread-sheet-action="report">Report</button>
-          <button type="button" data-thread-sheet-action="block">Block / Leave</button>
-        </div>
-        <button type="button" data-close-thread-actions>Close</button>
-      </div>
-    </section>
-    """.replace("__ACTIVE_THREAD_ID__", str(active_thread_id)).replace("__ACTIVE_PULSE_CONVERSATION_ID__", str(active_pulse_conversation_id)).replace("__CURRENT_USER_ID__", str(int(user["user_id"])))
+    """
     script = """
     (() => {
-      const root = document.querySelector("[data-unified-messenger]");
+      const root = document.querySelector("[data-dashboard-chat]");
       if (!root) return;
-	      const state = { mode: "direct", activeThread: Number(root.dataset.activeThread || 0), activePulseConversation: Number(root.dataset.activePulseConversation || 0), activeRoomId: "", currentUserId: Number(root.dataset.currentUser || 0), lastMessageId: 0, polling: false, selectedMembers: new Map(), replyToId: 0, typingTimer: null, live: null, liveBackoff: 0, mediaDraft: null, creatingGroup: false, captureStream: null, captureRecorder: null, captureChunks: [], captureMode: "photo", capturedBlob: null, voiceRecorder: null, voiceStream: null, voiceChunks: [], selectedMessageId: "", pendingFlush: false, pendingRetryTimer: 0, offline: !navigator.onLine };
-      const pendingKey = "pulseMessengerPendingV2";
-      const draftsKey = "pulseMessengerDraftsV2";
-      const cacheKey = name => "pulseMessengerCacheV2:" + name;
-      const safeJson = (value, fallback) => { try { return JSON.parse(value || ""); } catch (error) { return fallback; } };
-      const readPending = () => safeJson(localStorage.getItem(pendingKey), []);
-      const writePending = items => localStorage.setItem(pendingKey, JSON.stringify((items || []).slice(-60)));
-      const cacheList = (name, data) => { try { localStorage.setItem(cacheKey(name), JSON.stringify({ at: Date.now(), data })); window.PulseChatRecovery?.saveList(name, data); } catch (error) {} };
-      const readCachedList = name => {
-        const recovered = window.PulseChatRecovery?.loadList(name);
-        if (recovered) return recovered;
-        const cached = safeJson(localStorage.getItem(cacheKey(name)), null);
-        if (!cached || Date.now() - Number(cached.at || 0) > 120000) return null;
-        return cached.data || null;
-      };
-      const saveDraft = () => {
-        try {
-          const textarea = document.querySelector("[data-unified-send-form] textarea");
-          const drafts = safeJson(localStorage.getItem(draftsKey), {});
-          if (state.activePulseConversation && textarea) drafts[String(state.activePulseConversation)] = textarea.value || "";
-          localStorage.setItem(draftsKey, JSON.stringify(drafts));
-        } catch (error) {}
-      };
-      const restoreDraft = () => {
-        try {
-          const textarea = document.querySelector("[data-unified-send-form] textarea");
-          const drafts = safeJson(localStorage.getItem(draftsKey), {});
-          if (state.activePulseConversation && textarea && !textarea.value) textarea.value = drafts[String(state.activePulseConversation)] || "";
-        } catch (error) {}
-      };
-      const setNetworkStatus = (mode, copy) => {
-        const bar = document.querySelector("[data-presence]");
-        const messages = { reconnecting: "Reconnecting securely…", offline: "Offline temporarily. Messages will send when you are back online.", syncing: "Loading conversation…", retrying: "Retrying connection…" };
-        if (bar) bar.innerHTML = `<span class="presence-dot"></span><span>${esc(copy || messages[mode] || "Loading conversation…")}</span>`;
-      };
-      const esc = value => String(value || "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
-      const chatDebug = (label, detail = {}) => {
-        const payload = {
-          label,
-          user_id: state.currentUserId,
-          selected_tab: state.mode,
-          conversation_id: state.activePulseConversation,
-          room_id: state.activeRoomId,
-          group_id: state.mode === "group" ? state.activePulseConversation : 0,
-          online: navigator.onLine,
-          ...detail
-        };
-        console.info("[PulseMessenger]", payload);
-        return payload;
-      };
-      async function chatFetchJson(endpointName, url, options = {}) {
-        const started = performance.now();
-        const response = await fetch(url, { cache: "no-store", credentials: "same-origin", ...options });
-        const responseBody = await response.text();
-        let data = {};
-        try { data = JSON.parse(responseBody || "{}"); }
-        catch (error) { data = { ok: false, message: responseBody || "Server returned an unreadable response.", parse_error: error.message }; }
-        const detail = { endpoint: endpointName, url, status: response.status, response_body: responseBody.slice(0, 900), trace_id: data.trace_id || "", latency_ms: Math.round(performance.now() - started) };
-        if (!response.ok || data.ok === false) {
-          console.error("[PulseMessenger] request failed", detail);
-          const error = new Error(`${data.message || `${endpointName} failed.`}${data.trace_id ? " Trace " + data.trace_id : ""}`);
-          error.detail = detail;
-          error.status = response.status;
-          error.response = data;
-          throw error;
-        }
-        chatDebug("request ok", detail);
-        return data;
-      }
-      function normalizeMessageResponse(data) {
-        const conversation = data.conversation || {};
-        const type = conversation.conversation_type || data.conversation_type || state.mode || "direct";
-        return {
-          conversation_id: Number(data.conversation_id || conversation.conversation_id || conversation.id || state.activePulseConversation || 0),
-          conversation,
-          messages: data.messages || data.items || [],
-          pinned_notice: data.pinned_notice || conversation.pinned_notice || "",
-          conversation_type: type
-        };
-      }
-      async function loadConversationMessages(conversationId, modeOverride = "") {
-        if (!Number(conversationId || 0)) throw new Error("No conversation selected.");
-        const data = await chatFetchJson("loadConversationMessages", `/api/pulse/messages/${Number(conversationId)}/messages?limit=80`);
-        const normalized = normalizeMessageResponse(data);
-        if (modeOverride) normalized.conversation_type = modeOverride;
-        return normalized;
-      }
-      async function loadRoomMessages(roomId) {
-        if (!roomId) throw new Error("No room selected.");
-        const data = await chatFetchJson("loadRoomMessages", `/api/pulse/chatrooms/${encodeURIComponent(roomId)}/messages?limit=80`);
-        const normalized = normalizeMessageResponse(data);
-        normalized.conversation_type = "room";
-        return normalized;
-      }
-      async function loadGroupMessages(conversationId) {
-        const normalized = await loadConversationMessages(conversationId, "group");
-        normalized.conversation_type = "group";
-        return normalized;
-      }
-      async function retryMessageLoad() {
-        if (state.mode === "room" && state.activeRoomId) return openPulseConversation(state.activePulseConversation, state.activeRoomId, "room");
-        if (state.mode === "group" && state.activePulseConversation) return openPulseConversation(state.activePulseConversation, "", "group");
-        if (state.activePulseConversation) return openPulseConversation(state.activePulseConversation, "", "direct");
-      }
-      async function fallbackPollMessages() {
-        return pollThread(true);
-      }
-      const friendlyTime = value => {
+      const qs = selector => root.querySelector(selector) || document.querySelector(selector);
+      const escapeHtml = value => String(value || "").replace(/[&<>"']/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
+      const postJson = (url, payload = {}) => fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", cache:"no-store", body:JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed."); return j; }));
+      const state = { activeConversationId:Number(root.dataset.activeId || 0), activeKind:"", currentUserId:0, lastMessageId:0, polling:false };
+      function friendlyTime(value) {
         if (!value) return "";
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return "";
@@ -21988,1140 +21606,232 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const hours = Math.floor(minutes / 60);
         if (hours < 24) return hours + "h ago";
         return Math.floor(hours / 24) + "d ago";
-      };
-      const dividerLabel = value => {
-        const date = value ? new Date(value) : new Date();
-        if (Number.isNaN(date.getTime())) return "";
-        const today = new Date();
-        const yesterday = new Date();
-        yesterday.setDate(today.getDate() - 1);
-        const sameDay = (a,b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-        const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        if (sameDay(date, today)) return `Today ${time}`;
-        if (sameDay(date, yesterday)) return `Yesterday ${time}`;
-        return `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
-      };
-      const dateKey = value => {
-        const date = value ? new Date(value) : new Date();
-        if (Number.isNaN(date.getTime())) return "";
-        return `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
-      };
-      const showMenu = open => {
-        document.querySelector("[data-unified-menu]").hidden = !open;
-        document.querySelector("[data-unified-menu-backdrop]").hidden = !open;
-        document.querySelector("[data-unified-menu-toggle]").setAttribute("aria-expanded", open ? "true" : "false");
-      };
-      const showMessageActions = (messageId, open = true) => {
-        state.selectedMessageId = open ? String(messageId || "") : "";
-        const modal = document.querySelector("[data-message-actions-modal]");
-        if (!modal) return;
-        modal.classList.toggle("is-open", open);
-        modal.setAttribute("aria-hidden", open ? "false" : "true");
-      };
-      const showThreadActions = (kind = "options", open = true) => {
-        const modal = document.querySelector("[data-thread-actions-modal]");
-        if (!modal) return;
-        const title = document.querySelector("[data-thread-title]")?.textContent || "this chat";
-        const sheetTitle = modal.querySelector("[data-thread-sheet-title]");
-        const copy = modal.querySelector("[data-thread-sheet-copy]");
-        if (kind === "voice") {
-          sheetTitle.textContent = "Voice calling";
-          copy.textContent = "Voice calls are being connected to Pulse realtime. This chat is ready for messaging now.";
-        } else if (kind === "video") {
-          sheetTitle.textContent = "Video calling";
-          copy.textContent = "Video calls are being prepared for this Pulse conversation. You can keep chatting securely here.";
-        } else if (kind === "info") {
-          sheetTitle.textContent = title;
-          copy.textContent = state.mode === "group" ? "Group info, members, media, mute, and safety controls." : state.mode === "room" ? "Room info, topic, moderators, media, and report tools." : "Profile preview, media, search, mute, report, and block tools.";
-        } else {
-          sheetTitle.textContent = "Chat options";
-          copy.textContent = "Manage " + title + " without leaving Messenger.";
-        }
-        modal.classList.toggle("is-open", open);
-        modal.setAttribute("aria-hidden", open ? "false" : "true");
-      };
-      const clearThread = message => {
-        state.activeThread = 0;
-        state.activePulseConversation = 0;
-        state.activeRoomId = "";
-        state.lastMessageId = 0;
-        state.mediaDraft = null;
-        state.replyToId = 0;
-        document.querySelector("[data-unified-sidebar]").classList.remove("is-thread-open");
-        document.querySelector("[data-unified-thread-pane]").classList.remove("is-open");
-        document.querySelector("[data-unified-thread]").innerHTML = `<div class="unified-empty">${esc(message || "Choose a chat first.")}</div>`;
-        document.querySelector("[data-media-preview]").classList.remove("is-on");
-        document.querySelector("[data-media-preview]").innerHTML = "";
-        document.querySelector("[data-reply-bar]").classList.remove("is-on");
-        renderPresence(null);
-      };
-      const setTab = tab => {
-        document.querySelectorAll("[data-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.tab === tab));
-        document.querySelectorAll("[data-panel]").forEach(panel => panel.hidden = panel.dataset.panel !== tab);
-        const hint = tab === "rooms" ? "Choose a room to start chatting." : tab === "groups" ? "Choose a group chat or create one." : "Choose a private conversation.";
-        clearThread(hint);
-        setThreadChrome(tab === "rooms" ? "Chat Rooms" : tab === "groups" ? "Group Chats" : "Conversations", tab === "rooms" ? "Rooms" : tab === "groups" ? "Groups" : "Direct");
-        setComposerEnabled(false, tab);
+      }
+      function setTab(tab) {
+        root.querySelectorAll("[data-chat-tab]").forEach(button => button.classList.toggle("is-active", button.dataset.chatTab === tab));
+        root.querySelectorAll("[data-panel]").forEach(panel => panel.hidden = panel.dataset.panel !== tab);
+        if (tab === "direct") loadConversations();
         if (tab === "rooms") loadRooms();
-        else if (tab === "groups") loadGroups();
-        else loadThreads();
-      };
-      const mediaMarkup = message => {
-        const url = message.media_url || "";
-        const thumb = message.thumbnail_url || url;
-        const type = message.message_type || message.type || "text";
-        if (!url) return "";
-        if (type === "video") return `<video class="unified-bubble-media" controls playsinline preload="metadata" poster="${esc(thumb)}"><source src="${esc(url)}"></video>`;
-        if (type === "voice" || type === "audio") return `<div class="unified-voice-card"><span class="voice-play">▶</span><span class="voice-wave"></span><audio controls preload="metadata" src="${esc(url)}"></audio></div>`;
-        if (type === "file") return `<a class="unified-file-card" href="${esc(url)}" download><span>Attachment</span><span>Open</span></a>`;
-        if (type === "link" || type.endsWith("_share")) return `<a class="unified-file-card" href="${esc(url)}"><span>${esc(message.body || message.content || "Shared from Pulse")}</span><span>Open</span></a>`;
-        return `<img class="unified-bubble-media" src="${esc(thumb)}" alt="Message media" loading="lazy">`;
-      };
-      const reactionMarkup = reactions => {
-        const entries = Object.entries(reactions || {}).filter(([,count]) => Number(count || 0) > 0);
-        if (!entries.length) return "";
-        return `<div class="unified-reactions">${entries.map(([type,count]) => `<span class="unified-reaction-pill">${esc(type)} ${Number(count||0)}</span>`).join("")}</div>`;
-      };
-      const setTypingBubble = active => {
-        const thread = document.querySelector("[data-unified-thread]");
-        const existing = thread?.querySelector("[data-typing-bubble]");
-        if (!thread) return;
-        if (!active) { existing?.remove(); return; }
-        if (!existing) thread.insertAdjacentHTML("beforeend", '<div class="unified-typing-bubble" data-typing-bubble aria-label="Someone is typing"><i></i><i></i><i></i></div>');
+        if (tab === "groups") loadGroups();
+      }
+      function setComposer(enabled) {
+        const form = qs("[data-chat-send-form]");
+        form.setAttribute("aria-disabled", enabled ? "false" : "true");
+        form.body.disabled = !enabled;
+        form.querySelector("button").disabled = !enabled;
+        form.body.placeholder = enabled ? "Type a message..." : "Choose a chat first.";
+      }
+      function setThreadChrome(title, subtitle, mode) {
+        qs("[data-thread-title]").textContent = title || "Pulse chat";
+        qs("[data-thread-subtitle]").textContent = subtitle || "Ready.";
+        qs("[data-thread-mode]").textContent = mode || "Chat";
+      }
+      function rowHtml(item, kind) {
+        const id = item.conversation_id || item.thread_id || item.id || "";
+        const title = item.title || item.name || "Pulse chat";
+        const latest = item.latest_message || item.last_message || item.description || item.pinned_notice || "No messages yet.";
+        const meta = kind === "room" ? `${Number(item.online_count || 0)} online` : kind === "group" ? `${Number(item.member_count || 0)} members` : "Direct";
+        return `<button class="pulse-dashboard-row" type="button" data-open-chat="${escapeHtml(id)}" data-open-kind="${escapeHtml(kind)}" data-room-id="${escapeHtml(item.room_id || item.key || item.id || "")}"><strong>${escapeHtml(title)}${Number(item.unread_count || 0) ? ` <span class="pill">${Number(item.unread_count || 0)}</span>` : ""}</strong><span>${escapeHtml(latest)}</span><span>${escapeHtml(meta)} ${friendlyTime(item.last_message_at || item.updated_at)}</span></button>`;
+      }
+      function chatMessageHtml(message, optimistic = false) {
+        const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_id || message.sender_user_id || 0) === Number(state.currentUserId || 0);
+        const id = message.message_id || message.id || "";
+        return `<div class="pulse-dashboard-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><div>${escapeHtml(message.body || message.content || "")}</div><small>${optimistic ? "sending..." : `${friendlyTime(message.created_at)} · ${escapeHtml(message.delivery_status || message.status || "delivered")}`}</small></div>`;
+      }
+      function renderMessages(messages) {
+        const thread = qs("[data-chat-thread]");
+        thread.innerHTML = (messages || []).map(message => chatMessageHtml(message)).join("") || '<div class="pulse-dashboard-empty">No messages yet. Send the first one.</div>';
+        state.lastMessageId = Math.max(0, ...(messages || []).map(message => Number(message.message_id || message.id || 0)));
         thread.scrollTop = thread.scrollHeight;
-      };
-      const bubble = (message, previous = null) => {
-        if (message.status === "system" || message.message_type === "system") return `<div class="unified-system">${esc(message.body || message.content || "Pulse update")}</div>`;
-        const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_user_id || message.sender_id || 0) === Number(state.currentUserId);
-        const body = esc(message.body || message.content || "");
-        const id = esc(message.message_id || message.id || "");
-        const previousSender = previous ? Number(previous.sender_user_id || previous.sender_id || 0) : 0;
-        const senderId = Number(message.sender_user_id || message.sender_id || 0);
-        const grouped = previous && previousSender === senderId && dateKey(previous.created_at) === dateKey(message.created_at);
-        const reply = message.reply_to ? `<button type="button" class="unified-reply-preview" data-jump-message="${esc(message.reply_to.id || "")}"><strong>${esc(message.reply_to.sender_name || "Reply")}</strong><br>${esc(message.reply_to.body || "Media message")}</button>` : "";
-        const status = mine ? (message.delivery_status || message.status || "sent") : "";
-        const meta = mine ? status : friendlyTime(message.created_at);
-        return `<div class="unified-bubble ${mine ? "me" : "them"} ${grouped ? "is-grouped" : ""}" data-message-id="${id}" data-message-actions="${id}" tabindex="0">
-          ${reply}
-          ${body ? `<div>${body}</div>` : ""}
-          ${mediaMarkup(message)}
-          <small>${esc(meta)}</small>
-        </div>${reactionMarkup(message.reactions)}`;
-      };
-      const renderMessages = messages => {
-        const thread = document.querySelector("[data-unified-thread]");
-        let lastDay = "";
-        let previous = null;
-        const body = (messages || []).map(message => {
-          const key = dateKey(message.created_at);
-          const divider = key && key !== lastDay ? `<div class="unified-date-divider" data-date-divider="${esc(key)}">${esc(dividerLabel(message.created_at))}</div>` : "";
-          if (key) lastDay = key;
-          const html = divider + bubble(message, previous);
-          previous = message;
-          return html;
-        }).join("") || '<div class="unified-empty">No messages yet. Send the first one.</div>';
-	        const older = (messages || []).length >= 300 ? '<button type="button" class="unified-load-older" data-load-older>Load older messages</button>' : "";
-        thread.innerHTML = `${older}${body}`;
-        if (state.activePulseConversation) window.PulseChatRecovery?.saveThread(state.activePulseConversation, messages || []);
-        state.lastMessageId = Math.max(0, ...(messages || []).map(m => Number(m.message_id || m.id || 0) || 0));
-        thread.scrollTop = thread.scrollHeight;
-      };
-      const appendMessages = messages => {
-        const thread = document.querySelector("[data-unified-thread]");
-        const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96;
+      }
+      function appendMessages(messages) {
+        const thread = qs("[data-chat-thread]");
         const seen = new Set([...thread.querySelectorAll("[data-message-id]")].map(node => node.dataset.messageId));
         (messages || []).forEach(message => {
           const id = String(message.message_id || message.id || "");
           if (id && seen.has(id)) return;
-          const last = thread.querySelector(".unified-bubble:last-of-type");
-          const previous = last ? { sender_user_id: last.classList.contains("me") ? state.currentUserId : -1, created_at: message.created_at } : null;
-          const key = dateKey(message.created_at);
-          const lastDivider = thread.querySelector(".unified-date-divider:last-of-type");
-          const needsDivider = key && (!lastDivider || lastDivider.dataset.dateDivider !== key);
-          thread.insertAdjacentHTML("beforeend", `${needsDivider ? `<div class="unified-date-divider" data-date-divider="${esc(key)}">${esc(dividerLabel(message.created_at))}</div>` : ""}${bubble(message, previous)}`);
-          const numericId = Number(message.message_id || message.id || 0);
-          if (Number.isFinite(numericId)) state.lastMessageId = Math.max(state.lastMessageId, numericId);
+          thread.insertAdjacentHTML("beforeend", chatMessageHtml(message));
+          state.lastMessageId = Math.max(state.lastMessageId, Number(message.message_id || message.id || 0));
         });
-        if ((messages || []).length && nearBottom) thread.scrollTop = thread.scrollHeight;
-      };
-      const setComposerEnabled = (enabled, mode = state.mode) => {
-        const form = document.querySelector("[data-unified-send-form]");
-        form.message.disabled = !enabled;
-        form.querySelector('[type="submit"]').disabled = !enabled;
-        form.querySelector("[data-toggle-media-tray]").disabled = !enabled;
-        const label = mode === "room" ? "Choose a room first." : mode === "group" ? "Choose a group chat first." : "Choose a chat first.";
-        form.message.placeholder = enabled ? (mode === "room" && state.activeRoomId ? `Message ${state.activeRoomName || "this room"}...` : "Write a message...") : label;
-      };
-      const setThreadChrome = (title, mode) => {
-        const cleanTitle = title || "Pulse Messenger";
-        const cleanMode = mode || "Live";
-        document.querySelector("[data-thread-title]").textContent = cleanTitle;
-        document.querySelector("[data-thread-mode]").textContent = cleanMode;
-        document.querySelector("[data-thread-avatar]").textContent = (cleanTitle.trim()[0] || "P").toUpperCase();
-        const statusText = cleanMode === "Room" ? "Live room • active now" : cleanMode === "Group" ? "Group chat • recently active" : cleanMode === "Direct" ? "recently active" : "secure Pulse chat";
-        document.querySelector("[data-thread-status]").textContent = statusText;
-        document.querySelector("[data-pin-active-chat]").hidden = !state.activePulseConversation;
-      };
-      const closeCapture = () => {
-        state.captureRecorder = null;
-        state.captureChunks = [];
-        state.captureStream?.getTracks?.().forEach(track => track.stop());
-        state.captureStream = null;
-        document.querySelector("[data-capture-modal]").classList.remove("is-open");
-        document.querySelector("[data-capture-modal]").setAttribute("aria-hidden", "true");
-      };
-	      const uploadBlobDraft = async (blob, fileName, kind) => {
-        const progress = document.querySelector("[data-upload-progress]");
-        const bar = progress.querySelector("span");
-        progress.style.display = "block";
-        bar.style.width = "18%";
-        const fd = new FormData();
-        fd.append("file", blob, fileName);
-        fd.append("conversation_id", state.activePulseConversation || 0);
-        if (kind === "voice") fd.append("voice", "1");
-        const response = await fetch("/api/pulse/messages/media/upload", { method: "POST", credentials: "same-origin", body: fd });
-        const responseText = await response.text();
-        let data = {};
-        try { data = JSON.parse(responseText || "{}"); } catch (parseError) { data = { ok:false, message: responseText || "Invalid upload response." }; }
-        if (!response.ok || data.ok === false) {
-          console.error("Chat media upload failed", { status: response.status, responseText, fileName });
-          throw new Error(`${data.message || "Upload failed."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
-        }
-        bar.style.width = "100%";
-        setTimeout(() => { progress.style.display = "none"; bar.style.width = "0"; }, 700);
-        state.mediaDraft = { media_url: data.media_url, thumbnail_url: data.thumbnail_url, message_type: kind === "voice" ? "voice" : (data.message_type || data.type || "file"), file_size: data.file_size || blob.size, media_ids: data.media?.id ? [data.media.id] : [] };
-        const preview = document.querySelector("[data-media-preview]");
-        const previewUrl = URL.createObjectURL(blob);
-        const mediaKind = state.mediaDraft.message_type;
-        preview.innerHTML = `<div style="display:flex;align-items:center;gap:10px">${mediaKind === "video" ? `<video src="${previewUrl}" muted playsinline></video>` : mediaKind === "image" || mediaKind === "gif" ? `<img src="${previewUrl}" alt="">` : `<span class="pill">${esc(mediaKind)}</span>`}<span>${esc(fileName)}</span></div><button type="button" data-remove-media-draft>Remove</button>`;
-        preview.classList.add("is-on");
-	        document.querySelector("[data-unified-send-form] textarea").placeholder = `${fileName} ready. Add a caption or press Send.`;
-	      };
-	      const stopVoiceRecording = () => {
-	        if (state.voiceRecorder && state.voiceRecorder.state === "recording") state.voiceRecorder.stop();
-	      };
-      const openCapture = async mode => {
-        if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
-        state.captureMode = mode;
-        state.capturedBlob = null;
-        const modal = document.querySelector("[data-capture-modal]");
-        const video = document.querySelector("[data-capture-video]");
-        const status = document.querySelector("[data-capture-status] span:last-child");
-        document.querySelector("[data-capture-title]").textContent = mode === "video" ? "Record Video" : "Camera";
-        document.querySelector("[data-capture-shot]").textContent = mode === "video" ? "Start Recording" : "Take Photo";
-        document.querySelector("[data-capture-use]").hidden = true;
-        document.querySelector("[data-capture-retake]").hidden = true;
-        modal.classList.add("is-open");
-        modal.setAttribute("aria-hidden", "false");
-        state.captureStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30, max: 60 } },
-          audio: mode === "video" ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true } : false
-        });
-        video.srcObject = state.captureStream;
-        status.textContent = mode === "video" ? "Ready to record." : "Ready for photo.";
-      };
-      const renderPresence = presence => {
-        const bar = document.querySelector("[data-presence]");
-        const banner = document.querySelector("[data-room-banner]");
-        if (!presence || !presence.conversation_id) {
-          bar.innerHTML = '<span class="presence-dot"></span><span>Open a room or chat to see live presence.</span>';
-          banner.hidden = true;
-          return;
-        }
-        const typing = presence.typing_users || [];
-        const names = (presence.active_members || []).filter(m => !m.is_self).slice(0,3).map(m => m.display_name).join(", ");
-        const typingText = typing.length === 1 ? `${typing[0].display_name} is typing...` : typing.length > 1 ? `${typing.length} people typing...` : "";
-        document.querySelector("[data-thread-status]").textContent = typingText || (state.mode === "group" ? `${Number(presence.member_count || presence.online_count || 1)} members • ${Number(presence.online_count || 1)} online` : state.mode === "room" ? `${Number(presence.online_count || 1)} online now` : `${Number(presence.online_count || 1)} online now`);
-        bar.innerHTML = `<span class="presence-dot"></span><span>${typingText ? esc(typingText) : `${Number(presence.online_count || 1)} online now${names ? " • " + esc(names) + " active" : ""}`}</span>`;
-        banner.hidden = false;
-        document.querySelector("[data-room-topic]").textContent = presence.hot_discussion ? "Hot discussion" : (presence.topic || "Room intelligence");
-        document.querySelector("[data-room-energy]").textContent = `Pulse ${Number(presence.pulse_energy || 0)}%`;
-        document.querySelector("[data-room-summary]").textContent = presence.ai_summary || "AI room summary appears after activity starts.";
-        const chips = [];
-        (presence.trending_keywords || []).forEach(word => chips.push(`<span class="pill">#${esc(word)}</span>`));
-        if (presence.helpful_member) chips.push(`<span class="pill">Helpful: ${esc(presence.helpful_member)}</span>`);
-        (presence.moderators || []).slice(0,2).forEach(mod => chips.push(`<span class="pill">${esc(mod.display_name)} mod</span>`));
-        document.querySelector("[data-room-chips]").innerHTML = chips.join("") || '<span class="pill">Building energy</span>';
-      };
-      async function refreshPresence() {
-        if (!state.activePulseConversation) return;
-        try {
-          const response = await fetch(`/api/pulse/messages/${state.activePulseConversation}/presence`, { credentials: "same-origin", cache: "no-store" });
-          const data = await response.json();
-          if (response.ok && data.ok) renderPresence(data.presence);
-        } catch (error) {
-          console.warn("Presence refresh failed", error);
-        }
+        if ((messages || []).length) thread.scrollTop = thread.scrollHeight;
       }
-      async function loadThreads() {
-        const box = document.querySelector("[data-unified-conversations]");
-        const cached = readCachedList("chats");
-        if (cached) {
-          box.innerHTML = cached;
-        } else {
-          box.innerHTML = '<div class="unified-empty">Loading conversations...</div>';
-        }
+      async function loadConversations() {
+        const node = qs("[data-chat-conversations]");
+        node.innerHTML = '<div class="pulse-dashboard-empty">Loading conversations...</div>';
         try {
-          const response = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
-          const responseText = await response.text();
-          let data = {};
-          try { data = JSON.parse(responseText || "{}"); } catch (parseError) { throw new Error(`Chats API returned ${response.status}: ${responseText.slice(0, 180)}`); }
-          if (!response.ok || data.ok === false) {
-            console.error("Chats load failed", { status: response.status, responseText, trace_id: data.trace_id });
-            throw new Error(`${data.message || "Unable to load conversations."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
-          }
-          const direct = (data.conversations || data.items || []).filter(item => (item.conversation_type || "direct") === "direct");
-          box.innerHTML = direct.map(item => {
-            const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
-            return `
-            <button class="unified-row" type="button" data-open-pulse-conversation="${item.conversation_id || item.id}" data-conversation-type="direct" data-other-user-id="${item.other_user_id || ""}">
-              <strong>${esc(item.title || "Pulse user")}${Number(item.unread_count || 0) ? `<span class="unread-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
-              <span class="${typing ? "typing-preview" : ""}">${esc(typing || item.latest_message || "No messages yet.")}</span>
-              <span>${friendlyTime(item.last_message_at || item.updated_at)}</span>
-            </button>`}).join("") || '<div class="unified-empty">No private chats yet. Search for a Pulse user to start a conversation.</div>';
-          cacheList("chats", box.innerHTML);
+          const [legacy, pulse] = await Promise.all([
+            fetch("/api/chat/threads", { cache:"no-store", credentials:"same-origin" }).then(r => r.json()).catch(() => ({ conversations:[] })),
+            fetch("/api/pulse/messages/conversations", { cache:"no-store", credentials:"same-origin" }).then(r => r.json()).catch(() => ({ conversations:[] }))
+          ]);
+          const seen = new Set();
+          const rows = [];
+          [...(legacy.conversations || legacy.threads || []), ...(pulse.conversations || [])].forEach(item => {
+            const id = item.conversation_id || item.thread_id || item.id;
+            if (!id || seen.has(String(id))) return;
+            seen.add(String(id));
+            rows.push(rowHtml(item, "direct"));
+          });
+          node.innerHTML = rows.join("") || '<div class="pulse-dashboard-empty">No private chats yet. Search for a Pulse user to start one.</div>';
         } catch (error) {
-          console.error("Chats failed", error);
-          if (!cached) box.innerHTML = `<div class="unified-empty"><strong>Reconnecting securely…</strong><br><span>${esc(error.message || "Private chat is temporarily unavailable.")}</span><br><button type="button" data-retry-list="chats">Tap to retry</button></div>`;
-          setNetworkStatus("retrying");
-        }
-      }
-      async function loadGroups() {
-        const box = document.querySelector("[data-unified-groups]");
-        const cached = readCachedList("groups");
-        if (cached) box.innerHTML = cached;
-        else box.innerHTML = '<div class="unified-empty">Loading group chats...</div>';
-        try {
-          const response = await fetch("/api/pulse/messages/group-conversations", { cache: "no-store", credentials: "same-origin" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Unable to load group chats.");
-          const groups = data.conversations || data.items || [];
-          box.innerHTML = groups.map(item => {
-            const typing = (item.typing_users || []).length ? `${(item.typing_users || []).slice(0,2).join(", ")} typing...` : "";
-            return `
-            <button class="unified-row" type="button" data-open-pulse-conversation="${item.conversation_id || item.id}" data-conversation-type="${esc(item.conversation_type || "group")}">
-              <strong>${item.pinned ? "📌 " : ""}${esc(item.title || "Group Chat")}${Number(item.unread_count || 0) ? `<span class="unread-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
-              <span class="${typing ? "typing-preview" : ""}">${esc(typing || item.latest_message || "No messages yet.")}</span>
-              <span>${esc(item.conversation_type || "group")} • ${Number(item.member_count || 0)} members • ${friendlyTime(item.last_message_at || item.updated_at)}</span>
-            </button>`}).join("") || '<div class="unified-empty">No group chats yet. Create one with friends, creators, or your community.</div>';
-          cacheList("groups", box.innerHTML);
-        } catch (error) {
-          console.error("Group chats failed", error);
-          if (!cached) box.innerHTML = `<div class="unified-empty"><strong>Reconnecting securely…</strong><br><span>${esc(error.message || "Group chats are temporarily unavailable.")}</span><br><button type="button" data-retry-list="groups">Tap to retry</button></div>`;
-          setNetworkStatus("retrying");
+          node.innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(error.message || "Private chats could not load.")}</div>`;
         }
       }
       async function loadRooms() {
-        const box = document.querySelector("[data-unified-rooms]");
-        const cached = readCachedList("rooms");
-        if (cached) box.innerHTML = cached;
-        else box.innerHTML = '<div class="unified-empty">Loading chat rooms...</div>';
+        const node = qs("[data-chat-rooms]");
+        node.innerHTML = '<div class="pulse-dashboard-empty">Loading chat rooms...</div>';
         try {
-          const response = await fetch("/api/pulse/chatrooms", { cache: "no-store", credentials: "same-origin" });
-          const responseText = await response.text();
-          let data = {};
-          try { data = JSON.parse(responseText || "{}"); } catch (parseError) { throw new Error(`Chat room API returned ${response.status}: ${responseText.slice(0, 180)}`); }
-          if (!response.ok || data.ok === false) {
-            console.error("Chat room load failed", { status: response.status, responseText, trace_id: data.trace_id });
-            throw new Error(`${data.message || "Unable to load chat rooms."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
-          }
-          const rooms = data.rooms || data.items || [];
-          box.innerHTML = rooms.map(room => `
-            <button class="unified-row" type="button" data-open-room="${room.room_id || room.id}" data-room-name="${esc(room.name || "Pulse Room")}">
-              <strong>${esc(room.name || "Pulse Room")}<span class="pill">${Number(room.online_count || 0)} online</span>${Number(room.unread_count || 0) ? `<span class="unread-badge">${Number(room.unread_count || 0)}</span>` : ""}</strong>
-              <span>${esc(room.description || "")}</span>
-              <span>${esc(room.last_message || room.pinned_notice || "No messages yet.")}</span>
-              <span>${friendlyTime(room.last_message_at)}</span>
-            </button>`).join("") || '<div class="unified-empty">No rooms are available right now.</div>';
-          document.querySelector("[data-smart-rooms]").innerHTML = rooms.slice(0,4).map(room => `
-            <button class="unified-row" type="button" data-open-room="${room.room_id || room.id}" data-room-name="${esc(room.name || "Pulse Room")}">
-              <strong>${esc(room.name)}<span class="pill">Pulse ${Math.min(99, 55 + Number(room.online_count || 0) * 3)}%</span></strong>
-              <span>${esc(room.pinned_notice || room.description || "")}</span>
-            </button>`).join("") || '<div class="unified-empty">Rooms are warming up.</div>';
-          cacheList("rooms", box.innerHTML);
+          const data = await fetch("/api/pulse/chatrooms", { cache:"no-store", credentials:"same-origin" }).then(r => r.json());
+          if (!data.ok) throw new Error(data.message || "Rooms could not load.");
+          node.innerHTML = (data.rooms || data.items || []).map(item => rowHtml(item, "room")).join("") || '<div class="pulse-dashboard-empty">No rooms are available right now.</div>';
         } catch (error) {
-          console.error("Chat room load failed", error);
-          if (!cached) box.innerHTML = `<div class="unified-empty"><strong>Reconnecting securely…</strong><br><span>${esc(error.message || "Chat rooms are temporarily unavailable.")}</span><br><button type="button" data-retry-list="rooms">Tap to retry</button></div>`;
-          setNetworkStatus("retrying");
+          node.innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(error.message || "Rooms could not load.")}</div>`;
         }
       }
-      async function openThread(id) {
-        return openPulseConversation(id, "", "direct");
-      }
-      async function openPulseConversation(conversationId, roomId = "", modeOverride = "") {
-        const requestedMode = modeOverride || (roomId ? "room" : "");
-        state.mode = requestedMode || state.mode || "direct";
-        state.activePulseConversation = Number(conversationId || 0);
-        state.activeRoomId = roomId || "";
-        state.activeRoomName = state.activeRoomName || "";
-        state.activeThread = 0;
-        setThreadChrome(roomId ? "Pulse room" : requestedMode === "direct" ? "Private conversation" : requestedMode === "group" ? "Group chat" : "Pulse chat", roomId ? "Room" : requestedMode === "direct" ? "Direct" : requestedMode === "group" ? "Group" : "Chat");
-        document.querySelector("[data-unified-sidebar]").classList.add("is-thread-open");
-        document.querySelector("[data-unified-thread-pane]").classList.add("is-open");
-        document.querySelectorAll("[data-open-pulse-conversation]").forEach(button => button.classList.toggle("is-active", Number(button.dataset.openPulseConversation) === state.activePulseConversation));
-        const thread = document.querySelector("[data-unified-thread]");
-        thread.innerHTML = '<div class="unified-empty">Loading messages...</div>';
+      async function loadGroups() {
+        const node = qs("[data-chat-groups]");
+        node.innerHTML = '<div class="pulse-dashboard-empty">Loading group chats...</div>';
         try {
-          chatDebug("open conversation start", { requested_conversation_id: conversationId, requested_room_id: roomId, mode_override: modeOverride });
-          const data = roomId
-            ? await loadRoomMessages(roomId)
-            : await loadConversationMessages(state.activePulseConversation, requestedMode);
-          state.activePulseConversation = Number(data.conversation_id || state.activePulseConversation);
-          state.currentUserId = Number(root.dataset.currentUser || 0);
-          const convoType = data.conversation?.conversation_type || state.mode;
-          state.mode = roomId || convoType === "room" || convoType === "chat_room" ? "room" : (convoType === "direct" ? "direct" : "group");
-          const title = data.conversation?.title || (roomId ? (state.activeRoomName || "Pulse room") : state.mode === "direct" ? "Private conversation" : "Group chat");
-          setThreadChrome(title, roomId ? "Room" : state.mode === "direct" ? "Direct" : "Group");
-          const notice = data.pinned_notice ? [{id:0, body:data.pinned_notice, status:"pinned", created_at:""}] : [];
-          renderMessages(notice.concat(data.messages || []));
-          setComposerEnabled(true, state.mode);
-          refreshPresence();
-          if (state.mode === "room") loadRooms();
-          if (state.mode === "group") loadGroups();
-          if (state.mode === "direct") loadThreads();
-          history.replaceState(null, "", "/pulse/messages/" + state.activePulseConversation);
-          restoreDraft();
-          flushPendingMessages();
-          chatDebug("open conversation ok", { loaded_messages: (data.messages || []).length, conversation_type: state.mode });
+          const data = await fetch("/api/pulse/messages/group-conversations", { cache:"no-store", credentials:"same-origin" }).then(r => r.json());
+          if (!data.ok) throw new Error(data.message || "Groups could not load.");
+          node.innerHTML = (data.conversations || data.items || []).map(item => rowHtml(item, "group")).join("") || '<div class="pulse-dashboard-empty">No group chats yet. Create one with friends, creators, or your community.</div>';
         } catch (error) {
-          console.error("Open Pulse conversation failed", error.detail || error);
-          const notFound = Number(error.status || 0) === 404;
-          if (notFound) {
-            state.activePulseConversation = 0;
-            setComposerEnabled(false, state.mode);
-          } else {
-            state.activePulseConversation = Number(conversationId || state.activePulseConversation || 0);
-            setComposerEnabled(Boolean(state.activePulseConversation || state.activeRoomId), state.mode);
-          }
-          thread.innerHTML = `<div class="unified-empty"><strong>${notFound ? "Conversation unavailable." : "Messages are reconnecting."}</strong><br><span>${esc(error.message || "This conversation is reconnecting.")}</span><br><button type="button" data-retry-open="${esc(conversationId)}" data-retry-room="${esc(roomId)}" data-retry-mode="${esc(modeOverride)}">Retry message load</button></div>`;
-          setNetworkStatus(notFound ? "offline" : "retrying", notFound ? "This conversation is no longer available." : "HTTP recovery is active. Tap retry or keep typing.");
-          if (!notFound) setTimeout(() => pollThread(true), 350);
+          node.innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(error.message || "Groups could not load.")}</div>`;
         }
       }
-      async function pollThread(force = false) {
-        if (state.polling || document.hidden) return;
-        if (state.mode === "direct" && !state.activePulseConversation) return;
-        if (state.mode !== "direct" && !state.activePulseConversation && !state.activeRoomId) return;
+      async function openConversation(conversationId, kind = "direct", roomId = "") {
+        if (!conversationId && kind !== "room") return;
+        state.activeConversationId = Number(conversationId || 0);
+        state.activeKind = kind;
+        state.lastMessageId = 0;
+        root.classList.add("is-thread-open");
+        qs("[data-thread-shell]").classList.add("is-open");
+        qs("[data-chat-thread]").innerHTML = '<div class="pulse-dashboard-empty">Loading messages...</div>';
+        setComposer(false);
+        try {
+          let url = `/api/messages/${Number(conversationId)}`;
+          if (kind === "room" && roomId) url = `/api/chat-room/${encodeURIComponent(roomId)}/messages?limit=80`;
+          const data = await fetch(url, { cache:"no-store", credentials:"same-origin" }).then(async r => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || j.ok === false) throw new Error(j.message || "Unable to load messages.");
+            return j;
+          });
+          state.currentUserId = data.current_user_id || data.me?.user_id || Number(root.dataset.currentUser || 0);
+          state.activeConversationId = Number(data.conversation_id || data.conversation?.conversation_id || conversationId || 0);
+          const conversation = data.conversation || {};
+          const rawType = String(conversation.conversation_type || kind || "direct").toLowerCase();
+          const resolvedKind = rawType === "room" ? "room" : (rawType.includes("group") || rawType.includes("community") || rawType.includes("creator") || rawType.includes("live")) ? "group" : "direct";
+          state.activeKind = resolvedKind;
+          const title = conversation.title || (resolvedKind === "room" ? "Pulse room" : resolvedKind === "group" ? "Group chat" : "Private conversation");
+          setThreadChrome(title, resolvedKind === "room" ? "Open Pulse room" : resolvedKind === "group" ? "Group conversation" : "Private conversation", resolvedKind === "room" ? "Room" : resolvedKind === "group" ? "Group" : "Direct");
+          renderMessages(data.messages || data.items || []);
+          setComposer(true);
+          if (state.activeConversationId) history.replaceState(null, "", "/pulse/messages/" + state.activeConversationId);
+        } catch (error) {
+          qs("[data-chat-thread]").innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
+          setThreadChrome("Message loading failed", "Use another chat or try again.", "Error");
+        }
+      }
+      async function openRoom(roomId) {
+        const result = await postJson("/api/pulse/messages/room/open", { room_key: roomId || "pulse-general" });
+        await openConversation(result.conversation_id, "room", roomId || result.room_id || "pulse-general");
+      }
+      async function pollActiveConversation() {
+        if (!state.activeConversationId || state.polling || document.hidden) return;
         state.polling = true;
         try {
-          const url = state.mode === "direct"
-            ? `/api/pulse/messages/${state.activePulseConversation}/sync?after_id=${force ? 0 : state.lastMessageId}&limit=80`
-            : state.mode === "room"
-              ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages?limit=80`
-              : `/api/pulse/messages/${state.activePulseConversation}/sync?after_id=${force ? 0 : state.lastMessageId}&limit=80`;
-          const data = await chatFetchJson("fallbackPollMessages", url);
-          if (force && (data.messages || []).length) renderMessages(data.messages || []);
-          else appendMessages(data.messages || []);
-          setNetworkStatus("syncing", "Messages loaded through secure HTTP recovery.");
+          const data = await fetch(`/api/messages/${state.activeConversationId}?since_id=${state.lastMessageId}`, { cache:"no-store", credentials:"same-origin" }).then(r => r.json());
+          if (data.ok) appendMessages(data.messages || []);
         } catch (error) {
-          console.error("Fallback message poll failed", error.detail || error);
         } finally {
           state.polling = false;
         }
       }
-      function applyLiveEvents(events) {
-        (events || []).forEach(event => {
-          const type = event.event_type || event.type || "";
-          const payload = event.payload || {};
-          const conversationId = Number(payload.conversation_id || event.post_id || 0);
-          if (["pulse_typing","typing_start","typing_stop"].includes(type) && conversationId === Number(state.activePulseConversation || 0) && Number(payload.user_id || 0) !== Number(state.currentUserId || 0)) {
-            const bar = document.querySelector("[data-presence]");
-            if (payload.typing) {
-              bar.innerHTML = `<span class="presence-dot"></span><span>${esc(payload.display_name || "Someone")} is typing...</span>`;
-              setTypingBubble(true);
-              clearTimeout(state.typingTimer);
-              state.typingTimer = setTimeout(() => { setTypingBubble(false); refreshPresence(); }, 1800);
-            } else { setTypingBubble(false); refreshPresence(); }
-          }
-          if (["room_message_created","group_message_created","pulse_message_sent"].includes(type) && conversationId === Number(state.activePulseConversation || 0) && payload.message) {
-            appendMessages([payload.message]);
-            refreshPresence();
-            if (state.mode === "room") loadRooms();
-            if (state.mode === "group") loadGroups();
-          }
-          if (type === "pulse_message_reacted" && conversationId === Number(state.activePulseConversation || 0)) {
-            const bubbleNode = document.querySelector(`[data-message-id="${payload.message_id}"]`);
-            if (bubbleNode) {
-              const old = bubbleNode.querySelector(".unified-reactions");
-              if (old) old.remove();
-              bubbleNode.querySelector("small")?.insertAdjacentHTML("beforebegin", reactionMarkup(payload.reactions || {}));
-            }
-          }
-          if (type === "pulse_message_deleted" && conversationId === Number(state.activePulseConversation || 0)) {
-            document.querySelector(`[data-message-id="${payload.message_id}"]`)?.remove();
-          }
-          if (type === "participant_joined" && conversationId === Number(state.activePulseConversation || 0)) {
-            refreshPresence();
-          }
-          if (type === "conversation_updated") {
-            if (state.mode === "group") loadGroups();
-            if (state.mode === "room") loadRooms();
-          }
-        });
-      }
-      function buildSendRequest(body, mediaDraft, clientId, createdAt) {
-        const url = state.mode === "room"
-          ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
-          : `/api/pulse/messages/${Number(state.activePulseConversation || 0)}/send`;
-        const payload = {
-          message: body,
-          reply_to_id: state.replyToId || 0,
-          client_message_id: clientId,
-          local_created_at: createdAt
-        };
-        if (state.activePulseConversation) payload.conversation_id = state.activePulseConversation;
-        if (mediaDraft) Object.assign(payload, mediaDraft);
-        return { url, payload };
-      }
-      function sendPrivateMessage(item) {
-        return chatFetchJson("sendPrivateMessage", item.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload) });
-      }
-      function sendRoomMessage(item) {
-        return chatFetchJson("sendRoomMessage", item.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload) });
-      }
-      function sendGroupMessage(item) {
-        return chatFetchJson("sendGroupMessage", item.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.payload) });
-      }
-      async function sendRequest(item) {
-        if (item.mode === "room") return sendRoomMessage(item);
-        if (item.mode === "group") return sendGroupMessage(item);
-        return sendPrivateMessage(item);
-      }
-      function enqueuePending(item) {
-        const pending = readPending().filter(existing => existing.client_id !== item.client_id);
-        pending.push({ ...item, attempts: Number(item.attempts || 0), queued_at: Date.now() });
-        writePending(pending);
-      }
-      async function flushPendingMessages() {
-        if (state.pendingFlush || !navigator.onLine) return;
-        const pending = readPending();
-        if (!pending.length) return;
-        state.pendingFlush = true;
-        setNetworkStatus("syncing");
-        const remaining = [];
-        for (const item of pending) {
+      root.addEventListener("click", async event => {
+        const tab = event.target.closest("[data-chat-tab]");
+        if (tab) { setTab(tab.dataset.chatTab); return; }
+        const row = event.target.closest("[data-open-chat]");
+        if (row) {
+          if (row.dataset.openKind === "room") await openRoom(row.dataset.roomId || "pulse-general");
+          else await openConversation(row.dataset.openChat, row.dataset.openKind || "direct");
+          return;
+        }
+        if (event.target.closest("[data-chat-back]")) { root.classList.remove("is-thread-open"); qs("[data-thread-shell]").classList.remove("is-open"); }
+        if (event.target.closest("[data-chat-create-group]")) {
+          document.querySelector("[data-create-group-modal]")?.classList.add("is-open");
+          document.querySelector("[data-create-group-modal]")?.setAttribute("aria-hidden", "false");
+        }
+      });
+      document.addEventListener("click", event => {
+        if (event.target.closest("[data-create-group-cancel]") || event.target.matches("[data-create-group-modal]")) {
+          document.querySelector("[data-create-group-modal]")?.classList.remove("is-open");
+          document.querySelector("[data-create-group-modal]")?.setAttribute("aria-hidden", "true");
+        }
+      });
+      document.addEventListener("submit", async event => {
+        if (event.target.matches("[data-chat-start-form]")) {
+          event.preventDefault();
+          const form = event.target;
           try {
-            const data = await sendRequest(item);
-            const sentMessage = (data.data && typeof data.data === "object") ? data.data : (data.message && typeof data.message === "object") ? data.message : null;
-            document.querySelector(`[data-message-id="${CSS.escape(String(item.temp_id || item.client_id))}"]`)?.remove();
-            if (Number(item.conversation_id || 0) === Number(state.activePulseConversation || 0) && sentMessage) appendMessages([sentMessage]);
+            const result = await postJson("/api/chat/start", Object.fromEntries(new FormData(form).entries()));
+            form.reset();
+            qs("[data-chat-start-message]").textContent = "Conversation opened.";
+            await loadConversations();
+            await openConversation(result.thread_id || result.conversation_id, "direct");
           } catch (error) {
-            if (Number(item.attempts || 0) < 6) remaining.push({ ...item, attempts: Number(item.attempts || 0) + 1 });
+            qs("[data-chat-start-message]").textContent = error.message || "Conversation could not open.";
           }
         }
-        writePending(remaining);
-        state.pendingFlush = false;
-        if (remaining.length) {
-          clearTimeout(state.pendingRetryTimer);
-          state.pendingRetryTimer = setTimeout(flushPendingMessages, Math.min(30000, 1500 * Math.pow(1.7, Math.min(remaining[0].attempts || 1, 6))));
-          setNetworkStatus("retrying");
-        } else if (state.activePulseConversation) {
-          refreshPresence();
-        }
-      }
-      function startLiveStream() {
-        if (!window.EventSource) return;
-        try {
-          state.live?.close?.();
-          state.live = new EventSource("/api/pulse/live/stream?since_id=0");
-          state.live.addEventListener("pulse", event => {
-            try {
-              const data = JSON.parse(event.data || "{}");
-              applyLiveEvents(data.events || []);
-              state.liveBackoff = 0;
-            } catch (error) { console.warn("Messenger live parse failed", error); }
-          });
-          state.live.onerror = () => {
-            state.live?.close?.();
-            state.live = null;
-            state.liveBackoff = Math.min(15000, (state.liveBackoff || 1500) * 1.6);
-            setNetworkStatus("reconnecting");
-            fallbackPollMessages();
-            setTimeout(startLiveStream, state.liveBackoff || 2500);
-          };
-        } catch (error) {
-          console.warn("Messenger live stream unavailable", error);
-        }
-      }
-      function reconnectSocket() {
-        state.live?.close?.();
-        state.live = null;
-        state.liveBackoff = 0;
-        startLiveStream();
-        fallbackPollMessages();
-      }
-      document.addEventListener("click", async event => {
-        const retryOpen = event.target.closest("[data-retry-open]");
-        if (retryOpen) {
-          await openPulseConversation(retryOpen.dataset.retryOpen, retryOpen.dataset.retryRoom || "", retryOpen.dataset.retryMode || "");
-          return;
-        }
-        const retryList = event.target.closest("[data-retry-list]");
-        if (retryList) {
-          const kind = retryList.dataset.retryList;
-          if (kind === "rooms") loadRooms();
-          else if (kind === "groups") loadGroups();
-          else loadThreads();
-          return;
-        }
-        if (event.target.closest("[data-mobile-chat-back]")) {
-          document.querySelector("[data-unified-sidebar]").classList.remove("is-thread-open");
-          document.querySelector("[data-unified-thread-pane]").classList.remove("is-open");
-          return;
-        }
-        if (event.target.closest("[data-thread-info]")) { showThreadActions("info", true); return; }
-        const callButton = event.target.closest("[data-thread-call]");
-        if (callButton) { showThreadActions(callButton.dataset.threadCall || "voice", true); return; }
-        if (event.target.closest("[data-thread-options]")) { showThreadActions("options", true); return; }
-        if (event.target.closest("[data-close-thread-actions]") || event.target === document.querySelector("[data-thread-actions-modal]")) { showThreadActions("options", false); return; }
-        const threadSheetAction = event.target.closest("[data-thread-sheet-action]");
-        if (threadSheetAction) {
-          const action = threadSheetAction.dataset.threadSheetAction;
-          if (action === "search") { showThreadActions("options", false); document.querySelector("[data-unified-search-form] input")?.focus(); toast("Search is ready in the Messenger list."); return; }
-          if (action === "info") { toast(state.mode === "direct" ? "Profile preview is opening soon." : "Conversation info is opening soon."); return; }
-          if (action === "mute") { toast("Mute controls are being prepared for this chat."); return; }
-          if (action === "media") { toast("Shared media, links, and files are being indexed."); return; }
-          if (action === "report") { toast("Use message long-press report for urgent safety issues. Conversation report is coming online."); return; }
-          if (action === "block") { toast(state.mode === "group" ? "Leave group controls are being prepared." : "Block controls are being prepared."); return; }
-        }
-        const tab = event.target.closest("[data-tab],[data-switch-tab]");
-        if (tab) { setTab(tab.dataset.tab || tab.dataset.switchTab); showMenu(false); return; }
-        if (event.target.closest("[data-unified-menu-toggle]")) { showMenu(document.querySelector("[data-unified-menu]").hidden); return; }
-        if (event.target.closest("[data-unified-menu-backdrop]")) { showMenu(false); return; }
-        if (event.target.closest("[data-open-group-modal]")) { showMenu(false); document.querySelector("[data-group-modal]").classList.add("is-open"); document.querySelector("[data-group-modal]").setAttribute("aria-hidden", "false"); return; }
-        if (event.target.closest("[data-close-group-modal]") || event.target === document.querySelector("[data-group-modal]")) { document.querySelector("[data-group-modal]").classList.remove("is-open"); document.querySelector("[data-group-modal]").setAttribute("aria-hidden", "true"); return; }
-        const toastButton = event.target.closest("[data-menu-toast]");
-        if (toastButton) { showMenu(false); toast(toastButton.dataset.menuToast || "This Messenger option is being prepared."); return; }
-        if (event.target.closest("[data-focus-search]")) { showMenu(false); document.querySelector("[data-unified-search-form] input")?.focus(); return; }
-        if (event.target.closest("[data-pin-active-chat]")) {
-          if (!state.activePulseConversation) return;
+        if (event.target.matches("[data-chat-send-form]")) {
+          event.preventDefault();
+          if (!state.activeConversationId) return;
+          const form = event.target;
+          const body = new FormData(form).get("body");
+          if (!String(body || "").trim()) return;
+          const tempId = "temp-" + Date.now();
+          qs("[data-chat-thread]").insertAdjacentHTML("beforeend", `<div class="pulse-dashboard-bubble me" data-message-id="${tempId}"><div>${escapeHtml(body)}</div><small>sending...</small></div>`);
+          qs("[data-chat-thread]").scrollTop = qs("[data-chat-thread]").scrollHeight;
+          form.reset();
           try {
-            const result = await pulseApi(`/api/pulse/messages/${state.activePulseConversation}/pin`, { method:"POST", body:JSON.stringify({}) });
-            event.target.closest("[data-pin-active-chat]").textContent = result.pinned ? "Pinned" : "Pin";
-            if (state.mode === "group") loadGroups();
-            if (state.mode === "room") loadRooms();
-            toast(result.message || "Chat updated.");
-          } catch (error) { toast(error.message); }
-          return;
-        }
-        const jumpMessage = event.target.closest("[data-jump-message]");
-        if (jumpMessage) {
-          const target = document.querySelector(`[data-message-id="${CSS.escape(String(jumpMessage.dataset.jumpMessage || ""))}"]`);
-          if (target) { target.scrollIntoView({ behavior: "smooth", block: "center" }); target.animate([{ transform:"scale(1.02)" }, { transform:"scale(1)" }], { duration: 420, easing:"ease-out" }); }
-          return;
-        }
-	        if (event.target.closest("[data-toggle-media-tray]")) {
-	          if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
-	          document.querySelector("[data-media-tray]")?.classList.toggle("is-open");
-	          return;
-	        }
-	        if (event.target.closest("[data-load-older]")) { toast("Latest message history is loaded. Older pagination is ready when this thread grows past the current window."); return; }
-        if (event.target.closest("[data-close-gif-modal]") || event.target === document.querySelector("[data-gif-modal]")) { document.querySelector("[data-gif-modal]").classList.remove("is-open"); document.querySelector("[data-gif-modal]").setAttribute("aria-hidden", "true"); return; }
-        if (event.target.closest("[data-capture-close]") || event.target === document.querySelector("[data-capture-modal]")) { closeCapture(); return; }
-        if (event.target.closest("[data-close-message-actions]") || event.target === document.querySelector("[data-message-actions-modal]")) { showMessageActions("", false); return; }
-        const sheetReaction = event.target.closest("[data-sheet-reaction]");
-        if (sheetReaction && state.selectedMessageId) {
-          try {
-            const result = await pulseApi(`/api/pulse/messages/${state.selectedMessageId}/react`, { method: "POST", body: JSON.stringify({ reaction_type: sheetReaction.dataset.sheetReaction }) });
-            const node = document.querySelector(`[data-message-id="${CSS.escape(state.selectedMessageId)}"]`);
-            node?.nextElementSibling?.classList?.contains("unified-reactions") && node.nextElementSibling.remove();
-            node?.insertAdjacentHTML("afterend", reactionMarkup(result.reactions || {}));
-          } catch (error) { toast(error.message); }
-          showMessageActions("", false);
-          return;
-        }
-        if (event.target.closest("[data-sheet-reply]") && state.selectedMessageId) { state.replyToId = Number(state.selectedMessageId || 0); const bar = document.querySelector("[data-reply-bar]"); bar.textContent = "Replying to message #" + state.replyToId + "  ×"; bar.classList.add("is-on"); document.querySelector("[data-unified-send-form] textarea").focus(); showMessageActions("", false); return; }
-        if (event.target.closest("[data-sheet-report]") && state.selectedMessageId) { const reason = prompt("Report reason: spam, scam, harassment, unsafe link, or other", "spam"); if (reason) { try { const result = await pulseApi(`/api/pulse/messages/${state.selectedMessageId}/report`, { method: "POST", body: JSON.stringify({ reason }) }); toast(result.message || "Report submitted."); } catch (error) { toast(error.message); } } showMessageActions("", false); return; }
-        if (event.target.closest("[data-sheet-delete]") && state.selectedMessageId) { if (confirm("Delete this message?")) { try { await pulseApi(`/api/pulse/messages/${state.selectedMessageId}/delete`, { method: "POST", body: JSON.stringify({}) }); document.querySelector(`[data-message-id="${CSS.escape(state.selectedMessageId)}"]`)?.remove(); toast("Message deleted."); } catch (error) { toast(error.message); } } showMessageActions("", false); return; }
-        const messageBubble = event.target.closest("[data-message-actions]");
-        if (messageBubble && window.matchMedia("(max-width: 900px)").matches && !event.target.closest("a,button,video,audio")) { showMessageActions(messageBubble.dataset.messageActions, true); return; }
-        if (event.target.closest("[data-capture-retake]")) { closeCapture(); openCapture(state.captureMode).catch(error => toast(error.message)); return; }
-        if (event.target.closest("[data-capture-use]")) {
-          try {
-            if (!state.capturedBlob) throw new Error("Capture media first.");
-            await uploadBlobDraft(state.capturedBlob, state.captureMode === "video" ? "pulse-video.webm" : "pulse-photo.jpg", state.captureMode === "video" ? "video" : "image");
-            closeCapture();
-          } catch (error) { console.error("Capture upload failed", error); toast(error.message); }
-          return;
-        }
-        if (event.target.closest("[data-capture-shot]")) {
-          const button = event.target.closest("[data-capture-shot]");
-          const video = document.querySelector("[data-capture-video]");
-          const status = document.querySelector("[data-capture-status] span:last-child");
-          try {
-            if (state.captureMode === "video") {
-              if (!state.captureRecorder || state.captureRecorder.state === "inactive") {
-                state.captureChunks = [];
-                state.captureRecorder = new MediaRecorder(state.captureStream, { mimeType: MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : undefined });
-                state.captureRecorder.ondataavailable = event => { if (event.data?.size) state.captureChunks.push(event.data); };
-                state.captureRecorder.onstop = () => {
-                  state.capturedBlob = new Blob(state.captureChunks, { type: "video/webm" });
-                  status.textContent = "Preview ready.";
-                  document.querySelector("[data-capture-use]").hidden = false;
-                  document.querySelector("[data-capture-retake]").hidden = false;
-                  button.textContent = "Start Recording";
-                };
-                state.captureRecorder.start();
-                button.textContent = "Stop Recording";
-                status.textContent = "Recording...";
-              } else {
-                state.captureRecorder.stop();
-              }
-            } else {
-              const canvas = document.createElement("canvas");
-              canvas.width = video.videoWidth || 1080;
-              canvas.height = video.videoHeight || 1920;
-              canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-              state.capturedBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .94));
-              status.textContent = "Photo ready.";
-              document.querySelector("[data-capture-use]").hidden = false;
-              document.querySelector("[data-capture-retake]").hidden = false;
-            }
-          } catch (error) { console.error("Capture failed", error); toast(error.message); }
-          return;
-        }
-        const uploadKind = event.target.closest("[data-upload-kind]");
-        if (uploadKind) {
-          if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
-          if (uploadKind.dataset.uploadKind === "gif") {
-            document.querySelector("[data-gif-modal]").classList.add("is-open");
-            document.querySelector("[data-gif-modal]").setAttribute("aria-hidden", "false");
-            return;
+            const result = await postJson(`/api/messages/${state.activeConversationId}/send`, { body });
+            const pending = qs(`[data-message-id="${tempId}"]`);
+            if (pending) pending.remove();
+            if (result.message) appendMessages([result.message]);
+            else await openConversation(state.activeConversationId, state.activeKind);
+            if (state.activeKind === "direct") loadConversations();
+            if (state.activeKind === "group") loadGroups();
+          } catch (error) {
+            const pending = qs(`[data-message-id="${tempId}"]`);
+            if (pending) pending.querySelector("small").textContent = "failed";
+            form.body.value = body;
           }
-	          if (uploadKind.dataset.uploadKind === "voice") {
-	            try {
-	              if (state.voiceRecorder && state.voiceRecorder.state === "recording") {
-	                stopVoiceRecording();
-	                toast("Voice note stopped. Preparing preview...");
-	                return;
-	              }
-	              state.voiceStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-	              state.voiceChunks = [];
-	              state.voiceRecorder = new MediaRecorder(state.voiceStream);
-	              toast("Recording voice note. Tap Voice again to stop.");
-	              state.voiceRecorder.ondataavailable = event => { if (event.data?.size) state.voiceChunks.push(event.data); };
-	              state.voiceRecorder.onstop = async () => {
-	                state.voiceStream?.getTracks?.().forEach(track => track.stop());
-	                try { await uploadBlobDraft(new Blob(state.voiceChunks, { type: "audio/webm" }), "voice-note.webm", "voice"); }
-	                catch (error) { console.error("Voice upload failed", error); toast(error.message); }
-	                finally { state.voiceRecorder = null; state.voiceStream = null; state.voiceChunks = []; }
-	              };
-	              state.voiceRecorder.start();
-	            } catch (error) { console.error("Voice recording failed", error); toast(error.message); }
-	            return;
-	          }
-          if (uploadKind.dataset.uploadKind === "camera") { openCapture("photo").catch(error => toast(error.message)); return; }
-          if (uploadKind.dataset.uploadKind === "record") { openCapture("video").catch(error => toast(error.message)); return; }
-          const input = document.querySelector("[data-message-file]");
-          input.dataset.kind = uploadKind.dataset.uploadKind || "file";
-          input.removeAttribute("capture");
-          if (uploadKind.dataset.uploadKind === "camera") { input.accept = "image/*"; input.setAttribute("capture", "environment"); }
-          else if (uploadKind.dataset.uploadKind === "record") { input.accept = "video/mp4,video/webm,video/*"; input.setAttribute("capture", "environment"); }
-          else input.accept = uploadKind.dataset.uploadKind === "image" ? "image/*" : uploadKind.dataset.uploadKind === "video" ? "video/mp4,video/webm" : uploadKind.dataset.uploadKind === "gif" ? "image/gif" : uploadKind.dataset.uploadKind === "voice" ? "audio/*" : "image/*,video/*,audio/*,.pdf,.txt,.doc,.docx,.zip";
-          input.click();
-          return;
         }
-        const gifChoice = event.target.closest("[data-gif-url]");
-        if (gifChoice) {
-          state.mediaDraft = { media_url: gifChoice.dataset.gifUrl, thumbnail_url: gifChoice.dataset.gifUrl, message_type: "gif", media_ids: [] };
-          document.querySelector("[data-media-preview]").innerHTML = `<div style="display:flex;align-items:center;gap:10px"><img src="${esc(gifChoice.dataset.gifUrl)}" alt=""><span>GIF ready</span></div><button type="button" data-remove-media-draft>Remove</button>`;
-          document.querySelector("[data-media-preview]").classList.add("is-on");
-          document.querySelector("[data-gif-modal]").classList.remove("is-open");
-          document.querySelector("[data-gif-modal]").setAttribute("aria-hidden", "true");
-          document.querySelector("[data-unified-send-form] textarea").placeholder = "GIF ready. Add a caption or press Send.";
-          return;
-        }
-        const react = event.target.closest("[data-react-message]");
-        if (react) {
+        if (event.target.matches("[data-create-group-form]")) {
+          event.preventDefault();
+          const form = event.target;
           try {
-            const result = await pulseApi(`/api/pulse/messages/${react.dataset.reactMessage}/react`, { method: "POST", body: JSON.stringify({ reaction_type: react.dataset.reaction }) });
-            const node = react.closest("[data-message-id]");
-            node?.querySelector(".unified-reactions")?.remove();
-            node?.querySelector("small")?.insertAdjacentHTML("beforebegin", reactionMarkup(result.reactions || {}));
-          } catch (error) { toast(error.message); }
-          return;
-        }
-        const reply = event.target.closest("[data-reply-message]");
-        if (reply) {
-          state.replyToId = Number(reply.dataset.replyMessage || 0);
-          const bar = document.querySelector("[data-reply-bar]");
-          bar.textContent = "Replying to message #" + state.replyToId + "  ×";
-          bar.classList.add("is-on");
-          document.querySelector("[data-unified-send-form] textarea").focus();
-          return;
-        }
-        if (event.target.closest("[data-reply-bar]")) {
-          state.replyToId = 0;
-          document.querySelector("[data-reply-bar]").classList.remove("is-on");
-          return;
-        }
-        if (event.target.closest("[data-remove-media-draft]")) {
-          state.mediaDraft = null;
-          document.querySelector("[data-media-preview]").classList.remove("is-on");
-          document.querySelector("[data-media-preview]").innerHTML = "";
-          document.querySelector("[data-unified-send-form] textarea").placeholder = "Write a message...";
-          return;
-        }
-        const del = event.target.closest("[data-delete-message]");
-        if (del) {
-          if (!confirm("Delete this message?")) return;
-          try {
-            await pulseApi(`/api/pulse/messages/${del.dataset.deleteMessage}/delete`, { method: "POST", body: JSON.stringify({}) });
-            document.querySelector(`[data-message-id="${del.dataset.deleteMessage}"]`)?.remove();
-            toast("Message deleted.");
-          } catch (error) { toast(error.message); }
-          return;
-        }
-        const report = event.target.closest("[data-report-message]");
-        if (report) {
-          const reason = prompt("Report reason: spam, scam, harassment, unsafe link, or other", "spam");
-          if (!reason) return;
-          try {
-            const result = await pulseApi(`/api/pulse/messages/${report.dataset.reportMessage}/report`, { method: "POST", body: JSON.stringify({ reason }) });
-            toast(result.message || "Report submitted.");
-          } catch (error) { toast(error.message); }
-          return;
-        }
-        const row = event.target.closest("[data-open-thread]");
-        if (row) { openThread(row.dataset.openThread); return; }
-        const roomRow = event.target.closest("[data-open-room]");
-        if (roomRow) {
-          try {
-            state.activeRoomName = roomRow.dataset.roomName || "Pulse room";
-            const result = await pulseApi(`/api/pulse/chatrooms/${encodeURIComponent(roomRow.dataset.openRoom)}/join`, { method: "POST", body: JSON.stringify({}) });
-            await openPulseConversation(result.conversation_id, roomRow.dataset.openRoom);
-          } catch (error) { console.error("Room open failed", error); toast(error.message); }
-          return;
-        }
-        const pulseRow = event.target.closest("[data-open-pulse-conversation]");
-        if (pulseRow) { openPulseConversation(pulseRow.dataset.openPulseConversation, "", pulseRow.dataset.conversationType || ""); return; }
-        const selectUser = event.target.closest("[data-select-group-user]");
-        if (selectUser) {
-          const id = String(selectUser.dataset.selectGroupUser || "");
-          const name = selectUser.dataset.name || "Pulse user";
-          if (state.selectedMembers.has(id)) state.selectedMembers.delete(id); else state.selectedMembers.set(id, { id: Number(id), name });
-          renderSelectedMembers();
-          document.querySelectorAll(`[data-select-group-user="${CSS.escape(id)}"]`).forEach(button => { button.textContent = state.selectedMembers.has(id) ? "Remove" : "Add"; });
-          return;
-        }
-        const removeUser = event.target.closest("[data-remove-group-user]");
-        if (removeUser) {
-          const id = String(removeUser.dataset.removeGroupUser || "");
-          state.selectedMembers.delete(id);
-          renderSelectedMembers();
-          document.querySelectorAll(`[data-select-group-user="${CSS.escape(id)}"]`).forEach(button => { button.textContent = "Add"; });
-          return;
-        }
-        const createGroupButton = event.target.closest("[data-create-group-chat]");
-        if (createGroupButton) {
-          if (state.creatingGroup) return;
-          const errorBox = document.querySelector("[data-group-create-error]");
-          errorBox.classList.remove("is-on");
-          errorBox.textContent = "";
-          let payload = {};
-          try {
-            const title = document.querySelector("[data-group-title]").value.trim();
-            if (title.length < 2) throw new Error("Add a group chat name.");
-            const participant_ids = [...state.selectedMembers.keys()].map(Number).filter(Boolean);
-            if (!participant_ids.length) throw new Error("Add at least one other person.");
-            state.creatingGroup = true;
-            createGroupButton.disabled = true;
-            createGroupButton.textContent = "Creating...";
-	            payload = { title, description: document.querySelector("[data-group-description]").value, privacy: "private", participant_ids, member_ids: participant_ids };
-            const response = await fetch("/api/pulse/messages/group/create", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            const responseText = await response.text();
-            let result = {};
-            try { result = JSON.parse(responseText || "{}"); } catch (parseError) { result = { ok: false, message: responseText || "Invalid server response." }; }
-            if (!response.ok || result.ok === false) {
-              console.error("Create group chat failed", { status: response.status, responseText, payload });
-              throw new Error(`${result.message || "Group chat could not be created."}${result.trace_id ? " Trace " + result.trace_id : ""}`);
-            }
-            if (!result.conversation_id) throw new Error("Group chat was created, but no conversation id came back.");
-            document.querySelector("[data-group-modal]").classList.remove("is-open");
-            document.querySelector("[data-group-modal]").setAttribute("aria-hidden", "true");
+            const result = await postJson("/api/pulse/messages/group/create", { ...Object.fromEntries(new FormData(form).entries()), participant_ids: [] });
+            document.querySelector("[data-create-group-message]").textContent = "Group created.";
+            document.querySelector("[data-create-group-modal]")?.classList.remove("is-open");
             setTab("groups");
             await loadGroups();
-            toast("Group chat created.");
-            location.href = "/pulse/messages/" + result.conversation_id;
+            await openConversation(result.conversation_id, "group");
           } catch (error) {
-            console.error("Create group chat failed", { error, payload });
-            errorBox.textContent = error.message || "Group chat could not be created.";
-            errorBox.classList.add("is-on");
-            toast(error.message || "Group chat could not be created.");
-          } finally {
-            state.creatingGroup = false;
-            createGroupButton.disabled = false;
-            createGroupButton.textContent = "Create Group Chat";
+            document.querySelector("[data-create-group-message]").textContent = error.message || "Group could not be created.";
           }
-          return;
-        }
-        const message = event.target.closest("[data-message-user]");
-        if (message) {
-          try {
-            const result = await pulseApi("/api/pulse/messages/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: message.dataset.messageUser }) });
-            await openPulseConversation(result.conversation_id || result.thread_id, "", "direct");
-          } catch (error) { toast(error.message); }
         }
       });
-      document.querySelector("[data-unified-search-form]").addEventListener("submit", async event => {
-        event.preventDefault();
-        const query = event.target.q.value.trim();
-        if (!query) return;
-        const box = document.querySelector("[data-unified-search-results]");
-        box.innerHTML = '<div class="unified-empty">Searching...</div>';
-        try {
-          const response = await fetch("/api/pulse/users/search?q=" + encodeURIComponent(query), { credentials: "same-origin", cache: "no-store" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Search failed.");
-          box.innerHTML = (data.users || []).map(user => `
-            <div class="unified-row">
-              <strong>${esc(user.display_name || "Pulse user")}${user.premium ? " ✦" : ""}</strong>
-              <span>${esc(user.public_pulse_id || "")} ${user.label ? "• " + esc(user.label) : ""}</span>
-              ${user.is_self ? '<span>You cannot message yourself.</span>' : `<button class="primary" type="button" data-message-user="${user.id}">Message</button>`}
-            </div>`).join("") || '<div class="unified-empty">No Pulse users found.</div>';
-        } catch (error) {
-          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Search failed.")}</div>`;
-        }
-      });
-      function renderSelectedMembers() {
-        const box = document.querySelector("[data-group-selected]");
-        box.innerHTML = [...state.selectedMembers.values()].map(item => `<span class="pill">${esc(item.name)} <button type="button" aria-label="Remove ${esc(item.name)}" data-remove-group-user="${item.id}">×</button></span>`).join("") || '<span class="muted">Self is included automatically. Add at least one other person.</span>';
-      }
-      document.querySelector("[data-group-search-form]").addEventListener("submit", async event => {
-        event.preventDefault();
-        const query = event.target.q.value.trim();
-        if (!query) return;
-        const box = document.querySelector("[data-group-search-results]");
-        box.innerHTML = '<div class="unified-empty">Searching...</div>';
-        try {
-          const response = await fetch("/api/pulse/users/search?q=" + encodeURIComponent(query), { credentials: "same-origin", cache: "no-store" });
-          const data = await response.json();
-          if (!response.ok || data.ok === false) throw new Error(data.message || "Search failed.");
-          const seen = new Set();
-          const users = (data.users || []).filter(user => {
-            const id = String(user.id || user.user_id || "");
-            if (!id || seen.has(id)) return false;
-            seen.add(id);
-            return true;
-          });
-          box.innerHTML = users.map(user => `
-            <div class="unified-row">
-              <strong>${esc(user.display_name || "Pulse user")}${user.premium ? " ✦" : ""}</strong>
-              <span>${esc(user.public_pulse_id || "")} ${user.label ? "• " + esc(user.label) : ""}</span>
-              ${user.is_self ? '<span>You are included automatically.</span>' : `<button type="button" data-select-group-user="${user.id}" data-name="${esc(user.display_name || "Pulse user")}">${state.selectedMembers.has(String(user.id)) ? "Remove" : "Add"}</button>`}
-            </div>`).join("") || '<div class="unified-empty">No Pulse users found.</div>';
-        } catch (error) {
-          console.error("Group user search failed", error);
-          box.innerHTML = `<div class="unified-empty">${esc(error.message || "Search failed.")}</div>`;
-        }
-      });
-      document.querySelector("[data-gif-file]").addEventListener("change", async event => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        try {
-          await uploadBlobDraft(file, file.name || "upload.gif", "gif");
-          document.querySelector("[data-gif-modal]").classList.remove("is-open");
-          document.querySelector("[data-gif-modal]").setAttribute("aria-hidden", "true");
-        } catch (error) { console.error("GIF upload failed", error); toast(error.message); }
-        finally { event.target.value = ""; }
-      });
-      document.querySelector("[data-message-file]").addEventListener("change", async event => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); event.target.value = ""; return; }
-        const preview = document.querySelector("[data-media-preview]");
-        const progress = document.querySelector("[data-upload-progress]");
-        const bar = progress.querySelector("span");
-        progress.style.display = "block";
-        bar.style.width = "14%";
-        try {
-          const fd = new FormData();
-          fd.append("file", file);
-          fd.append("conversation_id", state.activePulseConversation || 0);
-          if (event.target.dataset.kind === "voice") fd.append("voice", "1");
-          const response = await fetch("/api/pulse/messages/media/upload", { method: "POST", credentials: "same-origin", body: fd });
-          bar.style.width = "75%";
-          const responseText = await response.text();
-          let data = {};
-          try { data = JSON.parse(responseText || "{}"); } catch (parseError) { data = { ok: false, message: responseText || "Invalid upload response." }; }
-          if (!response.ok || data.ok === false) {
-            console.error("Chat media upload failed", { status: response.status, responseText, fileName: file.name });
-            throw new Error(`${data.message || "Upload failed."}${data.trace_id ? " Trace " + data.trace_id : ""}`);
-          }
-          state.mediaDraft = { media_url: data.media_url, thumbnail_url: data.thumbnail_url, message_type: data.message_type || data.type || "file", file_size: data.file_size || file.size, media_ids: data.media?.id ? [data.media.id] : [] };
-          const previewUrl = URL.createObjectURL(file);
-          const mediaKind = state.mediaDraft.message_type;
-          preview.innerHTML = `<div style="display:flex;align-items:center;gap:10px">${mediaKind === "video" ? `<video src="${previewUrl}" muted playsinline></video>` : mediaKind === "image" || mediaKind === "gif" ? `<img src="${previewUrl}" alt="">` : `<span class="pill">${esc(mediaKind)}</span>`}<span>${esc(file.name)}</span></div><button type="button" data-remove-media-draft>Remove</button>`;
-          preview.classList.add("is-on");
-          document.querySelector("[data-unified-send-form] textarea").placeholder = `${file.name} ready. Add a caption or press Send.`;
-          document.querySelector("[data-media-tray]")?.classList.remove("is-open");
-          bar.style.width = "100%";
-          setTimeout(() => { progress.style.display = "none"; bar.style.width = "0"; }, 700);
-        } catch (error) {
-          console.error("Chat media upload failed", error);
-          progress.style.display = "none";
-          bar.style.width = "0";
-          toast(error.message || "Upload failed.");
-        } finally {
-          event.target.value = "";
-        }
-      });
-      document.querySelector("[data-unified-send-form]").addEventListener("submit", async event => {
-        event.preventDefault();
-        const input = event.target.message;
-        const body = input.value.trim();
-        const mediaDraft = state.mediaDraft;
-        if (!body && !mediaDraft) return;
-        if (!state.activePulseConversation && !state.activeRoomId) { toast("Choose a chat first."); return; }
-        input.value = "";
-        saveDraft();
-        const button = event.target.querySelector('button[type="submit"]');
-        button.disabled = true;
-        const createdAt = new Date().toISOString();
-        const tempId = "temp-" + Date.now();
-        const clientId = "local-" + state.currentUserId + "-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-        appendMessages([{ id: tempId, message_id: tempId, conversation_id: state.activePulseConversation, sender_user_id: state.currentUserId, body, content: body, message_type: mediaDraft?.message_type || "text", media_url: mediaDraft?.media_url || "", thumbnail_url: mediaDraft?.thumbnail_url || "", status: "sending", delivery_status: "sending", created_at: new Date().toISOString(), is_mine: true }]);
-        try {
-          const item = { ...buildSendRequest(body, mediaDraft, clientId, createdAt), client_id: clientId, temp_id: tempId, conversation_id: state.activePulseConversation, mode: state.mode, room_id: state.activeRoomId };
-          const data = await sendRequest(item);
-          const sentMessage = (data.data && typeof data.data === "object") ? data.data : (data.message && typeof data.message === "object") ? data.message : null;
-          document.querySelector(`[data-message-id="${CSS.escape(tempId)}"]`)?.remove();
-          if (sentMessage) appendMessages([sentMessage]);
-          state.mediaDraft = null;
-          state.replyToId = 0;
-          document.querySelector("[data-reply-bar]").classList.remove("is-on");
-          document.querySelector("[data-media-preview]").classList.remove("is-on");
-          document.querySelector("[data-media-preview]").innerHTML = "";
-          input.placeholder = "Write a message...";
-          if (state.mode === "direct") loadThreads();
-          if (state.mode === "group") loadGroups();
-          if (state.mode === "room") loadRooms();
-          refreshPresence();
-        } catch (error) {
-          console.error("Send failed", error);
-          const temp = document.querySelector(`[data-message-id="${CSS.escape(tempId)}"]`);
-          if (temp) temp.querySelector("small").textContent = navigator.onLine ? "retrying" : "offline";
-          const item = { ...buildSendRequest(body, mediaDraft, clientId, createdAt), client_id: clientId, temp_id: tempId, conversation_id: state.activePulseConversation, mode: state.mode, room_id: state.activeRoomId };
-          enqueuePending(item);
-          input.value = "";
-          setNetworkStatus(navigator.onLine ? "retrying" : "offline");
-          toast(navigator.onLine ? "Message queued. Retrying securely…" : "Offline temporarily. Message queued.");
-          flushPendingMessages();
-        } finally {
-          button.disabled = false;
-          input.focus();
-        }
-      });
-      document.querySelector("[data-unified-send-form] textarea").addEventListener("keydown", event => {
-        if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.target.form.requestSubmit(); }
-      });
-      document.querySelector("[data-unified-send-form] textarea").addEventListener("input", () => {
-        saveDraft();
-        if (!state.activePulseConversation) return;
-        clearTimeout(state.typingTimer);
-        fetch(`/api/pulse/messages/${state.activePulseConversation}/typing`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ typing:true }) }).catch(()=>{});
-        state.typingTimer = setTimeout(() => fetch(`/api/pulse/messages/${state.activePulseConversation}/typing`, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ typing:false }) }).catch(()=>{}), 1600);
-      });
-      document.addEventListener("keydown", event => { if (event.key === "Escape") showMenu(false); });
-      window.addEventListener("online", () => { state.offline = false; setNetworkStatus("syncing"); reconnectSocket(); flushPendingMessages(); });
-      window.addEventListener("offline", () => { state.offline = true; setNetworkStatus("offline"); });
-      document.addEventListener("visibilitychange", () => { if (!document.hidden) { reconnectSocket(); flushPendingMessages(); } });
-      setComposerEnabled(false);
-      loadThreads().then(() => {
-        if (state.activePulseConversation) { openPulseConversation(state.activePulseConversation); }
-        else if (state.activeThread) openThread(state.activeThread);
-      });
-      startLiveStream();
-      flushPendingMessages();
-      setInterval(pollThread, 8000);
-      setInterval(refreshPresence, 15000);
+      qs("[data-chat-send-form] input").addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); qs("[data-chat-send-form]").requestSubmit(); } });
+      loadConversations().then(() => { if (state.activeConversationId) openConversation(state.activeConversationId, "direct"); });
+      setInterval(pollActiveConversation, 1800);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) pollActiveConversation(); });
     })();
     """
-    return pulse_social_shell("Pulse Messenger", "Secure Pulse conversations, rooms, and group chats in one calm realtime hub.", main, "", script)
+    return pulse_social_shell("Pulse Messenger", "Stable Dashboard chat foundation restored for private conversations, rooms, and group chats.", main, "", script)
 
 
 @webhook_app.route("/pulse/messages", methods=["GET"])
 def pulse_messages_page():
     return pulse_dashboard_messenger_page(0)
-    init_db()
-    user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT c.*, MIN(p.user_id) AS other_user_id
-        FROM pulse_conversations c
-        JOIN pulse_conversation_participants mine
-          ON mine.conversation_id=c.id
-         AND mine.user_id=?
-         AND COALESCE(mine.left_at,'')=''
-        LEFT JOIN pulse_conversation_participants p
-          ON p.conversation_id=c.id
-         AND p.user_id!=?
-         AND COALESCE(p.left_at,'')=''
-        WHERE COALESCE(c.status,'active')='active'
-        GROUP BY c.id
-        ORDER BY COALESCE(c.last_message_at,c.updated_at,c.created_at) DESC
-        LIMIT 40
-        """,
-        (user["user_id"], user["user_id"]),
-    )
-    conversations = [dict(row) for row in cur.fetchall()]
-    direct_cards = []
-    room_cards = []
-    group_cards = []
-    community_cards = []
-    for convo in conversations:
-        other_id = int(convo.get("other_user_id") or 0)
-        convo_type = convo.get("conversation_type") or "direct"
-        if convo_type != "direct":
-            ident = {"name": convo.get("title") or "Group Chat", "avatar_url": convo.get("avatar_url") or "", "premium_mark": None}
-        else:
-            ident = pulse_identity_for_user(cur, other_id)
-        cur.execute("SELECT body, message_type, created_at FROM pulse_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1", (convo.get("id"),))
-        last = dict(cur.fetchone() or {})
-        preview = last.get("body") or ("Media message" if last.get("message_type") not in {"", "text", None} else "No messages yet.")
-        avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
-        chat_type = clean_html(convo_type.replace("_", " "))
-        card = f"<article class='card messenger-convo-card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(ident.get('name') or 'Pulse user')}{pulse_premium_mark_html(ident.get('premium_mark'))}</h2><p>{clean_html(str(preview)[:140])}</p><p><span class='pill'>{chat_type}</span> <span class='pill'>{int(convo.get('member_count') or 0) or (2 if convo_type == 'direct' else 1)} members</span></p></div></div><a class='button primary' href='/pulse/messages/{int(convo.get('id') or 0)}'>Open Thread</a></article>"
-        if convo_type == "direct":
-            direct_cards.append(card)
-        elif convo_type == "room":
-            room_cards.append(card)
-        elif "community" in convo_type:
-            community_cards.append(card)
-        else:
-            group_cards.append(card)
-    conn.close()
-    empty_group = "<article class='card'><h2>No group chats yet.</h2><p>No group chats yet. Create one with friends, creators, or your community.</p><button class='primary' data-open-group-create>Create Group Chat</button></article>"
-    main = f"""
-    <style>.messenger-tabs-main{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding-bottom:4px}}.messenger-tabs-main button{{min-width:0;border-radius:999px;min-height:40px;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.messenger-tabs-main button.active{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border-color:transparent}}.messenger-tab-panel[hidden]{{display:none}}.messenger-convo-card{{overflow:hidden}}.messenger-search-results{{display:grid;gap:8px;margin-top:10px}}.messenger-user-result{{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.04)}}.messenger-modal,.messenger-options{{position:fixed;inset:0;z-index:9999;display:none;background:rgba(0,0,0,.48);backdrop-filter:blur(8px);padding:14px;pointer-events:auto}}.messenger-modal.open,.messenger-options.open{{display:grid}}.messenger-modal{{place-items:end center}}.messenger-options{{place-items:start end}}.messenger-sheet,.messenger-options-sheet{{width:min(620px,100%);max-height:min(760px,88dvh);overflow:auto;border:1px solid var(--line);background:#071321;box-shadow:0 30px 90px rgba(0,0,0,.55)}}.messenger-sheet{{border-radius:24px;padding:16px}}.messenger-options-sheet{{width:min(320px,calc(100vw - 28px));border-radius:18px;padding:10px;margin-top:96px;margin-right:max(14px,env(safe-area-inset-right))}}.messenger-options-title{{padding:8px 10px 10px;font-weight:950;color:var(--text)}}.messenger-options-section{{display:grid;gap:6px;padding:6px;border-top:1px solid rgba(255,255,255,.08)}}.messenger-options-section:first-of-type{{border-top:0}}.messenger-options button{{width:100%;justify-content:flex-start;min-height:44px;background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.08)}}.messenger-options small{{display:block;padding:8px 10px 2px;color:var(--muted);font-weight:850;text-transform:uppercase;font-size:11px;letter-spacing:.08em}}.selected-users{{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}}@media(max-width:620px){{.messenger-tabs-main button[data-full-label]{{font-size:0}}.messenger-tabs-main button[data-full-label]::after{{content:attr(data-short-label);font-size:12px}}.messenger-user-result{{grid-template-columns:auto minmax(0,1fr)}}.messenger-user-result button{{grid-column:1/-1}}.messenger-options{{place-items:end center;padding:0;background:rgba(0,0,0,.58)}}.messenger-options-sheet{{width:100%;margin:0;max-height:74dvh;border-radius:26px 26px 0 0;padding:12px 12px calc(14px + env(safe-area-inset-bottom));animation:messengerSheetIn .22s cubic-bezier(.18,.9,.2,1)}}.messenger-options-sheet::before{{content:'';display:block;width:46px;height:5px;border-radius:999px;background:rgba(242,251,255,.36);margin:2px auto 10px}}}}@keyframes messengerSheetIn{{from{{transform:translateY(18px);opacity:.85}}to{{transform:translateY(0);opacity:1}}}}</style>
-    <section class='card'><div class='person'><div><h2>Pulse Messenger</h2><p>Conversations, open rooms, and group/community chats in one place.</p></div><button class='button' type='button' data-messenger-options-toggle aria-haspopup='dialog' aria-expanded='false'>...</button></div><div class='messenger-tabs-main'><button class='active' data-msg-tab='direct' data-full-label='Conversations' data-short-label='Chats'>Conversations</button><button data-msg-tab='room' data-full-label='Chat Room' data-short-label='Rooms'>Chat Room</button><button data-msg-tab='group' data-full-label='Group Chat' data-short-label='Groups'>Group Chat</button></div></section>
-    <section class='card' id='privateSearchCard'><h2>Start a Conversation</h2><form id='pulseUserSearch'><input name='q' placeholder='Search by name or public Pulse ID' autocomplete='off'><button class='primary'>Search</button></form><div class='messenger-search-results' id='pulseUserResults'></div></section>
-    <section class='messenger-tab-panel' data-msg-panel='direct'>{''.join(direct_cards) or '<article class="card"><h2>No private chats yet.</h2><p>No private chats yet. Search for a Pulse user to start a conversation.</p></article>'}</section>
-    <section class='messenger-tab-panel' data-msg-panel='room' hidden>{''.join(room_cards) or "<article class='card'><h2>Pulse Global Chat Room</h2><p>Join the always-on public Pulse room for community questions, creator updates, and live social energy.</p><button class='primary' data-open-pulse-room>Open Chat Room</button></article>"}</section>
-    <section class='messenger-tab-panel' data-msg-panel='group' hidden>{''.join(group_cards + community_cards) or empty_group}</section>
-    <section class='messenger-modal' id='groupChatModal'><div class='messenger-sheet'><h2>Create Group Chat</h2><input id='groupChatTitle' placeholder='Group chat name'><textarea id='groupChatDescription' placeholder='Description optional'></textarea><select id='groupChatPrivacy'><option value='private'>Private</option><option value='invite_only'>Invite Only</option><option value='community'>Community</option></select><label>Optional group image<input id='groupChatPhoto' type='file' accept='image/jpeg,image/png,image/webp'></label><form id='groupChatSearch'><input name='q' placeholder='Add people by name or public Pulse ID'><button>Search</button></form><div class='messenger-search-results' id='groupChatResults'></div><div class='selected-users' id='selectedUsers'></div><div class='actions'><button type='button' id='cancelGroupChat'>Cancel</button><button class='primary' id='createGroupChat' type='button'>Create Group Chat</button></div></div></section>
-    <section class='messenger-options' id='messengerOptions' aria-hidden='true'><div class='messenger-options-sheet' role='dialog' aria-modal='true' aria-label='Messenger Options'><div class='messenger-options-title'>Messenger Options</div><div class='messenger-options-section'><button type='button' data-open-group-create>Create Group Chat</button><button type='button' data-focus-private>New Private Message</button><button type='button' data-menu-toast='Message requests are being prepared. Your current chats and group chats are active now.'>Message Requests</button><button type='button' data-menu-toast='Muted chats controls are coming online. You can still open and manage conversations normally.'>Muted Chats</button><button type='button' data-menu-toast='Thanks. Use the report controls inside a conversation for urgent safety issues.'>Report a Problem</button></div><small>Safety & Privacy</small><div class='messenger-options-section'><button type='button' data-menu-toast='Blocked users management is being prepared inside Safety & Privacy.'>Blocked Users</button><button type='button' data-menu-toast='Restricted users management is being prepared inside Safety & Privacy.'>Restricted Users</button></div></div></section>
-    """
-    script = """
-    const selectedMembers=new Map();
-    function mEsc(v){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-    function renderPulseUser(u,selectMode=false){const avatar=u.avatar_url?`<img src="${mEsc(u.avatar_url)}" alt="">`:mEsc(String(u.display_name||'P').slice(0,1));const self=!!u.is_self;return `<div class="messenger-user-result" data-user-result="${u.id}"><span class="avatar">${avatar}</span><div><strong>${mEsc(u.display_name||'Pulse user')}${u.premium?' ✦':''}</strong><p class="muted">${mEsc(u.public_pulse_id||'')} • ${mEsc(u.label||'CoinPilotXAI Pulse')}</p></div><button class="${selectMode?'':'primary'}" data-${selectMode?'select':'message'}-user="${u.id}" ${self?'disabled title="You cannot message yourself." data-self-message="1"':''}>${self?'You':selectMode?(selectedMembers.has(String(u.id))?'Remove':'Add'):'Message'}</button>${self?'<p class="muted" style="grid-column:1/-1;margin:0">You cannot message yourself.</p>':''}</div>`}
-    async function searchPulseUsers(q){const r=await fetch('/api/pulse/users/search?q='+encodeURIComponent(q),{credentials:'same-origin',cache:'no-store'});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Search failed.');return d.users||[]}
-    function renderSelected(){document.getElementById('selectedUsers').innerHTML=[...selectedMembers.values()].map(u=>`<span class="pill">${u.display_name||u.public_pulse_id}<button type="button" data-remove-selected="${u.id}">×</button></span>`).join('')||'<span class="muted">No members selected yet.</span>'}
-    function closeMessengerOptions(){const sheet=document.getElementById('messengerOptions');sheet?.classList.remove('open');sheet?.setAttribute('aria-hidden','true');document.querySelector('[data-messenger-options-toggle]')?.setAttribute('aria-expanded','false')}
-    function openMessengerOptions(){const sheet=document.getElementById('messengerOptions');sheet?.classList.add('open');sheet?.setAttribute('aria-hidden','false');document.querySelector('[data-messenger-options-toggle]')?.setAttribute('aria-expanded','true')}
-    document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMessengerOptions();document.getElementById('groupChatModal')?.classList.remove('open')}});
-    document.addEventListener('click',async e=>{const tab=e.target.closest('[data-msg-tab]');if(tab){document.querySelectorAll('[data-msg-tab]').forEach(b=>b.classList.toggle('active',b===tab));document.querySelectorAll('[data-msg-panel]').forEach(p=>p.hidden=p.dataset.msgPanel!==tab.dataset.msgTab);return}const fab=e.target.closest('#pulseFab,.pulse-fab');if(fab){e.preventDefault();openMessengerOptions();return}const beta=e.target.closest('[data-menu-toast]');if(beta){closeMessengerOptions();toast(beta.dataset.menuToast||'This Messenger option is being prepared.');return}if(e.target.closest('[data-open-pulse-room]')){try{const d=await pulseApi('/api/pulse/messages/room/open',{method:'POST',body:JSON.stringify({room_key:'pulse-general'})});location.href=d.next_url}catch(err){toast(err.message)}return}if(e.target.closest('[data-messenger-options-toggle]')){openMessengerOptions();return}if(e.target.id==='messengerOptions'){closeMessengerOptions();return}if(e.target.closest('[data-open-group-create]')){closeMessengerOptions();document.getElementById('groupChatModal').classList.add('open');return}if(e.target.closest('#cancelGroupChat')||e.target.id==='groupChatModal'){document.getElementById('groupChatModal').classList.remove('open');return}if(e.target.closest('[data-focus-private]')){closeMessengerOptions();document.getElementById('privateSearchCard')?.scrollIntoView({behavior:'smooth'});document.querySelector('#pulseUserSearch input')?.focus();return}if(e.target.closest('[data-self-message]')){toast('You cannot message yourself.');return}const msg=e.target.closest('[data-message-user]');if(msg){try{const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({target_user_id:msg.dataset.messageUser})});location.href=d.next_url}catch(err){toast(err.message)}return}const sel=e.target.closest('[data-select-user]');if(sel){if(sel.disabled){toast('You cannot add yourself.');return}const card=sel.closest('[data-user-result]');const id=String(sel.dataset.selectUser);if(selectedMembers.has(id))selectedMembers.delete(id);else selectedMembers.set(id,{id:Number(id),display_name:card.querySelector('strong')?.textContent?.replace(' ✦','')||'Pulse user'});renderSelected();sel.textContent=selectedMembers.has(id)?'Remove':'Add';return}const rem=e.target.closest('[data-remove-selected]');if(rem){selectedMembers.delete(String(rem.dataset.removeSelected));renderSelected();return}});
-    document.getElementById('pulseUserSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('pulseUserResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,false)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
-    document.getElementById('groupChatSearch').addEventListener('submit',async e=>{e.preventDefault();const q=e.target.q.value.trim();if(!q)return;const box=document.getElementById('groupChatResults');box.innerHTML='<p class="muted">Searching...</p>';try{const users=await searchPulseUsers(q);box.innerHTML=users.map(u=>renderPulseUser(u,true)).join('')||'<p class="muted">No Pulse users found.</p>'}catch(err){box.innerHTML=`<p class="muted">${err.message}</p>`}});
-    document.getElementById('createGroupChat').addEventListener('click',async()=>{try{const ids=[...selectedMembers.keys()].map(Number);const title=document.getElementById('groupChatTitle').value.trim();if(!title)throw new Error('Add a group chat name.');const d=await pulseApi('/api/pulse/messages/group/create',{method:'POST',body:JSON.stringify({title,description:document.getElementById('groupChatDescription').value,privacy:document.getElementById('groupChatPrivacy').value,participant_ids:ids})});location.href='/pulse/messages/'+d.conversation_id}catch(err){toast(err.message)}});
-    renderSelected();
-    if(location.hash==='#group-chat')document.querySelector('[data-msg-tab="group"]')?.click();
-    """
-    return pulse_social_shell("Pulse Messenger", "Recent Pulse chats, creator messages, group chats, community chats, and request-friendly replies.", main, "", script)
 
 
 def pulse_message_media_html(message):
@@ -25173,7 +23883,7 @@ def api_pulse_message_group_create():
     group_id = safe_int(payload.get("group_id"), 0)
     group_slug = clean_html(payload.get("group_slug") or "")[:140]
     if not participant_ids and not (group_id or group_slug):
-        return jsonify({"ok": False, "message": "At least one other participant is required.", "trace_id": trace_id}), 400
+        logging.info("PULSE_GROUP_CHAT_CREATE_OWNER_ONLY trace_id=%s user_id=%s title=%s", trace_id, user.get("user_id"), title)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         ensure_pulse_messenger_schema(cur, conn)
