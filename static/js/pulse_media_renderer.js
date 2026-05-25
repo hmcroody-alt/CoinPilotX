@@ -47,6 +47,7 @@
       const src = media.dataset.fullSrc || mediaUrl(wrap) || media.currentSrc || media.src;
       if (src) {
         media.style.visibility = "hidden";
+        media.addEventListener("load", () => revealImage(wrap, media), { once: true });
         media.src = retryUrl(src.split("#")[0], retries + 1);
         if (media.tagName === "VIDEO") media.load();
         return;
@@ -66,6 +67,22 @@
     if (!wrap || wrap.dataset.mediaHydrated === "1") return;
     wrap.dataset.mediaHydrated = "1";
     const media = wrap.querySelector("img,video");
+    if (window.localStorage?.getItem("pulseDebugMedia") === "1") {
+      console.debug("Pulse media render state", {
+        media_id: wrap.dataset.mediaId || "",
+        type: wrap.dataset.mediaType || "",
+        src: mediaUrl(wrap),
+        thumb: wrap.dataset.mediaThumb || "",
+        poster: wrap.dataset.mediaPoster || "",
+        has_element: !!media,
+        tag: media?.tagName || "",
+        current_src: media?.currentSrc || media?.src || "",
+        complete: media?.complete,
+        natural_width: media?.naturalWidth,
+        ready_state: media?.readyState,
+        diag: wrap.dataset.mediaDiag || "",
+      });
+    }
     if (!media) {
       if (wrap.classList.contains(BROKEN)) return;
       mark(wrap, BROKEN);
@@ -76,6 +93,8 @@
     if (media.tagName === "IMG") {
       if (media.complete && media.naturalWidth > 0) {
         revealImage(wrap, media);
+      } else if (media.complete && media.naturalWidth === 0) {
+        failMedia(wrap, media);
       } else {
         media.addEventListener("load", () => revealImage(wrap, media), { once: true });
       }

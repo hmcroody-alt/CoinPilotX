@@ -632,6 +632,8 @@ body {
   .pulse-media-wrap {
     border-radius: 16px;
     cursor: zoom-in;
+    aspect-ratio: var(--media-ratio, auto);
+    min-height: 180px;
     background:
       linear-gradient(110deg, rgba(255, 255, 255, .04), rgba(110, 223, 246, .055), rgba(255, 255, 255, .035));
     background-size: 220% 100%;
@@ -641,6 +643,7 @@ body {
   .pulse-media-wrap img,
   .pulse-media-wrap video {
     max-height: min(62vh, 620px) !important;
+    min-height: 180px;
   }
 
   .post.media-landscape .pulse-media-wrap img,

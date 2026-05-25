@@ -27,7 +27,7 @@ def main():
     expect(status.get("provider") in {"local", "r2", "s3"}, "media storage provider is known")
     if os.getenv("MEDIA_STORAGE_PROVIDER", "").lower() == "r2":
         expect(status.get("configured") is True, "R2 media storage is fully configured", str(status))
-        expect(status.get("bucket") == "pulse-media", "R2 production bucket configured", str(status))
+        expect(status.get("bucket") == "pulse-media2", "R2 production bucket configured", str(status))
         expect(status.get("public_base_url", "").rstrip("/") == "https://cdn.coinpilotx.app", "production CDN base configured", str(status))
     resolved = media_service.resolve_media({"storage_key": "audit/example.jpg", "media_type": "image", "storage_provider": "r2", "is_available": 1})
     expect(resolved["media_url"].startswith("https://cdn.coinpilotx.app/") or media_storage.provider() != "r2", "storage key resolves to canonical CDN URL")

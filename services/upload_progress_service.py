@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import logging
 from typing import Any
 
 from . import media_service, media_storage
@@ -82,15 +83,35 @@ def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_uploa
     tid = trace_id()
     validation = validate_media_file(file_storage)
     if not validation.get("ok"):
+        logging.warning("PULSE_UPLOAD_VALIDATION_FAILED trace_id=%s user_id=%s context_type=%s message=%s", tid, user_id, context_type, validation.get("message"))
         return {
             "ok": False,
             "message": validation.get("message") or "Upload could not be validated.",
             "trace_id": tid,
             "progress": progress_payload("failed", 0, validation.get("message") or "Upload failed.", trace_id=tid, retryable=True),
         }, int(validation.get("status") or 400)
+    logging.info(
+        "PULSE_UPLOAD_STAGE_START trace_id=%s user_id=%s context_type=%s context_id=%s media_type=%s mime_type=%s size=%s provider=%s",
+        tid,
+        user_id,
+        context_type,
+        context_id,
+        validation.get("media_type"),
+        validation.get("mime_type"),
+        validation.get("size"),
+        media_storage.provider(),
+    )
     result, status = media_service.save_upload(user_id, file_storage, context_type=context_type, context_id=context_id)
     media = result.get("media") if isinstance(result, dict) else {}
     if not result.get("ok"):
+        logging.error(
+            "PULSE_UPLOAD_STAGE_FAILED trace_id=%s user_id=%s context_type=%s status=%s message=%s",
+            tid,
+            user_id,
+            context_type,
+            status,
+            (result or {}).get("message"),
+        )
         return {
             **(result or {}),
             "trace_id": tid,
@@ -98,7 +119,40 @@ def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_uploa
         }, status
     verified = verify_media(media or {})
     media = {**(media or {}), **verified}
+    if media_storage.provider() in {"r2", "s3"} and not media.get("verified"):
+        logging.error(
+            "PULSE_UPLOAD_R2_VERIFY_FAILED trace_id=%s user_id=%s context_type=%s media_id=%s media_url=%s provider=%s",
+            tid,
+            user_id,
+            context_type,
+            media.get("id"),
+            media.get("media_url"),
+            media_storage.provider(),
+        )
+        return {
+            "ok": False,
+            "message": "Upload could not be verified in durable storage. Please retry.",
+            "trace_id": tid,
+            "media": media,
+            "progress": progress_payload("failed", 0, "R2 verification failed. Retry upload.", trace_id=tid, retryable=True),
+            "storage": {
+                "provider": media.get("storage_provider") or media_storage.provider(),
+                "cdn_base": os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/"),
+                "verified": False,
+            },
+        }, 502
     media_type = media.get("media_type") or validation.get("media_type") or "media"
+    logging.info(
+        "PULSE_UPLOAD_STAGE_COMPLETE trace_id=%s user_id=%s context_type=%s media_id=%s media_type=%s media_url=%s verified=%s processing_status=%s",
+        tid,
+        user_id,
+        context_type,
+        media.get("id"),
+        media_type,
+        media.get("media_url"),
+        bool(media.get("verified")),
+        media.get("processing_status") or "ready",
+    )
     return {
         "ok": True,
         "message": "Media uploaded and verified.",

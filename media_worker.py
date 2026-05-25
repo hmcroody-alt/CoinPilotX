@@ -75,15 +75,19 @@ def dependency_snapshot() -> dict:
     storage_provider = os.getenv("MEDIA_STORAGE_PROVIDER", "local").strip().lower() or "local"
     r2_bucket = bool(os.getenv("R2_BUCKET"))
     r2_public_base_url = bool(os.getenv("R2_PUBLIC_BASE_URL"))
+    r2_endpoint = bool(os.getenv("R2_ENDPOINT_URL") or os.getenv("R2_ENDPOINT") or os.getenv("R2_ACCOUNT_ID"))
+    r2_credentials = bool(os.getenv("R2_ACCESS_KEY_ID") and os.getenv("R2_SECRET_ACCESS_KEY"))
     storage_configured = True
     if storage_provider in {"r2", "s3"}:
-        storage_configured = r2_bucket and r2_public_base_url
+        storage_configured = r2_bucket and r2_public_base_url and r2_endpoint and r2_credentials
     return {
         "database_url_present": bool(os.getenv("DATABASE_URL")),
         "redis_url_present": bool(os.getenv("REDIS_URL")),
         "media_storage_provider": storage_provider,
         "storage_configured": storage_configured,
         "r2_bucket_present": r2_bucket,
+        "r2_endpoint_present": r2_endpoint,
+        "r2_credentials_present": r2_credentials,
         "r2_public_base_url_present": r2_public_base_url,
         "ffmpeg_present": bool(shutil.which("ffmpeg")),
         "batch_size": BATCH_SIZE,
@@ -94,11 +98,15 @@ def dependency_snapshot() -> dict:
 def log_boot_diagnostics() -> None:
     details = dependency_snapshot()
     logging.info(
-        "MEDIA_ENGINE_BOOT_CHECK database_url=%s redis_url=%s provider=%s storage_configured=%s ffmpeg=%s",
+        "MEDIA_ENGINE_BOOT_CHECK database_url=%s redis_url=%s provider=%s storage_configured=%s r2_bucket=%s r2_endpoint=%s r2_credentials=%s r2_public_base_url=%s ffmpeg=%s",
         details["database_url_present"],
         details["redis_url_present"],
         details["media_storage_provider"],
         details["storage_configured"],
+        details["r2_bucket_present"],
+        details["r2_endpoint_present"],
+        details["r2_credentials_present"],
+        details["r2_public_base_url_present"],
         details["ffmpeg_present"],
     )
     if details["media_storage_provider"] in {"r2", "s3"} and not details["storage_configured"]:
@@ -174,6 +182,12 @@ def process_pending_uploads(limit: int = BATCH_SIZE) -> dict:
     blocked = 0
     for row in rows:
         result = _process_upload_row(cur, row)
+        logging.info(
+            "MEDIA_WORKER_UPLOAD_STATE media_id=%s media_type=%s status=%s",
+            result.get("media_id"),
+            result.get("media_type"),
+            result.get("status"),
+        )
         if result["status"] == "blocked":
             blocked += 1
         else:
@@ -252,7 +266,20 @@ def process_media_jobs(limit: int = BATCH_SIZE) -> dict:
                 (_now(), int(job.get("id") or 0)),
             )
             if cur.rowcount:
+                logging.info(
+                    "MEDIA_WORKER_JOB_PROCESSING job_id=%s job_type=%s target_id=%s attempts=%s",
+                    job.get("id"),
+                    job.get("job_type"),
+                    job.get("target_id"),
+                    int(job.get("attempts") or 0) + 1,
+                )
                 _process_media_job(cur, job)
+                logging.info(
+                    "MEDIA_WORKER_JOB_COMPLETE job_id=%s job_type=%s target_id=%s status=done",
+                    job.get("id"),
+                    job.get("job_type"),
+                    job.get("target_id"),
+                )
                 processed += 1
         except Exception as exc:
             failed += 1

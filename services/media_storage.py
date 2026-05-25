@@ -5,6 +5,7 @@ from __future__ import annotations
 import mimetypes
 import os
 import secrets
+import logging
 from datetime import datetime
 from pathlib import Path
 from werkzeug.utils import secure_filename
@@ -21,6 +22,7 @@ def provider():
 def storage_status():
     current = provider()
     if current in {"r2", "s3"}:
+        endpoint = _s3_endpoint()
         required = {
             "R2_ACCESS_KEY_ID": bool(os.getenv("R2_ACCESS_KEY_ID")),
             "R2_SECRET_ACCESS_KEY": bool(os.getenv("R2_SECRET_ACCESS_KEY")),
@@ -28,13 +30,15 @@ def storage_status():
             "R2_PUBLIC_BASE_URL": bool(os.getenv("R2_PUBLIC_BASE_URL")),
         }
         if current == "r2":
-            required["R2_ACCOUNT_ID"] = bool(os.getenv("R2_ACCOUNT_ID"))
+            required["R2_ENDPOINT_OR_ACCOUNT_ID"] = bool(endpoint)
         return {
             "provider": current,
             "configured": all(required.values()),
             "required": required,
             "public_base_url": os.getenv("R2_PUBLIC_BASE_URL", "").strip(),
             "bucket": os.getenv("R2_BUCKET", "").strip(),
+            "endpoint_configured": bool(endpoint),
+            "endpoint_host": endpoint.split("//", 1)[-1].split("/", 1)[0] if endpoint else "",
         }
     return {
         "provider": "local",
@@ -63,34 +67,78 @@ def _s3_endpoint():
     current = provider()
     if current == "r2":
         account_id = os.getenv("R2_ACCOUNT_ID", "").strip()
-        return os.getenv("R2_ENDPOINT_URL", "").strip() or (f"https://{account_id}.r2.cloudflarestorage.com" if account_id else "")
+        endpoint = os.getenv("R2_ENDPOINT_URL", "").strip() or os.getenv("R2_ENDPOINT", "").strip()
+        if endpoint and not endpoint.startswith(("http://", "https://")):
+            endpoint = f"https://{endpoint}"
+        return endpoint.rstrip("/") or (f"https://{account_id}.r2.cloudflarestorage.com" if account_id else "")
     return os.getenv("S3_ENDPOINT_URL", "").strip() or None
 
 
 def _upload_to_object_storage(path, storage_key, mime_type):
     status = storage_status()
     if status.get("provider") not in {"r2", "s3"} or not status.get("configured"):
+        logging.error(
+            "MEDIA_R2_UPLOAD_SKIPPED reason=config_incomplete provider=%s bucket=%s endpoint_configured=%s required=%s key=%s",
+            status.get("provider"),
+            status.get("bucket"),
+            status.get("endpoint_configured"),
+            status.get("required"),
+            storage_key,
+        )
         return False, "object storage env is not fully configured"
     try:
         import boto3
     except Exception as exc:
+        logging.exception("MEDIA_R2_CLIENT_UNAVAILABLE key=%s error=%s", storage_key, exc)
         return False, f"boto3 unavailable: {exc}"
     try:
+        bucket = os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET")
+        endpoint = _s3_endpoint()
+        size = Path(path).stat().st_size if Path(path).exists() else 0
+        logging.info(
+            "MEDIA_R2_UPLOAD_START provider=%s bucket=%s endpoint_host=%s key=%s mime_type=%s size=%s",
+            provider(),
+            bucket,
+            status.get("endpoint_host"),
+            storage_key,
+            mime_type,
+            size,
+        )
         client = boto3.client(
             "s3",
-            endpoint_url=_s3_endpoint(),
+            endpoint_url=endpoint,
             aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"),
             region_name=os.getenv("AWS_REGION", "auto"),
         )
         client.upload_file(
             str(path),
-            os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"),
+            bucket,
             storage_key,
             ExtraArgs={"ContentType": mime_type, "CacheControl": "public, max-age=31536000, immutable"},
         )
+        head = client.head_object(Bucket=bucket, Key=storage_key)
+        logging.info(
+            "MEDIA_R2_UPLOAD_COMPLETE provider=%s bucket=%s key=%s public_url=%s content_type=%s content_length=%s etag_present=%s",
+            provider(),
+            bucket,
+            storage_key,
+            public_media_url(storage_key),
+            head.get("ContentType") or "",
+            head.get("ContentLength") or 0,
+            bool(head.get("ETag")),
+        )
         return True, ""
     except Exception as exc:
+        logging.exception(
+            "MEDIA_R2_UPLOAD_FAILED provider=%s bucket=%s endpoint_host=%s key=%s mime_type=%s error=%s",
+            provider(),
+            os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"),
+            status.get("endpoint_host"),
+            storage_key,
+            mime_type,
+            exc,
+        )
         return False, str(exc)
 
 

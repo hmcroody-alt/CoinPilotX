@@ -1,59 +1,62 @@
 #!/usr/bin/env python3
-"""Consolidated audit for Pulse Status create/view/publish/reply contracts."""
+"""Audit Pulse Waves compatibility, creation, viewing, and lightweight launch flow."""
 
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(script: str):
-    result = subprocess.run([sys.executable, str(ROOT / "scripts" / script)], cwd=ROOT, text=True, capture_output=True)
-    print(result.stdout, end="")
-    if result.returncode:
-        print(result.stderr, end="")
-        raise AssertionError(f"{script} failed")
-
-
-def require(condition, message):
+def require(condition, message, detail=""):
     if not condition:
-        raise AssertionError(message)
+        raise AssertionError(f"{message}: {detail}")
     print(f"ok - {message}")
 
 
 def main():
-    run("pulse_status_audit.py")
-    run("create_status_flow_audit.py")
-    run("media_story_audit.py")
-    run("mobile_story_audit.py")
-    run("audio_pipeline_audit.py")
-    source = (ROOT / "bot.py").read_text()
-    require("/api/pulse/status" in source, "Status create endpoint exists")
-    require("/api/pulse/status/rail" in source, "Status rail endpoint exists")
-    require("/api/pulse/status/<int:status_id>/reply" in source, "Status reply endpoint exists")
-    require("/api/pulse/status/music/search" in source and "/api/pulse/status/ai-story" in source, "Status music and AI Story endpoints exist")
-    require("pulse_status_views" in source and "pulse_status_reactions" in source and "pulse_status_replies" in source, "Status view/reaction/reply tables exist")
-    require("data-status-tool='stickers'" in source and "data-status-tool='music'" in source, "Status editor tools are functional hooks, not dead labels")
-    require("data-status-mode-picker" in source and "Create photo or video story" in source and "Create text story" in source, "Create Status opens the two-choice story chooser")
-    require("pulse-status-mode-grid" in source and "pulse-status-choice-media" in source and "pulse-status-choice-text" in source, "Create Status chooser matches the two-card reference layout")
-    require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source and "Choose an image or video from your gallery." in source, "Create Status directly opens gallery picker before preview")
-    require("statusForm?.classList.toggle('is-choosing'" in source, "Create Status hides editor tools until a story type is selected")
-    require(source.count("data-status-start=") == 2, "Create Status entry exposes only photo/video story and text story starts")
-    require('"Music", "Sound-first story", "♪", "music"' in source and "openStatusMusicCreator" in source, "Music card opens music-first flow")
-    require('"Camera", "Capture now", "◎", "camera"' in source and "/pulse/camera?target=status" in source, "Camera card opens Pulse Camera")
-    require('"Live", "Start broadcast", "●", "live"' in source and "/pulse/live" in source, "Live card opens go-live flow")
-    require('"AI Story", "Prompt to visual story", "AI", "ai"' in source and "openStatusAiCreator" in source, "AI Story card opens AI generator")
-    require('"Following", "Watch followed creators", "F", "following"' in source and '"Trending", "Watch active stories", "↗", "trending"' in source and '"Global", "Watch worldwide stories", "G", "global"' in source, "Discovery cards have viewer intents")
-    require("routeStatusIntent" in source and "openStatusViewerFeed(mode)" in source, "Status intent router separates creation and viewing")
-    require("data-status-story-viewer" in source and "data-status-story-reply" in source and "data-status-story-react" in source, "Status viewer has reply and reaction behavior")
-    require("data-status-full-page" in source and "data-status-full-tab" in source and '"following", "Following"' in source and '"trending", "Trending"' in source, "Full Status page has discovery tabs")
-    require("data-upload-progress" in source, "Status publishing shows upload progress")
-    css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text()
-    require(".pulse-status-mode-picker" in css and ".pulse-status-music-panel" in css and ".pulse-status-ai-panel" in css and ".pulse-status-story-viewer" in css, "Status editor and viewer have immersive styling")
-    print("status system audit ok")
+    source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text(encoding="utf-8")
+
+    require("🌊 Pulse Waves" in source, "Pulse Waves naming is visible")
+    require("Launch Wave" in source and "Launch 🌊" in source, "Launch Wave CTA exists")
+    require("pulseCoreLauncher" in source and ".pulse-core-launcher" in css, "Pulse Core launcher exists")
+    require("pulseCoreRipple" in css and "prefers-reduced-motion" in css, "Pulse Core motion is lightweight and accessible")
+
+    for label in ["Media Wave", "Voice Wave", "Mood Wave", "Live Wave", "AI Wave"]:
+        require(label in source, f"{label} quick action exists")
+
+    require("/pulse/waves" in source, "Pulse Waves page route exists")
+    require("/api/pulse/waves/rail" in source, "Pulse Waves rail endpoint exists")
+    require("/api/pulse/waves" in source, "Pulse Waves launch endpoint exists")
+    require("/api/pulse/waves/ai" in source, "AI Wave endpoint alias exists")
+    require("/api/pulse/waves/<int:status_id>/view" in source, "Wave view endpoint exists")
+    require("/api/pulse/waves/<int:status_id>/reply" in source, "Wave reply endpoint exists")
+    require("/api/pulse/waves/<int:status_id>/react" in source, "Wave reaction endpoint exists")
+
+    require("routeStatusIntent" in source and "openStatusModePicker" in source, "intent router opens fast Wave sheet")
+    require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source, "Media Wave opens gallery picker")
+    require("openStatusMusicCreator" in source and "statusSoundInput?.click()" in source, "Voice Wave opens audio picker")
+    require("openStatusMoodCreator" in source and "data-wave-mood" in source, "Mood Wave has one-tap mood choices")
+    require("location.href='/pulse/live'" in source, "Live Wave opens live flow")
+    require("openStatusAiCreator" in source and "generateAiStatusStory" in source, "AI Wave opens AI assist")
+
+    require("context_type','pulse_wave'" in source, "Wave media uploads use Wave context")
+    require("context_type','pulse_wave_voice'" in source, "Voice Wave uploads use voice context")
+    require("PulseUploadManager" in source and "Launching Wave..." in source, "Wave launch uses upload progress")
+    require("Wave launched successfully" in source, "Wave success confirmation exists")
+    require("pulse_status_views" in source and "pulse_status_reactions" in source and "pulse_status_replies" in source, "legacy status tables remain as stable storage")
+    require("product_name\": \"Pulse Waves\"" in source, "rail response identifies Pulse Waves")
+
+    forbidden_visible = ["Create Status", "Pulse Status</", "Create your story", "Create photo or video story", "Create text story"]
+    for token in forbidden_visible:
+        require(token not in source, f"old visible label removed: {token}")
+
+    require(".pulse-wave-sheet" in css, "Wave sheet styling exists")
+    require("grid-template-columns: repeat(5" in css, "desktop Wave actions are compact")
+    require("grid-template-columns: 1fr" in css, "mobile Wave actions stack cleanly")
+
+    print("pulse waves audit ok")
 
 
 if __name__ == "__main__":

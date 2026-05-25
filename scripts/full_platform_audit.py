@@ -56,7 +56,6 @@ AUDIT_PLAN = [
 
 REQUIRED_PRODUCTION_ENV = [
     "MEDIA_STORAGE_PROVIDER",
-    "R2_ACCOUNT_ID",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
     "R2_BUCKET",
@@ -105,9 +104,11 @@ def railway_env_audit():
     require(nixpacks.exists(), "nixpacks.toml exists for Railway/system dependencies")
     if is_production_like():
         missing = [key for key in REQUIRED_PRODUCTION_ENV if not os.getenv(key)]
+        missing_endpoint = not (os.getenv("R2_ENDPOINT") or os.getenv("R2_ENDPOINT_URL") or os.getenv("R2_ACCOUNT_ID"))
         require(not missing, f"production R2/CDN env vars configured ({', '.join(missing) if missing else 'none missing'})")
+        require(not missing_endpoint, "production R2 endpoint or account id configured")
         require(os.getenv("MEDIA_STORAGE_PROVIDER", "").lower() == "r2", "production uses R2 media storage")
-        require(os.getenv("R2_BUCKET") == "pulse-media", "production R2 bucket is pulse-media")
+        require(os.getenv("R2_BUCKET") == "pulse-media2", "production R2 bucket is pulse-media2")
         require(os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/") == "https://cdn.coinpilotx.app", "production CDN is cdn.coinpilotx.app")
     else:
         print("ok - local/non-production environment may use local media fallback; production gate will require R2")

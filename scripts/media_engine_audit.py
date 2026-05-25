@@ -59,6 +59,8 @@ def main() -> int:
         "REDIS_URL": bool(os.getenv("REDIS_URL")),
         "MEDIA_STORAGE_PROVIDER": provider,
         "R2_BUCKET": bool(os.getenv("R2_BUCKET")),
+        "R2_ENDPOINT_OR_ACCOUNT_ID": bool(os.getenv("R2_ENDPOINT_URL") or os.getenv("R2_ENDPOINT") or os.getenv("R2_ACCOUNT_ID")),
+        "R2_CREDENTIALS": bool(os.getenv("R2_ACCESS_KEY_ID") and os.getenv("R2_SECRET_ACCESS_KEY")),
         "R2_PUBLIC_BASE_URL": bool(os.getenv("R2_PUBLIC_BASE_URL")),
     }
     lines.append("environment: " + json.dumps(env_status, sort_keys=True))
@@ -74,8 +76,13 @@ def main() -> int:
     )
     if running_on_railway and not env_status["DATABASE_URL"]:
         failures.append("Missing DATABASE_URL. Attach Postgres variables to coinpilotx-media-engine.")
-    if provider in {"r2", "s3"} and not (env_status["R2_BUCKET"] and env_status["R2_PUBLIC_BASE_URL"]):
-        failures.append("R2/S3 storage selected but R2_BUCKET or R2_PUBLIC_BASE_URL is missing.")
+    if provider in {"r2", "s3"} and not (
+        env_status["R2_BUCKET"]
+        and env_status["R2_ENDPOINT_OR_ACCOUNT_ID"]
+        and env_status["R2_CREDENTIALS"]
+        and env_status["R2_PUBLIC_BASE_URL"]
+    ):
+        failures.append("R2/S3 storage selected but bucket, endpoint/account id, credentials, or public base URL is missing.")
 
     bot.init_db()
     conn = bot.db()

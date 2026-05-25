@@ -3,6 +3,7 @@
 import mimetypes
 import os
 import secrets
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -121,6 +122,22 @@ def cdn_url_for_key(storage_key):
     return f"{base}/{key}"
 
 
+def _cdn_url_from_r2_private_url(value):
+    """Map a private R2/S3 endpoint URL to the public CDN URL when possible."""
+    try:
+        parsed = urlparse(str(value or "").strip())
+    except Exception:
+        return ""
+    host = (parsed.netloc or "").lower()
+    if "r2.cloudflarestorage.com" not in host:
+        return ""
+    key = (parsed.path or "").lstrip("/")
+    bucket = os.getenv("R2_BUCKET", "").strip().strip("/")
+    if bucket and key.startswith(bucket + "/"):
+        key = key[len(bucket) + 1 :]
+    return cdn_url_for_key(key)
+
+
 def validate_remote_url(url, timeout=2.5):
     """Fast HEAD validation for audits and admin diagnostics, not hot rendering."""
     value = normalize_url(url)
@@ -189,12 +206,21 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     source = url or item.get("public_url") or item.get("media_url") or item.get("valid_url") or canonical_cdn_url or ""
     thumb = thumbnail_url or item.get("thumbnail_url") or item.get("medium_url") or item.get("small_url") or source
     poster = poster_url or item.get("poster_url") or thumb
+    private_source = _cdn_url_from_r2_private_url(source)
+    if private_source:
+        source = private_source
     source = normalize_url(source)
     if source.startswith("/static/uploads/") and canonical_cdn_url and media_storage.provider() in {"r2", "s3"}:
         source = canonical_cdn_url
+    private_thumb = _cdn_url_from_r2_private_url(thumb)
+    if private_thumb:
+        thumb = private_thumb
     thumb = normalize_url(thumb)
     if thumb.startswith("/static/uploads/") and canonical_cdn_url and media_storage.provider() in {"r2", "s3"}:
         thumb = canonical_cdn_url
+    private_poster = _cdn_url_from_r2_private_url(poster)
+    if private_poster:
+        poster = private_poster
     poster = normalize_url(poster)
     if poster.startswith("/static/uploads/") and canonical_cdn_url and media_storage.provider() in {"r2", "s3"}:
         poster = canonical_cdn_url
@@ -376,7 +402,36 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         if not _image_header_ok(ext, header):
             return {"ok": False, "message": "This image or GIF could not be verified safely."}, 400
     folder = "pulse_media" if str(context_type or "").startswith("pulse") else "chat_media"
+    logging.info(
+        "PULSE_MEDIA_UPLOAD_START user_id=%s context_type=%s context_id=%s filename=%s media_type=%s size=%s provider=%s",
+        int(user_id),
+        context_type,
+        context_id,
+        original,
+        media_type,
+        size,
+        media_storage.provider(),
+    )
     storage = media_storage.save_public_file(file_storage, folder=folder)
+    logging.info(
+        "PULSE_MEDIA_UPLOAD_STORAGE_RESULT user_id=%s context_type=%s storage_provider=%s durable_uploaded=%s storage_key=%s public_url=%s upload_error=%s",
+        int(user_id),
+        context_type,
+        storage.get("provider"),
+        bool(storage.get("durable_uploaded")),
+        storage.get("storage_key"),
+        storage.get("media_url"),
+        storage.get("upload_error") or "",
+    )
+    if media_storage.provider() in {"r2", "s3"} and not storage.get("durable_uploaded"):
+        logging.error(
+            "PULSE_MEDIA_UPLOAD_DURABLE_REQUIRED_FAILED user_id=%s context_type=%s storage_key=%s upload_error=%s",
+            int(user_id),
+            context_type,
+            storage.get("storage_key"),
+            storage.get("upload_error") or "durable upload did not complete",
+        )
+        return {"ok": False, "message": "Upload could not be saved to durable media storage. Please retry."}, 502
     path = Path(storage.get("local_path") or "")
     stored = storage.get("storage_key") or f"{datetime.utcnow().strftime('%Y%m%d')}_{secrets.token_urlsafe(16)}.{ext}"
     mime = file_storage.mimetype or mimetypes.guess_type(original)[0] or "application/octet-stream"
@@ -436,7 +491,16 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     cur.execute("SELECT * FROM chat_media_uploads WHERE id=?", (media_id,))
     row = cur.fetchone()
     conn.close()
-    return {"ok": True, "media": _public(row)}, 200
+    public_media = _public(row)
+    logging.info(
+        "PULSE_MEDIA_UPLOAD_COMPLETE user_id=%s media_id=%s storage_provider=%s media_url=%s processing_status=%s",
+        int(user_id),
+        media_id,
+        public_media.get("storage_provider"),
+        public_media.get("media_url"),
+        public_media.get("processing_status") or "ready",
+    )
+    return {"ok": True, "media": public_media}, 200
 
 
 def attach_media_to_message(user_id, message_id, media_ids, context_type="private_chat", context_id=""):
