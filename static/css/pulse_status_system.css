@@ -1495,11 +1495,11 @@ body.status-editor-open {
   padding: clamp(86px, 12vh, 112px) clamp(22px, 5vw, 44px) clamp(184px, 18vh, 220px);
 }
 
-.pulse-wave-preview-card {
+.pulse-wave-preview-live {
   position: relative;
   z-index: 4;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   width: 100%;
   max-width: 780px;
@@ -1509,58 +1509,6 @@ body.status-editor-open {
   border-radius: 32px;
   background: rgba(7, 12, 26, .72);
   box-shadow: 0 0 0 1px rgba(100, 233, 255, .16), 0 30px 90px rgba(0, 0, 0, .44), 0 0 54px rgba(167, 71, 255, .22);
-}
-
-.pulse-wave-preview-card header,
-.pulse-wave-preview-card footer {
-  position: relative;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 20px clamp(18px, 5vw, 28px);
-}
-
-.pulse-wave-preview-card header {
-  position: absolute;
-  inset: 0 0 auto 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, .42), transparent);
-}
-
-.pulse-wave-preview-card header .pulse-status-avatar-ring {
-  width: 58px;
-  height: 58px;
-  flex: 0 0 auto;
-}
-
-.pulse-wave-preview-card header div {
-  min-width: 0;
-}
-
-.pulse-wave-preview-card header strong,
-.pulse-wave-preview-card footer strong {
-  color: #fff;
-  font-size: clamp(22px, 4vw, 30px);
-  line-height: 1.05;
-}
-
-.pulse-wave-preview-card header small,
-.pulse-wave-preview-card footer small {
-  display: block;
-  margin-top: 3px;
-  color: rgba(240, 245, 255, .74);
-  font-size: 15px;
-  font-weight: 750;
-}
-
-.pulse-wave-preview-card header button {
-  margin-left: auto;
-  width: 50px;
-  min-height: 50px;
-  border-radius: 999px;
-  padding: 0;
-  background: rgba(255, 255, 255, .12);
-  color: #fff;
 }
 
 .pulse-wave-media-frame {
@@ -1592,22 +1540,24 @@ body.status-editor-open {
   backdrop-filter: blur(14px);
 }
 
-.pulse-wave-preview-card footer {
+.pulse-wave-live-caption {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: clamp(18px, 5vw, 32px);
+  right: clamp(18px, 5vw, 32px);
   bottom: 0;
-  display: grid;
-  justify-items: start;
-  gap: 2px;
-  min-height: 112px;
-  padding-top: 44px;
-  background: linear-gradient(0deg, rgba(0, 0, 0, .72), transparent);
+  z-index: 5;
+  padding: 46px 0 24px;
+  color: #fff;
+  font-size: clamp(26px, 5vw, 42px);
+  font-weight: 950;
+  line-height: 1.08;
+  text-shadow: 0 16px 36px rgba(0, 0, 0, .62);
+  background: linear-gradient(0deg, rgba(0, 0, 0, .62), transparent);
+  pointer-events: none;
 }
 
-.pulse-wave-preview-card footer strong {
-  max-width: min(560px, 86%);
-  font-size: clamp(28px, 6vw, 46px);
+.pulse-wave-live-caption[hidden] {
+  display: none;
 }
 
 .pulse-status-form.is-photo-wave .pulse-status-caption-layer {
@@ -1810,7 +1760,7 @@ body.status-editor-open {
     min-height: min(61dvh, 620px);
   }
 
-  .pulse-wave-preview-card {
+  .pulse-wave-preview-live {
     border-radius: 26px;
   }
 

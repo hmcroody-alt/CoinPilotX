@@ -40,7 +40,9 @@ def main():
     require("Voice Wave" not in source and "Mood Wave" not in source and "Live Wave" not in source and "AI Wave" not in source, "old complex Wave actions are not visible")
     require("pulse-wave-step" in source and ".pulse-wave-step" in status_css, "mobile Wave flow shows step progress")
     require("pulse-wave-text-canvas" in source and ".pulse-wave-text-canvas" in status_css, "mobile Text Wave uses immersive writing canvas")
-    require("pulse-wave-preview-card" in source and ".pulse-wave-preview-card" in status_css, "mobile Photo Wave uses immersive preview card")
+    require("PulseWaveComponents" in source, "mobile Wave flow uses native dynamic components")
+    require("pulse-wave-preview-live" in source and ".pulse-wave-preview-live" in status_css, "mobile Photo Wave uses real selected media preview")
+    require("Just now · Public" not in source and "Preview your Wave" not in source, "mobile Wave preview does not render fake mockup card copy")
     require("pulseWaveAtmosphere" in status_css and "pulseWaveFloat" in status_css, "mobile Wave atmosphere uses lightweight motion")
     print("mobile experience audit ok")
 

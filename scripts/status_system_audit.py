@@ -49,8 +49,9 @@ def main():
     require("openStatusTextCreator" in source and "pulseStatusBody')?.focus()" in source, "Text Wave opens immersive writing space")
     require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source, "Photo Wave opens gallery picker directly")
     require("Add Music" in source and "Add Voice Note" in source and "statusSoundInput?.click()" in source, "music and voice are subtle optional controls")
-    require("pulse-wave-text-canvas" in source and "What’s on your mind?" in source, "Text Wave renders immersive writing canvas")
-    require("pulse-wave-preview-card" in source and "pulse-wave-media-frame" in source and "data-wave-caption-preview" in source, "Photo Wave renders immersive preview card")
+    require("PulseWaveComponents" in source and "data-wave-component='WaveStage'" in source, "Wave UI is component-driven")
+    require("pulse-wave-text-canvas" in source and "TextWaveComposer" in source, "Text Wave renders native writing canvas")
+    require("pulse-wave-preview-live" in source and "PhotoWavePreview" in source and "data-wave-caption-preview" in source, "Photo Wave renders real selected media preview")
 
     require("context_type','pulse_wave'" in source, "Wave media uploads use Wave context")
     require("context_type','pulse_wave_audio'" in source, "optional Wave audio uploads use audio context")
@@ -64,9 +65,12 @@ def main():
     forbidden_visible = ["Create Status", "Pulse Status</", "Create your story", "Create photo or video story", "Create text story"]
     for token in forbidden_visible:
         require(token not in source, f"old visible label removed: {token}")
+    for token in ["Just now · Public", "Preview your Wave", "Chasing sunsets", "goodvibes", "static/screenshots", "mockup"]:
+        require(token not in source, f"mock/reference Wave content is not rendered: {token}")
 
     require(".pulse-wave-sheet" in css, "Wave sheet styling exists")
-    require(".pulse-wave-preview-card" in css and ".pulse-wave-text-canvas" in css, "cinematic Wave composer surfaces are styled")
+    require(".pulse-wave-preview-live" in css and ".pulse-wave-text-canvas" in css, "native cinematic Wave composer surfaces are styled")
+    require(".pulse-wave-live-caption" in css, "Photo Wave caption is live dynamic UI")
     require("pulseWaveAtmosphere" in css and "pulseWaveFloat" in css, "cinematic Wave motion system exists")
     require("grid-template-columns: repeat(2" in css, "desktop Wave actions are strict two-choice layout")
     require(".pulse-wave-secondary-controls" in css, "secondary controls are visually subtle")
