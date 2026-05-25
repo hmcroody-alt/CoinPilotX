@@ -926,3 +926,396 @@ body {
     display: none !important;
   }
 }
+
+@media (max-width: 768px) {
+  html,
+  body,
+  .wrap,
+  .pulse-shell,
+  .pulse-desktop-layout,
+  .pulse-desktop-center,
+  .pulse-desktop-center > .layout,
+  .pulse-desktop-center > .layout > div,
+  .feed,
+  .card,
+  .post,
+  .composer,
+  .pulse-status-rail,
+  .pulse-live-now {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  .wrap,
+  .pulse-shell {
+    width: 100% !important;
+    padding: 6px 8px calc(126px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .mobile-topbar {
+    min-height: 48px !important;
+    margin: -6px -8px 6px !important;
+    padding: calc(5px + env(safe-area-inset-top)) 8px 6px !important;
+  }
+
+  .mobile-brand {
+    gap: 6px !important;
+    font-size: 14px !important;
+  }
+
+  .mobile-brand img {
+    width: 26px !important;
+    height: 26px !important;
+    border-radius: 8px !important;
+  }
+
+  .icon-btn,
+  .mobile-actions .avatar {
+    width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    border-radius: 11px !important;
+    font-size: 16px !important;
+  }
+
+  .hero.card,
+  .card,
+  .composer.card,
+  .post.card,
+  .pulse-live-now,
+  #tabs {
+    width: 100% !important;
+    max-width: calc(100vw - 16px) !important;
+    margin: 6px 0 !important;
+    padding: 9px !important;
+    border-radius: 13px !important;
+  }
+
+  .hero h1 {
+    font-size: clamp(22px, 7.2vw, 30px) !important;
+    line-height: 1.02 !important;
+    margin: 2px 0 !important;
+  }
+
+  .hero p,
+  .card p,
+  .muted {
+    font-size: 12px !important;
+    line-height: 1.32 !important;
+    margin: 2px 0 !important;
+  }
+
+  .badge,
+  .tag,
+  .pill {
+    font-size: 10px !important;
+    min-height: 22px !important;
+    padding: 3px 6px !important;
+    border-radius: 999px !important;
+  }
+
+  .pulse-status-rail {
+    padding: 8px 0 !important;
+  }
+
+  .pulse-status-head {
+    padding: 0 2px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .pulse-status-head h2 {
+    font-size: 16px !important;
+    line-height: 1.1 !important;
+  }
+
+  .pulse-status-head .button {
+    min-height: 32px !important;
+    padding: 6px 9px !important;
+    font-size: 12px !important;
+  }
+
+  .pulse-status-strip {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    max-width: 100vw !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 0 2px 5px !important;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .pulse-status-card {
+    flex: 0 0 112px !important;
+    width: 112px !important;
+    min-width: 112px !important;
+    min-height: 142px !important;
+    max-height: 148px !important;
+    padding: 9px !important;
+    border-radius: 15px !important;
+    gap: 7px !important;
+    scroll-snap-align: start;
+  }
+
+  .pulse-status-avatar-ring {
+    width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    font-size: 16px !important;
+  }
+
+  .pulse-status-title {
+    font-size: 12px !important;
+    line-height: 1.12 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden !important;
+  }
+
+  .pulse-status-meta {
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden !important;
+  }
+
+  .pulse-live-now {
+    gap: 7px !important;
+  }
+
+  .pulse-live-now header h2,
+  .pulse-desktop-center .pulse-live-now header h2 {
+    font-size: 17px !important;
+    line-height: 1.12 !important;
+    margin: 2px 0 !important;
+  }
+
+  .pulse-live-now header p,
+  .pulse-desktop-center .pulse-live-now header p {
+    display: none !important;
+  }
+
+  .pulse-live-now-grid,
+  .pulse-desktop-center .pulse-live-now-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  .pulse-live-now-card,
+  .pulse-desktop-center .pulse-live-now-card {
+    grid-template-columns: 96px minmax(0, 1fr) !important;
+    gap: 8px !important;
+    padding: 8px !important;
+    border-radius: 13px !important;
+    align-items: center !important;
+  }
+
+  .pulse-live-preview,
+  .pulse-desktop-center .pulse-live-preview {
+    width: 96px !important;
+    min-width: 96px !important;
+    aspect-ratio: 16 / 9 !important;
+    border-radius: 10px !important;
+    padding: 6px !important;
+  }
+
+  .pulse-live-now-card h3,
+  .pulse-desktop-center .pulse-live-now-card h3 {
+    font-size: 13px !important;
+    line-height: 1.16 !important;
+    margin: 0 0 2px !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden !important;
+  }
+
+  .pulse-live-now-card p,
+  .pulse-desktop-center .pulse-live-now-card p {
+    gap: 4px !important;
+    font-size: 10px !important;
+  }
+
+  .pulse-live-now-card .button {
+    grid-column: 1 / -1 !important;
+    min-height: 32px !important;
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+  }
+
+  .composer.card {
+    display: grid !important;
+    gap: 7px !important;
+  }
+
+  .pulse-publisher-card .smart-composer-bar {
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+    gap: 7px !important;
+  }
+
+  .pulse-publisher-card .smart-compose-avatar {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+    font-size: 14px !important;
+  }
+
+  .pulse-publisher-card .smart-composer-bar textarea {
+    min-height: 44px !important;
+    max-height: 74px !important;
+    padding: 9px 11px !important;
+    border-radius: 16px !important;
+    font-size: 14px !important;
+    line-height: 1.25 !important;
+  }
+
+  .composer-primary-actions {
+    gap: 6px !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding-bottom: 3px !important;
+  }
+
+  .composer-primary-actions button,
+  .composer-primary-actions .button {
+    flex: 0 0 auto !important;
+    min-height: 34px !important;
+    padding: 6px 9px !important;
+    border-radius: 10px !important;
+    font-size: 11px !important;
+  }
+
+  .feed {
+    gap: 7px !important;
+    margin-top: 7px !important;
+  }
+
+  .post.card {
+    contain-intrinsic-size: 280px !important;
+  }
+
+  .author-main,
+  .author {
+    gap: 7px !important;
+    min-width: 0 !important;
+  }
+
+  .avatar {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+  }
+
+  .author-name {
+    font-size: 13px !important;
+  }
+
+  .post h2 {
+    font-size: clamp(18px, 5.8vw, 24px) !important;
+    line-height: 1.06 !important;
+    margin: 1px 0 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden !important;
+  }
+
+  .post > p,
+  .post p {
+    font-size: 13px !important;
+    line-height: 1.34 !important;
+    margin: 2px 0 !important;
+  }
+
+  .post > p {
+    -webkit-line-clamp: 4 !important;
+  }
+
+  .post .tags,
+  .post .tag-row,
+  .post .post-tags,
+  .post [data-post-tags],
+  .post [data-ai-tags],
+  .tags {
+    gap: 4px !important;
+    max-height: 46px !important;
+    overflow: hidden !important;
+  }
+
+  .reaction-strip {
+    gap: 4px !important;
+    padding: 1px 0 2px !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+  }
+
+  .reaction-pill {
+    min-height: 28px !important;
+    padding: 4px 7px !important;
+    font-size: 11px !important;
+  }
+
+  .quick-actions {
+    gap: 4px !important;
+    padding: 3px 0 !important;
+  }
+
+  .quick-action {
+    min-height: 30px !important;
+    padding: 4px 2px !important;
+    font-size: 11px !important;
+    border-radius: 8px !important;
+  }
+
+  .inline-comments,
+  .comments {
+    gap: 5px !important;
+    margin-top: 3px !important;
+    max-height: 160px !important;
+  }
+
+  .comment {
+    padding: 6px 8px !important;
+    border-radius: 10px !important;
+  }
+
+  .comment-composer {
+    grid-template-columns: 28px minmax(0, 1fr) 32px 34px !important;
+    gap: 5px !important;
+  }
+
+  .comment-avatar {
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  .comment-input {
+    min-height: 34px !important;
+    padding: 7px 10px !important;
+    font-size: 13px !important;
+  }
+
+  .comment-send,
+  .comment-emoji {
+    width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+  }
+
+  .pulse-fab {
+    width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    right: 10px !important;
+    bottom: calc(76px + env(safe-area-inset-bottom)) !important;
+    border-radius: 13px !important;
+    font-size: 21px !important;
+    opacity: .92 !important;
+  }
+}
