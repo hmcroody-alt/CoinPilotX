@@ -125,10 +125,10 @@ def main() -> None:
     require(feed_response.status_code == 200 and created, "attached media post appears in feed after refresh", str(feed_payload)[:500])
     require(len(created.get("media") or []) >= 2, "feed payload preserves image/video attachments after refresh")
 
-    require("--pulse-feed-column: clamp(780px" in desktop_css and "--pulse-text-column: 820px" in desktop_css, "desktop feed column is enlarged")
-    require("minmax(720px, var(--pulse-feed-column))" in desktop_css, "desktop grid reserves a wider feed lane")
-    require("min-height: 118px" in desktop_css and "padding: clamp(24px" in desktop_css, "desktop composer and cards are no longer compressed")
-    require("max-height: min(88vh, 980px)" in desktop_css, "desktop media can render at immersive scale")
+    require("--pulse-feed-column: clamp(1040px" in desktop_css and "--pulse-text-column: 1040px" in desktop_css, "desktop feed column is doubled")
+    require("minmax(980px, var(--pulse-feed-column))" in desktop_css, "desktop grid reserves a doubled feed lane")
+    require("min-height: 190px" in desktop_css and "padding: clamp(36px" in desktop_css, "desktop composer and cards are no longer compressed")
+    require("max-height: min(92vh, 1180px)" in desktop_css, "desktop media can render at immersive scale")
 
     print("media attachment audit ok")
 

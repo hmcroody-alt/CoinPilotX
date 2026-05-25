@@ -65,10 +65,11 @@ def main():
         require(label in html, f"composer action exists: {label}")
     require("smart-compose-icon" not in html[html.find("pulseComposer") : html.find("pulseComposer") + 1200], "composer no longer has duplicate tiny upload icon")
 
-    require("--pulse-feed-column: clamp(780px" in desktop_css and "--pulse-text-column: 820px" in desktop_css, "desktop center feed target is Facebook-scale")
-    require(".composer.card" in desktop_css and "min-height: 118px" in desktop_css, "composer is larger and content-first on desktop")
-    require(".post.card" in desktop_css and "padding: clamp(24px" in desktop_css, "post cards have larger premium padding")
-    require("max-height: min(88vh, 980px)" in desktop_css, "feed media can render large on desktop")
+    require("--pulse-feed-column: clamp(1040px" in desktop_css and "--pulse-text-column: 1040px" in desktop_css, "desktop center feed target is doubled from composer down")
+    require("minmax(980px, var(--pulse-feed-column))" in desktop_css, "desktop grid reserves a doubled feed lane")
+    require(".composer.card" in desktop_css and "min-height: 190px" in desktop_css, "composer is larger and content-first on desktop")
+    require(".post.card" in desktop_css and "padding: clamp(36px" in desktop_css, "post cards have doubled premium padding")
+    require("max-height: min(92vh, 1180px)" in desktop_css, "feed media can render larger on desktop")
     require(".composer-primary-actions" in desktop_css and "repeat(6" in desktop_css, "desktop composer action row is intentional")
     require("@media(max-width:900px)" in source and ".composer-primary-actions" in source, "mobile composer action row has responsive rules")
 

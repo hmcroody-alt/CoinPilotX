@@ -1,10 +1,10 @@
 :root {
   --pulse-left-rail: clamp(220px, 14vw, 312px);
   --pulse-right-rail: clamp(278px, 18vw, 390px);
-  --pulse-feed-column: clamp(780px, 52vw, 1080px);
-  --pulse-text-column: 820px;
-  --pulse-cinematic-column: clamp(860px, 58vw, 1180px);
-  --pulse-shell-max: 2140px;
+  --pulse-feed-column: clamp(1040px, 62vw, 1320px);
+  --pulse-text-column: 1040px;
+  --pulse-cinematic-column: clamp(1120px, 68vw, 1440px);
+  --pulse-shell-max: 2420px;
 }
 
 html,
@@ -102,9 +102,9 @@ body {
   .pulse-desktop-layout {
     display: grid;
     grid-template-columns:
-      minmax(200px, var(--pulse-left-rail))
-      minmax(720px, var(--pulse-feed-column))
-      minmax(260px, var(--pulse-right-rail));
+      minmax(190px, var(--pulse-left-rail))
+      minmax(980px, var(--pulse-feed-column))
+      minmax(250px, var(--pulse-right-rail));
     gap: clamp(14px, 1.25vw, 24px);
     align-items: start;
     justify-content: stretch;
@@ -123,14 +123,21 @@ body {
 
   .pulse-desktop-center {
     min-width: 0;
+    width: 100%;
+    max-width: var(--pulse-feed-column);
+    justify-self: center;
   }
 
   .pulse-desktop-layout > .layout {
     display: block !important;
+    width: 100% !important;
+    max-width: none !important;
   }
 
   .pulse-desktop-layout > .layout > div {
     min-width: 0;
+    width: 100% !important;
+    max-width: none !important;
   }
 
   .pulse-desktop-layout > .layout > aside.side {
@@ -339,11 +346,12 @@ body {
   }
 
   .composer.card {
-    width: min(100%, var(--pulse-text-column));
+    width: min(100%, var(--pulse-text-column)) !important;
+    max-width: var(--pulse-text-column) !important;
     justify-self: center;
     border-radius: 22px;
-    margin: 16px auto;
-    padding: clamp(24px, 1.65vw, 32px);
+    margin: 22px auto;
+    padding: clamp(34px, 2.3vw, 48px);
     box-shadow: 0 24px 82px rgba(0, 0, 0, .3), 0 0 36px rgba(110, 223, 246, .06);
   }
 
@@ -361,10 +369,10 @@ body {
   }
 
   .pulse-publisher-card .smart-composer-bar textarea {
-    min-height: 118px;
-    border-radius: 24px;
-    padding: 20px 22px;
-    font-size: 19px;
+    min-height: 190px;
+    border-radius: 30px;
+    padding: 28px 30px;
+    font-size: 24px;
     line-height: 1.35;
   }
 
@@ -378,8 +386,9 @@ body {
 
   .composer-primary-actions button,
   .composer-primary-actions .button {
-    min-height: 52px;
-    border-radius: 15px;
+    min-height: 64px;
+    border-radius: 18px;
+    font-size: 18px;
     white-space: nowrap;
   }
 
@@ -441,12 +450,25 @@ body {
 
   .feed {
     display: grid;
-    gap: 18px;
+    gap: 30px;
     justify-items: center;
+    width: 100% !important;
+  }
+
+  #tabs,
+  #loadMore,
+  .pulse-desktop-center > .layout > div > .card:not(.hero):not(.composer),
+  .new-pulses-banner {
+    width: min(100%, var(--pulse-text-column)) !important;
+    max-width: var(--pulse-text-column) !important;
+    justify-self: center;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .desktop-feed-intel-card {
-    width: min(100%, var(--pulse-text-column));
+    width: min(100%, var(--pulse-text-column)) !important;
+    max-width: var(--pulse-text-column) !important;
     justify-self: center;
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto;
@@ -473,13 +495,14 @@ body {
   }
 
   .post.card {
-    width: min(100%, var(--pulse-text-column));
+    width: min(100%, var(--pulse-text-column)) !important;
+    max-width: var(--pulse-text-column) !important;
     justify-self: center;
-    border-radius: 22px;
-    padding: clamp(24px, 1.65vw, 32px);
-    gap: 16px;
+    border-radius: 28px;
+    padding: clamp(36px, 2.4vw, 52px);
+    gap: 24px;
     content-visibility: auto;
-    contain-intrinsic-size: 820px;
+    contain-intrinsic-size: 1120px;
     overflow: visible;
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
   }
@@ -491,14 +514,16 @@ body {
   }
 
   .post.is-text {
-    width: min(100%, var(--pulse-text-column));
+    width: min(100%, var(--pulse-text-column)) !important;
+    max-width: var(--pulse-text-column) !important;
   }
 
   .post.has-media,
   .post.is-video,
   .post.is-carousel {
-    width: min(100%, var(--pulse-cinematic-column));
-    contain-intrinsic-size: 900px;
+    width: min(100%, var(--pulse-cinematic-column)) !important;
+    max-width: var(--pulse-cinematic-column) !important;
+    contain-intrinsic-size: 1180px;
   }
 
   .post.type-scam-report {
@@ -532,15 +557,15 @@ body {
   }
 
   .post h2 {
-    font-size: clamp(31px, 2.65vw, 46px);
+    font-size: clamp(44px, 3.2vw, 66px);
     line-height: 1.08;
     margin: 4px 0 2px;
   }
 
   .post > p {
-    margin: 6px 0;
-    font-size: 18px;
-    line-height: 1.55;
+    margin: 10px 0;
+    font-size: 23px;
+    line-height: 1.58;
   }
 
   .media-grid {
@@ -558,17 +583,17 @@ body {
 
   .pulse-media-wrap img,
   .pulse-media-wrap video {
-    max-height: min(88vh, 980px) !important;
+    max-height: min(92vh, 1180px) !important;
   }
 
   .post.media-landscape .pulse-media-wrap img,
   .post.media-landscape .pulse-media-wrap video {
-    max-height: min(72vh, 820px) !important;
+    max-height: min(78vh, 980px) !important;
   }
 
   .post.media-portrait .pulse-media-wrap img,
   .post.media-portrait .pulse-media-wrap video {
-    max-height: min(90vh, 1040px) !important;
+    max-height: min(94vh, 1220px) !important;
   }
 
   .reaction-strip {
@@ -607,8 +632,8 @@ body {
   }
 
   .quick-action {
-    min-height: 46px;
-    font-size: 15px;
+    min-height: 56px;
+    font-size: 17px;
   }
 
   .inline-comments {
@@ -672,10 +697,10 @@ body {
 
 @media (min-width: 1500px) {
   :root {
-    --pulse-feed-column: clamp(840px, 48vw, 1120px);
-    --pulse-cinematic-column: clamp(940px, 56vw, 1260px);
-    --pulse-left-rail: clamp(250px, 16vw, 330px);
-    --pulse-right-rail: clamp(310px, 20vw, 410px);
+    --pulse-feed-column: clamp(1120px, 62vw, 1440px);
+    --pulse-cinematic-column: clamp(1240px, 70vw, 1560px);
+    --pulse-left-rail: clamp(220px, 13vw, 300px);
+    --pulse-right-rail: clamp(270px, 16vw, 360px);
   }
 
   .pulse-desktop-layout {
@@ -685,10 +710,14 @@ body {
 
 @media (min-width: 1280px) and (max-width: 1439px) {
   :root {
-    --pulse-feed-column: clamp(720px, 54vw, 860px);
-    --pulse-cinematic-column: clamp(780px, 58vw, 940px);
-    --pulse-left-rail: 220px;
-    --pulse-right-rail: 270px;
+    --pulse-feed-column: clamp(900px, 70vw, 1040px);
+    --pulse-cinematic-column: clamp(960px, 74vw, 1120px);
+    --pulse-left-rail: 190px;
+    --pulse-right-rail: 230px;
+  }
+
+  .pulse-desktop-layout {
+    grid-template-columns: minmax(170px, var(--pulse-left-rail)) minmax(820px, var(--pulse-feed-column)) minmax(210px, var(--pulse-right-rail));
   }
 
   .pulse-desktop-nav a {
