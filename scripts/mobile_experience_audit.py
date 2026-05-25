@@ -30,7 +30,10 @@ def main():
     require("pulse-status-mode-picker" in status_css and "pulse-status-bottom-bar" in status_css, "Status mobile editor has immersive controls")
     require("pulseStatusMedia" in source and "capture" not in source[source.find("pulseStatusMedia") : source.find("pulseStatusMedia") + 320], "Create Status upload does not force camera capture")
     require("pulse_environment_engine.js" in source and "prefers-reduced-motion" in env_js, "ambient environment engine is loaded and respects reduced motion")
-    require("#postMedia" in source and "opacity:0!important" in source.replace(" ", ""), "homepage raw Choose File control is visually hidden behind custom trigger")
+    require(
+        "input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source.replace(" ", ""),
+        "homepage raw Choose File controls are globally hidden behind custom triggers",
+    )
     require("data-status-start='camera'" in source and "data-status-start='upload'" in source, "Status creator actions are real controls")
     print("mobile experience audit ok")
 

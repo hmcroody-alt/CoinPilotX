@@ -339,13 +339,75 @@ body {
   }
 
   .composer.card {
+    width: min(100%, var(--pulse-text-column));
+    justify-self: center;
+    border-radius: 22px;
+    margin: 16px auto;
+    padding: clamp(18px, 1.35vw, 24px);
+    box-shadow: 0 24px 82px rgba(0, 0, 0, .3), 0 0 36px rgba(110, 223, 246, .06);
+  }
+
+  .pulse-publisher-card .smart-composer-bar {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+
+  .pulse-publisher-card .smart-compose-avatar {
+    width: 58px;
+    height: 58px;
     border-radius: 18px;
-    margin: 12px 0;
+    font-size: 22px;
+  }
+
+  .pulse-publisher-card .smart-composer-bar textarea {
+    min-height: 96px;
+    border-radius: 22px;
+    padding: 18px 20px;
+    font-size: 18px;
+    line-height: 1.35;
+  }
+
+  .composer-primary-actions {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr)) minmax(108px, auto);
+    gap: 9px;
+    align-items: center;
+    padding-top: 4px;
+  }
+
+  .composer-primary-actions button,
+  .composer-primary-actions .button {
+    min-height: 48px;
+    border-radius: 14px;
+    white-space: nowrap;
+  }
+
+  .pulse-media-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+  }
+
+  .pulse-media-preview span {
+    display: grid;
+    gap: 3px;
+    min-height: 58px;
+    border: 1px solid rgba(110, 223, 246, .16);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .045);
+    padding: 10px;
+    color: #f2fbff;
+    font-weight: 850;
+  }
+
+  .pulse-media-preview small {
+    color: rgba(223, 246, 255, .68);
   }
 
   .feed {
     display: grid;
-    gap: 14px;
+    gap: 18px;
     justify-items: center;
   }
 
@@ -379,9 +441,9 @@ body {
   .post.card {
     width: min(100%, var(--pulse-text-column));
     justify-self: center;
-    border-radius: 18px;
-    padding: clamp(13px, 1.1vw, 18px);
-    gap: 8px;
+    border-radius: 22px;
+    padding: clamp(18px, 1.35vw, 24px);
+    gap: 12px;
     content-visibility: auto;
     contain-intrinsic-size: 680px;
     overflow: visible;
@@ -436,17 +498,18 @@ body {
   }
 
   .post h2 {
-    font-size: clamp(24px, 2.2vw, 36px);
+    font-size: clamp(27px, 2.35vw, 40px);
     line-height: 1.08;
-    margin: 2px 0 1px;
+    margin: 4px 0 2px;
   }
 
   .post > p {
-    margin: 4px 0;
+    margin: 6px 0;
+    font-size: 16px;
   }
 
   .media-grid {
-    margin-top: 6px;
+    margin-top: 10px;
   }
 
   .pulse-media-wrap {
@@ -504,8 +567,8 @@ body {
   }
 
   .quick-actions {
-    padding: 4px 0;
-    margin-top: 0;
+    padding: 8px 0;
+    margin-top: 2px;
   }
 
   .inline-comments {

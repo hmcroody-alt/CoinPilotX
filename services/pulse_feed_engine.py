@@ -602,7 +602,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
     try:
-        if feed in {"for_you", "trending"}:
+        if feed == "trending" or (feed == "for_you" and (topic or profile_public_player_id)):
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
     except Exception:
         logging.exception("PULSE_FEED_RANKING_FAILED feed=%s viewer=%s", feed, viewer_user_id)
