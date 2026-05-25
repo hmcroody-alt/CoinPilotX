@@ -21594,6 +21594,35 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
     .unified-thread-copy{min-width:0;display:grid;gap:2px;border:0;background:transparent;color:inherit;padding:0;text-align:left;min-height:0;justify-content:start}.unified-thread-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.unified-thread-status{font-size:12px;color:rgba(213,239,245,.66);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .unified-thread-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
     .unified-icon-button{width:36px;min-width:36px;height:36px;min-height:36px;padding:0;border-radius:999px;display:grid;place-items:center}
+    @media(max-width:1024px){
+      body:has(.unified-messenger){max-width:100vw;overflow-x:hidden}
+      .unified-messenger,.unified-messenger *{box-sizing:border-box;max-width:100%}
+      .unified-messenger{height:min(78dvh,760px);min-height:560px;border-radius:20px}
+      .unified-messenger-head{padding:calc(10px + env(safe-area-inset-top)) 12px 11px;gap:9px}
+      .unified-messenger-title{gap:8px}.unified-messenger-title h2{font-size:22px;line-height:1.05}.unified-messenger-title p{font-size:13px;line-height:1.28;margin:2px 0 0}
+      .unified-messenger-title .actions{gap:6px;flex-wrap:nowrap}.unified-messenger-title .actions .button,.unified-messenger-title [data-unified-menu-toggle]{min-height:38px;padding:7px 10px;border-radius:12px;font-size:13px}
+      .unified-tabs{display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding-bottom:2px}.unified-tabs::-webkit-scrollbar{display:none}
+      .unified-tabs button{flex:1 0 max(94px,30%);min-height:36px;padding:6px 9px;font-size:13px;border-radius:999px}
+      .unified-messenger-body{grid-template-columns:minmax(240px,300px) minmax(0,1fr)}
+      .unified-sidebar{padding:10px;gap:9px}
+      .unified-sidebar-section{display:none}
+      .unified-search{grid-template-columns:minmax(0,1fr) 72px;gap:6px}.unified-search input{min-height:38px;padding:8px 10px;font-size:13px}.unified-search button{min-height:38px;padding:6px 8px;font-size:12px;border-radius:12px}
+      .unified-row{min-height:62px;padding:9px 10px;border-radius:13px;gap:3px}
+      .unified-row strong{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;min-width:0;font-size:14px;line-height:1.15;overflow:hidden}.unified-row strong:first-line{min-width:0}
+      .unified-row span{font-size:12px;line-height:1.24;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .unified-row span:nth-of-type(n+3){display:none}
+      .unified-empty{padding:12px;border-radius:14px;font-size:13px;line-height:1.32}
+      .unified-thread-top{padding:10px 12px 8px;gap:7px}.unified-thread-title{gap:7px;min-width:0}.unified-thread-title strong{font-size:16px}.unified-thread-status{font-size:11px}
+      .unified-thread-actions{gap:5px}.unified-icon-button{width:32px;min-width:32px;height:32px;min-height:32px;font-size:12px}
+      .unified-thread{padding:12px;gap:3px}
+      .unified-bubble{font-size:14px;line-height:1.34;padding:8px 10px;border-radius:16px;max-width:min(82%,560px)}
+      .unified-bubble-media{width:min(280px,64vw);max-height:300px;border-radius:12px}
+      .unified-composer{grid-template-columns:40px minmax(0,1fr) 52px;gap:7px;padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
+      .unified-composer textarea{min-height:40px;max-height:88px;border-radius:18px;padding:9px 11px;font-size:14px;line-height:1.24}
+      .unified-composer button{min-height:40px;border-radius:14px;font-size:13px}.unified-attach{width:40px;min-width:40px;font-size:22px}
+      .unified-media-tray{left:10px;right:10px;bottom:calc(62px + env(safe-area-inset-bottom));gap:6px;padding:8px;border-radius:16px}.unified-media-tray.is-open{grid-template-columns:repeat(4,minmax(0,1fr))}.unified-media-tray button{min-height:36px;padding:6px;font-size:12px;border-radius:12px}
+      .messenger-side-tabs,.messenger-mode-rail,.messenger-vertical-tabs,[data-messenger-mode-rail],[data-message-mode-rail]{display:none!important}
+    }
     @media(max-width:900px){
       body:has(.unified-messenger){overflow:hidden;background:radial-gradient(circle at 50% -10%,rgba(110,223,246,.2),transparent 22rem),linear-gradient(180deg,#071423,#03070d)}
       body:has(.unified-messenger) .wrap{padding:0!important;width:100%!important;max-width:100%!important}
@@ -21655,6 +21684,38 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       .unified-modal{padding:0}
       .unified-sheet{border-radius:26px 26px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
       .mobile-bottom-nav,.pulse-fab{display:none!important}
+    }
+    @media(max-width:768px){
+      html,body{max-width:100%;overflow-x:hidden}
+      body:has(.unified-messenger) .wrap,body:has(.unified-messenger) .layout,body:has(.unified-messenger) .layout>div{width:100%!important;max-width:100vw!important;overflow:hidden}
+      .unified-messenger{width:100vw;max-width:100vw;grid-template-rows:auto minmax(0,1fr) auto}
+      .unified-messenger-head{padding:calc(7px + env(safe-area-inset-top)) 10px 8px;gap:7px}
+      .unified-messenger-title h2{font-size:18px;line-height:1}.unified-messenger-title .actions{gap:5px}.unified-messenger-title .actions .button{width:36px;min-width:36px;height:36px;min-height:36px;border-radius:12px}
+      .unified-tabs{gap:5px;padding:2px;max-width:calc(100vw - 20px);overflow-x:auto}
+      .unified-tabs button{flex:0 0 auto;min-width:76px;min-height:32px;padding:4px 9px}
+      .unified-tabs button::after{font-size:12px}
+      .unified-sidebar{padding:8px 9px 12px;gap:7px;max-width:100vw}
+      .unified-search{grid-template-columns:minmax(0,1fr) 38px}.unified-search input{min-height:36px;font-size:13px;border-radius:12px}.unified-search button{min-height:36px;border-radius:12px}
+      .unified-results,.unified-list{gap:6px}
+      .unified-row{min-height:54px;padding:8px 9px;border-radius:12px}
+      .unified-row strong{font-size:13px;line-height:1.12}.unified-row .pill{font-size:10px;padding:2px 5px}.unified-row .unread-badge{min-width:20px;height:20px;font-size:10px}
+      .unified-row span{font-size:11px;line-height:1.22}
+      .unified-thread-top{padding:calc(7px + env(safe-area-inset-top)) 8px 7px}
+      .unified-back{width:32px;min-width:32px;height:32px;min-height:32px;font-size:20px}.unified-thread-avatar{width:30px;height:30px;border-radius:11px;font-size:12px}
+      .unified-thread-copy strong{font-size:14px}.unified-thread-status{font-size:10px}
+      .unified-icon-button{width:30px;min-width:30px;height:30px;min-height:30px}.unified-thread-actions .unified-icon-button:nth-child(2){display:none}
+      .unified-messenger:has(.unified-thread-pane.is-open) .unified-messenger-body{padding-bottom:calc(58px + env(safe-area-inset-bottom))}
+      .unified-thread{padding:9px 8px;gap:2px}
+      .unified-bubble{max-width:84%;font-size:13px;line-height:1.3;padding:7px 9px;border-radius:15px}.unified-bubble.me,.unified-bubble.them{max-width:82%}
+      .unified-bubble small{font-size:9px}.unified-date-divider{font-size:10px;margin:8px 0 5px}
+      .unified-bubble-media{width:min(220px,66vw);max-height:240px}
+      .unified-reactions{max-width:82%;gap:3px}.unified-reaction-pill{font-size:10px;padding:2px 6px}
+      .unified-composer{grid-template-columns:34px minmax(0,1fr) 42px;gap:6px;padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+      .unified-composer textarea{min-height:34px;max-height:72px;border-radius:17px;padding:8px 10px;font-size:13px;line-height:1.22}
+      .unified-composer button{width:42px;min-width:42px;min-height:34px;border-radius:14px;font-size:12px}.unified-attach{width:34px!important;min-width:34px!important;min-height:34px!important;font-size:20px!important}
+      .unified-media-preview{padding:7px;border-radius:11px;font-size:12px}.unified-media-preview img,.unified-media-preview video{width:40px;height:40px;border-radius:10px}
+      .unified-media-tray{left:8px;right:8px;bottom:calc(54px + env(safe-area-inset-bottom));grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:7px;border-radius:18px}.unified-media-tray.is-open{grid-template-columns:repeat(3,minmax(0,1fr))}.unified-media-tray button{min-height:34px;font-size:11px;padding:5px;border-radius:11px}
+      .unified-menu button,.unified-message-actions button{min-height:38px;font-size:13px}
     }
     @keyframes unifiedSheetIn{from{transform:translateY(18px);opacity:.86}to{transform:translateY(0);opacity:1}}
     @keyframes msgIn{from{transform:translateY(4px);opacity:.72}to{transform:translateY(0);opacity:1}}

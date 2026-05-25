@@ -39,6 +39,7 @@ AUDIT_PLAN = [
     ("chat actual load", "chat_actual_load_audit.py"),
     ("chat send/receive", "chat_send_receive_audit.py"),
     ("chat parity", "chat_desktop_mobile_parity_audit.py"),
+    ("chat mobile responsive", "chat_mobile_audit.py"),
     ("chat security", "chat_security_audit.py"),
     ("reels pipeline", "reels_pipeline_audit.py"),
     ("status system", "status_system_audit.py"),
