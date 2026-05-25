@@ -83,15 +83,18 @@ def main() -> None:
     assert_ok(status, data, "direct open")
     direct_id = int(data.get("conversation_id") or 0)
     assert_round_trip(client, f"/api/pulse/messages/{direct_id}/send", f"/api/pulse/messages/{direct_id}/messages?limit=80", "send receive direct body", "direct")
+    assert_round_trip(client, f"/api/messages/{direct_id}/send", f"/api/messages/{direct_id}", "legacy direct send receive body", "legacy direct")
 
     status, data = request_json(client, "POST", "/api/pulse/chatrooms/general-pulse/join", {})
     assert_ok(status, data, "room join")
     assert_round_trip(client, "/api/pulse/chatrooms/general-pulse/messages", "/api/pulse/chatrooms/general-pulse/messages?limit=80", "send receive room body", "room")
+    assert_round_trip(client, "/api/chat-room/general-pulse/messages", "/api/chat-room/general-pulse/messages?limit=80", "legacy room send receive body", "legacy room")
 
     status, data = request_json(client, "POST", "/api/pulse/messages/groups/create", {"title": "Send Receive Group", "member_ids": [other_id, third_id]})
     assert_ok(status, data, "group create")
     group_id = int(data.get("conversation_id") or (data.get("conversation") or {}).get("id") or 0)
     assert_round_trip(client, f"/api/pulse/messages/{group_id}/send", f"/api/pulse/messages/{group_id}/messages?limit=80", "send receive group body", "group")
+    assert_round_trip(client, f"/api/messages/{group_id}/send", f"/api/messages/{group_id}", "legacy group send receive body", "legacy group")
 
     print("chat send receive audit ok")
 

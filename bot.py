@@ -22324,27 +22324,34 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           chatDebug("open conversation ok", { loaded_messages: (data.messages || []).length, conversation_type: state.mode });
         } catch (error) {
           console.error("Open Pulse conversation failed", error.detail || error);
-          state.activePulseConversation = 0;
-          setComposerEnabled(false, state.mode);
-          thread.innerHTML = `<div class="unified-empty"><strong>Messages could not load.</strong><br><span>${esc(error.message || "This conversation is no longer available.")}</span><br><button type="button" data-retry-open="${esc(conversationId)}" data-retry-room="${esc(roomId)}" data-retry-mode="${esc(modeOverride)}">Retry message load</button></div>`;
-          setNetworkStatus("retrying", "Message loading failed. Retry is ready.");
+          const notFound = Number(error.status || 0) === 404;
+          if (notFound) {
+            state.activePulseConversation = 0;
+            setComposerEnabled(false, state.mode);
+          } else {
+            state.activePulseConversation = Number(conversationId || state.activePulseConversation || 0);
+            setComposerEnabled(Boolean(state.activePulseConversation || state.activeRoomId), state.mode);
+          }
+          thread.innerHTML = `<div class="unified-empty"><strong>${notFound ? "Conversation unavailable." : "Messages are reconnecting."}</strong><br><span>${esc(error.message || "This conversation is reconnecting.")}</span><br><button type="button" data-retry-open="${esc(conversationId)}" data-retry-room="${esc(roomId)}" data-retry-mode="${esc(modeOverride)}">Retry message load</button></div>`;
+          setNetworkStatus(notFound ? "offline" : "retrying", notFound ? "This conversation is no longer available." : "HTTP recovery is active. Tap retry or keep typing.");
+          if (!notFound) setTimeout(() => pollThread(true), 350);
         }
       }
       async function pollThread(force = false) {
-        if (!force && state.live && state.live.readyState === EventSource.OPEN) return;
         if (state.polling || document.hidden) return;
         if (state.mode === "direct" && !state.activePulseConversation) return;
         if (state.mode !== "direct" && !state.activePulseConversation && !state.activeRoomId) return;
         state.polling = true;
         try {
           const url = state.mode === "direct"
-            ? `/api/pulse/messages/${state.activePulseConversation}/messages`
+            ? `/api/pulse/messages/${state.activePulseConversation}/sync?after_id=${force ? 0 : state.lastMessageId}&limit=80`
             : state.mode === "room"
-              ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages`
-              : `/api/pulse/messages/${state.activePulseConversation}/messages`;
+              ? `/api/pulse/chatrooms/${encodeURIComponent(state.activeRoomId)}/messages?limit=80`
+              : `/api/pulse/messages/${state.activePulseConversation}/sync?after_id=${force ? 0 : state.lastMessageId}&limit=80`;
           const data = await chatFetchJson("fallbackPollMessages", url);
-          appendMessages(data.messages || []);
-          setNetworkStatus("syncing", "Messages restored locally.");
+          if (force && (data.messages || []).length) renderMessages(data.messages || []);
+          else appendMessages(data.messages || []);
+          setNetworkStatus("syncing", "Messages loaded through secure HTTP recovery.");
         } catch (error) {
           console.error("Fallback message poll failed", error.detail || error);
         } finally {
@@ -25065,6 +25072,7 @@ def api_pulse_users_search():
 
 @webhook_app.route("/api/pulse/messages/groups/create", methods=["POST"])
 @webhook_app.route("/api/pulse/messages/group/create", methods=["POST"])
+@webhook_app.route("/api/group-chat", methods=["POST"])
 def api_pulse_message_group_create():
     init_db()
     user = api_account_user()
@@ -25148,6 +25156,7 @@ def api_pulse_message_group_create():
 
 
 @webhook_app.route("/api/pulse/messages/room/open", methods=["POST"])
+@webhook_app.route("/api/chat-room", methods=["POST"])
 def api_pulse_message_room_open():
     init_db()
     user = api_account_user()
@@ -25175,6 +25184,7 @@ def api_pulse_message_room_open():
 
 @webhook_app.route("/api/pulse/chatrooms", methods=["GET"])
 @webhook_app.route("/api/pulse/messages/rooms", methods=["GET"])
+@webhook_app.route("/api/chat-room", methods=["GET"])
 def api_pulse_chatrooms():
     init_db()
     user = api_account_user()
@@ -25212,6 +25222,7 @@ def api_pulse_chatrooms():
 
 @webhook_app.route("/api/pulse/messages/rooms/<room_id>/join", methods=["POST"])
 @webhook_app.route("/api/pulse/chatrooms/<room_id>/join", methods=["POST"])
+@webhook_app.route("/api/chat-room/<room_id>/join", methods=["POST"])
 def api_pulse_chatroom_join(room_id):
     init_db()
     user = api_account_user()
@@ -25239,6 +25250,7 @@ def api_pulse_chatroom_join(room_id):
 
 @webhook_app.route("/api/pulse/messages/rooms/<room_id>/messages", methods=["GET", "POST"])
 @webhook_app.route("/api/pulse/chatrooms/<room_id>/messages", methods=["GET", "POST"])
+@webhook_app.route("/api/chat-room/<room_id>/messages", methods=["GET", "POST"])
 def api_pulse_chatroom_messages(room_id):
     init_db()
     user = api_account_user()
@@ -25369,6 +25381,7 @@ def api_pulse_message_presence(conversation_id):
 
 
 @webhook_app.route("/api/pulse/messages/group-conversations", methods=["GET"])
+@webhook_app.route("/api/group-chat", methods=["GET"])
 def api_pulse_message_group_conversations():
     init_db()
     user = api_account_user()
@@ -25595,6 +25608,8 @@ def api_pulse_message_group_leave(conversation_id):
 
 
 @webhook_app.route("/api/pulse/messages/conversations", methods=["GET"])
+@webhook_app.route("/api/messages", methods=["GET"])
+@webhook_app.route("/api/conversations", methods=["GET"])
 def api_pulse_message_conversations():
     init_db()
     user = api_account_user()
@@ -32568,6 +32583,25 @@ def api_messages_thread(conversation_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if not user_is_conversation_member(user["user_id"], conversation_id):
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        ensure_pulse_messenger_schema(cur, conn)
+        cur.execute(
+            """
+            SELECT 1
+            FROM pulse_conversations c
+            JOIN pulse_conversation_participants p
+              ON p.conversation_id=c.id
+             AND p.user_id=?
+             AND COALESCE(p.left_at,'')=''
+            WHERE c.id=? AND COALESCE(c.status,'active')='active'
+            LIMIT 1
+            """,
+            (user["user_id"], conversation_id),
+        )
+        is_pulse_conversation = bool(cur.fetchone())
+        conn.close()
+        if is_pulse_conversation:
+            return api_pulse_conversation_messages(conversation_id)
         return jsonify({"ok": False, "message": "Conversation not found."}), 404
     conn = db()
     cur = conn.cursor()
@@ -32597,6 +32631,25 @@ def api_messages_send(conversation_id):
     if not user:
         return jsonify({"ok": False, "message": "Login required."}), 401
     if not user_is_conversation_member(user["user_id"], conversation_id):
+        conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+        ensure_pulse_messenger_schema(cur, conn)
+        cur.execute(
+            """
+            SELECT 1
+            FROM pulse_conversations c
+            JOIN pulse_conversation_participants p
+              ON p.conversation_id=c.id
+             AND p.user_id=?
+             AND COALESCE(p.left_at,'')=''
+            WHERE c.id=? AND COALESCE(c.status,'active')='active'
+            LIMIT 1
+            """,
+            (user["user_id"], conversation_id),
+        )
+        is_pulse_conversation = bool(cur.fetchone())
+        conn.close()
+        if is_pulse_conversation:
+            return api_pulse_conversation_send(conversation_id)
         return jsonify({"ok": False, "message": "Conversation not found."}), 404
     payload = request.get_json(silent=True) or {}
     body = clean_html(payload.get("body") or payload.get("message") or "")[:2000]

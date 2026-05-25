@@ -38,11 +38,13 @@ def main() -> None:
     expect("/api/pulse/messages/${Number(conversationId)}/messages?limit=80" in source, "private/group loads use canonical message endpoint")
     expect("/api/pulse/chatrooms/${encodeURIComponent(roomId)}/messages?limit=80" in source, "room loads use canonical room endpoint")
     expect('fallbackPollMessages();' in source[source.find("state.live.onerror"):source.find("state.live.onerror") + 500], "websocket failure triggers HTTP fallback polling")
+    expect("if (!force && state.live" not in source, "HTTP fallback polling is not blocked by an open realtime socket")
+    expect("HTTP recovery is active" in source and "setTimeout(() => pollThread(true), 350)" in source, "selected chat keeps HTTP recovery after transient load failure")
     expect('window.addEventListener("online", () => { state.offline = false; setNetworkStatus("syncing"); reconnectSocket(); flushPendingMessages(); });' in source, "online recovery reconnects and polls")
     messenger_slice = source[source.find("data-unified-messenger"):]
     expect("Something needs attention. Please try again." not in messenger_slice, "messenger UI avoids generic dead error")
-    expect("Messages could not load." in messenger_slice, "messenger selected-thread failure is specific")
-    expect("Message loading failed. Retry is ready." in messenger_slice, "retry copy reflects real retry action")
+    expect("Messages are reconnecting." in messenger_slice, "messenger transient failure is recoverable")
+    expect("Retry message load" in messenger_slice, "retry copy reflects real retry action")
     print("chat desktop mobile parity audit ok")
 
 

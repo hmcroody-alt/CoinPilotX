@@ -82,6 +82,9 @@ def main() -> None:
     assert_ok(status, data, "direct selected thread loads messages")
     expect(data.get("endpoint", "").endswith(f"/{direct_id}/messages"), "direct load endpoint is explicit", str(data))
     expect(any((m.get("body") or "") == "actual load direct seed" for m in data.get("messages") or []), "direct loaded message body present", str(data))
+    status, data = request_json(client, "GET", f"/api/messages/{direct_id}")
+    assert_ok(status, data, "legacy private endpoint bridges to Pulse direct messages")
+    expect(any((m.get("body") or "") == "actual load direct seed" for m in data.get("messages") or []), "legacy private bridge returns direct body", str(data))
 
     status, data = request_json(client, "POST", "/api/pulse/chatrooms/general-pulse/join", {})
     assert_ok(status, data, "room joins")
@@ -92,6 +95,9 @@ def main() -> None:
     assert_ok(status, data, "room selected thread loads messages")
     expect(int(data.get("conversation_id") or 0) == room_conversation_id, "room load uses backing conversation id", str(data))
     expect((data.get("conversation") or {}).get("conversation_type") == "room", "room load declares room conversation type", str(data))
+    status, data = request_json(client, "GET", "/api/chat-room/general-pulse/messages?limit=80")
+    assert_ok(status, data, "legacy room endpoint bridges to Pulse room messages")
+    expect(int(data.get("conversation_id") or 0) == room_conversation_id, "legacy room bridge uses backing conversation id", str(data))
 
     status, data = request_json(client, "POST", "/api/pulse/messages/groups/create", {"title": "Actual Load Group", "member_ids": [other_id, third_id]})
     assert_ok(status, data, "group creates")
@@ -102,6 +108,11 @@ def main() -> None:
     assert_ok(status, data, "group selected thread loads messages")
     expect((data.get("conversation") or {}).get("conversation_type") in {"group", "community", "community_group"}, "group load declares group-like type", str(data))
     expect(any((m.get("body") or "") == "actual load group seed" for m in data.get("messages") or []), "group loaded message body present", str(data))
+    status, data = request_json(client, "GET", f"/api/messages/{group_id}")
+    assert_ok(status, data, "legacy group endpoint bridges to Pulse group messages")
+    expect(any((m.get("body") or "") == "actual load group seed" for m in data.get("messages") or []), "legacy group bridge returns group body", str(data))
+    status, data = request_json(client, "GET", "/api/group-chat")
+    assert_ok(status, data, "legacy group list endpoint bridges to Pulse group list")
 
     print("chat actual load audit ok")
 
