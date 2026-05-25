@@ -347,12 +347,13 @@
 .pulse-status-mode-picker {
   inset: 0;
   display: grid;
+  place-items: center;
   align-content: center;
-  gap: 14px;
-  padding: max(76px, env(safe-area-inset-top) + 56px) 18px max(108px, env(safe-area-inset-bottom) + 92px);
-  background:
-    radial-gradient(circle at 34% 16%, rgba(110, 223, 246, .2), transparent 28%),
-    linear-gradient(180deg, rgba(0, 0, 0, .36), rgba(0, 0, 0, .66));
+  gap: 26px;
+  padding: max(88px, env(safe-area-inset-top) + 68px) 18px max(88px, env(safe-area-inset-bottom) + 72px);
+  background: #eef0f3;
+  color: #26323d;
+  backdrop-filter: none;
 }
 
 .pulse-status-mode-picker.is-hidden {
@@ -361,48 +362,73 @@
 
 .pulse-status-mode-picker h3 {
   margin: 0;
-  font-size: clamp(28px, 7vw, 42px);
-  line-height: 1;
+  font-size: clamp(24px, 5vw, 36px);
+  line-height: 1.05;
   letter-spacing: 0;
+  text-align: center;
 }
 
 .pulse-status-mode-picker p {
-  margin: 0;
+  margin: 8px 0 0;
   max-width: 420px;
-  color: rgba(255, 255, 255, .76);
+  color: #69727c;
   font-weight: 750;
+  text-align: center;
+}
+
+.pulse-status-mode-grid {
+  width: min(100%, 520px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
 }
 
 .pulse-status-mode-picker button {
-  min-height: 62px;
-  border: 1px solid rgba(255, 255, 255, .16);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, .12);
+  min-height: clamp(260px, 42vh, 360px);
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #5939f3 0%, #75d9ff 100%);
   color: #fff;
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  padding: 10px 14px;
-  box-shadow: 0 18px 46px rgba(0, 0, 0, .18);
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 22px;
+  box-shadow: 0 18px 46px rgba(62, 83, 104, .16);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.pulse-status-mode-picker button:hover,
+.pulse-status-mode-picker button:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 58px rgba(62, 83, 104, .24);
+}
+
+.pulse-status-choice-text {
+  background: linear-gradient(145deg, #a945ee 0%, #f14684 100%) !important;
 }
 
 .pulse-status-mode-picker button span {
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(54, 229, 143, .92), rgba(110, 223, 246, .92));
-  color: #04101a;
-  font-size: 21px;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f2933;
+  font-size: 19px;
+  font-weight: 950;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .12);
 }
 
-.pulse-status-mode-picker button strong,
+.pulse-status-mode-picker button b,
 .pulse-status-music-panel button strong {
   display: block;
-  font-size: 15px;
+  max-width: 190px;
+  font-size: 17px;
+  line-height: 1.18;
+  text-wrap: balance;
 }
 
 .pulse-status-mode-picker button small,
@@ -411,6 +437,21 @@
   margin-top: 3px;
   color: rgba(255, 255, 255, .68);
   font-weight: 700;
+}
+
+.pulse-status-form.is-choosing {
+  background: #eef0f3;
+}
+
+.pulse-status-form.is-choosing .pulse-status-progress,
+.pulse-status-form.is-choosing .pulse-status-preview,
+.pulse-status-form.is-choosing .pulse-status-caption-layer,
+.pulse-status-form.is-choosing .pulse-status-tool-rail,
+.pulse-status-form.is-choosing .pulse-status-overlay-layer,
+.pulse-status-form.is-choosing .pulse-status-effects-tray,
+.pulse-status-form.is-choosing .pulse-status-bottom-bar,
+.pulse-status-form.is-choosing .pulse-status-upload-progress {
+  display: none;
 }
 
 .pulse-status-music-panel,
