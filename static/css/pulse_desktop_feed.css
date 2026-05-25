@@ -350,8 +350,8 @@ body {
     max-width: var(--pulse-text-column) !important;
     justify-self: center;
     border-radius: 22px;
-    margin: 22px auto;
-    padding: clamp(34px, 2.3vw, 48px);
+    margin: 16px auto;
+    padding: clamp(24px, 1.65vw, 32px);
     box-shadow: 0 24px 82px rgba(0, 0, 0, .3), 0 0 36px rgba(110, 223, 246, .06);
   }
 
@@ -369,10 +369,10 @@ body {
   }
 
   .pulse-publisher-card .smart-composer-bar textarea {
-    min-height: 190px;
-    border-radius: 30px;
-    padding: 28px 30px;
-    font-size: 24px;
+    min-height: 118px;
+    border-radius: 24px;
+    padding: 20px 22px;
+    font-size: 19px;
     line-height: 1.35;
   }
 
@@ -386,9 +386,8 @@ body {
 
   .composer-primary-actions button,
   .composer-primary-actions .button {
-    min-height: 64px;
-    border-radius: 18px;
-    font-size: 18px;
+    min-height: 52px;
+    border-radius: 15px;
     white-space: nowrap;
   }
 
@@ -450,7 +449,7 @@ body {
 
   .feed {
     display: grid;
-    gap: 30px;
+    gap: 18px;
     justify-items: center;
     width: 100% !important;
   }
@@ -498,11 +497,11 @@ body {
     width: min(100%, var(--pulse-text-column)) !important;
     max-width: var(--pulse-text-column) !important;
     justify-self: center;
-    border-radius: 28px;
-    padding: clamp(36px, 2.4vw, 52px);
-    gap: 24px;
+    border-radius: 22px;
+    padding: clamp(24px, 1.65vw, 32px);
+    gap: 16px;
     content-visibility: auto;
-    contain-intrinsic-size: 1120px;
+    contain-intrinsic-size: 820px;
     overflow: visible;
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
   }
@@ -523,7 +522,7 @@ body {
   .post.is-carousel {
     width: min(100%, var(--pulse-cinematic-column)) !important;
     max-width: var(--pulse-cinematic-column) !important;
-    contain-intrinsic-size: 1180px;
+    contain-intrinsic-size: 900px;
   }
 
   .post.type-scam-report {
@@ -557,15 +556,15 @@ body {
   }
 
   .post h2 {
-    font-size: clamp(44px, 3.2vw, 66px);
+    font-size: clamp(31px, 2.65vw, 46px);
     line-height: 1.08;
     margin: 4px 0 2px;
   }
 
   .post > p {
-    margin: 10px 0;
-    font-size: 23px;
-    line-height: 1.58;
+    margin: 6px 0;
+    font-size: 18px;
+    line-height: 1.55;
   }
 
   .media-grid {
@@ -583,17 +582,17 @@ body {
 
   .pulse-media-wrap img,
   .pulse-media-wrap video {
-    max-height: min(92vh, 1180px) !important;
+    max-height: min(88vh, 980px) !important;
   }
 
   .post.media-landscape .pulse-media-wrap img,
   .post.media-landscape .pulse-media-wrap video {
-    max-height: min(78vh, 980px) !important;
+    max-height: min(72vh, 820px) !important;
   }
 
   .post.media-portrait .pulse-media-wrap img,
   .post.media-portrait .pulse-media-wrap video {
-    max-height: min(94vh, 1220px) !important;
+    max-height: min(90vh, 1040px) !important;
   }
 
   .reaction-strip {
