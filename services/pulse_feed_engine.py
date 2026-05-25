@@ -532,6 +532,11 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         return list_user_posts(viewer_user_id, viewer_user_id=viewer_user_id, limit=limit, offset=offset)
     limit = max(1, min(int(limit or 20), 40))
     offset = max(0, int(offset or 0))
+    fetch_limit = limit
+    if feed in {"for_you", "following"} and not topic and not profile_public_player_id:
+        # Pull a larger recent window before ranking so fresh public posts cannot
+        # disappear behind older high-engagement rows on different devices/users.
+        fetch_limit = max(limit, min(200, max(120, limit * 5)))
     params = []
     where = _public_feed_where("p")
     if feed == "following" and viewer_user_id:
@@ -554,15 +559,18 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     if profile_public_player_id:
         where.append("p.public_player_id=?")
         params.append(str(profile_public_player_id)[:120])
-    order = (
-        "p.engagement_score DESC, p.created_at DESC"
-        if feed == "trending"
-        else "((CASE WHEN p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?) THEN 18 ELSE 0 END) + "
-             "(CASE WHEN p.user_id IN (SELECT friend_user_id FROM pulse_friends WHERE user_id=? AND COALESCE(status,'active')='active') THEN 14 ELSE 0 END) + "
-             "p.engagement_score + (CASE WHEN p.risk_score>=70 THEN 8 ELSE 0 END) + "
-             "(CASE WHEN p.post_type IN ('scam_report','arena_result','roast_clip') THEN 3 ELSE 0 END)) DESC, p.created_at DESC"
-    )
-    if feed != "trending":
+    if feed == "trending":
+        order = "p.engagement_score DESC, p.created_at DESC"
+    elif feed in {"for_you", "following"} and not topic and not profile_public_player_id:
+        order = "p.created_at DESC, p.id DESC"
+    else:
+        order = (
+            "((CASE WHEN p.user_id IN (SELECT followed_user_id FROM pulse_follows WHERE follower_user_id=?) THEN 18 ELSE 0 END) + "
+            "(CASE WHEN p.user_id IN (SELECT friend_user_id FROM pulse_friends WHERE user_id=? AND COALESCE(status,'active')='active') THEN 14 ELSE 0 END) + "
+            "p.engagement_score + (CASE WHEN p.risk_score>=70 THEN 8 ELSE 0 END) + "
+            "(CASE WHEN p.post_type IN ('scam_report','arena_result','roast_clip') THEN 3 ELSE 0 END)) DESC, p.created_at DESC"
+        )
+    if feed != "trending" and not (feed in {"for_you", "following"} and not topic and not profile_public_player_id):
         params.extend([int(viewer_user_id or 0), int(viewer_user_id or 0)])
     conn = user_context.connect()
     cur = conn.cursor()
@@ -579,7 +587,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         ORDER BY {order}
         LIMIT ? OFFSET ?
         """,
-        (*params, limit, offset),
+        (*params, fetch_limit, offset),
     )
     rows = [_row(row) for row in cur.fetchall()]
     post_ids = [int(row["id"]) for row in rows]
@@ -598,7 +606,8 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
     except Exception:
         logging.exception("PULSE_FEED_RANKING_FAILED feed=%s viewer=%s", feed, viewer_user_id)
-    return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel(topic)}
+    posts = posts[:limit]
+    return {"ok": True, "feed": feed, "topic": topic, "posts": posts, "next_offset": offset + len(posts), "has_more": len(rows) == fetch_limit, "intelligence": safe_intelligence_panel(topic)}
 
 
 def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):

@@ -196,6 +196,283 @@
   padding: 10px;
 }
 
+.pulse-status-mode-picker,
+.pulse-status-music-panel,
+.pulse-status-ai-panel {
+  position: absolute;
+  z-index: 14;
+  color: #fff;
+  backdrop-filter: blur(18px);
+}
+
+.pulse-status-mode-picker {
+  inset: 0;
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  padding: max(76px, env(safe-area-inset-top) + 56px) 18px max(108px, env(safe-area-inset-bottom) + 92px);
+  background:
+    radial-gradient(circle at 34% 16%, rgba(110, 223, 246, .2), transparent 28%),
+    linear-gradient(180deg, rgba(0, 0, 0, .36), rgba(0, 0, 0, .66));
+}
+
+.pulse-status-mode-picker.is-hidden {
+  display: none;
+}
+
+.pulse-status-mode-picker h3 {
+  margin: 0;
+  font-size: clamp(28px, 7vw, 42px);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.pulse-status-mode-picker p {
+  margin: 0;
+  max-width: 420px;
+  color: rgba(255, 255, 255, .76);
+  font-weight: 750;
+}
+
+.pulse-status-mode-picker button {
+  min-height: 62px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 10px 14px;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .18);
+}
+
+.pulse-status-mode-picker button span {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(54, 229, 143, .92), rgba(110, 223, 246, .92));
+  color: #04101a;
+  font-size: 21px;
+}
+
+.pulse-status-mode-picker button strong,
+.pulse-status-music-panel button strong {
+  display: block;
+  font-size: 15px;
+}
+
+.pulse-status-mode-picker button small,
+.pulse-status-music-panel button small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, .68);
+  font-weight: 700;
+}
+
+.pulse-status-music-panel,
+.pulse-status-ai-panel {
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  display: none;
+  gap: 10px;
+  max-height: min(70dvh, 520px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .15);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(110, 223, 246, .16), transparent 30%),
+    rgba(5, 10, 17, .82);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+}
+
+.pulse-status-music-panel.open,
+.pulse-status-ai-panel.open {
+  display: grid;
+}
+
+.pulse-status-music-panel header,
+.pulse-status-ai-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pulse-status-music-panel header button,
+.pulse-status-ai-panel header button {
+  width: 40px;
+  min-height: 40px;
+  border-radius: 999px;
+  padding: 0;
+  color: #fff;
+  background: rgba(255, 255, 255, .12);
+}
+
+.pulse-status-music-panel input,
+.pulse-status-ai-panel textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  padding: 12px 14px;
+}
+
+.pulse-status-ai-panel textarea {
+  min-height: 118px;
+  resize: vertical;
+}
+
+.pulse-status-music-panel [data-status-music-results] {
+  display: grid;
+  gap: 8px;
+}
+
+.pulse-status-music-panel [data-status-music-results] button {
+  min-height: 58px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.pulse-status-waveform {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 2px;
+}
+
+.pulse-status-waveform i {
+  width: 7px;
+  min-height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #6edff6, #36e58f);
+  animation: pulseStatusWave 1.2s ease-in-out infinite alternate;
+}
+
+.pulse-status-waveform i:nth-child(2n) {
+  min-height: 25px;
+  animation-delay: .12s;
+}
+
+.pulse-status-waveform i:nth-child(3n) {
+  min-height: 34px;
+  animation-delay: .24s;
+}
+
+.pulse-ai-story-preview {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: end start;
+  gap: 8px;
+  padding: 24px;
+  overflow: hidden;
+  color: #fff;
+}
+
+.pulse-ai-story-preview::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  background:
+    radial-gradient(circle at 24% 20%, rgba(255, 255, 255, .24), transparent 18%),
+    radial-gradient(circle at 74% 36%, rgba(54, 229, 143, .2), transparent 20%);
+  animation: pulseStatusDrift 8s ease-in-out infinite alternate;
+}
+
+.pulse-ai-story-preview strong,
+.pulse-ai-story-preview small {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, .42);
+}
+
+.pulse-ai-story-preview strong {
+  font-size: clamp(26px, 8vw, 44px);
+  line-height: 1.02;
+}
+
+.pulse-ai-story-preview small {
+  color: rgba(255, 255, 255, .78);
+  font-weight: 800;
+}
+
+.pulse-ai-story-preview.text-story {
+  background:
+    radial-gradient(circle at 24% 16%, rgba(110, 223, 246, .28), transparent 30%),
+    linear-gradient(145deg, #071521, #02050b);
+}
+
+.pulse-status-full-page {
+  display: grid;
+  gap: 18px;
+}
+
+.pulse-status-full-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pulse-status-full-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.pulse-status-full-tabs button {
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.pulse-status-full-tabs button.active {
+  background: linear-gradient(135deg, #36e58f, #6edff6);
+  color: #04101a;
+}
+
+.pulse-status-full-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.pulse-status-full-card {
+  min-height: 230px;
+  border-radius: 24px;
+}
+
+@keyframes pulseStatusWave {
+  from {
+    transform: scaleY(.62);
+    opacity: .7;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseStatusDrift {
+  from {
+    transform: translate3d(-2%, -1%, 0) rotate(-1deg);
+  }
+  to {
+    transform: translate3d(2%, 1%, 0) rotate(1deg);
+  }
+}
+
 @media (max-width: 900px) {
   .pulse-status-strip {
     grid-auto-columns: minmax(94px, 118px);

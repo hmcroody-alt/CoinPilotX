@@ -125,6 +125,7 @@ from services import (
     live_distribution_service,
     live_feed_service,
     live_health_service,
+    live_ranking_engine,
     live_ops_engine,
     live_presence_engine,
     live_restream_service,
@@ -135,6 +136,8 @@ from services import (
     market_data as market_data_service,
     media_service,
     media_storage,
+    music_service,
+    ai_story_service,
     upload_progress_service,
     mobile_ux_engine,
     news_service,
@@ -15982,8 +15985,16 @@ def pulse_status_rail_html():
         "<section class='pulse-status-viewer pulse-status-editor' id='pulseStatusViewer' data-status-editor aria-hidden='true'>"
         "<form class='pulse-status-stage pulse-status-form' id='pulseStatusForm'>"
         "<input id='pulseStatusMode' name='status_type' type='hidden' value='image'>"
+        "<input id='pulseStatusMusicTrack' type='hidden' value=''>"
         "<button class='pulse-status-back' type='button' data-status-back aria-label='Back'>‹</button>"
         "<div class='pulse-status-progress'><span></span></div>"
+        "<section class='pulse-status-mode-picker' data-status-mode-picker aria-label='Create Status options'>"
+        "<button type='button' data-status-start='camera'><span>◎</span><b>Camera</b><small>Capture now</small></button>"
+        "<button type='button' data-status-start='upload'><span>＋</span><b>Upload</b><small>Photo or video</small></button>"
+        "<button type='button' data-status-start='music'><span>♪</span><b>Music</b><small>Sound story</small></button>"
+        "<button type='button' data-status-start='ai'><span>AI</span><b>AI Story</b><small>Prompt to visual</small></button>"
+        "<button type='button' data-status-start='text'><span>Aa</span><b>Text Story</b><small>Write first</small></button>"
+        "</section>"
         "<div class='pulse-status-preview pulse-status-editor-preview' id='pulseStatusPreview' data-status-preview-stage><span>Select media to preview your status.</span></div>"
         "<div class='pulse-status-caption-layer'><textarea id='pulseStatusBody' name='body' placeholder='Add a caption...'></textarea></div>"
         "<aside class='pulse-status-tool-rail' aria-label='Status tools'>"
@@ -15995,6 +16006,8 @@ def pulse_status_rail_html():
         "<button type='button' data-status-tool='links'><span>↗</span><b>Links</b></button>"
         "</aside>"
         "<div class='pulse-status-overlay-layer' data-status-overlays></div>"
+        "<section class='pulse-status-music-panel' data-status-music-panel aria-hidden='true'><header><strong>Creator-safe sounds</strong><button type='button' data-close-status-music>×</button></header><input data-status-music-search placeholder='Search sounds'><div data-status-music-results></div><div class='pulse-status-waveform' data-status-waveform></div><small>Only original, uploaded, or licensed catalog audio is allowed.</small></section>"
+        "<section class='pulse-status-ai-panel' data-status-ai-panel aria-hidden='true'><header><strong>AI Story</strong><button type='button' data-close-status-ai>×</button></header><textarea data-status-ai-prompt placeholder='Describe the story: cyberpunk sunset over Haiti with floating crypto symbols'></textarea><button type='button' class='primary' data-generate-ai-story>Generate Story</button><div data-status-ai-result></div></section>"
         "<div class='pulse-status-effects-tray' data-status-effects-tray>"
         "<button type='button' data-status-effect='natural'>Natural</button><button type='button' data-status-effect='glow'>Glow</button><button type='button' data-status-effect='cinematic'>Cinematic</button><button type='button' data-status-effect='warm'>Warm</button><button type='button' data-status-effect='mono'>Mono</button>"
         "</div>"
@@ -16125,6 +16138,51 @@ def pulse_desktop_right_rail_html():
     )
 
 
+def pulse_live_now_cards(limit=8):
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT l.*, COALESCE(u.display_name,u.username,'Pulse Creator') AS creator_name,
+                   COALESCE(u.trust_score,72) AS creator_trust,
+                   (SELECT COUNT(*) FROM pulse_live_chat c WHERE c.live_id=l.id AND c.message_type='text') AS chat_count,
+                   (SELECT COUNT(*) FROM pulse_live_reactions r WHERE r.live_id=l.id) AS reaction_count
+            FROM pulse_live_sessions l
+            LEFT JOIN users u ON u.user_id=l.user_id
+            WHERE l.status IN ('live','publishing','reconnecting')
+            ORDER BY COALESCE(l.viewer_count,0) DESC, l.started_at DESC
+            LIMIT ?
+            """,
+            (max(1, min(int(limit or 8), 24)),),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception:
+        rows = []
+    return live_ranking_engine.ranked_live_cards(rows, limit=limit) if rows else [live_ranking_engine.empty_live_card()]
+
+
+def pulse_live_now_homepage_html(user_id=0):
+    cards = pulse_live_now_cards(limit=8)
+    card_html = "".join(
+        f"<article class='pulse-live-now-card {'' if int(card.get('id') or 0) else 'is-empty'}' data-live-now-card data-live-id='{int(card.get('id') or 0)}'>"
+        f"<div class='pulse-live-preview'><span class='live-dot'>LIVE</span><strong>{clean_html(card.get('ai_rating') or 'Ready')}</strong></div>"
+        f"<div><h3>{clean_html(card.get('title') or 'Pulse Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPilotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
+        f"<p><span>{int(card.get('viewer_count') or 0)} viewers</span><span>{clean_html(card.get('momentum') or 'warming')}</span><span>AI {clean_html(card.get('ai_rating') or 'Ready')}</span></p></div>"
+        f"<a class='button primary' href='/pulse/live/{int(card.get('id') or 0)}'>{'Watch Live' if int(card.get('id') or 0) else 'Open Live'}</a>"
+        "</article>"
+        for card in cards
+    )
+    return (
+        "<section class='card pulse-live-now' data-live-now-hub>"
+        "<header><span class='badge live'>LIVE NOW</span><h2>Realtime Pulse Discovery</h2><p class='muted'>Live streams appear here, in the feed, and across discovery the moment creators go live.</p></header>"
+        f"<div class='pulse-live-now-grid'>{card_html}</div>"
+        "</section>"
+    )
+
+
 def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     user = require_account()
     if not user:
@@ -16183,6 +16241,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     desktop_left_rail_html = pulse_desktop_left_rail_html(bool(session.get("admin_user_id")))
     desktop_right_rail_html = pulse_desktop_right_rail_html()
     status_rail_html = pulse_status_rail_html()
+    live_now_html = pulse_live_now_homepage_html(int(user.get("user_id") or 0))
     html = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -16209,6 +16268,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	.reaction-strip{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;padding:2px 0 4px;scrollbar-width:none}.reaction-strip::-webkit-scrollbar{display:none}.reaction-pill{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px;font-weight:950;background:rgba(255,255,255,.045);transition:transform .14s ease,background .14s ease,border-color .14s ease}.reaction-pill b{font-size:12px}.reaction-pill.active{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.58);box-shadow:0 0 0 1px rgba(54,229,143,.12),0 0 24px rgba(54,229,143,.16);transform:translateY(-1px)}
 	.quick-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);padding:7px 0}.quick-action{min-height:36px;border:0;background:transparent;border-radius:10px;padding:6px 5px;color:#dffcff;font-size:13px}.quick-action:active{background:rgba(110,223,246,.1)}
 	.inline-comments{display:grid;gap:7px;padding-top:2px}.comments{display:grid;gap:7px;max-height:220px;overflow:auto}.comment{border-left:0;border-radius:12px;background:rgba(255,255,255,.045);padding:8px 10px}.comment p{margin:3px 0}.comment-preview-toggle{min-height:32px;justify-content:flex-start;border:0;background:transparent;color:#b9f7ff;padding:3px 0}.comment-composer{display:grid;grid-template-columns:34px minmax(0,1fr) 36px 38px;gap:6px;align-items:center}.comment-avatar{width:34px;height:34px;border-radius:999px}.comment-input{min-height:38px;border-radius:999px;padding:9px 13px}.comment-send,.comment-emoji{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0}.typing{min-height:18px;color:#b9f7ff;font-size:12px}.live-enter{animation:pulseIn .28s ease-out}@keyframes pulseIn{from{opacity:.2;transform:translateY(-8px)}to{opacity:1;transform:none}}
+	#postMedia{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}.pulse-environment-engine{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;background:radial-gradient(circle at var(--pulse-env-x,50%) var(--pulse-env-y,16%),rgba(110,223,246,.16),transparent 24rem),radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}.pulse-environment-engine i{position:absolute;width:34vw;height:34vw;border-radius:50%;filter:blur(46px);opacity:.14;background:linear-gradient(135deg,var(--cyan),var(--purple));animation:pulseEnvDrift 18s ease-in-out infinite}.pulse-environment-engine i:nth-child(1){left:2%;top:8%}.pulse-environment-engine i:nth-child(2){right:4%;top:28%;animation-delay:-6s;background:linear-gradient(135deg,var(--green),var(--cyan))}.pulse-environment-engine i:nth-child(3){left:34%;bottom:-12%;animation-delay:-11s;background:linear-gradient(135deg,var(--gold),var(--purple))}@keyframes pulseEnvDrift{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4vw,-3vh,0) scale(1.12)}}.pulse-live-now{display:grid;gap:12px;background:radial-gradient(circle at 10% 0,rgba(255,77,109,.16),transparent 18rem),linear-gradient(180deg,rgba(17,29,50,.94),rgba(9,17,31,.9))}.pulse-live-now header h2{margin:6px 0 2px}.pulse-live-now-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.pulse-live-now-card{display:grid;gap:9px;border:1px solid rgba(255,77,109,.24);border-radius:14px;padding:10px;background:rgba(255,255,255,.045);text-decoration:none}.pulse-live-preview{aspect-ratio:16/9;border-radius:12px;background:radial-gradient(circle at 30% 20%,rgba(255,77,109,.28),transparent 32%),linear-gradient(145deg,#090d16,#02050b);display:flex;align-items:start;justify-content:space-between;padding:9px}.live-dot{border-radius:999px;background:#ff335d;color:#fff;font-size:11px;font-weight:950;padding:4px 7px;box-shadow:0 0 18px rgba(255,51,93,.6)}.pulse-live-now-card p{display:flex;gap:6px;flex-wrap:wrap;margin:0}.pulse-live-now-card p span{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:3px 7px;font-size:12px}.pulse-live-now-card.is-empty{border-color:rgba(110,223,246,.18)}
 	@media(max-width:900px){body{padding-top:0}.mobile-topbar{display:flex}.mobile-bottom-nav{display:grid}.pulse-fab{display:grid;place-items:center;width:48px;height:48px;min-height:48px;border-radius:16px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 82px);box-shadow:0 10px 28px rgba(54,229,143,.2)}.wrap,.pulse-shell{width:100%;max-width:100vw;padding:8px 10px calc(142px + env(safe-area-inset-bottom));overflow-x:hidden}.top,.pulse-nav{display:none}.pulse-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pulse-actions .button,.pulse-actions button{width:100%;min-width:0}.pulse-grid,.layout{grid-template-columns:1fr!important;gap:8px}.hero,.pulse-hero{display:grid!important;gap:5px;padding:10px 12px}.hero h1{font-size:clamp(24px,8vw,32px);line-height:1;margin:2px 0}.hero p{font-size:13px;line-height:1.35;margin:0}.hero .muted{display:none}.hero details .muted{display:block;margin-top:6px;font-size:12px}.tabs{margin-left:-10px;margin-right:-10px;padding:0 10px 2px;max-width:calc(100vw - 20px)}.composer{margin:8px 0;padding:9px;border-radius:18px;background:rgba(11,24,41,.82);box-shadow:0 10px 34px rgba(0,0,0,.18)}.smart-composer-bar{grid-template-columns:34px minmax(0,1fr) 38px 38px;gap:7px}.smart-compose-avatar{width:34px;height:34px;border-radius:12px}.smart-composer-bar textarea{min-height:38px;max-height:78px;border-radius:20px;padding:9px 12px;font-size:14px;background:rgba(6,16,29,.9)}.smart-compose-icon{width:38px;min-width:38px;height:38px;min-height:38px}.composer-advanced{display:none;position:fixed;left:10px;right:10px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:46;max-height:68dvh;overflow:auto;border:1px solid rgba(110,223,246,.22);border-radius:22px;background:rgba(6,15,27,.98);box-shadow:0 22px 70px rgba(0,0,0,.48);padding:12px}.composer.is-expanded .composer-advanced{display:grid}.composer-tools{margin:0 -2px;padding-bottom:2px}.composer .actions{display:grid;grid-template-columns:1fr;gap:8px}.composer .actions .button,.composer .actions button{width:100%;min-width:0}.composer-hint{font-size:12px;line-height:1.35}.author{align-items:flex-start}.author-main{max-width:calc(100% - 46px)}.author-name{white-space:normal}.reaction-strip{margin-left:-2px;margin-right:-2px}.quick-actions{grid-template-columns:repeat(5,minmax(0,1fr))}.quick-action{font-size:12px;padding:5px 2px}.side{position:static!important}.card{border-radius:14px;padding:11px;margin-left:0;margin-right:0}.toast{left:12px;right:12px;bottom:calc(104px + env(safe-area-inset-bottom));transform:none;min-width:0;width:auto}textarea{min-height:88px}.grid{grid-template-columns:1fr!important}.button,button{min-height:40px}.actions .button,.actions button{white-space:normal}}
 	@media(max-width:375px){.mobile-bottom-nav{padding-left:4px;padding-right:4px;gap:1px}.mobile-bottom-nav a{font-size:9px;border-radius:8px}.mobile-bottom-nav .nav-ico{font-size:16px}.pulse-fab{right:12px;width:46px;height:46px;min-height:46px}}
 	@media(max-width:430px){.wrap,.pulse-shell{padding-left:10px;padding-right:10px}.top .actions,.pulse-actions,.composer-tools{grid-template-columns:1fr!important}.badge{max-width:100%;white-space:normal}.card{padding:11px}.hero h1{font-size:30px}.button,button{padding:9px 10px}.comment-composer{grid-template-columns:30px minmax(0,1fr) 34px 36px}.comment-avatar{width:30px;height:30px}.quick-action{font-size:11px}}
@@ -16227,6 +16287,7 @@ __DESKTOP_LEFT_RAIL__
 <section class="card hero"><div><span class="badge live">Global Pulse Feed</span><h1>__TITLE__</h1><p>Post questions, scam warnings, ideas, and creator updates. New approved posts appear immediately.</p><details><summary>Learn more</summary><p class="muted">__DISCLAIMER__</p></details></div></section>
 <section class="layout pulse-grid"><div>
 __PULSE_STATUS_RAIL__
+__LIVE_NOW_HUB__
 <section class="card composer" id="pulseComposer"><div class="smart-composer-bar"><span class="smart-compose-avatar">P</span><textarea id="postBody" placeholder="What's happening in crypto today?"></textarea><button class="smart-compose-icon" type="button" id="aiBtn" aria-label="Enhance with AI">AI</button><button class="smart-compose-icon" type="button" data-open-media aria-label="Add media">+</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" placeholder="Optional title"><select id="postType" class="post-type-select"><option value="text">Text</option><option value="poll">Question</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="roast_clip">Roast Clip</option><option value="replay">Replay Card</option></select><div class="composer-tools"><button class="active" type="button" data-type="text">Text</button><button type="button" data-type="poll">Question</button><button type="button" data-type="scam_report">Scam</button><button type="button" data-type="roast_clip">Roast</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button></div><input id="postMedia" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="actions pulse-actions"><button class="primary" id="publishBtn">Publish Pulse</button><a class="button" href="/scam-shield/scan">Run Scam Shield</a><button type="button" data-collapse-composer>Done</button></div><div class="pulse-upload-progress-track" data-upload-progress aria-label="Pulse upload progress"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small></div><p class="muted composer-hint" id="composeMsg">Links are scanned by Scam Shield. Unsafe posts go to review.</p></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your Pulse is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="/pulse/create">Create Another</a><a class="button" href="/pulse">Pulse Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
@@ -16236,6 +16297,7 @@ __DESKTOP_RIGHT_RAIL__
 </section>
 </main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create Pulse">+</button><section class="create-sheet" id="createSheet"><h3>Create Pulse</h3><div class="create-sheet-grid"><button data-sheet-type="text">Text post</button><button data-sheet-type="poll">Question</button><button data-sheet-type="scam_report">Scam warning</button><button data-sheet-type="video">Reel upload</button><a class="button" href="/pulse/marketplace">Marketplace listing</a><a class="button" href="/pulse/teachers">Teacher lesson</a><a class="button" href="/pulse/groups">Group post</a><a class="button primary" href="/pulse/create">Full composer</a></div></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
 <script src="/static/js/time.js"></script>
+<script src="/static/js/pulse_environment_engine.js" defer></script>
 <script>
 const main=document.querySelector('main');const state={feed:main.dataset.feed||'for_you',topic:main.dataset.topic||'',profile:main.dataset.profile||'',offset:0,loading:false,pendingPosts:[],pendingPostIds:new Set(),deletedPostIds:new Set(JSON.parse(sessionStorage.getItem('pulseDeletedPostIds')||'[]')),lastUserScrollAt:Date.now(),checkingFeed:false,lastToast:{message:'',at:0}};
 const feedPaths={for_you:'/pulse',following:'/pulse/friends',trending:'/pulse/trending',questions:'/pulse/questions',my_posts:'/pulse/my-posts',scam_alerts:'/pulse/scam-alerts',arena_highlights:'/pulse/arena',roast_clips:'/pulse/roast-clips'};
@@ -16251,13 +16313,20 @@ const statusDraft={files:[],urls:[],mediaIds:[],soundFile:null,soundMediaId:0,ef
 function resetStatusPreviewUrls(){(statusDraft.urls||[]).forEach(u=>URL.revokeObjectURL(u));statusDraft.urls=[]}
 function openStatusEditor(){statusViewer?.classList.add('open');statusViewer?.setAttribute('aria-hidden','false');document.body.classList.add('status-editor-open')}
 function closeStatusEditor(){statusViewer?.classList.remove('open');statusViewer?.setAttribute('aria-hidden','true');document.body.classList.remove('status-editor-open')}
+function setStatusModePicker(show=true){document.querySelector('[data-status-mode-picker]')?.classList.toggle('is-hidden',!show)}
+function openStatusModePicker(){openStatusEditor();setStatusModePicker(true);window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose Camera, Upload, Music, AI Story, or Text Story.'})}
+function showStatusMusicPanel(open=true){const panel=document.querySelector('[data-status-music-panel]');if(!panel)return;panel.classList.toggle('open',open);panel.setAttribute('aria-hidden',open?'false':'true');if(open)loadStatusMusic('')}
+function showStatusAiPanel(open=true){const panel=document.querySelector('[data-status-ai-panel]');if(!panel)return;panel.classList.toggle('open',open);panel.setAttribute('aria-hidden',open?'false':'true')}
 function clearStatusDraft(){resetStatusPreviewUrls();statusDraft.files=[];statusDraft.mediaIds=[];statusDraft.soundFile=null;statusDraft.soundMediaId=0;statusDraft.sticker='';statusDraft.link='';statusDraft.effect='natural';if(statusMediaInput)statusMediaInput.value='';if(statusSoundInput)statusSoundInput.value='';document.getElementById('pulseStatusBody').value='';document.querySelector('[data-status-overlays]').innerHTML='';statusPreview.innerHTML='<span>Select media to preview your status.</span>';statusPreview.dataset.effect='natural';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose media to create a Status.'})}
-function renderStatusPreview(){resetStatusPreviewUrls();const file=statusDraft.files[0];if(!statusPreview)return;if(!file){statusPreview.innerHTML='<span>Select media to preview your status.</span>';return}const url=URL.createObjectURL(file);statusDraft.urls.push(url);const safeName=esc(file.name||'Pulse Status media');statusPreview.dataset.effect=statusDraft.effect||'natural';statusPreview.innerHTML=file.type?.startsWith('video/')?`<video src="${url}" playsinline controls muted loop aria-label="${safeName}"></video>`:`<img src="${url}" alt="${safeName}" decoding="async">`;document.getElementById('pulseStatusMode').value=file.type?.startsWith('video/')?'video':'image';document.querySelector('[data-status-overlays]').innerHTML=statusDraft.sticker?`<span class="pulse-status-sticker">${esc(statusDraft.sticker)}</span>`:'';openStatusEditor();window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Ready to publish ${safeName}`})}
+function renderStatusPreview(){resetStatusPreviewUrls();const file=statusDraft.files[0];if(!statusPreview)return;if(!file){statusPreview.innerHTML='<span>Select media to preview your status.</span>';return}const url=URL.createObjectURL(file);statusDraft.urls.push(url);const safeName=esc(file.name||'Pulse Status media');statusPreview.dataset.effect=statusDraft.effect||'natural';statusPreview.innerHTML=file.type?.startsWith('video/')?`<video src="${url}" playsinline controls muted loop aria-label="${safeName}"></video>`:`<img src="${url}" alt="${safeName}" decoding="async">`;document.getElementById('pulseStatusMode').value=file.type?.startsWith('video/')?'video':'image';document.querySelector('[data-status-overlays]').innerHTML=statusDraft.sticker?`<span class="pulse-status-sticker">${esc(statusDraft.sticker)}</span>`:'';openStatusEditor();setStatusModePicker(false);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Ready to publish ${safeName}`})}
 async function hydrateStatusRail(){try{const d=await api('/api/pulse/status/rail');const strip=document.querySelector('[data-status-strip]');if(!strip)return;strip.querySelectorAll('[data-status-dynamic]').forEach(x=>x.remove());const real=(d.items||[]).slice(0,12);if(!real.length){strip.insertAdjacentHTML('beforeend','<button class="pulse-status-card" type="button" data-status-card data-status-dynamic data-status-mode="create" data-status-title="Create the first Pulse Status" data-status-meta="Text, image, video, music, or camera"><span class="pulse-status-avatar-ring">+</span><span><span class="pulse-status-title">Create the first Pulse Status</span><span class="pulse-status-meta">Publish something real</span></span></button>');return}strip.insertAdjacentHTML('beforeend',real.map(s=>`<button class="pulse-status-card ${s.viewed?'is-viewed':''}" type="button" data-status-dynamic data-open-status-id="${s.id}" data-status-title="${esc(s.author_name||'Pulse Status')}" data-status-meta="${esc(s.body||s.status_type||'Tap to view')}"><span class="pulse-status-avatar-ring">${esc((s.author_name||'P').slice(0,1))}</span><span><span class="pulse-status-title">${esc(s.author_name||'Pulse member')}</span><span class="pulse-status-meta">${esc(s.status_type||'status')} · ${s.viewed?'seen':'new'}</span></span></button>`).join(''))}catch(e){console.warn('Pulse Status rail hydrate failed',e)}}
-document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card){const mode=card.dataset.statusMode||'create';if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}if(mode==='music'){statusSoundInput?.click();statusMediaInput?.click();return}statusMediaInput?.click();return}const openStatus=e.target.closest('[data-open-status-id]');if(openStatus&&statusViewer){toast(openStatus.dataset.statusMeta||'Opening status.');api(`/api/pulse/status/${openStatus.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).catch(()=>{});return}const back=e.target.closest('[data-status-back]');if(back){closeStatusEditor();return}const tool=e.target.closest('[data-status-tool]');if(tool){const name=tool.dataset.statusTool;if(name==='choose'){statusMediaInput?.click();return}if(name==='music'){statusSoundInput?.click();return}if(name==='text'){document.getElementById('pulseStatusBody')?.focus();toast('Add text over your Status.');return}if(name==='stickers'){const stickers=['❤️','🔥','✨','📸','🎉','💯'];const next=stickers[(stickers.indexOf(statusDraft.sticker)+1)%stickers.length]||stickers[0];statusDraft.sticker=next;renderStatusPreview();toast('Sticker added.');return}if(name==='filters'){document.querySelector('[data-status-effects-tray]')?.classList.toggle('open');return}if(name==='mention'){const mention=prompt('Mention a Pulse creator');if(mention){const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+' ':'')+(mention.startsWith('@')?mention:'@'+mention);body.focus()}return}if(name==='links'){const link=prompt('Add a link');if(link){statusDraft.link=link;const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+'\\n':'')+link;toast('Link added.')}return}}const effect=e.target.closest('[data-status-effect]');if(effect){statusDraft.effect=effect.dataset.statusEffect||'natural';document.querySelectorAll('[data-status-effect]').forEach(b=>b.classList.toggle('active',b===effect));if(statusPreview)statusPreview.dataset.effect=statusDraft.effect;toast(`${effect.textContent.trim()} filter applied.`);return}if(e.target===statusViewer){closeStatusEditor()}});
+async function loadStatusMusic(query=''){try{const d=await api('/api/pulse/status/music/search?q='+encodeURIComponent(query));const box=document.querySelector('[data-status-music-results]');if(!box)return;box.innerHTML=(d.items||[]).map(t=>`<button type="button" data-status-select-track="${esc(t.id)}" data-track-title="${esc(t.title)}" data-track-artist="${esc(t.artist)}"><strong>${esc(t.title)}</strong><small>${esc(t.artist)} · ${esc(t.mood||'story')}</small></button>`).join('')||'<p class="muted">No creator-safe sounds found.</p>'}catch(e){toast(e.message||'Music search failed.')}}
+async function generateAiStatusStory(){const prompt=document.querySelector('[data-status-ai-prompt]')?.value||'';if(!prompt.trim()){toast('Describe the AI Story first.');return}try{const d=await api('/api/pulse/status/ai-story',{method:'POST',body:JSON.stringify({prompt,style:'cinematic'})});const story=d.story||{};document.getElementById('pulseStatusMode').value='ai';document.getElementById('pulseStatusBody').value=story.caption||prompt;statusPreview.dataset.effect=story.style||'cinematic';statusPreview.innerHTML=`<div class="pulse-ai-story-preview" style="background:${esc(story.visual?.background||'linear-gradient(145deg,#061426,#02050b)')}"><strong>${esc(story.caption||prompt)}</strong><small>${esc((story.tags||[]).join(' · '))}</small></div>`;document.querySelector('[data-status-ai-result]').innerHTML='<span>AI Story ready. Add music or publish.</span>';setStatusModePicker(false);showStatusAiPanel(false);window.PulseUploadManager?.render(statusProgress,{stage:'processing',percent:64,message:'AI Story preview ready.'})}catch(e){toast(e.message||'AI Story failed.')}}
+document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card){const mode=card.dataset.statusMode||'create';if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}openStatusModePicker();if(mode==='music')showStatusMusicPanel(true);if(mode==='ai')showStatusAiPanel(true);return}const starter=e.target.closest('[data-status-start]');if(starter){const mode=starter.dataset.statusStart;if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='upload'){setStatusModePicker(false);statusMediaInput?.click();return}if(mode==='music'){setStatusModePicker(false);showStatusMusicPanel(true);return}if(mode==='ai'){setStatusModePicker(false);showStatusAiPanel(true);return}if(mode==='text'){setStatusModePicker(false);document.getElementById('pulseStatusMode').value='text';statusPreview.innerHTML='<div class="pulse-ai-story-preview text-story"><strong>Text Story</strong><small>Write your story below.</small></div>';document.getElementById('pulseStatusBody')?.focus();return}}if(e.target.closest('[data-close-status-music]')){showStatusMusicPanel(false);return}if(e.target.closest('[data-close-status-ai]')){showStatusAiPanel(false);return}if(e.target.closest('[data-generate-ai-story]')){generateAiStatusStory();return}const track=e.target.closest('[data-status-select-track]');if(track){document.getElementById('pulseStatusMusicTrack').value=track.dataset.statusSelectTrack||'';document.getElementById('pulseStatusMode').value='music';document.getElementById('pulseStatusBody').value=document.getElementById('pulseStatusBody').value||`${track.dataset.trackTitle||'Pulse sound'} · ${track.dataset.trackArtist||'Pulse'}`;document.querySelector('[data-status-waveform]').innerHTML='<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>';showStatusMusicPanel(false);toast('Sound attached.');return}const openStatus=e.target.closest('[data-open-status-id]');if(openStatus&&statusViewer){toast(openStatus.dataset.statusMeta||'Opening status.');api(`/api/pulse/status/${openStatus.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).catch(()=>{});return}const back=e.target.closest('[data-status-back]');if(back){closeStatusEditor();return}const tool=e.target.closest('[data-status-tool]');if(tool){const name=tool.dataset.statusTool;if(name==='choose'){statusMediaInput?.click();return}if(name==='music'){showStatusMusicPanel(true);return}if(name==='text'){document.getElementById('pulseStatusBody')?.focus();toast('Add text over your Status.');return}if(name==='stickers'){const stickers=['❤️','🔥','✨','📸','🎉','💯'];const next=stickers[(stickers.indexOf(statusDraft.sticker)+1)%stickers.length]||stickers[0];statusDraft.sticker=next;renderStatusPreview();toast('Sticker added.');return}if(name==='filters'){document.querySelector('[data-status-effects-tray]')?.classList.toggle('open');return}if(name==='mention'){const mention=prompt('Mention a Pulse creator');if(mention){const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+' ':'')+(mention.startsWith('@')?mention:'@'+mention);body.focus()}return}if(name==='links'){const link=prompt('Add a link');if(link){statusDraft.link=link;const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+'\\n':'')+link;toast('Link added.')}return}}const effect=e.target.closest('[data-status-effect]');if(effect){statusDraft.effect=effect.dataset.statusEffect||'natural';document.querySelectorAll('[data-status-effect]').forEach(b=>b.classList.toggle('active',b===effect));if(statusPreview)statusPreview.dataset.effect=statusDraft.effect;toast(`${effect.textContent.trim()} filter applied.`);return}if(e.target===statusViewer){closeStatusEditor()}});
+document.querySelector('[data-status-music-search]')?.addEventListener('input',e=>loadStatusMusic(e.target.value||''));
 statusMediaInput?.addEventListener('change',e=>{statusDraft.files=[...e.target.files].slice(0,8);statusDraft.mediaIds=[];if(statusDraft.files.length)renderStatusPreview()});
 statusSoundInput?.addEventListener('change',e=>{statusDraft.soundFile=e.target.files[0]||null;if(statusDraft.soundFile){toast(`Music selected: ${statusDraft.soundFile.name}`);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Music selected: ${statusDraft.soundFile.name}`})}});
-statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(statusDraft.publishing)return;if(!statusDraft.files.length){statusMediaInput?.click();toast('Choose an image or video first.');return}statusDraft.publishing=true;if(btn)btn.disabled=true;try{statusDraft.mediaIds=[];for(const [index,file] of statusDraft.files.entries()){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_status');fd.append('context_id','draft');fd.append('effect_name',statusDraft.effect||'natural');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:statusProgress,lockKey:`pulse-status-media-${index}-${file.name}`,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)statusDraft.mediaIds.push(up.media.id)}if(statusDraft.soundFile){const fd=new FormData();fd.append('file',statusDraft.soundFile);fd.append('context_type','pulse_status_music');fd.append('context_id','draft');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:statusDraft.soundFile,button:btn,progressTarget:statusProgress,lockKey:'pulse-status-sound'}):await api('/api/pulse/media/upload',{method:'POST',body:fd});statusDraft.soundMediaId=up.media?.id||0}window.PulseUploadManager?.render(statusProgress,{stage:'publishing',percent:96,message:'Publishing...'});const payload={status_type:document.getElementById('pulseStatusMode').value||'image',body:document.getElementById('pulseStatusBody').value,visibility:document.getElementById('pulseStatusPrivacy').value,duration_hours:Number(document.getElementById('pulseStatusDuration').value||24),media_ids:statusDraft.mediaIds,music_media_id:statusDraft.soundMediaId,effect_name:statusDraft.effect,sticker:statusDraft.sticker,link_url:statusDraft.link};const created=await api('/api/pulse/status',{method:'POST',body:JSON.stringify(payload)});window.PulseUploadManager?.render(statusProgress,{stage:'success',percent:100,message:'Posted successfully'});toast('Posted successfully');closeStatusEditor();clearStatusDraft();await hydrateStatusRail();if(created.status?.id){document.querySelector(`[data-open-status-id="${created.status.id}"]`)?.classList.add('just-created')}}catch(err){window.PulseUploadManager?.render(statusProgress,{stage:'failed',percent:0,message:(err.message||'Status publish failed.')+' Tap Share to retry.'});toast((err.message||'Status publish failed.')+' Tap Share to retry.')}finally{statusDraft.publishing=false;if(btn)btn.disabled=false}});
+statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(statusDraft.publishing)return;const mode=document.getElementById('pulseStatusMode').value||'image';if(!statusDraft.files.length&&!['text','ai','music','live'].includes(mode)){statusMediaInput?.click();toast('Choose an image or video first.');return}statusDraft.publishing=true;if(btn)btn.disabled=true;try{statusDraft.mediaIds=[];for(const [index,file] of statusDraft.files.entries()){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_status');fd.append('context_id','draft');fd.append('effect_name',statusDraft.effect||'natural');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:statusProgress,lockKey:`pulse-status-media-${index}-${file.name}`,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)statusDraft.mediaIds.push(up.media.id)}if(statusDraft.soundFile){const fd=new FormData();fd.append('file',statusDraft.soundFile);fd.append('context_type','pulse_status_music');fd.append('context_id','draft');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:statusDraft.soundFile,button:btn,progressTarget:statusProgress,lockKey:'pulse-status-sound'}):await api('/api/pulse/media/upload',{method:'POST',body:fd});statusDraft.soundMediaId=up.media?.id||0}window.PulseUploadManager?.render(statusProgress,{stage:'publishing',percent:96,message:'Publishing...'});const payload={status_type:mode,body:document.getElementById('pulseStatusBody').value,visibility:document.getElementById('pulseStatusPrivacy').value,duration_hours:Number(document.getElementById('pulseStatusDuration').value||24),media_ids:statusDraft.mediaIds,music_media_id:statusDraft.soundMediaId,effect_name:statusDraft.effect,sticker:statusDraft.sticker,link_url:statusDraft.link,music_track_id:document.getElementById('pulseStatusMusicTrack').value,ai_context:{music_track_id:document.getElementById('pulseStatusMusicTrack').value,editor_mode:mode}};const created=await api('/api/pulse/status',{method:'POST',body:JSON.stringify(payload)});window.PulseUploadManager?.render(statusProgress,{stage:'success',percent:100,message:'Posted successfully'});toast('Posted successfully');closeStatusEditor();clearStatusDraft();await hydrateStatusRail();if(created.status?.id){document.querySelector(`[data-open-status-id="${created.status.id}"]`)?.classList.add('just-created')}}catch(err){window.PulseUploadManager?.render(statusProgress,{stage:'failed',percent:0,message:(err.message||'Status publish failed.')+' Tap Share to retry.'});toast((err.message||'Status publish failed.')+' Tap Share to retry.')}finally{statusDraft.publishing=false;if(btn)btn.disabled=false}});
 hydrateStatusRail();
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/')||url.startsWith('data:')||url.startsWith('blob:'))return url;return '/'+url.replace(new RegExp('^/+'), '')}
@@ -16314,6 +16383,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)retu
         .replace("__DESKTOP_TOP_NAV__", desktop_top_nav_html)
         .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
         .replace("__PULSE_STATUS_RAIL__", status_rail_html)
+        .replace("__LIVE_NOW_HUB__", live_now_html)
         .replace("__DESKTOP_RIGHT_RAIL__", desktop_right_rail_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
     )
@@ -16385,6 +16455,7 @@ def pulse_status_payload(row, viewer_user_id=0):
         "viewed": bool(item.get("viewer_viewed")),
         "media": media_items,
         "ai_context": ai_context,
+        "music": ai_context.get("music") or {},
         "status_tools": ai_context.get("status_tools") or {},
         "adaptive": {"fit_mode": "smart", "preload": "nearby", "weak_network": "poster_first"},
     }
@@ -16392,12 +16463,72 @@ def pulse_status_payload(row, viewer_user_id=0):
 
 @webhook_app.route("/pulse/status", methods=["GET"])
 def pulse_status_page():
-    cards = [
-        {"title": "Create Status", "description": "Camera, upload, music, text, live, and AI story creation are status-ready.", "href": "/pulse/create", "cta": "Create Status"},
-        {"title": "Viewer", "description": "Fullscreen status viewing uses progress bars, tap navigation, pause, replies, and adaptive media fitting.", "href": "/pulse", "cta": "Open Pulse"},
-        {"title": "Discovery", "description": "Following, For You, Trending, Music, Global, AI Picks, and Live status lanes are scaffolded safely.", "href": "/pulse", "cta": "Explore Feed"},
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    tabs = [
+        ("for_you", "For You"),
+        ("following", "Following"),
+        ("trending", "Trending"),
+        ("global", "Global"),
+        ("ai_picks", "AI Picks"),
+        ("music", "Music"),
+        ("live", "Live"),
     ]
-    return pulse_section_shell("Pulse Status", "Immersive adaptive stories and status updates for creators, educators, live rooms, and the global Pulse network.", cards)
+    tab_html = "".join(
+        f"<button type='button' data-status-full-tab='{lane}' class='{'active' if lane == 'for_you' else ''}'>{label}</button>"
+        for lane, label in tabs
+    )
+    main_html = f"""
+    <link rel="stylesheet" href="/static/css/pulse_status_system.css">
+    <section class="card pulse-status-full-page" data-status-full-page>
+      <header>
+        <span class="pill">Pulse Status</span>
+        <h2>Stories that feel alive</h2>
+        <p class="muted">Create, watch, reply, and discover active stories across following, trending, global, music, AI, and live lanes.</p>
+        <div class="actions">
+          <a class="button primary" href="/pulse#pulse-status-rail">Create Status</a>
+          <a class="button" href="/pulse/camera?target=status">Camera</a>
+          <a class="button" href="/pulse/live">Go Live</a>
+        </div>
+      </header>
+      <nav class="pulse-status-full-tabs" aria-label="Pulse Status discovery tabs">{tab_html}</nav>
+      <div class="pulse-status-full-grid" data-status-full-grid aria-live="polite">
+        <article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Loading Pulse Status…</span><span class="pulse-status-meta">Syncing active stories</span></article>
+      </div>
+    </section>
+    """
+    side_html = (
+        "<article class='card'><h2>Status Intelligence</h2><p>Following shows people you follow. Trending is based on reactions and replies. Music and AI lanes only show matching active stories.</p></article>"
+        "<article class='card'><h2>Creator Safety</h2><p>Sounds must be original, uploaded by the creator, or explicitly licensed through a configured provider.</p></article>"
+    )
+    script_html = """
+    const statusGrid=document.querySelector('[data-status-full-grid]');
+    async function loadStatusLane(lane='for_you'){
+      if(statusGrid) statusGrid.innerHTML='<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Loading…</span><span class="pulse-status-meta">Preparing active stories</span></article>';
+      try{
+        const d=await pulseApi('/api/pulse/status/rail?lane='+encodeURIComponent(lane));
+        const items=d.items||[];
+        statusGrid.innerHTML=items.length?items.map(item=>{
+          const title=(item.body||item.author_name||'Pulse Status').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+          const author=(item.author_name||'Pulse creator').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+          const mode=(item.status_type||'story').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+          return `<article class="pulse-status-card pulse-status-full-card" data-open-status-id="${item.id}"><span class="pulse-status-avatar-ring">${author.charAt(0)||'P'}</span><span><span class="pulse-status-title">${title}</span><span class="pulse-status-meta">${author} · ${mode}</span></span></article>`;
+        }).join(''):'<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Create the first Pulse Status</span><span class="pulse-status-meta">No active stories in this lane yet.</span></article>';
+      }catch(err){
+        statusGrid.innerHTML='<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Status could not load</span><span class="pulse-status-meta">Tap a tab to retry.</span></article>';
+        toast(err.message||'Pulse Status could not load.');
+      }
+    }
+    document.addEventListener('click',e=>{
+      const tab=e.target.closest('[data-status-full-tab]');
+      if(tab){document.querySelectorAll('[data-status-full-tab]').forEach(b=>b.classList.toggle('active',b===tab));loadStatusLane(tab.dataset.statusFullTab||'for_you');}
+      const card=e.target.closest('[data-open-status-id]');
+      if(card){pulseApi(`/api/pulse/status/${card.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).then(()=>toast('Status opened.')).catch(err=>toast(err.message||'Status view failed.'));}
+    });
+    loadStatusLane('for_you');
+    """
+    return pulse_social_shell("Pulse Status", "Fullscreen stories, music, AI generation, live discovery, and creator-safe publishing.", main_html, side_html, script_html)
 
 
 @webhook_app.route("/api/pulse/status/rail", methods=["GET"])
@@ -16408,6 +16539,7 @@ def api_pulse_status_rail():
         return jsonify({"ok": False, "message": "Login required."}), 401
     trace_id = secrets.token_hex(6)
     now = datetime.utcnow().isoformat(timespec="seconds")
+    lane = clean_html(request.args.get("lane") or "global")[:40]
     try:
         conn = db()
         conn.row_factory = sqlite3.Row
@@ -16415,24 +16547,68 @@ def api_pulse_status_rail():
         cur.execute(
             """
             SELECT s.*, COALESCE(u.display_name,u.username,'Pulse member') AS author_name,
-                   CASE WHEN v.id IS NULL THEN 0 ELSE 1 END AS viewer_viewed
+                   CASE WHEN v.id IS NULL THEN 0 ELSE 1 END AS viewer_viewed,
+                   CASE WHEN f.followed_user_id IS NULL THEN 0 ELSE 1 END AS viewer_follows_author,
+                   (SELECT COUNT(*) FROM pulse_status_reactions r WHERE r.status_id=s.id) AS reaction_count,
+                   (SELECT COUNT(*) FROM pulse_status_replies rp WHERE rp.status_id=s.id) AS reply_count,
+                   CASE WHEN s.status_type='ai' THEN 85 ELSE 50 END AS ai_momentum_score,
+                   (SELECT title FROM pulse_status_music sm WHERE sm.status_id=s.id ORDER BY sm.id DESC LIMIT 1) AS music_title
             FROM pulse_status s
             LEFT JOIN users u ON u.user_id=s.user_id
             LEFT JOIN pulse_status_views v ON v.status_id=s.id AND v.viewer_user_id=?
+            LEFT JOIN pulse_follows f ON f.follower_user_id=? AND f.followed_user_id=s.user_id
             WHERE s.deleted_at IS NULL
               AND COALESCE(s.visibility,'public')='public'
               AND (s.expires_at IS NULL OR s.expires_at='' OR s.expires_at>?)
             ORDER BY s.created_at DESC
             LIMIT 40
             """,
-            (int(user["user_id"]), now),
+            (int(user["user_id"]), int(user["user_id"]), now),
         )
-        items = [pulse_status_payload(row, user["user_id"]) for row in cur.fetchall()]
+        rows = [dict(row) for row in cur.fetchall()]
+        lanes = music_service.discovery_lanes(rows)
+        selected_rows = lanes.get(lane) if lane in lanes else rows
+        items = [pulse_status_payload(row, user["user_id"]) for row in selected_rows]
         conn.close()
-        return jsonify({"ok": True, "items": items, "trace_id": trace_id, "lanes": ["following", "for_you", "trending", "global", "ai_picks", "music", "live"]})
+        return jsonify({"ok": True, "items": items, "trace_id": trace_id, "lane": lane, "lanes": ["following", "for_you", "trending", "global", "ai_picks", "music", "live"]})
     except Exception as exc:
         logging.exception("PULSE_STATUS_RAIL_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
         return jsonify({"ok": False, "message": "Pulse Status could not load.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/status/music/search", methods=["GET"])
+def api_pulse_status_music_search():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    query = clean_html(request.args.get("q") or "")[:120]
+    mood = clean_html(request.args.get("mood") or "")[:80]
+    items = music_service.search_tracks(query=query, mood=mood, limit=request.args.get("limit") or 12)
+    return jsonify({"ok": True, "items": items, "provider": music_service.provider_status(), "trace_id": secrets.token_hex(6)})
+
+
+@webhook_app.route("/api/pulse/status/music/trending", methods=["GET"])
+def api_pulse_status_music_trending():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    return jsonify({"ok": True, "items": music_service.trending_tracks(request.args.get("limit") or 10), "provider": music_service.provider_status(), "trace_id": secrets.token_hex(6)})
+
+
+@webhook_app.route("/api/pulse/status/ai-story", methods=["POST"])
+def api_pulse_status_ai_story():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    payload = request.get_json(silent=True) or {}
+    prompt = clean_html(payload.get("prompt") or "")[:500]
+    if not prompt:
+        return jsonify({"ok": False, "message": "Describe the AI Story first.", "trace_id": secrets.token_hex(6)}), 400
+    story = ai_story_service.generate_story(prompt, style=clean_html(payload.get("style") or "")[:80], duration_seconds=safe_int(payload.get("duration_seconds"), 12))
+    return jsonify({"ok": True, "story": story, "captions": ai_story_service.caption_suggestions(prompt), "trace_id": secrets.token_hex(6)})
 
 
 @webhook_app.route("/api/pulse/status", methods=["POST"])
@@ -16455,6 +16631,9 @@ def api_pulse_status_create():
         ai_context = payload.get("ai_context") or {}
         if not isinstance(ai_context, dict):
             ai_context = {}
+        music_track_id = clean_html(payload.get("music_track_id") or "")[:120]
+        if music_track_id:
+            ai_context["music"] = music_service.attach_music_payload(music_track_id)
         tool_context = {
             "effect_name": clean_html(payload.get("effect_name") or "natural")[:80],
             "sticker": clean_html(payload.get("sticker") or "")[:80],
@@ -16503,7 +16682,8 @@ def api_pulse_status_create():
                 ),
             )
         music_media_id = safe_int(payload.get("music_media_id"), 0)
-        if music_media_id:
+        if music_media_id or music_track_id:
+            music_payload = ai_context.get("music") or {}
             cur.execute("SELECT * FROM chat_media_uploads WHERE id=? LIMIT 1", (music_media_id,))
             media_row = dict(cur.fetchone() or {})
             cur.execute(
@@ -16511,7 +16691,14 @@ def api_pulse_status_create():
                 INSERT INTO pulse_status_music (status_id, audio_track_id, title, artist, waveform_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (status_id, music_media_id, clean_html(media_row.get("original_filename") or "Original Pulse sound")[:180], "Pulse creator", "[]", now.isoformat(timespec="seconds")),
+                (
+                    status_id,
+                    music_media_id or 0,
+                    clean_html(music_payload.get("title") or media_row.get("original_filename") or "Original Pulse sound")[:180],
+                    clean_html(music_payload.get("artist") or "Pulse creator")[:180],
+                    json.dumps(music_payload.get("waveform") or [], default=str),
+                    now.isoformat(timespec="seconds"),
+                ),
             )
         conn.commit()
         cur.execute("SELECT * FROM pulse_status WHERE id=? LIMIT 1", (status_id,))
@@ -24175,6 +24362,21 @@ def api_pulse_live():
     events = pulse_live_snapshot(cur, since_id, request.args.get("limit") or 80)
     conn.close()
     return jsonify({"ok": True, "events": events, "latest_event_id": events[-1]["id"] if events else since_id, "metrics": pulse_live_metrics()})
+
+
+@webhook_app.route("/api/pulse/live-now", methods=["GET"])
+def api_pulse_live_now():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+    trace_id = secrets.token_hex(6)
+    try:
+        cards = pulse_live_now_cards(limit=request.args.get("limit") or 8)
+        return jsonify({"ok": True, "items": cards, "trace_id": trace_id, "ranking": "engagement_velocity_viewers_comments_reactions_trust"})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_NOW_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
+        return jsonify({"ok": False, "message": "Live Now could not load.", "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/api/pulse/heartbeat", methods=["POST"])
