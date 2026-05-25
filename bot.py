@@ -16102,6 +16102,25 @@ def teacher_promo_card(compact=False):
     )
 
 
+def pulse_daily_mentor_card_html(desktop=False):
+    card_class = "desktop-rail-card pulse-daily-mentor-card" if desktop else "card pulse-daily-mentor-card"
+    return (
+        f"<section class='{card_class}' data-daily-mentor-card data-prompt-id='wallet-safety-reflection'>"
+        "<h3>Pulse Daily Mentor</h3>"
+        "<p class='muted'>Today's reflection</p>"
+        "<p class='daily-mentor-question' data-daily-mentor-question>What crypto scam did you almost fall for?</p>"
+        "<div class='daily-mentor-thread' data-daily-mentor-thread aria-live='polite'></div>"
+        "<textarea data-daily-mentor-input placeholder='Share your answer...'></textarea>"
+        "<div class='daily-mentor-actions'>"
+        "<button type='button' class='primary' data-daily-mentor-send>Send</button>"
+        "<button type='button' data-daily-mentor-help>Ask AI to help me answer</button>"
+        "<button type='button' data-daily-mentor-post>Post this as a Pulse</button>"
+        "</div>"
+        "<small class='muted' data-daily-mentor-status>Saved privately until you choose to post.</small>"
+        "</section>"
+    )
+
+
 def pulse_desktop_right_rail_html():
     return (
         "<aside class='pulse-desktop-right' aria-label='Pulse intelligence rail'>"
@@ -16112,6 +16131,7 @@ def pulse_desktop_right_rail_html():
         "<div class='desktop-energy-meter' aria-hidden='true'><span data-desktop-energy style='--energy:58%'></span></div>"
         "<p class='muted' data-desktop-suggested-action>Signals are loading quietly so the feed stays fast.</p>"
         "</section>"
+        f"{pulse_daily_mentor_card_html(desktop=True)}"
         f"{creator_promo_card()}"
         "<section class='desktop-rail-card'><h3>Trending Topics</h3><div class='desktop-intel-grid' data-desktop-trending>"
         "<a class='desktop-intel-row' href='/pulse/topic/scamshield'><span class='desktop-rail-ico'>#</span><span><strong>#scamshield</strong><small class='muted'>Safety intelligence</small></span></a>"
@@ -16277,6 +16297,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	.reaction-strip{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;padding:2px 0 4px;scrollbar-width:none}.reaction-strip::-webkit-scrollbar{display:none}.reaction-pill{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px;font-weight:950;background:rgba(255,255,255,.045);transition:transform .14s ease,background .14s ease,border-color .14s ease}.reaction-pill b{font-size:12px}.reaction-pill.active{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.58);box-shadow:0 0 0 1px rgba(54,229,143,.12),0 0 24px rgba(54,229,143,.16);transform:translateY(-1px)}
 	.quick-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);padding:7px 0}.quick-action{min-height:36px;border:0;background:transparent;border-radius:10px;padding:6px 5px;color:#dffcff;font-size:13px}.quick-action:active{background:rgba(110,223,246,.1)}
 	.inline-comments{display:grid;gap:7px;padding-top:2px}.comments{display:grid;gap:7px;max-height:220px;overflow:auto}.comment{border-left:0;border-radius:12px;background:rgba(255,255,255,.045);padding:8px 10px}.comment p{margin:3px 0}.comment-preview-toggle{min-height:32px;justify-content:flex-start;border:0;background:transparent;color:#b9f7ff;padding:3px 0}.comment-composer{display:grid;grid-template-columns:34px minmax(0,1fr) 36px 38px;gap:6px;align-items:center}.comment-avatar{width:34px;height:34px;border-radius:999px}.comment-input{min-height:38px;border-radius:999px;padding:9px 13px}.comment-send,.comment-emoji{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0}.typing{min-height:18px;color:#b9f7ff;font-size:12px}.live-enter{animation:pulseIn .28s ease-out}@keyframes pulseIn{from{opacity:.2;transform:translateY(-8px)}to{opacity:1;transform:none}}
+	.pulse-daily-mentor-card{display:grid;gap:10px;background:radial-gradient(circle at 8% 0,rgba(110,223,246,.16),transparent 16rem),linear-gradient(180deg,rgba(17,29,50,.94),rgba(8,18,33,.9))}.pulse-daily-mentor-card h3{margin:0}.daily-mentor-question{margin:0;color:#f2fbff;font-size:16px;font-weight:950;line-height:1.35}.daily-mentor-thread{display:grid;gap:8px;max-height:260px;overflow:auto;scrollbar-width:thin}.daily-mentor-msg{border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:9px 10px;background:rgba(255,255,255,.045);font-size:13px;line-height:1.42}.daily-mentor-msg.user{margin-left:16px;background:rgba(54,229,143,.1);border-color:rgba(54,229,143,.22)}.daily-mentor-msg.ai{margin-right:16px;background:rgba(110,223,246,.075);border-color:rgba(110,223,246,.2)}.daily-mentor-msg strong{display:block;margin-bottom:3px;color:#f2fbff}.pulse-daily-mentor-card textarea{min-height:78px;border-radius:14px}.daily-mentor-actions{display:grid;gap:7px}.daily-mentor-actions button{width:100%;white-space:normal;min-height:40px}.daily-mentor-thinking{position:relative;padding-left:18px}.daily-mentor-thinking:before{content:"";position:absolute;left:2px;top:.6em;width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.85);animation:mentorPulse 1s ease-in-out infinite}@keyframes mentorPulse{0%,100%{transform:scale(.74);opacity:.55}50%{transform:scale(1.2);opacity:1}}
 	.pulse-environment-engine{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;background:radial-gradient(circle at var(--pulse-env-x,50%) var(--pulse-env-y,16%),rgba(110,223,246,.16),transparent 24rem),radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}.pulse-environment-engine i{position:absolute;width:34vw;height:34vw;border-radius:50%;filter:blur(46px);opacity:.14;background:linear-gradient(135deg,var(--cyan),var(--purple));animation:pulseEnvDrift 18s ease-in-out infinite}.pulse-environment-engine i:nth-child(1){left:2%;top:8%}.pulse-environment-engine i:nth-child(2){right:4%;top:28%;animation-delay:-6s;background:linear-gradient(135deg,var(--green),var(--cyan))}.pulse-environment-engine i:nth-child(3){left:34%;bottom:-12%;animation-delay:-11s;background:linear-gradient(135deg,var(--gold),var(--purple))}@keyframes pulseEnvDrift{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4vw,-3vh,0) scale(1.12)}}.pulse-live-now{display:grid;gap:16px;padding:18px!important;background:radial-gradient(circle at 10% 0,rgba(255,77,109,.16),transparent 18rem),linear-gradient(180deg,rgba(17,29,50,.94),rgba(9,17,31,.9))}.pulse-live-now header h2{margin:6px 0 2px}.pulse-live-now-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:14px}.pulse-live-now-card{display:grid;gap:12px;border:1px solid rgba(255,77,109,.24);border-radius:18px;padding:14px;background:rgba(255,255,255,.045);text-decoration:none}.pulse-live-preview{aspect-ratio:16/9;border-radius:16px;background:radial-gradient(circle at 30% 20%,rgba(255,77,109,.28),transparent 32%),linear-gradient(145deg,#090d16,#02050b);display:flex;align-items:start;justify-content:space-between;padding:12px}.live-dot{border-radius:999px;background:#ff335d;color:#fff;font-size:11px;font-weight:950;padding:4px 7px;box-shadow:0 0 18px rgba(255,51,93,.6)}.pulse-live-now-card p{display:flex;gap:7px;flex-wrap:wrap;margin:0}.pulse-live-now-card p span{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px}.pulse-live-now-card.is-empty{border-color:rgba(110,223,246,.18)}
 	@media(max-width:900px){body{padding-top:0}.mobile-topbar{display:flex}.mobile-bottom-nav{display:grid}.pulse-fab{display:grid;place-items:center;width:48px;height:48px;min-height:48px;border-radius:16px;right:14px;bottom:calc(env(safe-area-inset-bottom) + 82px);box-shadow:0 10px 28px rgba(54,229,143,.2)}.wrap,.pulse-shell{width:100%;max-width:100vw;padding:8px 10px calc(142px + env(safe-area-inset-bottom));overflow-x:hidden}.top,.pulse-nav{display:none}.pulse-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pulse-actions .button,.pulse-actions button{width:100%;min-width:0}.pulse-grid,.layout{grid-template-columns:1fr!important;gap:8px}.hero,.pulse-hero{display:grid!important;gap:5px;padding:10px 12px}.hero h1{font-size:clamp(24px,8vw,32px);line-height:1;margin:2px 0}.hero p{font-size:13px;line-height:1.35;margin:0}.hero .muted{display:none}.hero details .muted{display:block;margin-top:6px;font-size:12px}.tabs{margin-left:-10px;margin-right:-10px;padding:0 10px 2px;max-width:calc(100vw - 20px)}.composer{margin:8px 0;padding:12px;border-radius:18px;background:rgba(11,24,41,.82);box-shadow:0 10px 34px rgba(0,0,0,.18)}.smart-composer-bar{grid-template-columns:42px minmax(0,1fr);gap:9px}.smart-compose-avatar{width:42px;height:42px;border-radius:13px}.smart-composer-bar textarea{min-height:50px;max-height:96px;border-radius:20px;padding:11px 13px;font-size:15px;background:rgba(6,16,29,.9)}.composer-primary-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.composer-primary-actions button,.composer-primary-actions .button{min-height:42px;border-radius:12px;padding:8px 6px;font-size:12px}.composer-primary-actions .primary{grid-column:auto}.pulse-media-preview{display:grid;gap:7px}.pulse-media-preview span{border:1px solid rgba(110,223,246,.16);border-radius:12px;background:rgba(255,255,255,.045);padding:8px;font-size:12px}.composer-advanced{display:none;position:fixed;left:10px;right:10px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:46;max-height:68dvh;overflow:auto;border:1px solid rgba(110,223,246,.22);border-radius:22px;background:rgba(6,15,27,.98);box-shadow:0 22px 70px rgba(0,0,0,.48);padding:12px}.composer.is-expanded .composer-advanced{display:grid}.composer-tools{margin:0 -2px;padding-bottom:2px}.composer .actions{display:grid;grid-template-columns:1fr;gap:8px}.composer .actions .button,.composer .actions button{width:100%;min-width:0}.composer-hint{font-size:12px;line-height:1.35}.author{align-items:flex-start}.author-main{max-width:calc(100% - 46px)}.author-name{white-space:normal}.reaction-strip{margin-left:-2px;margin-right:-2px}.quick-actions{grid-template-columns:repeat(5,minmax(0,1fr))}.quick-action{font-size:12px;padding:5px 2px}.side{position:static!important}.card{border-radius:14px;padding:11px;margin-left:0;margin-right:0}.toast{left:12px;right:12px;bottom:calc(104px + env(safe-area-inset-bottom));transform:none;min-width:0;width:auto}textarea{min-height:88px}.grid{grid-template-columns:1fr!important}.button,button{min-height:40px}.actions .button,.actions button{white-space:normal}}
 	@media(max-width:375px){.mobile-bottom-nav{padding-left:4px;padding-right:4px;gap:1px}.mobile-bottom-nav a{font-size:9px;border-radius:8px}.mobile-bottom-nav .nav-ico{font-size:16px}.pulse-fab{right:12px;width:46px;height:46px;min-height:46px}}
@@ -16300,7 +16321,7 @@ __LIVE_NOW_HUB__
 <section class="card composer pulse-publisher-card" id="pulseComposer"><div class="smart-composer-bar"><span class="smart-compose-avatar">P</span><textarea id="postBody" placeholder="What's happening in crypto today?"></textarea></div><div class="composer-primary-actions" data-pulse-media-picker="composer"><button type="button" data-open-media data-pulse-media-trigger data-expand-composer="pulseComposer" data-media-input="postMedia" data-media-accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime">Media</button><button type="button" data-composer-reel>Reel</button><a class="button" href="/pulse/live">Live</a><button type="button" data-composer-music>Music</button><button type="button" id="aiBtn" aria-label="Enhance with AI">AI</button><button type="button" data-composer-audience>Audience</button><button class="primary" id="publishBtn" type="button">Publish</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" placeholder="Optional title"><select id="postType" class="post-type-select"><option value="text">Text</option><option value="poll">Question</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="roast_clip">Roast Clip</option><option value="replay">Replay Card</option></select><div class="composer-tools"><button class="active" type="button" data-type="text">Text</button><button type="button" data-type="poll">Question</button><button type="button" data-type="scam_report">Scam</button><button type="button" data-type="roast_clip">Roast</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="actions pulse-actions"><a class="button" href="/scam-shield/scan">Run Scam Shield</a><button type="button" data-collapse-composer>Done</button></div><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><div class="pulse-upload-progress-track" data-upload-progress aria-label="Pulse upload progress"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small></div><p class="muted composer-hint" id="composeMsg">Media, Reels, Live, Music, AI, and Audience tools stay one tap away. Unsafe links are scanned before publishing.</p></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your Pulse is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="/pulse/create">Create Another</a><a class="button" href="/pulse">Pulse Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
-<aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section><section class="card"><h2>Daily Prompt</h2><p id="dailyPrompt" class="muted">Share one wallet safety tip.</p></section><section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section>
+<aside class="side"><section class="card"><h2>AI Pulse Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section>__DAILY_MENTOR_CARD__<section class="card"><h2>Pulse Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section>
 </div>
 __DESKTOP_RIGHT_RAIL__
 </section>
@@ -16372,7 +16393,8 @@ function queueNewPost(post){if(isDeletedPost(post)||existingPost(post.id))return
 function flushPendingPosts(){const posts=state.pendingPosts.splice(0).reverse();state.pendingPostIds.clear();posts.forEach(p=>prependPostStable(p,true));updateNewPulseBanner();const feed=document.getElementById('feed');if(feed)window.scrollTo({top:Math.max(0,feed.offsetTop-92),behavior:'smooth'})}
 function notificationToastKey(ev,p){return `${ev.event_type||ev.type||'event'}:${ev.id||p.notification_id||p.id||p.trace_id||p.message||p.title||''}`}
 function applyLiveEvents(events){(events||[]).forEach(ev=>{const p=ev.payload||{};const livePost=p.post||null;if(['post_deleted','pulse_post_deleted','post_removed','pulse_post_removed'].includes(ev.event_type)){rememberDeletedPost(p.post_id||ev.post_id);return}if((ev.event_type==='new_post'||ev.event_type==='pulse_post_created')&&livePost&&!existingPost(livePost.id)){if(readerNearTop())prependPostStable(livePost,false);else{queueNewPost(livePost);toast(`${esc((livePost.author||{}).display_name||'Someone')} posted a new update`,`new-post:${livePost.id}`)}}if(ev.event_type==='new_comment')applyCommentEvent({post_id:ev.post_id,...p});if(ev.event_type==='reaction_added'||ev.event_type==='reaction_removed')applyReactionEvent(p);if(ev.event_type==='typing_start'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t){t.textContent=`${esc(p.display_name||'Someone')} is typing...`;clearTimeout(t._timer);t._timer=setTimeout(()=>t.textContent='',3500)}}if(ev.event_type==='typing_stop'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t)t.textContent=''}if(ev.event_type==='notification_created'||ev.event_type==='friend_request'||ev.event_type==='message_received'||ev.event_type==='livestream_started')toast(p.message||p.title||'New Pulse activity.',notificationToastKey(ev,p));state.lastEventId=Math.max(state.lastEventId||0,Number(ev.id||0))})}
-function renderIntel(intel){const topics=(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${encodeURIComponent(t.tag)}">#${esc(t.tag)} · ${t.count}</a>`).join('');const spaces=(intel.top_spaces||[]).map(s=>`<a class="intel-item" href="/pulse/spaces/${encodeURIComponent(s.slug)}">${esc(s.name)} · heat ${Number(s.heat||0)}</a>`).join('');const posts=(intel.top_posts||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">${esc(p.title)}</a>`).join('');const scams=(intel.scam_warnings||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">Scam watch · ${esc(p.title)}</a>`).join('');document.getElementById('dailyPrompt').textContent=intel.daily_prompt||'What did the market teach you today?';const content=`<div class="intel-item"><strong>${esc(intel.community_mood||'Curious')}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${Number(intel.posts_today||0)}</strong><br><span class="muted">Posts today</span></div><div class="intel-item">${esc(intel.suggested_action||'Pulse is warming up. Create the first post.')}</div>${topics}${spaces}${posts}${scams}`;document.getElementById('intel').innerHTML=content||'<p class="muted">Pulse is warming up. Create the first post.</p>';const mood=document.querySelector('[data-desktop-mood]');if(mood)mood.textContent=intel.community_mood||'Curious';const today=document.querySelector('[data-desktop-posts-today]');if(today)today.textContent=Number(intel.posts_today||0);const action=document.querySelector('[data-desktop-suggested-action]');if(action)action.textContent=intel.suggested_action||'Read the feed, react with intent, and create only when you have useful signal.';const energy=document.querySelector('[data-desktop-energy]');if(energy){const score=Math.max(18,Math.min(96,Number(intel.posts_today||0)*8+42));energy.style.setProperty('--energy',score+'%')}const topicRail=document.querySelector('[data-desktop-trending]');if(topicRail)topicRail.innerHTML=(intel.trending_topics||[]).slice(0,6).map(t=>`<a class="desktop-intel-row" href="/pulse/topic/${encodeURIComponent(t.tag)}"><span class="desktop-rail-ico">#</span><span><strong>#${esc(t.tag)}</strong><small class="muted">${Number(t.count||0)} live signals</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">#</span><span><strong>Topics warming up</strong><small class="muted">Create useful signal to start the trend.</small></span></div>';const spaceRail=document.querySelector('[data-desktop-spaces]');if(spaceRail)spaceRail.innerHTML=(intel.top_spaces||[]).slice(0,5).map(s=>`<a class="desktop-intel-row is-live" href="/pulse/spaces/${encodeURIComponent(s.slug)}"><span class="desktop-rail-ico">↗</span><span><strong>${esc(s.name)}</strong><small class="muted">heat ${Number(s.heat||0)}</small></span></a>`).join('')||'<a class="desktop-intel-row is-live" href="/pulse/messages"><span class="desktop-rail-ico">↗</span><span><strong>General Pulse</strong><small class="muted">Open the live room layer</small></span></a>';const postRail=document.querySelector('[data-desktop-top-posts]');if(postRail)postRail.innerHTML=(intel.top_posts||[]).slice(0,5).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">AI</span><span><strong>${esc(p.title||'Pulse signal')}</strong><small class="muted">High conversation potential</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">AI</span><span><strong>Quality signals</strong><small class="muted">Top posts will surface here.</small></span></div>';const liveRail=document.querySelector('[data-desktop-live-activity]');if(liveRail)liveRail.innerHTML=[`<div class="desktop-intel-row is-live"><span class="desktop-rail-ico">●</span><span><strong>${Number(intel.posts_today||0)} signals today</strong><small class="muted">Realtime updates stay calm while you read.</small></span></div>`,...(intel.top_posts||[]).slice(0,2).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">↺</span><span><strong>Active thread</strong><small class="muted">${esc(p.title||'Pulse conversation')}</small></span></a>`)].join('');const educatorRail=document.querySelector('[data-desktop-educators]');if(educatorRail)educatorRail.innerHTML='<a class="desktop-intel-row" href="/pulse/teachers"><span class="desktop-rail-ico">T</span><span><strong>Trusted educator highlights</strong><small class="muted">Teacher signals, safety-first lessons, and creator learning.</small></span></a><a class="desktop-intel-row" href="/pulse/premium"><span class="desktop-rail-ico">✦</span><span><strong>Creator intelligence</strong><small class="muted">Upgrade presentation, not manipulation.</small></span></a>';const scamRail=document.querySelector('[data-desktop-scams]');if(scamRail)scamRail.innerHTML=(intel.scam_warnings||[]).slice(0,4).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">!</span><span><strong>Scam watch</strong><small class="muted">${esc(p.title||'Community warning')}</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">!</span><span><strong>Scam Shield calm</strong><small class="muted">No active warnings loaded.</small></span></div>'}
+function renderIntel(intel){const topics=(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${encodeURIComponent(t.tag)}">#${esc(t.tag)} · ${t.count}</a>`).join('');const spaces=(intel.top_spaces||[]).map(s=>`<a class="intel-item" href="/pulse/spaces/${encodeURIComponent(s.slug)}">${esc(s.name)} · heat ${Number(s.heat||0)}</a>`).join('');const posts=(intel.top_posts||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">${esc(p.title)}</a>`).join('');const scams=(intel.scam_warnings||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">Scam watch · ${esc(p.title)}</a>`).join('');document.querySelectorAll('[data-daily-mentor-question]').forEach(q=>q.textContent=intel.daily_prompt||'What crypto scam did you almost fall for?');const content=`<div class="intel-item"><strong>${esc(intel.community_mood||'Curious')}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${Number(intel.posts_today||0)}</strong><br><span class="muted">Posts today</span></div><div class="intel-item">${esc(intel.suggested_action||'Pulse is warming up. Create the first post.')}</div>${topics}${spaces}${posts}${scams}`;document.getElementById('intel').innerHTML=content||'<p class="muted">Pulse is warming up. Create the first post.</p>';const mood=document.querySelector('[data-desktop-mood]');if(mood)mood.textContent=intel.community_mood||'Curious';const today=document.querySelector('[data-desktop-posts-today]');if(today)today.textContent=Number(intel.posts_today||0);const action=document.querySelector('[data-desktop-suggested-action]');if(action)action.textContent=intel.suggested_action||'Read the feed, react with intent, and create only when you have useful signal.';const energy=document.querySelector('[data-desktop-energy]');if(energy){const score=Math.max(18,Math.min(96,Number(intel.posts_today||0)*8+42));energy.style.setProperty('--energy',score+'%')}const topicRail=document.querySelector('[data-desktop-trending]');if(topicRail)topicRail.innerHTML=(intel.trending_topics||[]).slice(0,6).map(t=>`<a class="desktop-intel-row" href="/pulse/topic/${encodeURIComponent(t.tag)}"><span class="desktop-rail-ico">#</span><span><strong>#${esc(t.tag)}</strong><small class="muted">${Number(t.count||0)} live signals</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">#</span><span><strong>Topics warming up</strong><small class="muted">Create useful signal to start the trend.</small></span></div>';const spaceRail=document.querySelector('[data-desktop-spaces]');if(spaceRail)spaceRail.innerHTML=(intel.top_spaces||[]).slice(0,5).map(s=>`<a class="desktop-intel-row is-live" href="/pulse/spaces/${encodeURIComponent(s.slug)}"><span class="desktop-rail-ico">↗</span><span><strong>${esc(s.name)}</strong><small class="muted">heat ${Number(s.heat||0)}</small></span></a>`).join('')||'<a class="desktop-intel-row is-live" href="/pulse/messages"><span class="desktop-rail-ico">↗</span><span><strong>General Pulse</strong><small class="muted">Open the live room layer</small></span></a>';const postRail=document.querySelector('[data-desktop-top-posts]');if(postRail)postRail.innerHTML=(intel.top_posts||[]).slice(0,5).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">AI</span><span><strong>${esc(p.title||'Pulse signal')}</strong><small class="muted">High conversation potential</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">AI</span><span><strong>Quality signals</strong><small class="muted">Top posts will surface here.</small></span></div>';const liveRail=document.querySelector('[data-desktop-live-activity]');if(liveRail)liveRail.innerHTML=[`<div class="desktop-intel-row is-live"><span class="desktop-rail-ico">●</span><span><strong>${Number(intel.posts_today||0)} signals today</strong><small class="muted">Realtime updates stay calm while you read.</small></span></div>`,...(intel.top_posts||[]).slice(0,2).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">↺</span><span><strong>Active thread</strong><small class="muted">${esc(p.title||'Pulse conversation')}</small></span></a>`)].join('');const educatorRail=document.querySelector('[data-desktop-educators]');if(educatorRail)educatorRail.innerHTML='<a class="desktop-intel-row" href="/pulse/teachers"><span class="desktop-rail-ico">T</span><span><strong>Trusted educator highlights</strong><small class="muted">Teacher signals, safety-first lessons, and creator learning.</small></span></a><a class="desktop-intel-row" href="/pulse/premium"><span class="desktop-rail-ico">✦</span><span><strong>Creator intelligence</strong><small class="muted">Upgrade presentation, not manipulation.</small></span></a>';const scamRail=document.querySelector('[data-desktop-scams]');if(scamRail)scamRail.innerHTML=(intel.scam_warnings||[]).slice(0,4).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">!</span><span><strong>Scam watch</strong><small class="muted">${esc(p.title||'Community warning')}</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">!</span><span><strong>Scam Shield calm</strong><small class="muted">No active warnings loaded.</small></span></div>'}
+const dailyMentorState={conversationId:null,suggestedPostText:''};function renderDailyMentorMessage(sender,body){document.querySelectorAll('[data-daily-mentor-thread]').forEach(thread=>{thread.insertAdjacentHTML('beforeend',`<div class="daily-mentor-msg ${sender==='user'?'user':'ai'}"><strong>${sender==='user'?'You':'Pulse Mentor'}</strong>${esc(body)}</div>`);thread.scrollTop=thread.scrollHeight})}function setDailyMentorStatus(message,thinking=false){document.querySelectorAll('[data-daily-mentor-status]').forEach(el=>{el.textContent=message;el.classList.toggle('daily-mentor-thinking',!!thinking)})}async function dailyMentorRespond(mode,source){const card=source?.closest('[data-daily-mentor-card]')||document.querySelector('[data-daily-mentor-card]');const input=card?.querySelector('[data-daily-mentor-input]');const promptId=card?.dataset.promptId||'wallet-safety-reflection';let message=(input?.value||'').trim();if(mode==='help')message='Help me answer today\\'s reflection with a safe, honest response.';if(!message){toast('Share your answer first.');input?.focus();return}if(mode!=='help'){renderDailyMentorMessage('user',message);input.value=''}setDailyMentorStatus('Pulse Mentor is thinking...',true);try{const d=await api('/api/pulse/daily-mentor/respond',{method:'POST',body:JSON.stringify({prompt_id:promptId,user_message:message,conversation_id:dailyMentorState.conversationId})});dailyMentorState.conversationId=d.conversation_id;dailyMentorState.suggestedPostText=d.suggested_post_text||'';renderDailyMentorMessage('ai',d.ai_reply||'I am here with you. What felt risky about that moment?');setDailyMentorStatus('Conversation saved privately. You approve anything before it becomes a Pulse post.')}catch(err){setDailyMentorStatus('Mentor could not reply. Tap Send to retry.');if(mode!=='help'&&input)input.value=message;toast(err.message)}}function dailyMentorPreparePost(source){const card=source?.closest('[data-daily-mentor-card]')||document.querySelector('[data-daily-mentor-card]');const text=dailyMentorState.suggestedPostText||card?.querySelector('[data-daily-mentor-input]')?.value||'';if(!text.trim()){toast('Talk with the mentor first, then approve a post draft.');return}expandComposer();document.getElementById('postBody').value=text.trim();document.getElementById('postType').value='scam_report';document.getElementById('postTitle').value='Daily Mentor reflection';document.getElementById('postBody').focus();toast('Draft added to composer. Review it, then publish when ready.')}document.addEventListener('click',e=>{if(e.target.closest('[data-daily-mentor-send]'))dailyMentorRespond('send',e.target);if(e.target.closest('[data-daily-mentor-help]'))dailyMentorRespond('help',e.target);if(e.target.closest('[data-daily-mentor-post]'))dailyMentorPreparePost(e.target)});
 	async function load(reset=false){if(state.loading)return;state.loading=true;if(reset){state.offset=0;state.pendingPosts=[];state.pendingPostIds.clear();updateNewPulseBanner();document.getElementById('feed').innerHTML=''}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}`);const posts=visiblePosts(d.posts||[]);document.getElementById('feed').insertAdjacentHTML('beforeend',feedHtml(posts,d.intelligence||{})||(state.offset?'':'<section class="card"><p class="muted">No posts yet. Create the first Pulse.</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>'));window.CoinPilotTime?.hydrate(document.getElementById('feed'));window.PulseMediaRenderer?.hydrate(document.getElementById('feed'));posts.slice(0,8).forEach(p=>loadComments(p.id,false));state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}catch(e){document.getElementById('feed').innerHTML='<section class="card"><p class="muted">'+esc(e.message)+'</p><a class="button primary" href="/pulse/create">Create Pulse</a></section>';document.getElementById('intel').innerHTML='<p class="muted">Pulse intelligence temporarily unavailable.</p>';toast(e.message)}finally{state.loading=false}}
 async function checkForNewPosts(){if(document.hidden||state.loading||state.checkingFeed)return;state.checkingFeed=true;try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=0&limit=6`);visiblePosts(d.posts||[]).slice().reverse().forEach(p=>{if(existingPost(p.id))return;if(readerNearTop())prependPostStable(p,false);else queueNewPost(p)});renderIntel(d.intelligence||{})}catch(e){console.warn('Pulse feed calm refresh skipped',e)}finally{state.checkingFeed=false}}
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',feedPaths[state.feed]||'/pulse');load(true)});
@@ -16406,6 +16428,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)retu
         .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
         .replace("__PULSE_STATUS_RAIL__", status_rail_html)
         .replace("__LIVE_NOW_HUB__", live_now_html)
+        .replace("__DAILY_MENTOR_CARD__", pulse_daily_mentor_card_html())
         .replace("__DESKTOP_RIGHT_RAIL__", desktop_right_rail_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
     )
@@ -23611,6 +23634,117 @@ def api_pulse_feed():
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
+
+
+def pulse_daily_mentor_reply(user_message, prompt_id="wallet-safety-reflection"):
+    message = clean_html(user_message or "")[:1600]
+    lower = message.lower()
+    safety_tags = ["daily_reflection", "mentor"]
+    if any(word in lower for word in ["scam", "fake", "support", "wallet", "seed", "link", "airdrop", "dm"]):
+        safety_tags.extend(["scam_awareness", "wallet_safety"])
+    if any(word in lower for word in ["buy", "sell", "profit", "guarantee", "pump", "moon", "signal"]):
+        safety_tags.append("financial_advice_boundary")
+    if "help me answer" in lower:
+        ai_reply = (
+            "Start with the moment, the pressure you felt, and the warning sign you noticed. "
+            "A strong answer could be: I almost trusted a message because it looked official, but I paused when it asked me to connect my wallet. "
+            "What detail made it feel believable?"
+        )
+    elif "support" in lower or "link" in lower:
+        ai_reply = (
+            "That is a common trap. The warning sign was urgency mixed with a link that wanted wallet access. "
+            "Next time, pause, verify the domain from an official source, and never connect a wallet from a support DM. "
+            "What made the link feel believable in the moment?"
+        )
+    elif "seed" in lower or "phrase" in lower or "private key" in lower:
+        ai_reply = (
+            "You caught one of the biggest red flags: no real support team needs a seed phrase or private key. "
+            "The practical habit is simple: treat any seed phrase request as theft, close the page, and verify from a clean browser tab. "
+            "What helped you stop before sharing it?"
+        )
+    elif "profit" in lower or "guarantee" in lower or "buy" in lower or "sell" in lower:
+        ai_reply = (
+            "I cannot give buy, sell, or profit instructions, but I can help you evaluate risk. "
+            "Guaranteed returns, secret groups, pressure to act quickly, and withdrawal tests are major warning signs. "
+            "What evidence did you check before trusting the offer?"
+        )
+    else:
+        ai_reply = (
+            "That reflection matters. The safest pattern is to slow down when a message creates urgency, asks for wallet access, or makes trust feel automatic. "
+            "Write down the warning sign you noticed, then make one rule you will use next time. "
+            "What is the one habit you want future-you to remember?"
+        )
+    suggested = (
+        "Pulse Daily Mentor reflection: I am learning to pause before trusting crypto links, DMs, or urgent wallet requests. "
+        "My safety habit is to verify the domain, avoid seed phrase requests, and slow down before connecting a wallet. "
+        "#ScamShield #WalletSafety"
+    )
+    return ai_reply, suggested, sorted(set(safety_tags))
+
+
+@webhook_app.route("/api/pulse/daily-mentor/respond", methods=["POST"])
+def api_pulse_daily_mentor_respond():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Login required.", "trace_id": secrets.token_hex(6)}), 401
+    payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
+    prompt_id = clean_html(payload.get("prompt_id") or "wallet-safety-reflection")[:120]
+    user_message = clean_html(payload.get("user_message") or "")[:1600]
+    conversation_id = safe_int(payload.get("conversation_id"), 0)
+    if not user_message:
+        return jsonify({"ok": False, "message": "Share your answer first.", "trace_id": trace_id}), 400
+    try:
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if conversation_id:
+            cur.execute("SELECT id FROM pulse_daily_mentor_conversations WHERE id=? AND user_id=? AND status='active'", (conversation_id, int(user["user_id"])))
+            if not cur.fetchone():
+                conversation_id = 0
+        if not conversation_id:
+            title = "Pulse Daily Mentor"
+            cur.execute(
+                """
+                INSERT INTO pulse_daily_mentor_conversations (user_id, prompt_id, title, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'active', ?, ?)
+                """,
+                (int(user["user_id"]), prompt_id, title, now, now),
+            )
+            conversation_id = int(cur.lastrowid)
+        cur.execute(
+            """
+            INSERT INTO pulse_daily_mentor_messages (conversation_id, sender_type, body, metadata_json, created_at)
+            VALUES (?, 'user', ?, ?, ?)
+            """,
+            (conversation_id, user_message, json.dumps({"prompt_id": prompt_id}), now),
+        )
+        ai_reply, suggested_post_text, safety_tags = pulse_daily_mentor_reply(user_message, prompt_id)
+        cur.execute(
+            """
+            INSERT INTO pulse_daily_mentor_messages (conversation_id, sender_type, body, metadata_json, created_at)
+            VALUES (?, 'ai', ?, ?, ?)
+            """,
+            (conversation_id, ai_reply, json.dumps({"safety_tags": safety_tags, "not_financial_advice": True}), now),
+        )
+        cur.execute("UPDATE pulse_daily_mentor_conversations SET updated_at=? WHERE id=?", (now, conversation_id))
+        conn.commit()
+        conn.close()
+        return jsonify(
+            {
+                "ok": True,
+                "trace_id": trace_id,
+                "conversation_id": conversation_id,
+                "ai_reply": ai_reply,
+                "suggested_post_text": suggested_post_text,
+                "safety_tags": safety_tags,
+            }
+        )
+    except Exception as exc:
+        logging.exception("PULSE_DAILY_MENTOR_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
+        return jsonify({"ok": False, "message": "Pulse Daily Mentor could not reply.", "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/api/pulse/my-posts", methods=["GET"])
@@ -41515,6 +41649,29 @@ def init_db():
         updated_at TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_daily_mentor_conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        prompt_id TEXT,
+        title TEXT,
+        status TEXT DEFAULT 'active',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_daily_mentor_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER,
+        sender_type TEXT,
+        body TEXT,
+        metadata_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_daily_mentor_user ON pulse_daily_mentor_conversations(user_id, updated_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_daily_mentor_messages ON pulse_daily_mentor_messages(conversation_id, created_at)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_media_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
