@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import secrets
 import logging
+import shutil
 from typing import Any
 
 from . import media_service, media_storage
@@ -50,6 +51,13 @@ def validate_media_file(file_storage) -> dict:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     mime_type = (getattr(file_storage, "mimetype", "") or "").lower()
     media_type = "video" if ext in VIDEO_EXTENSIONS or mime_type in VIDEO_MIME_TYPES else "image"
+    if ext == "mov" or mime_type in {"video/quicktime", "application/quicktime"}:
+        if not shutil.which("ffmpeg") and os.getenv("MEDIA_ALLOW_UNTRANSCODED_MOV", "").lower() not in {"1", "true", "yes"}:
+            return {
+                "ok": False,
+                "message": "MOV videos need conversion before posting. Please upload MP4/WebM, or enable the media transcoder.",
+                "status": 415,
+            }
     if media_type == "video" and mime_type and not (mime_type.startswith("video/") or mime_type == "application/octet-stream"):
         return {"ok": False, "message": "That video type is not supported.", "status": 400}
     if media_type != "video" and mime_type and not (mime_type.startswith(IMAGE_MIME_PREFIX) or mime_type == "application/octet-stream"):

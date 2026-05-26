@@ -46,9 +46,21 @@ def main():
         "--media-backdrop",
         "applyAmbientColor",
         "bindVideoAmbient",
+        "Pulse video diagnostic",
+        "data-media-mime",
+        "<source src=",
         "pulseMediaBreath",
     ]:
         expect(token in source + cinematic_css + cinematic_js, f"cinematic media atmosphere present: {token}")
+    upload_progress = (ROOT / "services/upload_progress_service.py").read_text(encoding="utf-8")
+    storage = (ROOT / "services/media_storage.py").read_text(encoding="utf-8")
+    for token in [
+        "MOV videos need conversion before posting",
+        "MEDIA_ALLOW_UNTRANSCODED_MOV",
+        "_content_type_for_upload",
+        "ContentType",
+    ]:
+        expect(token in upload_progress + storage, f"video upload hardening present: {token}")
     for token in [
         "def resolve_media",
         "def normalize_url",

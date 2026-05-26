@@ -56,6 +56,16 @@ def _media_type(ext):
     return ""
 
 
+def _is_video_url(value):
+    lowered = str(value or "").split("?", 1)[0].split("#", 1)[0].lower()
+    return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | {"m4v", "qt"})
+
+
+def _is_image_url(value):
+    lowered = str(value or "").split("?", 1)[0].split("#", 1)[0].lower()
+    return any(lowered.endswith(f".{ext}") for ext in IMAGE_EXTS | GIF_EXTS | {"avif"})
+
+
 def _public_url_for_path(path):
     resolved = Path(path).resolve()
     static_root = Path("static").resolve()
@@ -242,6 +252,15 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             kind = "audio"
         else:
             kind = "image"
+    if kind == "video":
+        if _is_video_url(thumb):
+            thumb = ""
+        if _is_video_url(poster):
+            poster = ""
+        if not poster and _is_image_url(item.get("thumbnail_url") or ""):
+            poster = normalize_url(item.get("thumbnail_url") or "")
+        if thumb and not _is_image_url(thumb):
+            thumb = poster or source
     provider = item.get("storage_provider") or item.get("provider") or ("r2" if canonical_cdn_url else "remote" if source.startswith(("http://", "https://")) else media_storage.provider())
     available = item.get("is_available")
     if available is None:
@@ -268,13 +287,16 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
                 (variants["original"], 2048),
             ] if v
         )
+    poster_value = (poster or thumb or source)
+    if kind == "video" and _is_video_url(poster_value):
+        poster_value = ""
     return {
         "id": item.get("id"),
         "valid_url": source if available else "",
         "cdn_url": canonical_cdn_url,
         "media_url": source,
         "thumbnail_url": thumb or source,
-        "poster_url": poster or thumb or source,
+        "poster_url": poster_value,
         "fallback_url": FALLBACK_URL,
         "media_type": kind,
         "mime_type": item.get("mime_type") or mimetypes.guess_type(source)[0] or "",
@@ -439,7 +461,8 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     if media_type in {"image", "gif"}:
         width, height = _image_dimensions(path)
     url = storage.get("media_url") or _public_url_for_path(path)
-    thumbnail_url = url if media_type != "video" else storage.get("local_url", "")
+    thumbnail_url = url if media_type != "video" else ""
+    poster_url = thumbnail_url if media_type != "video" else ""
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
@@ -478,7 +501,7 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
                 storage.get("provider") or media_storage.provider(),
                 storage.get("storage_key") or stored,
                 url,
-                thumbnail_url,
+                poster_url,
                 thumbnail_url,
                 url,
                 url,

@@ -74,6 +74,17 @@ def _s3_endpoint():
     return os.getenv("S3_ENDPOINT_URL", "").strip() or None
 
 
+def _content_type_for_upload(path, fallback=""):
+    guessed = mimetypes.guess_type(str(path))[0] or ""
+    provided = str(fallback or "").split(";", 1)[0].strip().lower()
+    generic = {"", "application/octet-stream", "binary/octet-stream"}
+    if guessed and provided in generic:
+        return guessed
+    if guessed and provided in {"video/quicktime", "application/quicktime"} and str(path).lower().endswith(".mp4"):
+        return "video/mp4"
+    return provided or guessed or "application/octet-stream"
+
+
 def _upload_to_object_storage(path, storage_key, mime_type):
     status = storage_status()
     if status.get("provider") not in {"r2", "s3"} or not status.get("configured"):
@@ -95,6 +106,7 @@ def _upload_to_object_storage(path, storage_key, mime_type):
         bucket = os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET")
         endpoint = _s3_endpoint()
         size = Path(path).stat().st_size if Path(path).exists() else 0
+        mime_type = _content_type_for_upload(path, mime_type)
         logging.info(
             "MEDIA_R2_UPLOAD_START provider=%s bucket=%s endpoint_host=%s key=%s mime_type=%s size=%s",
             provider(),
@@ -153,7 +165,7 @@ def save_public_file(file_storage, folder="media"):
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / safe_name
     file_storage.save(target)
-    mime_type = getattr(file_storage, "mimetype", "") or mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    mime_type = _content_type_for_upload(target, getattr(file_storage, "mimetype", ""))
     current_provider = provider()
     uploaded = False
     upload_error = ""

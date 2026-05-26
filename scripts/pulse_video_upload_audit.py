@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import os
+import shutil
 import sys
 import time
 from io import BytesIO
@@ -63,6 +64,14 @@ def main():
     assert_upload("status-audit.png", "image/png", PNG_BYTES, "pulse_status", "image")
     assert_upload("status-audit.webm", "video/webm", WEBM_BYTES, "pulse_status", "video")
     assert_upload("reel-audit.webm", "video/webm", WEBM_BYTES, "pulse_reel", "video")
+    mov_result, mov_status = upload_progress_service.stage_upload(
+        AUDIT_USER_ID,
+        file_storage("unsupported.mov", "video/quicktime", b"not-a-real-mov"),
+        context_type="pulse",
+        context_id="audit",
+    )
+    if not os.getenv("MEDIA_ALLOW_UNTRANSCODED_MOV") and not shutil.which("ffmpeg"):
+        expect(mov_status == 415 and mov_result.get("ok") is False, "MOV uploads are blocked until transcoding is available", str(mov_result))
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     expect("/api/pulse/reels/create" in source, "Reel creation endpoint exists")
     expect("/api/pulse/status" in source, "Status creation endpoint exists")

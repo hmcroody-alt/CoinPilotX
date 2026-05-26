@@ -77,6 +77,65 @@
     return `${url}${sep}pulse_retry=${Date.now()}_${count}`;
   }
 
+  function videoSource(media) {
+    return media?.currentSrc || media?.src || media?.querySelector?.("source")?.src || "";
+  }
+
+  function mediaSource(media) {
+    if (!media) return "";
+    return media.tagName === "VIDEO" ? videoSource(media) : (media.dataset.fullSrc || media.currentSrc || media.src || "");
+  }
+
+  function videoErrorDetails(video) {
+    const error = video?.error;
+    const codes = {
+      1: "aborted",
+      2: "network",
+      3: "decode",
+      4: "source_not_supported",
+    };
+    return {
+      code: error?.code || 0,
+      reason: codes[error?.code] || "unknown",
+      message: error?.message || "",
+      network_state: video?.networkState,
+      ready_state: video?.readyState,
+      current_src: videoSource(video),
+    };
+  }
+
+  function reportVideoDiagnostics(wrap, video, eventName) {
+    if (!wrap || !video) return;
+    const src = videoSource(video) || mediaUrl(wrap);
+    console.warn("Pulse video diagnostic", {
+      event: eventName,
+      media_id: wrap.dataset.mediaId || "",
+      src,
+      mime_type: wrap.dataset.mediaMime || "",
+      media_type: wrap.dataset.mediaType || "",
+      poster: wrap.dataset.mediaPoster || "",
+      cdn: src.startsWith("https://cdn.coinpilotx.app/"),
+      private_r2: src.includes("r2.cloudflarestorage.com"),
+      error: videoErrorDetails(video),
+      diag: wrap.dataset.mediaDiag || "",
+    });
+    if (src && src.startsWith("https://cdn.coinpilotx.app/")) {
+      fetch(src, { method: "HEAD", mode: "cors", cache: "no-store" })
+        .then(response => console.info("Pulse video CDN HEAD", {
+          media_id: wrap.dataset.mediaId || "",
+          status: response.status,
+          content_type: response.headers.get("content-type") || "",
+          accept_ranges: response.headers.get("accept-ranges") || "",
+          content_length: response.headers.get("content-length") || "",
+        }))
+        .catch(error => console.warn("Pulse video CDN HEAD failed", {
+          media_id: wrap.dataset.mediaId || "",
+          src,
+          message: error?.message || String(error),
+        }));
+    }
+  }
+
   function revealImage(wrap, img) {
     setBackdrop(wrap);
     applyAmbientColor(wrap, img);
@@ -103,7 +162,7 @@
     const retries = Number(wrap.dataset.mediaRetries || 0);
     if (retries < MAX_RETRIES) {
       wrap.dataset.mediaRetries = String(retries + 1);
-      const src = media.dataset.fullSrc || mediaUrl(wrap) || media.currentSrc || media.src;
+      const src = mediaSource(media) || mediaUrl(wrap);
       if (src) {
         media.style.visibility = "hidden";
         media.addEventListener("load", () => revealImage(wrap, media), { once: true });
@@ -149,7 +208,10 @@
       return;
     }
     mark(wrap, LOADING);
-    media.addEventListener("error", () => failMedia(wrap, media));
+    media.addEventListener("error", () => {
+      if (media.tagName === "VIDEO") reportVideoDiagnostics(wrap, media, "error");
+      failMedia(wrap, media);
+    });
     if (media.tagName === "IMG") {
       if (media.complete && media.naturalWidth > 0) {
         revealImage(wrap, media);
@@ -161,8 +223,22 @@
       return;
     }
     bindVideoAmbient(wrap, media);
-    media.addEventListener("loadedmetadata", () => mark(wrap, LOADED), { once: true });
+    media.addEventListener("loadedmetadata", () => {
+      console.info("Pulse video metadata loaded", {
+        media_id: wrap.dataset.mediaId || "",
+        src: videoSource(media) || mediaUrl(wrap),
+        duration: media.duration,
+        width: media.videoWidth,
+        height: media.videoHeight,
+        ready_state: media.readyState,
+      });
+      mark(wrap, LOADED);
+    }, { once: true });
     media.addEventListener("canplay", () => {
+      console.info("Pulse video canplay", {
+        media_id: wrap.dataset.mediaId || "",
+        src: videoSource(media) || mediaUrl(wrap),
+      });
       applyAmbientColor(wrap, media);
       mark(wrap, LOADED);
     }, { once: true });
@@ -179,7 +255,7 @@
     wrap.dataset.mediaHydrated = "";
     wrap.dataset.mediaRetries = "0";
     wrap.classList.remove(BROKEN);
-    const src = media.dataset.fullSrc || mediaUrl(wrap) || media.currentSrc || media.src;
+    const src = mediaSource(media) || mediaUrl(wrap);
     if (src) media.src = retryUrl(src.split("#")[0], 0);
     if (media.tagName === "VIDEO") media.load();
     hydrateWrap(wrap);
