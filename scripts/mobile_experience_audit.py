@@ -38,11 +38,12 @@ def main():
     require(source.count("data-status-start=") == 2, "mobile Wave launcher exposes only two primary choices")
     require("Add Music" in source and "Add Voice Note" in source and ".pulse-wave-secondary-controls" in status_css, "secondary Wave tools stay subtle on mobile")
     require("Voice Wave" not in source and "Mood Wave" not in source and "Live Wave" not in source and "AI Wave" not in source, "old complex Wave actions are not visible")
-    require("pulse-wave-step" in source and ".pulse-wave-step" in status_css, "mobile Wave flow shows step progress")
+    require("data-wave-step" in source and ".pulse-wave-step" in status_css and "STEP 1 OF 3" not in source, "mobile Wave flow has non-text progress anchor")
     require("pulse-wave-text-canvas" in source and ".pulse-wave-text-canvas" in status_css, "mobile Text Wave uses immersive writing canvas")
     require("PulseWaveComponents" in source, "mobile Wave flow uses native dynamic components")
     require("pulse-wave-preview-live" in source and ".pulse-wave-preview-live" in status_css, "mobile Photo Wave uses real selected media preview")
     require("Just now · Public" not in source and "Preview your Wave" not in source, "mobile Wave preview does not render fake mockup card copy")
+    require("Create a Wave" not in source and "border: 1px dashed" not in status_css, "mobile Wave UI does not expose template labels or dashed guides")
     require("pulseWaveAtmosphere" in status_css and "pulseWaveFloat" in status_css, "mobile Wave atmosphere uses lightweight motion")
     print("mobile experience audit ok")
 

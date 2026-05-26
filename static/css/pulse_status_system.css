@@ -325,7 +325,7 @@
 
 .pulse-status-preview {
   min-height: 52px;
-  border: 1px dashed rgba(110, 223, 246, .26);
+  border: 1px solid rgba(110, 223, 246, .18);
   border-radius: 16px;
   display: grid;
   place-items: center;
@@ -1098,30 +1098,25 @@ body.status-editor-open {
 
 .pulse-wave-step {
   position: absolute;
-  top: max(24px, env(safe-area-inset-top));
+  top: max(30px, env(safe-area-inset-top));
   left: 50%;
   z-index: 25;
   transform: translateX(-50%);
-  min-width: 92px;
-  padding: 9px 14px 18px;
-  border: 1px solid rgba(178, 139, 255, .22);
-  border-radius: 16px;
-  background: rgba(12, 15, 38, .62);
-  color: rgba(218, 191, 255, .95);
-  font-size: 12px;
-  font-weight: 950;
-  letter-spacing: .08em;
-  text-align: center;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .24);
+  display: flex;
+  gap: 7px;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .pulse-wave-step::after {
   content: "";
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 8px;
-  height: 4px;
+  display: block;
+  width: 78px;
+  height: 5px;
   border-radius: 999px;
   background:
     linear-gradient(90deg, #5fe7ff 0 30%, transparent 30% 37%, #b65cff 37% 67%, transparent 67% 74%, rgba(255, 255, 255, .22) 74%);
@@ -1172,25 +1167,42 @@ body.status-editor-open {
 
 .pulse-status-editor .pulse-status-stage::after {
   background:
+    radial-gradient(circle, rgba(70, 229, 165, .84) 0 2px, transparent 3px) 28px max(28px, env(safe-area-inset-top)) / 34px 34px no-repeat,
     radial-gradient(circle at 20% 20%, rgba(255, 255, 255, .08), transparent 2px),
-    radial-gradient(circle at 74% 46%, rgba(97, 228, 255, .12), transparent 2px),
-    radial-gradient(circle at 36% 72%, rgba(179, 79, 255, .12), transparent 2px);
-  background-size: 190px 240px, 260px 210px, 170px 190px;
-  opacity: .45;
+    radial-gradient(circle at 74% 46%, rgba(97, 228, 255, .1), transparent 2px),
+    radial-gradient(circle at 36% 72%, rgba(179, 79, 255, .1), transparent 2px);
+  background-size: 112px 112px, 190px 240px, 260px 210px, 170px 190px;
+  opacity: .5;
   animation: pulseWaveStars 14s linear infinite;
+}
+
+.pulse-status-form[data-wave-state="selecting_wave_type"] {
+  background:
+    radial-gradient(circle at 50% 88%, rgba(67, 236, 186, .4), transparent 18%),
+    radial-gradient(circle at 22% 58%, rgba(110, 223, 246, .16), transparent 26%),
+    radial-gradient(circle at 0% 68%, rgba(150, 50, 255, .18), transparent 30%),
+    linear-gradient(180deg, #020711 0%, #071322 56%, #02070d 100%);
+}
+
+.pulse-status-form.is-text-wave,
+.pulse-status-form.is-photo-wave {
+  background:
+    radial-gradient(circle at 78% 14%, rgba(31, 224, 170, .22), transparent 28%),
+    radial-gradient(circle at 8% 42%, rgba(170, 35, 185, .24), transparent 28%),
+    linear-gradient(180deg, #020711 0%, #061323 58%, #02050c 100%);
 }
 
 .pulse-status-mode-picker {
   z-index: 5;
   place-items: stretch;
-  align-content: center;
-  gap: clamp(22px, 4vh, 38px);
-  padding: max(92px, env(safe-area-inset-top) + 76px) clamp(18px, 7vw, 62px) max(56px, env(safe-area-inset-bottom) + 48px);
+  align-content: end;
+  padding: max(250px, 34dvh) clamp(18px, 7vw, 62px) max(78px, env(safe-area-inset-bottom) + 54px);
   background:
-    radial-gradient(circle at 50% 98%, rgba(160, 52, 255, .38), transparent 20%),
-    radial-gradient(circle at 84% 68%, rgba(32, 223, 220, .16), transparent 28%),
-    radial-gradient(circle at 18% 36%, rgba(132, 48, 255, .18), transparent 30%),
-    linear-gradient(180deg, rgba(3, 8, 20, .98), rgba(5, 14, 31, .98) 52%, rgba(2, 5, 12, .99));
+    radial-gradient(circle at 50% 94%, rgba(58, 235, 182, .42), transparent 16%),
+    radial-gradient(circle at 18% 62%, rgba(101, 218, 231, .16), transparent 28%),
+    radial-gradient(circle at 2% 70%, rgba(160, 49, 255, .18), transparent 30%),
+    radial-gradient(circle at 86% 70%, rgba(100, 35, 188, .12), transparent 26%),
+    linear-gradient(180deg, rgba(3, 8, 20, .98), rgba(4, 15, 26, .98) 54%, rgba(2, 5, 12, .99));
   overflow: hidden;
 }
 
@@ -1269,16 +1281,16 @@ body.status-editor-open {
 }
 
 .pulse-status-mode-grid {
-  width: min(100%, 730px);
+  width: min(100%, 720px);
   justify-self: center;
   grid-template-columns: 1fr;
-  gap: 24px;
+  gap: clamp(18px, 4vh, 30px);
 }
 
 .pulse-status-mode-picker button.pulse-status-choice-card {
-  grid-template-columns: 150px minmax(0, 1fr) 48px;
+  grid-template-columns: minmax(0, 1fr) 48px;
   place-items: center start;
-  min-height: clamp(170px, 20vh, 210px);
+  min-height: clamp(158px, 19vh, 210px);
   border-radius: 34px;
   padding: clamp(18px, 4vw, 36px);
   text-align: left;
@@ -1297,6 +1309,7 @@ body.status-editor-open {
 }
 
 .pulse-status-mode-picker button.pulse-status-choice-card span {
+  display: none;
   width: clamp(92px, 18vw, 124px);
   height: clamp(92px, 18vw, 124px);
   border: 2px solid rgba(187, 96, 255, .74);
@@ -1318,7 +1331,7 @@ body.status-editor-open {
 
 .pulse-status-mode-picker button.pulse-status-choice-card b {
   max-width: none;
-  font-size: clamp(28px, 5vw, 36px);
+  font-size: clamp(30px, 5.3vw, 40px);
   line-height: 1.05;
 }
 
@@ -1361,9 +1374,9 @@ body.status-editor-open {
 .pulse-status-form.is-text-wave .pulse-status-editor-preview,
 .pulse-status-form.is-photo-wave .pulse-status-editor-preview {
   background:
-    radial-gradient(circle at 48% 96%, rgba(162, 55, 255, .36), transparent 18%),
-    radial-gradient(circle at 72% 46%, rgba(70, 213, 255, .18), transparent 25%),
-    linear-gradient(180deg, rgba(4, 9, 23, .98), rgba(7, 20, 44, .98) 54%, rgba(3, 5, 13, .99));
+    radial-gradient(circle at 82% 16%, rgba(45, 235, 176, .18), transparent 27%),
+    radial-gradient(circle at 13% 42%, rgba(168, 35, 181, .24), transparent 30%),
+    linear-gradient(180deg, rgba(3, 8, 20, .98), rgba(5, 17, 31, .98) 54%, rgba(2, 5, 12, .99));
 }
 
 .pulse-status-form.is-text-wave .pulse-status-editor-preview::before,
@@ -1381,7 +1394,7 @@ body.status-editor-open {
   align-content: center;
   justify-items: start;
   gap: 16px;
-  padding: clamp(84px, 18vh, 180px) clamp(24px, 9vw, 78px) clamp(150px, 18vh, 210px);
+  padding: clamp(160px, 32vh, 270px) clamp(28px, 9vw, 82px) clamp(160px, 22vh, 230px);
   text-align: left;
   overflow: hidden;
 }
@@ -1414,19 +1427,63 @@ body.status-editor-open {
 .pulse-wave-text-canvas small {
   display: block;
   color: rgba(239, 246, 255, .68);
-  font-size: clamp(18px, 4vw, 25px);
+  font-size: clamp(18px, 3.8vw, 25px);
+}
+
+.pulse-wave-text-preview {
+  position: relative;
+  z-index: 4;
+  display: grid;
+  align-items: center;
+  width: 100%;
+  max-width: 720px;
+  min-height: min(58vh, 660px);
+  justify-self: center;
+  align-self: center;
+  padding: clamp(26px, 7vw, 54px);
+  border: 1px solid rgba(72, 219, 178, .26);
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(173, 41, 184, .12), transparent 32%),
+    radial-gradient(circle at 82% 80%, rgba(52, 229, 181, .12), transparent 34%),
+    rgba(7, 12, 26, .38);
+  box-shadow: inset 0 0 70px rgba(14, 185, 159, .05), 0 30px 90px rgba(0, 0, 0, .44);
+}
+
+.pulse-wave-text-preview p {
+  margin: 0;
+  color: #f7fbff;
+  font-size: clamp(34px, 7.2vw, 58px);
+  font-weight: 950;
+  line-height: 1.12;
+  text-shadow: 0 18px 48px rgba(0, 0, 0, .5);
+  overflow-wrap: anywhere;
 }
 
 .pulse-status-form.is-text-wave .pulse-status-caption-layer {
-  top: clamp(150px, 33vh, 300px);
-  left: clamp(22px, 8vw, 72px);
-  right: clamp(22px, 8vw, 72px);
+  top: clamp(250px, 45vh, 410px);
+  left: clamp(40px, 9vw, 82px);
+  right: clamp(40px, 9vw, 82px);
   bottom: auto;
   z-index: 9;
 }
 
+.pulse-status-form.is-text-wave.is-previewing .pulse-status-caption-layer {
+  display: none;
+}
+
+.pulse-status-form.is-text-wave.is-previewing .pulse-wave-text-canvas {
+  display: none;
+}
+
+.pulse-status-form.is-text-wave.is-previewing .pulse-status-editor-preview {
+  display: grid;
+  place-items: stretch;
+  padding: max(126px, env(safe-area-inset-top) + 86px) clamp(26px, 6vw, 62px) clamp(142px, 16vh, 196px);
+}
+
 .pulse-status-form.is-text-wave .pulse-status-caption-layer textarea {
-  min-height: clamp(190px, 30vh, 320px);
+  min-height: clamp(210px, 29vh, 360px);
   max-height: none;
   padding: 0;
   border-radius: 0;
@@ -1435,7 +1492,7 @@ body.status-editor-open {
   box-shadow: none;
   backdrop-filter: none;
   color: #f7fbff;
-  font-size: clamp(42px, 8.8vw, 66px);
+  font-size: clamp(38px, 8vw, 60px);
   font-weight: 900;
   line-height: 1.18;
   letter-spacing: 0;
@@ -1450,8 +1507,8 @@ body.status-editor-open {
   grid-template-columns: 1fr;
   left: auto;
   right: clamp(22px, 8vw, 72px);
-  width: min(142px, calc(100vw - 44px));
-  bottom: calc(34px + env(safe-area-inset-bottom));
+  width: min(190px, calc(100vw - 44px));
+  bottom: calc(42px + env(safe-area-inset-bottom));
 }
 
 .pulse-status-form.is-text-wave .pulse-status-bottom-bar [data-status-back] {
@@ -1459,24 +1516,22 @@ body.status-editor-open {
 }
 
 .pulse-status-form.is-text-wave .pulse-status-share {
-  width: 76px;
-  min-width: 76px;
+  width: auto;
+  min-width: 168px;
   height: 76px;
   min-height: 76px;
-  padding: 0;
+  padding: 0 24px;
   border-radius: 999px;
   justify-self: end;
   overflow: hidden;
-  color: transparent;
+  color: #fff;
+  font-size: 17px;
   background: radial-gradient(circle at 30% 24%, rgba(255, 255, 255, .36), transparent 22%), linear-gradient(135deg, #c23cff, #2bbdff);
   box-shadow: 0 0 0 6px rgba(197, 55, 255, .18), 0 24px 52px rgba(39, 159, 255, .36);
 }
 
 .pulse-status-form.is-text-wave .pulse-status-share::after {
-  content: ">";
-  color: #fff;
-  font-size: 34px;
-  line-height: 1;
+  content: "";
 }
 
 .pulse-status-form.is-text-wave .pulse-wave-secondary-controls {
@@ -1486,13 +1541,37 @@ body.status-editor-open {
   justify-content: flex-start;
 }
 
+.pulse-status-form.is-text-wave.is-previewing .pulse-wave-secondary-controls {
+  bottom: calc(128px + env(safe-area-inset-bottom));
+  left: clamp(22px, 6vw, 44px);
+  right: clamp(22px, 6vw, 44px);
+  justify-content: center;
+}
+
+.pulse-status-form.is-text-wave.is-previewing .pulse-status-bottom-bar {
+  left: clamp(22px, 6vw, 44px);
+  right: clamp(22px, 6vw, 44px);
+  width: auto;
+  bottom: calc(38px + env(safe-area-inset-bottom));
+}
+
+.pulse-status-form.is-text-wave.is-previewing .pulse-status-share {
+  justify-self: stretch;
+  min-height: 78px;
+  min-width: 0;
+  color: #fff;
+  font-size: clamp(24px, 5vw, 34px);
+  background: linear-gradient(105deg, rgba(196, 39, 220, .96), rgba(24, 215, 172, .94));
+  box-shadow: 0 0 0 4px rgba(52, 232, 184, .13), 0 26px 58px rgba(24, 215, 172, .24);
+}
+
 .pulse-status-form.is-text-wave .pulse-wave-secondary-controls [data-status-tool="more"] {
   display: none;
 }
 
 .pulse-status-form.is-photo-wave .pulse-status-editor-preview {
   place-items: stretch;
-  padding: clamp(86px, 12vh, 112px) clamp(22px, 5vw, 44px) clamp(184px, 18vh, 220px);
+  padding: max(126px, env(safe-area-inset-top) + 86px) clamp(26px, 6vw, 62px) clamp(142px, 16vh, 196px);
 }
 
 .pulse-wave-preview-live {
@@ -1505,23 +1584,23 @@ body.status-editor-open {
   max-width: 780px;
   min-height: 0;
   justify-self: center;
-  border: 2px solid rgba(181, 98, 255, .74);
-  border-radius: 32px;
-  background: rgba(7, 12, 26, .72);
-  box-shadow: 0 0 0 1px rgba(100, 233, 255, .16), 0 30px 90px rgba(0, 0, 0, .44), 0 0 54px rgba(167, 71, 255, .22);
+  border: 1px solid rgba(72, 219, 178, .26);
+  border-radius: 34px;
+  background: rgba(7, 12, 26, .38);
+  box-shadow: inset 0 0 70px rgba(14, 185, 159, .05), 0 30px 90px rgba(0, 0, 0, .44);
 }
 
 .pulse-wave-media-frame {
   position: relative;
-  min-height: min(68vh, 720px);
-  background: #02050b;
+  min-height: min(67vh, 700px);
+  background: rgba(2, 5, 11, .22);
 }
 
 .pulse-wave-media-frame img,
 .pulse-wave-media-frame video {
   width: 100%;
   height: 100%;
-  min-height: min(68vh, 720px);
+  min-height: min(67vh, 700px);
   object-fit: cover;
   display: block;
 }
@@ -1581,7 +1660,7 @@ body.status-editor-open {
   grid-template-columns: 1fr;
   left: clamp(22px, 6vw, 44px);
   right: clamp(22px, 6vw, 44px);
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  bottom: calc(38px + env(safe-area-inset-bottom));
 }
 
 .pulse-status-form.is-photo-wave .pulse-status-bottom-bar [data-status-back] {
@@ -1590,11 +1669,11 @@ body.status-editor-open {
 
 .pulse-status-form.is-photo-wave .pulse-status-share {
   justify-self: stretch;
-  min-height: 72px;
+  min-height: 78px;
   border-radius: 999px;
   font-size: clamp(24px, 5vw, 34px);
-  background: linear-gradient(135deg, #c23cff, #4154ff 48%, #22c9ff);
-  box-shadow: 0 0 0 6px rgba(197, 55, 255, .16), 0 26px 58px rgba(42, 157, 255, .32);
+  background: linear-gradient(105deg, rgba(196, 39, 220, .96), rgba(24, 215, 172, .94));
+  box-shadow: 0 0 0 4px rgba(52, 232, 184, .13), 0 26px 58px rgba(24, 215, 172, .24);
 }
 
 .pulse-status-form.is-publishing-wave .pulse-status-share {

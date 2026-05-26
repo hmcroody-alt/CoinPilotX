@@ -22,9 +22,10 @@ def main():
     require("🌊 Launch Wave" in source, "Launch Wave CTA exists")
     require("pulseCoreLauncher" in source and ".pulse-core-launcher" in css, "Pulse Core launcher exists")
     require("pulseCoreRipple" in css and "prefers-reduced-motion" in css, "Pulse Core motion is lightweight and accessible")
-    require("Create a Wave" in source and "Share your energy with the world" in source, "cinematic Wave selector copy exists")
-    require("pulse-wave-handle" in source and "pulse-wave-mark" in source and "pulse-wave-privacy" in source, "reference-style selector details exist")
-    require("pulse-wave-step" in source and ".pulse-wave-step" in css, "3-step Wave progress indicator exists")
+    require("Create a Wave" not in source and "Share your energy with the world" not in source, "selector does not render template headline copy")
+    require("pulse-wave-handle" not in source and "pulse-wave-mark" not in source and "pulse-wave-privacy" not in source, "template landmarks are not rendered as UI")
+    require("data-wave-step" in source and ".pulse-wave-step" in css, "Wave progress anchor exists without visible landmark labels")
+    require("STEP 1 OF 3" not in source and "STEP 2 OF 3" not in source and "STEP 3 OF 3" not in source, "step labels are not visible DOM text")
 
     require("Text Wave" in source and "Photo Wave" in source, "only two primary Wave choices exist")
     require(source.count("data-status-start=") == 2, "Wave creation exposes exactly two primary choices", f"found {source.count('data-status-start=')}")
@@ -51,6 +52,7 @@ def main():
     require("Add Music" in source and "Add Voice Note" in source and "statusSoundInput?.click()" in source, "music and voice are subtle optional controls")
     require("PulseWaveComponents" in source and "data-wave-component='WaveStage'" in source, "Wave UI is component-driven")
     require("pulse-wave-text-canvas" in source and "TextWaveComposer" in source, "Text Wave renders native writing canvas")
+    require("TextWavePreview" in source and "Continue →" in source, "Text Wave has real continue-to-preview flow")
     require("pulse-wave-preview-live" in source and "PhotoWavePreview" in source and "data-wave-caption-preview" in source, "Photo Wave renders real selected media preview")
 
     require("context_type','pulse_wave'" in source, "Wave media uploads use Wave context")
@@ -70,7 +72,9 @@ def main():
 
     require(".pulse-wave-sheet" in css, "Wave sheet styling exists")
     require(".pulse-wave-preview-live" in css and ".pulse-wave-text-canvas" in css, "native cinematic Wave composer surfaces are styled")
+    require(".pulse-wave-text-preview" in css, "text preview uses native glass preview zone")
     require(".pulse-wave-live-caption" in css, "Photo Wave caption is live dynamic UI")
+    require("border: 1px dashed" not in css, "production Wave UI exposes no dashed guide marks")
     require("pulseWaveAtmosphere" in css and "pulseWaveFloat" in css, "cinematic Wave motion system exists")
     require("grid-template-columns: repeat(2" in css, "desktop Wave actions are strict two-choice layout")
     require(".pulse-wave-secondary-controls" in css, "secondary controls are visually subtle")
