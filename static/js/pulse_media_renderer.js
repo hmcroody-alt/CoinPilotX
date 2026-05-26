@@ -16,6 +16,61 @@
     wrap.classList.add(state);
   }
 
+  function setBackdrop(wrap) {
+    const src = wrap?.dataset.mediaBackdrop || wrap?.dataset.mediaPoster || wrap?.dataset.mediaThumb || mediaUrl(wrap);
+    if (!wrap || !src || wrap.style.getPropertyValue("--media-backdrop")) return;
+    wrap.style.setProperty("--media-backdrop", `url("${src.replace(/"/g, "%22")}")`);
+  }
+
+  function applyAmbientColor(wrap, media, force = false) {
+    if (!wrap || !media || (!force && wrap.dataset.mediaAmbient === "1")) return;
+    wrap.dataset.mediaAmbient = "1";
+    try {
+      const canvas = document.createElement("canvas");
+      const size = 24;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.drawImage(media, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < data.length; i += 16) {
+        const alpha = data[i + 3];
+        if (alpha < 24) continue;
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        n += 1;
+      }
+      if (!n) return;
+      r = Math.round(r / n);
+      g = Math.round(g / n);
+      b = Math.round(b / n);
+      const tealBias = Math.max(g, Math.round((g + 54) * .86));
+      const blueBias = Math.max(b, Math.round((b + 70) * .82));
+      wrap.style.setProperty("--pulse-media-rgb", `${Math.min(255, r)}, ${Math.min(255, tealBias)}, ${Math.min(255, blueBias)}`);
+      wrap.style.setProperty("--pulse-media-x", `${38 + (r % 26)}%`);
+      wrap.style.setProperty("--pulse-media-y", `${28 + (b % 32)}%`);
+    } catch (_) {
+      wrap.style.setProperty("--pulse-media-rgb", "110, 223, 246");
+    }
+  }
+
+  function bindVideoAmbient(wrap, video) {
+    if (!wrap || !video || wrap.dataset.videoAmbientBound === "1") return;
+    wrap.dataset.videoAmbientBound = "1";
+    let lastSample = 0;
+    const sample = () => {
+      const now = Date.now();
+      if (now - lastSample < 1800) return;
+      lastSample = now;
+      applyAmbientColor(wrap, video, true);
+    };
+    video.addEventListener("playing", sample);
+    video.addEventListener("timeupdate", sample);
+  }
+
   function retryUrl(url, count) {
     if (!url || url.startsWith("data:") || url.startsWith("blob:")) return url;
     const sep = url.includes("?") ? "&" : "?";
@@ -23,6 +78,8 @@
   }
 
   function revealImage(wrap, img) {
+    setBackdrop(wrap);
+    applyAmbientColor(wrap, img);
     const full = img.dataset.fullSrc || mediaUrl(wrap) || img.currentSrc || img.src;
     if (full && img.src !== new URL(full, location.origin).href) {
       const upgraded = new Image();
@@ -30,6 +87,8 @@
       upgraded.onload = () => {
         img.src = full;
         img.style.visibility = "";
+        setBackdrop(wrap);
+        applyAmbientColor(wrap, img);
         mark(wrap, LOADED);
       };
       upgraded.onerror = () => mark(wrap, LOADED);
@@ -66,6 +125,7 @@
   function hydrateWrap(wrap) {
     if (!wrap || wrap.dataset.mediaHydrated === "1") return;
     wrap.dataset.mediaHydrated = "1";
+    setBackdrop(wrap);
     const media = wrap.querySelector("img,video");
     if (window.localStorage?.getItem("pulseDebugMedia") === "1") {
       console.debug("Pulse media render state", {
@@ -100,9 +160,16 @@
       }
       return;
     }
+    bindVideoAmbient(wrap, media);
     media.addEventListener("loadedmetadata", () => mark(wrap, LOADED), { once: true });
-    media.addEventListener("canplay", () => mark(wrap, LOADED), { once: true });
-    if (media.readyState >= 1) mark(wrap, LOADED);
+    media.addEventListener("canplay", () => {
+      applyAmbientColor(wrap, media);
+      mark(wrap, LOADED);
+    }, { once: true });
+    if (media.readyState >= 1) {
+      applyAmbientColor(wrap, media);
+      mark(wrap, LOADED);
+    }
   }
 
   function retry(wrap) {

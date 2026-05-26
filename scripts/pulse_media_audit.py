@@ -36,6 +36,19 @@ def main():
         "srcset",
     ]:
         expect(token in source + service, f"media rendering rule present: {token}")
+    cinematic_css = (ROOT / "static/css/pulse_desktop_feed.css").read_text(encoding="utf-8")
+    cinematic_js = (ROOT / "static/js/pulse_media_renderer.js").read_text(encoding="utf-8")
+    for token in [
+        "pulse-cinematic-media-shell",
+        "pulse-media-aura",
+        "pulse-media-backdrop",
+        "pulse-media-depth-layer",
+        "--media-backdrop",
+        "applyAmbientColor",
+        "bindVideoAmbient",
+        "pulseMediaBreath",
+    ]:
+        expect(token in source + cinematic_css + cinematic_js, f"cinematic media atmosphere present: {token}")
     for token in [
         "def resolve_media",
         "def normalize_url",

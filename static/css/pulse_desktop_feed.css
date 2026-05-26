@@ -630,20 +630,100 @@ body {
   }
 
   .pulse-media-wrap {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
     border-radius: 16px;
     cursor: zoom-in;
     aspect-ratio: var(--media-ratio, auto);
     min-height: 180px;
     background:
-      linear-gradient(110deg, rgba(255, 255, 255, .04), rgba(110, 223, 246, .055), rgba(255, 255, 255, .035));
+      radial-gradient(circle at 50% 12%, rgba(110, 223, 246, .18), transparent 34%),
+      linear-gradient(135deg, rgba(5, 13, 25, .96), rgba(2, 8, 17, .98));
     background-size: 220% 100%;
-    animation: pulseMediaSheen 3.8s ease-in-out infinite;
+    border: 1px solid rgba(110, 223, 246, .18);
+    box-shadow:
+      0 18px 70px rgba(0, 0, 0, .36),
+      0 0 46px rgba(54, 229, 143, .08),
+      inset 0 0 0 1px rgba(255, 255, 255, .035);
+    animation: pulseMediaSheen 7s ease-in-out infinite;
+  }
+
+  .pulse-cinematic-media-shell::before,
+  .pulse-cinematic-media-shell::after,
+  .pulse-media-backdrop,
+  .pulse-media-depth-layer,
+  .pulse-media-aura {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .pulse-media-backdrop {
+    z-index: 0;
+    inset: -12%;
+    background-image: var(--media-backdrop);
+    background-size: cover;
+    background-position: center;
+    filter: blur(34px) saturate(1.32) brightness(.62);
+    opacity: .86;
+    transform: scale(1.08);
+    animation: pulseMediaDrift 16s ease-in-out infinite alternate;
+  }
+
+  .pulse-media-depth-layer {
+    z-index: 1;
+    background:
+      radial-gradient(circle at var(--pulse-media-x, 50%) var(--pulse-media-y, 42%), rgba(var(--pulse-media-rgb, 110, 223, 246), .30), transparent 35%),
+      radial-gradient(circle at 12% 18%, rgba(54, 229, 143, .16), transparent 36%),
+      radial-gradient(circle at 86% 80%, rgba(166, 88, 255, .15), transparent 38%),
+      linear-gradient(180deg, rgba(2, 8, 17, .18), rgba(2, 8, 17, .58));
+    mix-blend-mode: screen;
+    opacity: .74;
+  }
+
+  .pulse-media-aura {
+    z-index: 2;
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 54px rgba(var(--pulse-media-rgb, 110, 223, 246), .16),
+      inset 0 -34px 72px rgba(0, 0, 0, .28),
+      0 0 52px rgba(var(--pulse-media-rgb, 110, 223, 246), .10);
+    background:
+      linear-gradient(115deg, transparent 10%, rgba(255, 255, 255, .06) 48%, transparent 62%);
+    opacity: .8;
+    animation: pulseMediaBreath 5.8s ease-in-out infinite;
+  }
+
+  .pulse-cinematic-media-shell::before {
+    content: "";
+    z-index: 3;
+    background:
+      radial-gradient(1px 1px at 18% 22%, rgba(110, 223, 246, .55), transparent),
+      radial-gradient(1px 1px at 77% 26%, rgba(54, 229, 143, .45), transparent),
+      radial-gradient(1px 1px at 66% 72%, rgba(166, 88, 255, .42), transparent);
+    background-size: 150px 150px, 190px 190px, 230px 230px;
+    opacity: .28;
+    animation: pulseMediaParticles 18s linear infinite;
+  }
+
+  .pulse-cinematic-media-shell::after {
+    content: "";
+    z-index: 4;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .06), transparent 22%, transparent 76%, rgba(0, 0, 0, .18));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .045);
   }
 
   .pulse-media-wrap img,
   .pulse-media-wrap video {
+    position: relative;
+    z-index: 5;
+    margin-inline: auto;
     max-height: min(62vh, 620px) !important;
     min-height: 180px;
+    background: transparent !important;
+    filter: drop-shadow(0 18px 44px rgba(0, 0, 0, .42));
   }
 
   .post.media-landscape .pulse-media-wrap img,
@@ -772,6 +852,30 @@ body {
   @keyframes pulseMediaSheen {
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
+  }
+
+  @keyframes pulseMediaDrift {
+    0% { transform: scale(1.08) translate3d(-1.2%, -1%, 0); }
+    100% { transform: scale(1.15) translate3d(1.4%, 1%, 0); }
+  }
+
+  @keyframes pulseMediaBreath {
+    0%, 100% { opacity: .62; filter: saturate(1); }
+    50% { opacity: .95; filter: saturate(1.22); }
+  }
+
+  @keyframes pulseMediaParticles {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(22px, -28px, 0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse-media-wrap,
+    .pulse-media-backdrop,
+    .pulse-media-aura,
+    .pulse-cinematic-media-shell::before {
+      animation: none !important;
+    }
   }
 }
 
