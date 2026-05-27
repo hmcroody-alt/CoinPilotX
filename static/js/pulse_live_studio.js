@@ -125,6 +125,263 @@
     }
   }
 
+  const rtcConfig = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" },
+    ],
+  };
+
+  function livePeerId(role) {
+    const key = `pulseLivePeer:${role}`;
+    try {
+      const existing = sessionStorage.getItem(key);
+      if (existing) return existing;
+      const next = `${role}-${Date.now().toString(36)}-${(crypto.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 18)}`;
+      sessionStorage.setItem(key, next);
+      return next;
+    } catch (_) {
+      return `${role}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+  }
+
+  function trackDiagnostics(stream) {
+    const tracks = stream ? stream.getTracks() : [];
+    return tracks.map((track) => ({
+      kind: track.kind,
+      id: track.id,
+      label: track.label,
+      readyState: track.readyState,
+      enabled: track.enabled,
+      muted: track.muted,
+    }));
+  }
+
+  function ensureTransportDiagnostics(root) {
+    let node = qs(root, "[data-live-transport-diagnostics]");
+    if (!node) {
+      node = document.createElement("div");
+      node.className = "live-transport-diagnostics";
+      node.dataset.liveTransportDiagnostics = "1";
+      node.setAttribute("aria-live", "polite");
+      root.appendChild(node);
+    }
+    return node;
+  }
+
+  function updateTransportDiagnostics(root, state) {
+    const node = ensureTransportDiagnostics(root);
+    const parts = [
+      `connection ${state.connection || "new"}`,
+      `ice ${state.ice || "new"}`,
+      `stream ${state.stream || "waiting"}`,
+      `audio ${state.audio ? "yes" : "no"}`,
+      `video ${state.video ? "yes" : "no"}`,
+      `bytes ${Math.round(Number(state.bytes || 0))}`,
+      `playback ${state.playback ? "started" : "waiting"}`,
+    ];
+    node.textContent = parts.join(" · ");
+  }
+
+  async function postSignal(root, role, peerId, eventType, payload, targetPeerId) {
+    const id = root?.dataset?.liveId;
+    if (!id) return null;
+    const response = await fetch(`/api/pulse/live/${id}/webrtc/signal`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role,
+        peer_id: peerId,
+        target_peer_id: targetPeerId || (role === "viewer" ? "publisher" : "all"),
+        event_type: eventType,
+        payload,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || "Live signal failed.");
+    return data;
+  }
+
+  async function fetchSignals(root, role, peerId, afterId) {
+    const id = root?.dataset?.liveId;
+    if (!id) return { signals: [], last_id: afterId || 0 };
+    const params = new URLSearchParams({ role, peer_id: peerId, after_id: String(afterId || 0) });
+    const response = await fetch(`/api/pulse/live/${id}/webrtc/signals?${params}`, { credentials: "same-origin", cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || "Live signals failed.");
+    return data;
+  }
+
+  async function initPublisherTransport(root, stream) {
+    if (!window.RTCPeerConnection || !stream) return;
+    const peerId = root.__pulseLivePublisherPeerId || (root.__pulseLivePublisherPeerId = livePeerId("publisher"));
+    const sessions = root.__pulseLivePublisherSessions || (root.__pulseLivePublisherSessions = new Map());
+    updateTransportDiagnostics(root, { connection: "publisher", ice: "checking", stream: "local", audio: stream.getAudioTracks().length, video: stream.getVideoTracks().length });
+    console.info("Pulse Live publisher tracks", { live_id: root.dataset.liveId, peer_id: peerId, tracks: trackDiagnostics(stream) });
+
+    sessions.forEach((pc) => {
+      const senders = pc.getSenders();
+      stream.getTracks().forEach((track) => {
+        const sender = senders.find((item) => item.track?.kind === track.kind);
+        if (sender) sender.replaceTrack(track).catch((error) => console.warn("Pulse Live replaceTrack failed", error));
+        else pc.addTrack(track, stream);
+      });
+    });
+
+    if (root.__pulseLivePublisherPolling) return;
+    root.__pulseLivePublisherPolling = true;
+    let afterId = 0;
+    const makePeer = (viewerPeerId) => {
+      if (sessions.has(viewerPeerId)) return sessions.get(viewerPeerId);
+      const pc = new RTCPeerConnection(rtcConfig);
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      pc.onicecandidate = (event) => {
+        if (event.candidate) postSignal(root, "publisher", peerId, "candidate", { candidate: event.candidate.toJSON() }, viewerPeerId).catch((error) => console.warn("Pulse Live publisher ICE signal failed", error));
+      };
+      pc.onconnectionstatechange = () => updateTransportDiagnostics(root, {
+        connection: pc.connectionState,
+        ice: pc.iceConnectionState,
+        stream: "publishing",
+        audio: stream.getAudioTracks().length,
+        video: stream.getVideoTracks().length,
+      });
+      pc.oniceconnectionstatechange = pc.onconnectionstatechange;
+      sessions.set(viewerPeerId, pc);
+      return pc;
+    };
+    const poll = async () => {
+      if (!root.isConnected) return;
+      try {
+        const data = await fetchSignals(root, "publisher", peerId, afterId);
+        afterId = Number(data.last_id || afterId || 0);
+        for (const signal of data.signals || []) {
+          const viewerPeerId = signal.peer_id;
+          if (!viewerPeerId) continue;
+          const pc = makePeer(viewerPeerId);
+          if (signal.event_type === "offer" && signal.payload?.sdp) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await postSignal(root, "publisher", peerId, "answer", { sdp: pc.localDescription.toJSON() }, viewerPeerId);
+          } else if (signal.event_type === "candidate" && signal.payload?.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.payload.candidate)).catch((error) => console.warn("Pulse Live publisher ICE add failed", error));
+          } else if (signal.event_type === "bye") {
+            pc.close();
+            sessions.delete(viewerPeerId);
+          }
+        }
+      } catch (error) {
+        console.warn("Pulse Live publisher signaling recovery", error);
+      } finally {
+        setTimeout(poll, document.hidden ? 2200 : 900);
+      }
+    };
+    poll();
+  }
+
+  async function initViewerTransport(root) {
+    const player = qs(root, "[data-live-player]");
+    if (!player || !window.RTCPeerConnection) return;
+    const peerId = root.__pulseLiveViewerPeerId || (root.__pulseLiveViewerPeerId = livePeerId("viewer"));
+    if (root.__pulseLiveViewerStarted) return;
+    root.__pulseLiveViewerStarted = true;
+    const pc = new RTCPeerConnection(rtcConfig);
+    const remoteStream = new MediaStream();
+    let afterId = 0;
+    let bytesReceived = 0;
+    let playbackStarted = false;
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+    player.muted = true;
+    player.playsInline = true;
+    player.preload = "metadata";
+    pc.ontrack = async (event) => {
+      event.streams?.[0]?.getTracks().forEach((track) => {
+        if (!remoteStream.getTracks().some((existing) => existing.id === track.id)) remoteStream.addTrack(track);
+      });
+      if (!player.srcObject) {
+        player.removeAttribute("src");
+        player.srcObject = remoteStream;
+      }
+      console.info("Pulse Live viewer remote stream", { live_id: root.dataset.liveId, peer_id: peerId, tracks: trackDiagnostics(remoteStream) });
+      try {
+        await player.play();
+        playbackStarted = true;
+      } catch (error) {
+        console.warn("Pulse Live viewer autoplay blocked", error);
+      }
+      updateTransportDiagnostics(root, {
+        connection: pc.connectionState,
+        ice: pc.iceConnectionState,
+        stream: remoteStream.active ? "remote" : "waiting",
+        audio: remoteStream.getAudioTracks().length,
+        video: remoteStream.getVideoTracks().length,
+        bytes: bytesReceived,
+        playback: playbackStarted,
+      });
+    };
+    pc.onicecandidate = (event) => {
+      if (event.candidate) postSignal(root, "viewer", peerId, "candidate", { candidate: event.candidate.toJSON() }, "publisher").catch((error) => console.warn("Pulse Live viewer ICE signal failed", error));
+    };
+    const refreshDiagnostics = async () => {
+      try {
+        const stats = await pc.getStats();
+        let nextBytes = 0;
+        stats.forEach((report) => {
+          if (report.type === "inbound-rtp" && !report.isRemote) nextBytes += Number(report.bytesReceived || 0);
+        });
+        bytesReceived = nextBytes;
+      } catch (_) {}
+      updateTransportDiagnostics(root, {
+        connection: pc.connectionState,
+        ice: pc.iceConnectionState,
+        stream: remoteStream.active ? "remote" : "waiting",
+        audio: remoteStream.getAudioTracks().length,
+        video: remoteStream.getVideoTracks().length,
+        bytes: bytesReceived,
+        playback: playbackStarted && !player.paused,
+      });
+    };
+    pc.onconnectionstatechange = refreshDiagnostics;
+    pc.oniceconnectionstatechange = refreshDiagnostics;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await postSignal(root, "viewer", peerId, "offer", { sdp: pc.localDescription.toJSON() }, "publisher");
+      console.info("Pulse Live viewer offer sent", { live_id: root.dataset.liveId, peer_id: peerId });
+    } catch (error) {
+      console.warn("Pulse Live viewer offer failed", error);
+      updateTransportDiagnostics(root, { connection: "failed", ice: pc.iceConnectionState, stream: "offer failed", audio: 0, video: 0 });
+      return;
+    }
+    const poll = async () => {
+      if (!root.isConnected) return;
+      try {
+        const data = await fetchSignals(root, "viewer", peerId, afterId);
+        afterId = Number(data.last_id || afterId || 0);
+        for (const signal of data.signals || []) {
+          if (signal.event_type === "answer" && signal.payload?.sdp && !pc.currentRemoteDescription) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
+          } else if (signal.event_type === "candidate" && signal.payload?.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.payload.candidate)).catch((error) => console.warn("Pulse Live viewer ICE add failed", error));
+          }
+        }
+      } catch (error) {
+        console.warn("Pulse Live viewer signaling recovery", error);
+      } finally {
+        refreshDiagnostics();
+        setTimeout(poll, document.hidden ? 2200 : 900);
+      }
+    };
+    poll();
+    setInterval(refreshDiagnostics, 2000);
+    window.addEventListener("pagehide", () => {
+      postSignal(root, "viewer", peerId, "bye", {}, "publisher").catch(() => {});
+      pc.close();
+    }, { once: true });
+  }
+
   function bootCamera(root) {
     const video = qs(root, "[data-live-camera]");
     if (!video || !navigator.mediaDevices?.getUserMedia) return;
@@ -150,7 +407,9 @@
           if (!response.ok || data.ok === false) throw new Error(data.message || "Live media publish failed.");
           return data;
         });
+        console.info("Pulse Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
         setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Camera and microphone publishing" : "No tracks detected");
+        await initPublisherTransport(root, stream);
         await fetchState(root);
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Publishing needs attention");
@@ -171,6 +430,7 @@
         video.srcObject = stream;
         root.classList.add("is-camera-active");
         setText(root, "[data-live-camera-state]", "Camera live-ready. Publishing tracks...");
+        console.info("Pulse Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Camera needs permission");
@@ -191,6 +451,7 @@
         video.style.transform = "none";
         root.classList.add("is-camera-active");
         setText(root, "[data-live-camera-state]", "Screen share live-ready. Publishing tracks...");
+        console.info("Pulse Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("screen_share");
       } catch {
         if (window.toast) window.toast("Screen share was not started.");
@@ -201,6 +462,7 @@
 
   function init(root) {
     bootCamera(root);
+    if (!qs(root, "[data-live-camera]")) initViewerTransport(root);
     fetchState(root);
     const interval = Number(root.dataset.livePollMs || 4500);
     setInterval(() => fetchState(root), Math.max(2200, interval));

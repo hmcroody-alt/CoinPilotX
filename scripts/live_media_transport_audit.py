@@ -55,6 +55,14 @@ def main():
     html = viewer.get_data(as_text=True)
     require("data-live-player" in html, "active viewer uses real media player")
     require("live-ready-orb" not in html, "active viewer does not show fake placeholder avatar")
+    source = (ROOT / "static/js/pulse_live_studio.js").read_text(encoding="utf-8")
+    bot_source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    require("/webrtc/signal" in bot_source and "/webrtc/signals" in bot_source, "WebRTC signaling endpoints exist")
+    require("RTCPeerConnection" in source, "browser transport creates real peer connections")
+    require("getAudioTracks" in source and "getVideoTracks" in source, "publisher diagnostics inspect audio and video tracks")
+    require("addTrack(track, stream)" in source, "publisher attaches media tracks to peer connections")
+    require("srcObject = remoteStream" in source, "viewer attaches remote media stream to video element")
+    require("getStats()" in source and "bytesReceived" in source, "viewer diagnostics track received media bytes")
     print("live media transport audit ok")
 
 

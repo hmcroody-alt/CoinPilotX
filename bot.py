@@ -15917,7 +15917,7 @@ def pulse_desktop_top_nav_html():
         "<div class='pulse-desktop-nav' aria-label='Pulse desktop navigation'>"
         f"{nav_html}"
         "</div>"
-        "<div class='pulse-desktop-actions'><input class='pulse-desktop-search' type='search' placeholder='Search Pulse'><a class='button primary' href='/pulse/create'>Create</a></div>"
+        "<div class='pulse-desktop-actions'><form class='pulse-desktop-search-form' data-pulse-search-form role='search'><input class='pulse-desktop-search' data-pulse-search-input type='search' placeholder='Search Pulse' autocomplete='off' aria-label='Search Pulse'></form><a class='button primary' href='/pulse/create'>Create</a></div>"
         "</header>"
     )
 
@@ -16311,7 +16311,7 @@ __DESKTOP_TOP_NAV__
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">Pulse</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
 <main class="wrap pulse-shell" data-feed="__ACTIVE_FEED__" data-topic="__TOPIC__" data-profile="__PROFILE__">
-<nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button" aria-label="Open Pulse menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><div class="mobile-actions"><a class="icon-btn badge-dot" href="/pulse/notifications" aria-label="Notifications">●</a><a class="icon-btn badge-dot" href="/pulse/messages" aria-label="Messenger">__CHAT_ICON__</a><a class="avatar" href="/pulse/profile" aria-label="Profile">P</a></div></nav>
+<nav class="mobile-topbar"><button class="icon-btn" id="drawerOpen" type="button" aria-label="Open Pulse menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="">CoinPilotXAI</a><div class="mobile-actions"><button class="icon-btn" id="pulseMobileSearch" type="button" aria-label="Search Pulse">⌕</button><a class="icon-btn badge-dot" href="/pulse/notifications" aria-label="Notifications">●</a><a class="icon-btn badge-dot" href="/pulse/messages" aria-label="Messenger">__CHAT_ICON__</a><a class="avatar" href="/pulse/profile" aria-label="Profile">P</a></div></nav>
 <nav class="top"><a class="brand" href="/dashboard"><img src="/static/Coinpilot%20Logo/NewLogo.png" alt="CoinPilotXAI logo">CoinPilotXAI</a><div class="actions pulse-actions"><a class="button" href="/dashboard">Dashboard</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button primary" href="/pulse/create">Create</a></div></nav>
 <div class="pulse-nav">__NAV__</div>
 <section class="pulse-desktop-layout">
@@ -16328,7 +16328,7 @@ __LIVE_NOW_HUB__
 </div>
 __DESKTOP_RIGHT_RAIL__
 </section>
-</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create Pulse">+</button><section class="create-sheet" id="createSheet"><h3>Create Pulse</h3><div class="create-sheet-grid"><button data-sheet-type="text">Text post</button><button data-sheet-type="poll">Question</button><button data-sheet-type="scam_report">Scam warning</button><button data-sheet-type="video">Reel upload</button><a class="button" href="/pulse/marketplace">Marketplace listing</a><a class="button" href="/pulse/teachers">Teacher lesson</a><a class="button" href="/pulse/groups">Group post</a><a class="button primary" href="/pulse/create">Full composer</a></div></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
+</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create Pulse">+</button><section class="create-sheet" id="createSheet"><h3>Create Pulse</h3><div class="create-sheet-grid"><button data-sheet-type="text">Text post</button><button data-sheet-type="poll">Question</button><button data-sheet-type="scam_report">Scam warning</button><button data-sheet-type="video">Reel upload</button><a class="button" href="/pulse/marketplace">Marketplace listing</a><a class="button" href="/pulse/teachers">Teacher lesson</a><a class="button" href="/pulse/groups">Group post</a><a class="button primary" href="/pulse/create">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search Pulse"><header class="pulse-search-head"><div><span class="badge">Pulse Search</span><h2>Find signals, creators, reels, rooms, and groups.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search"><input id="pulseSearchOverlayInput" data-pulse-search-input type="search" placeholder="Search Pulse" autocomplete="off" aria-label="Search Pulse"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search across public Pulse posts, creators, reels, groups, rooms, and comments.</p></div></div></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
 <script src="/static/js/time.js"></script>
 <script src="/static/js/pulse_environment_engine.js" defer></script>
 <script src="/static/js/pulse_media_picker.js" defer></script>
@@ -16372,6 +16372,27 @@ statusSoundInput?.addEventListener('change',e=>{statusDraft.soundFile=e.target.f
 statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(statusDraft.publishing)return;const mode=document.getElementById('pulseStatusMode').value||'image';if(!statusDraft.files.length&&!['text','ai','music','live'].includes(mode)){statusMediaInput?.click();toast('Choose an image or video first.');return}statusDraft.publishing=true;if(btn)btn.disabled=true;try{statusDraft.mediaIds=[];for(const [index,file] of statusDraft.files.entries()){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_status');fd.append('context_id','draft');fd.append('effect_name',statusDraft.effect||'natural');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:statusProgress,lockKey:`pulse-status-media-${index}-${file.name}`,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)statusDraft.mediaIds.push(up.media.id)}if(statusDraft.soundFile){const fd=new FormData();fd.append('file',statusDraft.soundFile);fd.append('context_type','pulse_status_music');fd.append('context_id','draft');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:statusDraft.soundFile,button:btn,progressTarget:statusProgress,lockKey:'pulse-status-sound'}):await api('/api/pulse/media/upload',{method:'POST',body:fd});statusDraft.soundMediaId=up.media?.id||0}window.PulseUploadManager?.render(statusProgress,{stage:'publishing',percent:96,message:'Publishing...'});const payload={status_type:mode,body:document.getElementById('pulseStatusBody').value,visibility:document.getElementById('pulseStatusPrivacy').value,duration_hours:Number(document.getElementById('pulseStatusDuration').value||24),media_ids:statusDraft.mediaIds,music_media_id:statusDraft.soundMediaId,effect_name:statusDraft.effect,sticker:statusDraft.sticker,link_url:statusDraft.link,music_track_id:document.getElementById('pulseStatusMusicTrack').value,ai_context:{music_track_id:document.getElementById('pulseStatusMusicTrack').value,editor_mode:mode}};const created=await api('/api/pulse/status',{method:'POST',body:JSON.stringify(payload)});window.PulseUploadManager?.render(statusProgress,{stage:'success',percent:100,message:'Posted successfully'});toast('Posted successfully');closeStatusEditor();clearStatusDraft();await hydrateStatusRail();if(created.status?.id){document.querySelector(`[data-open-status-id="${created.status.id}"]`)?.classList.add('just-created')}}catch(err){window.PulseUploadManager?.render(statusProgress,{stage:'failed',percent:0,message:(err.message||'Status publish failed.')+' Tap Share to retry.'});toast((err.message||'Status publish failed.')+' Tap Share to retry.')}finally{statusDraft.publishing=false;if(btn)btn.disabled=false}});
 hydrateStatusRail();
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
+const pulseSearch={overlay:document.getElementById('pulseSearchOverlay'),panel:document.querySelector('[data-pulse-search-results]'),starter:document.querySelector('[data-pulse-search-starter]'),recent:document.querySelector('[data-pulse-search-recent]'),trending:document.querySelector('[data-pulse-search-trending]'),overlayInput:document.getElementById('pulseSearchOverlayInput'),desktopInput:document.querySelector('.pulse-desktop-search'),timer:0,query:'',groups:[['posts','Posts'],['creators','Creators'],['reels','Reels'],['groups','Groups'],['rooms','Chat Rooms'],['comments','Comments'],['statuses','Media']]};
+function pulseSearchRecent(){try{return JSON.parse(localStorage.getItem('pulseRecentSearches')||'[]').filter(Boolean).slice(0,8)}catch(_){return []}}
+function pulseSearchSave(q){const clean=String(q||'').trim();if(!clean)return;try{const next=[clean,...pulseSearchRecent().filter(x=>x.toLowerCase()!==clean.toLowerCase())].slice(0,8);localStorage.setItem('pulseRecentSearches',JSON.stringify(next))}catch(_){}}
+function pulseSearchChip(label){return `<button class="pulse-search-chip" type="button" data-pulse-search-chip="${esc(label)}">${esc(label)}</button>`}
+function pulseSearchStarter(trending=[]){if(!pulseSearch.recent||!pulseSearch.trending)return;const recent=pulseSearchRecent();pulseSearch.recent.innerHTML=recent.length?recent.map(pulseSearchChip).join(''):'<span class="muted">Your searches will appear here.</span>';pulseSearch.trending.innerHTML=(trending.length?trending:['scam alerts','AI builders','creator economy','wallet safety']).map(pulseSearchChip).join('')}
+function pulseSearchHighlight(text,q){const safe=esc(text||'');const term=String(q||'').trim();if(!term)return safe;const needle=[...term].map(ch=>'.*+?^${}()|[]\\\\'.includes(ch)?'\\\\'+ch:ch).join('');return safe.replace(new RegExp(`(${needle})`,'ig'),'<em>$1</em>')}
+function pulseSearchResult(item,q){const letter=(item.type||item.title||'P').slice(0,1).toUpperCase();return `<a class="pulse-search-result" href="${esc(item.url||'/pulse')}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title||'Pulse result',q)}</strong><small>${pulseSearchHighlight(item.description||item.meta||'',q)}</small></span><span class="pulse-search-type">${esc(item.type||'Pulse')}</span></a>`}
+function pulseSearchRender(data){const q=data.query||pulseSearch.query||'';const results=data.results||{};const sections=pulseSearch.groups.map(([key,label])=>{const items=results[key]||[];if(!items.length)return '';return `<section class="pulse-search-group"><h3>${label}</h3>${items.map(item=>pulseSearchResult(item,q)).join('')}</section>`}).join('');pulseSearch.panel.innerHTML=sections||'<div class="pulse-search-empty"><strong>No Pulse results found.</strong><p class="muted">Try another creator, topic, room, reel, or signal.</p></div>';pulseSearchStarter(data.trending||[])}
+async function runPulseSearch(q){const clean=String(q||'').trim();pulseSearch.query=clean;if(!pulseSearch.panel)return;if(!clean){pulseSearch.panel.innerHTML='<p class="muted">Search across public Pulse posts, creators, reels, groups, rooms, and comments.</p>';pulseSearchStarter();return}pulseSearch.starter?.classList.remove('is-hidden');pulseSearch.panel.innerHTML='<div class="pulse-search-loading">Searching Pulse...</div>';try{const d=await api('/api/pulse/search?q='+encodeURIComponent(clean)+'&limit=8');pulseSearchSave(clean);pulseSearchRender(d)}catch(err){pulseSearch.panel.innerHTML=`<div class="pulse-search-error"><strong>Search could not load.</strong><p class="muted">${esc(err.message||'Try again in a moment.')}</p></div>`}}
+function openPulseSearch(q=''){if(!pulseSearch.overlay)return;pulseSearch.overlay.classList.add('open');pulseSearch.overlay.setAttribute('aria-hidden','false');document.body.classList.add('pulse-search-open');const value=String(q||pulseSearch.desktopInput?.value||'').trim();if(pulseSearch.overlayInput){pulseSearch.overlayInput.value=value;setTimeout(()=>pulseSearch.overlayInput.focus(),30)}pulseSearchStarter();if(value)runPulseSearch(value);else pulseSearch.panel.innerHTML='<p class="muted">Search across public Pulse posts, creators, reels, groups, rooms, and comments.</p>'}
+function closePulseSearch(){pulseSearch.overlay?.classList.remove('open');pulseSearch.overlay?.setAttribute('aria-hidden','true');document.body.classList.remove('pulse-search-open')}
+function debouncePulseSearch(q){clearTimeout(pulseSearch.timer);pulseSearch.timer=setTimeout(()=>runPulseSearch(q),320)}
+document.querySelector('[data-pulse-search-form]')?.addEventListener('submit',e=>{e.preventDefault();openPulseSearch(pulseSearch.desktopInput?.value||'')});
+document.querySelector('[data-pulse-search-overlay-form]')?.addEventListener('submit',e=>{e.preventDefault();runPulseSearch(pulseSearch.overlayInput?.value||'')});
+pulseSearch.desktopInput?.addEventListener('input',e=>{const q=e.target.value||'';if(q.trim().length>=2){openPulseSearch(q);debouncePulseSearch(q)}});
+pulseSearch.overlayInput?.addEventListener('input',e=>debouncePulseSearch(e.target.value||''));
+document.getElementById('pulseMobileSearch')?.addEventListener('click',()=>openPulseSearch(''));
+document.querySelector('[data-close-pulse-search]')?.addEventListener('click',closePulseSearch);
+pulseSearch.overlay?.addEventListener('click',e=>{if(e.target===pulseSearch.overlay)closePulseSearch()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&pulseSearch.overlay?.classList.contains('open'))closePulseSearch()});
+document.addEventListener('click',e=>{const chip=e.target.closest('[data-pulse-search-chip]');if(!chip)return;openPulseSearch(chip.dataset.pulseSearchChip||chip.textContent||'')});
 function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/')||url.startsWith('data:')||url.startsWith('blob:'))return url;return '/'+url.replace(new RegExp('^/+'), '')}
 function mediaFallbackHtml(m){const id=m.id||m.media_id||'';return `<div class="pulse-media-fallback" data-media-fallback="${esc(id)}"><div><strong>${m.is_available===false?'Media is being restored.':'Media could not load.'}</strong><span class="muted">Tap to retry. Trace media-${esc(id||'unknown')}</span><br><button type="button" data-retry-media>Retry</button></div></div>`}
 function mediaHtml(items){const frameMode='smart';return (items||[]).map(m=>{const src=mediaUrl(m.valid_url||m.media_url);const raw=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url)||src;const poster=mediaUrl(m.poster_url)||'';const available=m.is_available!==false&&!!src;const w=Number(m.width||0),h=Number(m.height||0);const ratio=w>0&&h>0?(w/h):Number(m.aspect_ratio||0);const orient=m.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');const mediaType=String(m.media_type||m.type||'image').toLowerCase();const mime=String(m.mime_type||'').toLowerCase();const backdrop=mediaUrl(mediaTypePlaceholder(m, thumb, poster, src));const style=(ratio?`--media-ratio:${ratio};`:'')+(backdrop?`--media-backdrop:url('${esc(backdrop)}');`:'');const styleAttr=style?` style="${style}"`:'';const dims=w>0&&h>0?` width="${w}" height="${h}"`:'';const mediaId=esc(m.id||m.media_id||'');const cls=`pulse-media-wrap pulse-cinematic-media-shell is-${esc(orient)} media-kind-${esc(mediaType)} ${available?'':'is-broken'}`;const cinematicLayers=`<div class="pulse-media-backdrop" aria-hidden="true"></div><div class="pulse-media-depth-layer" aria-hidden="true"></div><div class="pulse-media-aura" aria-hidden="true"></div>`;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||m.type||'',mime_type:m.mime_type||'',embed_type:m.embed_type||'',source_platform:m.source_platform||'',src:src||raw,width:w,height:h,available}).slice(0,500));const srcset=m.srcset?` srcset="${esc(m.srcset)}"`:'';const sizes=m.sizes?` sizes="${esc(m.sizes)}"`:' sizes="(max-width: 760px) 100vw, 760px"';const data=`data-media-id="${mediaId}" data-media-url="${esc(src||raw)}" data-media-src="${esc(src||raw)}" data-media-type="${esc(mediaType)}" data-media-mime="${esc(mime)}" data-media-thumb="${esc(thumb)}" data-media-poster="${esc(poster)}" data-media-backdrop="${esc(backdrop)}" data-media-embed="${esc(m.embed_type||'upload')}" data-media-platform="${esc(m.source_platform||'coinpilotx')}" data-media-diag="${diag}"`;if(!available)return `<div class="${cls}" data-fit="smart" ${data}${styleAttr}>${cinematicLayers}${mediaFallbackHtml(m)}</div>`;if(mediaType==='video'){const posterAttr=poster?` poster="${esc(poster)}"`:'';const typeAttr=mime?` type="${esc(mime)}"`:'';return `<div class="${cls}" data-fit="smart" data-open-media-lightbox ${data}${styleAttr}>${cinematicLayers}<video muted controls playsinline preload="${m.preload_priority==='high'?'metadata':'metadata'}"${posterAttr} ${dims}><source src="${esc(src)}"${typeAttr}></video>${mediaFallbackHtml(m)}</div>`}return `<div class="${cls}" data-fit="smart" data-open-media-lightbox ${data}${styleAttr}>${cinematicLayers}<img src="${esc(thumb||src)}" data-full-src="${esc(src)}" alt="Pulse media" loading="${m.preload_priority==='high'?'eager':'lazy'}" decoding="async" ${dims}${srcset}${sizes}>${mediaFallbackHtml(m)}</div>`}).join('')}
@@ -16466,6 +16487,231 @@ def pulse_page():
     else:
         feed = request.args.get("feed") or "for_you"
     return pulse_page_html("My Pulse Posts" if feed == "my_posts" else "Global Pulse Feed", feed, topic=request.args.get("topic") or "", profile_id=request.args.get("profile") or "")
+
+
+@webhook_app.route("/api/pulse/search", methods=["GET"])
+def api_pulse_search():
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    init_db()
+    q = clean_html(request.args.get("q") or "").strip()[:120]
+    limit = max(1, min(safe_int(request.args.get("limit"), 8), 20))
+    trending = ["scam alerts", "AI builders", "creator economy", "wallet safety", "reels", "live rooms"]
+    empty = {"posts": [], "creators": [], "comments": [], "groups": [], "rooms": [], "reels": [], "statuses": []}
+    if not q:
+        return jsonify({"ok": True, "query": "", "results": empty, "trending": trending, "recent": [], "limit": limit})
+
+    like = f"%{q}%"
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    results = {key: [] for key in empty}
+
+    def add_results(key, sql, params, mapper):
+        try:
+            rows = cur.execute(sql, params).fetchall()
+            results[key] = [mapper(dict(row)) for row in rows]
+        except Exception as exc:
+            webhook_app.logger.warning("pulse.search.%s failed q=%r: %s", key, q, exc)
+            results[key] = []
+
+    add_results(
+        "posts",
+        """
+        SELECT id, title, body, post_type, created_at
+        FROM pulse_posts
+        WHERE deleted_at IS NULL
+          AND COALESCE(status, 'published') NOT IN ('deleted', 'removed')
+          AND COALESCE(visibility, 'public') IN ('public', 'global', '')
+          AND (
+            COALESCE(title, '') LIKE ?
+            OR COALESCE(body, '') LIKE ?
+            OR COALESCE(ai_tags_json, '') LIKE ?
+            OR COALESCE(tags_json, '') LIKE ?
+            OR COALESCE(post_type, '') LIKE ?
+          )
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (like, like, like, like, like, limit),
+        lambda r: {
+            "id": r.get("id"),
+            "title": r.get("title") or "Pulse post",
+            "description": (r.get("body") or r.get("post_type") or "")[:180],
+            "type": "post",
+            "url": f"/pulse/post/{r.get('id')}",
+            "meta": r.get("created_at") or r.get("post_type") or "Pulse",
+        },
+    )
+    add_results(
+        "comments",
+        """
+        SELECT c.id, c.post_id, c.body, c.created_at, p.title AS post_title
+        FROM pulse_comments c
+        JOIN pulse_posts p ON p.id = c.post_id
+        WHERE c.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+          AND COALESCE(p.visibility, 'public') IN ('public', 'global', '')
+          AND COALESCE(c.moderation_status, 'approved') NOT IN ('removed', 'deleted', 'blocked')
+          AND COALESCE(c.body, '') LIKE ?
+        ORDER BY c.id DESC
+        LIMIT ?
+        """,
+        (like, limit),
+        lambda r: {
+            "id": r.get("id"),
+            "title": r.get("post_title") or "Pulse comment",
+            "description": (r.get("body") or "")[:180],
+            "type": "comment",
+            "url": f"/pulse/post/{r.get('post_id')}#comment-{r.get('id')}",
+            "meta": r.get("created_at") or "Comment",
+        },
+    )
+    add_results(
+        "creators",
+        """
+        SELECT user_id, username, display_name, bio, avatar_url, public_player_id
+        FROM users
+        WHERE COALESCE(username, '') LIKE ?
+           OR COALESCE(display_name, '') LIKE ?
+           OR COALESCE(public_player_id, '') LIKE ?
+           OR COALESCE(bio, '') LIKE ?
+        ORDER BY user_id DESC
+        LIMIT ?
+        """,
+        (like, like, like, like, limit),
+        lambda r: {
+            "id": r.get("user_id"),
+            "title": r.get("display_name") or r.get("username") or "Pulse creator",
+            "description": (r.get("bio") or r.get("username") or "Creator on Pulse")[:160],
+            "type": "creator",
+            "url": f"/pulse/profile/{r.get('public_player_id') or r.get('username') or r.get('user_id')}",
+            "avatar_url": r.get("avatar_url") or "",
+            "meta": "Creator",
+        },
+    )
+    if not results["creators"]:
+        add_results(
+            "creators",
+            """
+            SELECT user_id, username, display_name
+            FROM users
+            WHERE COALESCE(username, '') LIKE ?
+               OR COALESCE(display_name, '') LIKE ?
+            ORDER BY user_id DESC
+            LIMIT ?
+            """,
+            (like, like, limit),
+            lambda r: {
+                "id": r.get("user_id"),
+                "title": r.get("display_name") or r.get("username") or "Pulse creator",
+                "description": r.get("username") or "Creator on Pulse",
+                "type": "creator",
+                "url": f"/pulse/profile/{r.get('username') or r.get('user_id')}",
+                "meta": "Creator",
+            },
+        )
+    add_results(
+        "groups",
+        """
+        SELECT id, slug, name, description, category, member_count
+        FROM pulse_groups
+        WHERE deleted_at IS NULL
+          AND COALESCE(status, 'active') NOT IN ('deleted', 'removed', 'suspended')
+          AND (
+            COALESCE(name, '') LIKE ?
+            OR COALESCE(slug, '') LIKE ?
+            OR COALESCE(description, '') LIKE ?
+            OR COALESCE(category, '') LIKE ?
+            OR COALESCE(tags_json, '') LIKE ?
+          )
+        ORDER BY featured DESC, member_count DESC, id DESC
+        LIMIT ?
+        """,
+        (like, like, like, like, like, limit),
+        lambda r: {
+            "id": r.get("id"),
+            "title": r.get("name") or r.get("slug") or "Pulse group",
+            "description": (r.get("description") or r.get("category") or "Community group")[:180],
+            "type": "group",
+            "url": f"/pulse/groups/{r.get('slug') or r.get('id')}",
+            "meta": f"{safe_int(r.get('member_count'), 0)} members",
+        },
+    )
+    room_matches = []
+    try:
+        pulse_ensure_default_rooms(cur, int(user.get("user_id") or 0))
+    except Exception as exc:
+        webhook_app.logger.warning("pulse.search.room_seed failed q=%r: %s", q, exc)
+    for room in pulse_default_room_cards():
+        haystack = " ".join([
+            str(room.get("name") or ""),
+            str(room.get("description") or ""),
+            str(room.get("category") or ""),
+            " ".join(room.get("tags") or []),
+        ]).lower()
+        if q.lower() in haystack:
+            room_matches.append({
+                "id": room.get("slug"),
+                "title": room.get("name") or "Pulse room",
+                "description": room.get("description") or "Live community room",
+                "type": "room",
+                "url": f"/pulse/messages?room={room.get('slug')}",
+                "meta": f"{room.get('member_count') or 0} members",
+            })
+    results["rooms"] = room_matches[:limit]
+    add_results(
+        "reels",
+        """
+        SELECT id, post_id, category, caption, video_url, created_at
+        FROM pulse_reels
+        WHERE COALESCE(status, 'active') NOT IN ('deleted', 'removed', 'blocked')
+          AND (
+            COALESCE(category, '') LIKE ?
+            OR COALESCE(caption, '') LIKE ?
+            OR COALESCE(ai_tags_json, '') LIKE ?
+          )
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (like, like, like, limit),
+        lambda r: {
+            "id": r.get("id"),
+            "title": r.get("caption") or f"{r.get('category') or 'Pulse'} Reel",
+            "description": r.get("category") or "Short video",
+            "type": "reel",
+            "url": f"/pulse/reels/{r.get('id')}",
+            "meta": r.get("created_at") or "Reel",
+        },
+    )
+    add_results(
+        "statuses",
+        """
+        SELECT id, status_type, body, created_at
+        FROM pulse_status
+        WHERE deleted_at IS NULL
+          AND COALESCE(visibility, 'public') = 'public'
+          AND (
+            COALESCE(body, '') LIKE ?
+            OR COALESCE(status_type, '') LIKE ?
+          )
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (like, like, limit),
+        lambda r: {
+            "id": r.get("id"),
+            "title": r.get("body") or f"{r.get('status_type') or 'Pulse'} status",
+            "description": r.get("status_type") or "Pulse media",
+            "type": "status",
+            "url": f"/pulse/status?status_id={r.get('id')}",
+            "meta": r.get("created_at") or "Status",
+        },
+    )
+    conn.close()
+    total = sum(len(items) for items in results.values())
+    return jsonify({"ok": True, "query": q, "results": results, "total": total, "trending": trending, "limit": limit})
 
 
 def pulse_status_payload(row, viewer_user_id=0):
@@ -18965,25 +19211,30 @@ def pulse_reels_page():
     const reelTabs=[['for_you','For You'],['following','Following'],['trending','Trending'],['new_creators','New Creators'],['ai_picks','AI Picks'],['local','Local'],['global','Global'],['educational','Educational'],['music','Music'],['live','Live']];
     const emptyCopy={for_you:['Reels are warming up.','Post the first short clip, add a sound, or turn a livestream highlight into a Reel.'],following:['No followed creator Reels yet.','Follow creators from Pulse, then their clips will land here first.'],trending:['No trending Reels yet.','Reels with strong watch energy and healthy engagement will rise here.'],new_creators:['New creators are warming up.','Fresh Pulse creators will appear here as they post vertical clips.'],ai_picks:['AI Picks are calibrating.','Pulse AI highlights original, trustworthy, high-quality clips here.'],local:['Local Reels are warming up.','As profiles add region signals, nearby creator clips will appear here.'],global:['Global Reels are warming up.','Worldwide creator clips will appear here as the network grows.'],educational:['No educational Reels yet.','Safety lessons, market education, and creator tutorials will appear here.'],music:['No sound-powered Reels yet.','Clips with original audio or saved sounds will appear here.'],live:['No live clips yet.','Livestream highlights and event clips will appear here.']};
     function reelHtml(reel){
-      const author=reel.author||{},media=(reel.media||[])[0]||{},src=(media.is_available===false?'':(media.valid_url||media.media_url||reel.video_url||'')),poster=media.poster_url||media.thumbnail_url||reel.poster_url||'',id=reel.reel_id||reel.id;
+      const author=reel.author||{},media=(reel.media||[])[0]||{},src=(media.is_available===false?'':(media.valid_url||media.media_url||reel.video_url||'')),posterRaw=media.poster_url||media.thumbnail_url||reel.poster_url||'',id=reel.reel_id||reel.id;
       const tags=(reel.ai_tags||reel.tags||[]).slice(0,5),audio=reel.audio||{},music=audio.title?`${audio.title}${audio.artist?' · '+audio.artist:''}`:'Original Pulse sound';
       const insight=(reel.ai_summary||reel.why_this_matters||reel.category||tags[0]||'Creator signal').toString().slice(0,88);
       const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));
       const mt=(media.media_type||reel.media_type||(/\\.(jpg|jpeg|png|webp|gif)(\\?|$)/i.test(src)?'image':'video')).toLowerCase();
       const mime=media.mime_type||(/\\.webm(\\?|$)/i.test(src)?'video/webm':/\\.mp4(\\?|$)/i.test(src)?'video/mp4':/\\.mov(\\?|$)/i.test(src)?'video/quicktime':'');
+      const poster=/\\.(mp4|webm|mov|m4v)(\\?|$)/i.test(posterRaw)?'':posterRaw;
       const onerr=`window.retryPulseReelMedia&&window.retryPulseReelMedia(this,'${id}')`;
-      const mediaEl=src?(mt==='image'||mt==='gif'?`<img class="reel-media" data-reel-media src="${esc(src)}" alt="${esc(reel.title||'Pulse Reel')}" loading="lazy" decoding="async" onerror="${onerr}">`:`<video class="reel-media" data-reel-media poster="${esc(poster||src)}" muted playsinline loop preload="metadata" onerror="${onerr}"><source src="${esc(src)}" type="${esc(mime||'video/mp4')}"></video>`):'';
+      const commonData=`data-reel-id="${esc(id)}" data-media-id="${esc(media.id||media.media_id||'')}" data-reel-url="${esc(src)}" data-reel-mime="${esc(mime)}" data-reel-type="${esc(mt)}"`;
+      if(src&&/r2\\.cloudflarestorage\\.com/i.test(src))console.warn('Pulse Reel received private R2 URL',{id,src});
+      const mediaEl=src?(mt==='image'||mt==='gif'?`<img class="reel-media" data-reel-media ${commonData} src="${esc(src)}" alt="${esc(reel.title||'Pulse Reel')}" loading="lazy" decoding="async" onerror="${onerr}">`:`<video class="reel-media" data-reel-media ${commonData}${poster?` poster="${esc(poster)}"`:''} muted controls playsinline loop preload="metadata" onerror="${onerr}"><source src="${esc(src)}" type="${esc(mime||'video/mp4')}"></video>`):'';
       const blurEl=src?(mt==='image'||mt==='gif'?`<img class="reel-blur-bg" src="${esc(src)}" alt="" aria-hidden="true">`:`<video class="reel-blur-bg" src="${esc(src)}" muted playsinline loop preload="metadata" aria-hidden="true"></video>`):'';
       const ratio=Number(media.aspect_ratio||0),orientation=media.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');
       return `<article class="reel-card smart ${src?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}"><div class="reels-media-stage" data-reels-media-stage>${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">Media could not load. Tap to retry.</span></div><div class="reel-scrim"></div></div><header class="reel-top"><div class="reel-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'Pulse creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></header><aside class="reels-action-rail reel-actions" data-reels-action-rail><button class="reel-action" data-reel-react="${id}" aria-label="Fire">🔥<small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comments">💬<small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost">↻<small>Repost</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save">★<small>Save</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share">↗<small>Share</small></button><a class="reel-action" href="/pulse/profile/${author.user_id||reel.user_id||''}" aria-label="Creator profile">◉<small>Profile</small></a></aside><section class="reels-caption-overlay reel-caption" data-reels-caption-overlay><div class="reel-ai-hint">Pulse AI · ${esc(insight)}</div><h2>${esc(reel.title||'Pulse Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>Trust ${reel.safety_score||100}</span><span>Score ${reel.reel_score||0}</span></div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button><button class="button" data-save-sound="${audio.track_id||audio.id||''}" ${audio.track_id||audio.id?'':'disabled'}>Save sound</button></div></section></article>`;
     }
-    function syncPlayback(){const cards=[...document.querySelectorAll('.reel-card')];const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;card.querySelectorAll('video').forEach(v=>{v.muted=true;if(v.classList.contains('reel-media'))v.muted=reelsMuted;if(visible)v.play().catch(()=>{});else v.pause();});});if(active){const next=active.nextElementSibling?.querySelector('video');if(next)next.load();}}
-    window.retryPulseReelMedia=function(el,id){const card=el.closest('.reel-card');const attempts=Number(el.dataset.retryCount||0);if(attempts<2){el.dataset.retryCount=String(attempts+1);const srcEl=el.tagName==='VIDEO'?el.querySelector('source'):el;const src=srcEl?.getAttribute('src')||el.getAttribute('src')||'';const clean=src.split('?')[0];window.setTimeout(()=>{if(srcEl)srcEl.setAttribute('src',clean+'?retry='+(attempts+1)+'&t='+Date.now());else el.setAttribute('src',clean+'?retry='+(attempts+1)+'&t='+Date.now());if(el.tagName==='VIDEO')el.load();},450*(attempts+1));return}card?.classList.add('is-broken');console.warn('Pulse reel media failed after retry',{id,src:el.currentSrc||el.src});}
+    function reelVideoDiagnostics(video,phase){if(!video)return;console.info('Pulse Reel media diagnostic',{phase,reel_id:video.dataset.reelId,media_id:video.dataset.mediaId,src:video.currentSrc||video.querySelector('source')?.src||video.dataset.reelUrl,mime:video.dataset.reelMime,networkState:video.networkState,readyState:video.readyState,error:video.error?{code:video.error.code,message:video.error.message}:null,videoWidth:video.videoWidth,videoHeight:video.videoHeight});}
+    function bindReelDiagnostics(scope=document){scope.querySelectorAll('video[data-reel-media]:not([data-reel-bound])').forEach(video=>{video.dataset.reelBound='1';['loadedmetadata','canplay','canplaythrough','playing','stalled','waiting','error'].forEach(eventName=>video.addEventListener(eventName,()=>reelVideoDiagnostics(video,eventName)));if(video.dataset.reelUrl&&/r2\\.cloudflarestorage\\.com/i.test(video.dataset.reelUrl))console.warn('Pulse Reel blocked private R2 render candidate',{reel_id:video.dataset.reelId,src:video.dataset.reelUrl});});}
+    function syncPlayback(){const cards=[...document.querySelectorAll('.reel-card')];const mid=innerHeight/2;let active=null;cards.forEach(card=>{const r=card.getBoundingClientRect();const visible=r.top<mid&&r.bottom>mid;if(visible)active=card;card.querySelectorAll('video').forEach(v=>{v.muted=true;if(v.classList.contains('reel-media'))v.muted=reelsMuted;if(visible)v.play().catch(error=>{reelVideoDiagnostics(v,'play-blocked');console.warn('Pulse Reel playback blocked',error)});else v.pause();});});if(active){const next=active.nextElementSibling?.querySelector('video');if(next)next.load();}}
+    window.retryPulseReelMedia=function(el,id){const card=el.closest('.reel-card');const attempts=Number(el.dataset.retryCount||0);reelVideoDiagnostics(el,'retry-'+attempts);if(attempts<2){el.dataset.retryCount=String(attempts+1);const srcEl=el.tagName==='VIDEO'?el.querySelector('source'):el;const src=srcEl?.getAttribute('src')||el.getAttribute('src')||'';const clean=src.split('?')[0];window.setTimeout(()=>{if(srcEl)srcEl.setAttribute('src',clean+'?retry='+(attempts+1)+'&t='+Date.now());else el.setAttribute('src',clean+'?retry='+(attempts+1)+'&t='+Date.now());if(el.tagName==='VIDEO')el.load();},450*(attempts+1));return}card?.classList.add('is-broken');console.warn('Pulse reel media failed after retry',{id,src:el.currentSrc||el.src,error:el.error?{code:el.error.code,message:el.error.message}:null});}
     function preloadNextReel(){const active=[...document.querySelectorAll('.reel-card')].find(card=>{const r=card.getBoundingClientRect();return r.top<innerHeight/2&&r.bottom>innerHeight/2});const next=active?.nextElementSibling;if(!next)return;next.querySelectorAll('img[loading="lazy"],video').forEach(media=>{if(media.tagName==='VIDEO')media.load();else if(media.dataset.src&&!media.src)media.src=media.dataset.src;});}
     function renderRail(activeLane='for_you',categories=[]){const seen=new Set();const tabs=[...reelTabs,...(categories||[]).map(c=>['category:'+c,c])].filter(([key])=>{if(seen.has(key))return false;seen.add(key);return true});rail.innerHTML=tabs.map(([key,label])=>`<button class="${key===activeLane?'active':''}" data-reel-lane="${esc(key)}" aria-pressed="${key===activeLane?'true':'false'}">${esc(label)}</button>`).join('');rail.querySelector('.active')?.scrollIntoView({block:'nearest',inline:'center'});}
     function setEmpty(lane){const copy=emptyCopy[lane]||['No Reels in this lane yet.','Creators are still warming this category up.'];reelsEmpty.querySelector('h2').textContent=copy[0];reelsEmpty.querySelector('p').textContent=copy[1];}
     function setTabUrl(lane){const u=new URL(location.href);u.searchParams.set('tab',lane);history.replaceState({tab:lane},'',u.pathname+'?'+u.searchParams.toString())}
-    async function loadReels(lane='for_you'){currentLane=lane;renderRail(lane);setTabUrl(lane);reelsLoading?.classList.add('open');try{const isCategory=lane.startsWith('category:');const url='/api/pulse/reels/feed?limit=18&tab='+encodeURIComponent(isCategory?'category':lane)+(isCategory?'&category='+encodeURIComponent(lane.slice(9)):'');const d=await pulseApi(url);const reels=d.reels||[];renderRail(d.lane||lane,d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');setEmpty(d.lane||lane);reelsEmpty.style.display=reels.length?'none':'grid';requestAnimationFrame(syncPlayback)}catch(e){setEmpty(lane);reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}finally{reelsLoading?.classList.remove('open')}}
+    async function loadReels(lane='for_you'){currentLane=lane;renderRail(lane);setTabUrl(lane);reelsLoading?.classList.add('open');try{const isCategory=lane.startsWith('category:');const url='/api/pulse/reels/feed?limit=18&tab='+encodeURIComponent(isCategory?'category':lane)+(isCategory?'&category='+encodeURIComponent(lane.slice(9)):'');const d=await pulseApi(url);const reels=d.reels||[];renderRail(d.lane||lane,d.categories||[]);reelsFeed.innerHTML=reels.map(reelHtml).join('');bindReelDiagnostics(reelsFeed);setEmpty(d.lane||lane);reelsEmpty.style.display=reels.length?'none':'grid';requestAnimationFrame(syncPlayback)}catch(e){setEmpty(lane);reelsEmpty.style.display='grid';reelsEmpty.querySelector('p').textContent=e.message||'Reels are temporarily unavailable.'}finally{reelsLoading?.classList.remove('open')}}
     reelsFeed.addEventListener('scroll',()=>requestAnimationFrame(()=>{syncPlayback();preloadNextReel();}),{passive:true});document.addEventListener('visibilitychange',syncPlayback);
     function fireBurst(x,y){const burst=document.createElement('div');burst.className='reel-fire-burst';burst.textContent='🔥';burst.style.left=x+'px';burst.style.top=y+'px';document.body.appendChild(burst);setTimeout(()=>burst.remove(),760)}
     async function fireReel(id,origin){const d=await pulseApi(`/api/pulse/reels/${id}/react`,{method:'POST',body:JSON.stringify({reaction_type:'fire'})});document.querySelector(`[data-reel-react="${id}"]`)?.classList.toggle('active',!d.removed);document.querySelectorAll(`[data-fire-count="${id}"]`).forEach(n=>n.textContent=(d.reactions||{}).fire||d.fire_count||Number(n.textContent||0)+(d.removed?-1:1));if(origin)fireBurst(origin.clientX||innerWidth/2,origin.clientY||innerHeight/2);return d}
@@ -18998,7 +19249,7 @@ def pulse_reels_page():
     function stopReelCamera(){stopStream(reelCameraStream);reelCameraStream=null;if(reelRecorder&&reelRecorder.state!=='inactive')reelRecorder.stop();cameraOverlay.classList.remove('open')}
     async function capturePhotoBlob(){const canvas=document.getElementById('reelCameraCanvas');canvas.width=cameraPreview.videoWidth||1080;canvas.height=cameraPreview.videoHeight||1920;const ctx=canvas.getContext('2d');ctx.filter=getComputedStyle(document.documentElement).getPropertyValue('--reel-camera-filter')||'none';if(reelFacing==='user'){ctx.translate(canvas.width,0);ctx.scale(-1,1)}ctx.drawImage(cameraPreview,0,0,canvas.width,canvas.height);return new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.94))}
     async function toggleReelRecording(){if(!reelCameraStream){await openReelCamera();return}const btn=document.getElementById('reelRecordBtn');if(reelRecorder&&reelRecorder.state==='recording'){reelRecorder.stop();btn.classList.remove('recording');document.getElementById('reelCameraStatus').textContent='Video captured. Add a caption and post.';return}try{reelChunks=[];reelRecorder=new MediaRecorder(reelCameraStream,{mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'});reelRecorder.ondataavailable=e=>{if(e.data&&e.data.size)reelChunks.push(e.data)};reelRecorder.onstop=()=>{cameraBlob=new Blob(reelChunks,{type:'video/webm'});cameraMime='video/webm'};reelRecorder.start();btn.classList.add('recording');document.getElementById('reelCameraStatus').textContent='Recording Reel. Tap again to stop.'}catch(err){cameraBlob=await capturePhotoBlob();cameraMime='image/jpeg';document.getElementById('reelCameraStatus').textContent='Photo captured. Video recording is unavailable in this browser.'}}
-    async function postCameraReel(){try{if(reelRecorder&&reelRecorder.state==='recording')reelRecorder.stop();await new Promise(r=>setTimeout(r,220));if(!cameraBlob){cameraBlob=await capturePhotoBlob();cameraMime='image/jpeg'}const fd=new FormData();fd.append('file',cameraBlob,cameraMime.includes('video')?'pulse-reel.webm':'pulse-reel.jpg');fd.append('context_type','pulse_reel');fd.append('context_id','camera');fd.append('filter_name',document.querySelector('.reel-filter-chip.active')?.dataset.filter||'clean_hd');const status=document.getElementById('reelCameraStatus');const upload=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:cameraBlob,mediaType:cameraMime,lockKey:'reel-camera-upload',onProgress:s=>{status.textContent=s.message}}):await fetch('/api/pulse/media/upload',{method:'POST',credentials:'same-origin',body:fd}).then(async r=>{const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');return d});status.textContent='Processing media...';const media=upload.media||{};const d=await pulseApi('/api/pulse/reels/create',{method:'POST',body:JSON.stringify({title:'Camera Reel',caption:document.getElementById('reelCameraCaption').value,category:'Community',visibility:'public',post_type:media.media_type||'video',media_ids:[media.id],audio_track_id:selectedSoundId,sound_start_seconds:Number(document.getElementById('soundStart')?.value||0),sound_end_seconds:Number(document.getElementById('soundEnd')?.value||0)})});toast('Posted successfully');status.textContent='Posted successfully';stopReelCamera();if(d.reel){reelsFeed.insertAdjacentHTML('afterbegin',reelHtml(d.reel));reelsEmpty.style.display='none';requestAnimationFrame(syncPlayback)}}catch(err){document.getElementById('reelCameraStatus').textContent=err.message+' Tap Post Reel to retry.';toast(err.message)}}
+    async function postCameraReel(){try{if(reelRecorder&&reelRecorder.state==='recording')reelRecorder.stop();await new Promise(r=>setTimeout(r,220));if(!cameraBlob){cameraBlob=await capturePhotoBlob();cameraMime='image/jpeg'}const fd=new FormData();fd.append('file',cameraBlob,cameraMime.includes('video')?'pulse-reel.webm':'pulse-reel.jpg');fd.append('context_type','pulse_reel');fd.append('context_id','camera');fd.append('filter_name',document.querySelector('.reel-filter-chip.active')?.dataset.filter||'clean_hd');const status=document.getElementById('reelCameraStatus');const upload=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:cameraBlob,mediaType:cameraMime,lockKey:'reel-camera-upload',onProgress:s=>{status.textContent=s.message}}):await fetch('/api/pulse/media/upload',{method:'POST',credentials:'same-origin',body:fd}).then(async r=>{const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');return d});status.textContent='Processing media...';const media=upload.media||{};const d=await pulseApi('/api/pulse/reels/create',{method:'POST',body:JSON.stringify({title:'Camera Reel',caption:document.getElementById('reelCameraCaption').value,category:'Community',visibility:'public',post_type:media.media_type||'video',media_ids:[media.id],audio_track_id:selectedSoundId,sound_start_seconds:Number(document.getElementById('soundStart')?.value||0),sound_end_seconds:Number(document.getElementById('soundEnd')?.value||0)})});toast('Posted successfully');status.textContent='Posted successfully';stopReelCamera();if(d.reel){reelsFeed.insertAdjacentHTML('afterbegin',reelHtml(d.reel));bindReelDiagnostics(reelsFeed);reelsEmpty.style.display='none';requestAnimationFrame(syncPlayback)}}catch(err){document.getElementById('reelCameraStatus').textContent=err.message+' Tap Post Reel to retry.';toast(err.message)}}
     async function openInlineLive(){liveOverlay.classList.add('open');liveOverlay.classList.toggle('is-front',liveFacing==='user');const status=document.getElementById('inlineLiveStatus');try{stopStream(reelLiveStream);status.textContent='Requesting camera and microphone permission...';reelLiveStream=await navigator.mediaDevices.getUserMedia(reelConstraints(liveFacing));livePreview.srcObject=reelLiveStream;status.textContent='Preview ready. Add a title, choose a category, then start Live.'}catch(err){status.textContent='Camera preview unavailable. If your browser blocks inline camera, open /pulse/live.'}}
     function closeInlineLive(){stopStream(reelLiveStream);reelLiveStream=null;liveOverlay.classList.remove('open')}
     async function startInlineLive(){const status=document.getElementById('inlineLiveStatus');try{status.textContent='Checking eligibility and creating live room...';const d=await pulseApi('/api/pulse/live/start',{method:'POST',body:JSON.stringify({title:document.getElementById('inlineLiveTitle').value,category:document.getElementById('inlineLiveCategory').value,thumbnail_url:document.getElementById('inlineLiveThumb').value})});status.textContent='Live room ready.';toast('Live started.');if(d.live_url)location.href=d.live_url}catch(err){status.textContent=err.message||'Live is not available yet.';toast(status.textContent)}}
@@ -19010,7 +19261,7 @@ def pulse_reels_page():
     let previewAudio=null;document.addEventListener('click',e=>{const p=e.target.closest('[data-preview-sound]');if(!p)return;const url=p.dataset.previewSound;if(!url){toast('This sound has no preview yet.');return}if(previewAudio){previewAudio.pause();previewAudio=null}previewAudio=new Audio(url);previewAudio.play().catch(()=>toast('Sound preview is unavailable.'))});
     document.getElementById('soundUploadForm').addEventListener('submit',async e=>{e.preventDefault();const file=document.getElementById('soundUploadFile').files[0];if(!file){toast('Choose an audio file.');return}try{const fd=new FormData();fd.append('file',file);fd.append('title',document.getElementById('soundUploadTitle').value);fd.append('artist',document.getElementById('soundUploadArtist').value);const d=await fetch('/api/pulse/reels/sounds/upload',{method:'POST',credentials:'same-origin',body:fd}).then(async r=>{const data=await r.json();if(!r.ok||data.ok===false)throw new Error(data.message||'Sound upload failed.');return data});selectedSoundId=d.track_id;document.getElementById('selectedSoundLabel').textContent='Sound: '+(d.sound?.title||'Original sound');toast('Original sound uploaded.');loadSounds()}catch(err){toast(err.message)}});
     document.addEventListener('input',e=>{if(e.target.closest('[data-camera-control]'))updateCameraFilter()});
-    document.getElementById('reelUploadForm').addEventListener('submit',async e=>{e.preventDefault();const file=document.getElementById('reelUploadFile').files[0];if(!file){toast('Choose a video or image first.');return}const submit=e.submitter;try{if(submit)submit.disabled=true;const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_reel');fd.append('context_id','draft');toast(file.type?.startsWith('video/')?'Uploading video... 0%':'Uploading image... 0%');const upload=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:submit,lockKey:'reel-upload-modal',onProgress:s=>toast(s.message)}):await fetch('/api/pulse/media/upload',{method:'POST',credentials:'same-origin',body:fd}).then(async r=>{const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');return d});toast('Processing media...');const media=upload.media||{};toast('Publishing...');const d=await pulseApi('/api/pulse/reels/create',{method:'POST',body:JSON.stringify({title:document.getElementById('reelUploadTitle').value,caption:document.getElementById('reelUploadCaption').value,category:document.getElementById('reelUploadCategory').value,visibility:document.getElementById('reelUploadVisibility').value,post_type:(media.media_type||'video'),media_ids:[media.id],audio_track_id:selectedSoundId,sound_start_seconds:Number(document.getElementById('soundStart').value||0),sound_end_seconds:Number(document.getElementById('soundEnd').value||0)})});uploadModal.classList.remove('open');toast('Posted successfully');if(d.reel){reelsFeed.insertAdjacentHTML('afterbegin',reelHtml(d.reel));reelsEmpty.style.display='none';requestAnimationFrame(syncPlayback)}else if(d.next_url)location.href=d.next_url}catch(err){toast((err.message||'Upload failed.')+' Tap publish to retry.')}finally{if(submit)submit.disabled=false}});
+    document.getElementById('reelUploadForm').addEventListener('submit',async e=>{e.preventDefault();const file=document.getElementById('reelUploadFile').files[0];if(!file){toast('Choose a video or image first.');return}const submit=e.submitter;try{if(submit)submit.disabled=true;const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_reel');fd.append('context_id','draft');toast(file.type?.startsWith('video/')?'Uploading video... 0%':'Uploading image... 0%');const upload=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:submit,lockKey:'reel-upload-modal',onProgress:s=>toast(s.message)}):await fetch('/api/pulse/media/upload',{method:'POST',credentials:'same-origin',body:fd}).then(async r=>{const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.message||'Upload failed.');return d});toast('Processing media...');const media=upload.media||{};toast('Publishing...');const d=await pulseApi('/api/pulse/reels/create',{method:'POST',body:JSON.stringify({title:document.getElementById('reelUploadTitle').value,caption:document.getElementById('reelUploadCaption').value,category:document.getElementById('reelUploadCategory').value,visibility:document.getElementById('reelUploadVisibility').value,post_type:(media.media_type||'video'),media_ids:[media.id],audio_track_id:selectedSoundId,sound_start_seconds:Number(document.getElementById('soundStart').value||0),sound_end_seconds:Number(document.getElementById('soundEnd').value||0)})});uploadModal.classList.remove('open');toast('Posted successfully');if(d.reel){reelsFeed.insertAdjacentHTML('afterbegin',reelHtml(d.reel));bindReelDiagnostics(reelsFeed);reelsEmpty.style.display='none';requestAnimationFrame(syncPlayback)}else if(d.next_url)location.href=d.next_url}catch(err){toast((err.message||'Upload failed.')+' Tap publish to retry.')}finally{if(submit)submit.disabled=false}});
     reelsFeed.addEventListener('click',e=>{if(e.target.closest('.reel-action,.reel-follow,.button'))return;const video=e.target.closest('.reel-card')?.querySelector('.reel-media');if(video&&video.tagName==='VIDEO'){reelsMuted=!reelsMuted;video.muted=reelsMuted;toast(reelsMuted?'Muted':'Sound on')}});
     window.addEventListener('pagehide',()=>{stopReelCamera();closeInlineLive();if(previewAudio)previewAudio.pause()});
     loadReels(new URLSearchParams(location.search).get('tab')||'for_you');
@@ -20079,6 +20330,122 @@ def api_pulse_live_browser_publish(live_id):
         except Exception:
             pass
         return jsonify({"ok": False, "message": "Live media could not publish.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/webrtc/signal", methods=["POST"])
+def api_pulse_live_webrtc_signal(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    trace_id = secrets.token_hex(6)
+    peer_id = clean_html(payload.get("peer_id") or "")[:96].strip()
+    target_peer_id = clean_html(payload.get("target_peer_id") or "")[:96].strip()
+    sender_role = clean_html(payload.get("role") or "viewer").lower()[:24]
+    event_type = clean_html(payload.get("event_type") or "")[:32].strip().lower()
+    signal_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+    if sender_role not in {"publisher", "viewer"}:
+        return jsonify({"ok": False, "message": "Invalid live signal role.", "trace_id": trace_id}), 400
+    if event_type not in {"offer", "answer", "candidate", "ready", "bye"}:
+        return jsonify({"ok": False, "message": "Invalid live signal event.", "trace_id": trace_id}), 400
+    if not peer_id:
+        return jsonify({"ok": False, "message": "Missing live signal peer id.", "trace_id": trace_id}), 400
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT id,user_id,status FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        if sender_role == "publisher" and int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
+            conn.close()
+            return api_error("Only the host can send publisher live signals.", 403)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute(
+            """
+            INSERT INTO pulse_live_webrtc_signals
+                (live_id, sender_user_id, peer_id, target_peer_id, sender_role, event_type, payload_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (live_id, int(user["user_id"] or 0), peer_id, target_peer_id or ("publisher" if sender_role == "viewer" else "all"), sender_role, event_type, json.dumps(signal_payload, default=str)[:120000], now),
+        )
+        signal_id = int(cur.lastrowid)
+        cur.execute("DELETE FROM pulse_live_webrtc_signals WHERE live_id=? AND id < ?", (live_id, max(0, signal_id - 500)))
+        conn.commit(); conn.close()
+        logging.info(
+            "PULSE_LIVE_WEBRTC_SIGNAL trace_id=%s live_id=%s user_id=%s role=%s peer_id=%s target=%s event=%s signal_id=%s",
+            trace_id, live_id, user.get("user_id"), sender_role, peer_id, target_peer_id, event_type, signal_id,
+        )
+        return jsonify({"ok": True, "signal_id": signal_id, "trace_id": trace_id})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_WEBRTC_SIGNAL_FAILED trace_id=%s live_id=%s user_id=%s error=%s", trace_id, live_id, user.get("user_id"), exc)
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "message": "Live signal could not be sent.", "trace_id": trace_id}), 500
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/webrtc/signals", methods=["GET"])
+def api_pulse_live_webrtc_signals(live_id):
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    trace_id = secrets.token_hex(6)
+    peer_id = clean_html(request.args.get("peer_id") or "")[:96].strip()
+    role = clean_html(request.args.get("role") or "viewer").lower()[:24]
+    after_id = max(0, safe_int(request.args.get("after_id"), 0))
+    if role not in {"publisher", "viewer"} or not peer_id:
+        return jsonify({"ok": False, "message": "Invalid live signal polling request.", "trace_id": trace_id}), 400
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT id,user_id,status FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        if role == "publisher" and int(live.get("user_id") or 0) != int(user["user_id"] or 0) and not admin_current_user():
+            conn.close()
+            return api_error("Only the host can receive publisher live signals.", 403)
+        if role == "publisher":
+            cur.execute(
+                """
+                SELECT * FROM pulse_live_webrtc_signals
+                WHERE live_id=? AND id>? AND sender_role='viewer'
+                  AND COALESCE(target_peer_id,'') IN ('', 'publisher', ?)
+                ORDER BY id ASC LIMIT 80
+                """,
+                (live_id, after_id, peer_id),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT * FROM pulse_live_webrtc_signals
+                WHERE live_id=? AND id>? AND sender_role='publisher'
+                  AND COALESCE(target_peer_id,'') IN (?, 'all')
+                ORDER BY id ASC LIMIT 80
+                """,
+                (live_id, after_id, peer_id),
+            )
+        rows = []
+        for row in cur.fetchall():
+            item = dict(row)
+            try:
+                item["payload"] = json.loads(item.pop("payload_json") or "{}")
+            except Exception:
+                item["payload"] = {}
+            rows.append(item)
+        conn.close()
+        return jsonify({"ok": True, "signals": rows, "last_id": rows[-1]["id"] if rows else after_id, "trace_id": trace_id})
+    except Exception as exc:
+        logging.exception("PULSE_LIVE_WEBRTC_SIGNALS_FAILED trace_id=%s live_id=%s user_id=%s role=%s error=%s", trace_id, live_id, user.get("user_id"), role, exc)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({"ok": False, "message": "Live signals could not load.", "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/api/pulse/live/<int:live_id>/chat", methods=["GET", "POST"])
@@ -21596,7 +21963,16 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
       const qs = selector => root.querySelector(selector) || document.querySelector(selector);
       const escapeHtml = value => String(value || "").replace(/[&<>"']/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
       const postJson = (url, payload = {}) => fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, credentials:"same-origin", cache:"no-store", body:JSON.stringify(payload) }).then(r => r.json().then(j => { if (!r.ok || j.ok === false) throw new Error(j.message || "Request failed."); return j; }));
-      const state = { activeConversationId:Number(root.dataset.activeId || 0), activeKind:"", currentUserId:0, lastMessageId:0, polling:false };
+      const state = { activeConversationId:Number(root.dataset.activeId || 0), activeRoomId:"", activeKind:"", currentUserId:0, lastMessageId:0, polling:false };
+      function chatTrace(event, detail = {}) {
+        console.info("Pulse Messenger diagnostic", {
+          event,
+          conversation_id: state.activeConversationId || 0,
+          room_id: state.activeRoomId || "",
+          kind: state.activeKind || "",
+          ...detail
+        });
+      }
       function friendlyTime(value) {
         if (!value) return "";
         const date = new Date(value);
@@ -21622,6 +21998,24 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         form.body.disabled = !enabled;
         form.querySelector("button").disabled = !enabled;
         form.body.placeholder = enabled ? "Type a message..." : "Choose a chat first.";
+      }
+      function messageLoadUrl(conversationId, kind, roomId, sinceId = 0) {
+        if (kind === "room") {
+          const room = encodeURIComponent(roomId || "pulse-general");
+          return `/api/pulse/messages/rooms/${room}/messages?limit=80${sinceId ? `&since_id=${sinceId}` : ""}`;
+        }
+        return `/api/pulse/messages/${Number(conversationId)}/messages?limit=80${sinceId ? `&since_id=${sinceId}` : ""}`;
+      }
+      function messageSendUrl(conversationId, kind, roomId) {
+        if (kind === "room") return `/api/pulse/messages/rooms/${encodeURIComponent(roomId || "pulse-general")}/messages`;
+        return `/api/pulse/messages/${Number(conversationId)}/send`;
+      }
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, { cache:"no-store", credentials:"same-origin", ...options });
+        const data = await response.json().catch(() => ({}));
+        chatTrace("http", { endpoint:url, status:response.status, ok:response.ok, body_ok:data.ok !== false, trace_id:data.trace_id || "", message_count:(data.messages || data.items || []).length });
+        if (!response.ok || data.ok === false) throw new Error(data.message || data.error || "Unable to load messages.");
+        return data;
       }
       function setThreadChrome(title, subtitle, mode) {
         qs("[data-thread-title]").textContent = title || "Pulse chat";
@@ -21704,33 +22098,31 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (!conversationId && kind !== "room") return;
         state.activeConversationId = Number(conversationId || 0);
         state.activeKind = kind;
+        state.activeRoomId = roomId || "";
         state.lastMessageId = 0;
         root.classList.add("is-thread-open");
         qs("[data-thread-shell]").classList.add("is-open");
         qs("[data-chat-thread]").innerHTML = '<div class="pulse-dashboard-empty">Loading messages...</div>';
         setComposer(false);
         try {
-          let url = `/api/messages/${Number(conversationId)}`;
-          if (kind === "room" && roomId) url = `/api/chat-room/${encodeURIComponent(roomId)}/messages?limit=80`;
-          const data = await fetch(url, { cache:"no-store", credentials:"same-origin" }).then(async r => {
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok || j.ok === false) throw new Error(j.message || "Unable to load messages.");
-            return j;
-          });
+          const data = await fetchJson(messageLoadUrl(conversationId, kind, roomId));
           state.currentUserId = data.current_user_id || data.me?.user_id || Number(root.dataset.currentUser || 0);
           state.activeConversationId = Number(data.conversation_id || data.conversation?.conversation_id || conversationId || 0);
           const conversation = data.conversation || {};
           const rawType = String(conversation.conversation_type || kind || "direct").toLowerCase();
           const resolvedKind = rawType === "room" ? "room" : (rawType.includes("group") || rawType.includes("community") || rawType.includes("creator") || rawType.includes("live")) ? "group" : "direct";
           state.activeKind = resolvedKind;
+          state.activeRoomId = roomId || conversation.room_key || conversation.room_id || state.activeRoomId || "";
           const title = conversation.title || (resolvedKind === "room" ? "Pulse room" : resolvedKind === "group" ? "Group chat" : "Private conversation");
           setThreadChrome(title, resolvedKind === "room" ? "Open Pulse room" : resolvedKind === "group" ? "Group conversation" : "Private conversation", resolvedKind === "room" ? "Room" : resolvedKind === "group" ? "Group" : "Direct");
           renderMessages(data.messages || data.items || []);
+          chatTrace("hydrated", { kind:state.activeKind, room_id:state.activeRoomId, message_count:(data.messages || data.items || []).length });
           setComposer(true);
           if (state.activeConversationId) history.replaceState(null, "", "/pulse/messages/" + state.activeConversationId);
         } catch (error) {
           qs("[data-chat-thread]").innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
           setThreadChrome("Message loading failed", "Use another chat or try again.", "Error");
+          chatTrace("hydrate_failed", { error:error.message || String(error), kind, room_id:roomId });
         }
       }
       async function openRoom(roomId) {
@@ -21741,9 +22133,10 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         if (!state.activeConversationId || state.polling || document.hidden) return;
         state.polling = true;
         try {
-          const data = await fetch(`/api/messages/${state.activeConversationId}?since_id=${state.lastMessageId}`, { cache:"no-store", credentials:"same-origin" }).then(r => r.json());
+          const data = await fetchJson(messageLoadUrl(state.activeConversationId, state.activeKind, state.activeRoomId, state.lastMessageId));
           if (data.ok) appendMessages(data.messages || []);
         } catch (error) {
+          chatTrace("poll_failed", { error:error.message || String(error) });
         } finally {
           state.polling = false;
         }
@@ -21794,11 +22187,11 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           qs("[data-chat-thread]").scrollTop = qs("[data-chat-thread]").scrollHeight;
           form.reset();
           try {
-            const result = await postJson(`/api/messages/${state.activeConversationId}/send`, { body });
+            const result = await postJson(messageSendUrl(state.activeConversationId, state.activeKind, state.activeRoomId), { body, message: body });
             const pending = qs(`[data-message-id="${tempId}"]`);
             if (pending) pending.remove();
             if (result.message) appendMessages([result.message]);
-            else await openConversation(state.activeConversationId, state.activeKind);
+            else await openConversation(state.activeConversationId, state.activeKind, state.activeRoomId);
             if (state.activeKind === "direct") loadConversations();
             if (state.activeKind === "group") loadGroups();
           } catch (error) {
@@ -38682,6 +39075,19 @@ def init_db():
         ("device_json", "TEXT"),
     ], conn=conn)
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_live_webrtc_signals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        live_id INTEGER,
+        sender_user_id INTEGER DEFAULT 0,
+        peer_id TEXT,
+        target_peer_id TEXT,
+        sender_role TEXT,
+        event_type TEXT,
+        payload_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_premium_profiles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER UNIQUE,
@@ -38983,6 +39389,8 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_sessions_user_status ON pulse_live_sessions(user_id, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_chat_live ON pulse_live_chat(live_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_viewers_live ON pulse_live_viewers(live_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_webrtc_signals_live_target ON pulse_live_webrtc_signals(live_id, target_peer_id, id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_webrtc_signals_live_role ON pulse_live_webrtc_signals(live_id, sender_role, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_destinations_user ON pulse_live_destinations(user_id, platform, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_restream_live ON pulse_live_restream_targets(live_id, platform, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_archive_shares_live ON pulse_live_archive_shares(live_id, status)")

@@ -53,6 +53,9 @@ def main():
         "<source src=",
         "Trace media-",
         "pulseMediaBreath",
+        "pulseGalaxyDepth",
+        "pulseGalaxyStreak",
+        "radial-gradient(ellipse at 50% 105%",
     ]:
         expect(token in source + cinematic_css + cinematic_js, f"cinematic media atmosphere present: {token}")
     upload_progress = (ROOT / "services/upload_progress_service.py").read_text(encoding="utf-8")

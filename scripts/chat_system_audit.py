@@ -30,7 +30,9 @@ def main():
     expect("pulse-dashboard-chat" in active_pulse_chat, "Pulse Messenger uses restored Dashboard chat shell")
     expect("/api/chat/threads" in active_pulse_chat, "Pulse Messenger loads Dashboard conversation threads")
     expect("/api/chat/start" in active_pulse_chat, "Pulse Messenger starts private chats through Dashboard chat API")
-    expect("/api/messages/" in active_pulse_chat, "Pulse Messenger uses stable Dashboard-compatible message load/send bridge")
+    expect("messageLoadUrl" in active_pulse_chat and "messageSendUrl" in active_pulse_chat, "Pulse Messenger uses unified message load/send bridge")
+    expect("/api/pulse/messages/${Number(conversationId)}/messages" in active_pulse_chat, "direct and group messages use canonical Pulse endpoint")
+    expect("/api/pulse/messages/rooms/${room}/messages" in active_pulse_chat, "room messages use canonical Pulse endpoint")
     expect("/api/pulse/chatrooms" in active_pulse_chat and "/api/pulse/messages/group-conversations" in active_pulse_chat, "rooms and groups remain wired")
     expect("pulseMessengerPendingV2" not in active_pulse_chat, "broken Pulse recovery queue is not active in Pulse Messenger shell")
     for primitive in [

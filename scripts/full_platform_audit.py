@@ -29,6 +29,7 @@ AUDIT_PLAN = [
     ("media attachments", "media_attachment_audit.py"),
     ("daily mentor", "daily_mentor_audit.py"),
     ("feed", "pulse_feed_audit.py"),
+    ("pulse search", "pulse_search_audit.py"),
     ("global feed", "pulse_global_feed_audit.py"),
     ("visibility", "pulse_visibility_audit.py"),
     ("cross-device feed", "cross_device_feed_audit.py"),

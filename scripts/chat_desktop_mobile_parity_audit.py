@@ -33,8 +33,10 @@ def main() -> None:
     for name in required_functions:
         expect(re.search(rf"function\s+{name}\s*\(", messenger_slice) is not None or re.search(rf"async\s+function\s+{name}\s*\(", messenger_slice) is not None, f"{name} exists")
 
-    expect('/api/messages/${state.activeConversationId}/send' in messenger_slice, "all sends use Dashboard-compatible selected conversation id")
-    expect("/api/chat-room/${encodeURIComponent(roomId)}/messages?limit=80" in messenger_slice, "room loads use stable room bridge")
+    expect("messageSendUrl(state.activeConversationId, state.activeKind, state.activeRoomId)" in messenger_slice, "all sends use unified selected thread send route")
+    expect("/api/pulse/messages/${Number(conversationId)}/messages" in messenger_slice, "direct and group loads use canonical Pulse message endpoint")
+    expect("/api/pulse/messages/rooms/${room}/messages" in messenger_slice, "room loads use canonical Pulse room endpoint")
+    expect("chatTrace(\"http\"" in messenger_slice and "trace_id" in messenger_slice, "message pipeline emits endpoint/status/trace diagnostics")
     expect("/api/chat/threads" in messenger_slice and "/api/pulse/messages/conversations" in messenger_slice, "desktop and mobile share same direct chat list loader")
     expect("setInterval(pollActiveConversation, 1800)" in messenger_slice, "HTTP polling keeps messages fresh")
     expect("document.addEventListener(\"visibilitychange\"" in messenger_slice, "visibility recovery polls active conversation")
