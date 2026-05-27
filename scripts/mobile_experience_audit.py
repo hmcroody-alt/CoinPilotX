@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit mobile-first Pulse homepage, Pulse Waves, safe-area, and non-decorative controls."""
+"""Audit mobile-first Pulse homepage, Status, safe-area, and non-decorative controls."""
 
 from __future__ import annotations
 
@@ -27,24 +27,20 @@ def main():
     combined = source + "\n" + status_css + "\n" + mobile_css
     require("env(safe-area-inset-top)" in combined and "env(safe-area-inset-bottom)" in combined, "mobile safe-area rules are present")
     require("100dvh" in combined, "dynamic viewport height is used for fullscreen mobile surfaces")
-    require("pulse-status-mode-picker" in status_css and "pulse-status-bottom-bar" in status_css, "Pulse Waves mobile launcher has immersive controls")
-    require("pulseStatusMedia" in source and "capture" not in source[source.find("pulseStatusMedia") : source.find("pulseStatusMedia") + 320], "Photo Wave upload does not force camera capture")
+    require("pulse-status-mode-picker" in status_css and "pulse-status-bottom-bar" in status_css, "Status mobile editor has immersive controls")
+    require("pulseStatusMedia" in source and "capture" not in source[source.find("pulseStatusMedia") : source.find("pulseStatusMedia") + 320], "Create Status upload does not force camera capture")
     require("pulse_environment_engine.js" in source and "prefers-reduced-motion" in env_js, "ambient environment engine is loaded and respects reduced motion")
     require(
         "input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source.replace(" ", ""),
         "homepage raw Choose File controls are globally hidden behind custom triggers",
     )
-    require("data-status-start='text'" in source and "data-status-start='upload'" in source and "routeStatusIntent" in source, "Pulse Wave creation has the strict Text/Photo choices")
-    require(source.count("data-status-start=") == 2, "mobile Wave launcher exposes only two primary choices")
-    require("Add Music" in source and "Add Voice Note" in source and ".pulse-wave-secondary-controls" in status_css, "secondary Wave tools stay subtle on mobile")
-    require("Voice Wave" not in source and "Mood Wave" not in source and "Live Wave" not in source and "AI Wave" not in source, "old complex Wave actions are not visible")
-    require("data-wave-step" in source and ".pulse-wave-step" in status_css and "STEP 1 OF 3" not in source, "mobile Wave flow has non-text progress anchor")
-    require("pulse-wave-text-canvas" in source and ".pulse-wave-text-canvas" in status_css, "mobile Text Wave uses immersive writing canvas")
-    require("PulseWaveComponents" in source, "mobile Wave flow uses native dynamic components")
-    require("pulse-wave-preview-live" in source and ".pulse-wave-preview-live" in status_css, "mobile Photo Wave uses real selected media preview")
-    require("Just now · Public" not in source and "Preview your Wave" not in source, "mobile Wave preview does not render fake mockup card copy")
-    require("Create a Wave" not in source and "border: 1px dashed" not in status_css, "mobile Wave UI does not expose template labels or dashed guides")
-    require("pulseWaveAtmosphere" in status_css and "pulseWaveFloat" in status_css, "mobile Wave atmosphere uses lightweight motion")
+    require(
+        "data-status-start='upload'" in source
+        and "data-status-start='text'" in source
+        and '"Camera", "Capture now", "◎", "camera"' in source
+        and "routeStatusIntent" in source,
+        "Status creator and camera actions are real, separated controls",
+    )
     print("mobile experience audit ok")
 
 

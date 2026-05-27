@@ -325,7 +325,7 @@
 
 .pulse-status-preview {
   min-height: 52px;
-  border: 1px solid rgba(110, 223, 246, .18);
+  border: 1px dashed rgba(110, 223, 246, .26);
   border-radius: 16px;
   display: grid;
   place-items: center;
@@ -351,12 +351,9 @@
   align-content: center;
   gap: 26px;
   padding: max(88px, env(safe-area-inset-top) + 68px) 18px max(88px, env(safe-area-inset-bottom) + 72px);
-  background:
-    radial-gradient(circle at 18% 18%, rgba(110, 223, 246, .22), transparent 28rem),
-    radial-gradient(circle at 82% 82%, rgba(54, 229, 143, .14), transparent 24rem),
-    linear-gradient(145deg, rgba(5, 11, 20, .98), rgba(8, 20, 34, .98));
-  color: #f2fbff;
-  backdrop-filter: blur(18px);
+  background: #eef0f3;
+  color: #26323d;
+  backdrop-filter: none;
 }
 
 .pulse-status-mode-picker.is-hidden {
@@ -374,7 +371,7 @@
 .pulse-status-mode-picker p {
   margin: 8px 0 0;
   max-width: 420px;
-  color: rgba(223, 252, 255, .72);
+  color: #69727c;
   font-weight: 750;
   text-align: center;
 }
@@ -387,12 +384,10 @@
 }
 
 .pulse-status-mode-picker button {
-  min-height: clamp(210px, 34vh, 300px);
-  border: 1px solid rgba(110, 223, 246, .22);
-  border-radius: 24px;
-  background:
-    linear-gradient(145deg, rgba(12, 27, 49, .86), rgba(8, 18, 31, .72)),
-    radial-gradient(circle at 20% 20%, rgba(110, 223, 246, .22), transparent 60%);
+  min-height: clamp(260px, 42vh, 360px);
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #5939f3 0%, #75d9ff 100%);
   color: #fff;
   display: grid;
   place-items: center;
@@ -400,7 +395,7 @@
   gap: 14px;
   text-align: center;
   padding: 22px;
-  box-shadow: 0 18px 46px rgba(0, 0, 0, .28);
+  box-shadow: 0 18px 46px rgba(62, 83, 104, .16);
   transition: transform .18s ease, box-shadow .18s ease;
 }
 
@@ -411,9 +406,7 @@
 }
 
 .pulse-status-choice-text {
-  background:
-    linear-gradient(145deg, rgba(16, 40, 68, .88), rgba(15, 30, 51, .76)),
-    radial-gradient(circle at 24% 16%, rgba(54, 229, 143, .22), transparent 60%) !important;
+  background: linear-gradient(145deg, #a945ee 0%, #f14684 100%) !important;
 }
 
 .pulse-status-mode-picker button span {
@@ -447,7 +440,7 @@
 }
 
 .pulse-status-form.is-choosing {
-  background: #050b14;
+  background: #eef0f3;
 }
 
 .pulse-status-form.is-choosing .pulse-status-progress,
@@ -455,7 +448,6 @@
 .pulse-status-form.is-choosing .pulse-status-caption-layer,
 .pulse-status-form.is-choosing .pulse-status-tool-rail,
 .pulse-status-form.is-choosing .pulse-status-overlay-layer,
-.pulse-status-form.is-choosing .pulse-wave-secondary-controls,
 .pulse-status-form.is-choosing .pulse-status-effects-tray,
 .pulse-status-form.is-choosing .pulse-status-bottom-bar,
 .pulse-status-form.is-choosing .pulse-status-upload-progress {
@@ -843,7 +835,7 @@ body.status-editor-open {
 .pulse-status-caption-layer {
   position: absolute;
   left: max(18px, env(safe-area-inset-left));
-  right: max(18px, env(safe-area-inset-right));
+  right: max(110px, env(safe-area-inset-right) + 94px);
   bottom: calc(132px + env(safe-area-inset-bottom));
   z-index: 8;
 }
@@ -925,7 +917,7 @@ body.status-editor-open {
   bottom: max(18px, env(safe-area-inset-bottom));
   z-index: 12;
   display: grid;
-  grid-template-columns: minmax(90px, auto) minmax(150px, 1fr);
+  grid-template-columns: minmax(88px, auto) minmax(70px, auto) minmax(104px, auto) minmax(104px, 1fr);
   gap: 10px;
   align-items: center;
 }
@@ -934,30 +926,6 @@ body.status-editor-open {
 .pulse-status-bottom-bar button {
   min-height: 50px;
   border-radius: 18px;
-}
-
-.pulse-wave-secondary-controls {
-  position: absolute;
-  left: max(18px, env(safe-area-inset-left));
-  right: max(18px, env(safe-area-inset-right));
-  bottom: calc(88px + env(safe-area-inset-bottom));
-  z-index: 12;
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  pointer-events: auto;
-}
-
-.pulse-wave-secondary-controls button {
-  min-height: 36px;
-  border-radius: 999px;
-  border: 1px solid rgba(110, 223, 246, .18);
-  background: rgba(0, 0, 0, .32);
-  color: rgba(242, 251, 255, .86);
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 850;
-  backdrop-filter: blur(12px);
 }
 
 .pulse-status-bottom-bar select {
@@ -1020,705 +988,6 @@ body.status-editor-open {
   box-shadow: 0 0 0 2px rgba(54, 229, 143, .82), 0 18px 42px rgba(54, 229, 143, .22);
 }
 
-.pulse-core-launcher {
-  position: fixed;
-  right: clamp(14px, 2.2vw, 28px);
-  bottom: calc(96px + env(safe-area-inset-bottom));
-  z-index: 32;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 52px;
-  padding: 0 16px;
-  border: 1px solid rgba(110, 223, 246, .42);
-  border-radius: 999px;
-  color: #06101b;
-  background: linear-gradient(135deg, #36e58f, #6edff6);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, .34), 0 0 34px rgba(110, 223, 246, .22);
-  font-weight: 950;
-  cursor: pointer;
-  animation: pulseCoreRipple 2.8s ease-in-out infinite;
-}
-
-.pulse-core-launcher span {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .72);
-}
-
-.pulse-core-launcher b {
-  white-space: nowrap;
-}
-
-.pulse-wave-sheet .pulse-status-mode-grid {
-  width: min(100%, 680px);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.pulse-wave-sheet .pulse-status-choice-card small {
-  display: block;
-  margin-top: 5px;
-  color: rgba(223, 252, 255, .72);
-  font-size: 12px;
-}
-
-.pulse-ai-story-preview [data-wave-mood] {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 5px;
-  min-height: 34px;
-  border: 1px solid rgba(110, 223, 246, .2);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .08);
-  color: #f2fbff;
-  padding: 6px 10px;
-}
-
-.pulse-status-close {
-  position: absolute;
-  top: max(18px, env(safe-area-inset-top));
-  right: max(18px, env(safe-area-inset-right));
-  z-index: 24;
-  width: 54px;
-  height: 54px;
-  min-height: 54px;
-  border-radius: 999px;
-  border: 1px solid rgba(174, 197, 255, .18);
-  background: rgba(8, 15, 30, .48);
-  color: rgba(246, 251, 255, .92);
-  font-size: 32px;
-  line-height: 1;
-  backdrop-filter: blur(18px);
-  box-shadow: inset 0 0 22px rgba(255, 255, 255, .04), 0 16px 42px rgba(0, 0, 0, .32);
-}
-
-.pulse-wave-step {
-  position: absolute;
-  top: max(30px, env(safe-area-inset-top));
-  left: 50%;
-  z-index: 25;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 7px;
-  width: auto;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.pulse-wave-step::after {
-  content: "";
-  display: block;
-  width: 78px;
-  height: 5px;
-  border-radius: 999px;
-  background:
-    linear-gradient(90deg, #5fe7ff 0 30%, transparent 30% 37%, #b65cff 37% 67%, transparent 67% 74%, rgba(255, 255, 255, .22) 74%);
-}
-
-.pulse-status-form[data-wave-state="selecting_wave_type"] .pulse-wave-step::after {
-  background:
-    linear-gradient(90deg, #b65cff 0 30%, transparent 30% 37%, rgba(255, 255, 255, .2) 37% 67%, transparent 67% 74%, rgba(255, 255, 255, .16) 74%);
-}
-
-.pulse-status-form.is-text-wave .pulse-wave-step::after {
-  background:
-    linear-gradient(90deg, #b65cff 0 30%, transparent 30% 37%, #5fe7ff 37% 67%, transparent 67% 74%, rgba(255, 255, 255, .16) 74%);
-}
-
-.pulse-status-form.is-previewing .pulse-wave-step::after,
-.pulse-status-form.is-publishing-wave .pulse-wave-step::after {
-  background:
-    linear-gradient(90deg, #5fe7ff 0 30%, transparent 30% 37%, #b65cff 37% 67%, transparent 67% 74%, #b65cff 74%);
-}
-
-.pulse-status-editor .pulse-status-stage {
-  isolation: isolate;
-  background:
-    radial-gradient(circle at 52% 98%, rgba(153, 57, 255, .42), transparent 18%),
-    radial-gradient(circle at 82% 35%, rgba(33, 219, 255, .18), transparent 26%),
-    radial-gradient(circle at 16% 52%, rgba(181, 45, 255, .2), transparent 28%),
-    linear-gradient(180deg, #020713 0%, #061225 48%, #02050c 100%);
-}
-
-.pulse-status-editor .pulse-status-stage::before,
-.pulse-status-editor .pulse-status-stage::after {
-  content: "";
-  position: absolute;
-  inset: -18%;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.pulse-status-editor .pulse-status-stage::before {
-  background:
-    linear-gradient(115deg, transparent 15%, rgba(143, 57, 255, .22) 31%, transparent 43%),
-    linear-gradient(68deg, transparent 26%, rgba(76, 224, 255, .16) 44%, transparent 57%),
-    radial-gradient(circle at 50% 82%, rgba(81, 236, 255, .14), transparent 24%);
-  filter: blur(16px);
-  animation: pulseWaveAtmosphere 9s ease-in-out infinite alternate;
-}
-
-.pulse-status-editor .pulse-status-stage::after {
-  background:
-    radial-gradient(circle, rgba(70, 229, 165, .84) 0 2px, transparent 3px) 28px max(28px, env(safe-area-inset-top)) / 34px 34px no-repeat,
-    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, .08), transparent 2px),
-    radial-gradient(circle at 74% 46%, rgba(97, 228, 255, .1), transparent 2px),
-    radial-gradient(circle at 36% 72%, rgba(179, 79, 255, .1), transparent 2px);
-  background-size: 112px 112px, 190px 240px, 260px 210px, 170px 190px;
-  opacity: .5;
-  animation: pulseWaveStars 14s linear infinite;
-}
-
-.pulse-status-form[data-wave-state="selecting_wave_type"] {
-  background:
-    radial-gradient(circle at 50% 88%, rgba(67, 236, 186, .4), transparent 18%),
-    radial-gradient(circle at 22% 58%, rgba(110, 223, 246, .16), transparent 26%),
-    radial-gradient(circle at 0% 68%, rgba(150, 50, 255, .18), transparent 30%),
-    linear-gradient(180deg, #020711 0%, #071322 56%, #02070d 100%);
-}
-
-.pulse-status-form.is-text-wave,
-.pulse-status-form.is-photo-wave {
-  background:
-    radial-gradient(circle at 78% 14%, rgba(31, 224, 170, .22), transparent 28%),
-    radial-gradient(circle at 8% 42%, rgba(170, 35, 185, .24), transparent 28%),
-    linear-gradient(180deg, #020711 0%, #061323 58%, #02050c 100%);
-}
-
-.pulse-status-mode-picker {
-  z-index: 5;
-  place-items: stretch;
-  align-content: end;
-  padding: max(250px, 34dvh) clamp(18px, 7vw, 62px) max(78px, env(safe-area-inset-bottom) + 54px);
-  background:
-    radial-gradient(circle at 50% 94%, rgba(58, 235, 182, .42), transparent 16%),
-    radial-gradient(circle at 18% 62%, rgba(101, 218, 231, .16), transparent 28%),
-    radial-gradient(circle at 2% 70%, rgba(160, 49, 255, .18), transparent 30%),
-    radial-gradient(circle at 86% 70%, rgba(100, 35, 188, .12), transparent 26%),
-    linear-gradient(180deg, rgba(3, 8, 20, .98), rgba(4, 15, 26, .98) 54%, rgba(2, 5, 12, .99));
-  overflow: hidden;
-}
-
-.pulse-status-mode-picker::before,
-.pulse-status-mode-picker::after {
-  content: "";
-  position: absolute;
-  inset: -18%;
-  pointer-events: none;
-  background:
-    linear-gradient(115deg, transparent 12%, rgba(140, 68, 255, .22) 32%, transparent 48%),
-    linear-gradient(70deg, transparent 27%, rgba(76, 224, 255, .16) 45%, transparent 62%);
-  filter: blur(14px);
-  opacity: .86;
-  animation: pulseWaveAtmosphere 8s ease-in-out infinite alternate;
-}
-
-.pulse-status-mode-picker::after {
-  filter: blur(28px);
-  opacity: .48;
-  animation-duration: 12s;
-  animation-direction: alternate-reverse;
-}
-
-.pulse-wave-handle,
-.pulse-status-mode-copy,
-.pulse-status-mode-grid,
-.pulse-wave-privacy {
-  position: relative;
-  z-index: 2;
-}
-
-.pulse-wave-handle {
-  justify-self: center;
-  width: 82px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .44);
-  box-shadow: 0 0 22px rgba(255, 255, 255, .16);
-}
-
-.pulse-status-mode-copy {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  text-align: center;
-}
-
-.pulse-wave-mark {
-  width: 94px;
-  height: 94px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  font-size: 46px;
-  background:
-    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, .32), transparent 22%),
-    radial-gradient(circle, rgba(90, 226, 255, .34), rgba(88, 62, 255, .14) 58%, transparent 72%);
-  filter: drop-shadow(0 0 28px rgba(92, 226, 255, .46));
-  animation: pulseWaveFloat 3.8s ease-in-out infinite;
-}
-
-.pulse-status-mode-picker h3 {
-  font-size: clamp(42px, 8.5vw, 66px);
-  background: linear-gradient(105deg, #fff, #a9f8ff 48%, #a88aff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 18px 44px rgba(0, 0, 0, .34);
-}
-
-.pulse-status-mode-picker p {
-  margin: 0;
-  font-size: clamp(17px, 3.4vw, 24px);
-  color: rgba(235, 242, 255, .72);
-}
-
-.pulse-status-mode-grid {
-  width: min(100%, 720px);
-  justify-self: center;
-  grid-template-columns: 1fr;
-  gap: clamp(18px, 4vh, 30px);
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-card {
-  grid-template-columns: minmax(0, 1fr) 48px;
-  place-items: center start;
-  min-height: clamp(158px, 19vh, 210px);
-  border-radius: 34px;
-  padding: clamp(18px, 4vw, 36px);
-  text-align: left;
-  background:
-    radial-gradient(circle at 10% 20%, rgba(197, 65, 255, .34), transparent 34%),
-    linear-gradient(120deg, rgba(71, 23, 108, .66), rgba(10, 45, 91, .54) 78%);
-  border-color: rgba(169, 109, 255, .48);
-  box-shadow: inset 0 0 42px rgba(255, 255, 255, .035), 0 26px 70px rgba(0, 0, 0, .34);
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-media {
-  background:
-    radial-gradient(circle at 12% 20%, rgba(48, 255, 223, .26), transparent 36%),
-    linear-gradient(120deg, rgba(10, 63, 78, .68), rgba(8, 42, 76, .56) 78%);
-  border-color: rgba(64, 240, 229, .44);
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-card span {
-  display: none;
-  width: clamp(92px, 18vw, 124px);
-  height: clamp(92px, 18vw, 124px);
-  border: 2px solid rgba(187, 96, 255, .74);
-  background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, .24), transparent 20%),
-    radial-gradient(circle, rgba(183, 65, 255, .3), rgba(26, 23, 79, .78));
-  color: #fff;
-  font-size: clamp(38px, 7vw, 52px);
-  box-shadow: 0 0 40px rgba(189, 75, 255, .34);
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-media span {
-  border-color: rgba(65, 255, 231, .74);
-  background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, .24), transparent 20%),
-    radial-gradient(circle, rgba(42, 255, 223, .26), rgba(13, 55, 75, .78));
-  box-shadow: 0 0 40px rgba(51, 243, 222, .3);
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-card b {
-  max-width: none;
-  font-size: clamp(30px, 5.3vw, 40px);
-  line-height: 1.05;
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-card small {
-  max-width: 290px;
-  margin-top: 10px;
-  color: rgba(236, 244, 255, .72);
-  font-size: clamp(17px, 3vw, 23px);
-  line-height: 1.34;
-}
-
-.pulse-status-mode-picker button.pulse-status-choice-card i {
-  justify-self: end;
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .08);
-  color: rgba(255, 255, 255, .88);
-  font-size: 46px;
-  font-style: normal;
-  line-height: .7;
-}
-
-.pulse-wave-privacy {
-  justify-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: rgba(186, 174, 255, .78) !important;
-  font-size: clamp(15px, 3vw, 19px) !important;
-}
-
-.pulse-wave-privacy span {
-  color: #9a6cff;
-  font-size: 19px;
-}
-
-.pulse-status-form.is-text-wave .pulse-status-editor-preview,
-.pulse-status-form.is-photo-wave .pulse-status-editor-preview {
-  background:
-    radial-gradient(circle at 82% 16%, rgba(45, 235, 176, .18), transparent 27%),
-    radial-gradient(circle at 13% 42%, rgba(168, 35, 181, .24), transparent 30%),
-    linear-gradient(180deg, rgba(3, 8, 20, .98), rgba(5, 17, 31, .98) 54%, rgba(2, 5, 12, .99));
-}
-
-.pulse-status-form.is-text-wave .pulse-status-editor-preview::before,
-.pulse-status-form.is-text-wave .pulse-status-editor-preview::after,
-.pulse-status-form.is-photo-wave .pulse-status-editor-preview::before,
-.pulse-status-form.is-photo-wave .pulse-status-editor-preview::after {
-  display: none;
-}
-
-.pulse-wave-text-canvas {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: grid;
-  align-content: center;
-  justify-items: start;
-  gap: 16px;
-  padding: clamp(160px, 32vh, 270px) clamp(28px, 9vw, 82px) clamp(160px, 22vh, 230px);
-  text-align: left;
-  overflow: hidden;
-}
-
-.pulse-wave-text-canvas::before {
-  content: "";
-  position: absolute;
-  inset: -20%;
-  z-index: -1;
-  background:
-    linear-gradient(112deg, transparent 16%, rgba(170, 70, 255, .22) 31%, transparent 45%),
-    linear-gradient(64deg, transparent 30%, rgba(79, 224, 255, .17) 49%, transparent 64%);
-  filter: blur(18px);
-  animation: pulseWaveAtmosphere 8s ease-in-out infinite alternate;
-}
-
-.pulse-wave-text-canvas span {
-  align-self: start;
-  color: rgba(199, 166, 255, .9);
-  font-size: 11px;
-  font-weight: 950;
-  letter-spacing: .12em;
-  opacity: 0;
-}
-
-.pulse-wave-text-canvas strong {
-  display: none;
-}
-
-.pulse-wave-text-canvas small {
-  display: block;
-  color: rgba(239, 246, 255, .68);
-  font-size: clamp(18px, 3.8vw, 25px);
-}
-
-.pulse-wave-text-preview {
-  position: relative;
-  z-index: 4;
-  display: grid;
-  align-items: center;
-  width: 100%;
-  max-width: 720px;
-  min-height: min(58vh, 660px);
-  justify-self: center;
-  align-self: center;
-  padding: clamp(26px, 7vw, 54px);
-  border: 1px solid rgba(72, 219, 178, .26);
-  border-radius: 34px;
-  background:
-    radial-gradient(circle at 18% 18%, rgba(173, 41, 184, .12), transparent 32%),
-    radial-gradient(circle at 82% 80%, rgba(52, 229, 181, .12), transparent 34%),
-    rgba(7, 12, 26, .38);
-  box-shadow: inset 0 0 70px rgba(14, 185, 159, .05), 0 30px 90px rgba(0, 0, 0, .44);
-}
-
-.pulse-wave-text-preview p {
-  margin: 0;
-  color: #f7fbff;
-  font-size: clamp(34px, 7.2vw, 58px);
-  font-weight: 950;
-  line-height: 1.12;
-  text-shadow: 0 18px 48px rgba(0, 0, 0, .5);
-  overflow-wrap: anywhere;
-}
-
-.pulse-status-form.is-text-wave .pulse-status-caption-layer {
-  top: clamp(250px, 45vh, 410px);
-  left: clamp(40px, 9vw, 82px);
-  right: clamp(40px, 9vw, 82px);
-  bottom: auto;
-  z-index: 9;
-}
-
-.pulse-status-form.is-text-wave.is-previewing .pulse-status-caption-layer {
-  display: none;
-}
-
-.pulse-status-form.is-text-wave.is-previewing .pulse-wave-text-canvas {
-  display: none;
-}
-
-.pulse-status-form.is-text-wave.is-previewing .pulse-status-editor-preview {
-  display: grid;
-  place-items: stretch;
-  padding: max(126px, env(safe-area-inset-top) + 86px) clamp(26px, 6vw, 62px) clamp(142px, 16vh, 196px);
-}
-
-.pulse-status-form.is-text-wave .pulse-status-caption-layer textarea {
-  min-height: clamp(210px, 29vh, 360px);
-  max-height: none;
-  padding: 0;
-  border-radius: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  color: #f7fbff;
-  font-size: clamp(38px, 8vw, 60px);
-  font-weight: 900;
-  line-height: 1.18;
-  letter-spacing: 0;
-  text-shadow: 0 18px 48px rgba(0, 0, 0, .46);
-}
-
-.pulse-status-form.is-text-wave .pulse-status-caption-layer textarea::placeholder {
-  color: rgba(223, 231, 255, .72);
-}
-
-.pulse-status-form.is-text-wave .pulse-status-bottom-bar {
-  grid-template-columns: 1fr;
-  left: auto;
-  right: clamp(22px, 8vw, 72px);
-  width: min(190px, calc(100vw - 44px));
-  bottom: calc(42px + env(safe-area-inset-bottom));
-}
-
-.pulse-status-form.is-text-wave .pulse-status-bottom-bar [data-status-back] {
-  display: none;
-}
-
-.pulse-status-form.is-text-wave .pulse-status-share {
-  width: auto;
-  min-width: 168px;
-  height: 76px;
-  min-height: 76px;
-  padding: 0 24px;
-  border-radius: 999px;
-  justify-self: end;
-  overflow: hidden;
-  color: #fff;
-  font-size: 17px;
-  background: radial-gradient(circle at 30% 24%, rgba(255, 255, 255, .36), transparent 22%), linear-gradient(135deg, #c23cff, #2bbdff);
-  box-shadow: 0 0 0 6px rgba(197, 55, 255, .18), 0 24px 52px rgba(39, 159, 255, .36);
-}
-
-.pulse-status-form.is-text-wave .pulse-status-share::after {
-  content: "";
-}
-
-.pulse-status-form.is-text-wave .pulse-wave-secondary-controls {
-  left: clamp(22px, 8vw, 72px);
-  right: auto;
-  bottom: calc(42px + env(safe-area-inset-bottom));
-  justify-content: flex-start;
-}
-
-.pulse-status-form.is-text-wave.is-previewing .pulse-wave-secondary-controls {
-  bottom: calc(128px + env(safe-area-inset-bottom));
-  left: clamp(22px, 6vw, 44px);
-  right: clamp(22px, 6vw, 44px);
-  justify-content: center;
-}
-
-.pulse-status-form.is-text-wave.is-previewing .pulse-status-bottom-bar {
-  left: clamp(22px, 6vw, 44px);
-  right: clamp(22px, 6vw, 44px);
-  width: auto;
-  bottom: calc(38px + env(safe-area-inset-bottom));
-}
-
-.pulse-status-form.is-text-wave.is-previewing .pulse-status-share {
-  justify-self: stretch;
-  min-height: 78px;
-  min-width: 0;
-  color: #fff;
-  font-size: clamp(24px, 5vw, 34px);
-  background: linear-gradient(105deg, rgba(196, 39, 220, .96), rgba(24, 215, 172, .94));
-  box-shadow: 0 0 0 4px rgba(52, 232, 184, .13), 0 26px 58px rgba(24, 215, 172, .24);
-}
-
-.pulse-status-form.is-text-wave .pulse-wave-secondary-controls [data-status-tool="more"] {
-  display: none;
-}
-
-.pulse-status-form.is-photo-wave .pulse-status-editor-preview {
-  place-items: stretch;
-  padding: max(126px, env(safe-area-inset-top) + 86px) clamp(26px, 6vw, 62px) clamp(142px, 16vh, 196px);
-}
-
-.pulse-wave-preview-live {
-  position: relative;
-  z-index: 4;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  overflow: hidden;
-  width: 100%;
-  max-width: 780px;
-  min-height: 0;
-  justify-self: center;
-  border: 1px solid rgba(72, 219, 178, .26);
-  border-radius: 34px;
-  background: rgba(7, 12, 26, .38);
-  box-shadow: inset 0 0 70px rgba(14, 185, 159, .05), 0 30px 90px rgba(0, 0, 0, .44);
-}
-
-.pulse-wave-media-frame {
-  position: relative;
-  min-height: min(67vh, 700px);
-  background: rgba(2, 5, 11, .22);
-}
-
-.pulse-wave-media-frame img,
-.pulse-wave-media-frame video {
-  width: 100%;
-  height: 100%;
-  min-height: min(67vh, 700px);
-  object-fit: cover;
-  display: block;
-}
-
-.pulse-wave-count {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  z-index: 4;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(7, 10, 24, .66);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 900;
-  backdrop-filter: blur(14px);
-}
-
-.pulse-wave-live-caption {
-  position: absolute;
-  left: clamp(18px, 5vw, 32px);
-  right: clamp(18px, 5vw, 32px);
-  bottom: 0;
-  z-index: 5;
-  padding: 46px 0 24px;
-  color: #fff;
-  font-size: clamp(26px, 5vw, 42px);
-  font-weight: 950;
-  line-height: 1.08;
-  text-shadow: 0 16px 36px rgba(0, 0, 0, .62);
-  background: linear-gradient(0deg, rgba(0, 0, 0, .62), transparent);
-  pointer-events: none;
-}
-
-.pulse-wave-live-caption[hidden] {
-  display: none;
-}
-
-.pulse-status-form.is-photo-wave .pulse-status-caption-layer {
-  bottom: calc(166px + env(safe-area-inset-bottom));
-  left: clamp(32px, 7vw, 80px);
-  right: clamp(32px, 7vw, 80px);
-  z-index: 12;
-}
-
-.pulse-status-form.is-photo-wave .pulse-status-caption-layer textarea {
-  min-height: 44px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, .38);
-}
-
-.pulse-status-form.is-photo-wave .pulse-wave-secondary-controls {
-  bottom: calc(104px + env(safe-area-inset-bottom));
-}
-
-.pulse-status-form.is-photo-wave .pulse-status-bottom-bar {
-  grid-template-columns: 1fr;
-  left: clamp(22px, 6vw, 44px);
-  right: clamp(22px, 6vw, 44px);
-  bottom: calc(38px + env(safe-area-inset-bottom));
-}
-
-.pulse-status-form.is-photo-wave .pulse-status-bottom-bar [data-status-back] {
-  display: none;
-}
-
-.pulse-status-form.is-photo-wave .pulse-status-share {
-  justify-self: stretch;
-  min-height: 78px;
-  border-radius: 999px;
-  font-size: clamp(24px, 5vw, 34px);
-  background: linear-gradient(105deg, rgba(196, 39, 220, .96), rgba(24, 215, 172, .94));
-  box-shadow: 0 0 0 4px rgba(52, 232, 184, .13), 0 26px 58px rgba(24, 215, 172, .24);
-}
-
-.pulse-status-form.is-publishing-wave .pulse-status-share {
-  opacity: .72;
-  transform: scale(.98);
-}
-
-@keyframes pulseWaveAtmosphere {
-  from {
-    transform: translate3d(-2%, -1%, 0) rotate(-1deg) scale(1);
-  }
-  to {
-    transform: translate3d(2%, 1%, 0) rotate(1deg) scale(1.04);
-  }
-}
-
-@keyframes pulseWaveStars {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    transform: translate3d(-24px, 18px, 0);
-  }
-}
-
-@keyframes pulseWaveFloat {
-  0%, 100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-7px) scale(1.03);
-  }
-}
-
-@keyframes pulseCoreRipple {
-  0%, 100% {
-    transform: translateY(0) scale(1);
-    box-shadow: 0 16px 42px rgba(0, 0, 0, .34), 0 0 34px rgba(110, 223, 246, .2);
-  }
-  50% {
-    transform: translateY(-2px) scale(1.015);
-    box-shadow: 0 18px 46px rgba(0, 0, 0, .38), 0 0 42px rgba(54, 229, 143, .24);
-  }
-}
-
 @media (min-width: 900px) {
   .pulse-status-editor {
     display: none;
@@ -1743,110 +1012,6 @@ body.status-editor-open {
 }
 
 @media (max-width: 520px) {
-  .pulse-status-editor .pulse-status-stage {
-    border-radius: 0;
-  }
-
-  .pulse-status-close,
-  .pulse-status-back {
-    width: 46px;
-    height: 46px;
-    min-height: 46px;
-    font-size: 28px;
-  }
-
-  .pulse-status-back {
-    left: 14px;
-  }
-
-  .pulse-status-close {
-    right: 14px;
-  }
-
-  .pulse-wave-step {
-    top: max(20px, env(safe-area-inset-top));
-    padding: 7px 12px 16px;
-    font-size: 10px;
-  }
-
-  .pulse-status-mode-picker {
-    padding: max(74px, env(safe-area-inset-top) + 54px) 28px max(44px, env(safe-area-inset-bottom) + 34px);
-    gap: 22px;
-  }
-
-  .pulse-wave-mark {
-    width: 76px;
-    height: 76px;
-    font-size: 38px;
-  }
-
-  .pulse-status-mode-picker h3 {
-    font-size: clamp(36px, 12vw, 50px);
-  }
-
-  .pulse-status-mode-picker p {
-    font-size: 18px;
-  }
-
-  .pulse-status-mode-picker button.pulse-status-choice-card {
-    grid-template-columns: 96px minmax(0, 1fr) 36px;
-    min-height: 154px;
-    border-radius: 26px;
-    padding: 18px;
-  }
-
-  .pulse-status-mode-picker button.pulse-status-choice-card span {
-    width: 78px;
-    height: 78px;
-    font-size: 34px;
-  }
-
-  .pulse-status-mode-picker button.pulse-status-choice-card b {
-    font-size: 25px;
-  }
-
-  .pulse-status-mode-picker button.pulse-status-choice-card small {
-    font-size: 17px;
-  }
-
-  .pulse-status-mode-picker button.pulse-status-choice-card i {
-    width: 34px;
-    height: 34px;
-    font-size: 34px;
-  }
-
-  .pulse-wave-privacy {
-    font-size: 14px !important;
-  }
-
-  .pulse-status-form.is-text-wave .pulse-status-caption-layer {
-    top: 38vh;
-    left: 26px;
-    right: 26px;
-  }
-
-  .pulse-status-form.is-text-wave .pulse-status-caption-layer textarea {
-    font-size: clamp(38px, 11vw, 54px);
-  }
-
-  .pulse-status-form.is-photo-wave .pulse-status-editor-preview {
-    padding: max(78px, env(safe-area-inset-top) + 58px) 18px calc(176px + env(safe-area-inset-bottom));
-  }
-
-  .pulse-wave-media-frame,
-  .pulse-wave-media-frame img,
-  .pulse-wave-media-frame video {
-    min-height: min(61dvh, 620px);
-  }
-
-  .pulse-wave-preview-live {
-    border-radius: 26px;
-  }
-
-  .pulse-status-form.is-photo-wave .pulse-status-share {
-    min-height: 64px;
-  }
-
   .pulse-status-tool-rail {
     right: 10px;
     gap: 9px;
@@ -1872,7 +1037,7 @@ body.status-editor-open {
   }
 
   .pulse-status-bottom-bar {
-    grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+    grid-template-columns: minmax(82px, auto) minmax(62px, auto) minmax(0, 1fr);
   }
 
   .pulse-status-bottom-bar [data-status-tool="choose"] {
@@ -1882,44 +1047,5 @@ body.status-editor-open {
   .pulse-status-share {
     min-width: 98px;
     font-size: 18px;
-  }
-
-  .pulse-core-launcher {
-    right: 12px;
-    bottom: calc(78px + env(safe-area-inset-bottom));
-    min-height: 46px;
-    padding: 0 12px;
-    font-size: 13px;
-  }
-
-  .pulse-core-launcher span {
-    width: 26px;
-    height: 26px;
-  }
-
-  .pulse-wave-sheet .pulse-status-mode-grid {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
-  .pulse-status-mode-picker button {
-    min-height: 150px;
-    border-radius: 20px;
-  }
-
-  .pulse-wave-secondary-controls {
-    bottom: calc(82px + env(safe-area-inset-bottom));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pulse-core-launcher,
-  .pulse-status-editor .pulse-status-stage::before,
-  .pulse-status-editor .pulse-status-stage::after,
-  .pulse-status-mode-picker::before,
-  .pulse-status-mode-picker::after,
-  .pulse-wave-text-canvas::before,
-  .pulse-wave-mark {
-    animation: none;
   }
 }

@@ -1,86 +1,59 @@
 #!/usr/bin/env python3
-"""Audit Pulse Waves strict 3-click creation, viewing, and lightweight launch flow."""
+"""Consolidated audit for Pulse Status create/view/publish/reply contracts."""
 
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def require(condition, message, detail=""):
+def run(script: str):
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / script)], cwd=ROOT, text=True, capture_output=True)
+    print(result.stdout, end="")
+    if result.returncode:
+        print(result.stderr, end="")
+        raise AssertionError(f"{script} failed")
+
+
+def require(condition, message):
     if not condition:
-        raise AssertionError(f"{message}: {detail}")
+        raise AssertionError(message)
     print(f"ok - {message}")
 
 
 def main():
-    source = (ROOT / "bot.py").read_text(encoding="utf-8")
-    css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text(encoding="utf-8")
-
-    require("🌊 Pulse Waves" in source, "Pulse Waves naming is visible")
-    require("🌊 Launch Wave" in source, "Launch Wave CTA exists")
-    require("pulseCoreLauncher" in source and ".pulse-core-launcher" in css, "Pulse Core launcher exists")
-    require("pulseCoreRipple" in css and "prefers-reduced-motion" in css, "Pulse Core motion is lightweight and accessible")
-    require("Create a Wave" not in source and "Share your energy with the world" not in source, "selector does not render template headline copy")
-    require("pulse-wave-handle" not in source and "pulse-wave-mark" not in source and "pulse-wave-privacy" not in source, "template landmarks are not rendered as UI")
-    require("data-wave-step" in source and ".pulse-wave-step" in css, "Wave progress anchor exists without visible landmark labels")
-    require("STEP 1 OF 3" not in source and "STEP 2 OF 3" not in source and "STEP 3 OF 3" not in source, "step labels are not visible DOM text")
-
-    require("Text Wave" in source and "Photo Wave" in source, "only two primary Wave choices exist")
-    require(source.count("data-status-start=") == 2, "Wave creation exposes exactly two primary choices", f"found {source.count('data-status-start=')}")
-    require("data-status-start='text'" in source and "data-status-start='upload'" in source, "Wave choices are Text Wave and Photo Wave")
-
-    for label in ["Media Wave", "Voice Wave", "Mood Wave", "Live Wave", "AI Wave", "Creator-safe sounds", "Sound search", "Generate Wave"]:
-        require(label not in source, f"old complex Wave label removed: {label}")
-    for token in ["data-status-start='voice'", "data-status-start='mood'", "data-status-start='ai'", "data-status-start='live'"]:
-        require(token not in source, f"old Wave start control removed: {token}")
-
-    require("/pulse/waves" in source, "Pulse Waves page route exists")
-    require("/api/pulse/waves/rail" in source, "Pulse Waves rail endpoint exists")
-    require("/api/pulse/waves" in source, "Pulse Waves launch endpoint exists")
-    require("/api/pulse/waves/<int:status_id>/view" in source, "Wave view endpoint exists")
-    require("/api/pulse/waves/<int:status_id>/reply" in source, "Wave reply endpoint exists")
-    require("/api/pulse/waves/<int:status_id>/react" in source, "Wave reaction endpoint exists")
-
-    require("setWaveState" in source, "Wave state machine exists")
-    for state in ["selecting_wave_type", "composing_text", "selecting_photo", "previewing_wave", "publishing_wave"]:
-        require(state in source, f"Wave state exists: {state}")
-    require("routeStatusIntent" in source and "openStatusModePicker" in source, "intent router opens fast Wave sheet")
-    require("openStatusTextCreator" in source and "pulseStatusBody')?.focus()" in source, "Text Wave opens immersive writing space")
-    require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source, "Photo Wave opens gallery picker directly")
-    require("Add Music" in source and "Add Voice Note" in source and "statusSoundInput?.click()" in source, "music and voice are subtle optional controls")
-    require("PulseWaveComponents" in source and "data-wave-component='WaveStage'" in source, "Wave UI is component-driven")
-    require("pulse-wave-text-canvas" in source and "TextWaveComposer" in source, "Text Wave renders native writing canvas")
-    require("TextWavePreview" in source and "Continue →" in source, "Text Wave has real continue-to-preview flow")
-    require("pulse-wave-preview-live" in source and "PhotoWavePreview" in source and "data-wave-caption-preview" in source, "Photo Wave renders real selected media preview")
-
-    require("context_type','pulse_wave'" in source, "Wave media uploads use Wave context")
-    require("context_type','pulse_wave_audio'" in source, "optional Wave audio uploads use audio context")
-    require("PulseUploadManager" in source and "Launching Wave..." in source, "Wave launch uses upload progress")
-    require("Wave launched successfully" in source, "Wave success confirmation exists")
-    require("three_click:true" in source, "Wave payload is marked as three-click flow")
-    require("visibility:'public'" in source and "duration_hours:24" in source, "Wave launch skips extra setup screens")
-    require("pulse_status_views" in source and "pulse_status_reactions" in source and "pulse_status_replies" in source, "legacy status tables remain as stable storage")
-    require("product_name\": \"Pulse Waves\"" in source, "rail response identifies Pulse Waves")
-
-    forbidden_visible = ["Create Status", "Pulse Status</", "Create your story", "Create photo or video story", "Create text story"]
-    for token in forbidden_visible:
-        require(token not in source, f"old visible label removed: {token}")
-    for token in ["Just now · Public", "Preview your Wave", "Chasing sunsets", "goodvibes", "static/screenshots", "mockup"]:
-        require(token not in source, f"mock/reference Wave content is not rendered: {token}")
-
-    require(".pulse-wave-sheet" in css, "Wave sheet styling exists")
-    require(".pulse-wave-preview-live" in css and ".pulse-wave-text-canvas" in css, "native cinematic Wave composer surfaces are styled")
-    require(".pulse-wave-text-preview" in css, "text preview uses native glass preview zone")
-    require(".pulse-wave-live-caption" in css, "Photo Wave caption is live dynamic UI")
-    require("border: 1px dashed" not in css, "production Wave UI exposes no dashed guide marks")
-    require("pulseWaveAtmosphere" in css and "pulseWaveFloat" in css, "cinematic Wave motion system exists")
-    require("grid-template-columns: repeat(2" in css, "desktop Wave actions are strict two-choice layout")
-    require(".pulse-wave-secondary-controls" in css, "secondary controls are visually subtle")
-    require("grid-template-columns: 1fr" in css, "mobile Wave actions stack cleanly")
-
-    print("pulse waves 3-click audit ok")
+    run("pulse_status_audit.py")
+    run("create_status_flow_audit.py")
+    run("media_story_audit.py")
+    run("mobile_story_audit.py")
+    run("audio_pipeline_audit.py")
+    source = (ROOT / "bot.py").read_text()
+    require("/api/pulse/status" in source, "Status create endpoint exists")
+    require("/api/pulse/status/rail" in source, "Status rail endpoint exists")
+    require("/api/pulse/status/<int:status_id>/reply" in source, "Status reply endpoint exists")
+    require("/api/pulse/status/music/search" in source and "/api/pulse/status/ai-story" in source, "Status music and AI Story endpoints exist")
+    require("pulse_status_views" in source and "pulse_status_reactions" in source and "pulse_status_replies" in source, "Status view/reaction/reply tables exist")
+    require("data-status-tool='stickers'" in source and "data-status-tool='music'" in source, "Status editor tools are functional hooks, not dead labels")
+    require("data-status-mode-picker" in source and "Create photo or video story" in source and "Create text story" in source, "Create Status opens the two-choice story chooser")
+    require("pulse-status-mode-grid" in source and "pulse-status-choice-media" in source and "pulse-status-choice-text" in source, "Create Status chooser matches the two-card reference layout")
+    require("openStatusGalleryCreator" in source and "statusMediaInput?.click()" in source and "Choose an image or video from your gallery." in source, "Create Status directly opens gallery picker before preview")
+    require("statusForm?.classList.toggle('is-choosing'" in source, "Create Status hides editor tools until a story type is selected")
+    require(source.count("data-status-start=") == 2, "Create Status entry exposes only photo/video story and text story starts")
+    require('"Music", "Sound-first story", "♪", "music"' in source and "openStatusMusicCreator" in source, "Music card opens music-first flow")
+    require('"Camera", "Capture now", "◎", "camera"' in source and "/pulse/camera?target=status" in source, "Camera card opens Pulse Camera")
+    require('"Live", "Start broadcast", "●", "live"' in source and "/pulse/live" in source, "Live card opens go-live flow")
+    require('"AI Story", "Prompt to visual story", "AI", "ai"' in source and "openStatusAiCreator" in source, "AI Story card opens AI generator")
+    require('"Following", "Watch followed creators", "F", "following"' in source and '"Trending", "Watch active stories", "↗", "trending"' in source and '"Global", "Watch worldwide stories", "G", "global"' in source, "Discovery cards have viewer intents")
+    require("routeStatusIntent" in source and "openStatusViewerFeed(mode)" in source, "Status intent router separates creation and viewing")
+    require("data-status-story-viewer" in source and "data-status-story-reply" in source and "data-status-story-react" in source, "Status viewer has reply and reaction behavior")
+    require("data-status-full-page" in source and "data-status-full-tab" in source and '"following", "Following"' in source and '"trending", "Trending"' in source, "Full Status page has discovery tabs")
+    require("data-upload-progress" in source, "Status publishing shows upload progress")
+    css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text()
+    require(".pulse-status-mode-picker" in css and ".pulse-status-music-panel" in css and ".pulse-status-ai-panel" in css and ".pulse-status-story-viewer" in css, "Status editor and viewer have immersive styling")
+    print("status system audit ok")
 
 
 if __name__ == "__main__":

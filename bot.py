@@ -15959,10 +15959,14 @@ def pulse_desktop_left_rail_html(is_admin=False):
 
 def pulse_status_rail_html():
     cards = [
-        ("Launch Wave", "Fast social signal", "🌊", "create"),
-        ("Following", "Waves from creators you follow", "F", "following"),
-        ("Trending", "High-energy Waves", "↗", "trending"),
-        ("Global", "Worldwide Waves", "G", "global"),
+        ("Create Status", "Photo/video or text story", "+", "create"),
+        ("Music", "Sound-first story", "♪", "music"),
+        ("Camera", "Capture now", "◎", "camera"),
+        ("Live", "Start broadcast", "●", "live"),
+        ("AI Story", "Prompt to visual story", "AI", "ai"),
+        ("Following", "Watch followed creators", "F", "following"),
+        ("Trending", "Watch active stories", "↗", "trending"),
+        ("Global", "Watch worldwide stories", "G", "global"),
     ]
     card_html = "".join(
         "<button class='pulse-status-card' type='button' data-status-card "
@@ -15973,21 +15977,19 @@ def pulse_status_rail_html():
     )
     return (
         "<section class='pulse-status-rail' data-pulse-status-rail>"
-        "<div class='pulse-status-head'><h2>🌊 Pulse Waves</h2><a class='button' href='/pulse/waves'>View all</a></div>"
+        "<div class='pulse-status-head'><h2>Pulse Status</h2><a class='button' href='/pulse/status'>View all</a></div>"
         f"<div class='pulse-status-strip' data-status-strip>{card_html}</div>"
         "</section>"
-        "<button class='pulse-core-launcher' id='pulseCoreLauncher' type='button' data-status-card data-status-intent='create' aria-label='Open Pulse Core'>"
-        "<span>🌊</span><b>Pulse Core</b></button>"
         "<section class='pulse-status-viewer pulse-status-story-viewer' id='pulseStatusStoryViewer' data-status-story-viewer aria-hidden='true'>"
         "<article class='pulse-status-stage pulse-status-story-stage' data-status-story-stage>"
         "<div class='pulse-status-progress' data-story-progress><span></span></div>"
-        "<button class='pulse-status-back' type='button' data-status-story-close aria-label='Close Wave'>‹</button>"
-        "<div class='pulse-status-story-media' data-status-story-media><span>Choose a Wave to watch.</span></div>"
+        "<button class='pulse-status-back' type='button' data-status-story-close aria-label='Close Status'>‹</button>"
+        "<div class='pulse-status-story-media' data-status-story-media><span>Choose a status to watch.</span></div>"
         "<div class='pulse-status-story-gradient' aria-hidden='true'></div>"
-        "<header class='pulse-status-story-header'><span class='pulse-status-avatar-ring' data-status-story-avatar>P</span><div><strong data-status-story-author>Pulse Wave</strong><small data-status-story-time>Now</small></div><button type='button' data-status-story-mute aria-label='Mute or unmute'>🔇</button></header>"
-        "<button class='pulse-status-nav-zone is-prev' type='button' data-status-story-prev aria-label='Previous Wave'></button>"
-        "<button class='pulse-status-nav-zone is-next' type='button' data-status-story-next aria-label='Next Wave'></button>"
-        "<footer class='pulse-status-story-footer'><p data-status-story-body>Waves load here.</p><div class='pulse-status-story-actions'><button type='button' data-status-story-react='fire'>🔥 React</button><button type='button' data-status-story-react='love'>❤️ Love</button><span data-status-story-count>0 views</span></div><div class='pulse-status-reply-row'><input data-status-story-reply placeholder='Reply to this Wave...'><button type='button' data-status-story-send-reply>Send</button></div></footer>"
+        "<header class='pulse-status-story-header'><span class='pulse-status-avatar-ring' data-status-story-avatar>P</span><div><strong data-status-story-author>Pulse Status</strong><small data-status-story-time>Now</small></div><button type='button' data-status-story-mute aria-label='Mute or unmute'>🔇</button></header>"
+        "<button class='pulse-status-nav-zone is-prev' type='button' data-status-story-prev aria-label='Previous Status'></button>"
+        "<button class='pulse-status-nav-zone is-next' type='button' data-status-story-next aria-label='Next Status'></button>"
+        "<footer class='pulse-status-story-footer'><p data-status-story-body>Stories load here.</p><div class='pulse-status-story-actions'><button type='button' data-status-story-react='fire'>🔥 React</button><button type='button' data-status-story-react='love'>❤️ Love</button><span data-status-story-count>0 views</span></div><div class='pulse-status-reply-row'><input data-status-story-reply placeholder='Reply to this story...'><button type='button' data-status-story-send-reply>Send</button></div></footer>"
         "</article></section>"
         "<input id='pulseStatusMedia' class='pulse-status-file-input' type='file' accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime' multiple>"
         "<input id='pulseStatusSound' class='pulse-status-file-input' type='file' accept='audio/mpeg,audio/mp4,audio/wav,audio/ogg'>"
@@ -15996,28 +15998,37 @@ def pulse_status_rail_html():
         "<input id='pulseStatusMode' name='status_type' type='hidden' value='image'>"
         "<input id='pulseStatusMusicTrack' type='hidden' value=''>"
         "<button class='pulse-status-back' type='button' data-status-back aria-label='Back'>‹</button>"
-        "<button class='pulse-status-close' type='button' data-status-close aria-label='Close Wave creator'>×</button>"
         "<div class='pulse-status-progress'><span></span></div>"
-        "<div class='pulse-wave-step' data-wave-step aria-hidden='true'></div>"
-        "<section class='pulse-status-mode-picker pulse-wave-sheet' data-status-mode-picker data-wave-component='WaveTypeSelector' aria-label='Launch Wave options'>"
+        "<section class='pulse-status-mode-picker' data-status-mode-picker aria-label='Create Status options'>"
+        "<div class='pulse-status-mode-copy'><h3>Create your story</h3><p>Choose how you want to start.</p></div>"
         "<div class='pulse-status-mode-grid'>"
-        "<button class='pulse-status-choice-card pulse-status-choice-text' type='button' data-status-start='text'><span>✍️</span><b>Text Wave</b><small>Write your thoughts, share your energy.</small><i aria-hidden='true'>›</i></button>"
-        "<button class='pulse-status-choice-card pulse-status-choice-media' type='button' data-status-start='upload'><span>📸</span><b>Photo Wave</b><small>Share a moment, a memory, a vibe.</small><i aria-hidden='true'>›</i></button>"
+        "<button class='pulse-status-choice-card pulse-status-choice-media' type='button' data-status-start='upload'><span>▣</span><b>Create photo or video story</b></button>"
+        "<button class='pulse-status-choice-card pulse-status-choice-text' type='button' data-status-start='text'><span>Aa</span><b>Create text story</b></button>"
         "</div>"
         "</section>"
-        "<div class='pulse-status-preview pulse-status-editor-preview' id='pulseStatusPreview' data-status-preview-stage data-wave-component='WaveStage'><span>Choose Text Wave or Photo Wave.</span></div>"
-        "<div class='pulse-status-caption-layer'><textarea id='pulseStatusBody' name='body' placeholder='Release your energy into Pulse...'></textarea></div>"
-        "<div class='pulse-wave-secondary-controls' aria-label='Optional Wave tools'>"
-        "<button type='button' data-status-tool='music'>Add Music</button>"
-        "<button type='button' data-status-tool='voice'>Add Voice Note</button>"
-        "<button type='button' data-status-tool='more'>⋯ More</button>"
-        "</div>"
+        "<div class='pulse-status-preview pulse-status-editor-preview' id='pulseStatusPreview' data-status-preview-stage><span>Select media to preview your status.</span></div>"
+        "<div class='pulse-status-caption-layer'><textarea id='pulseStatusBody' name='body' placeholder='Add a caption...'></textarea></div>"
+        "<aside class='pulse-status-tool-rail' aria-label='Status tools'>"
+        "<button type='button' data-status-tool='stickers'><span>☺</span><b>Stickers</b></button>"
+        "<button type='button' data-status-tool='text'><span>Aa</span><b>Text</b></button>"
+        "<button type='button' data-status-tool='music'><span>♪</span><b>Music</b></button>"
+        "<button type='button' data-status-tool='filters'><span>✦</span><b>Filters</b></button>"
+        "<button type='button' data-status-tool='mention'><span>@</span><b>Mention</b></button>"
+        "<button type='button' data-status-tool='links'><span>↗</span><b>Links</b></button>"
+        "</aside>"
         "<div class='pulse-status-overlay-layer' data-status-overlays></div>"
-        "<div class='pulse-status-bottom-bar'>"
-        "<button class='button' type='button' data-status-back>Back</button>"
-        "<button class='primary pulse-status-share' type='submit' data-wave-component='WaveLaunchButton' data-launch-label='🌊 Launch Wave'>🌊 Launch Wave</button>"
+        "<section class='pulse-status-music-panel' data-status-music-panel aria-hidden='true'><header><strong>Creator-safe sounds</strong><button type='button' data-close-status-music>×</button></header><input data-status-music-search placeholder='Search sounds'><div data-status-music-results></div><div class='pulse-status-waveform' data-status-waveform></div><small>Only original, uploaded, or licensed catalog audio is allowed.</small></section>"
+        "<section class='pulse-status-ai-panel' data-status-ai-panel aria-hidden='true'><header><strong>AI Story</strong><button type='button' data-close-status-ai>×</button></header><textarea data-status-ai-prompt placeholder='Describe the story: cyberpunk sunset over Haiti with floating crypto symbols'></textarea><button type='button' class='primary' data-generate-ai-story>Generate Story</button><div data-status-ai-result></div></section>"
+        "<div class='pulse-status-effects-tray' data-status-effects-tray>"
+        "<button type='button' data-status-effect='natural'>Natural</button><button type='button' data-status-effect='glow'>Glow</button><button type='button' data-status-effect='cinematic'>Cinematic</button><button type='button' data-status-effect='warm'>Warm</button><button type='button' data-status-effect='mono'>Mono</button>"
         "</div>"
-        "<div class='pulse-status-upload-progress' data-upload-progress data-upload-state='idle'><span data-upload-progress-bar role='progressbar' aria-valuemin='0' aria-valuemax='100' aria-valuenow='0'></span><b data-upload-progress-text>Choose how to launch your Wave.</b></div>"
+        "<div class='pulse-status-bottom-bar'>"
+        "<select id='pulseStatusPrivacy' aria-label='Audience selector'><option value='public'>For you</option><option value='followers'>Followers</option><option value='private'>Private preview</option></select>"
+        "<select id='pulseStatusDuration' aria-label='Status duration'><option value='24'>24h</option><option value='6'>6h</option><option value='48'>48h</option></select>"
+        "<button class='button' type='button' data-status-tool='choose'>Choose again</button>"
+        "<button class='primary pulse-status-share' type='submit'>Share</button>"
+        "</div>"
+        "<div class='pulse-status-upload-progress' data-upload-progress data-upload-state='idle'><span data-upload-progress-bar role='progressbar' aria-valuemin='0' aria-valuemax='100' aria-valuenow='0'></span><b data-upload-progress-text>Choose media to create a Status.</b></div>"
         "</form></section>"
     )
 
@@ -16338,34 +16349,27 @@ function openStatusEditor(){statusViewer?.classList.add('open');statusViewer?.se
 function closeStatusEditor(){statusViewer?.classList.remove('open');statusViewer?.setAttribute('aria-hidden','true');document.body.classList.remove('status-editor-open')}
 function closeStatusStoryViewer(){statusStoryViewer?.classList.remove('open');statusStoryViewer?.setAttribute('aria-hidden','true');document.body.classList.remove('status-viewer-open')}
 function setStatusModePicker(show=true){document.querySelector('[data-status-mode-picker]')?.classList.toggle('is-hidden',!show);statusForm?.classList.toggle('is-choosing',!!show)}
-function setWaveState(stage){if(!statusForm)return;const mode=document.getElementById('pulseStatusMode')?.value||'';statusForm.dataset.waveState=stage;['is-text-wave','is-photo-wave','is-previewing','is-publishing-wave'].forEach(c=>statusForm.classList.remove(c));if(stage==='composing_text'||(stage==='previewing_wave'&&mode==='text'))statusForm.classList.add('is-text-wave');if(stage==='selecting_photo'||(stage==='previewing_wave'&&mode!=='text'))statusForm.classList.add('is-photo-wave');if(stage==='previewing_wave')statusForm.classList.add('is-previewing');if(stage==='publishing_wave')statusForm.classList.add('is-publishing-wave');const step=document.querySelector('[data-wave-step]');if(step)step.dataset.waveStep=stage==='selecting_wave_type'?'1':stage==='previewing_wave'?'3':'2';const launch=document.querySelector('[data-wave-component="WaveLaunchButton"]');if(launch)launch.textContent=stage==='composing_text'?'Continue →':launch.dataset.launchLabel||'🌊 Launch Wave';}
-const PulseWaveComponents={
-  textCanvas(){return '<div class="pulse-wave-text-canvas" data-wave-component="TextWaveComposer"><small>Write your wave...</small></div>'},
-  textPreview(body){return `<article class="pulse-wave-text-preview" data-wave-component="TextWavePreview"><p>${esc(body)}</p></article>`},
-  photoPreview(file,url,count){const safeName=esc(file?.name||'Selected Wave media');const total=count>1?`<span class="pulse-wave-count">${count} selected</span>`:'';const media=file?.type?.startsWith('video/')?`<video src="${url}" playsinline controls muted loop aria-label="${safeName}"></video>`:`<img src="${url}" alt="${safeName}" decoding="async">`;return `<article class="pulse-wave-preview-live" data-wave-component="PhotoWavePreview"><div class="pulse-wave-media-frame">${media}${total}</div><div class="pulse-wave-live-caption" data-wave-caption-preview hidden></div></article>`},
-  publishing(isPublishing){const btn=document.querySelector('[data-wave-component="WaveLaunchButton"]');if(btn)btn.setAttribute('aria-busy',isPublishing?'true':'false')}
-};
-function openStatusModePicker(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setWaveState('selecting_wave_type');setStatusModePicker(true);window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose a Wave type.'})}
-function openStatusGalleryCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setWaveState('selecting_photo');setStatusModePicker(false);document.getElementById('pulseStatusMode').value='image';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose media for your Wave.'});statusMediaInput?.click()}
+function openStatusModePicker(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(true);window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose photo/video story or text story.'})}
+function openStatusGalleryCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(false);document.getElementById('pulseStatusMode').value='image';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose an image or video from your gallery.'});statusMediaInput?.click()}
 function showStatusMusicPanel(open=true){const panel=document.querySelector('[data-status-music-panel]');if(!panel)return;panel.classList.toggle('open',open);panel.setAttribute('aria-hidden',open?'false':'true');if(open)loadStatusMusic('')}
 function showStatusAiPanel(open=true){const panel=document.querySelector('[data-status-ai-panel]');if(!panel)return;panel.classList.toggle('open',open);panel.setAttribute('aria-hidden',open?'false':'true')}
-function clearStatusDraft(){resetStatusPreviewUrls();statusDraft.files=[];statusDraft.mediaIds=[];statusDraft.soundFile=null;statusDraft.soundMediaId=0;statusDraft.sticker='';statusDraft.link='';statusDraft.effect='natural';if(statusMediaInput)statusMediaInput.value='';if(statusSoundInput)statusSoundInput.value='';document.getElementById('pulseStatusBody').value='';document.querySelector('[data-status-overlays]').innerHTML='';statusPreview.innerHTML='<span>Choose Text Wave or Photo Wave.</span>';statusPreview.dataset.effect='natural';setWaveState('idle');window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose how to launch your Wave.'})}
-function renderStatusPreview(){resetStatusPreviewUrls();const file=statusDraft.files[0];if(!statusPreview)return;if(!file){statusPreview.innerHTML='<span>Select media to preview your Wave.</span>';return}const url=URL.createObjectURL(file);statusDraft.urls.push(url);const safeName=esc(file.name||'Pulse Wave media');statusPreview.dataset.effect=statusDraft.effect||'natural';statusPreview.innerHTML=PulseWaveComponents.photoPreview(file,url,statusDraft.files.length);document.getElementById('pulseStatusMode').value=file.type?.startsWith('video/')?'video':'image';document.querySelector('[data-status-overlays]').innerHTML=statusDraft.sticker?`<span class="pulse-status-sticker">${esc(statusDraft.sticker)}</span>`:'';openStatusEditor();setWaveState('previewing_wave');setStatusModePicker(false);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Ready to launch ${safeName}`})}
-async function hydrateStatusRail(){try{const d=await api('/api/pulse/waves/rail');const strip=document.querySelector('[data-status-strip]');if(!strip)return;strip.querySelectorAll('[data-status-dynamic]').forEach(x=>x.remove());const real=(d.items||[]).slice(0,12);if(!real.length){strip.insertAdjacentHTML('beforeend','<button class="pulse-status-card" type="button" data-status-card data-status-dynamic data-status-mode="create" data-status-title="Launch the first Wave" data-status-meta="Text or Photo Wave"><span class="pulse-status-avatar-ring">🌊</span><span><span class="pulse-status-title">Launch the first Wave</span><span class="pulse-status-meta">Send energy into Pulse</span></span></button>');return}strip.insertAdjacentHTML('beforeend',real.map(s=>`<button class="pulse-status-card ${s.viewed?'is-viewed':''}" type="button" data-status-dynamic data-open-status-id="${s.id}" data-status-title="${esc(s.author_name||'Pulse Wave')}" data-status-meta="${esc(s.body||s.status_type||'Tap to view')}"><span class="pulse-status-avatar-ring">${esc((s.author_name||'P').slice(0,1))}</span><span><span class="pulse-status-title">${esc(s.author_name||'Pulse member')}</span><span class="pulse-status-meta">${esc(s.status_type||'wave')} · ${s.viewed?'seen':'new'}</span></span></button>`).join(''))}catch(e){console.warn('Pulse Waves rail hydrate failed',e)}}
-async function loadStatusMusic(query=''){try{const d=await api('/api/pulse/status/music/search?q='+encodeURIComponent(query));const box=document.querySelector('[data-status-music-results]');if(!box)return;box.innerHTML=(d.items||[]).map(t=>`<button type="button" data-status-select-track="${esc(t.id)}" data-track-title="${esc(t.title)}" data-track-artist="${esc(t.artist)}"><strong>${esc(t.title)}</strong><small>${esc(t.artist)} · ${esc(t.mood||'wave')}</small></button>`).join('')||'<p class="muted">No audio files found.</p>'}catch(e){toast(e.message||'Music search failed.')}}
-function statusMediaStoryHtml(item){const media=(item.media||[])[0]||{};const src=mediaUrl(media.valid_url||media.media_url||media.thumbnail_url||media.poster_url||'');const poster=mediaUrl(media.poster_url||media.thumbnail_url||src);const kind=String(media.media_type||item.status_type||'text').toLowerCase();if(src&&kind==='video')return `<video src="${esc(src)}" poster="${esc(poster)}" playsinline controls muted autoplay preload="metadata"></video>`;if(src)return `<img src="${esc(src)}" alt="${esc(item.body||'Pulse Wave')}" loading="eager" decoding="async">`;return `<div class="pulse-ai-story-preview text-story"><strong>${esc(item.body||'Pulse Wave')}</strong><small>${esc(item.status_type||'wave')}</small></div>`}
-function renderStatusStory(index=0){const items=statusDraft.storyItems||[];if(!items.length||!statusStoryViewer)return;statusDraft.storyIndex=Math.max(0,Math.min(index,items.length-1));const item=items[statusDraft.storyIndex]||{};statusDraft.currentStatusId=Number(item.id||0);statusStoryViewer.querySelector('[data-status-story-media]').innerHTML=statusMediaStoryHtml(item);statusStoryViewer.querySelector('[data-status-story-author]').textContent=item.author_name||'Pulse creator';statusStoryViewer.querySelector('[data-status-story-time]').textContent=item.status_type?`${item.status_type} Wave`:'Active Wave';statusStoryViewer.querySelector('[data-status-story-avatar]').textContent=(item.author_name||'P').slice(0,1);statusStoryViewer.querySelector('[data-status-story-body]').textContent=item.body||item.music?.title||'Pulse Wave';statusStoryViewer.querySelector('[data-status-story-count]').textContent=`${Number(item.view_count||0)} views`;statusStoryViewer.querySelector('[data-story-progress] span').style.width=`${Math.round(((statusDraft.storyIndex+1)/items.length)*100)}%`;if(item.id)api(`/api/pulse/waves/${item.id}/view`,{method:'POST',body:JSON.stringify({source:'viewer'})}).catch(()=>{})}
-async function openStatusViewerFeed(lane='global',statusId=0){closeStatusEditor();try{let items=[];if(statusId){const d=await api('/api/pulse/waves/rail?lane=global');items=d.items||[];const target=items.find(x=>Number(x.id)===Number(statusId));if(target)items=[target,...items.filter(x=>Number(x.id)!==Number(statusId))]}else{const d=await api('/api/pulse/waves/rail?lane='+encodeURIComponent(lane));items=d.items||[]}if(!items.length){toast(lane==='following'?'No followed Waves yet.':'No active Waves in this lane yet.');return}statusDraft.storyItems=items;statusStoryViewer?.classList.add('open');statusStoryViewer?.setAttribute('aria-hidden','false');document.body.classList.add('status-viewer-open');renderStatusStory(0)}catch(err){toast(err.message||'Wave viewer could not load.')}}
-function renderTextWaveCanvas(){statusPreview.dataset.effect='cinematic';statusPreview.innerHTML=PulseWaveComponents.textCanvas()}
-function openStatusTextCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setWaveState('composing_text');setStatusModePicker(false);document.getElementById('pulseStatusMode').value='text';renderTextWaveCanvas();document.getElementById('pulseStatusBody')?.focus();window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:'Text Wave ready.'})}
-function routeStatusIntent(intent){const mode=String(intent||'create');if(mode==='create')return openStatusModePicker();if(mode==='media')return openStatusGalleryCreator();if(['following','trending','global'].includes(mode))return openStatusViewerFeed(mode);return openStatusModePicker()}
+function clearStatusDraft(){resetStatusPreviewUrls();statusDraft.files=[];statusDraft.mediaIds=[];statusDraft.soundFile=null;statusDraft.soundMediaId=0;statusDraft.sticker='';statusDraft.link='';statusDraft.effect='natural';if(statusMediaInput)statusMediaInput.value='';if(statusSoundInput)statusSoundInput.value='';document.getElementById('pulseStatusBody').value='';document.querySelector('[data-status-overlays]').innerHTML='';statusPreview.innerHTML='<span>Select media to preview your status.</span>';statusPreview.dataset.effect='natural';window.PulseUploadManager?.render(statusProgress,{stage:'idle',percent:0,message:'Choose media to create a Status.'})}
+function renderStatusPreview(){resetStatusPreviewUrls();const file=statusDraft.files[0];if(!statusPreview)return;if(!file){statusPreview.innerHTML='<span>Select media to preview your status.</span>';return}const url=URL.createObjectURL(file);statusDraft.urls.push(url);const safeName=esc(file.name||'Pulse Status media');statusPreview.dataset.effect=statusDraft.effect||'natural';statusPreview.innerHTML=file.type?.startsWith('video/')?`<video src="${url}" playsinline controls muted loop aria-label="${safeName}"></video>`:`<img src="${url}" alt="${safeName}" decoding="async">`;document.getElementById('pulseStatusMode').value=file.type?.startsWith('video/')?'video':'image';document.querySelector('[data-status-overlays]').innerHTML=statusDraft.sticker?`<span class="pulse-status-sticker">${esc(statusDraft.sticker)}</span>`:'';openStatusEditor();setStatusModePicker(false);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Ready to publish ${safeName}`})}
+async function hydrateStatusRail(){try{const d=await api('/api/pulse/status/rail');const strip=document.querySelector('[data-status-strip]');if(!strip)return;strip.querySelectorAll('[data-status-dynamic]').forEach(x=>x.remove());const real=(d.items||[]).slice(0,12);if(!real.length){strip.insertAdjacentHTML('beforeend','<button class="pulse-status-card" type="button" data-status-card data-status-dynamic data-status-mode="create" data-status-title="Create the first Pulse Status" data-status-meta="Text, image, video, music, or camera"><span class="pulse-status-avatar-ring">+</span><span><span class="pulse-status-title">Create the first Pulse Status</span><span class="pulse-status-meta">Publish something real</span></span></button>');return}strip.insertAdjacentHTML('beforeend',real.map(s=>`<button class="pulse-status-card ${s.viewed?'is-viewed':''}" type="button" data-status-dynamic data-open-status-id="${s.id}" data-status-title="${esc(s.author_name||'Pulse Status')}" data-status-meta="${esc(s.body||s.status_type||'Tap to view')}"><span class="pulse-status-avatar-ring">${esc((s.author_name||'P').slice(0,1))}</span><span><span class="pulse-status-title">${esc(s.author_name||'Pulse member')}</span><span class="pulse-status-meta">${esc(s.status_type||'status')} · ${s.viewed?'seen':'new'}</span></span></button>`).join(''))}catch(e){console.warn('Pulse Status rail hydrate failed',e)}}
+async function loadStatusMusic(query=''){try{const d=await api('/api/pulse/status/music/search?q='+encodeURIComponent(query));const box=document.querySelector('[data-status-music-results]');if(!box)return;box.innerHTML=(d.items||[]).map(t=>`<button type="button" data-status-select-track="${esc(t.id)}" data-track-title="${esc(t.title)}" data-track-artist="${esc(t.artist)}"><strong>${esc(t.title)}</strong><small>${esc(t.artist)} · ${esc(t.mood||'story')}</small></button>`).join('')||'<p class="muted">No creator-safe sounds found.</p>'}catch(e){toast(e.message||'Music search failed.')}}
+function statusMediaStoryHtml(item){const media=(item.media||[])[0]||{};const src=mediaUrl(media.valid_url||media.media_url||media.thumbnail_url||media.poster_url||'');const poster=mediaUrl(media.poster_url||media.thumbnail_url||src);const kind=String(media.media_type||item.status_type||'text').toLowerCase();if(src&&kind==='video')return `<video src="${esc(src)}" poster="${esc(poster)}" playsinline controls muted autoplay preload="metadata"></video>`;if(src)return `<img src="${esc(src)}" alt="${esc(item.body||'Pulse Status')}" loading="eager" decoding="async">`;return `<div class="pulse-ai-story-preview text-story"><strong>${esc(item.body||'Pulse Status')}</strong><small>${esc(item.status_type||'story')}</small></div>`}
+function renderStatusStory(index=0){const items=statusDraft.storyItems||[];if(!items.length||!statusStoryViewer)return;statusDraft.storyIndex=Math.max(0,Math.min(index,items.length-1));const item=items[statusDraft.storyIndex]||{};statusDraft.currentStatusId=Number(item.id||0);statusStoryViewer.querySelector('[data-status-story-media]').innerHTML=statusMediaStoryHtml(item);statusStoryViewer.querySelector('[data-status-story-author]').textContent=item.author_name||'Pulse creator';statusStoryViewer.querySelector('[data-status-story-time]').textContent=item.status_type?`${item.status_type} story`:'Active story';statusStoryViewer.querySelector('[data-status-story-avatar]').textContent=(item.author_name||'P').slice(0,1);statusStoryViewer.querySelector('[data-status-story-body]').textContent=item.body||item.music?.title||'Pulse Status';statusStoryViewer.querySelector('[data-status-story-count]').textContent=`${Number(item.view_count||0)} views`;statusStoryViewer.querySelector('[data-story-progress] span').style.width=`${Math.round(((statusDraft.storyIndex+1)/items.length)*100)}%`;if(item.id)api(`/api/pulse/status/${item.id}/view`,{method:'POST',body:JSON.stringify({source:'viewer'})}).catch(()=>{})}
+async function openStatusViewerFeed(lane='global',statusId=0){closeStatusEditor();try{let items=[];if(statusId){const d=await api('/api/pulse/status/rail?lane=global');items=d.items||[];const target=items.find(x=>Number(x.id)===Number(statusId));if(target)items=[target,...items.filter(x=>Number(x.id)!==Number(statusId))]}else{const d=await api('/api/pulse/status/rail?lane='+encodeURIComponent(lane));items=d.items||[]}if(!items.length){toast(lane==='following'?'No followed stories yet.':'No active stories in this lane yet.');return}statusDraft.storyItems=items;statusStoryViewer?.classList.add('open');statusStoryViewer?.setAttribute('aria-hidden','false');document.body.classList.add('status-viewer-open');renderStatusStory(0)}catch(err){toast(err.message||'Status viewer could not load.')}}
+function openStatusMusicCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(false);document.getElementById('pulseStatusMode').value='music';statusPreview.dataset.effect='cinematic';statusPreview.innerHTML='<div class="pulse-ai-story-preview music-story"><strong>Music Story</strong><small>Choose a creator-safe sound, then add media or text.</small></div>';showStatusMusicPanel(true);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:'Choose a sound to build your Status.'})}
+function openStatusAiCreator(){closeStatusStoryViewer();clearStatusDraft();openStatusEditor();setStatusModePicker(false);document.getElementById('pulseStatusMode').value='ai';statusPreview.dataset.effect='cinematic';statusPreview.innerHTML='<div class="pulse-ai-story-preview"><strong>AI Story</strong><small>Describe a visual story and preview it before publishing.</small></div>';showStatusAiPanel(true);window.PulseUploadManager?.render(statusProgress,{stage:'processing',percent:10,message:'AI Story generator ready.'})}
+function routeStatusIntent(intent){const mode=String(intent||'create');if(mode==='create')return openStatusGalleryCreator();if(mode==='music')return openStatusMusicCreator();if(mode==='camera'){location.href='/pulse/camera?target=status';return}if(mode==='live'){location.href='/pulse/live';return}if(mode==='ai')return openStatusAiCreator();if(['following','trending','global'].includes(mode))return openStatusViewerFeed(mode);return openStatusGalleryCreator()}
 document.addEventListener('click',e=>{const card=e.target.closest('[data-status-card]');if(card){e.preventDefault();e.stopImmediatePropagation();routeStatusIntent(card.dataset.statusIntent||card.dataset.statusMode||'create');return}const openStatus=e.target.closest('[data-open-status-id]');if(openStatus){e.preventDefault();e.stopImmediatePropagation();openStatusViewerFeed('global',openStatus.dataset.openStatusId);return}const storyClose=e.target.closest('[data-status-story-close]');if(storyClose){e.preventDefault();e.stopImmediatePropagation();closeStatusStoryViewer();return}const prev=e.target.closest('[data-status-story-prev]');if(prev){e.preventDefault();e.stopImmediatePropagation();renderStatusStory(statusDraft.storyIndex-1);return}const next=e.target.closest('[data-status-story-next]');if(next){e.preventDefault();e.stopImmediatePropagation();renderStatusStory(statusDraft.storyIndex+1);return}const storyReact=e.target.closest('[data-status-story-react]');if(storyReact&&statusDraft.currentStatusId){e.preventDefault();e.stopImmediatePropagation();api(`/api/pulse/status/${statusDraft.currentStatusId}/react`,{method:'POST',body:JSON.stringify({reaction_type:storyReact.dataset.statusStoryReact})}).then(()=>toast('Reaction sent.')).catch(err=>toast(err.message||'Reaction failed.'));return}const reply=e.target.closest('[data-status-story-send-reply]');if(reply&&statusDraft.currentStatusId){e.preventDefault();e.stopImmediatePropagation();const input=document.querySelector('[data-status-story-reply]');const body=input?.value||'';if(!body.trim()){input?.focus();return}api(`/api/pulse/status/${statusDraft.currentStatusId}/reply`,{method:'POST',body:JSON.stringify({body})}).then(()=>{input.value='';toast('Reply sent.')}).catch(err=>toast(err.message||'Reply failed.'));return}const mute=e.target.closest('[data-status-story-mute]');if(mute){e.preventDefault();e.stopImmediatePropagation();const media=statusStoryViewer?.querySelector('video');if(media){media.muted=!media.muted;toast(media.muted?'Story muted.':'Story unmuted.')}return}if(e.target===statusStoryViewer){e.preventDefault();e.stopImmediatePropagation();closeStatusStoryViewer();return}},true);
-document.addEventListener('click',e=>{const starter=e.target.closest('[data-status-start]');if(starter){const mode=starter.dataset.statusStart;if(mode==='upload'){setStatusModePicker(false);setWaveState('selecting_photo');statusMediaInput?.click();return}if(mode==='text'){openStatusTextCreator();return}}const close=e.target.closest('[data-status-close]');if(close){closeStatusEditor();clearStatusDraft();return}const back=e.target.closest('[data-status-back]');if(back){if(statusForm?.classList.contains('is-choosing'))closeStatusEditor();else openStatusModePicker();return}const tool=e.target.closest('[data-status-tool]');if(tool){const name=tool.dataset.statusTool;if(name==='music'||name==='voice'){statusSoundInput?.click();toast(name==='voice'?'Choose a voice note.':'Choose a music file.');return}if(name==='more'){toast('More Wave tools are tucked away for now.');return}}if(e.target===statusViewer){closeStatusEditor()}});
+async function generateAiStatusStory(){const prompt=document.querySelector('[data-status-ai-prompt]')?.value||'';if(!prompt.trim()){toast('Describe the AI Story first.');return}try{const d=await api('/api/pulse/status/ai-story',{method:'POST',body:JSON.stringify({prompt,style:'cinematic'})});const story=d.story||{};document.getElementById('pulseStatusMode').value='ai';document.getElementById('pulseStatusBody').value=story.caption||prompt;statusPreview.dataset.effect=story.style||'cinematic';statusPreview.innerHTML=`<div class="pulse-ai-story-preview" style="background:${esc(story.visual?.background||'linear-gradient(145deg,#061426,#02050b)')}"><strong>${esc(story.caption||prompt)}</strong><small>${esc((story.tags||[]).join(' · '))}</small></div>`;document.querySelector('[data-status-ai-result]').innerHTML='<span>AI Story ready. Add music or publish.</span>';setStatusModePicker(false);showStatusAiPanel(false);window.PulseUploadManager?.render(statusProgress,{stage:'processing',percent:64,message:'AI Story preview ready.'})}catch(e){toast(e.message||'AI Story failed.')}}
+document.addEventListener('click',e=>{const starter=e.target.closest('[data-status-start]');if(starter){const mode=starter.dataset.statusStart;if(mode==='upload'){setStatusModePicker(false);statusMediaInput?.click();return}if(mode==='text'){setStatusModePicker(false);document.getElementById('pulseStatusMode').value='text';statusPreview.dataset.effect='cinematic';statusPreview.innerHTML='<div class="pulse-ai-story-preview text-story"><strong>Text Story</strong><small>Write your story below.</small></div>';document.getElementById('pulseStatusBody')?.focus();window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:'Text story ready. Write, preview, then share.'});return}}if(e.target.closest('[data-close-status-music]')){showStatusMusicPanel(false);return}if(e.target.closest('[data-close-status-ai]')){showStatusAiPanel(false);return}if(e.target.closest('[data-generate-ai-story]')){generateAiStatusStory();return}const track=e.target.closest('[data-status-select-track]');if(track){document.getElementById('pulseStatusMusicTrack').value=track.dataset.statusSelectTrack||'';document.getElementById('pulseStatusMode').value='music';document.getElementById('pulseStatusBody').value=document.getElementById('pulseStatusBody').value||`${track.dataset.trackTitle||'Pulse sound'} · ${track.dataset.trackArtist||'Pulse'}`;document.querySelector('[data-status-waveform]').innerHTML='<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>';showStatusMusicPanel(false);toast('Sound attached.');return}const back=e.target.closest('[data-status-back]');if(back){if(statusForm?.classList.contains('is-choosing'))closeStatusEditor();else openStatusModePicker();return}const tool=e.target.closest('[data-status-tool]');if(tool){const name=tool.dataset.statusTool;if(name==='choose'){statusMediaInput?.click();return}if(name==='music'){showStatusMusicPanel(true);return}if(name==='text'){document.getElementById('pulseStatusBody')?.focus();toast('Add text over your Status.');return}if(name==='stickers'){const stickers=['❤️','🔥','✨','📸','🎉','💯'];const next=stickers[(stickers.indexOf(statusDraft.sticker)+1)%stickers.length]||stickers[0];statusDraft.sticker=next;renderStatusPreview();toast('Sticker added.');return}if(name==='filters'){document.querySelector('[data-status-effects-tray]')?.classList.toggle('open');return}if(name==='mention'){const mention=prompt('Mention a Pulse creator');if(mention){const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+' ':'')+(mention.startsWith('@')?mention:'@'+mention);body.focus()}return}if(name==='links'){const link=prompt('Add a link');if(link){statusDraft.link=link;const body=document.getElementById('pulseStatusBody');body.value=(body.value?body.value+'\\n':'')+link;toast('Link added.')}return}}const effect=e.target.closest('[data-status-effect]');if(effect){statusDraft.effect=effect.dataset.statusEffect||'natural';document.querySelectorAll('[data-status-effect]').forEach(b=>b.classList.toggle('active',b===effect));if(statusPreview)statusPreview.dataset.effect=statusDraft.effect;toast(`${effect.textContent.trim()} filter applied.`);return}if(e.target===statusViewer){closeStatusEditor()}});
 document.querySelector('[data-status-music-search]')?.addEventListener('input',e=>loadStatusMusic(e.target.value||''));
 statusMediaInput?.addEventListener('change',e=>{statusDraft.files=[...e.target.files].slice(0,8);statusDraft.mediaIds=[];if(statusDraft.files.length)renderStatusPreview()});
-statusSoundInput?.addEventListener('change',e=>{statusDraft.soundFile=e.target.files[0]||null;if(statusDraft.soundFile){toast(`Audio selected: ${statusDraft.soundFile.name}`);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Audio selected: ${statusDraft.soundFile.name}`})}});
-document.getElementById('pulseStatusBody')?.addEventListener('input',()=>{if(document.getElementById('pulseStatusMode')?.value==='text')return;const caption=document.querySelector('[data-wave-caption-preview]');if(caption){const text=document.getElementById('pulseStatusBody').value.trim();caption.textContent=text;caption.hidden=!text}});
-statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(statusDraft.publishing)return;const mode=document.getElementById('pulseStatusMode').value||'image';const bodyText=document.getElementById('pulseStatusBody').value.trim();if(mode==='text'&&!bodyText){document.getElementById('pulseStatusBody').focus();toast('Write your Wave first.');return}if(mode==='text'&&!statusForm.classList.contains('is-previewing')){statusPreview.innerHTML=PulseWaveComponents.textPreview(bodyText);setWaveState('previewing_wave');window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:'Wave ready to launch.'});return}if(!statusDraft.files.length&&mode!=='text'){statusMediaInput?.click();toast('Choose media first.');return}statusDraft.publishing=true;setWaveState('publishing_wave');PulseWaveComponents.publishing(true);if(btn)btn.disabled=true;try{statusDraft.mediaIds=[];for(const [index,file] of statusDraft.files.entries()){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_wave');fd.append('context_id','draft');fd.append('effect_name',statusDraft.effect||'natural');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:statusProgress,lockKey:`pulse-wave-media-${index}-${file.name}`,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)statusDraft.mediaIds.push(up.media.id)}if(statusDraft.soundFile){const fd=new FormData();fd.append('file',statusDraft.soundFile);fd.append('context_type','pulse_wave_audio');fd.append('context_id','draft');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:statusDraft.soundFile,button:btn,progressTarget:statusProgress,lockKey:'pulse-wave-audio'}):await api('/api/pulse/media/upload',{method:'POST',body:fd});statusDraft.soundMediaId=up.media?.id||0}window.PulseUploadManager?.render(statusProgress,{stage:'publishing',percent:96,message:'Launching Wave...'});const payload={status_type:mode,body:document.getElementById('pulseStatusBody').value,visibility:'public',duration_hours:24,media_ids:statusDraft.mediaIds,music_media_id:statusDraft.soundMediaId,effect_name:statusDraft.effect,ai_context:{editor_mode:mode,wave:true,three_click:true}};const created=await api('/api/pulse/waves',{method:'POST',body:JSON.stringify(payload)});window.PulseUploadManager?.render(statusProgress,{stage:'success',percent:100,message:'Wave launched successfully'});toast('Wave launched successfully');closeStatusEditor();clearStatusDraft();await hydrateStatusRail();if(created.status?.id){document.querySelector(`[data-open-status-id="${created.status.id}"]`)?.classList.add('just-created')}}catch(err){setWaveState(mode==='text'?'composing_text':'previewing_wave');window.PulseUploadManager?.render(statusProgress,{stage:'failed',percent:0,message:(err.message||'Wave launch failed.')+' Tap Launch to retry.'});toast((err.message||'Wave launch failed.')+' Tap Launch to retry.')}finally{statusDraft.publishing=false;PulseWaveComponents.publishing(false);if(btn)btn.disabled=false}});
+statusSoundInput?.addEventListener('change',e=>{statusDraft.soundFile=e.target.files[0]||null;if(statusDraft.soundFile){toast(`Music selected: ${statusDraft.soundFile.name}`);window.PulseUploadManager?.render(statusProgress,{stage:'starting',percent:1,message:`Music selected: ${statusDraft.soundFile.name}`})}});
+statusForm?.addEventListener('submit',async e=>{e.preventDefault();const btn=e.submitter;if(statusDraft.publishing)return;const mode=document.getElementById('pulseStatusMode').value||'image';if(!statusDraft.files.length&&!['text','ai','music','live'].includes(mode)){statusMediaInput?.click();toast('Choose an image or video first.');return}statusDraft.publishing=true;if(btn)btn.disabled=true;try{statusDraft.mediaIds=[];for(const [index,file] of statusDraft.files.entries()){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse_status');fd.append('context_id','draft');fd.append('effect_name',statusDraft.effect||'natural');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:statusProgress,lockKey:`pulse-status-media-${index}-${file.name}`,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd});if(up.media?.id)statusDraft.mediaIds.push(up.media.id)}if(statusDraft.soundFile){const fd=new FormData();fd.append('file',statusDraft.soundFile);fd.append('context_type','pulse_status_music');fd.append('context_id','draft');const up=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file:statusDraft.soundFile,button:btn,progressTarget:statusProgress,lockKey:'pulse-status-sound'}):await api('/api/pulse/media/upload',{method:'POST',body:fd});statusDraft.soundMediaId=up.media?.id||0}window.PulseUploadManager?.render(statusProgress,{stage:'publishing',percent:96,message:'Publishing...'});const payload={status_type:mode,body:document.getElementById('pulseStatusBody').value,visibility:document.getElementById('pulseStatusPrivacy').value,duration_hours:Number(document.getElementById('pulseStatusDuration').value||24),media_ids:statusDraft.mediaIds,music_media_id:statusDraft.soundMediaId,effect_name:statusDraft.effect,sticker:statusDraft.sticker,link_url:statusDraft.link,music_track_id:document.getElementById('pulseStatusMusicTrack').value,ai_context:{music_track_id:document.getElementById('pulseStatusMusicTrack').value,editor_mode:mode}};const created=await api('/api/pulse/status',{method:'POST',body:JSON.stringify(payload)});window.PulseUploadManager?.render(statusProgress,{stage:'success',percent:100,message:'Posted successfully'});toast('Posted successfully');closeStatusEditor();clearStatusDraft();await hydrateStatusRail();if(created.status?.id){document.querySelector(`[data-open-status-id="${created.status.id}"]`)?.classList.add('just-created')}}catch(err){window.PulseUploadManager?.render(statusProgress,{stage:'failed',percent:0,message:(err.message||'Status publish failed.')+' Tap Share to retry.'});toast((err.message||'Status publish failed.')+' Tap Share to retry.')}finally{statusDraft.publishing=false;if(btn)btn.disabled=false}});
 hydrateStatusRail();
 async function api(url,opts={}){const headers=opts.body instanceof FormData?{}:{'Content-Type':'application/json'};const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{...headers,...(opts.headers||{})},...opts});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false){throw new Error(d.message||(r.status===401?'Login required.':r.status===403?'Session expired. Please refresh and try again.':'Pulse is warming up. Create the first post.'))}return d}
 function mediaUrl(url){url=String(url||'').trim();if(!url)return'';if(url.startsWith('http://')||url.startsWith('https://')||url.startsWith('/')||url.startsWith('data:')||url.startsWith('blob:'))return url;return '/'+url.replace(new RegExp('^/+'), '')}
@@ -16508,7 +16512,6 @@ def pulse_status_payload(row, viewer_user_id=0):
 
 
 @webhook_app.route("/pulse/status", methods=["GET"])
-@webhook_app.route("/pulse/waves", methods=["GET"])
 def pulse_status_page():
     user = require_account()
     if not user:
@@ -16530,56 +16533,55 @@ def pulse_status_page():
     <link rel="stylesheet" href="/static/css/pulse_status_system.css">
     <section class="card pulse-status-full-page" data-status-full-page>
       <header>
-        <span class="pill">🌊 Pulse Waves</span>
-        <h2>Fast social energy broadcasts</h2>
-        <p class="muted">Launch, watch, reply, and discover lightweight Waves across following, trending, global, music, AI, and live lanes.</p>
+        <span class="pill">Pulse Status</span>
+        <h2>Stories that feel alive</h2>
+        <p class="muted">Create, watch, reply, and discover active stories across following, trending, global, music, AI, and live lanes.</p>
         <div class="actions">
-          <a class="button primary" href="/pulse#pulse-status-rail">Launch Wave</a>
-          <a class="button" href="/pulse/camera?target=status">Camera Wave</a>
+          <a class="button primary" href="/pulse#pulse-status-rail">Create Status</a>
+          <a class="button" href="/pulse/camera?target=status">Camera</a>
           <a class="button" href="/pulse/live">Go Live</a>
         </div>
       </header>
-      <nav class="pulse-status-full-tabs" aria-label="Pulse Waves discovery tabs">{tab_html}</nav>
+      <nav class="pulse-status-full-tabs" aria-label="Pulse Status discovery tabs">{tab_html}</nav>
       <div class="pulse-status-full-grid" data-status-full-grid aria-live="polite">
-        <article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Loading Pulse Waves…</span><span class="pulse-status-meta">Syncing active energy</span></article>
+        <article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Loading Pulse Status…</span><span class="pulse-status-meta">Syncing active stories</span></article>
       </div>
     </section>
     """
     side_html = (
-        "<article class='card'><h2>Wave Intelligence</h2><p>Following shows people you follow. Trending is based on reactions and replies. Music and AI lanes only show matching active Waves.</p></article>"
+        "<article class='card'><h2>Status Intelligence</h2><p>Following shows people you follow. Trending is based on reactions and replies. Music and AI lanes only show matching active stories.</p></article>"
         "<article class='card'><h2>Creator Safety</h2><p>Sounds must be original, uploaded by the creator, or explicitly licensed through a configured provider.</p></article>"
     )
     script_html = """
     const statusGrid=document.querySelector('[data-status-full-grid]');
     async function loadStatusLane(lane='for_you'){
-      if(statusGrid) statusGrid.innerHTML='<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Loading…</span><span class="pulse-status-meta">Preparing active Waves</span></article>';
+      if(statusGrid) statusGrid.innerHTML='<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Loading…</span><span class="pulse-status-meta">Preparing active stories</span></article>';
       try{
-        const d=await pulseApi('/api/pulse/waves/rail?lane='+encodeURIComponent(lane));
+        const d=await pulseApi('/api/pulse/status/rail?lane='+encodeURIComponent(lane));
         const items=d.items||[];
         statusGrid.innerHTML=items.length?items.map(item=>{
-          const title=(item.body||item.author_name||'Pulse Wave').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+          const title=(item.body||item.author_name||'Pulse Status').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
           const author=(item.author_name||'Pulse creator').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-          const mode=(item.status_type||'wave').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+          const mode=(item.status_type||'story').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
           return `<article class="pulse-status-card pulse-status-full-card" data-open-status-id="${item.id}"><span class="pulse-status-avatar-ring">${author.charAt(0)||'P'}</span><span><span class="pulse-status-title">${title}</span><span class="pulse-status-meta">${author} · ${mode}</span></span></article>`;
-        }).join(''):'<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Launch the first Pulse Wave</span><span class="pulse-status-meta">No active Waves in this lane yet.</span></article>';
+        }).join(''):'<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Create the first Pulse Status</span><span class="pulse-status-meta">No active stories in this lane yet.</span></article>';
       }catch(err){
-        statusGrid.innerHTML='<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Waves could not load</span><span class="pulse-status-meta">Tap a tab to retry.</span></article>';
-        toast(err.message||'Pulse Waves could not load.');
+        statusGrid.innerHTML='<article class="pulse-status-card pulse-status-full-card"><span class="pulse-status-title">Status could not load</span><span class="pulse-status-meta">Tap a tab to retry.</span></article>';
+        toast(err.message||'Pulse Status could not load.');
       }
     }
     document.addEventListener('click',e=>{
       const tab=e.target.closest('[data-status-full-tab]');
       if(tab){document.querySelectorAll('[data-status-full-tab]').forEach(b=>b.classList.toggle('active',b===tab));loadStatusLane(tab.dataset.statusFullTab||'for_you');}
       const card=e.target.closest('[data-open-status-id]');
-      if(card){pulseApi(`/api/pulse/waves/${card.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).then(()=>toast('Wave opened.')).catch(err=>toast(err.message||'Wave view failed.'));}
+      if(card){pulseApi(`/api/pulse/status/${card.dataset.openStatusId}/view`,{method:'POST',body:JSON.stringify({})}).then(()=>toast('Status opened.')).catch(err=>toast(err.message||'Status view failed.'));}
     });
     loadStatusLane('for_you');
     """
-    return pulse_social_shell("Pulse Waves", "Fast, lightweight social energy broadcasts for media, voice, mood, AI, and live moments.", main_html, side_html, script_html)
+    return pulse_social_shell("Pulse Status", "Fullscreen stories, music, AI generation, live discovery, and creator-safe publishing.", main_html, side_html, script_html)
 
 
 @webhook_app.route("/api/pulse/status/rail", methods=["GET"])
-@webhook_app.route("/api/pulse/waves/rail", methods=["GET"])
 def api_pulse_status_rail():
     init_db()
     user = api_account_user()
@@ -16618,14 +16620,13 @@ def api_pulse_status_rail():
         selected_rows = lanes.get(lane) if lane in lanes else rows
         items = [pulse_status_payload(row, user["user_id"]) for row in selected_rows]
         conn.close()
-        return jsonify({"ok": True, "items": items, "trace_id": trace_id, "lane": lane, "lanes": ["following", "for_you", "trending", "global", "ai_picks", "music", "live"], "product_name": "Pulse Waves"})
+        return jsonify({"ok": True, "items": items, "trace_id": trace_id, "lane": lane, "lanes": ["following", "for_you", "trending", "global", "ai_picks", "music", "live"]})
     except Exception as exc:
         logging.exception("PULSE_STATUS_RAIL_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
-        return jsonify({"ok": False, "message": "Pulse Waves could not load.", "trace_id": trace_id}), 500
+        return jsonify({"ok": False, "message": "Pulse Status could not load.", "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/api/pulse/status/music/search", methods=["GET"])
-@webhook_app.route("/api/pulse/waves/music/search", methods=["GET"])
 def api_pulse_status_music_search():
     init_db()
     user = api_account_user()
@@ -16638,7 +16639,6 @@ def api_pulse_status_music_search():
 
 
 @webhook_app.route("/api/pulse/status/music/trending", methods=["GET"])
-@webhook_app.route("/api/pulse/waves/music/trending", methods=["GET"])
 def api_pulse_status_music_trending():
     init_db()
     user = api_account_user()
@@ -16648,7 +16648,6 @@ def api_pulse_status_music_trending():
 
 
 @webhook_app.route("/api/pulse/status/ai-story", methods=["POST"])
-@webhook_app.route("/api/pulse/waves/ai", methods=["POST"])
 def api_pulse_status_ai_story():
     init_db()
     user = api_account_user()
@@ -16657,13 +16656,12 @@ def api_pulse_status_ai_story():
     payload = request.get_json(silent=True) or {}
     prompt = clean_html(payload.get("prompt") or "")[:500]
     if not prompt:
-        return jsonify({"ok": False, "message": "Describe the Wave idea first.", "trace_id": secrets.token_hex(6)}), 400
+        return jsonify({"ok": False, "message": "Describe the AI Story first.", "trace_id": secrets.token_hex(6)}), 400
     story = ai_story_service.generate_story(prompt, style=clean_html(payload.get("style") or "")[:80], duration_seconds=safe_int(payload.get("duration_seconds"), 12))
     return jsonify({"ok": True, "story": story, "captions": ai_story_service.caption_suggestions(prompt), "trace_id": secrets.token_hex(6)})
 
 
 @webhook_app.route("/api/pulse/status", methods=["POST"])
-@webhook_app.route("/api/pulse/waves", methods=["POST"])
 def api_pulse_status_create():
     init_db()
     user = api_account_user()
@@ -16690,7 +16688,7 @@ def api_pulse_status_create():
             "effect_name": clean_html(payload.get("effect_name") or "natural")[:80],
             "sticker": clean_html(payload.get("sticker") or "")[:80],
             "link_url": clean_html(payload.get("link_url") or "")[:500],
-            "source": "pulse_wave_launcher",
+            "source": "create_status_editor",
         }
         ai_context["status_tools"] = {key: value for key, value in tool_context.items() if value}
         conn = db()
@@ -16756,14 +16754,13 @@ def api_pulse_status_create():
         cur.execute("SELECT * FROM pulse_status WHERE id=? LIMIT 1", (status_id,))
         status = pulse_status_payload(cur.fetchone(), user["user_id"])
         conn.close()
-        return jsonify({"ok": True, "status": status, "wave": status, "status_id": status_id, "wave_id": status_id, "trace_id": trace_id})
+        return jsonify({"ok": True, "status": status, "status_id": status_id, "trace_id": trace_id})
     except Exception as exc:
         logging.exception("PULSE_STATUS_CREATE_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)
-        return jsonify({"ok": False, "message": "Pulse Wave could not be launched.", "trace_id": trace_id}), 500
+        return jsonify({"ok": False, "message": "Pulse Status could not be created.", "trace_id": trace_id}), 500
 
 
 @webhook_app.route("/api/pulse/status/<int:status_id>/view", methods=["POST"])
-@webhook_app.route("/api/pulse/waves/<int:status_id>/view", methods=["POST"])
 def api_pulse_status_view(status_id):
     init_db()
     user = api_account_user()
@@ -16777,7 +16774,6 @@ def api_pulse_status_view(status_id):
 
 
 @webhook_app.route("/api/pulse/status/<int:status_id>/react", methods=["POST"])
-@webhook_app.route("/api/pulse/waves/<int:status_id>/react", methods=["POST"])
 def api_pulse_status_react(status_id):
     init_db()
     user = api_account_user()
@@ -16793,7 +16789,6 @@ def api_pulse_status_react(status_id):
 
 
 @webhook_app.route("/api/pulse/status/<int:status_id>/reply", methods=["POST"])
-@webhook_app.route("/api/pulse/waves/<int:status_id>/reply", methods=["POST"])
 def api_pulse_status_reply(status_id):
     init_db()
     user = api_account_user()
@@ -16811,7 +16806,7 @@ def api_pulse_status_reply(status_id):
         cur.execute("SELECT id FROM pulse_status WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(status_id),))
         if not cur.fetchone():
             conn.close()
-            return jsonify({"ok": False, "message": "Wave is no longer available.", "trace_id": trace_id}), 404
+            return jsonify({"ok": False, "message": "Status is no longer available.", "trace_id": trace_id}), 404
         cur.execute(
             "INSERT INTO pulse_status_replies (status_id, user_id, body, created_at) VALUES (?, ?, ?, ?)",
             (int(status_id), int(user["user_id"]), body, now),
@@ -16822,7 +16817,7 @@ def api_pulse_status_reply(status_id):
         return jsonify({"ok": True, "reply": {"id": reply_id, "status_id": int(status_id), "body": body, "created_at": now}, "trace_id": trace_id})
     except Exception as exc:
         logging.exception("PULSE_STATUS_REPLY_FAILED trace_id=%s status_id=%s user_id=%s error=%s", trace_id, status_id, user.get("user_id"), exc)
-        return jsonify({"ok": False, "message": "Wave reply could not be sent.", "trace_id": trace_id}), 500
+        return jsonify({"ok": False, "message": "Status reply could not be sent.", "trace_id": trace_id}), 500
 
 
 def pulse_section_shell(title, description, cards=None, primary_href="/pulse/create", primary_label="Create Pulse"):
