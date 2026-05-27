@@ -151,13 +151,18 @@ def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_uploa
         }, 502
     media_type = media.get("media_type") or validation.get("media_type") or "media"
     logging.info(
-        "PULSE_UPLOAD_STAGE_COMPLETE trace_id=%s user_id=%s context_type=%s media_id=%s media_type=%s media_url=%s verified=%s processing_status=%s",
+        "PULSE_UPLOAD_STAGE_COMPLETE trace_id=%s user_id=%s context_type=%s media_id=%s media_type=%s mime_type=%s file_size=%s storage_provider=%s storage_key=%s media_url=%s valid_url=%s verified=%s processing_status=%s",
         tid,
         user_id,
         context_type,
         media.get("id"),
         media_type,
+        media.get("mime_type") or validation.get("mime_type") or "",
+        media.get("file_size_bytes") or validation.get("size") or 0,
+        media.get("storage_provider") or media_storage.provider(),
+        media.get("storage_key") or "",
         media.get("media_url"),
+        media.get("valid_url") or "",
         bool(media.get("verified")),
         media.get("processing_status") or "ready",
     )

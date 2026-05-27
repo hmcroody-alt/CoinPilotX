@@ -22377,7 +22377,7 @@ def pulse_post_page(post_id):
         backdrop_url = poster_url if poster_url and not re.search(r"\.(mp4|webm|mov|m4v)(\?|#|$)", poster_url, re.I) else ""
         backdrop_style = f" style=\"--media-ratio:{ratio};--media-backdrop:url('{backdrop_url}');\"" if ratio else f" style=\"--media-backdrop:url('{backdrop_url}');\""
         cinematic_layers = "<div class='pulse-media-backdrop' aria-hidden='true'></div><div class='pulse-media-depth-layer' aria-hidden='true'></div><div class='pulse-media-aura' aria-hidden='true'></div>"
-        fallback = "<div class='pulse-media-fallback'><div><strong>Media could not load.</strong><span>Tap to retry.</span><br><button type='button' onclick='location.reload()'>Retry</button></div></div>"
+        fallback = f"<div class='pulse-media-fallback'><div><strong>Media could not load.</strong><span>Tap to retry. Trace media-{media_id or 'unknown'}</span><br><button type='button' onclick='location.reload()'>Retry</button></div></div>"
         if is_video_item:
             poster_attr = f" poster='{poster_url}'" if poster_url else ""
             type_attr = f" type='{mime_type}'" if mime_type else ""

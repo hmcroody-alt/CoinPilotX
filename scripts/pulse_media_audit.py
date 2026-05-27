@@ -47,8 +47,11 @@ def main():
         "applyAmbientColor",
         "bindVideoAmbient",
         "Pulse video diagnostic",
+        "Pulse video CDN HEAD",
+        "setMediaSource",
         "data-media-mime",
         "<source src=",
+        "Trace media-",
         "pulseMediaBreath",
     ]:
         expect(token in source + cinematic_css + cinematic_js, f"cinematic media atmosphere present: {token}")

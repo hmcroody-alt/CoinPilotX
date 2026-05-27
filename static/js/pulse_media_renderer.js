@@ -86,6 +86,21 @@
     return media.tagName === "VIDEO" ? videoSource(media) : (media.dataset.fullSrc || media.currentSrc || media.src || "");
   }
 
+  function setMediaSource(media, url) {
+    if (!media || !url) return;
+    if (media.tagName === "VIDEO") {
+      const source = media.querySelector("source");
+      if (source) {
+        source.src = url;
+      } else {
+        media.src = url;
+      }
+      media.load();
+      return;
+    }
+    media.src = url;
+  }
+
   function videoErrorDetails(video) {
     const error = video?.error;
     const codes = {
@@ -160,14 +175,22 @@
 
   function failMedia(wrap, media) {
     const retries = Number(wrap.dataset.mediaRetries || 0);
+    if (media?.tagName === "VIDEO") reportVideoDiagnostics(wrap, media, retries ? "retry_error" : "load_error");
     if (retries < MAX_RETRIES) {
       wrap.dataset.mediaRetries = String(retries + 1);
       const src = mediaSource(media) || mediaUrl(wrap);
       if (src) {
         media.style.visibility = "hidden";
-        media.addEventListener("load", () => revealImage(wrap, media), { once: true });
-        media.src = retryUrl(src.split("#")[0], retries + 1);
-        if (media.tagName === "VIDEO") media.load();
+        if (media.tagName === "VIDEO") {
+          media.addEventListener("loadedmetadata", () => {
+            media.style.visibility = "";
+            mark(wrap, LOADED);
+          }, { once: true });
+          setMediaSource(media, retryUrl(src.split("#")[0], retries + 1));
+        } else {
+          media.addEventListener("load", () => revealImage(wrap, media), { once: true });
+          setMediaSource(media, retryUrl(src.split("#")[0], retries + 1));
+        }
         return;
       }
     }
@@ -186,6 +209,13 @@
     wrap.dataset.mediaHydrated = "1";
     setBackdrop(wrap);
     const media = wrap.querySelector("img,video");
+    const canonicalSrc = mediaUrl(wrap);
+    if (canonicalSrc.includes("r2.cloudflarestorage.com")) {
+      console.warn("Pulse media received private R2 URL; renderer requires CDN URL", {
+        media_id: wrap.dataset.mediaId || "",
+        src: canonicalSrc,
+      });
+    }
     if (window.localStorage?.getItem("pulseDebugMedia") === "1") {
       console.debug("Pulse media render state", {
         media_id: wrap.dataset.mediaId || "",
@@ -256,8 +286,7 @@
     wrap.dataset.mediaRetries = "0";
     wrap.classList.remove(BROKEN);
     const src = mediaSource(media) || mediaUrl(wrap);
-    if (src) media.src = retryUrl(src.split("#")[0], 0);
-    if (media.tagName === "VIDEO") media.load();
+    if (src) setMediaSource(media, retryUrl(src.split("#")[0], 0));
     hydrateWrap(wrap);
   }
 
