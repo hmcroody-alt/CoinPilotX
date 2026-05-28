@@ -163,6 +163,63 @@ article.card > .pulse-media-wrap {
     drop-shadow(0 0 18px rgba(var(--pulse-media-rgb, 110, 223, 246), .12)) !important;
 }
 
+.pulse-media-surface-reels {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+}
+
+.pulse-media-surface-reels img,
+.pulse-media-surface-reels video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
+
+.reel-card.fill .pulse-media-surface-reels img,
+.reel-card.fill .pulse-media-surface-reels video {
+  object-fit: cover !important;
+}
+
+.pulse-media-surface-message {
+  width: min(320px, 72vw) !important;
+  margin-top: 7px !important;
+  border-radius: 16px !important;
+}
+
+.pulse-dashboard-bubble.me .pulse-media-surface-message {
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, .24),
+    0 0 30px rgba(6, 16, 27, .12) !important;
+}
+
+.pulse-media-surface-message img,
+.pulse-media-surface-message video {
+  max-height: 360px !important;
+  border-radius: 0 !important;
+}
+
+.pulse-media-surface-message audio {
+  position: relative;
+  z-index: 5;
+  width: 100%;
+  min-height: 38px;
+  padding: 10px;
+}
+
+.pulse-media-surface-live-preview {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  border-radius: inherit !important;
+}
+
+.pulse-media-surface-live-preview img,
+.pulse-media-surface-live-preview video {
+  height: 100% !important;
+}
+
 .pulse-media-wrap.is-portrait img,
 .pulse-media-wrap.is-portrait video {
   width: auto !important;

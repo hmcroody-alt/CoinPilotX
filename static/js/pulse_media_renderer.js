@@ -12,12 +12,138 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=edge-20260527";
+    link.href = "/static/css/pulse_cinematic_media.css?v=foundation-20260528";
     document.head.appendChild(link);
   }
 
   function mediaUrl(wrap) {
     return wrap?.dataset.mediaUrl || wrap?.dataset.mediaSrc || "";
+  }
+
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[char]));
+  }
+
+  function safeUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("/") || raw.startsWith("data:") || raw.startsWith("blob:")) return raw;
+    return "/" + raw.replace(/^\/+/, "");
+  }
+
+  function inferMediaType(item, url) {
+    const explicit = String(item?.media_type || item?.type || item?.message_type || item?.kind || "").toLowerCase();
+    const mime = String(item?.mime_type || item?.mime || "").toLowerCase();
+    const source = String(url || item?.media_url || item?.valid_url || "").toLowerCase();
+    if (explicit === "gif") return "image";
+    if (explicit === "image" || explicit === "video" || explicit === "audio" || explicit === "file") return explicit;
+    if (mime.startsWith("video/") || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(source)) return "video";
+    if (mime.startsWith("audio/") || /\.(mp3|m4a|aac|wav|ogg)(\?|#|$)/i.test(source)) return "audio";
+    if (mime.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|avif)(\?|#|$)/i.test(source)) return "image";
+    return "image";
+  }
+
+  function normalizeMedia(input = {}) {
+    const item = input || {};
+    const url = safeUrl(item.valid_url || item.media_url || item.url || item.src || "");
+    const thumb = safeUrl(item.thumbnail_url || item.thumbnail || item.thumb || "");
+    const poster = safeUrl(item.poster_url || item.poster || thumb || "");
+    const type = inferMediaType(item, url);
+    const mime = String(item.mime_type || item.mime || (type === "video" ? "video/mp4" : type === "image" ? "image/jpeg" : "")).toLowerCase();
+    const id = item.id || item.media_id || item.message_id || item.reel_id || "";
+    return {
+      id,
+      url,
+      valid_url: safeUrl(item.valid_url || url),
+      thumb,
+      poster,
+      type,
+      mime,
+      width: Number(item.width || 0),
+      height: Number(item.height || 0),
+      aspect_ratio: Number(item.aspect_ratio || 0),
+      orientation: item.orientation || "",
+      is_available: item.is_available !== false && !!url,
+      embed_type: item.embed_type || "upload",
+      source_platform: item.source_platform || "coinpilotx",
+      preload_priority: item.preload_priority || "nearby",
+      alt: item.alt || item.title || "Pulse media",
+      diag: item.diag || item.diagnostics || "",
+    };
+  }
+
+  function layersHtml() {
+    return '<div class="pulse-media-backdrop" aria-hidden="true"></div><div class="pulse-media-soft-glow" aria-hidden="true"></div><div class="pulse-media-color-orb" aria-hidden="true"></div><div class="pulse-media-depth-layer" aria-hidden="true"></div><div class="pulse-media-aura" aria-hidden="true"></div><div class="pulse-media-vignette" aria-hidden="true"></div>';
+  }
+
+  function renderMedia(input = {}, options = {}) {
+    const media = normalizeMedia(input);
+    const ratio = media.width > 0 && media.height > 0 ? media.width / media.height : media.aspect_ratio;
+    const orientation = media.orientation || (ratio ? Math.abs(ratio - 1) < .08 ? "square" : ratio > 1 ? "landscape" : "portrait" : "unknown");
+    const backdrop = media.type === "video" ? (media.poster || media.thumb) : (media.thumb || media.valid_url || media.url);
+    const surface = options.surface || "pulse";
+    const className = options.className || "";
+    const shellClass = [
+      "pulse-media-wrap",
+      "pulse-cinematic-media-shell",
+      "pulse-media-galaxy-shell",
+      "pulse-media-ambient-shell",
+      `is-${orientation}`,
+      `media-kind-${media.type}`,
+      `pulse-media-surface-${surface}`,
+      media.is_available ? "" : BROKEN,
+      className,
+    ].filter(Boolean).join(" ");
+    const style = `${ratio ? `--media-ratio:${ratio};` : ""}${backdrop ? `--media-backdrop:url('${esc(backdrop)}');` : ""}`;
+    const diag = esc(JSON.stringify({
+      id: media.id || 0,
+      type: media.type,
+      mime_type: media.mime,
+      src: media.valid_url || media.url,
+      surface,
+      available: media.is_available,
+    }).slice(0, 600));
+    const extraAttrs = options.attrs ? String(options.attrs) : "";
+    const data = [
+      `data-media-id="${esc(media.id)}"`,
+      `data-media-url="${esc(media.valid_url || media.url)}"`,
+      `data-media-src="${esc(media.valid_url || media.url)}"`,
+      `data-media-type="${esc(media.type)}"`,
+      `data-media-mime="${esc(media.mime)}"`,
+      `data-media-thumb="${esc(media.thumb)}"`,
+      `data-media-poster="${esc(media.poster)}"`,
+      `data-media-backdrop="${esc(backdrop)}"`,
+      `data-media-embed="${esc(media.embed_type)}"`,
+      `data-media-platform="${esc(media.source_platform)}"`,
+      `data-media-surface="${esc(surface)}"`,
+      `data-media-diag="${diag}"`,
+    ].join(" ") + (extraAttrs ? ` ${extraAttrs}` : "");
+    const fallback = `<div class="pulse-media-fallback" data-media-fallback="${esc(media.id)}"><div><strong>${media.is_available ? "Media could not load." : "Media is being restored."}</strong><span class="muted">Tap to retry. Trace media-${esc(media.id || "unknown")}</span><br><button type="button" data-retry-media>Retry</button></div></div>`;
+    if (!media.is_available) {
+      return `<div class="${shellClass}" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}${fallback}</div>`;
+    }
+    if (media.type === "video") {
+      const poster = media.poster ? ` poster="${esc(media.poster)}"` : "";
+      const type = media.mime ? ` type="${esc(media.mime)}"` : "";
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video muted controls playsinline preload="metadata"${poster}><source src="${esc(media.valid_url || media.url)}"${type}></video>${fallback}</div>`;
+    }
+    if (media.type === "audio") {
+      return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
+    }
+    return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<img src="${esc(media.thumb || media.valid_url || media.url)}" data-full-src="${esc(media.valid_url || media.url)}" alt="${esc(media.alt)}" loading="${media.preload_priority === "high" ? "eager" : "lazy"}" decoding="async">${fallback}</div>`;
+  }
+
+  function renderInto(root, mediaList, options = {}) {
+    const node = typeof root === "string" ? document.querySelector(root) : root;
+    if (!node) return;
+    node.innerHTML = (Array.isArray(mediaList) ? mediaList : [mediaList]).map(item => renderMedia(item, options)).join("");
+    hydrate(node);
   }
 
   function mark(wrap, state) {
@@ -334,5 +460,5 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => hydrate(document));
-  window.PulseMediaRenderer = { hydrate, retry };
+  window.PulseMediaRenderer = { hydrate, retry, normalizeMedia, renderMedia, renderInto };
 })();
