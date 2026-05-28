@@ -5,6 +5,16 @@
   const LOADED = "is-ready";
   const LOADING = "is-loading";
   const BROKEN = "is-broken";
+  const PORTAL_CSS_ID = "pulse-cinematic-media-css";
+
+  function ensurePortalStyles() {
+    if (document.getElementById(PORTAL_CSS_ID)) return;
+    const link = document.createElement("link");
+    link.id = PORTAL_CSS_ID;
+    link.rel = "stylesheet";
+    link.href = "/static/css/pulse_cinematic_media.css?v=edge-20260527";
+    document.head.appendChild(link);
+  }
 
   function mediaUrl(wrap) {
     return wrap?.dataset.mediaUrl || wrap?.dataset.mediaSrc || "";
@@ -49,26 +59,32 @@
       b = Math.round(b / n);
       const tealBias = Math.max(g, Math.round((g + 54) * .86));
       const blueBias = Math.max(b, Math.round((b + 70) * .82));
-      wrap.style.setProperty("--pulse-media-rgb", `${Math.min(255, r)}, ${Math.min(255, tealBias)}, ${Math.min(255, blueBias)}`);
+      const primary = `${Math.min(255, r)}, ${Math.min(255, tealBias)}, ${Math.min(255, blueBias)}`;
+      const secondary = `${Math.min(255, Math.round((r + 54) * .72))}, ${Math.min(255, Math.round((g + 110) * .88))}, ${Math.min(255, Math.round((b + 92) * .78))}`;
+      const accent = `${Math.min(255, Math.round((r + 138) * .72))}, ${Math.min(255, Math.round((g + 60) * .62))}, ${Math.min(255, Math.round((b + 178) * .78))}`;
+      wrap.style.setProperty("--pulse-media-rgb", primary);
+      wrap.style.setProperty("--pulse-media-secondary-rgb", secondary);
+      wrap.style.setProperty("--pulse-media-accent-rgb", accent);
       wrap.style.setProperty("--pulse-media-x", `${38 + (r % 26)}%`);
       wrap.style.setProperty("--pulse-media-y", `${28 + (b % 32)}%`);
     } catch (_) {
       wrap.style.setProperty("--pulse-media-rgb", "110, 223, 246");
+      wrap.style.setProperty("--pulse-media-secondary-rgb", "54, 229, 143");
+      wrap.style.setProperty("--pulse-media-accent-rgb", "155, 92, 255");
     }
   }
 
   function bindVideoAmbient(wrap, video) {
     if (!wrap || !video || wrap.dataset.videoAmbientBound === "1") return;
     wrap.dataset.videoAmbientBound = "1";
-    let lastSample = 0;
+    let sampleCount = 0;
     const sample = () => {
-      const now = Date.now();
-      if (now - lastSample < 1800) return;
-      lastSample = now;
+      if (sampleCount >= 2) return;
+      sampleCount += 1;
       applyAmbientColor(wrap, video, true);
     };
+    video.addEventListener("loadeddata", sample, { once: true });
     video.addEventListener("playing", sample);
-    video.addEventListener("timeupdate", sample);
   }
 
   function retryUrl(url, count) {
@@ -292,6 +308,7 @@
 
   let observer = null;
   function hydrate(root) {
+    ensurePortalStyles();
     const scope = root || document;
     const wraps = Array.from(scope.querySelectorAll(".pulse-media-wrap"));
     if ("IntersectionObserver" in window) {

@@ -1684,3 +1684,64 @@ body {
     opacity: .92 !important;
   }
 }
+
+/* Final Pulse media edge-to-edge pass.
+   Kept at the end of the feed stylesheet so older media frame rules cannot re-add borders. */
+.post.card {
+  --pulse-card-media-bleed: clamp(14px, 1vw, 20px);
+}
+
+article.card {
+  --pulse-card-media-bleed: 14px;
+}
+
+.post > .media-grid,
+article.card > .pulse-media-wrap {
+  width: calc(100% + (var(--pulse-card-media-bleed, 16px) * 2)) !important;
+  max-width: none !important;
+  margin-left: calc(var(--pulse-card-media-bleed, 16px) * -1) !important;
+  margin-right: calc(var(--pulse-card-media-bleed, 16px) * -1) !important;
+}
+
+.post > .media-grid {
+  gap: 0 !important;
+  margin-top: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+.pulse-media-wrap,
+.pulse-cinematic-media-shell,
+.pulse-media-galaxy-shell,
+.pulse-media-ambient-shell {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  box-shadow:
+    0 24px 76px rgba(0, 0, 0, .38),
+    0 0 52px rgba(var(--pulse-media-rgb, 110, 223, 246), .11),
+    0 0 96px rgba(54, 229, 143, .055),
+    inset 0 -58px 108px rgba(0, 0, 0, .30) !important;
+}
+
+.pulse-media-wrap img,
+.pulse-media-wrap video {
+  width: 100% !important;
+  max-width: 100% !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
+
+@media (max-width: 900px) {
+  .post.card {
+    --pulse-card-media-bleed: 13px;
+  }
+}
+
+@media (max-width: 600px) {
+  .post.card {
+    --pulse-card-media-bleed: 9px;
+  }
+}

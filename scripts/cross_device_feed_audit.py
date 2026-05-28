@@ -25,8 +25,8 @@ def main():
 
     expect((ROOT / "services/embed_service.py").exists(), "canonical embed service exists")
     expect("pulse_media_renderer.js" in bot_source, "Pulse pages load deterministic media renderer")
-    expect("pulse_media_renderer.js?v=media-desktop-fix-20260525-2" in bot_source, "Pulse media renderer is cache-busted")
-    expect("pulse_desktop_feed.css?v=media-desktop-fix-20260525-2" in bot_source, "Pulse desktop CSS is cache-busted")
+    expect("pulse_media_renderer.js?v=edge-20260527" in bot_source, "Pulse media renderer is cache-busted")
+    expect("pulse_desktop_feed.css?v=edge-20260527" in bot_source, "Pulse desktop CSS is cache-busted")
     expect("PulseMediaRenderer?.hydrate" in bot_source, "feed hydrates media after DOM inserts")
     expect("data-media-url" in bot_source and "data-media-id" in bot_source, "media DOM has canonical data attributes")
     for key in ["type", "media_url", "thumbnail_url", "poster_url", "width", "height", "aspect_ratio", "mime_type", "embed_type", "source_platform", "preload_priority"]:

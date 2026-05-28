@@ -1,0 +1,282 @@
+/* Pulse lightweight cinematic media ambience.
+   CSS-first, low-latency glow system for feed and detail media shells. */
+
+.pulse-media-wrap,
+.pulse-cinematic-media-shell,
+.pulse-media-galaxy-shell,
+.pulse-media-ambient-shell {
+  position: relative !important;
+  isolation: isolate !important;
+  overflow: hidden !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  border-radius: clamp(12px, 1.1vw, 18px) !important;
+  background:
+    radial-gradient(circle at var(--pulse-media-x, 48%) var(--pulse-media-y, 38%), rgba(var(--pulse-media-rgb, 110, 223, 246), .14), transparent 34%),
+    radial-gradient(ellipse at 50% 112%, rgba(54, 229, 143, .13), transparent 44%),
+    linear-gradient(145deg, rgba(3, 10, 20, .98), rgba(4, 14, 27, .96) 54%, rgba(1, 5, 12, .98)) !important;
+  border: 0 !important;
+  box-shadow:
+    0 24px 76px rgba(0, 0, 0, .38),
+    0 0 52px rgba(var(--pulse-media-rgb, 110, 223, 246), .11),
+    0 0 96px rgba(54, 229, 143, .055),
+    inset 0 -58px 108px rgba(0, 0, 0, .30) !important;
+  transform: translateZ(0);
+}
+
+.post.card {
+  --pulse-card-media-bleed: clamp(14px, 1vw, 20px);
+}
+
+article.card {
+  --pulse-card-media-bleed: 14px;
+}
+
+.post > .media-grid,
+article.card > .pulse-media-wrap {
+  width: calc(100% + (var(--pulse-card-media-bleed, 16px) * 2)) !important;
+  max-width: none !important;
+  margin-left: calc(var(--pulse-card-media-bleed, 16px) * -1) !important;
+  margin-right: calc(var(--pulse-card-media-bleed, 16px) * -1) !important;
+}
+
+.post > .media-grid {
+  gap: 0 !important;
+  margin-top: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+.pulse-media-wrap::before,
+.pulse-media-wrap::after,
+.pulse-cinematic-media-shell::before,
+.pulse-cinematic-media-shell::after,
+.pulse-media-backdrop,
+.pulse-media-depth-layer,
+.pulse-media-aura,
+.pulse-media-soft-glow,
+.pulse-media-color-orb,
+.pulse-media-vignette {
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+}
+
+.pulse-media-backdrop {
+  z-index: 0 !important;
+  inset: -18% !important;
+  background-image:
+    linear-gradient(120deg, rgba(2, 8, 17, .40), rgba(2, 8, 17, .14)),
+    var(--media-backdrop) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  filter: blur(46px) saturate(1.46) contrast(1.08) brightness(.56) !important;
+  opacity: .82 !important;
+  transform: scale(1.16) translate3d(0, 0, 0);
+  animation: pulseAmbientBackdropDrift 20s ease-in-out infinite alternate !important;
+}
+
+.pulse-media-backdrop::after,
+.pulse-media-soft-glow,
+.pulse-media-color-orb,
+.pulse-media-wrap::before {
+  content: "" !important;
+  z-index: 1 !important;
+  background:
+    radial-gradient(circle at var(--pulse-media-x, 46%) var(--pulse-media-y, 38%), rgba(var(--pulse-media-rgb, 110, 223, 246), .22), transparent 34%),
+    radial-gradient(circle at 18% 76%, rgba(var(--pulse-media-secondary-rgb, 54, 229, 143), .14), transparent 36%),
+    radial-gradient(circle at 82% 24%, rgba(var(--pulse-media-accent-rgb, 155, 92, 255), .12), transparent 38%) !important;
+  opacity: .78 !important;
+  mix-blend-mode: screen;
+  animation: pulseAmbientGlowBreath 16s ease-in-out infinite !important;
+}
+
+.pulse-media-depth-layer {
+  z-index: 2 !important;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(255, 255, 255, .07), transparent 24%),
+    radial-gradient(ellipse at 50% 104%, rgba(54, 229, 143, .11), transparent 44%),
+    linear-gradient(180deg, rgba(1, 5, 12, .18), rgba(1, 5, 12, .68)) !important;
+  opacity: .76 !important;
+  mix-blend-mode: screen;
+  animation: pulseAmbientDepthShift 18s ease-in-out infinite alternate !important;
+}
+
+.pulse-media-aura {
+  z-index: 3 !important;
+  border-radius: inherit !important;
+  background:
+    linear-gradient(116deg, transparent 12%, rgba(255, 255, 255, .055) 45%, transparent 62%),
+    radial-gradient(ellipse at var(--pulse-media-x, 52%) var(--pulse-media-y, 42%), rgba(255, 255, 255, .09), transparent 22%) !important;
+  box-shadow:
+    inset 0 0 78px rgba(var(--pulse-media-rgb, 110, 223, 246), .15),
+    inset 0 0 150px rgba(3, 8, 17, .54),
+    inset 0 0 0 1px rgba(255, 255, 255, .055),
+    0 0 66px rgba(var(--pulse-media-rgb, 110, 223, 246), .11) !important;
+  opacity: .78 !important;
+  animation: pulseAmbientAuraBreath 18s ease-in-out infinite !important;
+}
+
+.pulse-cinematic-media-shell::before {
+  z-index: 4 !important;
+  background:
+    radial-gradient(1px 1px at 12% 84%, rgba(var(--pulse-media-rgb, 110, 223, 246), .28), transparent),
+    radial-gradient(1px 1px at 24% 24%, rgba(110, 223, 246, .28), transparent),
+    radial-gradient(1px 1px at 74% 30%, rgba(155, 92, 255, .24), transparent),
+    linear-gradient(104deg, transparent 15%, rgba(110, 223, 246, .045) 44%, rgba(255, 255, 255, .02) 53%, transparent 70%) !important;
+  background-size: 190px 190px, 240px 240px, 310px 310px, 180% 100% !important;
+  opacity: .24 !important;
+  mix-blend-mode: screen;
+  animation: pulseAmbientSoftParticles 34s linear infinite, pulseAmbientLightStreak 18s ease-in-out infinite alternate !important;
+}
+
+.pulse-cinematic-media-shell::after,
+.pulse-media-vignette {
+  content: "" !important;
+  z-index: 6 !important;
+  border-radius: inherit !important;
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 48%, rgba(0, 0, 0, .34) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, .055), transparent 18%, transparent 74%, rgba(0, 0, 0, .24)),
+    linear-gradient(90deg, rgba(110, 223, 246, .045), transparent 18%, transparent 82%, rgba(155, 92, 255, .045)) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .06),
+    inset 0 0 112px rgba(0, 0, 0, .22) !important;
+}
+
+.pulse-media-wrap img,
+.pulse-media-wrap video {
+  position: relative !important;
+  z-index: 5 !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin-inline: auto !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  filter:
+    drop-shadow(0 22px 48px rgba(0, 0, 0, .54))
+    drop-shadow(0 0 18px rgba(var(--pulse-media-rgb, 110, 223, 246), .12)) !important;
+}
+
+.pulse-media-wrap.is-portrait img,
+.pulse-media-wrap.is-portrait video {
+  width: auto !important;
+  max-width: 100% !important;
+}
+
+.pulse-media-wrap.is-landscape img,
+.pulse-media-wrap.is-landscape video,
+.pulse-media-wrap.is-square img,
+.pulse-media-wrap.is-square video {
+  width: 100% !important;
+}
+
+.pulse-media-wrap.is-ready img,
+.pulse-media-wrap.is-ready video {
+  animation: pulseAmbientMediaFloat 12s ease-in-out infinite;
+}
+
+.pulse-media-wrap.is-broken::before,
+.pulse-media-wrap.is-broken::after {
+  opacity: .18 !important;
+}
+
+.pulse-media-fallback {
+  z-index: 8 !important;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(110, 223, 246, .12), transparent 28%),
+    linear-gradient(145deg, rgba(8, 19, 35, .94), rgba(3, 9, 18, .98)) !important;
+  backdrop-filter: blur(8px);
+}
+
+@keyframes pulseAmbientBackdropDrift {
+  0% { transform: scale(1.14) translate3d(-1.2%, -.8%, 0); filter: blur(44px) saturate(1.36) contrast(1.06) brightness(.54); }
+  100% { transform: scale(1.2) translate3d(1.2%, .9%, 0); filter: blur(48px) saturate(1.54) contrast(1.1) brightness(.59); }
+}
+
+@keyframes pulseAmbientGlowBreath {
+  0%, 100% { opacity: .56; transform: scale(1); }
+  50% { opacity: .82; transform: scale(1.025); }
+}
+
+@keyframes pulseAmbientDepthShift {
+  0% { transform: translate3d(-.5%, -.4%, 0); opacity: .62; }
+  100% { transform: translate3d(.5%, .45%, 0); opacity: .8; }
+}
+
+@keyframes pulseAmbientAuraBreath {
+  0%, 100% { opacity: .62; filter: saturate(1) brightness(.98); }
+  50% { opacity: .82; filter: saturate(1.12) brightness(1.04); }
+}
+
+@keyframes pulseAmbientSoftParticles {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(18px, -22px, 0); }
+}
+
+@keyframes pulseAmbientLightStreak {
+  0% { background-position: 0 0, 0 0, 0 0, -42% 0; }
+  100% { background-position: 10px -8px, 14px -10px, 20px -16px, 60% 0; }
+}
+
+@keyframes pulseAmbientMediaFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-1px) scale(1.001); }
+}
+
+@media (max-width: 900px) {
+  .pulse-media-wrap,
+  .pulse-cinematic-media-shell,
+  .pulse-media-galaxy-shell,
+  .pulse-media-ambient-shell {
+    border-radius: 10px !important;
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, .36),
+      0 0 34px rgba(var(--pulse-media-rgb, 110, 223, 246), .095) !important;
+  }
+
+  .post.card {
+    --pulse-card-media-bleed: 13px;
+  }
+
+  .pulse-media-backdrop {
+    filter: blur(34px) saturate(1.35) contrast(1.06) brightness(.58) !important;
+    opacity: .74 !important;
+  }
+
+  .pulse-cinematic-media-shell::before {
+    opacity: .18 !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .post.card {
+    --pulse-card-media-bleed: 9px;
+  }
+
+  .post > .media-grid,
+  article.card > .pulse-media-wrap {
+    width: calc(100% + (var(--pulse-card-media-bleed, 9px) * 2)) !important;
+    margin-left: calc(var(--pulse-card-media-bleed, 9px) * -1) !important;
+    margin-right: calc(var(--pulse-card-media-bleed, 9px) * -1) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-media-wrap,
+  .pulse-media-backdrop,
+  .pulse-media-depth-layer,
+  .pulse-media-aura,
+  .pulse-media-soft-glow,
+  .pulse-media-color-orb,
+  .pulse-cinematic-media-shell::before,
+  .pulse-media-wrap.is-ready img,
+  .pulse-media-wrap.is-ready video {
+    animation: none !important;
+  }
+}

@@ -36,7 +36,11 @@ def main():
         "srcset",
     ]:
         expect(token in source + service, f"media rendering rule present: {token}")
-    cinematic_css = (ROOT / "static/css/pulse_desktop_feed.css").read_text(encoding="utf-8")
+    cinematic_css = (
+        (ROOT / "static/css/pulse_desktop_feed.css").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "static/css/pulse_cinematic_media.css").read_text(encoding="utf-8")
+    )
     cinematic_js = (ROOT / "static/js/pulse_media_renderer.js").read_text(encoding="utf-8")
     for token in [
         "pulse-cinematic-media-shell",
@@ -56,6 +60,20 @@ def main():
         "pulseGalaxyDepth",
         "pulseGalaxyStreak",
         "radial-gradient(ellipse at 50% 105%",
+        "pulse-media-galaxy-shell",
+        "pulse-media-ambient-shell",
+        "pulse-media-soft-glow",
+        "pulse-media-color-orb",
+        "pulse-media-vignette",
+        "pulseAmbientBackdropDrift",
+        "pulseAmbientGlowBreath",
+        "pulseAmbientAuraBreath",
+        "pulse-cinematic-media-css",
+        "--pulse-media-secondary-rgb",
+        "--pulse-media-accent-rgb",
+        "--pulse-card-media-bleed",
+        "edge-20260527",
+        "border: 0 !important",
     ]:
         expect(token in source + cinematic_css + cinematic_js, f"cinematic media atmosphere present: {token}")
     upload_progress = (ROOT / "services/upload_progress_service.py").read_text(encoding="utf-8")
