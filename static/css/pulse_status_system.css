@@ -670,6 +670,11 @@ body.status-editor-open {
 }
 
 .pulse-status-editor {
+  --pulse-status-stage-width: 100vw;
+  --pulse-status-stage-height: 100dvh;
+  --pulse-status-stage-radius: 0;
+  --pulse-status-stage-border: 0;
+  --pulse-status-stage-shadow: none;
   padding: 0;
   background: #000;
   backdrop-filter: none;
@@ -680,13 +685,13 @@ body.status-editor-open {
 }
 
 .pulse-status-editor .pulse-status-stage {
-  width: 100vw;
-  height: 100dvh;
+  width: var(--pulse-status-stage-width);
+  height: var(--pulse-status-stage-height);
   max-width: none;
-  border: 0;
-  border-radius: 0;
+  border: var(--pulse-status-stage-border);
+  border-radius: var(--pulse-status-stage-radius);
   background: #05070a;
-  box-shadow: none;
+  box-shadow: var(--pulse-status-stage-shadow);
 }
 
 .pulse-status-back {
@@ -990,6 +995,11 @@ body.status-editor-open {
 
 @media (min-width: 900px) {
   .pulse-status-editor {
+    --pulse-status-stage-width: min(100%, 460px);
+    --pulse-status-stage-height: min(100dvh - 44px, 820px);
+    --pulse-status-stage-radius: 30px;
+    --pulse-status-stage-border: 1px solid rgba(255, 255, 255, .12);
+    --pulse-status-stage-shadow: 0 32px 100px rgba(0, 0, 0, .55);
     display: none;
     place-items: center;
     padding: 22px;
@@ -1002,12 +1012,7 @@ body.status-editor-open {
   }
 
   .pulse-status-editor .pulse-status-stage {
-    width: min(100%, 460px);
-    height: min(100dvh - 44px, 820px);
-    border-radius: 30px;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, .12);
-    box-shadow: 0 32px 100px rgba(0, 0, 0, .55);
   }
 }
 

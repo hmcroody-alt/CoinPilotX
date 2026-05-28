@@ -15993,8 +15993,8 @@ def pulse_status_rail_html():
         "</article></section>"
         "<input id='pulseStatusMedia' class='pulse-status-file-input' type='file' accept='image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime' multiple>"
         "<input id='pulseStatusSound' class='pulse-status-file-input' type='file' accept='audio/mpeg,audio/mp4,audio/wav,audio/ogg'>"
-        "<section class='pulse-status-viewer pulse-status-editor' id='pulseStatusViewer' data-status-editor aria-hidden='true'>"
-        "<form class='pulse-status-stage pulse-status-form' id='pulseStatusForm'>"
+        "<section class='pulse-status-viewer pulse-status-editor' id='pulseStatusViewer' data-status-editor data-status-unified-create='desktop-mobile' aria-hidden='true'>"
+        "<form class='pulse-status-stage pulse-status-form' id='pulseStatusForm' data-status-create-form='unified'>"
         "<input id='pulseStatusMode' name='status_type' type='hidden' value='image'>"
         "<input id='pulseStatusMusicTrack' type='hidden' value=''>"
         "<button class='pulse-status-back' type='button' data-status-back aria-label='Back'>‹</button>"
@@ -20628,23 +20628,36 @@ def api_pulse_live_end(live_id):
         conn.close()
         return api_error("Only the host or an admin can end this stream.", 403)
     replay_url = clean_html((request.get_json(silent=True) or {}).get("replay_url") or live.get("replay_url") or "")[:700]
+    replay_is_cdn = bool(replay_url and replay_url.startswith((os.getenv("R2_PUBLIC_BASE_URL", "").rstrip("/") or "https://cdn.coinpilotx.app") + "/"))
+    recording_status = "replay_ready" if replay_is_cdn else "replay_unavailable"
+    recording_error = "" if replay_is_cdn else "No durable live recording asset was produced for this session."
     viewer_count = int(live.get("viewer_count") or 0)
     cur.execute(
-        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', replay_url=?, recording_status=?, ended_at=?, updated_at=? WHERE id=?",
-        (replay_url, "ready" if replay_url else "processing", now, now, live_id),
+        "UPDATE pulse_live_sessions SET status='ended', publish_state='ended', stream_health='ended', replay_url=?, recording_status=?, recording_error=?, ended_at=?, updated_at=? WHERE id=?",
+        (replay_url if replay_is_cdn else "", recording_status, recording_error, now, now, live_id),
     )
     cur.execute("UPDATE pulse_live_streams SET status='ended', ended_at=?, updated_at=? WHERE session_id=?", (now, now, live_id))
     cur.execute("UPDATE pulse_live_viewers SET status='left', left_at=?, last_seen_at=? WHERE live_id=? AND status IN ('watching','hosting')", (now, now, live_id))
-    feed_post_id = live_feed_service.mark_live_feed_ended(cur, live_id=live_id, replay_url=replay_url, viewer_count=viewer_count)
+    feed_post_id = live_feed_service.mark_live_feed_ended(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn else "", viewer_count=viewer_count)
     live_restream_service.mark_targets_ended(cur, live_id=live_id)
-    share_options = live_archive_share_service.create_post_live_options(cur, live_id=live_id, replay_url=replay_url)
+    share_options = live_archive_share_service.create_post_live_options(cur, live_id=live_id, replay_url=replay_url if replay_is_cdn else "")
     cur.execute("INSERT INTO pulse_live_chat (live_id, user_id, body, message_type, moderation_status, pinned, metadata_json, created_at) VALUES (?, ?, 'Live stream ended.', 'system', 'approved', 1, ?, ?)", (live_id, user["user_id"], json.dumps({"kind": "ended"}, default=str), now))
     conn.commit(); conn.close()
     try:
         pulse_emit_event("livestream_ended", {"live_id": live_id, "message": "Live stream ended."}, user["user_id"], None)
     except Exception:
         logging.exception("PULSE_LIVE_END_EMIT_FAILED live_id=%s", live_id)
-    return jsonify({"ok": True, "message": "Live stream ended.", "live_id": live_id, "feed_post_id": feed_post_id, "post_live_options": share_options})
+    return jsonify({
+        "ok": True,
+        "message": "Live stream ended.",
+        "live_id": live_id,
+        "feed_post_id": feed_post_id,
+        "recording_status": recording_status,
+        "recording_error": recording_error,
+        "replay_url": replay_url if replay_is_cdn else "",
+        "replay_available": replay_is_cdn,
+        "post_live_options": share_options,
+    })
 
 
 @webhook_app.route("/pulse/creator-status", methods=["GET"])
@@ -31552,6 +31565,49 @@ def api_pulse_profile_update():
     return jsonify({"ok": True, "message": "Profile updated.", "display_name": display_name})
 
 
+def _profile_media_from_upload(user_id, media_id):
+    if not safe_int(media_id, 0):
+        return {}
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM chat_media_uploads
+        WHERE id=? AND uploader_user_id=? AND media_type IN ('image','gif')
+        LIMIT 1
+        """,
+        (safe_int(media_id, 0), int(user_id)),
+    )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return {}
+    return media_service.resolve_media(dict(row))
+
+
+def _profile_media_is_cdn_safe(url):
+    if media_storage.provider() not in {"r2", "s3"}:
+        return bool(url)
+    base = (os.getenv("R2_PUBLIC_BASE_URL") or "").rstrip("/")
+    return bool(base and str(url or "").startswith(base + "/"))
+
+
+def _profile_media_payload_url(user_id, payload, media_id_key, url_key, thumbnail_key="thumbnail_url"):
+    media_id = safe_int(payload.get(media_id_key) or request.form.get(media_id_key), 0)
+    resolved = _profile_media_from_upload(user_id, media_id)
+    if not resolved:
+        raw_url = clean_html(payload.get(url_key) or request.form.get(url_key) or "")[:1000]
+        if raw_url:
+            resolved = media_service.resolve_media({"media_url": raw_url, "thumbnail_url": payload.get(thumbnail_key) or request.form.get(thumbnail_key) or ""})
+    if not resolved:
+        return "", "", {}
+    media_url = clean_html(resolved.get("valid_url") or resolved.get("media_url") or "")[:1000]
+    thumbnail_url = clean_html(resolved.get("thumbnail_url") or media_url)[:1000]
+    return media_url, thumbnail_url, resolved
+
+
 @webhook_app.route("/api/pulse/profile/avatar", methods=["POST"])
 def api_pulse_profile_avatar():
     init_db()
@@ -31560,7 +31616,7 @@ def api_pulse_profile_avatar():
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     result = {"media": {}}
-    avatar_url = clean_html(payload.get("media_url") or "")[:1000]
+    avatar_url, avatar_thumbnail_url, payload_media = _profile_media_payload_url(user["user_id"], payload, "media_id", "media_url")
     if not avatar_url:
         file_storage = request.files.get("avatar")
         filename = (getattr(file_storage, "filename", "") or "").lower()
@@ -31572,18 +31628,25 @@ def api_pulse_profile_avatar():
         result, status = media_service.save_upload(user["user_id"], file_storage, context_type="pulse_avatar", context_id=str(user["user_id"]))
         if not result.get("ok"):
             return jsonify(result), status
-        avatar_url = (result.get("media") or {}).get("media_url") or ""
+        uploaded_media = result.get("media") or {}
+        resolved = media_service.resolve_media(uploaded_media)
+        avatar_url = clean_html(resolved.get("valid_url") or resolved.get("media_url") or uploaded_media.get("media_url") or "")[:1000]
+        avatar_thumbnail_url = clean_html(resolved.get("thumbnail_url") or avatar_url)[:1000]
+        payload_media = resolved
+    if not _profile_media_is_cdn_safe(avatar_url):
+        return api_error("Profile picture was not saved to durable CDN media. Please upload again.", 502)
     avatar_filter = clean_html(payload.get("filter_name") or request.form.get("filter_name") or "")[:80]
     conn = db()
     cur = conn.cursor()
     cur.execute(
         "UPDATE users SET avatar_url=?, avatar_thumbnail_url=?, avatar_filter=?, updated_at=? WHERE user_id=?",
-        (avatar_url, payload.get("thumbnail_url") or (result.get("media") or {}).get("thumbnail_url") or avatar_url, avatar_filter, datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]),
+        (avatar_url, avatar_thumbnail_url or avatar_url, avatar_filter, datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]),
     )
     conn.commit()
     conn.close()
     pulse_emit_event("profile_updated", {"avatar_url": avatar_url, "message": "A Pulse profile picture changed."}, user["user_id"], 0)
-    return jsonify({"ok": True, "message": "Profile picture updated.", "avatar_url": avatar_url, "media": result.get("media")})
+    media_response = result.get("media") or payload_media
+    return jsonify({"ok": True, "message": "Profile picture updated.", "avatar_url": avatar_url, "thumbnail_url": avatar_thumbnail_url or avatar_url, "media": media_response})
 
 
 @webhook_app.route("/api/pulse/profile/cover", methods=["POST"])
@@ -31594,7 +31657,7 @@ def api_pulse_profile_cover():
         return api_error("Login required.", 401)
     payload = request.get_json(silent=True) or {}
     result = {"media": {}}
-    cover_url = clean_html(payload.get("media_url") or "")[:1000]
+    cover_url, cover_thumbnail_url, payload_media = _profile_media_payload_url(user["user_id"], payload, "media_id", "media_url")
     if not cover_url:
         file_storage = request.files.get("cover")
         filename = (getattr(file_storage, "filename", "") or "").lower()
@@ -31606,7 +31669,13 @@ def api_pulse_profile_cover():
         result, status = media_service.save_upload(user["user_id"], file_storage, context_type="pulse_cover", context_id=str(user["user_id"]))
         if not result.get("ok"):
             return jsonify(result), status
-        cover_url = (result.get("media") or {}).get("media_url") or ""
+        uploaded_media = result.get("media") or {}
+        resolved = media_service.resolve_media(uploaded_media)
+        cover_url = clean_html(resolved.get("valid_url") or resolved.get("media_url") or uploaded_media.get("media_url") or "")[:1000]
+        cover_thumbnail_url = clean_html(resolved.get("thumbnail_url") or cover_url)[:1000]
+        payload_media = resolved
+    if not _profile_media_is_cdn_safe(cover_url):
+        return api_error("Cover photo was not saved to durable CDN media. Please upload again.", 502)
     cover_filter = clean_html(payload.get("filter_name") or request.form.get("filter_name") or "")[:80]
     cover_position = clean_html(payload.get("cover_position") or request.form.get("cover_position") or "center")[:80]
     conn = db()
@@ -31618,7 +31687,8 @@ def api_pulse_profile_cover():
     conn.commit()
     conn.close()
     pulse_emit_event("profile_updated", {"cover_url": cover_url, "message": "A Pulse cover photo changed."}, user["user_id"], 0)
-    return jsonify({"ok": True, "message": "Cover photo updated.", "cover_url": cover_url, "media": result.get("media")})
+    media_response = result.get("media") or payload_media
+    return jsonify({"ok": True, "message": "Cover photo updated.", "cover_url": cover_url, "thumbnail_url": cover_thumbnail_url or cover_url, "media": media_response})
 
 
 @webhook_app.route("/api/pulse/profile/avatar/remove", methods=["POST"])
@@ -37403,15 +37473,23 @@ def init_db():
         ("moderation_reason", "TEXT"),
         ("storage_provider", "TEXT"),
         ("storage_key", "TEXT"),
+        ("bucket", "TEXT"),
+        ("object_key", "TEXT"),
+        ("cdn_url", "TEXT"),
         ("public_url", "TEXT"),
+        ("private_url", "TEXT"),
         ("poster_url", "TEXT"),
         ("small_url", "TEXT"),
         ("medium_url", "TEXT"),
         ("large_url", "TEXT"),
         ("is_available", "INTEGER DEFAULT 1"),
+        ("verification_status", "TEXT DEFAULT 'pending'"),
         ("availability_checked_at", "TEXT"),
         ("availability_error", "TEXT"),
         ("processing_status", "TEXT DEFAULT 'ready'"),
+        ("trace_id", "TEXT"),
+        ("error_message", "TEXT"),
+        ("updated_at", "TEXT"),
         ("created_at", "TEXT"),
         ("deleted_at", "TEXT"),
     ], conn=conn)
@@ -39029,6 +39107,7 @@ def init_db():
         ("peak_viewers", "INTEGER DEFAULT 0"),
         ("replay_asset_id", "INTEGER DEFAULT 0"),
         ("recording_status", "TEXT DEFAULT 'pending'"),
+        ("recording_error", "TEXT"),
         ("engagement_score", "INTEGER DEFAULT 0"),
         ("active_scene", "TEXT DEFAULT 'camera_only'"),
         ("audio_chain_json", "TEXT"),

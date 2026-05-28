@@ -35,9 +35,9 @@ REQUIRED_TABLES = {
 
 REQUIRED_COLUMNS = {
     "pulse_posts": {"deleted_at", "moderation_status", "visibility", "live_session_id", "live_status", "playback_url", "preview_url", "replay_url"},
-    "pulse_live_sessions": {"feed_post_id", "playback_url", "preview_url", "replay_url", "publish_state", "audio_tracks", "video_tracks", "recording_status", "active_scene", "audio_chain_json", "destinations_json"},
+    "pulse_live_sessions": {"feed_post_id", "playback_url", "preview_url", "replay_url", "publish_state", "audio_tracks", "video_tracks", "recording_status", "recording_error", "active_scene", "audio_chain_json", "destinations_json"},
     "pulse_messages": {"conversation_id", "sender_user_id", "body", "message_type", "created_at", "deleted_at"},
-    "chat_media_uploads": {"media_url", "storage_provider", "storage_key", "mime_type", "width", "height", "thumbnail_url", "is_available"},
+    "chat_media_uploads": {"media_url", "storage_provider", "storage_key", "bucket", "object_key", "cdn_url", "mime_type", "width", "height", "thumbnail_url", "is_available", "verification_status", "trace_id", "error_message"},
 }
 
 

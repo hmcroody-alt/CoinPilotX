@@ -211,9 +211,9 @@ def _orientation(width, height, ratio):
 
 def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_type="", check_remote=False):
     item = dict(media or {})
-    storage_key = item.get("storage_key") or item.get("stored_filename") or ""
+    storage_key = item.get("storage_key") or item.get("object_key") or item.get("stored_filename") or ""
     canonical_cdn_url = cdn_url_for_key(storage_key)
-    source = url or item.get("public_url") or item.get("media_url") or item.get("valid_url") or canonical_cdn_url or ""
+    source = url or item.get("cdn_url") or item.get("public_url") or item.get("media_url") or item.get("valid_url") or canonical_cdn_url or ""
     thumb = thumbnail_url or item.get("thumbnail_url") or item.get("medium_url") or item.get("small_url") or source
     poster = poster_url or item.get("poster_url") or thumb
     private_source = _cdn_url_from_r2_private_url(source)
@@ -308,6 +308,13 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "is_available": bool(available),
         "storage_provider": provider,
         "storage_key": storage_key,
+        "bucket": item.get("bucket") or "",
+        "object_key": item.get("object_key") or storage_key,
+        "cdn_url": item.get("cdn_url") or canonical_cdn_url,
+        "verification_status": item.get("verification_status") or ("verified" if available else "failed" if source else "missing"),
+        "processing_status": item.get("processing_status") or ("ready" if available else "failed"),
+        "trace_id": item.get("trace_id") or "",
+        "error_message": item.get("error_message") or item.get("availability_error") or "",
         "hydration_state": "ready" if available else ("restoring" if source else "missing"),
         "content_type_verified": bool(item.get("mime_type") or mimetypes.guess_type(source)[0]),
         "srcset": srcset,
@@ -365,6 +372,13 @@ def _public(row):
         "is_available": resolved["is_available"],
         "storage_provider": resolved["storage_provider"],
         "storage_key": resolved["storage_key"],
+        "bucket": resolved["bucket"],
+        "object_key": resolved["object_key"],
+        "cdn_url": resolved["cdn_url"],
+        "verification_status": resolved["verification_status"],
+        "processing_status": resolved["processing_status"],
+        "trace_id": resolved["trace_id"],
+        "error_message": resolved["error_message"],
         "srcset": resolved["srcset"],
         "sizes": resolved["sizes"],
         "moderation_status": item.get("moderation_status") or "pending",
@@ -402,6 +416,7 @@ def rate_limited(user_id, media_type):
 
 
 def save_upload(user_id, file_storage, context_type="private_chat", context_id=""):
+    upload_trace = secrets.token_hex(6)
     if not file_storage or not file_storage.filename:
         return {"ok": False, "message": "Choose a photo, GIF, video, voice note, audio clip, or safe file."}, 400
     original = secure_filename(file_storage.filename)
@@ -425,7 +440,8 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
             return {"ok": False, "message": "This image or GIF could not be verified safely."}, 400
     folder = "pulse_media" if str(context_type or "").startswith("pulse") else "chat_media"
     logging.info(
-        "PULSE_MEDIA_UPLOAD_START user_id=%s context_type=%s context_id=%s filename=%s media_type=%s size=%s provider=%s",
+        "PULSE_MEDIA_UPLOAD_START trace_id=%s user_id=%s context_type=%s context_id=%s filename=%s media_type=%s size=%s provider=%s",
+        upload_trace,
         int(user_id),
         context_type,
         context_id,
@@ -436,7 +452,8 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     )
     storage = media_storage.save_public_file(file_storage, folder=folder)
     logging.info(
-        "PULSE_MEDIA_UPLOAD_STORAGE_RESULT user_id=%s context_type=%s storage_provider=%s durable_uploaded=%s storage_key=%s public_url=%s upload_error=%s",
+        "PULSE_MEDIA_UPLOAD_STORAGE_RESULT trace_id=%s user_id=%s context_type=%s storage_provider=%s durable_uploaded=%s storage_key=%s public_url=%s upload_error=%s",
+        upload_trace,
         int(user_id),
         context_type,
         storage.get("provider"),
@@ -447,7 +464,8 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     )
     if media_storage.provider() in {"r2", "s3"} and not storage.get("durable_uploaded"):
         logging.error(
-            "PULSE_MEDIA_UPLOAD_DURABLE_REQUIRED_FAILED user_id=%s context_type=%s storage_key=%s upload_error=%s",
+            "PULSE_MEDIA_UPLOAD_DURABLE_REQUIRED_FAILED trace_id=%s user_id=%s context_type=%s storage_key=%s upload_error=%s",
+            upload_trace,
             int(user_id),
             context_type,
             storage.get("storage_key"),
@@ -461,6 +479,10 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     if media_type in {"image", "gif"}:
         width, height = _image_dimensions(path)
     url = storage.get("media_url") or _public_url_for_path(path)
+    cdn_url = storage.get("media_url") if str(storage.get("media_url") or "").startswith("https://") else cdn_url_for_key(storage.get("storage_key") or stored)
+    verification_status = "verified" if storage.get("durable_uploaded") or media_storage.provider() == "local" else "failed"
+    processing_status = "ready" if verification_status == "verified" else "failed"
+    availability_error = "" if verification_status == "verified" else (storage.get("upload_error") or "durable_upload_unverified")
     thumbnail_url = url if media_type != "video" else ""
     poster_url = thumbnail_url if media_type != "video" else ""
     conn = user_context.connect()
@@ -493,18 +515,31 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         cur.execute(
             """
             UPDATE chat_media_uploads
-            SET storage_provider=?, storage_key=?, public_url=?, poster_url=?, small_url=?, medium_url=?, large_url=?,
-                is_available=1, processing_status='ready'
+            SET storage_provider=?, storage_key=?, bucket=?, object_key=?, cdn_url=?, public_url=?, private_url='',
+                poster_url=?, small_url=?, medium_url=?, large_url=?,
+                is_available=?, processing_status=?, verification_status=?, availability_checked_at=?,
+                availability_error=?, trace_id=?, error_message=?, updated_at=?
             WHERE id=?
             """,
             (
                 storage.get("provider") or media_storage.provider(),
                 storage.get("storage_key") or stored,
+                os.getenv("R2_BUCKET", "") if (storage.get("provider") or media_storage.provider()) in {"r2", "s3"} else "",
+                storage.get("storage_key") or stored,
+                cdn_url or url,
                 url,
                 poster_url,
                 thumbnail_url,
                 url,
                 url,
+                1 if verification_status == "verified" else 0,
+                processing_status,
+                verification_status,
+                _now(),
+                availability_error,
+                upload_trace,
+                availability_error,
+                _now(),
                 media_id,
             ),
         )
@@ -516,12 +551,16 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     conn.close()
     public_media = _public(row)
     logging.info(
-        "PULSE_MEDIA_UPLOAD_COMPLETE user_id=%s media_id=%s storage_provider=%s media_url=%s processing_status=%s",
+        "PULSE_MEDIA_UPLOAD_COMPLETE trace_id=%s user_id=%s media_id=%s storage_provider=%s media_url=%s processing_status=%s verification_status=%s object_key=%s cdn_url=%s",
+        upload_trace,
         int(user_id),
         media_id,
         public_media.get("storage_provider"),
         public_media.get("media_url"),
         public_media.get("processing_status") or "ready",
+        public_media.get("verification_status") or "",
+        public_media.get("object_key") or public_media.get("storage_key") or "",
+        public_media.get("cdn_url") or "",
     )
     return {"ok": True, "media": public_media}, 200
 

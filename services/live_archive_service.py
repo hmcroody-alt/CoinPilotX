@@ -9,13 +9,31 @@ def replay_manifest(session=None, chat_messages=None):
     session = session or {}
     chat_messages = chat_messages or []
     live_id = int(session.get("id") or session.get("live_id") or 0)
+    recording_status = (session.get("recording_status") or "").strip().lower()
+    replay_url = session.get("replay_url") or ""
+    status = (session.get("status") or "").strip().lower()
+    if status == "live":
+        replay_state = "recording"
+    elif replay_url:
+        replay_state = "ready"
+    elif recording_status in {"replay_unavailable", "unavailable"}:
+        replay_state = "unavailable"
+    elif recording_status in {"replay_failed", "failed"}:
+        replay_state = "failed"
+    elif session.get("ended_at"):
+        replay_state = "processing_recording"
+    else:
+        replay_state = "pending"
     return {
         "ok": True,
         "live_id": live_id,
-        "status": "recording" if (session.get("status") or "") == "live" else "ready" if session.get("ended_at") else "pending",
-        "replay_url": session.get("replay_url") or "",
+        "status": replay_state,
+        "replay_url": replay_url,
         "thumbnail_url": session.get("thumbnail_url") or "",
         "chat_replay_events": len(chat_messages),
+        "recording_status": recording_status or replay_state,
+        "recording_error": session.get("recording_error") or "",
+        "replay_available": bool(replay_url and replay_state == "ready"),
         "created_at": datetime.utcnow().isoformat(timespec="seconds"),
     }
 

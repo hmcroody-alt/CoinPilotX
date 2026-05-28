@@ -179,6 +179,9 @@
       `video ${state.video ? "yes" : "no"}`,
       `bytes ${Math.round(Number(state.bytes || 0))}`,
       `playback ${state.playback ? "started" : "waiting"}`,
+      `autoplay ${state.autoplayBlocked ? "blocked" : "ok"}`,
+      `unmute ${state.unmuted ? "yes" : "no"}`,
+      `audioOut ${state.audioOut ? "yes" : "waiting"}`,
     ];
     node.textContent = parts.join(" · ");
   }
@@ -291,6 +294,8 @@
     let afterId = 0;
     let bytesReceived = 0;
     let playbackStarted = false;
+    const playbackPolicy = { autoplayBlocked: false, unmuted: false, audioOut: false };
+    root.__pulseLivePlaybackPolicy = playbackPolicy;
     pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTransceiver("audio", { direction: "recvonly" });
     player.muted = true;
@@ -308,7 +313,9 @@
       try {
         await player.play();
         playbackStarted = true;
+        playbackPolicy.audioOut = remoteStream.getAudioTracks().length > 0 && !player.muted;
       } catch (error) {
+        playbackPolicy.autoplayBlocked = true;
         console.warn("Pulse Live viewer autoplay blocked", error);
       }
       updateTransportDiagnostics(root, {
@@ -319,6 +326,7 @@
         video: remoteStream.getVideoTracks().length,
         bytes: bytesReceived,
         playback: playbackStarted,
+        ...playbackPolicy,
       });
     };
     pc.onicecandidate = (event) => {
@@ -341,6 +349,7 @@
         video: remoteStream.getVideoTracks().length,
         bytes: bytesReceived,
         playback: playbackStarted && !player.paused,
+        ...playbackPolicy,
       });
     };
     pc.onconnectionstatechange = refreshDiagnostics;
@@ -477,7 +486,16 @@
       const player = qs(root, "[data-live-player]");
       if (!player) return;
       player.muted = false;
-      try { await player.play(); } catch (_) {}
+      root.__pulseLivePlaybackPolicy = root.__pulseLivePlaybackPolicy || {};
+      root.__pulseLivePlaybackPolicy.unmuted = true;
+      try {
+        await player.play();
+        root.__pulseLivePlaybackPolicy.audioOut = true;
+        console.info("Pulse Live viewer unmuted", { live_id: root.dataset.liveId, has_audio: !!player.srcObject?.getAudioTracks?.().length });
+      } catch (error) {
+        root.__pulseLivePlaybackPolicy.autoplayBlocked = true;
+        console.warn("Pulse Live viewer unmute failed", error);
+      }
       event.currentTarget.hidden = true;
     });
   }
