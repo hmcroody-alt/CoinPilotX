@@ -82,7 +82,16 @@ def main():
     require("Security Agent" not in feed_html, "UNDX security agent absent from Pulse feed")
     require("Council Mode: Multi-Agent" not in feed_html, "UNDX council mode absent from Pulse feed")
     require("Save Council Output to Mission Memory" not in feed_html, "UNDX council save action absent from Pulse feed")
+    require("UNDX Chat Interface" not in feed_html, "UNDX chat interface absent from Pulse feed")
+    require("Send Directive" not in feed_html, "UNDX chat send action absent from Pulse feed")
+    require("Clear Chat History" not in feed_html, "UNDX clear chat action absent from Pulse feed")
+    require("Chat Status: Online" not in feed_html, "UNDX chat status absent from Pulse feed")
+    require("Intelligence Bridge: OpenAI" not in feed_html, "UNDX OpenAI bridge status absent from Pulse feed")
+    require("Mission Protocol: Active" not in feed_html, "UNDX mission protocol absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
+
+    routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
+    require("/api/undx/chat" in routes, "/api/undx/chat route exists")
 
     for token in [
         "data-undx-premium-entry",
@@ -157,6 +166,24 @@ def main():
         "Recommended next action",
         "Council status: Complete",
         "Council Output",
+        "UNDX Chat Interface",
+        "Chat with UNDX and issue real mission directives powered by CoinPilotXAI intelligence.",
+        "UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?",
+        "Describe a project, feature, improvement, automation, or mission...",
+        "Send Directive",
+        "Clear Chat History",
+        "/api/undx/chat",
+        "Chat Status: Online",
+        "Intelligence Bridge: OpenAI",
+        "Phase: 7",
+        "Mission Protocol: Active",
+        "undxChatMemory",
+        "UNDX OpenAI bridge error:",
+        "UNDX is processing the mission directive through the OpenAI intelligence bridge...",
+        "Enter a directive before contacting UNDX.",
+        "Send To Builder Console",
+        "Save To Mission Memory",
+        "UNDX Chat Mission",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

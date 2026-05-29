@@ -8517,6 +8517,139 @@ def api_ai_chat():
     return response
 
 
+UNDX_SYSTEM_PROMPT = (
+    "You are UNDX Core, the premium intelligence layer inside CoinPilotXAI. "
+    "Your job is to help build, expand, secure, and evolve CoinPilotXAI phase by phase. "
+    "Respond like a strategic AI builder. When the user gives a mission, classify it, explain the objective, "
+    "suggest modules, identify risks, recommend next actions, and keep responses focused on building CoinPilotXAI."
+)
+
+
+def undx_clean_chat_history(history):
+    clean = []
+    if not isinstance(history, list):
+        return clean
+    for item in history[-10:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").lower()
+        if role == "undx":
+            role = "assistant"
+        if role not in {"user", "assistant"}:
+            continue
+        content = clean_html(item.get("text") or item.get("content") or "")[:1800]
+        if content:
+            clean.append({"role": role, "content": content})
+    return clean
+
+
+def undx_openai_response(user_id, message, history=None):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {
+            "ok": False,
+            "status": 503,
+            "error": "OpenAI intelligence bridge is not configured on this server.",
+        }
+
+    messages = [{"role": "system", "content": UNDX_SYSTEM_PROMPT}]
+    messages.extend(undx_clean_chat_history(history))
+    messages.append({
+        "role": "user",
+        "content": (
+            f"Mission directive from user:\n{message}\n\n"
+            "When relevant, use these sections: Mission Classification, Objective, Suggested Modules, "
+            "Build Steps, Security Notes, Recommended Next Action."
+        ),
+    })
+    payload = {
+        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "messages": messages,
+        "max_tokens": 900,
+        "temperature": 0.35,
+    }
+    try:
+        started = time.time()
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=25,
+        )
+        response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"].strip()
+        if not text:
+            return {"ok": False, "status": 502, "error": "UNDX received an empty OpenAI response."}
+        return {
+            "ok": True,
+            "response": text,
+            "builder_directive": f"UNDX mission directive:\n{message}\n\nUNDX response:\n{text}",
+            "source": "OpenAI",
+            "model": payload["model"],
+            "latency_ms": int((time.time() - started) * 1000),
+        }
+    except requests.Timeout:
+        logging.warning("UNDX OpenAI timeout user_id=%s", user_id)
+        return {"ok": False, "status": 504, "error": "UNDX OpenAI bridge timed out. Try again in a moment."}
+    except requests.RequestException as exc:
+        logging.warning("UNDX OpenAI request failed: %s", exc)
+        return {"ok": False, "status": 502, "error": "UNDX OpenAI bridge is temporarily unavailable."}
+    except Exception as exc:
+        logging.warning("UNDX OpenAI response failed: %s", exc)
+        return {"ok": False, "status": 502, "error": "UNDX could not parse the OpenAI response."}
+
+
+@webhook_app.route("/api/undx/chat", methods=["POST"])
+def api_undx_chat():
+    init_db()
+    user = api_account_user()
+    gated = api_pro_required(user, "UNDX Chat Interface")
+    if gated:
+        return gated
+    payload = request.get_json(silent=True) or {}
+    message = clean_html(payload.get("message") or payload.get("directive") or payload.get("question") or "")[:2200]
+    if not message:
+        response = jsonify({"ok": False, "error": "Enter a directive before contacting UNDX."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 400
+
+    result = undx_openai_response(user["user_id"], message, payload.get("history") or [])
+    status = int(result.pop("status", 200 if result.get("ok") else 502))
+    if result.get("ok"):
+        record_command_history(
+            user["user_id"],
+            "undx_chat",
+            message,
+            {
+                "ok": True,
+                "action_key": "undx_chat",
+                "summary": result.get("response", ""),
+                "source": result.get("source", "OpenAI"),
+                "confidence": "Medium",
+            },
+            source="undx_chat",
+            pro_required=False,
+            status="success",
+        )
+        log_product_event(user["user_id"], "undx_chat_used", {"source": result.get("source"), "model": result.get("model")})
+    else:
+        record_command_history(
+            user["user_id"],
+            "undx_chat",
+            message,
+            {"ok": False, "action_key": "undx_chat", "summary": result.get("error", ""), "source": "OpenAI"},
+            source="undx_chat",
+            pro_required=False,
+            status="failed",
+            error=result.get("error") or "UNDX chat failed",
+        )
+        log_product_event(user["user_id"], "undx_chat_error", {"error": (result.get("error") or "")[:300]})
+
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, status
+
+
 @webhook_app.route("/api/ai/history", methods=["GET"])
 def api_ai_history():
     init_db()
@@ -21452,6 +21585,25 @@ def pulse_premium_undx_page():
     .undx-blueprint-block strong{display:block;margin-bottom:6px;color:#dffcff}
     .undx-blueprint-block p,.undx-blueprint-block ol{margin:0;color:rgba(223,246,255,.72)}
     .undx-blueprint-block ol{padding-left:18px}
+    .undx-chat-interface{position:relative;overflow:hidden;border-color:rgba(110,223,246,.22);background:radial-gradient(circle at 14% 16%,rgba(110,223,246,.14),transparent 24rem),radial-gradient(circle at 86% 12%,rgba(155,92,255,.12),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.076),rgba(255,255,255,.03))}
+    .undx-chat-interface:before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,rgba(255,255,255,.08),transparent 32%,rgba(54,229,143,.06));pointer-events:none}
+    .undx-chat-interface>*{position:relative;z-index:1}
+    .undx-chat-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px;align-items:start}
+    .undx-chat-panel{display:grid;gap:12px}
+    .undx-chat-history{min-height:330px;max-height:520px;overflow:auto;display:grid;align-content:start;gap:10px;border:1px solid rgba(110,223,246,.18);border-radius:20px;padding:14px;background:rgba(3,8,17,.48);box-shadow:inset 0 0 34px rgba(110,223,246,.05)}
+    .undx-chat-message{max-width:min(780px,92%);display:grid;gap:7px;border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:12px;background:rgba(255,255,255,.045);box-shadow:0 14px 42px rgba(0,0,0,.16)}
+    .undx-chat-message[data-role="user"]{justify-self:end;border-color:rgba(255,209,102,.22);background:linear-gradient(145deg,rgba(255,209,102,.10),rgba(255,255,255,.04))}
+    .undx-chat-message[data-role="undx"]{justify-self:start;border-color:rgba(110,223,246,.22);background:linear-gradient(145deg,rgba(110,223,246,.10),rgba(255,255,255,.04))}
+    .undx-chat-message strong{color:#dffcff}
+    .undx-chat-message p{margin:0;white-space:pre-wrap;color:rgba(223,246,255,.78)}
+    .undx-chat-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:rgba(223,246,255,.62);font-size:.82rem;font-weight:900}
+    .undx-chat-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+    .undx-chat-input{min-height:92px;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(3,8,17,.56);color:#f2fbff;padding:14px;box-shadow:inset 0 0 28px rgba(110,223,246,.05);resize:vertical}
+    .undx-chat-input::placeholder{color:rgba(223,246,255,.46)}
+    .undx-chat-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-chat-actions .button{min-height:46px;border-radius:14px}
+    .undx-chat-message-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-chat-message-actions .button{min-height:38px;border-radius:12px}
     .undx-memory-panel{position:relative;overflow:hidden;border-color:rgba(110,223,246,.20);background:radial-gradient(circle at 18% 12%,rgba(110,223,246,.12),transparent 24rem),radial-gradient(circle at 82% 18%,rgba(255,209,102,.08),transparent 22rem),linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03))}
     .undx-memory-panel:before{content:"";position:absolute;inset:0;background:linear-gradient(145deg,rgba(255,255,255,.08),transparent 32%,rgba(54,229,143,.06));pointer-events:none}
     .undx-memory-panel>*{position:relative;z-index:1}
@@ -21493,8 +21645,8 @@ def pulse_premium_undx_page():
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
     @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
@@ -21534,6 +21686,34 @@ def pulse_premium_undx_page():
           </aside>
         </div>
         <div class='undx-blueprint-output' id='undxBlueprintOutput' aria-live='polite'></div>
+      </section>
+      <section class='undx-section-panel undx-chat-interface' id='undx-chat-interface'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Phase 7 Conversational Core</span>
+            <h2>UNDX Chat Interface</h2>
+          </div>
+          <p>Chat with UNDX and issue real mission directives powered by CoinPilotXAI intelligence.</p>
+        </div>
+        <div class='undx-chat-layout' data-undx-chat-endpoint='/api/undx/chat'>
+          <div class='undx-chat-panel'>
+            <div class='undx-chat-history' id='undxChatHistory' aria-live='polite' aria-label='UNDX conversation history'></div>
+            <p class='undx-council-message' id='undxChatMessage' aria-live='polite'></p>
+            <div class='undx-chat-input-row'>
+              <textarea class='undx-chat-input' id='undxChatInput' placeholder='Describe a project, feature, improvement, automation, or mission...' aria-label='UNDX directive input'></textarea>
+              <div class='undx-chat-actions'>
+                <button class='button primary' type='button' id='undxSendDirective'>Send Directive</button>
+                <button class='button' type='button' id='undxClearChat'>Clear Chat History</button>
+              </div>
+            </div>
+          </div>
+          <aside class='undx-console-status' aria-label='UNDX chat interface status'>
+            <p class='undx-status-item' aria-label='Chat Status: Online'><span>Chat Status:</span><strong>Online</strong></p>
+            <p class='undx-status-item' aria-label='Intelligence Bridge: OpenAI'><span>Intelligence Bridge:</span><strong>OpenAI</strong></p>
+            <p class='undx-status-item' aria-label='Phase: 7'><span>Phase:</span><strong>7</strong></p>
+            <p class='undx-status-item' aria-label='Mission Protocol: Active'><span>Mission Protocol:</span><strong>Active</strong></p>
+          </aside>
+        </div>
       </section>
       <section class='undx-section-panel undx-memory-panel' id='undx-mission-memory'>
         <div class='undx-section-heading'>
@@ -21660,7 +21840,14 @@ def pulse_premium_undx_page():
     const undxSaveCouncilOutput = document.getElementById('undxSaveCouncilOutput');
     const undxCouncilMessage = document.getElementById('undxCouncilMessage');
     const undxCouncilSummary = document.getElementById('undxCouncilSummary');
+    const undxChatHistory = document.getElementById('undxChatHistory');
+    const undxChatInput = document.getElementById('undxChatInput');
+    const undxSendDirective = document.getElementById('undxSendDirective');
+    const undxClearChat = document.getElementById('undxClearChat');
+    const undxChatMessageStatus = document.getElementById('undxChatMessage');
     const undxMemoryStorageKey = 'undxMissionMemory';
+    const undxChatStorageKey = 'undxChatMemory';
+    const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -21829,6 +22016,168 @@ def pulse_premium_undx_page():
         wrap.append(' ');
       });
       return wrap;
+    }
+    const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?';
+    function undxChatMessage(role, text, extra = {}){
+      return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        role,
+        text,
+        createdAt: new Date().toISOString(),
+        ...extra
+      };
+    }
+    function undxChatSeed(text){
+      return [undxChatMessage('undx', text, {type:'system'})];
+    }
+    function undxLoadChat(){
+      try{
+        const raw = localStorage.getItem(undxChatStorageKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && (item.role === 'user' || item.role === 'undx') && typeof item.text === 'string').slice(-80) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveChat(messages){
+      try{
+        localStorage.setItem(undxChatStorageKey, JSON.stringify(messages.slice(-80)));
+      }catch(error){}
+    }
+    function undxSetChatLoading(isLoading){
+      if(undxSendDirective){
+        undxSendDirective.disabled = isLoading;
+        undxSendDirective.textContent = isLoading ? 'Sending Directive...' : 'Send Directive';
+      }
+      if(undxChatInput) undxChatInput.disabled = isLoading;
+    }
+    function undxSaveChatMission(message){
+      const objective = message.builderDirective || message.text || '';
+      if(!objective.trim()){
+        if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'UNDX chat mission could not be saved.';
+        return;
+      }
+      const nameSource = objective.replace(/^UNDX mission directive:\\s*/i, '').slice(0,120);
+      undxStoreBlueprint({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name: `UNDX Chat Mission ${undxMissionName(nameSource).replace(/^Mission\\s+/,'')}`,
+        objective,
+        type: 'UNDX Chat Mission',
+        source: message.source || 'OpenAI',
+        model: message.model || '',
+        createdAt: new Date().toISOString(),
+        phase: 'Phase 7',
+        status: 'Stored'
+      });
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'UNDX chat mission saved to Mission Memory.';
+    }
+    function undxCreateChatBubble(message){
+      const article = document.createElement('article');
+      article.className = 'undx-chat-message';
+      article.dataset.role = message.role === 'user' ? 'user' : 'undx';
+      article.dataset.type = message.type || 'message';
+      const meta = document.createElement('div');
+      meta.className = 'undx-chat-meta';
+      const sender = document.createElement('strong');
+      sender.textContent = message.role === 'user' ? 'You' : 'UNDX';
+      const time = document.createElement('span');
+      time.textContent = undxFormatMemoryTime(message.createdAt);
+      meta.append(sender, time);
+      if(message.source){
+        const source = document.createElement('span');
+        source.textContent = `Source: ${message.source}`;
+        meta.appendChild(source);
+      }
+      const body = document.createElement('p');
+      body.textContent = message.text || '';
+      article.append(meta, body);
+      if(message.role === 'undx' && message.type === 'response'){
+        const actions = document.createElement('div');
+        actions.className = 'undx-chat-message-actions';
+        const sendToBuilder = document.createElement('button');
+        sendToBuilder.className = 'button';
+        sendToBuilder.type = 'button';
+        sendToBuilder.textContent = 'Send To Builder Console';
+        sendToBuilder.addEventListener('click', () => {
+          undxLoadMissionIntoConsole(message.builderDirective || message.text || '', 'UNDX directive loaded into Builder Intelligence Console.');
+        });
+        const saveToMemory = document.createElement('button');
+        saveToMemory.className = 'button';
+        saveToMemory.type = 'button';
+        saveToMemory.textContent = 'Save To Mission Memory';
+        saveToMemory.addEventListener('click', () => undxSaveChatMission(message));
+        actions.append(sendToBuilder, saveToMemory);
+        article.appendChild(actions);
+      }
+      return article;
+    }
+    function undxRenderChat(){
+      if(!undxChatHistory) return;
+      let messages = undxLoadChat();
+      if(!messages.length || (messages.length === 1 && messages[0].type === 'system' && messages[0].text !== undxInitialChatText)){
+        messages = undxChatSeed(undxInitialChatText);
+        undxSaveChat(messages);
+      }
+      undxChatHistory.replaceChildren();
+      messages.forEach(message => undxChatHistory.appendChild(undxCreateChatBubble(message)));
+      undxChatHistory.scrollTop = undxChatHistory.scrollHeight;
+    }
+    async function undxSendChatDirective(){
+      const directive = (undxChatInput?.value || '').trim();
+      if(!directive){
+        if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Enter a directive before contacting UNDX.';
+        undxChatInput?.focus();
+        return;
+      }
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = '';
+      const messages = undxLoadChat();
+      const loadingMessage = undxChatMessage('undx', 'UNDX is processing the mission directive through the OpenAI intelligence bridge...', {type:'loading', source:'OpenAI'});
+      let next = [
+        ...messages,
+        undxChatMessage('user', directive),
+        loadingMessage
+      ];
+      undxSaveChat(next);
+      if(undxChatInput) undxChatInput.value = '';
+      undxRenderChat();
+      undxSetChatLoading(true);
+      try{
+        const response = await fetch(undxChatEndpoint, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({message:directive, history:messages.slice(-12)})
+        });
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false){
+          throw new Error(data.error || data.message || 'UNDX OpenAI bridge failed.');
+        }
+        const current = undxLoadChat().filter(item => item.id !== loadingMessage.id);
+        current.push(undxChatMessage('undx', data.response || 'UNDX response unavailable.', {
+          type:'response',
+          source:data.source || 'OpenAI',
+          model:data.model || '',
+          builderDirective:data.builder_directive || data.response || ''
+        }));
+        undxSaveChat(current);
+        undxRenderChat();
+      }catch(error){
+        const current = undxLoadChat().filter(item => item.id !== loadingMessage.id);
+        current.push(undxChatMessage('undx', `UNDX OpenAI bridge error: ${error.message || 'Network error. Please try again.'}`, {type:'error', source:'OpenAI'}));
+        undxSaveChat(current);
+        if(undxChatMessageStatus) undxChatMessageStatus.textContent = error.message || 'Network error. Please try again.';
+        undxRenderChat();
+      }finally{
+        undxSetChatLoading(false);
+        undxChatInput?.focus();
+      }
+    }
+    function undxClearChatHistory(){
+      const reset = undxChatSeed(undxInitialChatText);
+      undxSaveChat(reset);
+      undxRenderChat();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = '';
+      undxChatInput?.focus();
     }
     function undxCouncilPriority(mission){
       const text = String(mission || '').toLowerCase();
@@ -22095,8 +22444,14 @@ def pulse_premium_undx_page():
     });
     undxRunCouncil?.addEventListener('click', undxRunAgentCouncil);
     undxSaveCouncilOutput?.addEventListener('click', undxSaveCouncilToMemory);
+    undxSendDirective?.addEventListener('click', undxSendChatDirective);
+    undxClearChat?.addEventListener('click', undxClearChatHistory);
+    undxChatInput?.addEventListener('keydown', event => {
+      if((event.metaKey || event.ctrlKey) && event.key === 'Enter') undxSendChatDirective();
+    });
     undxRenderMemory();
     undxRenderEvolutionEmpty();
+    undxRenderChat();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 
