@@ -93,6 +93,12 @@ def main():
     require("Project Registry" not in feed_html, "UNDX project registry absent from Pulse feed")
     require("Project Core: Active" not in feed_html, "UNDX project core status absent from Pulse feed")
     require("Registry Status: Online" not in feed_html, "UNDX registry status absent from Pulse feed")
+    require("UNDX Project Workspace" not in feed_html, "UNDX project workspace absent from Pulse feed")
+    require("Project Tasks" not in feed_html, "UNDX project tasks absent from Pulse feed")
+    require("Project Milestones" not in feed_html, "UNDX project milestones absent from Pulse feed")
+    require("Project Memory" not in feed_html, "UNDX project memory absent from Pulse feed")
+    require("Generate Build Directive" not in feed_html, "UNDX build directive action absent from Pulse feed")
+    require("Send Directive To UNDX Chat" not in feed_html, "UNDX directive chat handoff absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
@@ -210,13 +216,17 @@ def main():
         "Infrastructure",
         "Other",
         "Project Registry",
-        "Project Overview",
+        "UNDX Project Workspace",
         "Project Core: Active",
         "Registry Status: <strong>Online</strong>",
         "Phase: <strong>8</strong>",
         "Projects Created",
         "Active Projects",
         "Completed Projects",
+        "Total Tasks",
+        "Completed Tasks",
+        "Memory Notes",
+        "Completed Milestones",
         "Planning",
         "Open Project",
         "UNDX-",
@@ -226,6 +236,37 @@ def main():
         "Suggested Milestones",
         "Recommended Modules",
         "No projects registered yet. Create a project to activate the UNDX registry.",
+        "Select a project to load its UNDX workspace.",
+        "Project ID",
+        "Project Tasks",
+        "Task title",
+        "Task status",
+        "Todo",
+        "In Progress",
+        "Done",
+        "Add Task",
+        "Mark In Progress",
+        "Mark Done",
+        "Delete Task",
+        "Project Milestones",
+        "Blueprint Created",
+        "Agent Council Review",
+        "Build Plan Ready",
+        "Implementation Pending",
+        "Pending",
+        "Complete",
+        "Mark Milestone Complete",
+        "Project Memory",
+        "UNDX stores important notes, decisions, and build context for this project.",
+        "Note text",
+        "Add Memory Note",
+        "Delete Note",
+        "Build Directive",
+        "Generate Build Directive",
+        "Copy Build Directive",
+        "Send Directive To UNDX Chat",
+        "UNDX Build Directive",
+        "Recommended Next Action",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

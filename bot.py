@@ -21672,13 +21672,25 @@ def pulse_premium_undx_page():
     .undx-project-card p{margin:0;color:rgba(223,246,255,.72)}
     .undx-project-detail{display:grid;gap:12px;margin-top:14px}
     .undx-project-enhancement{display:grid;gap:10px}
+    .undx-workspace-card{display:grid;gap:16px}
+    .undx-workspace-section{display:grid;gap:12px;border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:14px;background:rgba(255,255,255,.04)}
+    .undx-workspace-section h4{margin:0;font-size:clamp(18px,2.2vw,24px)}
+    .undx-workspace-section p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-workspace-form{display:grid;grid-template-columns:minmax(0,1fr) 170px auto;gap:10px;align-items:end}
+    .undx-workspace-form-memory{grid-template-columns:minmax(0,1fr) auto}
+    .undx-workspace-list{display:grid;gap:10px}
+    .undx-workspace-item{display:grid;gap:9px;border:1px solid rgba(110,223,246,.13);border-radius:16px;padding:12px;background:rgba(5,11,20,.38)}
+    .undx-workspace-item strong{color:#dffcff}
+    .undx-workspace-item p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-workspace-empty{border:1px dashed rgba(110,223,246,.20);border-radius:16px;padding:12px;background:rgba(5,11,20,.28);color:rgba(223,246,255,.70);font-weight:850}
+    .undx-directive-output{min-height:150px;max-height:360px;overflow:auto;white-space:pre-wrap;border:1px solid rgba(110,223,246,.18);border-radius:16px;padding:12px;background:rgba(3,8,17,.58);color:rgba(223,246,255,.82);font:inherit;line-height:1.45}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
     @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
@@ -21877,9 +21889,9 @@ def pulse_premium_undx_page():
               <div class='undx-memory-empty' id='undxProjectEmpty'>No projects registered yet. Create a project to activate the UNDX registry.</div>
               <div class='undx-project-list' id='undxProjectList' aria-live='polite'></div>
             </section>
-            <section class='undx-project-detail' aria-label='Project Overview'>
-              <h3>Project Overview</h3>
-              <div class='undx-evolution-empty' id='undxProjectDetailEmpty'>Select a project to load its UNDX overview.</div>
+            <section class='undx-project-detail' aria-label='UNDX Project Workspace'>
+              <h3>UNDX Project Workspace</h3>
+              <div class='undx-evolution-empty' id='undxProjectDetailEmpty'>Select a project to load its UNDX workspace.</div>
               <div class='undx-evolution-content' id='undxProjectDetailContent' aria-live='polite'></div>
             </section>
           </div>
@@ -21887,6 +21899,10 @@ def pulse_premium_undx_page():
             <p class='undx-project-stat'><span>Projects Created</span><strong id='undxProjectsCreatedCount'>0</strong></p>
             <p class='undx-project-stat'><span>Active Projects</span><strong id='undxActiveProjectsCount'>0</strong></p>
             <p class='undx-project-stat'><span>Completed Projects</span><strong id='undxCompletedProjectsCount'>0</strong></p>
+            <p class='undx-project-stat'><span>Total Tasks</span><strong id='undxTotalTasksCount'>0</strong></p>
+            <p class='undx-project-stat'><span>Completed Tasks</span><strong id='undxCompletedTasksCount'>0</strong></p>
+            <p class='undx-project-stat'><span>Memory Notes</span><strong id='undxProjectMemoryNotesCount'>0</strong></p>
+            <p class='undx-project-stat'><span>Completed Milestones</span><strong id='undxCompletedMilestonesCount'>0</strong></p>
           </aside>
         </div>
       </section>
@@ -21978,6 +21994,10 @@ def pulse_premium_undx_page():
     const undxProjectsCreatedCount = document.getElementById('undxProjectsCreatedCount');
     const undxActiveProjectsCount = document.getElementById('undxActiveProjectsCount');
     const undxCompletedProjectsCount = document.getElementById('undxCompletedProjectsCount');
+    const undxTotalTasksCount = document.getElementById('undxTotalTasksCount');
+    const undxCompletedTasksCount = document.getElementById('undxCompletedTasksCount');
+    const undxProjectMemoryNotesCount = document.getElementById('undxProjectMemoryNotesCount');
+    const undxCompletedMilestonesCount = document.getElementById('undxCompletedMilestonesCount');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -21985,6 +22005,7 @@ def pulse_premium_undx_page():
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
     let undxSelectedProjectId = null;
+    const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
       const words = text.replace(/[^a-zA-Z0-9\\s-]/g,' ').trim().split(/\\s+/).filter(Boolean).slice(0,5);
@@ -22152,11 +22173,44 @@ def pulse_premium_undx_page():
       });
       return wrap;
     }
+    function undxNormalizeProject(project){
+      const allowedTaskStatuses = new Set(['Todo', 'In Progress', 'Done']);
+      const tasks = Array.isArray(project.tasks) ? project.tasks.filter(task => task && task.title).slice(0,80).map(task => ({
+        id: task.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        title: String(task.title || '').slice(0,180),
+        status: allowedTaskStatuses.has(task.status) ? task.status : 'Todo',
+        createdAt: task.createdAt || new Date().toISOString()
+      })) : [];
+      const sourceMilestones = Array.isArray(project.milestones) ? project.milestones : [];
+      const milestones = undxDefaultProjectMilestones.map(title => {
+        const existing = sourceMilestones.find(item => item && item.title === title);
+        return {
+          id: title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''),
+          title,
+          status: existing?.status === 'Complete' ? 'Complete' : 'Pending',
+          completedAt: existing?.completedAt || ''
+        };
+      });
+      const memoryNotes = Array.isArray(project.memoryNotes) ? project.memoryNotes.filter(note => note && note.text).slice(0,80).map(note => ({
+        id: note.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        text: String(note.text || '').slice(0,1200),
+        createdAt: note.createdAt || new Date().toISOString()
+      })) : [];
+      return {
+        ...project,
+        priority: project.priority || 'Medium',
+        status: project.status || 'Planning',
+        tasks,
+        milestones,
+        memoryNotes,
+        lastBuildDirective: project.lastBuildDirective || ''
+      };
+    }
     function undxLoadProjects(){
       try{
         const raw = localStorage.getItem(undxProjectStorageKey);
         const parsed = raw ? JSON.parse(raw) : [];
-        return Array.isArray(parsed) ? parsed.filter(item => item && item.projectId && item.name && item.objective).slice(0,48) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.projectId && item.name && item.objective).slice(0,48).map(undxNormalizeProject) : [];
       }catch(error){
         return [];
       }
@@ -22270,6 +22324,7 @@ def pulse_premium_undx_page():
         project.projectId || 'UNDX-0000',
         project.type || 'Other',
         `Status: ${project.status || 'Planning'}`,
+        `Priority: ${project.priority || 'Medium'}`,
         `Created: ${undxFormatMemoryTime(project.createdAt)}`
       ];
     }
@@ -22333,6 +22388,16 @@ def pulse_premium_undx_page():
       if(undxProjectsCreatedCount) undxProjectsCreatedCount.textContent = String(projects.length);
       if(undxActiveProjectsCount) undxActiveProjectsCount.textContent = String(projects.filter(project => project.status === 'Active').length);
       if(undxCompletedProjectsCount) undxCompletedProjectsCount.textContent = String(projects.filter(project => project.status === 'Completed').length);
+      const selected = projects.find(project => project.projectId === undxSelectedProjectId);
+      const statsProjects = selected ? [selected] : projects;
+      const totalTasks = statsProjects.reduce((sum, project) => sum + (project.tasks || []).length, 0);
+      const completedTasks = statsProjects.reduce((sum, project) => sum + (project.tasks || []).filter(task => task.status === 'Done').length, 0);
+      const memoryNotes = statsProjects.reduce((sum, project) => sum + (project.memoryNotes || []).length, 0);
+      const completedMilestones = statsProjects.reduce((sum, project) => sum + (project.milestones || []).filter(milestone => milestone.status === 'Complete').length, 0);
+      if(undxTotalTasksCount) undxTotalTasksCount.textContent = String(totalTasks);
+      if(undxCompletedTasksCount) undxCompletedTasksCount.textContent = String(completedTasks);
+      if(undxProjectMemoryNotesCount) undxProjectMemoryNotesCount.textContent = String(memoryNotes);
+      if(undxCompletedMilestonesCount) undxCompletedMilestonesCount.textContent = String(completedMilestones);
     }
     function undxRenderProjects(){
       const projects = undxLoadProjects();
@@ -22342,46 +22407,323 @@ def pulse_premium_undx_page():
       undxProjectList.replaceChildren();
       projects.forEach(project => undxProjectList.appendChild(undxCreateProjectCard(project)));
     }
+    function undxWorkspaceSection(title, purpose = ''){
+      const section = document.createElement('section');
+      section.className = 'undx-workspace-section';
+      const heading = document.createElement('h4');
+      heading.textContent = title;
+      section.appendChild(heading);
+      if(purpose){
+        const text = document.createElement('p');
+        text.textContent = purpose;
+        section.appendChild(text);
+      }
+      return section;
+    }
+    function undxWorkspaceEmpty(text){
+      const empty = document.createElement('div');
+      empty.className = 'undx-workspace-empty';
+      empty.textContent = text;
+      return empty;
+    }
+    function undxProjectActionButton(label, handler, isPrimary = false){
+      const button = document.createElement('button');
+      button.className = isPrimary ? 'button primary' : 'button';
+      button.type = 'button';
+      button.textContent = label;
+      button.addEventListener('click', handler);
+      return button;
+    }
+    function undxProjectSelect(options, selected){
+      const select = document.createElement('select');
+      options.forEach(option => {
+        const item = document.createElement('option');
+        item.value = option;
+        item.textContent = option;
+        if(option === selected) item.selected = true;
+        select.appendChild(item);
+      });
+      return select;
+    }
+    function undxProjectInputLabel(labelText, control){
+      const label = document.createElement('label');
+      label.className = 'undx-project-field';
+      const span = document.createElement('span');
+      span.textContent = labelText;
+      label.append(span, control);
+      return label;
+    }
+    function undxAddProjectTask(projectId, title, status){
+      const cleanTitle = String(title || '').trim().slice(0,180);
+      if(!cleanTitle){
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Enter a task title before adding it to the workspace.';
+        return;
+      }
+      undxUpdateProject(projectId, project => ({
+        ...project,
+        tasks: [
+          ...(project.tasks || []),
+          {id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, title:cleanTitle, status:status || 'Todo', createdAt:new Date().toISOString()}
+        ]
+      }));
+      if(undxProjectMessage) undxProjectMessage.textContent = 'Task added to UNDX Project Workspace.';
+    }
+    function undxSetProjectTaskStatus(projectId, taskId, status){
+      undxUpdateProject(projectId, project => ({
+        ...project,
+        tasks: (project.tasks || []).map(task => task.id === taskId ? {...task, status} : task)
+      }));
+    }
+    function undxDeleteProjectTask(projectId, taskId){
+      undxUpdateProject(projectId, project => ({
+        ...project,
+        tasks: (project.tasks || []).filter(task => task.id !== taskId)
+      }));
+      if(undxProjectMessage) undxProjectMessage.textContent = 'Task deleted from workspace.';
+    }
+    function undxMarkProjectMilestoneComplete(projectId, milestoneId){
+      undxUpdateProject(projectId, project => ({
+        ...project,
+        milestones: (project.milestones || []).map(milestone => milestone.id === milestoneId ? {...milestone, status:'Complete', completedAt:new Date().toISOString()} : milestone)
+      }));
+      if(undxProjectMessage) undxProjectMessage.textContent = 'Milestone marked complete.';
+    }
+    function undxAddProjectMemoryNote(projectId, text){
+      const cleanText = String(text || '').trim().slice(0,1200);
+      if(!cleanText){
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Enter a memory note before storing it.';
+        return;
+      }
+      undxUpdateProject(projectId, project => ({
+        ...project,
+        memoryNotes: [
+          ...(project.memoryNotes || []),
+          {id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, text:cleanText, createdAt:new Date().toISOString()}
+        ]
+      }));
+      if(undxProjectMessage) undxProjectMessage.textContent = 'Memory note stored in project workspace.';
+    }
+    function undxDeleteProjectMemoryNote(projectId, noteId){
+      undxUpdateProject(projectId, project => ({
+        ...project,
+        memoryNotes: (project.memoryNotes || []).filter(note => note.id !== noteId)
+      }));
+      if(undxProjectMessage) undxProjectMessage.textContent = 'Memory note deleted.';
+    }
+    function undxProjectRecommendedNextAction(project){
+      const incompleteMilestone = (project.milestones || []).find(milestone => milestone.status !== 'Complete');
+      const openTask = (project.tasks || []).find(task => task.status !== 'Done');
+      if(openTask) return `Advance the task "${openTask.title}" from ${openTask.status} toward Done, then update project memory with the decision.`;
+      if(incompleteMilestone) return `Complete the "${incompleteMilestone.title}" milestone before expanding implementation scope.`;
+      return 'Prepare the project for the next UNDX phase with fresh Agent Council review and implementation planning.';
+    }
+    function undxGenerateProjectDirectiveText(project){
+      const taskLines = (project.tasks || []).length ? project.tasks.map(task => `- [${task.status}] ${task.title} (created ${undxFormatMemoryTime(task.createdAt)})`).join('\\n') : '- No tasks yet.';
+      const milestoneLines = (project.milestones || []).map(milestone => `- [${milestone.status}] ${milestone.title}`).join('\\n');
+      const noteLines = (project.memoryNotes || []).length ? project.memoryNotes.map(note => `- ${undxFormatMemoryTime(note.createdAt)}: ${note.text}`).join('\\n') : '- No memory notes yet.';
+      return [
+        'UNDX Build Directive',
+        '',
+        `Project ID: ${project.projectId}`,
+        `Project Name: ${project.name}`,
+        `Objective: ${project.objective}`,
+        `Type: ${project.type || 'Other'}`,
+        `Priority: ${project.priority || 'Medium'}`,
+        `Status: ${project.status || 'Planning'}`,
+        `Linked Mission: ${project.linkedMission || project.source || 'Mission Source'}`,
+        '',
+        'Current Tasks:',
+        taskLines,
+        '',
+        'Milestones:',
+        milestoneLines,
+        '',
+        'Memory Notes:',
+        noteLines,
+        '',
+        `Recommended Next Action: ${undxProjectRecommendedNextAction(project)}`,
+        '',
+        'Safety Boundary: Planning only. Do not execute code, access local files, or modify repositories without explicit user direction.'
+      ].join('\\n');
+    }
+    function undxStoreProjectDirective(projectId){
+      const project = undxLoadProjects().find(item => item.projectId === projectId);
+      if(!project) return '';
+      const directive = undxGenerateProjectDirectiveText(project);
+      undxUpdateProject(projectId, current => ({...current, lastBuildDirective: directive}));
+      if(undxProjectMessage) undxProjectMessage.textContent = 'Build directive generated.';
+      return directive;
+    }
+    async function undxCopyProjectDirective(projectId){
+      const project = undxLoadProjects().find(item => item.projectId === projectId);
+      if(!project) return;
+      const directive = project.lastBuildDirective || undxGenerateProjectDirectiveText(project);
+      try{
+        await navigator.clipboard.writeText(directive);
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Build directive copied.';
+      }catch(error){
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Copy unavailable. The directive is visible in the workspace.';
+      }
+    }
+    function undxSendProjectDirectiveToChat(projectId){
+      const project = undxLoadProjects().find(item => item.projectId === projectId);
+      if(!project || !undxChatInput) return;
+      const directive = project.lastBuildDirective || undxGenerateProjectDirectiveText(project);
+      undxChatInput.value = directive;
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Build directive loaded into UNDX Chat Interface.';
+    }
+    function undxRenderProjectTasks(project, card){
+      const section = undxWorkspaceSection('Project Tasks');
+      const form = document.createElement('div');
+      form.className = 'undx-workspace-form';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Task title';
+      const status = undxProjectSelect(['Todo', 'In Progress', 'Done'], 'Todo');
+      form.append(
+        undxProjectInputLabel('Task title', input),
+        undxProjectInputLabel('Task status', status),
+        undxProjectActionButton('Add Task', () => undxAddProjectTask(project.projectId, input.value, status.value), true)
+      );
+      section.appendChild(form);
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.tasks || []).length){
+        list.appendChild(undxWorkspaceEmpty('No tasks yet. Add a task to begin workspace execution planning.'));
+      }else{
+        project.tasks.forEach(task => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = task.title;
+          const meta = document.createElement('p');
+          meta.textContent = `Task status: ${task.status} · Created: ${undxFormatMemoryTime(task.createdAt)}`;
+          const actions = document.createElement('div');
+          actions.className = 'undx-project-actions';
+          actions.append(
+            undxProjectActionButton('Mark In Progress', () => undxSetProjectTaskStatus(project.projectId, task.id, 'In Progress')),
+            undxProjectActionButton('Mark Done', () => undxSetProjectTaskStatus(project.projectId, task.id, 'Done'), task.status !== 'Done'),
+            undxProjectActionButton('Delete Task', () => undxDeleteProjectTask(project.projectId, task.id))
+          );
+          item.append(title, meta, actions);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
+    function undxRenderProjectMilestones(project, card){
+      const section = undxWorkspaceSection('Project Milestones');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      (project.milestones || []).forEach(milestone => {
+        const item = document.createElement('article');
+        item.className = 'undx-workspace-item';
+        const title = document.createElement('strong');
+        title.textContent = milestone.title;
+        const meta = document.createElement('p');
+        meta.textContent = `Milestone status: ${milestone.status}${milestone.completedAt ? ` · Completed: ${undxFormatMemoryTime(milestone.completedAt)}` : ''}`;
+        const actions = document.createElement('div');
+        actions.className = 'undx-project-actions';
+        const complete = undxProjectActionButton('Mark Milestone Complete', () => undxMarkProjectMilestoneComplete(project.projectId, milestone.id), milestone.status !== 'Complete');
+        complete.disabled = milestone.status === 'Complete';
+        actions.appendChild(complete);
+        item.append(title, meta, actions);
+        list.appendChild(item);
+      });
+      section.appendChild(list);
+      card.appendChild(section);
+    }
+    function undxRenderProjectMemory(project, card){
+      const section = undxWorkspaceSection('Project Memory', 'UNDX stores important notes, decisions, and build context for this project.');
+      const form = document.createElement('div');
+      form.className = 'undx-workspace-form undx-workspace-form-memory';
+      const note = document.createElement('textarea');
+      note.placeholder = 'Note text';
+      form.append(
+        undxProjectInputLabel('Note text', note),
+        undxProjectActionButton('Add Memory Note', () => undxAddProjectMemoryNote(project.projectId, note.value), true)
+      );
+      section.appendChild(form);
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.memoryNotes || []).length){
+        list.appendChild(undxWorkspaceEmpty('No project memory notes yet.'));
+      }else{
+        project.memoryNotes.forEach(memory => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const text = document.createElement('p');
+          text.textContent = memory.text;
+          const meta = document.createElement('p');
+          meta.textContent = `Created: ${undxFormatMemoryTime(memory.createdAt)}`;
+          const actions = document.createElement('div');
+          actions.className = 'undx-project-actions';
+          actions.appendChild(undxProjectActionButton('Delete Note', () => undxDeleteProjectMemoryNote(project.projectId, memory.id)));
+          item.append(text, meta, actions);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
+    function undxRenderBuildDirective(project, card){
+      const section = undxWorkspaceSection('Build Directive', 'Generate a clean instruction-style build directive from this project for Codex or future UNDX.');
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Generate Build Directive', () => undxStoreProjectDirective(project.projectId), true),
+        undxProjectActionButton('Copy Build Directive', () => undxCopyProjectDirective(project.projectId)),
+        undxProjectActionButton('Send Directive To UNDX Chat', () => undxSendProjectDirectiveToChat(project.projectId))
+      );
+      const output = document.createElement('pre');
+      output.className = 'undx-directive-output';
+      output.textContent = project.lastBuildDirective || 'No build directive generated yet.';
+      section.append(actions, output);
+      card.appendChild(section);
+    }
     function undxOpenProject(projectId, shouldScroll = true){
       const project = undxLoadProjects().find(item => item.projectId === projectId);
       if(!project || !undxProjectDetailContent) return;
       undxSelectedProjectId = project.projectId;
       if(undxProjectDetailEmpty) undxProjectDetailEmpty.hidden = true;
+      undxRenderProjectStats(undxLoadProjects());
       const card = document.createElement('article');
-      card.className = 'undx-blueprint-card';
+      card.className = 'undx-blueprint-card undx-workspace-card';
       const label = document.createElement('span');
       label.className = 'undx-core-label';
-      label.textContent = 'Project Overview';
+      label.textContent = 'UNDX Project Workspace';
       const title = document.createElement('h3');
       title.textContent = `${project.projectId} · ${project.name}`;
       const grid = document.createElement('div');
       grid.className = 'undx-blueprint-grid';
       const enhancement = project.aiEnhancement || undxProjectFallbackEnhancement(project);
       grid.append(
-        undxBlock('Objective', project.objective),
-        undxBlock('Type', project.type || 'Other'),
+        undxBlock('Project ID', project.projectId),
+        undxBlock('Project Name', project.name),
+        undxBlock('Project Type', project.type || 'Other'),
         undxBlock('Status', project.status || 'Planning'),
+        undxBlock('Priority', project.priority || 'Medium'),
         undxBlock('Created Date', undxFormatMemoryTime(project.createdAt)),
+        undxBlock('Objective', project.objective),
         undxBlock('Linked Mission', project.linkedMission || project.source || 'Mission Source'),
         undxBlock('Project Summary', enhancement.summary || 'Project summary pending.'),
-        undxBlock('Suggested Milestones', enhancement.milestones || []),
         undxBlock('Recommended Modules', undxModulePills(enhancement.modules || undxSuggestedModules(project.objective))),
         undxBlock('Enhancement Source', enhancement.source || 'Pending')
       );
       const actions = document.createElement('div');
       actions.className = 'undx-project-actions';
-      const send = document.createElement('button');
-      send.className = 'button primary';
-      send.type = 'button';
-      send.textContent = 'Send To Builder Console';
-      send.addEventListener('click', () => undxSendProjectToBuilder(project));
-      const council = document.createElement('button');
-      council.className = 'button';
-      council.type = 'button';
-      council.textContent = 'Run Agent Council';
-      council.addEventListener('click', () => undxRunProjectCouncil(project));
-      actions.append(send, council);
+      actions.append(
+        undxProjectActionButton('Send To Builder Console', () => undxSendProjectToBuilder(project), true),
+        undxProjectActionButton('Run Agent Council', () => undxRunProjectCouncil(project))
+      );
       card.append(label, title, grid, actions);
+      undxRenderProjectTasks(project, card);
+      undxRenderProjectMilestones(project, card);
+      undxRenderProjectMemory(project, card);
+      undxRenderBuildDirective(project, card);
       undxProjectDetailContent.replaceChildren(card);
       if(shouldScroll) document.getElementById('undx-project-creator')?.scrollIntoView({behavior:'smooth', block:'start'});
     }
@@ -22435,6 +22777,15 @@ def pulse_premium_undx_page():
         source: source?.kind || 'Manual Mission',
         linkedMission: source?.linkedMission || source?.name || 'Mission Source',
         createdAt: new Date().toISOString(),
+        tasks: [],
+        milestones: undxDefaultProjectMilestones.map(title => ({
+          id: title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''),
+          title,
+          status: 'Pending',
+          completedAt: ''
+        })),
+        memoryNotes: [],
+        lastBuildDirective: '',
         aiEnhancement: {
           source: 'Pending',
           summary: 'UNDX is preparing the project summary, suggested milestones, and recommended modules.',
