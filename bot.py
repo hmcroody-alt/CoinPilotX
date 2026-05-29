@@ -16214,40 +16214,6 @@ def pulse_live_now_homepage_html(user_id=0):
     )
 
 
-def pulse_undx_core_homepage_html():
-    features = [
-        ("Recursive Builder Intelligence", "Learns from product signals and prepares safer build paths for CoinPilotXAI expansion."),
-        ("Autonomous Code Evolution", "Premium planning layer for future controlled refactors, audits, and system hardening."),
-        ("Crypto Security Expansion", "Threat modeling, scam pattern research, and trust infrastructure for the Pulse ecosystem."),
-        ("AI Research Engine", "Turns market, product, and community intelligence into structured next-step recommendations."),
-        ("Product Growth Intelligence", "Reads creator momentum, retention signals, and feature adoption without drowning the feed."),
-        ("Mission Control Automation", "Future command layer for orchestrating workers, diagnostics, and launch readiness."),
-    ]
-    feature_html = "".join(
-        "<article class='undx-feature-card'>"
-        f"<span>{clean_html(str(index).zfill(2))}</span>"
-        f"<h3>{clean_html(title)}</h3>"
-        f"<p>{clean_html(body)}</p>"
-        "</article>"
-        for index, (title, body) in enumerate(features, start=1)
-    )
-    return (
-        "<section class='card pulse-undx-core' data-undx-core>"
-        "<div class='undx-orbit' aria-hidden='true'><span></span><span></span><span></span></div>"
-        "<header class='undx-hero'>"
-        "<div>"
-        "<span class='badge undx-premium-badge'>Coming Soon: Premium Intelligence Layer</span>"
-        "<h2>UNDX Core: Build Beyond the Known.</h2>"
-        "<p>The premium intelligence engine designed to help CoinPilotXAI evolve, build, analyze, secure, and expand into unknown destinations.</p>"
-        "</div>"
-        "<a class='button primary undx-cta' href='/pulse/premium'>Unlock UNDX</a>"
-        "</header>"
-        f"<div class='undx-feature-grid'>{feature_html}</div>"
-        "<footer class='undx-footer'><strong>UNDX = Unknown Destination X</strong><span>Hidden builder intelligence for the next era of Pulse.</span></footer>"
-        "</section>"
-    )
-
-
 def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     user = require_account()
     if not user:
@@ -16307,7 +16273,6 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     desktop_right_rail_html = pulse_desktop_right_rail_html()
     status_rail_html = pulse_status_rail_html()
     live_now_html = pulse_live_now_homepage_html(int(user.get("user_id") or 0))
-    undx_core_html = pulse_undx_core_homepage_html()
     html = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -16356,7 +16321,6 @@ __DESKTOP_LEFT_RAIL__
 <section class="layout pulse-grid"><div>
 __PULSE_STATUS_RAIL__
 __LIVE_NOW_HUB__
-__UNDX_CORE__
 <section class="card composer pulse-publisher-card" id="pulseComposer"><div class="smart-composer-bar"><span class="smart-compose-avatar">P</span><textarea id="postBody" placeholder="What's happening in crypto today?"></textarea></div><div class="composer-primary-actions" data-pulse-media-picker="composer"><button type="button" data-open-media data-pulse-media-trigger data-expand-composer="pulseComposer" data-media-input="postMedia" data-media-accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime">Media</button><button type="button" data-composer-reel>Reel</button><a class="button" href="/pulse/live">Live</a><button type="button" data-composer-music>Music</button><button type="button" id="aiBtn" aria-label="Enhance with AI">AI</button><button type="button" data-composer-audience>Audience</button><button class="primary" id="publishBtn" type="button">Publish</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" placeholder="Optional title"><select id="postType" class="post-type-select"><option value="text">Text</option><option value="poll">Question</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="roast_clip">Roast Clip</option><option value="replay">Replay Card</option></select><div class="composer-tools"><button class="active" type="button" data-type="text">Text</button><button type="button" data-type="poll">Question</button><button type="button" data-type="scam_report">Scam</button><button type="button" data-type="roast_clip">Roast</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="actions pulse-actions"><a class="button" href="/scam-shield/scan">Run Scam Shield</a><button type="button" data-collapse-composer>Done</button></div><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><div class="pulse-upload-progress-track" data-upload-progress aria-label="Pulse upload progress"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small></div><p class="muted composer-hint" id="composeMsg">Media, Reels, Live, Music, AI, and Audience tools stay one tap away. Unsafe links are scanned before publishing.</p></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your Pulse is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="/pulse/create">Create Another</a><a class="button" href="/pulse">Pulse Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
@@ -16490,7 +16454,6 @@ let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)retu
         .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
         .replace("__PULSE_STATUS_RAIL__", status_rail_html)
         .replace("__LIVE_NOW_HUB__", live_now_html)
-        .replace("__UNDX_CORE__", undx_core_html)
         .replace("__DAILY_MENTOR_CARD__", pulse_daily_mentor_card_html())
         .replace("__DESKTOP_RIGHT_RAIL__", desktop_right_rail_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
@@ -21361,8 +21324,15 @@ def pulse_premium_page():
     .elite-mark{{width:112px;height:112px;border-radius:34px;display:grid;place-items:center;font-size:54px;background:radial-gradient(circle at 32% 24%,#fff8cc,#ffd166 46%,#36e58f 100%);color:#071321;box-shadow:0 0 0 1px rgba(255,255,255,.5),0 0 60px rgba(255,209,102,.75),0 0 105px rgba(110,223,246,.18);animation:premiumPulse 2.8s ease-in-out infinite}}
     .creator-rank{{display:grid;gap:8px;border-radius:22px;padding:14px;background:rgba(5,11,20,.62);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(18px)}}
     .rank-line{{height:9px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}}.rank-line span{{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffd166,#6edff6,#36e58f);box-shadow:0 0 18px rgba(110,223,246,.55)}}
-    .visual-grid{{display:grid;gap:12px}}
-    .glass-panel{{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:16px;background:rgba(255,255,255,.065);backdrop-filter:blur(18px);box-shadow:0 22px 70px rgba(0,0,0,.22)}}
+	    .visual-grid{{display:grid;gap:12px}}
+	    .glass-panel{{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:16px;background:rgba(255,255,255,.065);backdrop-filter:blur(18px);box-shadow:0 22px 70px rgba(0,0,0,.22)}}
+	    .premium-undx-entry{{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;overflow:hidden;padding:clamp(18px,3vw,28px);border-color:rgba(110,223,246,.25);background:radial-gradient(circle at 18% 12%,rgba(110,223,246,.20),transparent 24rem),radial-gradient(circle at 88% 20%,rgba(155,92,255,.18),transparent 22rem),linear-gradient(135deg,rgba(6,15,28,.92),rgba(10,18,34,.78));box-shadow:0 28px 90px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.10),0 0 60px rgba(54,229,143,.08)}}
+	    .premium-undx-entry:before{{content:"";position:absolute;inset:-35%;background:linear-gradient(115deg,transparent 20%,rgba(110,223,246,.12) 43%,transparent 62%),radial-gradient(circle,rgba(255,255,255,.12) 0 1px,transparent 1px);background-size:auto,42px 42px;opacity:.28;transform:rotate(-8deg);animation:premiumUndxDrift 18s ease-in-out infinite;pointer-events:none}}
+	    .premium-undx-entry>*{{position:relative;z-index:1}}
+	    .premium-undx-entry h2{{margin:10px 0 8px;font-size:clamp(30px,5vw,62px);line-height:.92;letter-spacing:0}}
+	    .premium-undx-entry p{{max-width:760px;margin:0;color:rgba(223,246,255,.75);font-size:clamp(15px,1.4vw,18px)}}
+	    .undx-premium-cta{{min-width:190px;min-height:54px;border-radius:18px;box-shadow:0 18px 42px rgba(54,229,143,.20),0 0 30px rgba(110,223,246,.14)}}
+	    .undx-core-sparks{{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}}.undx-core-sparks span{{border:1px solid rgba(110,223,246,.18);border-radius:999px;padding:7px 10px;background:rgba(5,11,20,.34);color:#dffcff;font-weight:850;font-size:.86rem}}
     .ai-preview{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}.ai-preview article{{display:grid;gap:5px;border:1px solid rgba(110,223,246,.16);border-radius:16px;padding:12px;background:rgba(5,11,20,.42)}}.ai-preview span{{font-size:.86rem;color:rgba(223,246,255,.66)}}
     .amplify-chart{{height:180px;border-radius:20px;border:1px solid rgba(255,255,255,.10);background:linear-gradient(180deg,rgba(110,223,246,.08),rgba(255,255,255,.02));position:relative;overflow:hidden}}
     .amplify-chart:before{{content:"";position:absolute;left:8%;right:8%;bottom:22%;height:48%;border-radius:50% 50% 0 0;border-top:4px solid #36e58f;border-right:4px solid #6edff6;transform:skewX(-16deg);filter:drop-shadow(0 0 16px rgba(54,229,143,.58))}}
@@ -21371,10 +21341,10 @@ def pulse_premium_page():
     .creator-proof{{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:12px;background:rgba(255,255,255,.05)}}.proof-avatar{{width:42px;height:42px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(135deg,#ffd166,#6edff6);color:#06101b;font-weight:950}}.creator-proof span{{display:block;color:rgba(223,246,255,.66);font-size:.86rem}}.creator-proof b{{color:#36e58f}}
     .premium-table{{width:100%;border-collapse:separate;border-spacing:0 8px}}.premium-table td,.premium-table th{{padding:13px;border:0;background:rgba(255,255,255,.045)}}.premium-table th:first-child,.premium-table td:first-child{{border-radius:14px 0 0 14px}}.premium-table th:last-child,.premium-table td:last-child{{border-radius:0 14px 14px 0;color:#fff3bf}}
     .premium-sticky-cta{{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom));z-index:4;display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid rgba(255,209,102,.28);border-radius:22px;padding:10px 12px;background:rgba(5,11,20,.78);backdrop-filter:blur(20px);box-shadow:0 20px 70px rgba(0,0,0,.42),0 0 38px rgba(255,209,102,.12)}}
-    @keyframes premiumSpin{{to{{transform:rotate(360deg)}}}}@keyframes premiumPulse{{50%{{transform:translateY(-4px) scale(1.035);box-shadow:0 0 0 1px rgba(255,255,255,.5),0 0 78px rgba(255,209,102,.86),0 0 130px rgba(110,223,246,.24)}}}}
-    @media(max-width:980px){{.premium-hero-lux{{grid-template-columns:1fr;min-height:auto}}.prestige-card{{min-height:420px}}.lux-grid{{grid-template-columns:1fr 1fr}}}}
-    @media(max-width:640px){{.premium-hero-lux{{border-radius:22px;padding:10px}}.premium-copy{{padding:10px}}.prestige-card{{min-height:360px;border-radius:20px}}.elite-mark{{width:86px;height:86px;border-radius:26px;font-size:42px}}.ai-preview,.lux-grid{{grid-template-columns:1fr}}.premium-sticky-cta{{left:10px;right:10px;display:grid}}.premium-table{{font-size:.88rem}}.premium-table td,.premium-table th{{padding:10px 8px}}}}
-    @media(prefers-reduced-motion:reduce){{.prestige-card:before,.elite-mark{{animation:none}}}}
+	    @keyframes premiumSpin{{to{{transform:rotate(360deg)}}}}@keyframes premiumPulse{{50%{{transform:translateY(-4px) scale(1.035);box-shadow:0 0 0 1px rgba(255,255,255,.5),0 0 78px rgba(255,209,102,.86),0 0 130px rgba(110,223,246,.24)}}}}@keyframes premiumUndxDrift{{0%,100%{{transform:translate3d(0,0,0) rotate(-8deg)}}50%{{transform:translate3d(2%,-1.5%,0) rotate(-5deg)}}}}
+	    @media(max-width:980px){{.premium-hero-lux,.premium-undx-entry{{grid-template-columns:1fr;min-height:auto}}.prestige-card{{min-height:420px}}.lux-grid{{grid-template-columns:1fr 1fr}}.undx-premium-cta{{width:max-content}}}}
+	    @media(max-width:640px){{.premium-hero-lux{{border-radius:22px;padding:10px}}.premium-copy{{padding:10px}}.prestige-card{{min-height:360px;border-radius:20px}}.elite-mark{{width:86px;height:86px;border-radius:26px;font-size:42px}}.ai-preview,.lux-grid{{grid-template-columns:1fr}}.premium-sticky-cta{{left:10px;right:10px;display:grid}}.premium-table{{font-size:.88rem}}.premium-table td,.premium-table th{{padding:10px 8px}}.premium-undx-entry{{border-radius:20px;padding:18px}}.undx-premium-cta{{width:100%}}}}
+	    @media(prefers-reduced-motion:reduce){{.prestige-card:before,.elite-mark,.premium-undx-entry:before{{animation:none}}}}
     </style>
     <section class='premium-universe'>
       <section class='premium-hero-lux'>
@@ -21391,10 +21361,19 @@ def pulse_premium_page():
             <h3>Creator aura rising</h3>
             <div class='rank-line'><span style='width:86%'></span></div>
             <p class='muted'>Discovery energy, trust visibility, audience intelligence, and premium identity effects working together.</p>
-          </div>
-        </aside>
-      </section>
-      <section class='visual-grid'>
+	          </div>
+	        </aside>
+	      </section>
+	      <section class='glass-panel premium-undx-entry' data-undx-premium-entry>
+	        <div>
+	          <span class='prestige-cycle'>Coming Soon: Premium Intelligence Layer</span>
+	          <h2>UNDX Core</h2>
+	          <p>Open the Unknown Destination intelligence layer.</p>
+	          <div class='undx-core-sparks'><span>Recursive builder intelligence</span><span>Security expansion</span><span>Mission control automation</span></div>
+	        </div>
+	        <a class='button primary undx-premium-cta' href='/pulse/premium/undx'>Enter UNDX</a>
+	      </section>
+	      <section class='visual-grid'>
         <div class='glass-panel'><h2>Advanced Creator AI</h2><p>Premium helps you create with sharper hooks, stronger captions, better timing, livestream ideas, and intelligence that respects trust over hype.</p><div class='ai-preview'>{ai_cards}</div></div>
         <div class='glass-panel'><h2>Creator Acceleration</h2><p>Not pay-to-win. Premium improves how the system understands your creator identity, expertise, consistency, and audience fit.</p><div class='amplify-chart'></div></div>
       </section>
@@ -21416,6 +21395,48 @@ def pulse_premium_page():
     </section>
     """
     return pulse_social_shell("Pulse Premium", "Prestige, identity, creator enhancement, elite cosmetics, and advanced creator intelligence without locking the core platform.", main)
+
+
+@webhook_app.route("/pulse/premium/undx", methods=["GET"])
+def pulse_premium_undx_page():
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    main = """
+    <style>
+    .undx-core-page{position:relative;display:grid;gap:18px;isolation:isolate}
+    .undx-core-page:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 16% 10%,rgba(110,223,246,.16),transparent 27rem),radial-gradient(circle at 84% 20%,rgba(155,92,255,.16),transparent 25rem),radial-gradient(circle at 48% 82%,rgba(54,229,143,.10),transparent 30rem)}
+    .undx-core-hero{position:relative;min-height:560px;display:grid;align-content:end;gap:18px;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:30px;padding:clamp(18px,4vw,42px);background:radial-gradient(circle at 18% 12%,rgba(110,223,246,.22),transparent 26rem),radial-gradient(circle at 86% 18%,rgba(155,92,255,.18),transparent 27rem),linear-gradient(145deg,#050812,#0c182d 62%,#050b14);box-shadow:0 34px 120px rgba(0,0,0,.44),0 0 70px rgba(54,229,143,.10)}
+    .undx-core-hero:before{content:"";position:absolute;inset:-30%;background:linear-gradient(120deg,transparent 18%,rgba(110,223,246,.12) 44%,transparent 62%),radial-gradient(circle,rgba(255,255,255,.13) 0 1px,transparent 1px);background-size:auto,48px 48px;opacity:.3;transform:rotate(-7deg);animation:undxCoreDrift 18s ease-in-out infinite}
+    .undx-core-hero>*{position:relative;z-index:1}
+    .undx-core-label{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(110,223,246,.34);border-radius:999px;padding:8px 12px;background:rgba(110,223,246,.08);color:#dffcff;font-weight:950;box-shadow:0 0 28px rgba(110,223,246,.12)}
+    .undx-core-hero h1{max-width:900px;margin:0;font-size:clamp(48px,10vw,120px);line-height:.84;letter-spacing:0}
+    .undx-core-hero p{max-width:900px;margin:0;color:rgba(223,246,255,.78);font-size:clamp(17px,2vw,24px)}
+    .undx-core-actions{display:flex;gap:10px;flex-wrap:wrap}.undx-core-actions .button{min-height:48px;border-radius:16px}
+    .undx-core-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.undx-core-card{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:18px;background:rgba(255,255,255,.06);backdrop-filter:blur(16px);box-shadow:0 22px 70px rgba(0,0,0,.22)}.undx-core-card h2{margin-top:0}
+    @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
+    @media(max-width:800px){.undx-core-hero{min-height:430px;border-radius:22px}.undx-core-grid{grid-template-columns:1fr}.undx-core-actions .button{width:100%}}
+    @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
+    </style>
+    <section class='undx-core-page' data-undx-core-page>
+      <section class='undx-core-hero'>
+        <span class='undx-core-label'>Premium Intelligence Layer</span>
+        <h1>UNDX Core</h1>
+        <p>Unknown Destination X — the premium intelligence layer powering the future of CoinPilotXAI.</p>
+        <div class='undx-core-actions'>
+          <a class='button primary' href='/pulse/premium'>Back to Pulse Premium</a>
+          <a class='button' href='/pulse/creator/dashboard'>Open Creator Intelligence</a>
+        </div>
+      </section>
+      <section class='undx-core-grid'>
+        <article class='undx-core-card'><h2>Build Beyond the Known</h2><p class='muted'>UNDX is the future premium builder intelligence layer for product evolution, safer automation, and expansion planning.</p></article>
+        <article class='undx-core-card'><h2>Hidden Mission Control</h2><p class='muted'>Designed to become the command layer for diagnostics, security research, worker orchestration, and launch readiness.</p></article>
+        <article class='undx-core-card'><h2>AI-Native Expansion</h2><p class='muted'>A premium foundation for analysis, creation, trust systems, and Unknown Destination X roadmaps.</p></article>
+      </section>
+    </section>
+    """
+    return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer powering the future of CoinPilotXAI.", main)
 
 
 def premium_user_is_grantable(user):
