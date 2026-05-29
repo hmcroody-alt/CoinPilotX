@@ -21709,14 +21709,27 @@ def pulse_premium_undx_page():
     .undx-execution-planner .undx-project-field,.undx-execution-planner select,.undx-execution-planner .button{min-width:0}
     .undx-execution-source-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
     .undx-execution-source-list li{border:1px solid rgba(156,124,255,.17);border-radius:14px;padding:10px 12px;background:rgba(5,11,20,.34);color:rgba(223,246,255,.76);font-weight:850}
+    .undx-approval-protocol{position:relative;overflow:hidden;border-color:rgba(54,229,143,.24);background:radial-gradient(circle at 17% 10%,rgba(54,229,143,.12),transparent 24rem),radial-gradient(circle at 82% 15%,rgba(110,223,246,.11),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+    .undx-approval-protocol:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08),transparent 32%,rgba(255,209,102,.052));pointer-events:none}
+    .undx-approval-protocol>*{position:relative;z-index:1}
+    .undx-approval-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+    .undx-approval-controls,.undx-approval-sidebar{display:grid;gap:12px}
+    .undx-gate-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .undx-approval-gate,.undx-approval-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(5,19,27,.80),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-approval-gate h4,.undx-approval-card h3,.undx-approval-card h4{margin:0;font-size:clamp(18px,2vw,24px)}
+    .undx-approval-gate p,.undx-approval-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-approval-gate select{width:100%;min-width:0}
+    .undx-approval-history{display:grid;gap:10px}
+    .undx-approval-request{display:grid;gap:10px;border:1px solid rgba(54,229,143,.18);border-radius:16px;padding:12px;background:rgba(5,11,20,.42)}
+    .undx-trust-score{font-size:clamp(38px,8vw,58px);line-height:1;font-weight:950;color:#dffcff;text-shadow:0 0 26px rgba(54,229,143,.32)}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22076,6 +22089,63 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-approval-protocol' id='undx-approval-protocol'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Approval Core: Active</span>
+            <h2>UNDX Approval Protocol</h2>
+          </div>
+          <p>All future repository access, file operations, code changes, terminal commands, Git actions, and deployments require explicit approval.</p>
+        </div>
+        <div class='undx-approval-layout'>
+          <div class='undx-approval-controls'>
+            <div class='undx-memory-status' aria-label='UNDX approval protocol status'>
+              <span aria-label='Approval Core: Active'>Approval Core: <strong>Active</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Trust Protocol: Active'>Trust Protocol: <strong>Active</strong></span>
+              <span aria-label='Phase: 12'>Phase: <strong>12</strong></span>
+            </div>
+            <section class='undx-project-registry' aria-label='Safe Action Gates'>
+              <h3>Safe Action Gates</h3>
+              <div class='undx-gate-grid' id='undxSafeActionGates' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-registry' aria-label='Approval History'>
+              <h3>Approval History</h3>
+              <div class='undx-memory-empty' id='undxApprovalHistoryEmpty'>No approval decisions recorded yet. Simulate an approval request to activate the trust ledger.</div>
+              <div class='undx-approval-history' id='undxApprovalHistoryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-approval-sidebar'>
+            <article class='undx-approval-card' aria-label='Trust Score'>
+              <span class='undx-core-label'>Trust Score</span>
+              <h3>Trust Score</h3>
+              <strong class='undx-trust-score' id='undxTrustScoreValue'>100</strong>
+              <div class='undx-status-grid'>
+                <p class='undx-status-item'><span>Approval Requests</span><strong id='undxApprovalRequestCount'>0</strong></p>
+                <p class='undx-status-item'><span>Approved</span><strong id='undxApprovalApprovedCount'>0</strong></p>
+                <p class='undx-status-item'><span>Rejected</span><strong id='undxApprovalRejectedCount'>0</strong></p>
+              </div>
+              <button class='button primary' type='button' id='undxSimulateApprovalRequest'>Simulate Approval Request</button>
+              <div class='undx-approval-request' id='undxApprovalRequestPanel' aria-live='polite'>No active approval request.</div>
+              <p class='undx-project-message' id='undxApprovalMessage' aria-live='polite'></p>
+            </article>
+            <article class='undx-approval-card' aria-label='UNDX Safety Constitution'>
+              <span class='undx-core-label'>UNDX Safety Constitution</span>
+              <h3>UNDX Safety Constitution</h3>
+              <ul class='undx-safety-list'>
+                <li>Never expose secrets</li>
+                <li>Always show diffs before edits</li>
+                <li>Create backups before destructive changes</li>
+                <li>Require approval before commands</li>
+                <li>Require approval before deployment</li>
+                <li>Preserve recoverability</li>
+                <li>Preserve mission integrity</li>
+              </ul>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22185,16 +22255,29 @@ def pulse_premium_undx_page():
     const undxExecutionPlanList = document.getElementById('undxExecutionPlanList');
     const undxExecutionDetailEmpty = document.getElementById('undxExecutionDetailEmpty');
     const undxExecutionPlanDetail = document.getElementById('undxExecutionPlanDetail');
+    const undxSafeActionGates = document.getElementById('undxSafeActionGates');
+    const undxApprovalHistoryEmpty = document.getElementById('undxApprovalHistoryEmpty');
+    const undxApprovalHistoryList = document.getElementById('undxApprovalHistoryList');
+    const undxTrustScoreValue = document.getElementById('undxTrustScoreValue');
+    const undxApprovalRequestCount = document.getElementById('undxApprovalRequestCount');
+    const undxApprovalApprovedCount = document.getElementById('undxApprovalApprovedCount');
+    const undxApprovalRejectedCount = document.getElementById('undxApprovalRejectedCount');
+    const undxSimulateApprovalRequest = document.getElementById('undxSimulateApprovalRequest');
+    const undxApprovalRequestPanel = document.getElementById('undxApprovalRequestPanel');
+    const undxApprovalMessage = document.getElementById('undxApprovalMessage');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
     const undxRepositoryPlansKey = 'undxRepositoryPlans';
     const undxExecutionPlansKey = 'undxExecutionPlans';
+    const undxApprovalProtocolKey = 'undxApprovalProtocol';
+    const undxApprovalHistoryKey = 'undxApprovalHistory';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
     let undxSelectedProjectId = null;
     let undxSelectedExecutionPlanId = null;
+    let undxActiveApprovalRequest = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -22656,6 +22739,233 @@ def pulse_premium_undx_page():
       label.append(span, control);
       return label;
     }
+    function undxApprovalGateNames(){
+      return [
+        'Repository Read Access',
+        'File Edit Access',
+        'Terminal Command Access',
+        'Git Commit Access',
+        'Deployment Access',
+        'Secret Management Access'
+      ];
+    }
+    function undxApprovalPermissionLevels(){
+      return [
+        'Disabled',
+        'Request Approval',
+        'Allowed With Confirmation',
+        'Always Require Approval'
+      ];
+    }
+    function undxDefaultApprovalGate(name){
+      return {
+        gateType: name,
+        status: 'Disabled',
+        permissionLevel: 'Always Require Approval',
+        lastUpdated: ''
+      };
+    }
+    function undxNormalizeApprovalGate(gate, name){
+      const permissionLevels = undxApprovalPermissionLevels();
+      return {
+        gateType: name,
+        status: 'Disabled',
+        permissionLevel: permissionLevels.includes(gate?.permissionLevel) ? gate.permissionLevel : 'Always Require Approval',
+        lastUpdated: gate?.lastUpdated || ''
+      };
+    }
+    function undxLoadApprovalProtocol(){
+      try{
+        const raw = localStorage.getItem(undxApprovalProtocolKey);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return undxApprovalGateNames().map(name => undxNormalizeApprovalGate(parsed?.[name], name));
+      }catch(error){
+        return undxApprovalGateNames().map(undxDefaultApprovalGate);
+      }
+    }
+    function undxSaveApprovalProtocol(gates){
+      try{
+        const payload = {};
+        gates.forEach(gate => {
+          payload[gate.gateType] = gate;
+        });
+        localStorage.setItem(undxApprovalProtocolKey, JSON.stringify(payload));
+      }catch(error){
+        if(undxApprovalMessage) undxApprovalMessage.textContent = 'Approval protocol could not be updated.';
+      }
+    }
+    function undxUpdateApprovalGate(gateType, permissionLevel){
+      const gates = undxLoadApprovalProtocol().map(gate => gate.gateType === gateType ? {
+        ...gate,
+        permissionLevel,
+        status: 'Disabled',
+        lastUpdated: new Date().toISOString()
+      } : gate);
+      undxSaveApprovalProtocol(gates);
+      undxRenderApprovalProtocol();
+      if(undxApprovalMessage) undxApprovalMessage.textContent = `${gateType} now requires ${permissionLevel}. File and execution access remain disabled.`;
+    }
+    function undxCreateApprovalGateCard(gate){
+      const article = document.createElement('article');
+      article.className = 'undx-approval-gate';
+      const title = document.createElement('h4');
+      title.textContent = gate.gateType;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        `Status: ${gate.status || 'Disabled'}`,
+        `Permission Level: ${gate.permissionLevel || 'Always Require Approval'}`,
+        `Last Updated: ${gate.lastUpdated ? undxFormatMemoryTime(gate.lastUpdated) : 'Not updated yet'}`
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const select = undxProjectSelect(undxApprovalPermissionLevels(), gate.permissionLevel || 'Always Require Approval');
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.appendChild(undxProjectActionButton('Update Gate', () => undxUpdateApprovalGate(gate.gateType, select.value), true));
+      article.append(title, meta, undxProjectInputLabel('Permission Level', select), actions);
+      return article;
+    }
+    function undxRenderApprovalProtocol(){
+      if(!undxSafeActionGates) return;
+      undxSafeActionGates.replaceChildren();
+      undxLoadApprovalProtocol().forEach(gate => undxSafeActionGates.appendChild(undxCreateApprovalGateCard(gate)));
+    }
+    function undxLoadApprovalHistory(){
+      try{
+        const raw = localStorage.getItem(undxApprovalHistoryKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.actionRequested && item.gateType && item.decision).slice(0,80) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveApprovalHistory(items){
+      try{
+        localStorage.setItem(undxApprovalHistoryKey, JSON.stringify(items.slice(0,80)));
+      }catch(error){
+        if(undxApprovalMessage) undxApprovalMessage.textContent = 'Approval History could not be updated.';
+      }
+    }
+    function undxRenderTrustScore(){
+      const history = undxLoadApprovalHistory();
+      const approved = history.filter(item => item.decision === 'Approved').length;
+      const rejected = history.filter(item => item.decision === 'Rejected').length;
+      const score = Math.max(0, Math.min(100, 100 - rejected * 2));
+      if(undxTrustScoreValue) undxTrustScoreValue.textContent = String(score);
+      if(undxApprovalRequestCount) undxApprovalRequestCount.textContent = String(history.length);
+      if(undxApprovalApprovedCount) undxApprovalApprovedCount.textContent = String(approved);
+      if(undxApprovalRejectedCount) undxApprovalRejectedCount.textContent = String(rejected);
+    }
+    function undxRenderApprovalHistory(){
+      const history = undxLoadApprovalHistory();
+      if(undxApprovalHistoryEmpty) undxApprovalHistoryEmpty.hidden = history.length > 0;
+      if(!undxApprovalHistoryList) return;
+      undxApprovalHistoryList.replaceChildren();
+      history.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'undx-approval-gate';
+        const title = document.createElement('h4');
+        title.textContent = item.actionRequested;
+        const meta = document.createElement('div');
+        meta.className = 'undx-memory-meta';
+        [
+          `Gate Type: ${item.gateType}`,
+          `Decision: ${item.decision}`,
+          `Timestamp: ${undxFormatMemoryTime(item.timestamp)}`,
+          `Risk Level: ${item.riskLevel || 'Medium'}`
+        ].forEach(value => {
+          const pill = document.createElement('span');
+          pill.className = 'undx-module-label';
+          pill.textContent = value;
+          meta.appendChild(pill);
+        });
+        const area = document.createElement('p');
+        area.textContent = `Affected Area: ${item.affectedArea || 'UNDX planning surface'}`;
+        card.append(title, meta, area);
+        undxApprovalHistoryList.appendChild(card);
+      });
+      undxRenderTrustScore();
+    }
+    function undxApprovalPermissionForGate(gateType){
+      const gate = undxLoadApprovalProtocol().find(item => item.gateType === gateType);
+      return gate?.permissionLevel || 'Always Require Approval';
+    }
+    function undxApprovalSimulationExamples(){
+      return [
+        {actionRequested:'Read repository files', gateType:'Repository Read Access', riskLevel:'Medium', affectedArea:'Planned repository inspection'},
+        {actionRequested:'Edit authentication module', gateType:'File Edit Access', riskLevel:'High', affectedArea:'Authentication and account trust boundary'},
+        {actionRequested:'Run Git commit', gateType:'Git Commit Access', riskLevel:'Medium', affectedArea:'Version control checkpoint'},
+        {actionRequested:'Deploy production update', gateType:'Deployment Access', riskLevel:'High', affectedArea:'Production release channel'}
+      ];
+    }
+    function undxRenderApprovalRequest(request){
+      if(!undxApprovalRequestPanel) return;
+      if(!request){
+        undxApprovalRequestPanel.textContent = 'No active approval request.';
+        return;
+      }
+      const card = document.createElement('div');
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Action Requested', request.actionRequested),
+        undxBlock('Gate Type', request.gateType),
+        undxBlock('Risk Level', request.riskLevel),
+        undxBlock('Affected Area', request.affectedArea),
+        undxBlock('Approval Required', `Yes · ${undxApprovalPermissionForGate(request.gateType)}`)
+      );
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Approve', () => undxRecordApprovalDecision('Approved'), true),
+        undxProjectActionButton('Reject', () => undxRecordApprovalDecision('Rejected'))
+      );
+      card.append(grid, actions);
+      undxApprovalRequestPanel.replaceChildren(card);
+    }
+    function undxSimulateApprovalRequestFlow(){
+      const examples = undxApprovalSimulationExamples();
+      const history = undxLoadApprovalHistory();
+      undxActiveApprovalRequest = examples[history.length % examples.length];
+      undxRenderApprovalRequest(undxActiveApprovalRequest);
+      if(undxApprovalMessage) undxApprovalMessage.textContent = 'Approval request simulated. No real access was attempted.';
+    }
+    function undxRecordApprovalDecision(decision){
+      if(!undxActiveApprovalRequest){
+        if(undxApprovalMessage) undxApprovalMessage.textContent = 'Simulate an approval request before recording a decision.';
+        return;
+      }
+      const item = {
+        ...undxActiveApprovalRequest,
+        decision,
+        timestamp: new Date().toISOString()
+      };
+      undxSaveApprovalHistory([item, ...undxLoadApprovalHistory()]);
+      if(undxApprovalMessage) undxApprovalMessage.textContent = `${decision} recorded in Approval History. Access remains disabled in Phase 12.`;
+      undxActiveApprovalRequest = null;
+      undxRenderApprovalRequest(null);
+      undxRenderApprovalHistory();
+    }
+    function undxExecutionRequiredGates(plan){
+      const text = `${plan?.objective || ''} ${plan?.sourceType || ''} ${(plan?.approvalCheckpoints || []).join(' ')}`.toLowerCase();
+      const gates = ['Repository Read Access', 'File Edit Access'];
+      if(/terminal|command|script|shell|run/.test(text)) gates.push('Terminal Command Access');
+      if(/git|commit|version/.test(text)) gates.push('Git Commit Access');
+      if(/deploy|production|railway|vercel|release/.test(text)) gates.push('Deployment Access');
+      if(/secret|env|key|auth|wallet|payment|token/.test(text)) gates.push('Secret Management Access');
+      return [...new Set(gates)];
+    }
+    function undxProjectApprovalStatus(project){
+      const count = (project.linkedExecutionPlans || []).length;
+      if(count){
+        return `${count} execution plan${count === 1 ? '' : 's'} attached. Approval gates required before repository, file, terminal, Git, or deployment access.`;
+      }
+      return 'No attached execution plans require approval yet. Future high-impact actions still pass through UNDX Approval Protocol.';
+    }
     function undxNormalizeRepositoryPlan(plan){
       return {
         id: String(plan.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`),
@@ -22838,6 +23148,7 @@ def pulse_premium_undx_page():
         ]),
         suggestedFiles: undxNormalizeExecutionList(plan.suggestedFiles, ['UNDX premium planning surfaces', 'Relevant route, UI, and audit areas']),
         approvalCheckpoints: undxNormalizeExecutionList(plan.approvalCheckpoints, undxExecutionApprovalCheckpoints()),
+        requiredGates: undxNormalizeExecutionList(plan.requiredGates, undxExecutionRequiredGates(plan), 6, 80),
         riskLevel: ['Low', 'Medium', 'High'].includes(plan.riskLevel) ? plan.riskLevel : 'Low',
         rollbackStrategy: undxNormalizeExecutionList(plan.rollbackStrategy, undxExecutionRollbackStrategy()),
         recommendedNextAction: String(plan.recommendedNextAction || 'Review the execution plan, then decide whether to approve future file review.').slice(0,600),
@@ -23003,6 +23314,9 @@ def pulse_premium_undx_page():
         'Approval Checkpoints:',
         ...(plan.approvalCheckpoints || []).map(item => `- ${item}`),
         '',
+        'Required Gates:',
+        ...(plan.requiredGates || []).map(item => `- ${item}`),
+        '',
         'Safety Boundary: Planning only. Do not read files, edit repositories, run terminal commands, or deploy without explicit approval.'
       ].join('\\n');
     }
@@ -23143,6 +23457,9 @@ def pulse_premium_undx_page():
         'Approval Checkpoints:',
         ...(plan.approvalCheckpoints || []).map(item => `- ${item}`),
         '',
+        'Required Gates:',
+        ...(plan.requiredGates || []).map(item => `- ${item}`),
+        '',
         'Rollback Strategy:',
         ...(plan.rollbackStrategy || []).map(item => `- ${item}`),
         '',
@@ -23201,6 +23518,7 @@ def pulse_premium_undx_page():
         undxBlock('Task Breakdown', plan.taskBreakdown),
         undxBlock('Suggested Files/Folders to Review', plan.suggestedFiles),
         undxBlock('Approval Checkpoints', plan.approvalCheckpoints),
+        undxBlock('Required Gates', plan.requiredGates),
         undxBlock('Risk Level', plan.riskLevel),
         undxBlock('Rollback Strategy', plan.rollbackStrategy),
         undxBlock('Recommended Next Action', plan.recommendedNextAction)
@@ -23471,7 +23789,7 @@ def pulse_premium_undx_page():
           const title = document.createElement('strong');
           title.textContent = plan.id;
           const meta = document.createElement('p');
-          meta.textContent = `Risk Level: ${plan.riskLevel} · Source Type: ${plan.sourceType} · Status: ${plan.status || 'Planned'}`;
+          meta.textContent = `Risk Level: ${plan.riskLevel} · Source Type: ${plan.sourceType} · Required Gates: ${(plan.requiredGates || []).join(', ')} · Status: ${plan.status || 'Planned'}`;
           const objective = document.createElement('p');
           objective.textContent = plan.objective || '';
           item.append(title, meta, objective);
@@ -23521,6 +23839,7 @@ def pulse_premium_undx_page():
         undxBlock('Created Date', undxFormatMemoryTime(project.createdAt)),
         undxBlock('Objective', project.objective),
         undxBlock('Linked Mission', project.linkedMission || project.source || 'Mission Source'),
+        undxBlock('Approval Status', undxProjectApprovalStatus(project)),
         undxBlock('Project Summary', enhancement.summary || 'Project summary pending.'),
         undxBlock('Recommended Modules', undxModulePills(enhancement.modules || undxSuggestedModules(project.objective))),
         undxBlock('Enhancement Source', enhancement.source || 'Pending')
@@ -24072,6 +24391,7 @@ def pulse_premium_undx_page():
     undxRepositoryPlanForm?.addEventListener('submit', undxRegisterRepositoryPlan);
     undxExecutionPlannerForm?.addEventListener('submit', undxGenerateExecutionPlan);
     undxExecutionSourceSelect?.addEventListener('change', undxRefreshExecutionSourcePreview);
+    undxSimulateApprovalRequest?.addEventListener('click', undxSimulateApprovalRequestFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -24079,6 +24399,9 @@ def pulse_premium_undx_page():
     undxRenderProjects();
     undxRenderRepositoryPlans();
     undxRenderExecutionPlans();
+    undxRenderApprovalProtocol();
+    undxRenderApprovalHistory();
+    undxRenderApprovalRequest(null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     """

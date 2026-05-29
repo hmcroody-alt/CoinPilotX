@@ -113,6 +113,13 @@ def main():
     require("Approval Protocol: Required" not in feed_html, "UNDX approval protocol status absent from Pulse feed")
     require("Generate Codex-Style Directive" not in feed_html, "UNDX Codex directive action absent from Pulse feed")
     require("Copy Codex-Style Directive" not in feed_html, "UNDX Codex copy action absent from Pulse feed")
+    require("UNDX Approval Protocol" not in feed_html, "UNDX approval protocol panel absent from Pulse feed")
+    require("Safe Action Gates" not in feed_html, "UNDX safe action gates absent from Pulse feed")
+    require("Approval History" not in feed_html, "UNDX approval history absent from Pulse feed")
+    require("UNDX Safety Constitution" not in feed_html, "UNDX safety constitution absent from Pulse feed")
+    require("Approval Core: Active" not in feed_html, "UNDX approval core status absent from Pulse feed")
+    require("Trust Protocol: Active" not in feed_html, "UNDX trust protocol status absent from Pulse feed")
+    require("Simulate Approval Request" not in feed_html, "UNDX approval simulator absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
@@ -360,6 +367,56 @@ def main():
         "Approval Protocol: Required",
         "Phase: 11",
         "Linked Execution Plans",
+        "UNDX Approval Protocol",
+        "All future repository access, file operations, code changes, terminal commands, Git actions, and deployments require explicit approval.",
+        "Safe Action Gates",
+        "Repository Read Access",
+        "File Edit Access",
+        "Terminal Command Access",
+        "Git Commit Access",
+        "Deployment Access",
+        "Secret Management Access",
+        "Status: ${gate.status || 'Disabled'}",
+        "Permission Level: ${gate.permissionLevel || 'Always Require Approval'}",
+        "Last Updated:",
+        "Disabled",
+        "Request Approval",
+        "Allowed With Confirmation",
+        "Always Require Approval",
+        "Update Gate",
+        "undxApprovalProtocol",
+        "Approval History",
+        "Action Requested",
+        "Gate Type",
+        "Decision",
+        "Timestamp",
+        "undxApprovalHistory",
+        "Simulate Approval Request",
+        "Read repository files",
+        "Edit authentication module",
+        "Run Git commit",
+        "Deploy production update",
+        "Risk Level",
+        "Affected Area",
+        "Approval Required",
+        "Approve",
+        "Reject",
+        "Trust Score",
+        "Approval Requests",
+        "Approved",
+        "Rejected",
+        "UNDX Safety Constitution",
+        "Always show diffs before edits",
+        "Create backups before destructive changes",
+        "Require approval before commands",
+        "Require approval before deployment",
+        "Preserve recoverability",
+        "Preserve mission integrity",
+        "Approval Core: Active",
+        "Trust Protocol: Active",
+        "Phase: 12",
+        "Approval Status",
+        "Required Gates",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
