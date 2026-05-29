@@ -8545,6 +8545,7 @@ def undx_clean_chat_history(history):
 
 def undx_openai_response(user_id, message, history=None):
     api_key = os.getenv("OPENAI_API_KEY")
+    logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")
     if not api_key:
         return {
             "ok": False,
@@ -21640,13 +21641,44 @@ def pulse_premium_undx_page():
     .undx-agent-status[data-status="Active"]{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.10);color:#c8ffdf;box-shadow:0 0 24px rgba(54,229,143,.12)}
     .undx-council-message{min-height:24px;margin:0 0 10px;color:#ffb8c1;font-weight:850}
     .undx-council-summary{display:grid;gap:12px;margin-top:12px}
+    .undx-project-creator{position:relative;overflow:hidden;border-color:rgba(54,229,143,.22);background:radial-gradient(circle at 18% 10%,rgba(54,229,143,.12),transparent 23rem),radial-gradient(circle at 82% 14%,rgba(110,223,246,.13),transparent 25rem),linear-gradient(180deg,rgba(255,255,255,.076),rgba(255,255,255,.03))}
+    .undx-project-creator:before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,rgba(255,255,255,.08),transparent 30%,rgba(255,209,102,.055));pointer-events:none}
+    .undx-project-creator>*{position:relative;z-index:1}
+    .undx-project-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:14px;align-items:start}
+    .undx-project-controls{display:grid;gap:12px}
+    .undx-project-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-project-actions .button{min-height:42px;border-radius:14px}
+    .undx-project-form{display:grid;gap:12px;border:1px solid rgba(110,223,246,.16);border-radius:20px;padding:14px;background:rgba(3,8,17,.42)}
+    .undx-project-form[hidden]{display:none}
+    .undx-project-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .undx-project-field{display:grid;gap:7px;color:rgba(223,246,255,.72);font-weight:850}
+    .undx-project-field span{font-size:.88rem}
+    .undx-project-field input,.undx-project-field textarea,.undx-project-field select{width:100%;border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(3,8,17,.58);color:#f2fbff;padding:12px;font:inherit;box-shadow:inset 0 0 24px rgba(110,223,246,.04)}
+    .undx-project-field textarea{min-height:120px;resize:vertical}
+    .undx-project-field option{background:#071321;color:#f2fbff}
+    .undx-project-field-wide{grid-column:1/-1}
+    .undx-project-source{border:1px dashed rgba(110,223,246,.22);border-radius:16px;padding:12px;background:rgba(5,11,20,.32);color:rgba(223,246,255,.72);font-weight:850}
+    .undx-project-message{min-height:24px;margin:0;color:#ffb8c1;font-weight:850}
+    .undx-project-stats{display:grid;gap:10px}
+    .undx-project-stat{border:1px solid rgba(110,223,246,.14);border-radius:16px;padding:12px;background:rgba(5,11,20,.38)}
+    .undx-project-stat span{display:block;color:rgba(223,246,255,.62);font-weight:850}
+    .undx-project-stat strong{display:block;margin-top:4px;color:#36e58f;font-size:clamp(28px,4vw,42px);line-height:1}
+    .undx-project-registry{display:grid;gap:12px;margin-top:14px}
+    .undx-project-registry h3,.undx-project-detail h3{margin:0;font-size:clamp(22px,3vw,32px)}
+    .undx-project-list{display:grid;gap:12px}
+    .undx-project-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(7,18,32,.78),rgba(255,255,255,.04));box-shadow:0 18px 54px rgba(0,0,0,.20);cursor:pointer}
+    .undx-project-card:hover,.undx-project-card:focus-within{border-color:rgba(54,229,143,.28);box-shadow:0 18px 58px rgba(0,0,0,.24),0 0 34px rgba(54,229,143,.08)}
+    .undx-project-card h4{margin:0;font-size:clamp(19px,2.2vw,26px)}
+    .undx-project-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-project-detail{display:grid;gap:12px;margin-top:14px}
+    .undx-project-enhancement{display:grid;gap:10px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
     @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
@@ -21774,6 +21806,90 @@ def pulse_premium_undx_page():
         </div>
         <div class='undx-council-summary' id='undxCouncilSummary' hidden aria-live='polite'></div>
       </section>
+      <section class='undx-section-panel undx-project-creator' id='undx-project-creator'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Project Core: Active</span>
+            <h2>UNDX Project Creator</h2>
+          </div>
+          <p>Convert missions into structured projects managed by UNDX.</p>
+        </div>
+        <div class='undx-project-layout'>
+          <div class='undx-project-controls'>
+            <div class='undx-memory-status' aria-label='UNDX project creator status'>
+              <span>Project Core: <strong>Active</strong></span>
+              <span>Registry Status: <strong>Online</strong></span>
+              <span>Phase: <strong>8</strong></span>
+            </div>
+            <div class='undx-project-source' id='undxProjectSourcePreview'>Project Source: Builder Intelligence Console, Mission Memory, or latest UNDX Chat response.</div>
+            <div class='undx-project-actions'>
+              <button class='button primary' type='button' id='undxCreateProjectFromMission'>Create Project From Mission</button>
+            </div>
+            <p class='undx-project-message' id='undxProjectMessage' aria-live='polite'></p>
+            <form class='undx-project-form' id='undxProjectForm' hidden>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'>
+                  <span>Project Source</span>
+                  <select id='undxProjectSourceSelect'>
+                    <option value='builder'>Current Builder Intelligence Console mission</option>
+                    <option value='memory'>Selected Mission Memory item</option>
+                    <option value='chat'>Latest UNDX Chat response</option>
+                  </select>
+                </label>
+                <label class='undx-project-field'>
+                  <span>Project Name</span>
+                  <input id='undxProjectName' type='text' autocomplete='off' placeholder='Project Unknown Destination'>
+                </label>
+                <label class='undx-project-field'>
+                  <span>Project Type</span>
+                  <select id='undxProjectType'>
+                    <option>Crypto Intelligence</option>
+                    <option>Security</option>
+                    <option>AI Systems</option>
+                    <option>Automation</option>
+                    <option>Research</option>
+                    <option>Product Experience</option>
+                    <option>Infrastructure</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label class='undx-project-field'>
+                  <span>Priority</span>
+                  <select id='undxProjectPriority'>
+                    <option>Medium</option>
+                    <option>High</option>
+                    <option>Critical</option>
+                    <option>Low</option>
+                  </select>
+                </label>
+                <label class='undx-project-field undx-project-field-wide'>
+                  <span>Project Objective</span>
+                  <textarea id='undxProjectObjective' placeholder='Define the mission objective UNDX should preserve as a project.'></textarea>
+                </label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='submit'>Store Project</button>
+                <button class='button' type='button' id='undxCancelProjectForm'>Cancel</button>
+              </div>
+            </form>
+            <section class='undx-project-registry' aria-label='Project Registry'>
+              <h3>Project Registry</h3>
+              <div class='undx-memory-empty' id='undxProjectEmpty'>No projects registered yet. Create a project to activate the UNDX registry.</div>
+              <div class='undx-project-list' id='undxProjectList' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-detail' aria-label='Project Overview'>
+              <h3>Project Overview</h3>
+              <div class='undx-evolution-empty' id='undxProjectDetailEmpty'>Select a project to load its UNDX overview.</div>
+              <div class='undx-evolution-content' id='undxProjectDetailContent' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-project-stats' aria-label='UNDX project statistics'>
+            <p class='undx-project-stat'><span>Projects Created</span><strong id='undxProjectsCreatedCount'>0</strong></p>
+            <p class='undx-project-stat'><span>Active Projects</span><strong id='undxActiveProjectsCount'>0</strong></p>
+            <p class='undx-project-stat'><span>Completed Projects</span><strong id='undxCompletedProjectsCount'>0</strong></p>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -21845,11 +21961,30 @@ def pulse_premium_undx_page():
     const undxSendDirective = document.getElementById('undxSendDirective');
     const undxClearChat = document.getElementById('undxClearChat');
     const undxChatMessageStatus = document.getElementById('undxChatMessage');
+    const undxCreateProjectFromMission = document.getElementById('undxCreateProjectFromMission');
+    const undxProjectForm = document.getElementById('undxProjectForm');
+    const undxCancelProjectForm = document.getElementById('undxCancelProjectForm');
+    const undxProjectSourceSelect = document.getElementById('undxProjectSourceSelect');
+    const undxProjectSourcePreview = document.getElementById('undxProjectSourcePreview');
+    const undxProjectName = document.getElementById('undxProjectName');
+    const undxProjectType = document.getElementById('undxProjectType');
+    const undxProjectPriority = document.getElementById('undxProjectPriority');
+    const undxProjectObjective = document.getElementById('undxProjectObjective');
+    const undxProjectMessage = document.getElementById('undxProjectMessage');
+    const undxProjectEmpty = document.getElementById('undxProjectEmpty');
+    const undxProjectList = document.getElementById('undxProjectList');
+    const undxProjectDetailEmpty = document.getElementById('undxProjectDetailEmpty');
+    const undxProjectDetailContent = document.getElementById('undxProjectDetailContent');
+    const undxProjectsCreatedCount = document.getElementById('undxProjectsCreatedCount');
+    const undxActiveProjectsCount = document.getElementById('undxActiveProjectsCount');
+    const undxCompletedProjectsCount = document.getElementById('undxCompletedProjectsCount');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
+    const undxProjectStorageKey = 'undxProjectRegistry';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
+    let undxSelectedProjectId = null;
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
       const words = text.replace(/[^a-zA-Z0-9\\s-]/g,' ').trim().split(/\\s+/).filter(Boolean).slice(0,5);
@@ -22016,6 +22151,303 @@ def pulse_premium_undx_page():
         wrap.append(' ');
       });
       return wrap;
+    }
+    function undxLoadProjects(){
+      try{
+        const raw = localStorage.getItem(undxProjectStorageKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.projectId && item.name && item.objective).slice(0,48) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveProjects(projects){
+      try{
+        localStorage.setItem(undxProjectStorageKey, JSON.stringify(projects.slice(0,48)));
+      }catch(error){
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Project Registry could not be updated.';
+      }
+    }
+    function undxNextProjectId(projects){
+      const max = projects.reduce((highest, project) => {
+        const match = String(project.projectId || '').match(/^UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxLatestChatResponse(){
+      return [...undxLoadChat()].reverse().find(item => item && item.role === 'undx' && item.type === 'response' && (item.builderDirective || item.text));
+    }
+    function undxResolveProjectSource(preferred = 'builder'){
+      const typedMission = (undxMissionInput?.value || '').trim();
+      const memoryMission = undxSelectedEvolutionMission && (undxSelectedEvolutionMission.objective || '').trim() ? undxSelectedEvolutionMission : null;
+      const chatMission = undxLatestChatResponse();
+      const sources = {
+        builder: typedMission ? {kind:'Builder Intelligence Console', objective: typedMission, name: undxMissionName(typedMission), linkedMission: 'Current Builder Intelligence Console mission'} : null,
+        memory: memoryMission ? {kind:'Mission Memory', objective: memoryMission.objective, name: memoryMission.name || undxMissionName(memoryMission.objective), linkedMission: memoryMission.name || 'Selected Mission Memory item'} : null,
+        chat: chatMission ? {kind:'UNDX Chat Interface', objective: chatMission.builderDirective || chatMission.text, name: `Project ${undxMissionName(chatMission.text || '').replace(/^Mission\\s+/,'')}`, linkedMission: 'Latest UNDX Chat response'} : null
+      };
+      return sources[preferred] || sources.builder || sources.memory || sources.chat || null;
+    }
+    function undxProjectTypeForMission(text){
+      const lower = String(text || '').toLowerCase();
+      if(/wallet|risk|scam|security|secure|threat/.test(lower)) return 'Security';
+      if(/crypto|token|market|chain|wallet/.test(lower)) return 'Crypto Intelligence';
+      if(/ai|agent|memory|model|intelligence/.test(lower)) return 'AI Systems';
+      if(/automation|workflow|scheduled|mission control/.test(lower)) return 'Automation';
+      if(/research|analysis|study|learn/.test(lower)) return 'Research';
+      if(/dashboard|ui|premium|page|design|interface|product/.test(lower)) return 'Product Experience';
+      if(/deploy|infra|server|railway|database|api/.test(lower)) return 'Infrastructure';
+      return 'Other';
+    }
+    function undxProjectFallbackEnhancement(project){
+      const modules = undxSuggestedModules(project.objective || '');
+      const milestones = [
+        'Lock the project objective and success signal.',
+        'Define the smallest planning prototype and premium user flow.',
+        'Review security boundaries, storage rules, and audit coverage.',
+        'Prepare the next UNDX phase after validation.'
+      ];
+      return {
+        source: 'Frontend Fallback',
+        summary: `${project.name} is a Phase 8 planning project for ${project.objective}`,
+        milestones,
+        modules
+      };
+    }
+    function undxProjectEnhancementLabel(project){
+      if(project.aiEnhancement?.source === 'OpenAI') return 'OpenAI Enhancement';
+      if(project.aiEnhancement?.source) return `${project.aiEnhancement.source} Enhancement`;
+      return 'Enhancement Pending';
+    }
+    function undxUpdateProject(projectId, updater){
+      const projects = undxLoadProjects();
+      const next = projects.map(project => project.projectId === projectId ? updater({...project}) : project);
+      undxSaveProjects(next);
+      undxRenderProjects();
+      if(undxSelectedProjectId === projectId) undxOpenProject(projectId, false);
+    }
+    async function undxEnhanceProject(projectId){
+      const project = undxLoadProjects().find(item => item.projectId === projectId);
+      if(!project) return;
+      const fallback = undxProjectFallbackEnhancement(project);
+      try{
+        const response = await fetch(undxChatEndpoint, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({
+            message:`Create a planning-only UNDX project enhancement. Do not execute code, access files, or modify repositories. Return a Project Summary, Suggested Milestones, and Recommended Modules for this project: ${project.name}. Objective: ${project.objective}`,
+            history:[]
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'OpenAI unavailable');
+        undxUpdateProject(projectId, current => ({
+          ...current,
+          aiEnhancement: {
+            source: data.source || 'OpenAI',
+            summary: data.response || fallback.summary,
+            milestones: fallback.milestones,
+            modules: fallback.modules,
+            model: data.model || '',
+            updatedAt: new Date().toISOString()
+          }
+        }));
+      }catch(error){
+        undxUpdateProject(projectId, current => ({
+          ...current,
+          aiEnhancement: {
+            ...fallback,
+            error: 'OpenAI unavailable; stored frontend planning fallback.',
+            updatedAt: new Date().toISOString()
+          }
+        }));
+      }
+    }
+    function undxProjectMeta(project){
+      return [
+        project.projectId || 'UNDX-0000',
+        project.type || 'Other',
+        `Status: ${project.status || 'Planning'}`,
+        `Created: ${undxFormatMemoryTime(project.createdAt)}`
+      ];
+    }
+    function undxCreateProjectCard(project){
+      const article = document.createElement('article');
+      article.className = 'undx-project-card';
+      article.tabIndex = 0;
+      article.setAttribute('aria-label', `Open Project ${project.projectId}`);
+      article.addEventListener('click', () => undxOpenProject(project.projectId));
+      article.addEventListener('keydown', event => {
+        if(event.key === 'Enter' || event.key === ' '){
+          event.preventDefault();
+          undxOpenProject(project.projectId);
+        }
+      });
+      const title = document.createElement('h4');
+      title.textContent = project.name || 'UNDX Project';
+      const objective = document.createElement('p');
+      objective.textContent = project.objective || '';
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      undxProjectMeta(project).forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const enhancement = document.createElement('p');
+      enhancement.textContent = undxProjectEnhancementLabel(project);
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      const open = document.createElement('button');
+      open.className = 'button primary';
+      open.type = 'button';
+      open.textContent = 'Open Project';
+      open.addEventListener('click', event => {
+        event.stopPropagation();
+        undxOpenProject(project.projectId);
+      });
+      const send = document.createElement('button');
+      send.className = 'button';
+      send.type = 'button';
+      send.textContent = 'Send To Builder Console';
+      send.addEventListener('click', event => {
+        event.stopPropagation();
+        undxSendProjectToBuilder(project);
+      });
+      const council = document.createElement('button');
+      council.className = 'button';
+      council.type = 'button';
+      council.textContent = 'Run Agent Council';
+      council.addEventListener('click', event => {
+        event.stopPropagation();
+        undxRunProjectCouncil(project);
+      });
+      actions.append(open, send, council);
+      article.append(title, objective, meta, enhancement, actions);
+      return article;
+    }
+    function undxRenderProjectStats(projects){
+      if(undxProjectsCreatedCount) undxProjectsCreatedCount.textContent = String(projects.length);
+      if(undxActiveProjectsCount) undxActiveProjectsCount.textContent = String(projects.filter(project => project.status === 'Active').length);
+      if(undxCompletedProjectsCount) undxCompletedProjectsCount.textContent = String(projects.filter(project => project.status === 'Completed').length);
+    }
+    function undxRenderProjects(){
+      const projects = undxLoadProjects();
+      undxRenderProjectStats(projects);
+      if(undxProjectEmpty) undxProjectEmpty.hidden = projects.length > 0;
+      if(!undxProjectList) return;
+      undxProjectList.replaceChildren();
+      projects.forEach(project => undxProjectList.appendChild(undxCreateProjectCard(project)));
+    }
+    function undxOpenProject(projectId, shouldScroll = true){
+      const project = undxLoadProjects().find(item => item.projectId === projectId);
+      if(!project || !undxProjectDetailContent) return;
+      undxSelectedProjectId = project.projectId;
+      if(undxProjectDetailEmpty) undxProjectDetailEmpty.hidden = true;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Project Overview';
+      const title = document.createElement('h3');
+      title.textContent = `${project.projectId} · ${project.name}`;
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      const enhancement = project.aiEnhancement || undxProjectFallbackEnhancement(project);
+      grid.append(
+        undxBlock('Objective', project.objective),
+        undxBlock('Type', project.type || 'Other'),
+        undxBlock('Status', project.status || 'Planning'),
+        undxBlock('Created Date', undxFormatMemoryTime(project.createdAt)),
+        undxBlock('Linked Mission', project.linkedMission || project.source || 'Mission Source'),
+        undxBlock('Project Summary', enhancement.summary || 'Project summary pending.'),
+        undxBlock('Suggested Milestones', enhancement.milestones || []),
+        undxBlock('Recommended Modules', undxModulePills(enhancement.modules || undxSuggestedModules(project.objective))),
+        undxBlock('Enhancement Source', enhancement.source || 'Pending')
+      );
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      const send = document.createElement('button');
+      send.className = 'button primary';
+      send.type = 'button';
+      send.textContent = 'Send To Builder Console';
+      send.addEventListener('click', () => undxSendProjectToBuilder(project));
+      const council = document.createElement('button');
+      council.className = 'button';
+      council.type = 'button';
+      council.textContent = 'Run Agent Council';
+      council.addEventListener('click', () => undxRunProjectCouncil(project));
+      actions.append(send, council);
+      card.append(label, title, grid, actions);
+      undxProjectDetailContent.replaceChildren(card);
+      if(shouldScroll) document.getElementById('undx-project-creator')?.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+    function undxSendProjectToBuilder(project){
+      undxLoadMissionIntoConsole(`Continue UNDX project ${project.projectId}: ${project.name}\\nObjective: ${project.objective}`, `${project.projectId} loaded into Builder Intelligence Console.`);
+    }
+    function undxRunProjectCouncil(project){
+      if(undxMissionInput) undxMissionInput.value = `Project ${project.projectId}: ${project.name}\\nObjective: ${project.objective}`;
+      document.getElementById('undx-agent-council')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxRunAgentCouncil();
+    }
+    function undxRefreshProjectSourcePreview(){
+      const source = undxResolveProjectSource(undxProjectSourceSelect?.value || 'builder');
+      if(undxProjectSourcePreview){
+        undxProjectSourcePreview.textContent = source ? `Project Source: ${source.kind} · ${source.objective.slice(0,180)}` : 'Project Source: No mission available yet.';
+      }
+    }
+    function undxOpenProjectForm(){
+      const source = undxResolveProjectSource(undxProjectSourceSelect?.value || 'builder');
+      if(!source){
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Create or select a mission before opening the Project Creator.';
+        undxMissionInput?.focus();
+        return;
+      }
+      if(undxProjectMessage) undxProjectMessage.textContent = '';
+      if(undxProjectForm) undxProjectForm.hidden = false;
+      if(undxProjectName) undxProjectName.value = source.name.replace(/^Mission\\s+/,'Project ');
+      if(undxProjectObjective) undxProjectObjective.value = source.objective;
+      if(undxProjectType) undxProjectType.value = undxProjectTypeForMission(source.objective);
+      undxProjectName?.focus();
+      undxRefreshProjectSourcePreview();
+    }
+    function undxCreateProject(event){
+      event?.preventDefault();
+      const source = undxResolveProjectSource(undxProjectSourceSelect?.value || 'builder');
+      const objective = (undxProjectObjective?.value || source?.objective || '').trim();
+      if(!objective){
+        if(undxProjectMessage) undxProjectMessage.textContent = 'Create or select a mission before storing a project.';
+        undxProjectObjective?.focus();
+        return;
+      }
+      const projects = undxLoadProjects();
+      const name = (undxProjectName?.value || source?.name || undxMissionName(objective)).trim().slice(0,90);
+      const project = {
+        projectId: undxNextProjectId(projects),
+        name: name || undxMissionName(objective).replace(/^Mission\\s+/,'Project '),
+        type: undxProjectType?.value || undxProjectTypeForMission(objective),
+        objective,
+        priority: undxProjectPriority?.value || 'Medium',
+        status: 'Planning',
+        source: source?.kind || 'Manual Mission',
+        linkedMission: source?.linkedMission || source?.name || 'Mission Source',
+        createdAt: new Date().toISOString(),
+        aiEnhancement: {
+          source: 'Pending',
+          summary: 'UNDX is preparing the project summary, suggested milestones, and recommended modules.',
+          milestones: ['Project enhancement queued.'],
+          modules: undxSuggestedModules(objective)
+        }
+      };
+      undxSaveProjects([project, ...projects]);
+      undxRenderProjects();
+      undxOpenProject(project.projectId, false);
+      if(undxProjectForm) undxProjectForm.hidden = true;
+      if(undxProjectMessage) undxProjectMessage.textContent = `${project.projectId} stored in Project Registry.`;
+      undxEnhanceProject(project.projectId);
     }
     const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?';
     function undxChatMessage(role, text, extra = {}){
@@ -22449,9 +22881,27 @@ def pulse_premium_undx_page():
     undxChatInput?.addEventListener('keydown', event => {
       if((event.metaKey || event.ctrlKey) && event.key === 'Enter') undxSendChatDirective();
     });
+    undxCreateProjectFromMission?.addEventListener('click', undxOpenProjectForm);
+    undxProjectForm?.addEventListener('submit', undxCreateProject);
+    undxCancelProjectForm?.addEventListener('click', () => {
+      if(undxProjectForm) undxProjectForm.hidden = true;
+      if(undxProjectMessage) undxProjectMessage.textContent = '';
+    });
+    undxProjectSourceSelect?.addEventListener('change', () => {
+      const source = undxResolveProjectSource(undxProjectSourceSelect.value);
+      if(source){
+        if(undxProjectName) undxProjectName.value = source.name.replace(/^Mission\\s+/,'Project ');
+        if(undxProjectObjective) undxProjectObjective.value = source.objective;
+        if(undxProjectType) undxProjectType.value = undxProjectTypeForMission(source.objective);
+      }
+      undxRefreshProjectSourcePreview();
+    });
+    undxMissionInput?.addEventListener('input', undxRefreshProjectSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
     undxRenderChat();
+    undxRenderProjects();
+    undxRefreshProjectSourcePreview();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 

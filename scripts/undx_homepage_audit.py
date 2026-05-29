@@ -88,10 +88,16 @@ def main():
     require("Chat Status: Online" not in feed_html, "UNDX chat status absent from Pulse feed")
     require("Intelligence Bridge: OpenAI" not in feed_html, "UNDX OpenAI bridge status absent from Pulse feed")
     require("Mission Protocol: Active" not in feed_html, "UNDX mission protocol absent from Pulse feed")
+    require("UNDX Project Creator" not in feed_html, "UNDX project creator absent from Pulse feed")
+    require("Create Project From Mission" not in feed_html, "UNDX project action absent from Pulse feed")
+    require("Project Registry" not in feed_html, "UNDX project registry absent from Pulse feed")
+    require("Project Core: Active" not in feed_html, "UNDX project core status absent from Pulse feed")
+    require("Registry Status: Online" not in feed_html, "UNDX registry status absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
     require("/api/undx/chat" in routes, "/api/undx/chat route exists")
+    require('logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")' in source, "UNDX logs safe OpenAI key configuration status")
 
     for token in [
         "data-undx-premium-entry",
@@ -184,6 +190,42 @@ def main():
         "Send To Builder Console",
         "Save To Mission Memory",
         "UNDX Chat Mission",
+        "UNDX Project Creator",
+        "Convert missions into structured projects managed by UNDX.",
+        "Create Project From Mission",
+        "Project Source",
+        "Current Builder Intelligence Console mission",
+        "Selected Mission Memory item",
+        "Latest UNDX Chat response",
+        "Project Name",
+        "Project Type",
+        "Project Objective",
+        "Priority",
+        "Crypto Intelligence",
+        "Security",
+        "AI Systems",
+        "Automation",
+        "Research",
+        "Product Experience",
+        "Infrastructure",
+        "Other",
+        "Project Registry",
+        "Project Overview",
+        "Project Core: Active",
+        "Registry Status: <strong>Online</strong>",
+        "Phase: <strong>8</strong>",
+        "Projects Created",
+        "Active Projects",
+        "Completed Projects",
+        "Planning",
+        "Open Project",
+        "UNDX-",
+        "undxProjectRegistry",
+        "Store Project",
+        "Project Summary",
+        "Suggested Milestones",
+        "Recommended Modules",
+        "No projects registered yet. Create a project to activate the UNDX registry.",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
