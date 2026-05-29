@@ -53,6 +53,8 @@ def main():
     bot.init_db()
     ensure_audit_user()
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    router_source = (ROOT / "undx_router.py").read_text(encoding="utf-8")
+    worker_source = (ROOT / "undx_worker.py").read_text(encoding="utf-8")
     feed_css = (ROOT / "static/css/pulse_desktop_feed.css").read_text(encoding="utf-8")
 
     require("pulse_undx_core_homepage_html" not in source, "UNDX feed helper removed")
@@ -146,6 +148,21 @@ def main():
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
     require("/api/undx/chat" in routes, "/api/undx/chat route exists")
     require('logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")' in source, "UNDX logs safe OpenAI key configuration status")
+    require("undx_router.route_undx_request" in source, "UNDX chat route uses Intelligence Router")
+    require("UNDX Intelligence Router" in router_source, "UNDX Intelligence Router module exists")
+    for token in [
+        "OPENAI_API_KEY",
+        "CLAUDE_AI_API",
+        "Gemini_AI_API",
+        "DEEPSEEK_AI_API",
+        "GROQ_AI_API",
+        "UNDX_ROUTER_ENABLED",
+        "UNDX_MULTI_MODEL_MODE",
+        "UNDX_DEFAULT_AI_PROVIDER",
+        "fallback_provider",
+    ]:
+        require(token in router_source, f"UNDX router contains {token}")
+    require("coinpilotx-undx-worker" in worker_source, "UNDX worker targets Railway service name")
 
     for token in [
         "data-undx-premium-entry",

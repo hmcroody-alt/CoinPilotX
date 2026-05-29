@@ -20,6 +20,8 @@ import time
 import unicodedata
 import xml.etree.ElementTree as ET
 
+import undx_router
+
 print("CoinPilotX web boot starting", flush=True)
 print("PORT=", os.environ.get("PORT"), flush=True)
 print("DATABASE_URL present=", bool(os.environ.get("DATABASE_URL")), flush=True)
@@ -8546,58 +8548,24 @@ def undx_clean_chat_history(history):
 def undx_openai_response(user_id, message, history=None):
     api_key = os.getenv("OPENAI_API_KEY")
     logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")
-    if not api_key:
-        return {
-            "ok": False,
-            "status": 503,
-            "error": "OpenAI intelligence bridge is not configured on this server.",
-        }
-
-    messages = [{"role": "system", "content": UNDX_SYSTEM_PROMPT}]
-    messages.extend(undx_clean_chat_history(history))
-    messages.append({
-        "role": "user",
-        "content": (
-            f"Mission directive from user:\n{message}\n\n"
-            "When relevant, use these sections: Mission Classification, Objective, Suggested Modules, "
-            "Build Steps, Security Notes, Recommended Next Action."
-        ),
-    })
-    payload = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        "messages": messages,
-        "max_tokens": 900,
-        "temperature": 0.35,
-    }
     try:
-        started = time.time()
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json=payload,
+        return undx_router.route_undx_request(
+            user_id=user_id,
+            message=message,
+            history=history or [],
+            system_prompt=UNDX_SYSTEM_PROMPT,
             timeout=25,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
-        if not text:
-            return {"ok": False, "status": 502, "error": "UNDX received an empty OpenAI response."}
-        return {
-            "ok": True,
-            "response": text,
-            "builder_directive": f"UNDX mission directive:\n{message}\n\nUNDX response:\n{text}",
-            "source": "OpenAI",
-            "model": payload["model"],
-            "latency_ms": int((time.time() - started) * 1000),
-        }
-    except requests.Timeout:
-        logging.warning("UNDX OpenAI timeout user_id=%s", user_id)
-        return {"ok": False, "status": 504, "error": "UNDX OpenAI bridge timed out. Try again in a moment."}
-    except requests.RequestException as exc:
-        logging.warning("UNDX OpenAI request failed: %s", exc)
-        return {"ok": False, "status": 502, "error": "UNDX OpenAI bridge is temporarily unavailable."}
     except Exception as exc:
-        logging.warning("UNDX OpenAI response failed: %s", exc)
-        return {"ok": False, "status": 502, "error": "UNDX could not parse the OpenAI response."}
+        logging.warning("UNDX Intelligence Router failed: %s", exc)
+        if not api_key:
+            return {
+                "ok": False,
+                "status": 503,
+                "error": "OpenAI intelligence bridge is not configured on this server.",
+                "source": "OpenAI",
+            }
+        return {"ok": False, "status": 502, "error": "UNDX OpenAI bridge is temporarily unavailable.", "source": "OpenAI"}
 
 
 @webhook_app.route("/api/undx/chat", methods=["POST"])
@@ -8638,13 +8606,13 @@ def api_undx_chat():
             user["user_id"],
             "undx_chat",
             message,
-            {"ok": False, "action_key": "undx_chat", "summary": result.get("error", ""), "source": "OpenAI"},
+            {"ok": False, "action_key": "undx_chat", "summary": result.get("error", ""), "source": result.get("source", "OpenAI")},
             source="undx_chat",
             pro_required=False,
             status="failed",
             error=result.get("error") or "UNDX chat failed",
         )
-        log_product_event(user["user_id"], "undx_chat_error", {"error": (result.get("error") or "")[:300]})
+        log_product_event(user["user_id"], "undx_chat_error", {"error": (result.get("error") or "")[:300], "source": result.get("source", "OpenAI")})
 
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store, max-age=0"
