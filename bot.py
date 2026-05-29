@@ -8619,6 +8619,34 @@ def api_undx_chat():
     return response, status
 
 
+@webhook_app.route("/api/undx/agent-council", methods=["POST"])
+def api_undx_agent_council():
+    init_db()
+    user = api_account_user()
+    gated = api_pro_required(user, "UNDX Agent Council")
+    if gated:
+        return gated
+    payload = request.get_json(silent=True) or {}
+    mission = clean_html(payload.get("mission") or payload.get("objective") or payload.get("message") or "")[:2200]
+    if not mission:
+        response = jsonify({"ok": False, "error": "Enter or select a mission before running the Agent Council."})
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response, 400
+    plan = undx_router.council_agent_provider_plan(mission)
+    log_product_event(
+        user["user_id"],
+        "undx_agent_council_router_used",
+        {
+            "classification": (plan.get("classification") or {}).get("category"),
+            "router_enabled": bool(plan.get("router_enabled")),
+            "multi_model_mode": bool(plan.get("multi_model_mode")),
+        },
+    )
+    response = jsonify({"ok": True, "router": plan, "agents": plan.get("agents", [])})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/ai/history", methods=["GET"])
 def api_ai_history():
     init_db()
@@ -21605,6 +21633,12 @@ def pulse_premium_undx_page():
     .undx-agent-card h3{margin:0;font-size:clamp(18px,2vw,24px)}
     .undx-agent-role{margin:0;color:rgba(223,246,255,.66);font-weight:850}
     .undx-agent-output{margin:0;color:rgba(223,246,255,.76)}
+    .undx-agent-provider-meta{display:grid;gap:7px;border:1px solid rgba(110,223,246,.15);border-radius:14px;padding:10px;background:rgba(3,8,17,.36)}
+    .undx-agent-provider-meta span{display:flex;align-items:center;justify-content:space-between;gap:8px;color:rgba(223,246,255,.64);font-size:.78rem;font-weight:900}
+    .undx-agent-provider-meta strong{color:#dffcff;text-align:right}
+    .undx-agent-provider-meta [data-undx-provider-status="Configured"]{color:#36e58f}
+    .undx-agent-provider-meta [data-undx-provider-status="Unavailable"]{color:#ffb8c1}
+    .undx-agent-provider-meta [data-undx-fallback-used="true"]{color:#fff2b8}
     .undx-agent-status{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(110,223,246,.23);border-radius:999px;padding:6px 9px;background:rgba(110,223,246,.075);color:#dffcff;font-size:.78rem;font-weight:950}
     .undx-agent-status[data-status="Active"]{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.10);color:#c8ffdf;box-shadow:0 0 24px rgba(54,229,143,.12)}
     .undx-council-message{min-height:24px;margin:0 0 10px;color:#ffb8c1;font-weight:850}
@@ -21836,12 +21870,12 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Council Mode: Multi-Agent</span>
             <h2>UNDX Agent Council</h2>
           </div>
-          <p>Six specialized intelligence agents evaluate each mission before CoinPilotXAI enters the next build phase.</p>
+          <p>Five routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPilotXAI enters the next build phase.</p>
         </div>
         <div class='undx-agent-toolbar'>
           <div class='undx-memory-status' aria-label='UNDX agent council status'>
             <span>Council Mode: <strong>Multi-Agent</strong></span>
-            <span>Active Agents: <strong>6</strong></span>
+            <span>Active Agents: <strong>5</strong></span>
             <span>Council Phase: <strong>Phase 6</strong></span>
           </div>
           <div class='undx-agent-actions'>
@@ -21851,12 +21885,11 @@ def pulse_premium_undx_page():
         </div>
         <p class='undx-council-message' id='undxCouncilMessage' aria-live='polite'></p>
         <div class='undx-agent-grid' id='undxAgentGrid' aria-live='polite'>
-          <article class='undx-agent-card' data-undx-agent-card='architect'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Architect Agent</h3><p class='undx-agent-role'>System design and mission architecture</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before mapping structure, data boundaries, and command flow.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='builder'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Builder Agent</h3><p class='undx-agent-role'>Implementation path and build sequencing</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing a phased implementation track.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='security'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Security Agent</h3><p class='undx-agent-role'>Risk controls and trust boundaries</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before scanning for abuse cases, data risk, and premium boundary concerns.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='research'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Research Agent</h3><p class='undx-agent-role'>Evidence, market, and technical discovery</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before identifying source material and validation questions.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='product'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Product Agent</h3><p class='undx-agent-role'>User value and premium experience</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before translating the build into user-facing value.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='deployment'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Deployment Agent</h3><p class='undx-agent-role'>Release readiness and rollout safety</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before defining tests, audits, and rollout gates.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='architect'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Architect Agent</h3><p class='undx-agent-role'>System design and mission architecture</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Claude</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before mapping structure, data boundaries, and command flow.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='research'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Research Agent</h3><p class='undx-agent-role'>Evidence, market, and technical discovery</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Gemini</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before identifying source material and validation questions.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='builder'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Builder Agent</h3><p class='undx-agent-role'>Implementation path and build sequencing</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>OpenAI</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>Not needed</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing a phased implementation track.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='optimization'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Optimization Agent</h3><p class='undx-agent-role'>Performance, code quality, and system refinement</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>DeepSeek</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before tightening implementation quality and execution efficiency.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='rapid_response'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Rapid Response Agent</h3><p class='undx-agent-role'>Fast triage, concise direction, and immediate next moves</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Groq</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before compressing the fastest safe next action.</p></article>
         </div>
         <div class='undx-council-summary' id='undxCouncilSummary' hidden aria-live='polite'></div>
       </section>
@@ -22639,6 +22672,7 @@ def pulse_premium_undx_page():
     const undxReadOnlyAccessRequestsKey = 'undxReadOnlyAccessRequests';
     const undxPreviewManifestsKey = 'undxPreviewManifests';
     const undxChatEndpoint = '/api/undx/chat';
+    const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
     let undxSelectedProjectId = null;
@@ -25283,46 +25317,74 @@ def pulse_premium_undx_page():
       const recommendations = {
         'Security Expansion': {
           architect: 'Separate the risk engine, explanation layer, and premium interface so wallet or scam signals stay traceable.',
-          builder: 'Start with a static analyzer prototype, then add guarded data adapters and focused audit fixtures.',
-          security: 'Define abuse cases, false-positive handling, safe wallet language, and no-secret collection rules before release.',
           research: 'Compare trusted risk signals, scam pattern sources, and explainability examples before ranking threats.',
-          product: 'Frame the value around safer decisions, confidence labels, and clear next steps without financial advice.',
-          deployment: 'Roll out behind premium access, run security audits, and monitor errors before widening availability.'
+          builder: 'Start with a static analyzer prototype, then add guarded data adapters and focused audit fixtures.',
+          optimization: 'Optimize the signal pipeline for explainability, low false positives, and clean audit checkpoints.',
+          rapid_response: 'Prioritize wallet safety language, no-secret collection, and a narrow premium-only prototype.'
         },
         'Product Experience': {
           architect: 'Define the route, state model, and reusable premium panels before extending the interface.',
-          builder: 'Build the tightest useful workflow first, then layer status, saved outputs, and responsive states.',
-          security: 'Keep premium gates intact, sanitize user text, and verify the new surface does not leak into Pulse feed views.',
           research: 'Review current dashboard behavior, user intent signals, and comparable command-center patterns.',
-          product: 'Prioritize fast scanning, clear hierarchy, and one obvious next action for premium users.',
-          deployment: 'Validate desktop and mobile layouts, then ship with focused functional and performance audits.'
+          builder: 'Build the tightest useful workflow first, then layer status, saved outputs, and responsive states.',
+          optimization: 'Reduce layout friction, keep the interaction path fast, and protect mobile scanning quality.',
+          rapid_response: 'Prototype the premium workflow, verify feed isolation, then run desktop and mobile checks.'
         },
         'Intelligence Expansion': {
           architect: 'Map agent responsibilities, memory boundaries, and human-control points before adding autonomy.',
-          builder: 'Implement frontend-only orchestration first, then graduate proven flows into durable services later.',
-          security: 'Require explicit user intent, safe persistence, and no hidden background actions from agent outputs.',
           research: 'Investigate task decomposition, memory scoring, and evaluation methods for multi-agent workflows.',
-          product: 'Make the intelligence feel useful through clear recommendations, editable prompts, and visible confidence.',
-          deployment: 'Gate the rollout with manual checks, memory persistence tests, and clear recovery paths.'
+          builder: 'Implement supervised orchestration first, then graduate proven flows into durable services later.',
+          optimization: 'Tune the council loop around concise outputs, traceable memory, and controlled model routing.',
+          rapid_response: 'Define manual approval points before expanding automation or autonomous build behavior.'
         },
         'Core Build Expansion': {
           architect: 'Turn the mission into a small system map with inputs, outputs, route boundaries, and audit points.',
-          builder: 'Create a narrow prototype, connect the minimum UI state, and keep follow-up modules optional.',
-          security: 'Validate inputs, keep sensitive data out of local storage, and preserve premium-only access.',
           research: 'Clarify assumptions, dependencies, user examples, and the smallest proof needed to move forward.',
-          product: 'Tie the build to a visible user win and avoid adding controls that do not support the mission.',
-          deployment: 'Run the standard audit set, verify responsive behavior, and ship in one reversible phase.'
+          builder: 'Create a narrow prototype, connect the minimum UI state, and keep follow-up modules optional.',
+          optimization: 'Keep the first build reversible, compact, and easy to validate before expanding scope.',
+          rapid_response: 'Ship the smallest useful command-center step, validate it, then promote the next module.'
         }
       };
       const set = recommendations[priority] || recommendations['Core Build Expansion'];
       return [
         {key:'architect', name:'Architect Agent', role:'System design and mission architecture', output:set.architect},
-        {key:'builder', name:'Builder Agent', role:'Implementation path and build sequencing', output:set.builder},
-        {key:'security', name:'Security Agent', role:'Risk controls and trust boundaries', output:set.security},
         {key:'research', name:'Research Agent', role:'Evidence, market, and technical discovery', output:set.research},
-        {key:'product', name:'Product Agent', role:'User value and premium experience', output:set.product},
-        {key:'deployment', name:'Deployment Agent', role:'Release readiness and rollout safety', output:set.deployment}
+        {key:'builder', name:'Builder Agent', role:'Implementation path and build sequencing', output:set.builder},
+        {key:'optimization', name:'Optimization Agent', role:'Performance, code quality, and system refinement', output:set.optimization},
+        {key:'rapid_response', name:'Rapid Response Agent', role:'Fast triage, concise direction, and immediate next moves', output:set.rapid_response}
       ];
+    }
+    function undxCouncilFallbackRouting(){
+      return [
+        {key:'architect', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true},
+        {key:'research', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true},
+        {key:'builder', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Not needed', fallback_used:false},
+        {key:'optimization', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true},
+        {key:'rapid_response', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true}
+      ];
+    }
+    function undxCouncilAgentRouting(routingAgents, key){
+      const agents = Array.isArray(routingAgents) ? routingAgents : [];
+      return agents.find(agent => agent && agent.key === key) || null;
+    }
+    function undxMergeCouncilRouting(agents, routingAgents){
+      return agents.map(agent => ({...agent, ...(undxCouncilAgentRouting(routingAgents, agent.key) || {})}));
+    }
+    async function undxFetchCouncilRouting(mission){
+      const response = await fetch(undxCouncilEndpoint, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mission})
+      });
+      const data = await response.json().catch(() => ({}));
+      if(!response.ok || data.ok === false){
+        throw new Error(data.error || 'UNDX Intelligence Router is unavailable.');
+      }
+      return data;
+    }
+    function undxSetCouncilLoading(isLoading){
+      if(!undxRunCouncil) return;
+      undxRunCouncil.disabled = Boolean(isLoading);
+      undxRunCouncil.textContent = isLoading ? 'Routing Agent Council...' : 'Run Agent Council';
     }
     function undxRenderCouncilAgents(agents){
       agents.forEach(agent => {
@@ -25330,11 +25392,23 @@ def pulse_premium_undx_page():
         if(!card) return;
         const status = card.querySelector('[data-undx-agent-status]');
         const output = card.querySelector('[data-undx-agent-output]');
+        const providerSelected = card.querySelector('[data-undx-provider-selected]');
+        const providerStatus = card.querySelector('[data-undx-provider-status]');
+        const fallbackStatus = card.querySelector('[data-undx-fallback-status]');
         if(status){
           status.textContent = 'Status: Active';
           status.dataset.status = 'Active';
         }
         if(output) output.textContent = agent.output;
+        if(providerSelected) providerSelected.textContent = agent.selected_provider_label || agent.preferred_provider_label || 'OpenAI';
+        if(providerStatus){
+          providerStatus.textContent = agent.provider_status || agent.selected_provider_status || 'Unavailable';
+          providerStatus.dataset.undxProviderStatus = agent.provider_status || '';
+        }
+        if(fallbackStatus){
+          fallbackStatus.textContent = agent.fallback_status || 'Not needed';
+          fallbackStatus.dataset.undxFallbackUsed = String(Boolean(agent.fallback_used));
+        }
       });
     }
     function undxRenderCouncilSummary(summary){
@@ -25353,13 +25427,14 @@ def pulse_premium_undx_page():
         undxBlock('Strategic priority', summary.priority),
         undxBlock('Build complexity', summary.complexity),
         undxBlock('Recommended next action', summary.nextAction),
+        undxBlock('Provider router', `${summary.router?.name || 'UNDX Intelligence Router'} · OpenAI fallback`),
         undxBlock('Council status: Complete', 'Complete')
       );
       card.append(label, title, grid);
       undxCouncilSummary.replaceChildren(card);
       undxCouncilSummary.hidden = false;
     }
-    function undxRunAgentCouncil(){
+    async function undxRunAgentCouncil(){
       const mission = undxCouncilActiveMission();
       if(!mission){
         if(undxCouncilMessage) undxCouncilMessage.textContent = 'Enter or select a mission before running the Agent Council.';
@@ -25370,7 +25445,20 @@ def pulse_premium_undx_page():
       const priority = undxCouncilPriority(mission.objective);
       const complexity = undxCouncilComplexity(mission.objective);
       const nextAction = undxCouncilNextAction(priority);
-      const agents = undxCouncilAgents(mission.objective, priority);
+      const baseAgents = undxCouncilAgents(mission.objective, priority);
+      let routerPlan = null;
+      let agents = baseAgents;
+      undxSetCouncilLoading(true);
+      try{
+        const routing = await undxFetchCouncilRouting(mission.objective);
+        routerPlan = routing.router || null;
+        agents = undxMergeCouncilRouting(baseAgents, routing.agents || routerPlan?.agents || []);
+      }catch(error){
+        agents = undxMergeCouncilRouting(baseAgents, undxCouncilFallbackRouting());
+        if(undxCouncilMessage) undxCouncilMessage.textContent = `${error.message || 'UNDX Intelligence Router is unavailable.'} OpenAI fallback selected for council routing.`;
+      }finally{
+        undxSetCouncilLoading(false);
+      }
       undxLastCouncilOutput = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
         name: mission.name,
@@ -25379,6 +25467,7 @@ def pulse_premium_undx_page():
         complexity,
         nextAction,
         agents,
+        router: routerPlan || {name:'UNDX Intelligence Router', fallback_provider_label:'OpenAI'},
         createdAt: new Date().toISOString(),
         status: 'Complete'
       };
@@ -25401,7 +25490,8 @@ def pulse_premium_undx_page():
           strategicPriority: undxLastCouncilOutput.priority,
           buildComplexity: undxLastCouncilOutput.complexity,
           recommendedNextAction: undxLastCouncilOutput.nextAction,
-          councilStatus: 'Complete'
+          councilStatus: 'Complete',
+          router: undxLastCouncilOutput.router
         },
         councilAgents: undxLastCouncilOutput.agents,
         createdAt: new Date().toISOString(),

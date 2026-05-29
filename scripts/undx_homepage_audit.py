@@ -82,6 +82,9 @@ def main():
     require("Run Agent Council" not in feed_html, "UNDX agent council action absent from Pulse feed")
     require("Architect Agent" not in feed_html, "UNDX architect agent absent from Pulse feed")
     require("Security Agent" not in feed_html, "UNDX security agent absent from Pulse feed")
+    require("Optimization Agent" not in feed_html, "UNDX optimization agent absent from Pulse feed")
+    require("Rapid Response Agent" not in feed_html, "UNDX rapid response agent absent from Pulse feed")
+    require("Provider selected" not in feed_html, "UNDX council provider routing absent from Pulse feed")
     require("Council Mode: Multi-Agent" not in feed_html, "UNDX council mode absent from Pulse feed")
     require("Save Council Output to Mission Memory" not in feed_html, "UNDX council save action absent from Pulse feed")
     require("UNDX Chat Interface" not in feed_html, "UNDX chat interface absent from Pulse feed")
@@ -147,8 +150,10 @@ def main():
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
     require("/api/undx/chat" in routes, "/api/undx/chat route exists")
+    require("/api/undx/agent-council" in routes, "/api/undx/agent-council route exists")
     require('logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")' in source, "UNDX logs safe OpenAI key configuration status")
     require("undx_router.route_undx_request" in source, "UNDX chat route uses Intelligence Router")
+    require("undx_router.council_agent_provider_plan" in source, "UNDX Agent Council uses Intelligence Router provider plan")
     require("UNDX Intelligence Router" in router_source, "UNDX Intelligence Router module exists")
     for token in [
         "OPENAI_API_KEY",
@@ -160,9 +165,19 @@ def main():
         "UNDX_MULTI_MODEL_MODE",
         "UNDX_DEFAULT_AI_PROVIDER",
         "fallback_provider",
+        "COUNCIL_AGENT_PROVIDER_MAP",
+        "council_agent_provider_plan",
     ]:
         require(token in router_source, f"UNDX router contains {token}")
     require("coinpilotx-undx-worker" in worker_source, "UNDX worker targets Railway service name")
+
+    council_response = client.post("/api/undx/agent-council", json={"mission": "Optimize repository analysis with fast research"})
+    require(council_response.status_code == 200, "/api/undx/agent-council returns 200", council_response.status_code)
+    council_payload = council_response.get_json() or {}
+    council_agents = council_payload.get("agents") or []
+    require(len(council_agents) == 5, "UNDX Agent Council router returns five agents", len(council_agents))
+    for token in ["selected_provider_label", "provider_status", "fallback_status"]:
+        require(all(token in agent for agent in council_agents), f"UNDX Agent Council router includes {token}")
 
     for token in [
         "data-undx-premium-entry",
@@ -218,16 +233,24 @@ def main():
         "Use as Next Blueprint",
         "Evolve this mission into the next build phase:",
         "UNDX Agent Council",
-        "Six specialized intelligence agents evaluate each mission before CoinPilotXAI enters the next build phase.",
+        "Five routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPilotXAI enters the next build phase.",
         "Run Agent Council",
         "Architect Agent",
-        "Builder Agent",
-        "Security Agent",
         "Research Agent",
-        "Product Agent",
-        "Deployment Agent",
+        "Builder Agent",
+        "Optimization Agent",
+        "Rapid Response Agent",
+        "Provider selected",
+        "Provider status",
+        "Fallback status",
+        "Claude",
+        "Gemini",
+        "OpenAI",
+        "DeepSeek",
+        "Groq",
+        "/api/undx/agent-council",
         "Council Mode: Multi-Agent",
-        "Active Agents: <strong>6</strong>",
+        "Active Agents: <strong>5</strong>",
         "Council Phase: <strong>Phase 6</strong>",
         "Save Council Output to Mission Memory",
         "Enter or select a mission before running the Agent Council.",

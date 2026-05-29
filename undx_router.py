@@ -51,6 +51,39 @@ PROVIDERS = {
     "groq": ProviderConfig("groq", "Groq", "GROQ_AI_API", "GROQ_MODEL", "llama-3.1-8b-instant"),
 }
 
+COUNCIL_AGENT_PROVIDER_MAP = [
+    {
+        "key": "architect",
+        "name": "Architect Agent",
+        "role": "System design and mission architecture",
+        "preferred_provider": "claude",
+    },
+    {
+        "key": "research",
+        "name": "Research Agent",
+        "role": "Evidence, market, and technical discovery",
+        "preferred_provider": "gemini",
+    },
+    {
+        "key": "builder",
+        "name": "Builder Agent",
+        "role": "Implementation path and build sequencing",
+        "preferred_provider": "openai",
+    },
+    {
+        "key": "optimization",
+        "name": "Optimization Agent",
+        "role": "Performance, code quality, and system refinement",
+        "preferred_provider": "deepseek",
+    },
+    {
+        "key": "rapid_response",
+        "name": "Rapid Response Agent",
+        "role": "Fast triage, concise direction, and immediate next moves",
+        "preferred_provider": "groq",
+    },
+]
+
 
 def _flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
@@ -90,6 +123,65 @@ def _model(provider: str) -> str:
 
 def provider_status() -> dict[str, bool]:
     return {provider: bool(_api_key(provider)) for provider in PROVIDERS}
+
+
+def provider_label(provider: str) -> str:
+    provider = _normalize_provider(provider)
+    return PROVIDERS[provider].label
+
+
+def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
+    """Return safe provider routing metadata for the UNDX Agent Council.
+
+    The plan exposes provider availability as yes/no only. It never returns API
+    keys and never calls a model. OpenAI remains the automatic fallback lane.
+    """
+
+    status = provider_status()
+    classification = classify_request(message)
+    openai_available = status.get("openai", False)
+    agents: list[dict[str, Any]] = []
+
+    for agent in COUNCIL_AGENT_PROVIDER_MAP:
+        preferred = _normalize_provider(agent["preferred_provider"])
+        preferred_available = status.get(preferred, False)
+        selected = preferred if preferred_available else "openai"
+        fallback_used = selected != preferred
+        selected_available = status.get(selected, False)
+        if fallback_used:
+            fallback_status = "Using OpenAI fallback" if openai_available else "OpenAI fallback unavailable"
+        else:
+            fallback_status = "Not needed"
+
+        agents.append(
+            {
+                "key": agent["key"],
+                "name": agent["name"],
+                "role": agent["role"],
+                "preferred_provider": preferred,
+                "preferred_provider_label": provider_label(preferred),
+                "selected_provider": selected,
+                "selected_provider_label": provider_label(selected),
+                "provider_status": "Configured" if preferred_available else "Unavailable",
+                "selected_provider_status": "Configured" if selected_available else "Unavailable",
+                "fallback_provider": "openai",
+                "fallback_provider_label": "OpenAI",
+                "fallback_used": fallback_used,
+                "fallback_status": fallback_status,
+            }
+        )
+
+    return {
+        "name": "UNDX Intelligence Router",
+        "classification": classification,
+        "router_enabled": router_enabled(),
+        "multi_model_mode": multi_model_mode(),
+        "default_provider": default_provider(),
+        "fallback_provider": "openai",
+        "fallback_provider_label": "OpenAI",
+        "providers": status,
+        "agents": agents,
+    }
 
 
 def log_provider_status() -> None:
