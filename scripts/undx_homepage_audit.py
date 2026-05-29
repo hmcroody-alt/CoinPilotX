@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 from datetime import datetime, timezone
@@ -147,6 +148,7 @@ def main():
     require("Preview Gateway: Active" not in feed_html, "UNDX preview gateway status absent from Pulse feed")
     require("Read Access: Disabled" not in feed_html, "UNDX read access disabled status absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
+    require("Awaiting router" not in undx_html, "UNDX Agent Council no longer shows router placeholder text")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
     require("/api/undx/chat" in routes, "/api/undx/chat route exists")
@@ -167,9 +169,19 @@ def main():
         "fallback_provider",
         "COUNCIL_AGENT_PROVIDER_MAP",
         "council_agent_provider_plan",
+        "provider_health",
+        "Online",
+        "Offline",
+        "Missing API Key",
+        "Fallback Active",
     ]:
         require(token in router_source, f"UNDX router contains {token}")
     require("coinpilotx-undx-worker" in worker_source, "UNDX worker targets Railway service name")
+
+    council_health_response = client.get("/api/undx/agent-council")
+    require(council_health_response.status_code == 200, "/api/undx/agent-council health returns 200", council_health_response.status_code)
+    council_health_payload = council_health_response.get_json() or {}
+    require(council_health_payload.get("health_only") is True, "UNDX Agent Council health mode is explicit")
 
     council_response = client.post("/api/undx/agent-council", json={"mission": "Optimize repository analysis with fast research"})
     require(council_response.status_code == 200, "/api/undx/agent-council returns 200", council_response.status_code)
@@ -178,6 +190,24 @@ def main():
     require(len(council_agents) == 5, "UNDX Agent Council router returns five agents", len(council_agents))
     for token in ["selected_provider_label", "provider_status", "fallback_status"]:
         require(all(token in agent for agent in council_agents), f"UNDX Agent Council router includes {token}")
+    allowed_health = {"Online", "Offline", "Missing API Key", "Fallback Active"}
+    require(all(agent.get("provider_status") in allowed_health for agent in council_agents), "UNDX Agent Council provider statuses use health labels")
+
+    saved_env = {key: os.environ.get(key) for key in ["OPENAI_API_KEY", "CLAUDE_AI_API", "Gemini_AI_API", "GEMINI_AI_API", "DEEPSEEK_AI_API", "GROQ_AI_API"]}
+    try:
+        os.environ["OPENAI_API_KEY"] = "audit-openai-key"
+        for key in ["CLAUDE_AI_API", "Gemini_AI_API", "GEMINI_AI_API", "DEEPSEEK_AI_API", "GROQ_AI_API"]:
+            os.environ.pop(key, None)
+        fallback_plan = bot.undx_router.council_agent_provider_plan("Optimize repository analysis with fast research")
+        fallback_agents = fallback_plan.get("agents") or []
+        require(any(agent.get("provider_status") == "Online" for agent in fallback_agents if agent.get("key") == "builder"), "OpenAI-keyed Builder Agent reports Online")
+        require(any(agent.get("provider_status") == "Fallback Active" for agent in fallback_agents if agent.get("key") == "architect"), "Missing Claude key activates OpenAI fallback")
+    finally:
+        for key, value in saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     for token in [
         "data-undx-premium-entry",
@@ -243,6 +273,7 @@ def main():
         "Provider selected",
         "Provider status",
         "Fallback status",
+        "Checking",
         "Claude",
         "Gemini",
         "OpenAI",

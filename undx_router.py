@@ -125,6 +125,13 @@ def provider_status() -> dict[str, bool]:
     return {provider: bool(_api_key(provider)) for provider in PROVIDERS}
 
 
+def provider_health(provider: str, routing_available: bool = True) -> str:
+    provider = _normalize_provider(provider)
+    if not _api_key(provider):
+        return "Missing API Key"
+    return "Online" if routing_available else "Offline"
+
+
 def provider_label(provider: str) -> str:
     provider = _normalize_provider(provider)
     return PROVIDERS[provider].label
@@ -139,19 +146,24 @@ def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
 
     status = provider_status()
     classification = classify_request(message)
-    openai_available = status.get("openai", False)
+    routing_available = True
+    openai_health = provider_health("openai", routing_available)
+    openai_available = openai_health == "Online"
     agents: list[dict[str, Any]] = []
 
     for agent in COUNCIL_AGENT_PROVIDER_MAP:
         preferred = _normalize_provider(agent["preferred_provider"])
-        preferred_available = status.get(preferred, False)
+        preferred_health = provider_health(preferred, routing_available)
+        preferred_available = preferred_health == "Online"
         selected = preferred if preferred_available else "openai"
         fallback_used = selected != preferred
-        selected_available = status.get(selected, False)
+        selected_health = provider_health(selected, routing_available)
         if fallback_used:
-            fallback_status = "Using OpenAI fallback" if openai_available else "OpenAI fallback unavailable"
+            fallback_status = "Fallback Active" if openai_available else openai_health
+            display_status = "Fallback Active" if openai_available else preferred_health
         else:
             fallback_status = "Not needed"
+            display_status = preferred_health
 
         agents.append(
             {
@@ -160,10 +172,11 @@ def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
                 "role": agent["role"],
                 "preferred_provider": preferred,
                 "preferred_provider_label": provider_label(preferred),
+                "preferred_provider_status": preferred_health,
                 "selected_provider": selected,
                 "selected_provider_label": provider_label(selected),
-                "provider_status": "Configured" if preferred_available else "Unavailable",
-                "selected_provider_status": "Configured" if selected_available else "Unavailable",
+                "provider_status": display_status,
+                "selected_provider_status": selected_health,
                 "fallback_provider": "openai",
                 "fallback_provider_label": "OpenAI",
                 "fallback_used": fallback_used,
@@ -175,6 +188,7 @@ def council_agent_provider_plan(message: str = "") -> dict[str, Any]:
         "name": "UNDX Intelligence Router",
         "classification": classification,
         "router_enabled": router_enabled(),
+        "router_status": "Online" if routing_available else "Offline",
         "multi_model_mode": multi_model_mode(),
         "default_provider": default_provider(),
         "fallback_provider": "openai",

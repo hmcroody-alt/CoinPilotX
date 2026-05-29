@@ -8619,30 +8619,32 @@ def api_undx_chat():
     return response, status
 
 
-@webhook_app.route("/api/undx/agent-council", methods=["POST"])
+@webhook_app.route("/api/undx/agent-council", methods=["GET", "POST"])
 def api_undx_agent_council():
     init_db()
     user = api_account_user()
     gated = api_pro_required(user, "UNDX Agent Council")
     if gated:
         return gated
-    payload = request.get_json(silent=True) or {}
+    payload = (request.get_json(silent=True) or {}) if request.method == "POST" else {}
     mission = clean_html(payload.get("mission") or payload.get("objective") or payload.get("message") or "")[:2200]
-    if not mission:
+    health_only = request.method == "GET" or bool(payload.get("health_only"))
+    if not mission and not health_only:
         response = jsonify({"ok": False, "error": "Enter or select a mission before running the Agent Council."})
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return response, 400
     plan = undx_router.council_agent_provider_plan(mission)
-    log_product_event(
-        user["user_id"],
-        "undx_agent_council_router_used",
-        {
-            "classification": (plan.get("classification") or {}).get("category"),
-            "router_enabled": bool(plan.get("router_enabled")),
-            "multi_model_mode": bool(plan.get("multi_model_mode")),
-        },
-    )
-    response = jsonify({"ok": True, "router": plan, "agents": plan.get("agents", [])})
+    if not health_only:
+        log_product_event(
+            user["user_id"],
+            "undx_agent_council_router_used",
+            {
+                "classification": (plan.get("classification") or {}).get("category"),
+                "router_enabled": bool(plan.get("router_enabled")),
+                "multi_model_mode": bool(plan.get("multi_model_mode")),
+            },
+        )
+    response = jsonify({"ok": True, "health_only": health_only, "router": plan, "agents": plan.get("agents", [])})
     response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
@@ -21636,9 +21638,11 @@ def pulse_premium_undx_page():
     .undx-agent-provider-meta{display:grid;gap:7px;border:1px solid rgba(110,223,246,.15);border-radius:14px;padding:10px;background:rgba(3,8,17,.36)}
     .undx-agent-provider-meta span{display:flex;align-items:center;justify-content:space-between;gap:8px;color:rgba(223,246,255,.64);font-size:.78rem;font-weight:900}
     .undx-agent-provider-meta strong{color:#dffcff;text-align:right}
-    .undx-agent-provider-meta [data-undx-provider-status="Configured"]{color:#36e58f}
-    .undx-agent-provider-meta [data-undx-provider-status="Unavailable"]{color:#ffb8c1}
-    .undx-agent-provider-meta [data-undx-fallback-used="true"]{color:#fff2b8}
+    .undx-agent-provider-meta [data-undx-provider-status="Online"]{color:#36e58f}
+    .undx-agent-provider-meta [data-undx-provider-status="Fallback Active"]{color:#fff2b8}
+    .undx-agent-provider-meta [data-undx-provider-status="Missing API Key"],.undx-agent-provider-meta [data-undx-provider-status="Offline"]{color:#ffb8c1}
+    .undx-agent-provider-meta [data-undx-fallback-health="Fallback Active"]{color:#fff2b8}
+    .undx-agent-provider-meta [data-undx-fallback-health="Missing API Key"],.undx-agent-provider-meta [data-undx-fallback-health="Offline"]{color:#ffb8c1}
     .undx-agent-status{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(110,223,246,.23);border-radius:999px;padding:6px 9px;background:rgba(110,223,246,.075);color:#dffcff;font-size:.78rem;font-weight:950}
     .undx-agent-status[data-status="Active"]{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.10);color:#c8ffdf;box-shadow:0 0 24px rgba(54,229,143,.12)}
     .undx-council-message{min-height:24px;margin:0 0 10px;color:#ffb8c1;font-weight:850}
@@ -21885,11 +21889,11 @@ def pulse_premium_undx_page():
         </div>
         <p class='undx-council-message' id='undxCouncilMessage' aria-live='polite'></p>
         <div class='undx-agent-grid' id='undxAgentGrid' aria-live='polite'>
-          <article class='undx-agent-card' data-undx-agent-card='architect'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Architect Agent</h3><p class='undx-agent-role'>System design and mission architecture</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Claude</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before mapping structure, data boundaries, and command flow.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='research'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Research Agent</h3><p class='undx-agent-role'>Evidence, market, and technical discovery</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Gemini</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before identifying source material and validation questions.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='builder'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Builder Agent</h3><p class='undx-agent-role'>Implementation path and build sequencing</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>OpenAI</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>Not needed</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing a phased implementation track.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='optimization'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Optimization Agent</h3><p class='undx-agent-role'>Performance, code quality, and system refinement</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>DeepSeek</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before tightening implementation quality and execution efficiency.</p></article>
-          <article class='undx-agent-card' data-undx-agent-card='rapid_response'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Rapid Response Agent</h3><p class='undx-agent-role'>Fast triage, concise direction, and immediate next moves</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Groq</strong></span><span>Provider status: <strong data-undx-provider-status>Awaiting router</strong></span><span>Fallback status: <strong data-undx-fallback-status>OpenAI fallback ready</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before compressing the fastest safe next action.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='architect'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Architect Agent</h3><p class='undx-agent-role'>System design and mission architecture</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Claude</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before mapping structure, data boundaries, and command flow.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='research'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Research Agent</h3><p class='undx-agent-role'>Evidence, market, and technical discovery</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Gemini</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before identifying source material and validation questions.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='builder'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Builder Agent</h3><p class='undx-agent-role'>Implementation path and build sequencing</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>OpenAI</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing a phased implementation track.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='optimization'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Optimization Agent</h3><p class='undx-agent-role'>Performance, code quality, and system refinement</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>DeepSeek</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before tightening implementation quality and execution efficiency.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='rapid_response'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Rapid Response Agent</h3><p class='undx-agent-role'>Fast triage, concise direction, and immediate next moves</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Groq</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before compressing the fastest safe next action.</p></article>
         </div>
         <div class='undx-council-summary' id='undxCouncilSummary' hidden aria-live='polite'></div>
       </section>
@@ -25355,11 +25359,11 @@ def pulse_premium_undx_page():
     }
     function undxCouncilFallbackRouting(){
       return [
-        {key:'architect', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true},
-        {key:'research', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true},
-        {key:'builder', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Not needed', fallback_used:false},
-        {key:'optimization', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true},
-        {key:'rapid_response', selected_provider_label:'OpenAI', provider_status:'Router unavailable', fallback_status:'Using OpenAI fallback', fallback_used:true}
+        {key:'architect', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
+        {key:'research', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
+        {key:'builder', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:false},
+        {key:'optimization', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
+        {key:'rapid_response', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true}
       ];
     }
     function undxCouncilAgentRouting(routingAgents, key){
@@ -25369,12 +25373,13 @@ def pulse_premium_undx_page():
     function undxMergeCouncilRouting(agents, routingAgents){
       return agents.map(agent => ({...agent, ...(undxCouncilAgentRouting(routingAgents, agent.key) || {})}));
     }
-    async function undxFetchCouncilRouting(mission){
-      const response = await fetch(undxCouncilEndpoint, {
+    async function undxFetchCouncilRouting(mission, healthOnly = false){
+      const options = healthOnly ? {method:'GET'} : {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({mission})
-      });
+      };
+      const response = await fetch(undxCouncilEndpoint, {cache:'no-store', ...options});
       const data = await response.json().catch(() => ({}));
       if(!response.ok || data.ok === false){
         throw new Error(data.error || 'UNDX Intelligence Router is unavailable.');
@@ -25386,7 +25391,17 @@ def pulse_premium_undx_page():
       undxRunCouncil.disabled = Boolean(isLoading);
       undxRunCouncil.textContent = isLoading ? 'Routing Agent Council...' : 'Run Agent Council';
     }
-    function undxRenderCouncilAgents(agents){
+    async function undxRefreshCouncilHealth(){
+      try{
+        const routing = await undxFetchCouncilRouting('', true);
+        undxRenderCouncilAgents(routing.agents || routing.router?.agents || [], {activate:false});
+      }catch(error){
+        undxRenderCouncilAgents(undxCouncilFallbackRouting(), {activate:false});
+        if(undxCouncilMessage) undxCouncilMessage.textContent = 'UNDX provider health check could not reach the router.';
+      }
+    }
+    function undxRenderCouncilAgents(agents, options = {}){
+      const activate = options.activate !== false;
       agents.forEach(agent => {
         const card = document.querySelector(`[data-undx-agent-card="${agent.key}"]`);
         if(!card) return;
@@ -25396,18 +25411,19 @@ def pulse_premium_undx_page():
         const providerStatus = card.querySelector('[data-undx-provider-status]');
         const fallbackStatus = card.querySelector('[data-undx-fallback-status]');
         if(status){
-          status.textContent = 'Status: Active';
-          status.dataset.status = 'Active';
+          status.textContent = activate ? 'Status: Active' : 'Status: Standby';
+          status.dataset.status = activate ? 'Active' : 'Standby';
         }
-        if(output) output.textContent = agent.output;
+        if(output && agent.output) output.textContent = agent.output;
         if(providerSelected) providerSelected.textContent = agent.selected_provider_label || agent.preferred_provider_label || 'OpenAI';
         if(providerStatus){
-          providerStatus.textContent = agent.provider_status || agent.selected_provider_status || 'Unavailable';
+          providerStatus.textContent = agent.provider_status || agent.selected_provider_status || 'Offline';
           providerStatus.dataset.undxProviderStatus = agent.provider_status || '';
         }
         if(fallbackStatus){
           fallbackStatus.textContent = agent.fallback_status || 'Not needed';
-          fallbackStatus.dataset.undxFallbackUsed = String(Boolean(agent.fallback_used));
+          fallbackStatus.dataset.undxFallbackHealth = agent.fallback_status || '';
+          fallbackStatus.dataset.undxFallbackUsed = String(Boolean(agent.fallback_used && agent.fallback_status === 'Fallback Active'));
         }
       });
     }
@@ -25639,6 +25655,7 @@ def pulse_premium_undx_page():
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
+    undxRefreshCouncilHealth();
     undxRenderChat();
     undxRenderProjects();
     undxRenderRepositoryPlans();
