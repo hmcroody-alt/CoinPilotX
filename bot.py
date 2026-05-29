@@ -21464,7 +21464,13 @@ def pulse_premium_undx_page():
     .undx-memory-card h3{margin:0;font-size:clamp(19px,2.2vw,26px)}
     .undx-memory-card p{margin:0;color:rgba(223,246,255,.72)}
     .undx-memory-meta{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-memory-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-memory-actions .button{min-height:42px;border-radius:14px}
     .undx-memory-empty{border:1px dashed rgba(110,223,246,.22);border-radius:18px;padding:16px;background:rgba(5,11,20,.32);color:rgba(223,246,255,.72);font-weight:850}
+    .undx-evolution-panel{position:relative;overflow:hidden;border-color:rgba(255,209,102,.18);background:radial-gradient(circle at 20% 12%,rgba(255,209,102,.10),transparent 22rem),radial-gradient(circle at 86% 14%,rgba(110,223,246,.12),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03))}
+    .undx-evolution-content{display:grid;gap:12px}
+    .undx-evolution-empty{border:1px dashed rgba(255,209,102,.22);border-radius:18px;padding:16px;background:rgba(5,11,20,.34);color:rgba(223,246,255,.72);font-weight:850}
+    .undx-evolution-score{font-size:clamp(32px,5vw,54px);line-height:1;color:#36e58f;font-weight:950;text-shadow:0 0 28px rgba(54,229,143,.22)}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
@@ -21530,6 +21536,17 @@ def pulse_premium_undx_page():
         <div class='undx-memory-empty' id='undxMemoryEmpty'>No missions stored yet. Generate a blueprint to initialize UNDX memory.</div>
         <div class='undx-memory-list' id='undxMemoryList' aria-live='polite'></div>
       </section>
+      <section class='undx-section-panel undx-evolution-panel' id='undx-mission-evolution'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Mission Evolution</span>
+            <h2>Mission Evolution</h2>
+          </div>
+          <p>Replay stored missions into the next build phase and let UNDX suggest an expansion path.</p>
+        </div>
+        <div class='undx-evolution-empty' id='undxEvolutionEmpty'>Select a stored mission to view its evolution path.</div>
+        <div class='undx-evolution-content' id='undxEvolutionContent' aria-live='polite'></div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -21590,7 +21607,10 @@ def pulse_premium_undx_page():
     const undxMemoryEmpty = document.getElementById('undxMemoryEmpty');
     const undxStoredMissionCount = document.getElementById('undxStoredMissionCount');
     const undxClearMemory = document.getElementById('undxClearMemory');
+    const undxEvolutionEmpty = document.getElementById('undxEvolutionEmpty');
+    const undxEvolutionContent = document.getElementById('undxEvolutionContent');
     const undxMemoryStorageKey = 'undxMissionMemory';
+    let undxSelectedEvolutionMission = null;
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
       const words = text.replace(/[^a-zA-Z0-9\\s-]/g,' ').trim().split(/\\s+/).filter(Boolean).slice(0,5);
@@ -21646,7 +21666,20 @@ def pulse_premium_undx_page():
         pill.textContent = value;
         meta.appendChild(pill);
       });
-      article.append(title, objective, meta);
+      const actions = document.createElement('div');
+      actions.className = 'undx-memory-actions';
+      const replay = document.createElement('button');
+      replay.className = 'button primary';
+      replay.type = 'button';
+      replay.textContent = 'Replay Mission';
+      replay.addEventListener('click', () => undxLoadMissionIntoConsole(item.objective || '', 'Mission replay loaded into Builder Intelligence Console.'));
+      const viewEvolution = document.createElement('button');
+      viewEvolution.className = 'button';
+      viewEvolution.type = 'button';
+      viewEvolution.textContent = 'View Evolution';
+      viewEvolution.addEventListener('click', () => undxRenderEvolution(item));
+      actions.append(replay, viewEvolution);
+      article.append(title, objective, meta, actions);
       return article;
     }
     function undxRenderMemory(){
@@ -21662,6 +21695,131 @@ def pulse_premium_undx_page():
       const next = [blueprint, ...current].slice(0,24);
       undxSaveMemory(next);
       undxRenderMemory();
+    }
+    function undxLoadMissionIntoConsole(text, message){
+      if(!undxMissionInput) return;
+      undxMissionInput.value = text || '';
+      if(undxConsoleMessage) undxConsoleMessage.textContent = message || '';
+      document.getElementById('undx-builder-console')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxMissionInput.focus();
+    }
+    function undxMissionSearchText(item){
+      return `${item?.name || ''} ${item?.objective || ''}`.toLowerCase();
+    }
+    function undxEvolutionNextPhase(item){
+      const text = undxMissionSearchText(item);
+      if(/wallet|risk|scam|security|secure/.test(text)) return 'Security Intelligence Expansion';
+      if(/dashboard|ui|premium|page|design/.test(text)) return 'Product Interface Expansion';
+      if(/ai|agent|memory|automation/.test(text)) return 'Autonomous Intelligence Expansion';
+      return 'Core Builder Expansion';
+    }
+    function undxEvolutionModules(item){
+      const text = undxMissionSearchText(item);
+      const modules = ['Builder Intelligence'];
+      if(/wallet|risk|scam|security|secure/.test(text)) modules.push('Security Expansion', 'Crypto Research Engine');
+      if(/dashboard|ui|premium|page|design/.test(text)) modules.push('Product Growth Intelligence', 'Mission Control Automation');
+      if(/ai|agent|memory|automation/.test(text)) modules.push('Mission Control Automation', 'Autonomous Debugging');
+      if(/debug|fix|audit/.test(text)) modules.push('Autonomous Debugging');
+      modules.push('Product Growth Intelligence');
+      return [...new Set(modules)].slice(0,5);
+    }
+    function undxEvolutionRiskNotes(item){
+      const phase = undxEvolutionNextPhase(item);
+      if(phase === 'Security Intelligence Expansion') return 'Prioritize threat modeling, false-positive handling, safe wallet language, and audit coverage before any live signal is trusted.';
+      if(phase === 'Product Interface Expansion') return 'Protect premium boundaries, keep mobile layout stable, and validate that interface changes do not leak into the Pulse feed.';
+      if(phase === 'Autonomous Intelligence Expansion') return 'Keep automation supervised, preserve clear user intent, and prevent memory or agent actions from running without explicit control.';
+      return 'Start with a narrow prototype, define success criteria, and add a focused audit before expanding scope.';
+    }
+    function undxEvolutionPath(item){
+      const phase = undxEvolutionNextPhase(item);
+      if(phase === 'Security Intelligence Expansion') return ['Define the risk model and trusted signal sources.', 'Build a guarded analysis surface with explainable labels.', 'Add security-focused audits before exposing recommendations.'];
+      if(phase === 'Product Interface Expansion') return ['Map the user workflow and premium affordances.', 'Prototype the smallest useful interface path.', 'Run responsive and feed-isolation checks before launch.'];
+      if(phase === 'Autonomous Intelligence Expansion') return ['Convert the mission into supervised agent tasks.', 'Add memory checkpoints and explicit user controls.', 'Verify every autonomous step with rollback-safe audits.'];
+      return ['Break the mission into one command-center prototype.', 'Connect the minimum modules needed for a useful result.', 'Promote the mission after validation and user testing.'];
+    }
+    function undxEvolutionScore(item){
+      const text = undxMissionSearchText(item);
+      const lengthBonus = Math.min(14, Math.floor((item?.objective || '').length / 10));
+      const keywordBonus = (text.match(/wallet|risk|scam|security|dashboard|premium|design|ai|agent|memory|automation|audit|crypto/g) || []).length * 3;
+      return Math.min(99, 70 + lengthBonus + keywordBonus);
+    }
+    function undxBlock(title, body){
+      const block = document.createElement('section');
+      block.className = 'undx-blueprint-block';
+      const heading = document.createElement('strong');
+      heading.textContent = title;
+      block.appendChild(heading);
+      if(Array.isArray(body)){
+        const list = document.createElement('ol');
+        body.forEach(item => {
+          const li = document.createElement('li');
+          li.textContent = item;
+          list.appendChild(li);
+        });
+        block.appendChild(list);
+      }else if(body instanceof Node){
+        block.appendChild(body);
+      }else{
+        const text = document.createElement('p');
+        text.textContent = body || '';
+        block.appendChild(text);
+      }
+      return block;
+    }
+    function undxModulePills(modules){
+      const wrap = document.createElement('p');
+      modules.forEach(module => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = module;
+        wrap.appendChild(pill);
+        wrap.append(' ');
+      });
+      return wrap;
+    }
+    function undxRenderEvolutionEmpty(){
+      undxSelectedEvolutionMission = null;
+      if(undxEvolutionEmpty) undxEvolutionEmpty.hidden = false;
+      if(undxEvolutionContent) undxEvolutionContent.replaceChildren();
+    }
+    function undxRenderEvolution(item){
+      undxSelectedEvolutionMission = item;
+      if(undxEvolutionEmpty) undxEvolutionEmpty.hidden = true;
+      if(!undxEvolutionContent) return;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Mission Evolution Active';
+      const title = document.createElement('h3');
+      title.textContent = item.name || 'Mission Unknown Destination';
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      const score = document.createElement('p');
+      score.className = 'undx-evolution-score';
+      score.textContent = `${undxEvolutionScore(item)}/99`;
+      grid.append(
+        undxBlock('Selected Mission Name', item.name || 'Mission Unknown Destination'),
+        undxBlock('Original Objective', item.objective || ''),
+        undxBlock('Suggested Next Phase', undxEvolutionNextPhase(item)),
+        undxBlock('Recommended Modules', undxModulePills(undxEvolutionModules(item))),
+        undxBlock('Risk Notes', undxEvolutionRiskNotes(item)),
+        undxBlock('Expansion Path', undxEvolutionPath(item)),
+        undxBlock('UNDX Evolution Score', score)
+      );
+      const actions = document.createElement('div');
+      actions.className = 'undx-memory-actions';
+      const useNext = document.createElement('button');
+      useNext.className = 'button primary';
+      useNext.type = 'button';
+      useNext.textContent = 'Use as Next Blueprint';
+      useNext.addEventListener('click', () => {
+        undxLoadMissionIntoConsole(`Evolve this mission into the next build phase: ${item.objective || ''}`, 'Next blueprint loaded into Builder Intelligence Console.');
+      });
+      actions.appendChild(useNext);
+      card.append(label, title, grid, actions);
+      undxEvolutionContent.replaceChildren(card);
+      document.getElementById('undx-mission-evolution')?.scrollIntoView({behavior:'smooth', block:'start'});
     }
     function undxBuildBlueprint(){
       const mission = (undxMissionInput?.value || '').trim();
@@ -21714,12 +21872,14 @@ def pulse_premium_undx_page():
         localStorage.removeItem(undxMemoryStorageKey);
       }catch(error){}
       undxRenderMemory();
+      undxRenderEvolutionEmpty();
       if(undxConsoleMessage) undxConsoleMessage.textContent = '';
     });
     undxMissionInput?.addEventListener('keydown', event => {
       if((event.metaKey || event.ctrlKey) && event.key === 'Enter') undxBuildBlueprint();
     });
     undxRenderMemory();
+    undxRenderEvolutionEmpty();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 

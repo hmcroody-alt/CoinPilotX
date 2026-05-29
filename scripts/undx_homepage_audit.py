@@ -73,6 +73,9 @@ def main():
     require("Generate Mission Blueprint" not in feed_html, "UNDX blueprint action absent from Pulse feed")
     require("Mission Memory" not in feed_html, "UNDX mission memory absent from Pulse feed")
     require("Clear Mission Memory" not in feed_html, "UNDX clear memory action absent from Pulse feed")
+    require("Replay Mission" not in feed_html, "UNDX replay action absent from Pulse feed")
+    require("View Evolution" not in feed_html, "UNDX evolution action absent from Pulse feed")
+    require("Mission Evolution" not in feed_html, "UNDX mission evolution absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     for token in [
@@ -114,6 +117,20 @@ def main():
         "Clear Mission Memory",
         "No missions stored yet. Generate a blueprint to initialize UNDX memory.",
         "undxMissionMemory",
+        "Replay Mission",
+        "View Evolution",
+        "Mission replay loaded into Builder Intelligence Console.",
+        "Mission Evolution",
+        "Select a stored mission to view its evolution path.",
+        "Selected Mission Name",
+        "Original Objective",
+        "Suggested Next Phase",
+        "Recommended Modules",
+        "Risk Notes",
+        "Expansion Path",
+        "UNDX Evolution Score",
+        "Use as Next Blueprint",
+        "Evolve this mission into the next build phase:",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
