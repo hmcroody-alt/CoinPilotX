@@ -69,6 +69,8 @@ def main():
     require("data-undx-premium-entry" not in feed_html, "UNDX entry absent from Pulse feed")
     require("/pulse/premium/undx" not in feed_html, "UNDX premium route absent from Pulse feed")
     require("Enter the Unknown Destination" not in feed_html, "UNDX Command Center hero absent from Pulse feed")
+    require("Builder Intelligence Console" not in feed_html, "UNDX builder console absent from Pulse feed")
+    require("Generate Mission Blueprint" not in feed_html, "UNDX blueprint action absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     for token in [
@@ -88,6 +90,21 @@ def main():
         "Premium Intelligence Layer",
         "Initialize UNDX Core",
         "View Core Modules",
+        "Builder Intelligence Console",
+        "Describe what you want CoinPilotXAI to build next, and UNDX will prepare the mission blueprint.",
+        "Example: Build a wallet risk analyzer, improve the premium dashboard, or create an AI scam detection module...",
+        "Generate Mission Blueprint",
+        "Console Status: Online",
+        "Mode: Builder Intelligence",
+        "Access: Premium",
+        "Phase: 3",
+        "Enter a mission before initializing UNDX.",
+        "Mission Name",
+        "Objective",
+        "Suggested Modules",
+        "Build Steps",
+        "Security Notes",
+        "Next Action",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

@@ -21434,14 +21434,32 @@ def pulse_premium_undx_page():
     .undx-status-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid rgba(110,223,246,.14);border-radius:15px;padding:12px;background:rgba(5,11,20,.38)}
     .undx-status-item span{color:rgba(223,246,255,.66);font-weight:850}
     .undx-status-item strong{color:#36e58f;text-align:right}
+    .undx-builder-console{position:relative;overflow:hidden;border-color:rgba(54,229,143,.20);background:radial-gradient(circle at 18% 16%,rgba(54,229,143,.11),transparent 22rem),radial-gradient(circle at 86% 10%,rgba(110,223,246,.13),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.03))}
+    .undx-builder-console:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 20%,rgba(110,223,246,.10),transparent 48%,rgba(255,209,102,.055));pointer-events:none}
+    .undx-builder-console>*{position:relative;z-index:1}
+    .undx-console-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px;align-items:start}
+    .undx-console-form{display:grid;gap:12px}
+    .undx-builder-input{min-height:154px;border:1px solid rgba(110,223,246,.24);border-radius:18px;background:rgba(3,8,17,.56);color:#f2fbff;padding:14px;box-shadow:inset 0 0 28px rgba(110,223,246,.05);resize:vertical}
+    .undx-builder-input::placeholder{color:rgba(223,246,255,.46)}
+    .undx-console-form .button{width:max-content;max-width:100%;min-height:52px;border-radius:16px}
+    .undx-console-message{min-height:24px;margin:0;color:#ffb8c1;font-weight:850}
+    .undx-console-status{display:grid;gap:10px}
+    .undx-blueprint-output{display:grid;gap:12px;margin-top:14px}
+    .undx-blueprint-card{display:grid;gap:14px;border:1px solid rgba(110,223,246,.22);border-radius:20px;padding:16px;background:linear-gradient(145deg,rgba(6,17,31,.88),rgba(9,22,36,.62));box-shadow:0 24px 80px rgba(0,0,0,.26),0 0 42px rgba(54,229,143,.08)}
+    .undx-blueprint-card h3{margin:0;font-size:clamp(24px,3vw,36px)}
+    .undx-blueprint-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .undx-blueprint-block{border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px;background:rgba(255,255,255,.045)}
+    .undx-blueprint-block strong{display:block;margin-bottom:6px;color:#dffcff}
+    .undx-blueprint-block p,.undx-blueprint-block ol{margin:0;color:rgba(223,246,255,.72)}
+    .undx-blueprint-block ol{padding-left:18px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button{width:100%}.undx-command-bar{align-items:stretch}.undx-command-bar .button{width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button{width:100%}.undx-command-bar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid{grid-template-columns:1fr}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -21457,6 +21475,29 @@ def pulse_premium_undx_page():
           <a class='button primary' href='#undx-system-status'>Initialize UNDX Core</a>
           <a class='button' href='#undx-core-modules'>View Core Modules</a>
         </div>
+      </section>
+      <section class='undx-section-panel undx-builder-console' id='undx-builder-console'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Phase 3 Active Module</span>
+            <h2>Builder Intelligence Console</h2>
+          </div>
+          <p>Describe what you want CoinPilotXAI to build next, and UNDX will prepare the mission blueprint.</p>
+        </div>
+        <div class='undx-console-layout'>
+          <div class='undx-console-form'>
+            <textarea class='undx-builder-input' id='undxMissionInput' placeholder='Example: Build a wallet risk analyzer, improve the premium dashboard, or create an AI scam detection module...' aria-label='UNDX mission request'></textarea>
+            <p class='undx-console-message' data-undx-console-message aria-live='polite'></p>
+            <button class='button primary' type='button' id='undxGenerateBlueprint'>Generate Mission Blueprint</button>
+          </div>
+          <aside class='undx-console-status' aria-label='UNDX builder console status'>
+            <p class='undx-status-item' aria-label='Console Status: Online'><span>Console Status:</span><strong>Online</strong></p>
+            <p class='undx-status-item' aria-label='Mode: Builder Intelligence'><span>Mode:</span><strong>Builder Intelligence</strong></p>
+            <p class='undx-status-item' aria-label='Access: Premium'><span>Access:</span><strong>Premium</strong></p>
+            <p class='undx-status-item' aria-label='Phase: 3'><span>Phase:</span><strong>3</strong></p>
+          </aside>
+        </div>
+        <div class='undx-blueprint-output' id='undxBlueprintOutput' aria-live='polite'></div>
       </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
@@ -21509,7 +21550,63 @@ def pulse_premium_undx_page():
       </section>
     </section>
     """
-    return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main)
+    script = """
+    const undxMissionInput = document.getElementById('undxMissionInput');
+    const undxGenerateBlueprint = document.getElementById('undxGenerateBlueprint');
+    const undxBlueprintOutput = document.getElementById('undxBlueprintOutput');
+    const undxConsoleMessage = document.querySelector('[data-undx-console-message]');
+    const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    function undxMissionName(text){
+      const words = text.replace(/[^a-zA-Z0-9\\s-]/g,' ').trim().split(/\\s+/).filter(Boolean).slice(0,5);
+      return words.length ? `Mission ${words.map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}` : 'Mission Unknown Destination';
+    }
+    function undxSuggestedModules(text){
+      const lower = text.toLowerCase();
+      const modules = ['Builder Intelligence', 'Product Growth Intelligence'];
+      if(lower.includes('wallet') || lower.includes('risk') || lower.includes('scam') || lower.includes('secure') || lower.includes('security')) modules.push('Security Expansion');
+      if(lower.includes('crypto') || lower.includes('token') || lower.includes('market')) modules.push('Crypto Research Engine');
+      if(lower.includes('debug') || lower.includes('fix') || lower.includes('audit')) modules.push('Autonomous Debugging');
+      if(lower.includes('dashboard') || lower.includes('premium') || lower.includes('automation')) modules.push('Mission Control Automation');
+      return [...new Set(modules)].slice(0,4);
+    }
+    function undxBuildBlueprint(){
+      const mission = (undxMissionInput?.value || '').trim();
+      if(!mission){
+        if(undxConsoleMessage) undxConsoleMessage.textContent = 'Enter a mission before initializing UNDX.';
+        if(undxBlueprintOutput) undxBlueprintOutput.innerHTML = '';
+        undxMissionInput?.focus();
+        return;
+      }
+      if(undxConsoleMessage) undxConsoleMessage.textContent = '';
+      const name = undxMissionName(mission);
+      const modules = undxSuggestedModules(mission);
+      const moduleText = modules.map(item => `<span class="undx-module-label">${undxEscape(item)}</span>`).join(' ');
+      const steps = [
+        'Define the user problem and premium success signal.',
+        'Map the data, route, UI, and audit surfaces required.',
+        'Build the first safe prototype inside the CoinPilotXAI pattern.',
+        'Run focused audits, then prepare the next phase upgrade.'
+      ];
+      undxBlueprintOutput.innerHTML = `
+        <article class="undx-blueprint-card">
+          <span class="undx-core-label">Mission Blueprint Generated</span>
+          <h3>${undxEscape(name)}</h3>
+          <div class="undx-blueprint-grid">
+            <section class="undx-blueprint-block"><strong>Mission Name</strong><p>${undxEscape(name)}</p></section>
+            <section class="undx-blueprint-block"><strong>Objective</strong><p>${undxEscape(mission)}</p></section>
+            <section class="undx-blueprint-block"><strong>Suggested Modules</strong><p>${moduleText}</p></section>
+            <section class="undx-blueprint-block"><strong>Build Steps</strong><ol>${steps.map(step => `<li>${undxEscape(step)}</li>`).join('')}</ol></section>
+            <section class="undx-blueprint-block"><strong>Security Notes</strong><p>Keep secrets server-side, validate inputs, preserve premium boundaries, and add an audit before launch.</p></section>
+            <section class="undx-blueprint-block"><strong>Next Action</strong><p>Create the smallest command-center prototype, then connect real intelligence once the workflow is proven.</p></section>
+          </div>
+        </article>`;
+    }
+    undxGenerateBlueprint?.addEventListener('click', undxBuildBlueprint);
+    undxMissionInput?.addEventListener('keydown', event => {
+      if((event.metaKey || event.ctrlKey) && event.key === 'Enter') undxBuildBlueprint();
+    });
+    """
+    return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 
 
 def premium_user_is_grantable(user):
