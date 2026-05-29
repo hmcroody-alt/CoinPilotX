@@ -133,6 +133,14 @@ def main():
     require("Future Trust Roadmap" not in feed_html, "UNDX future trust roadmap absent from Pulse feed")
     require("Read Access Core: Blueprint" not in feed_html, "UNDX read access blueprint status absent from Pulse feed")
     require("Secret Access: Disabled" not in feed_html, "UNDX secret access disabled status absent from Pulse feed")
+    require("UNDX Read-Only Preview Gateway" not in feed_html, "UNDX read-only preview gateway absent from Pulse feed")
+    require("Preview Gateway Workflow" not in feed_html, "UNDX preview gateway workflow absent from Pulse feed")
+    require("Preview Manifest Simulator" not in feed_html, "UNDX preview manifest simulator absent from Pulse feed")
+    require("Preview Manifest Registry" not in feed_html, "UNDX preview manifest registry absent from Pulse feed")
+    require("Protected Resource Detection" not in feed_html, "UNDX protected resource detection absent from Pulse feed")
+    require("Future Desktop Connector Vision" not in feed_html, "UNDX desktop connector vision absent from Pulse feed")
+    require("Preview Gateway: Active" not in feed_html, "UNDX preview gateway status absent from Pulse feed")
+    require("Read Access: Disabled" not in feed_html, "UNDX read access disabled status absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
@@ -546,6 +554,64 @@ def main():
         "Phase 20",
         "Controlled execution",
         "undxReadOnlyAccessRequests",
+        "UNDX Read-Only Preview Gateway",
+        "Prepare the future workflow for safe repository previews and analysis.",
+        "Preview Gateway Workflow",
+        "Repository Registered",
+        "Read Access Requested",
+        "Approval Granted",
+        "Manifest Generated",
+        "File Preview Available",
+        "Analysis Generated",
+        "User Review",
+        "Preview Manifest Simulator",
+        "Repository Name",
+        "Repository Type",
+        "Planned Files",
+        "Notes",
+        "Generate Preview Manifest",
+        "Manifest ID",
+        "MANIFEST-UNDX-",
+        "Estimated File Count",
+        "Preview Status",
+        "Protected Resources",
+        "Approval Status",
+        "README.md",
+        "requirements.txt",
+        "Protected Resource Detection",
+        ".env",
+        "credentials.json",
+        "Hidden",
+        "Future Analysis Output",
+        "Architecture Summary",
+        "Dependency Map",
+        "Risk Assessment",
+        "Improvement Opportunities",
+        "Suggested Modules",
+        "Preview Manifest Registry",
+        "Open Manifest",
+        "Attach To Project",
+        "Delete Manifest",
+        "Linked Preview Manifests",
+        "Preview Gateway Status",
+        "Blueprint Ready",
+        "Preview Gateway: Active",
+        "Manifest Mode: Simulation",
+        "Read Access: Disabled",
+        "Phase: 15",
+        "Future Desktop Connector Vision",
+        "Future desktop connector may:",
+        "expose selected folders",
+        "generate manifests",
+        "provide previews",
+        "protect secrets",
+        "require approval",
+        "UNDX still cannot directly access files.",
+        "Gateway Restrictions",
+        "open files",
+        "execute commands",
+        "without future approved phases.",
+        "undxPreviewManifests",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

@@ -21745,14 +21745,27 @@ def pulse_premium_undx_page():
     .undx-access-step strong{color:#dffcff}
     .undx-access-step em{font-style:normal;color:rgba(223,246,255,.46);font-weight:950}
     .undx-read-blueprint textarea{min-height:100px}
+    .undx-preview-gateway{position:relative;overflow:hidden;border-color:rgba(54,229,143,.25);background:radial-gradient(circle at 18% 12%,rgba(54,229,143,.13),transparent 24rem),radial-gradient(circle at 82% 17%,rgba(156,124,255,.13),transparent 26rem),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+    .undx-preview-gateway:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08),transparent 31%,rgba(110,223,246,.052));pointer-events:none}
+    .undx-preview-gateway>*{position:relative;z-index:1}
+    .undx-gateway-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+    .undx-gateway-controls,.undx-gateway-sidebar,.undx-gateway-list,.undx-gateway-detail{display:grid;gap:12px}
+    .undx-gateway-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(6,24,26,.82),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-gateway-card h3,.undx-gateway-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-gateway-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-gateway-flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:stretch}
+    .undx-gateway-step{display:grid;gap:7px;align-content:start;min-height:118px;border:1px solid rgba(54,229,143,.16);border-radius:16px;padding:12px;background:rgba(5,11,20,.38)}
+    .undx-gateway-step strong{color:#dffcff}
+    .undx-gateway-step em{font-style:normal;color:rgba(223,246,255,.46);font-weight:950}
+    .undx-preview-gateway textarea{min-height:100px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22363,6 +22376,146 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-preview-gateway' id='undx-read-only-preview-gateway'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Preview Gateway: Active</span>
+            <h2>UNDX Read-Only Preview Gateway</h2>
+          </div>
+          <p>Prepare the future workflow for safe repository previews and analysis.</p>
+        </div>
+        <div class='undx-gateway-layout'>
+          <div class='undx-gateway-controls'>
+            <div class='undx-memory-status' aria-label='UNDX read-only preview gateway status'>
+              <span aria-label='Preview Gateway: Active'>Preview Gateway: <strong>Active</strong></span>
+              <span aria-label='Manifest Mode: Simulation'>Manifest Mode: <strong>Simulation</strong></span>
+              <span aria-label='Read Access: Disabled'>Read Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 15'>Phase: <strong>15</strong></span>
+            </div>
+            <section class='undx-gateway-card' aria-label='Preview Gateway Workflow'>
+              <span class='undx-core-label'>Preview Gateway Workflow</span>
+              <h3>Preview Gateway Workflow</h3>
+              <div class='undx-gateway-flow'>
+                <article class='undx-gateway-step'><strong>Repository Registered</strong><em>↓</em></article>
+                <article class='undx-gateway-step'><strong>Read Access Requested</strong><em>↓</em></article>
+                <article class='undx-gateway-step'><strong>Approval Granted</strong><em>↓</em></article>
+                <article class='undx-gateway-step'><strong>Manifest Generated</strong><em>↓</em></article>
+                <article class='undx-gateway-step'><strong>File Preview Available</strong><em>↓</em></article>
+                <article class='undx-gateway-step'><strong>Analysis Generated</strong><em>↓</em></article>
+                <article class='undx-gateway-step'><strong>User Review</strong></article>
+              </div>
+            </section>
+            <section class='undx-gateway-card' aria-label='Preview Manifest Simulator'>
+              <span class='undx-core-label'>Preview Manifest Simulator</span>
+              <h3>Preview Manifest Simulator</h3>
+              <form class='undx-project-form' id='undxPreviewManifestForm'>
+                <div class='undx-project-fields'>
+                  <label class='undx-project-field'>
+                    <span>Repository Name</span>
+                    <input id='undxPreviewRepositoryName' type='text' autocomplete='off' placeholder='CoinPilotXAI'>
+                  </label>
+                  <label class='undx-project-field'>
+                    <span>Repository Type</span>
+                    <select id='undxPreviewRepositoryType'>
+                      <option>Local Folder</option>
+                      <option>GitHub Repository</option>
+                      <option>Railway Project</option>
+                      <option>Vercel Project</option>
+                      <option>Other</option>
+                    </select>
+                  </label>
+                  <label class='undx-project-field undx-project-field-wide'>
+                    <span>Planned Files</span>
+                    <textarea id='undxPreviewPlannedFiles' placeholder='README.md&#10;bot.py&#10;templates/pulse.html&#10;static/js/main.js&#10;requirements.txt'></textarea>
+                  </label>
+                  <label class='undx-project-field undx-project-field-wide'>
+                    <span>Notes</span>
+                    <textarea id='undxPreviewNotes' placeholder='Describe what this future preview should help UNDX understand.'></textarea>
+                  </label>
+                </div>
+                <div class='undx-project-actions'>
+                  <button class='button primary' type='submit'>Generate Preview Manifest</button>
+                </div>
+              </form>
+              <p class='undx-project-message' id='undxPreviewManifestMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-project-registry' aria-label='Preview Manifest Registry'>
+              <h3>Preview Manifest Registry</h3>
+              <div class='undx-memory-empty' id='undxPreviewManifestEmpty'>No preview manifests stored yet. Generate a simulation manifest to activate the Preview Gateway.</div>
+              <div class='undx-gateway-list' id='undxPreviewManifestList' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-detail' aria-label='Preview Manifest Detail'>
+              <h3>Preview Manifest Detail</h3>
+              <div class='undx-evolution-empty' id='undxPreviewManifestDetailEmpty'>Open a preview manifest to inspect planned files, protected resources, and approval status.</div>
+              <div class='undx-gateway-detail' id='undxPreviewManifestDetail' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-gateway-sidebar'>
+            <article class='undx-gateway-card' aria-label='Mock File Preview List'>
+              <span class='undx-core-label'>Mock File Preview</span>
+              <h3>Mock File Preview</h3>
+              <ul class='undx-safety-list'>
+                <li>README.md — Preview Only</li>
+                <li>bot.py — Preview Only</li>
+                <li>templates/pulse.html — Preview Only</li>
+                <li>static/js/main.js — Preview Only</li>
+                <li>requirements.txt — Preview Only</li>
+              </ul>
+              <p>Status: Preview Only</p>
+            </article>
+            <article class='undx-gateway-card' aria-label='Protected Resource Detection'>
+              <span class='undx-core-label'>Protected Resource Detection</span>
+              <h3>Protected Resource Detection</h3>
+              <ul class='undx-safety-list'>
+                <li>.env — Hidden</li>
+                <li>credentials.json — Hidden</li>
+                <li>tokens — Hidden</li>
+                <li>secrets — Hidden</li>
+                <li>production configuration — Hidden</li>
+              </ul>
+              <p>Status: Hidden</p>
+            </article>
+            <article class='undx-gateway-card' aria-label='Future Analysis Output'>
+              <span class='undx-core-label'>Future Analysis Output</span>
+              <h3>Future Analysis Output</h3>
+              <ul class='undx-safety-list'>
+                <li>Architecture Summary</li>
+                <li>Dependency Map</li>
+                <li>Risk Assessment</li>
+                <li>Improvement Opportunities</li>
+                <li>Suggested Modules</li>
+              </ul>
+            </article>
+            <article class='undx-gateway-card' aria-label='Future Desktop Connector Vision'>
+              <span class='undx-core-label'>Future Desktop Connector Vision</span>
+              <h3>Future Desktop Connector Vision</h3>
+              <p>Future desktop connector may:</p>
+              <ul class='undx-safety-list'>
+                <li>expose selected folders</li>
+                <li>generate manifests</li>
+                <li>provide previews</li>
+                <li>protect secrets</li>
+                <li>require approval</li>
+              </ul>
+              <p>UNDX still cannot directly access files.</p>
+            </article>
+            <article class='undx-gateway-card' aria-label='Gateway Restrictions'>
+              <span class='undx-core-label'>Gateway Restrictions</span>
+              <h3>Gateway Restrictions</h3>
+              <p>UNDX may NOT:</p>
+              <ul class='undx-safety-list'>
+                <li>open files</li>
+                <li>edit files</li>
+                <li>execute commands</li>
+                <li>commit changes</li>
+                <li>deploy changes</li>
+              </ul>
+              <p>without future approved phases.</p>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22497,6 +22650,16 @@ def pulse_premium_undx_page():
     const undxAccessExpectedOutcome = document.getElementById('undxAccessExpectedOutcome');
     const undxAccessRequestMessage = document.getElementById('undxAccessRequestMessage');
     const undxAccessRequestOutput = document.getElementById('undxAccessRequestOutput');
+    const undxPreviewManifestForm = document.getElementById('undxPreviewManifestForm');
+    const undxPreviewRepositoryName = document.getElementById('undxPreviewRepositoryName');
+    const undxPreviewRepositoryType = document.getElementById('undxPreviewRepositoryType');
+    const undxPreviewPlannedFiles = document.getElementById('undxPreviewPlannedFiles');
+    const undxPreviewNotes = document.getElementById('undxPreviewNotes');
+    const undxPreviewManifestMessage = document.getElementById('undxPreviewManifestMessage');
+    const undxPreviewManifestEmpty = document.getElementById('undxPreviewManifestEmpty');
+    const undxPreviewManifestList = document.getElementById('undxPreviewManifestList');
+    const undxPreviewManifestDetailEmpty = document.getElementById('undxPreviewManifestDetailEmpty');
+    const undxPreviewManifestDetail = document.getElementById('undxPreviewManifestDetail');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -22506,6 +22669,7 @@ def pulse_premium_undx_page():
     const undxApprovalHistoryKey = 'undxApprovalHistory';
     const undxRepositoryIntelligenceProfilesKey = 'undxRepositoryIntelligenceProfiles';
     const undxReadOnlyAccessRequestsKey = 'undxReadOnlyAccessRequests';
+    const undxPreviewManifestsKey = 'undxPreviewManifests';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
@@ -22514,6 +22678,7 @@ def pulse_premium_undx_page():
     let undxActiveApprovalRequest = null;
     let undxSelectedRepositoryPlanId = null;
     let undxSelectedRepositoryProfileId = null;
+    let undxSelectedPreviewManifestId = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -22717,6 +22882,7 @@ def pulse_premium_undx_page():
       })) : [];
       const linkedExecutionPlans = Array.isArray(project.linkedExecutionPlans) ? project.linkedExecutionPlans.filter(plan => plan && plan.id && plan.objective).slice(0,24).map(undxNormalizeExecutionPlan) : [];
       const linkedRepositoryIntelligenceProfiles = Array.isArray(project.linkedRepositoryIntelligenceProfiles) ? project.linkedRepositoryIntelligenceProfiles.filter(profile => profile && profile.profileId && profile.name).slice(0,24).map(undxNormalizeRepositoryProfile) : [];
+      const linkedPreviewManifests = Array.isArray(project.linkedPreviewManifests) ? project.linkedPreviewManifests.filter(manifest => manifest && manifest.manifestId && manifest.repositoryName).slice(0,24).map(undxNormalizePreviewManifest) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -22727,6 +22893,7 @@ def pulse_premium_undx_page():
         linkedRepositories,
         linkedExecutionPlans,
         linkedRepositoryIntelligenceProfiles,
+        linkedPreviewManifests,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         lastBuildDirective: project.lastBuildDirective || ''
       };
@@ -23219,6 +23386,7 @@ def pulse_premium_undx_page():
         requiredApprovalGates: undxNormalizeExecutionList(profile.requiredApprovalGates, ['Repository Read Access'], 6, 90),
         confidenceLevel: ['Low', 'Medium', 'High'].includes(profile.confidenceLevel) ? profile.confidenceLevel : 'Low',
         accessBlueprintStatus: String(profile.accessBlueprintStatus || 'Planned').slice(0,80),
+        previewGatewayStatus: String(profile.previewGatewayStatus || 'Blueprint Ready').slice(0,80),
         sourceType: String(profile.sourceType || 'Planning Context').slice(0,120),
         sourceRef: String(profile.sourceRef || '').slice(0,220),
         createdAt: profile.createdAt || new Date().toISOString(),
@@ -23398,6 +23566,7 @@ def pulse_premium_undx_page():
         requiredApprovalGates,
         confidenceLevel,
         accessBlueprintStatus: 'Planned',
+        previewGatewayStatus: 'Blueprint Ready',
         sourceType: source.sourceType,
         sourceRef: source.sourceRef,
         createdAt: new Date().toISOString(),
@@ -23413,6 +23582,7 @@ def pulse_premium_undx_page():
         `Repository Type: ${profile.repositoryType}`,
         `Conceptual Stack Guess: ${profile.stackGuess}`,
         `Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'}`,
+        `Preview Gateway Status: ${profile.previewGatewayStatus || 'Blueprint Ready'}`,
         `Confidence Level: ${profile.confidenceLevel}`,
         `Status: ${profile.status || 'Intelligence Profile'}`,
         '',
@@ -23520,6 +23690,7 @@ def pulse_premium_undx_page():
         `Repository Type: ${profile.repositoryType}`,
         `Confidence Level: ${profile.confidenceLevel}`,
         `Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'}`,
+        `Preview Gateway Status: ${profile.previewGatewayStatus || 'Blueprint Ready'}`,
         `Created: ${undxFormatMemoryTime(profile.createdAt)}`,
         `Status: ${profile.status || 'Intelligence Profile'}`
       ].forEach(value => {
@@ -23573,6 +23744,7 @@ def pulse_premium_undx_page():
         undxBlock('Recommended Next Inspection', profile.recommendedNextInspection),
         undxBlock('Required Approval Gates', profile.requiredApprovalGates),
         undxBlock('Access Blueprint Status', profile.accessBlueprintStatus || 'Planned'),
+        undxBlock('Preview Gateway Status', profile.previewGatewayStatus || 'Blueprint Ready'),
         undxBlock('Confidence Level', profile.confidenceLevel)
       );
       const actions = document.createElement('div');
@@ -23699,6 +23871,221 @@ def pulse_premium_undx_page():
       undxSaveAccessRequests([request, ...requests]);
       undxRenderAccessRequest(request);
       if(undxAccessRequestMessage) undxAccessRequestMessage.textContent = `${request.requestId} generated as a blueprint only. No files were accessed.`;
+    }
+    function undxDefaultPreviewFiles(){
+      return ['README.md', 'bot.py', 'templates/pulse.html', 'static/js/main.js', 'requirements.txt'];
+    }
+    function undxPreviewProtectedResources(){
+      return ['.env', 'credentials.json', 'tokens', 'secrets', 'production configuration'];
+    }
+    function undxParsePlannedFiles(value){
+      const parsed = String(value || '')
+        .split(/[\\n,]+/)
+        .map(item => item.trim())
+        .filter(Boolean)
+        .slice(0,40)
+        .map(item => item.slice(0,180));
+      return parsed.length ? [...new Set(parsed)] : undxDefaultPreviewFiles();
+    }
+    function undxNormalizePreviewManifest(manifest){
+      const plannedFiles = undxNormalizeExecutionList(manifest.plannedFiles, undxDefaultPreviewFiles(), 40, 180);
+      return {
+        manifestId: String(manifest.manifestId || `MANIFEST-UNDX-${Date.now()}`).slice(0,44),
+        repositoryName: String(manifest.repositoryName || 'CoinPilotXAI').slice(0,140),
+        repositoryType: String(manifest.repositoryType || 'Other').slice(0,100),
+        plannedFiles,
+        notes: String(manifest.notes || '').slice(0,1200),
+        estimatedFileCount: Number(manifest.estimatedFileCount || plannedFiles.length || 0),
+        previewStatus: 'Preview Only',
+        protectedResources: undxNormalizeExecutionList(manifest.protectedResources, undxPreviewProtectedResources(), 10, 140),
+        approvalStatus: String(manifest.approvalStatus || 'Approval Required').slice(0,120),
+        createdAt: manifest.createdAt || new Date().toISOString(),
+        status: 'Preview Only'
+      };
+    }
+    function undxLoadPreviewManifests(){
+      try{
+        const raw = localStorage.getItem(undxPreviewManifestsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(manifest => manifest && manifest.manifestId && manifest.repositoryName).slice(0,48).map(undxNormalizePreviewManifest) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSavePreviewManifests(manifests){
+      try{
+        localStorage.setItem(undxPreviewManifestsKey, JSON.stringify(manifests.slice(0,48)));
+      }catch(error){
+        if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = 'Preview Manifest Registry could not be updated.';
+      }
+    }
+    function undxNextPreviewManifestId(manifests){
+      const max = manifests.reduce((highest, manifest) => {
+        const match = String(manifest.manifestId || '').match(/^MANIFEST-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `MANIFEST-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxPreviewManifestDirective(manifest){
+      return [
+        'UNDX Read-Only Preview Manifest',
+        '',
+        `Manifest ID: ${manifest.manifestId}`,
+        `Repository Name: ${manifest.repositoryName}`,
+        `Repository Type: ${manifest.repositoryType}`,
+        `Estimated File Count: ${manifest.estimatedFileCount}`,
+        `Preview Status: ${manifest.previewStatus}`,
+        `Approval Status: ${manifest.approvalStatus}`,
+        '',
+        'Planned Files:',
+        ...(manifest.plannedFiles || []).map(file => `- ${file}`),
+        '',
+        'Protected Resources:',
+        ...(manifest.protectedResources || []).map(resource => `- ${resource} — Hidden`),
+        '',
+        `Notes: ${manifest.notes || 'No notes provided.'}`,
+        '',
+        'Safety Boundary: Simulation only. UNDX has not opened files, read folders, connected to GitHub, executed commands, committed changes, or deployed anything.'
+      ].join('\\n');
+    }
+    function undxSendPreviewManifestToChat(manifest){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxPreviewManifestDirective(manifest);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Preview manifest loaded into UNDX Chat Interface.';
+    }
+    function undxAttachPreviewManifestToProject(manifest){
+      if(!undxSelectedProjectId){
+        if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = 'Open a project workspace before attaching a preview manifest.';
+        return;
+      }
+      undxUpdateProject(undxSelectedProjectId, project => {
+        const current = Array.isArray(project.linkedPreviewManifests) ? project.linkedPreviewManifests : [];
+        const next = [undxNormalizePreviewManifest(manifest), ...current.filter(item => item.manifestId !== manifest.manifestId)].slice(0,24);
+        return {...project, linkedPreviewManifests: next};
+      });
+      if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = `${manifest.manifestId} attached to the selected project workspace.`;
+    }
+    function undxDeletePreviewManifest(manifestId){
+      const manifests = undxLoadPreviewManifests().filter(manifest => manifest.manifestId !== manifestId);
+      undxSavePreviewManifests(manifests);
+      const projects = undxLoadProjects().map(project => ({
+        ...project,
+        linkedPreviewManifests: (project.linkedPreviewManifests || []).filter(manifest => manifest.manifestId !== manifestId)
+      }));
+      undxSaveProjects(projects);
+      if(undxSelectedPreviewManifestId === manifestId){
+        undxSelectedPreviewManifestId = null;
+        if(undxPreviewManifestDetailEmpty) undxPreviewManifestDetailEmpty.hidden = false;
+        if(undxPreviewManifestDetail) undxPreviewManifestDetail.replaceChildren();
+      }
+      undxRenderPreviewManifests();
+      undxRenderProjects();
+      if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
+      if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = 'Preview manifest deleted.';
+    }
+    function undxCreatePreviewManifestCard(manifest){
+      const article = document.createElement('article');
+      article.className = 'undx-gateway-card';
+      const title = document.createElement('h4');
+      title.textContent = `${manifest.manifestId} · ${manifest.repositoryName}`;
+      const notes = document.createElement('p');
+      notes.textContent = manifest.notes || 'Simulation manifest ready for future read-only preview planning.';
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        `Manifest ID: ${manifest.manifestId}`,
+        `Repository Name: ${manifest.repositoryName}`,
+        `Status: ${manifest.status || 'Preview Only'}`,
+        `Created Date: ${undxFormatMemoryTime(manifest.createdAt)}`
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Manifest', () => undxOpenPreviewManifest(manifest.manifestId), true),
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendPreviewManifestToChat(manifest)),
+        undxProjectActionButton('Attach To Project', () => undxAttachPreviewManifestToProject(manifest)),
+        undxProjectActionButton('Delete Manifest', () => undxDeletePreviewManifest(manifest.manifestId))
+      );
+      article.append(title, notes, meta, actions);
+      return article;
+    }
+    function undxRenderPreviewManifests(){
+      const manifests = undxLoadPreviewManifests();
+      if(undxPreviewManifestEmpty) undxPreviewManifestEmpty.hidden = manifests.length > 0;
+      if(!undxPreviewManifestList) return;
+      undxPreviewManifestList.replaceChildren();
+      manifests.forEach(manifest => undxPreviewManifestList.appendChild(undxCreatePreviewManifestCard(manifest)));
+    }
+    function undxOpenPreviewManifest(manifestId, shouldScroll = true){
+      const manifest = undxLoadPreviewManifests().find(item => item.manifestId === manifestId);
+      if(!manifest || !undxPreviewManifestDetail) return;
+      undxSelectedPreviewManifestId = manifest.manifestId;
+      if(undxPreviewManifestDetailEmpty) undxPreviewManifestDetailEmpty.hidden = true;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Preview Manifest';
+      const title = document.createElement('h3');
+      title.textContent = `${manifest.manifestId} · ${manifest.repositoryName}`;
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Manifest ID', manifest.manifestId),
+        undxBlock('Repository Name', manifest.repositoryName),
+        undxBlock('Repository Type', manifest.repositoryType),
+        undxBlock('Estimated File Count', String(manifest.estimatedFileCount)),
+        undxBlock('Preview Status', manifest.previewStatus),
+        undxBlock('Protected Resources', manifest.protectedResources.map(resource => `${resource} — Hidden`)),
+        undxBlock('Approval Status', manifest.approvalStatus),
+        undxBlock('Mock File Preview', manifest.plannedFiles.map(file => `${file} — Preview Only`)),
+        undxBlock('Notes', manifest.notes || 'No notes provided.')
+      );
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendPreviewManifestToChat(manifest), true),
+        undxProjectActionButton('Attach To Project', () => undxAttachPreviewManifestToProject(manifest))
+      );
+      card.append(label, title, grid, actions);
+      undxPreviewManifestDetail.replaceChildren(card);
+      if(shouldScroll) document.getElementById('undx-read-only-preview-gateway')?.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+    function undxGeneratePreviewManifest(event){
+      event?.preventDefault();
+      const repositoryName = (undxPreviewRepositoryName?.value || '').trim().slice(0,140);
+      const repositoryType = (undxPreviewRepositoryType?.value || 'Other').trim().slice(0,100);
+      const plannedFiles = undxParsePlannedFiles(undxPreviewPlannedFiles?.value || '');
+      const notes = (undxPreviewNotes?.value || '').trim().slice(0,1200);
+      if(!repositoryName){
+        if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = 'Enter a repository name before generating a preview manifest.';
+        undxPreviewRepositoryName?.focus();
+        return;
+      }
+      const manifests = undxLoadPreviewManifests();
+      const manifest = undxNormalizePreviewManifest({
+        manifestId: undxNextPreviewManifestId(manifests),
+        repositoryName,
+        repositoryType,
+        plannedFiles,
+        notes,
+        estimatedFileCount: plannedFiles.length,
+        previewStatus: 'Preview Only',
+        protectedResources: undxPreviewProtectedResources(),
+        approvalStatus: 'Approval Required',
+        createdAt: new Date().toISOString()
+      });
+      undxSavePreviewManifests([manifest, ...manifests]);
+      undxRenderPreviewManifests();
+      undxOpenPreviewManifest(manifest.manifestId, false);
+      if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = `${manifest.manifestId} generated in simulation mode. No files were opened.`;
     }
     function undxNormalizeRepositoryPlan(plan){
       return {
@@ -24530,10 +24917,33 @@ def pulse_premium_undx_page():
           const title = document.createElement('strong');
           title.textContent = `${profile.profileId} · ${profile.name}`;
           const meta = document.createElement('p');
-          meta.textContent = `Repository Type: ${profile.repositoryType} · Conceptual Stack Guess: ${profile.stackGuess} · Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'} · Confidence Level: ${profile.confidenceLevel} · Status: ${profile.status || 'Intelligence Profile'}`;
+          meta.textContent = `Repository Type: ${profile.repositoryType} · Conceptual Stack Guess: ${profile.stackGuess} · Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'} · Preview Gateway Status: ${profile.previewGatewayStatus || 'Blueprint Ready'} · Confidence Level: ${profile.confidenceLevel} · Status: ${profile.status || 'Intelligence Profile'}`;
           const purpose = document.createElement('p');
           purpose.textContent = profile.corePurpose || '';
           item.append(title, meta, purpose);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
+    function undxRenderLinkedPreviewManifests(project, card){
+      const section = undxWorkspaceSection('Linked Preview Manifests');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedPreviewManifests || []).length){
+        list.appendChild(undxWorkspaceEmpty('No preview manifests linked yet. Attach a simulation manifest from the Preview Gateway.'));
+      }else{
+        project.linkedPreviewManifests.forEach(manifest => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${manifest.manifestId} · ${manifest.repositoryName}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Repository Type: ${manifest.repositoryType} · Estimated File Count: ${manifest.estimatedFileCount} · Preview Status: ${manifest.previewStatus} · Approval Status: ${manifest.approvalStatus}`;
+          const files = document.createElement('p');
+          files.textContent = `Planned Files: ${(manifest.plannedFiles || []).slice(0,6).join(', ')}`;
+          item.append(title, meta, files);
           list.appendChild(item);
         });
       }
@@ -24618,6 +25028,7 @@ def pulse_premium_undx_page():
       card.append(label, title, grid, actions);
       undxRenderLinkedRepositoryPlans(project, card);
       undxRenderLinkedRepositoryIntelligenceProfiles(project, card);
+      undxRenderLinkedPreviewManifests(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -24689,6 +25100,7 @@ def pulse_premium_undx_page():
         linkedRepositories: [],
         linkedExecutionPlans: [],
         linkedRepositoryIntelligenceProfiles: [],
+        linkedPreviewManifests: [],
         readOnlyAccessStatus: 'Not Connected',
         lastBuildDirective: '',
         aiEnhancement: {
@@ -25165,6 +25577,7 @@ def pulse_premium_undx_page():
     undxRepositoryIntelligenceSourceSelect?.addEventListener('change', undxRefreshRepositoryProfileSourcePreview);
     undxRepositoryIntelligenceNotes?.addEventListener('input', undxRefreshRepositoryProfileSourcePreview);
     undxAccessRequestForm?.addEventListener('submit', undxGenerateAccessRequest);
+    undxPreviewManifestForm?.addEventListener('submit', undxGeneratePreviewManifest);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -25177,6 +25590,7 @@ def pulse_premium_undx_page():
     undxRenderApprovalRequest(null);
     undxRenderRepositoryProfiles();
     undxRenderAccessRequest(null);
+    undxRenderPreviewManifests();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
