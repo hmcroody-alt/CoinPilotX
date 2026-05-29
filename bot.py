@@ -21722,14 +21722,23 @@ def pulse_premium_undx_page():
     .undx-approval-history{display:grid;gap:10px}
     .undx-approval-request{display:grid;gap:10px;border:1px solid rgba(54,229,143,.18);border-radius:16px;padding:12px;background:rgba(5,11,20,.42)}
     .undx-trust-score{font-size:clamp(38px,8vw,58px);line-height:1;font-weight:950;color:#dffcff;text-shadow:0 0 26px rgba(54,229,143,.32)}
+    .undx-repo-intelligence{position:relative;overflow:hidden;border-color:rgba(110,223,246,.24);background:radial-gradient(circle at 18% 11%,rgba(110,223,246,.14),transparent 25rem),radial-gradient(circle at 80% 16%,rgba(156,124,255,.12),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+    .undx-repo-intelligence:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08),transparent 30%,rgba(54,229,143,.052));pointer-events:none}
+    .undx-repo-intelligence>*{position:relative;z-index:1}
+    .undx-repo-intel-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+    .undx-repo-intel-controls,.undx-repo-intel-sidebar,.undx-repo-intel-list,.undx-repo-intel-detail{display:grid;gap:12px}
+    .undx-repo-intel-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(6,17,31,.82),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-repo-intel-card h3,.undx-repo-intel-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-repo-intel-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-repo-intelligence textarea{min-height:130px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22146,6 +22155,72 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-repo-intelligence' id='undx-repository-intelligence'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Intelligence: Active</span>
+            <h2>UNDX Repository Intelligence</h2>
+          </div>
+          <p>Analyze planned codebases conceptually before UNDX receives file access or execution permissions.</p>
+        </div>
+        <div class='undx-repo-intel-layout'>
+          <div class='undx-repo-intel-controls'>
+            <div class='undx-memory-status' aria-label='UNDX repository intelligence status'>
+              <span aria-label='Repository Intelligence: Active'>Repository Intelligence: <strong>Active</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Profile Mode: Conceptual'>Profile Mode: <strong>Conceptual</strong></span>
+              <span aria-label='Phase: 13'>Phase: <strong>13</strong></span>
+            </div>
+            <form class='undx-project-form' id='undxRepositoryIntelligenceForm'>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'>
+                  <span>Profile Sources</span>
+                  <select id='undxRepositoryIntelligenceSourceSelect'>
+                    <option value='repository'>Selected Repository Plan</option>
+                    <option value='project'>Selected/open Project Workspace</option>
+                    <option value='execution'>Linked Execution Plan</option>
+                    <option value='notes'>Manual Repository Notes</option>
+                  </select>
+                </label>
+                <label class='undx-project-field undx-project-field-wide'>
+                  <span>Manual Repository Notes</span>
+                  <textarea id='undxRepositoryIntelligenceNotes' placeholder='Describe the repo structure, stack, modules, risks, or goals...'></textarea>
+                </label>
+              </div>
+              <div class='undx-project-source' id='undxRepositoryIntelligenceSourcePreview'>Repository Intelligence Source: Waiting for repository planning context.</div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='submit'>Generate Repository Intelligence Profile</button>
+              </div>
+            </form>
+            <p class='undx-project-message' id='undxRepositoryIntelligenceMessage' aria-live='polite'></p>
+            <section class='undx-project-registry' aria-label='Repository Intelligence Registry'>
+              <h3>Repository Intelligence Registry</h3>
+              <div class='undx-memory-empty' id='undxRepositoryIntelligenceEmpty'>No repository intelligence profiles stored yet. Generate a conceptual profile to activate Phase 13.</div>
+              <div class='undx-repo-intel-list' id='undxRepositoryIntelligenceList' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-detail' aria-label='Repository Intelligence Profile Detail'>
+              <h3>Repository Intelligence Profile Detail</h3>
+              <div class='undx-evolution-empty' id='undxRepositoryIntelligenceDetailEmpty'>Open a repository intelligence profile to view its conceptual stack, risks, suggested improvements, and approval gates.</div>
+              <div class='undx-repo-intel-detail' id='undxRepositoryIntelligenceDetail' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-repo-intel-sidebar'>
+            <article class='undx-repo-intel-card' aria-label='Repository Intelligence Boundary'>
+              <span class='undx-core-label'>Repository Intelligence Boundary</span>
+              <h3>Repository Intelligence Boundary</h3>
+              <p>UNDX is only analyzing provided planning context. It has not accessed repository files, local folders, GitHub content, secrets, terminals, or deployments.</p>
+              <ul class='undx-safety-list'>
+                <li>Selected repository plan</li>
+                <li>Selected/open project</li>
+                <li>Linked execution plan</li>
+                <li>Manual repository notes</li>
+                <li>Conceptual analysis only</li>
+              </ul>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22265,6 +22340,15 @@ def pulse_premium_undx_page():
     const undxSimulateApprovalRequest = document.getElementById('undxSimulateApprovalRequest');
     const undxApprovalRequestPanel = document.getElementById('undxApprovalRequestPanel');
     const undxApprovalMessage = document.getElementById('undxApprovalMessage');
+    const undxRepositoryIntelligenceForm = document.getElementById('undxRepositoryIntelligenceForm');
+    const undxRepositoryIntelligenceSourceSelect = document.getElementById('undxRepositoryIntelligenceSourceSelect');
+    const undxRepositoryIntelligenceNotes = document.getElementById('undxRepositoryIntelligenceNotes');
+    const undxRepositoryIntelligenceSourcePreview = document.getElementById('undxRepositoryIntelligenceSourcePreview');
+    const undxRepositoryIntelligenceMessage = document.getElementById('undxRepositoryIntelligenceMessage');
+    const undxRepositoryIntelligenceEmpty = document.getElementById('undxRepositoryIntelligenceEmpty');
+    const undxRepositoryIntelligenceList = document.getElementById('undxRepositoryIntelligenceList');
+    const undxRepositoryIntelligenceDetailEmpty = document.getElementById('undxRepositoryIntelligenceDetailEmpty');
+    const undxRepositoryIntelligenceDetail = document.getElementById('undxRepositoryIntelligenceDetail');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -22272,12 +22356,15 @@ def pulse_premium_undx_page():
     const undxExecutionPlansKey = 'undxExecutionPlans';
     const undxApprovalProtocolKey = 'undxApprovalProtocol';
     const undxApprovalHistoryKey = 'undxApprovalHistory';
+    const undxRepositoryIntelligenceProfilesKey = 'undxRepositoryIntelligenceProfiles';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
     let undxSelectedProjectId = null;
     let undxSelectedExecutionPlanId = null;
     let undxActiveApprovalRequest = null;
+    let undxSelectedRepositoryPlanId = null;
+    let undxSelectedRepositoryProfileId = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -22480,6 +22567,7 @@ def pulse_premium_undx_page():
         status: 'Planned'
       })) : [];
       const linkedExecutionPlans = Array.isArray(project.linkedExecutionPlans) ? project.linkedExecutionPlans.filter(plan => plan && plan.id && plan.objective).slice(0,24).map(undxNormalizeExecutionPlan) : [];
+      const linkedRepositoryIntelligenceProfiles = Array.isArray(project.linkedRepositoryIntelligenceProfiles) ? project.linkedRepositoryIntelligenceProfiles.filter(profile => profile && profile.profileId && profile.name).slice(0,24).map(undxNormalizeRepositoryProfile) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -22489,6 +22577,7 @@ def pulse_premium_undx_page():
         memoryNotes,
         linkedRepositories,
         linkedExecutionPlans,
+        linkedRepositoryIntelligenceProfiles,
         lastBuildDirective: project.lastBuildDirective || ''
       };
     }
@@ -22966,6 +23055,397 @@ def pulse_premium_undx_page():
       }
       return 'No attached execution plans require approval yet. Future high-impact actions still pass through UNDX Approval Protocol.';
     }
+    function undxNormalizeRepositoryProfile(profile){
+      return {
+        profileId: String(profile.profileId || `RIP-UNDX-${Date.now()}`).slice(0,40),
+        name: String(profile.name || 'Repository Intelligence Profile').slice(0,140),
+        repositoryType: String(profile.repositoryType || 'Other').slice(0,100),
+        stackGuess: String(profile.stackGuess || 'Unknown').slice(0,120),
+        corePurpose: String(profile.corePurpose || '').slice(0,1200),
+        likelyImportantModules: undxNormalizeExecutionList(profile.likelyImportantModules, ['Application routes', 'Interface layer', 'Validation and audit coverage'], 10, 180),
+        possibleRisks: undxNormalizeExecutionList(profile.possibleRisks, ['Unapproved file access', 'Secret exposure', 'Insufficient validation before future execution'], 10, 220),
+        suggestedImprovements: undxNormalizeExecutionList(profile.suggestedImprovements, ['Prepare a read-only inspection checklist', 'Map approval gates before implementation', 'Keep repository analysis conceptual until permission is granted'], 10, 240),
+        recommendedNextInspection: String(profile.recommendedNextInspection || 'Request approval for read-only repository inspection before opening files.').slice(0,600),
+        requiredApprovalGates: undxNormalizeExecutionList(profile.requiredApprovalGates, ['Repository Read Access'], 6, 90),
+        confidenceLevel: ['Low', 'Medium', 'High'].includes(profile.confidenceLevel) ? profile.confidenceLevel : 'Low',
+        sourceType: String(profile.sourceType || 'Planning Context').slice(0,120),
+        sourceRef: String(profile.sourceRef || '').slice(0,220),
+        createdAt: profile.createdAt || new Date().toISOString(),
+        status: 'Intelligence Profile'
+      };
+    }
+    function undxLoadRepositoryProfiles(){
+      try{
+        const raw = localStorage.getItem(undxRepositoryIntelligenceProfilesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(profile => profile && profile.profileId && profile.name).slice(0,48).map(undxNormalizeRepositoryProfile) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveRepositoryProfiles(profiles){
+      try{
+        localStorage.setItem(undxRepositoryIntelligenceProfilesKey, JSON.stringify(profiles.slice(0,48)));
+      }catch(error){
+        if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = 'Repository Intelligence Registry could not be updated.';
+      }
+    }
+    function undxNextRepositoryProfileId(profiles){
+      const max = profiles.reduce((highest, profile) => {
+        const match = String(profile.profileId || '').match(/^RIP-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `RIP-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxSelectedRepositoryPlan(){
+      const plans = undxLoadRepositoryPlans();
+      return plans.find(plan => plan.id === undxSelectedRepositoryPlanId) || plans[0] || null;
+    }
+    function undxSelectedExecutionPlan(){
+      const plans = undxLoadExecutionPlans();
+      const project = undxCurrentProject();
+      return plans.find(plan => plan.id === undxSelectedExecutionPlanId) || (project?.linkedExecutionPlans || [])[0] || plans[0] || null;
+    }
+    function undxRepositoryProfileSourceOptions(){
+      const manualNotes = (undxRepositoryIntelligenceNotes?.value || '').trim();
+      const repositoryPlan = undxSelectedRepositoryPlan();
+      const project = undxCurrentProject();
+      const executionPlan = undxSelectedExecutionPlan();
+      return {
+        repository: repositoryPlan ? {
+          sourceType: 'Selected Repository Plan',
+          sourceRef: repositoryPlan.id,
+          name: repositoryPlan.name,
+          repositoryType: repositoryPlan.type,
+          text: [repositoryPlan.name, repositoryPlan.type, repositoryPlan.path, repositoryPlan.accessLevel, repositoryPlan.purpose].join(' '),
+          context: [
+            `Repository Plan: ${repositoryPlan.name}`,
+            `Repository Type: ${repositoryPlan.type}`,
+            `Planned Path or URL: ${repositoryPlan.path}`,
+            `Access Level: ${repositoryPlan.accessLevel}`,
+            `Purpose: ${repositoryPlan.purpose || 'No notes provided.'}`
+          ]
+        } : null,
+        project: project ? {
+          sourceType: 'Selected/open Project Workspace',
+          sourceRef: project.projectId,
+          name: project.name,
+          repositoryType: project.type || 'Project Workspace',
+          text: [project.name, project.type, project.objective, project.priority, project.status, ...(project.memoryNotes || []).map(note => note.text), ...(project.linkedRepositories || []).map(plan => `${plan.name} ${plan.type} ${plan.path} ${plan.purpose}`), ...(project.linkedExecutionPlans || []).map(plan => `${plan.id} ${plan.objective} ${plan.sourceType}`)].join(' '),
+          context: [
+            `Project ID: ${project.projectId}`,
+            `Project Type: ${project.type || 'Other'}`,
+            `Objective: ${project.objective}`,
+            `Linked Repository Plans: ${(project.linkedRepositories || []).length}`,
+            `Linked Execution Plans: ${(project.linkedExecutionPlans || []).length}`
+          ]
+        } : null,
+        execution: executionPlan ? {
+          sourceType: 'Linked Execution Plan',
+          sourceRef: executionPlan.id,
+          name: executionPlan.id,
+          repositoryType: 'Execution Planning Source',
+          text: [executionPlan.id, executionPlan.sourceType, executionPlan.objective, ...(executionPlan.requiredContext || []), ...(executionPlan.suggestedFiles || []), ...(executionPlan.taskBreakdown || []), ...(executionPlan.requiredGates || [])].join(' '),
+          context: [
+            `Execution Plan ID: ${executionPlan.id}`,
+            `Source Type: ${executionPlan.sourceType}`,
+            `Risk Level: ${executionPlan.riskLevel}`,
+            `Objective: ${executionPlan.objective}`
+          ]
+        } : null,
+        notes: manualNotes ? {
+          sourceType: 'Manual Repository Notes',
+          sourceRef: 'Manual Repository Notes',
+          name: 'Manual Repository Profile',
+          repositoryType: 'Planning Notes',
+          text: manualNotes,
+          context: [`Manual Repository Notes: ${manualNotes}`]
+        } : null
+      };
+    }
+    function undxResolveRepositoryProfileSource(preferred = 'repository'){
+      const sources = undxRepositoryProfileSourceOptions();
+      return sources[preferred] || sources.repository || sources.project || sources.execution || sources.notes || null;
+    }
+    function undxRepositoryStackGuess(text){
+      const lower = String(text || '').toLowerCase();
+      if(/bot\\.py|flask|python|railway/.test(lower)) return 'Flask/Python';
+      if(/react|next|component|jsx|tsx/.test(lower)) return 'React/Next.js';
+      if(/node|express|npm|package\\.json/.test(lower)) return 'Node/Express';
+      return 'Unknown';
+    }
+    function undxRepositoryConfidence(text){
+      const lower = String(text || '').toLowerCase();
+      const clearSignals = (lower.match(/bot\\.py|flask|python|railway|react|next|component|node|express|module|route|api|database|static|templates|audit|test|path|url|github|folder/g) || []).length;
+      if(clearSignals >= 4 || /\\/|\\.py|\\.js|\\.tsx|\\.jsx|templates|static/.test(lower)) return 'High';
+      if(String(text || '').trim().length > 60 || clearSignals >= 2) return 'Medium';
+      return 'Low';
+    }
+    function undxRepositoryImportantModules(text, stackGuess){
+      const lower = String(text || '').toLowerCase();
+      const modules = ['Application entry points', 'Interface and command-center surfaces', 'Validation and audit coverage'];
+      if(stackGuess === 'Flask/Python') modules.push('Flask routes', 'Server-side API handlers', 'Python service modules');
+      if(stackGuess === 'React/Next.js') modules.push('Page components', 'State management layer', 'Client API adapters');
+      if(stackGuess === 'Node/Express') modules.push('Express routes', 'Middleware layer', 'Package scripts');
+      if(/premium|undx|pulse/.test(lower)) modules.push('Premium UNDX route isolation');
+      if(/database|sqlite|postgres|storage/.test(lower)) modules.push('Data persistence boundary');
+      if(/openai|api|secret|auth/.test(lower)) modules.push('Secret and API boundary');
+      if(/repository|git|github|folder/.test(lower)) modules.push('Repository planning record');
+      return [...new Set(modules)].slice(0,8);
+    }
+    function undxRepositoryRisks(text){
+      const lower = String(text || '').toLowerCase();
+      const risks = ['Unapproved file access', 'Secret exposure', 'Assumption drift before real inspection'];
+      if(/auth|secret|key|token|payment|wallet/.test(lower)) risks.push('Sensitive boundary changes require strict approval gates');
+      if(/deploy|production|railway|vercel/.test(lower)) risks.push('Deployment planning must remain disabled until explicit approval');
+      if(/terminal|command|script|npm|pytest|py_compile|build/.test(lower)) risks.push('Command execution must stay disabled until approved');
+      if(/ui|dashboard|pulse|feed|layout/.test(lower)) risks.push('Interface changes could leak into Pulse feed surfaces without audit coverage');
+      return [...new Set(risks)].slice(0,8);
+    }
+    function undxRepositoryImprovements(text, stackGuess){
+      const lower = String(text || '').toLowerCase();
+      const improvements = ['Create a read-only inspection checklist before future file access', 'Map route, module, and approval boundaries', 'Keep a rollback plan ready before any future implementation'];
+      if(stackGuess === 'Flask/Python') improvements.push('Identify likely Flask route, template, static, and audit areas before inspection');
+      if(stackGuess === 'React/Next.js') improvements.push('Map component, page, state, and API adapter boundaries before inspection');
+      if(stackGuess === 'Node/Express') improvements.push('Map route, middleware, package script, and validation boundaries before inspection');
+      if(/audit|test|validation|build|py_compile|npm|pytest/.test(lower)) improvements.push('Prepare validation commands only after Terminal Command Access is approved');
+      if(/commit|git/.test(lower)) improvements.push('Prepare Git checkpoint guidance only after Git Commit Access is approved');
+      return [...new Set(improvements)].slice(0,8);
+    }
+    function undxRepositoryRequiredGates(text, improvements){
+      const lower = `${text || ''} ${(improvements || []).join(' ')}`.toLowerCase();
+      const gates = ['Repository Read Access'];
+      if(/edit|change|implement|code change|modify|refactor|fix/.test(lower)) gates.push('File Edit Access');
+      if(/terminal|command|script|npm|pytest|py_compile|build|validation command/.test(lower)) gates.push('Terminal Command Access');
+      if(/git|commit/.test(lower)) gates.push('Git Commit Access');
+      return [...new Set(gates)];
+    }
+    function undxRepositoryNextInspection(stackGuess, confidence){
+      if(confidence === 'High') return `Request approval for a read-only ${stackGuess} inspection plan, then compare the conceptual profile against real files before any edits.`;
+      if(confidence === 'Medium') return 'Add more stack, path, module, and risk notes before requesting read-only repository inspection.';
+      return 'Provide clearer repository notes or link a repository plan/project before requesting any future inspection.';
+    }
+    function undxBuildRepositoryProfileFromSource(source){
+      const profiles = undxLoadRepositoryProfiles();
+      const stackGuess = undxRepositoryStackGuess(source.text);
+      const likelyImportantModules = undxRepositoryImportantModules(source.text, stackGuess);
+      const possibleRisks = undxRepositoryRisks(source.text);
+      const suggestedImprovements = undxRepositoryImprovements(source.text, stackGuess);
+      const confidenceLevel = undxRepositoryConfidence(source.text);
+      const requiredApprovalGates = undxRepositoryRequiredGates(source.text, suggestedImprovements);
+      const name = source.name || 'Repository Intelligence Profile';
+      return undxNormalizeRepositoryProfile({
+        profileId: undxNextRepositoryProfileId(profiles),
+        name,
+        repositoryType: source.repositoryType || 'Other',
+        stackGuess,
+        corePurpose: `${name} is a conceptual repository intelligence profile based only on provided planning context from ${source.sourceType}.`,
+        likelyImportantModules,
+        possibleRisks,
+        suggestedImprovements,
+        recommendedNextInspection: undxRepositoryNextInspection(stackGuess, confidenceLevel),
+        requiredApprovalGates,
+        confidenceLevel,
+        sourceType: source.sourceType,
+        sourceRef: source.sourceRef,
+        createdAt: new Date().toISOString(),
+        status: 'Intelligence Profile'
+      });
+    }
+    function undxRepositoryProfileDirective(profile){
+      return [
+        'UNDX Repository Intelligence Profile',
+        '',
+        `Profile ID: ${profile.profileId}`,
+        `Repository / Project Name: ${profile.name}`,
+        `Repository Type: ${profile.repositoryType}`,
+        `Conceptual Stack Guess: ${profile.stackGuess}`,
+        `Confidence Level: ${profile.confidenceLevel}`,
+        `Status: ${profile.status || 'Intelligence Profile'}`,
+        '',
+        `Core Purpose: ${profile.corePurpose}`,
+        '',
+        'Likely Important Modules:',
+        ...(profile.likelyImportantModules || []).map(item => `- ${item}`),
+        '',
+        'Possible Risks:',
+        ...(profile.possibleRisks || []).map(item => `- ${item}`),
+        '',
+        'Suggested Improvements:',
+        ...(profile.suggestedImprovements || []).map(item => `- ${item}`),
+        '',
+        'Required Approval Gates:',
+        ...(profile.requiredApprovalGates || []).map(item => `- ${item}`),
+        '',
+        `Recommended Next Inspection: ${profile.recommendedNextInspection}`,
+        '',
+        'Boundary: Planning context only. UNDX has not accessed files, GitHub, terminals, secrets, or deployments.'
+      ].join('\\n');
+    }
+    function undxRefreshRepositoryProfileSourcePreview(){
+      if(!undxRepositoryIntelligenceSourcePreview) return;
+      const source = undxResolveRepositoryProfileSource(undxRepositoryIntelligenceSourceSelect?.value || 'repository');
+      undxRepositoryIntelligenceSourcePreview.textContent = source ? `Repository Intelligence Source: ${source.sourceType} · ${source.name}` : 'Repository Intelligence Source: Waiting for repository planning context.';
+    }
+    function undxSelectRepositoryPlanForIntelligence(plan){
+      undxSelectedRepositoryPlanId = plan.id;
+      if(undxRepositoryIntelligenceSourceSelect) undxRepositoryIntelligenceSourceSelect.value = 'repository';
+      undxRefreshRepositoryProfileSourcePreview();
+      document.getElementById('undx-repository-intelligence')?.scrollIntoView({behavior:'smooth', block:'start'});
+      if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = `${plan.name} selected for repository intelligence.`;
+    }
+    function undxSendRepositoryProfileToChat(profile){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxRepositoryProfileDirective(profile);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Repository intelligence profile loaded into UNDX Chat Interface.';
+    }
+    function undxAttachRepositoryProfileToProject(profile){
+      if(!undxSelectedProjectId){
+        if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = 'Open a project workspace before attaching a repository intelligence profile.';
+        return;
+      }
+      undxUpdateProject(undxSelectedProjectId, project => {
+        const current = Array.isArray(project.linkedRepositoryIntelligenceProfiles) ? project.linkedRepositoryIntelligenceProfiles : [];
+        const next = [undxNormalizeRepositoryProfile(profile), ...current.filter(item => item.profileId !== profile.profileId)].slice(0,24);
+        return {...project, linkedRepositoryIntelligenceProfiles: next};
+      });
+      if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = `${profile.profileId} attached to the selected project workspace.`;
+    }
+    function undxDeleteRepositoryProfile(profileId){
+      const profiles = undxLoadRepositoryProfiles().filter(profile => profile.profileId !== profileId);
+      undxSaveRepositoryProfiles(profiles);
+      const projects = undxLoadProjects().map(project => ({
+        ...project,
+        linkedRepositoryIntelligenceProfiles: (project.linkedRepositoryIntelligenceProfiles || []).filter(profile => profile.profileId !== profileId)
+      }));
+      undxSaveProjects(projects);
+      if(undxSelectedRepositoryProfileId === profileId){
+        undxSelectedRepositoryProfileId = null;
+        if(undxRepositoryIntelligenceDetailEmpty) undxRepositoryIntelligenceDetailEmpty.hidden = false;
+        if(undxRepositoryIntelligenceDetail) undxRepositoryIntelligenceDetail.replaceChildren();
+      }
+      undxRenderRepositoryProfiles();
+      undxRenderProjects();
+      if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
+      if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = 'Repository intelligence profile deleted.';
+    }
+    function undxGenerateExecutionPlanFromProfile(profile){
+      const source = {
+        sourceType: 'Repository Intelligence Profile',
+        objective: `Review ${profile.name} using repository intelligence profile ${profile.profileId}: ${profile.corePurpose}`,
+        requiredContext: [
+          `Repository Intelligence Profile: ${profile.profileId}`,
+          `Conceptual Stack Guess: ${profile.stackGuess}`,
+          `Repository Type: ${profile.repositoryType}`,
+          `Confidence Level: ${profile.confidenceLevel}`,
+          `Recommended Next Inspection: ${profile.recommendedNextInspection}`
+        ],
+        repositoryProfile: profile,
+        requiredGates: profile.requiredApprovalGates
+      };
+      const plan = undxBuildExecutionPlanFromSource(source);
+      const plans = undxLoadExecutionPlans();
+      undxSaveExecutionPlans([plan, ...plans]);
+      undxRenderExecutionPlans();
+      undxOpenExecutionPlan(plan.id, false);
+      document.getElementById('undx-task-execution-planner')?.scrollIntoView({behavior:'smooth', block:'start'});
+      if(undxExecutionMessage) undxExecutionMessage.textContent = `${plan.id} generated from ${profile.profileId}.`;
+    }
+    function undxCreateRepositoryProfileCard(profile){
+      const article = document.createElement('article');
+      article.className = 'undx-repo-intel-card';
+      const title = document.createElement('h4');
+      title.textContent = `${profile.profileId} · ${profile.name}`;
+      const purpose = document.createElement('p');
+      purpose.textContent = profile.corePurpose || '';
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        `Profile ID: ${profile.profileId}`,
+        `Repository Type: ${profile.repositoryType}`,
+        `Confidence Level: ${profile.confidenceLevel}`,
+        `Created: ${undxFormatMemoryTime(profile.createdAt)}`,
+        `Status: ${profile.status || 'Intelligence Profile'}`
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Profile', () => undxOpenRepositoryProfile(profile.profileId), true),
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendRepositoryProfileToChat(profile)),
+        undxProjectActionButton('Attach To Project', () => undxAttachRepositoryProfileToProject(profile)),
+        undxProjectActionButton('Generate Execution Plan From Profile', () => undxGenerateExecutionPlanFromProfile(profile)),
+        undxProjectActionButton('Delete Profile', () => undxDeleteRepositoryProfile(profile.profileId))
+      );
+      article.append(title, purpose, meta, actions);
+      return article;
+    }
+    function undxRenderRepositoryProfiles(){
+      const profiles = undxLoadRepositoryProfiles();
+      if(undxRepositoryIntelligenceEmpty) undxRepositoryIntelligenceEmpty.hidden = profiles.length > 0;
+      if(!undxRepositoryIntelligenceList) return;
+      undxRepositoryIntelligenceList.replaceChildren();
+      profiles.forEach(profile => undxRepositoryIntelligenceList.appendChild(undxCreateRepositoryProfileCard(profile)));
+    }
+    function undxOpenRepositoryProfile(profileId, shouldScroll = true){
+      const profile = undxLoadRepositoryProfiles().find(item => item.profileId === profileId);
+      if(!profile || !undxRepositoryIntelligenceDetail) return;
+      undxSelectedRepositoryProfileId = profile.profileId;
+      if(undxRepositoryIntelligenceDetailEmpty) undxRepositoryIntelligenceDetailEmpty.hidden = true;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Repository Intelligence Profile';
+      const title = document.createElement('h3');
+      title.textContent = `${profile.profileId} · ${profile.name}`;
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Profile ID', profile.profileId),
+        undxBlock('Repository / Project Name', profile.name),
+        undxBlock('Repository Type', profile.repositoryType),
+        undxBlock('Conceptual Stack Guess', profile.stackGuess),
+        undxBlock('Core Purpose', profile.corePurpose),
+        undxBlock('Likely Important Modules', profile.likelyImportantModules),
+        undxBlock('Possible Risks', profile.possibleRisks),
+        undxBlock('Suggested Improvements', profile.suggestedImprovements),
+        undxBlock('Recommended Next Inspection', profile.recommendedNextInspection),
+        undxBlock('Required Approval Gates', profile.requiredApprovalGates),
+        undxBlock('Confidence Level', profile.confidenceLevel)
+      );
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendRepositoryProfileToChat(profile), true),
+        undxProjectActionButton('Attach To Project', () => undxAttachRepositoryProfileToProject(profile)),
+        undxProjectActionButton('Generate Execution Plan From Profile', () => undxGenerateExecutionPlanFromProfile(profile))
+      );
+      card.append(label, title, grid, actions);
+      undxRepositoryIntelligenceDetail.replaceChildren(card);
+      if(shouldScroll) document.getElementById('undx-repository-intelligence')?.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+    function undxGenerateRepositoryProfile(event){
+      event?.preventDefault();
+      const source = undxResolveRepositoryProfileSource(undxRepositoryIntelligenceSourceSelect?.value || 'repository');
+      if(!source){
+        if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = 'Add a repository plan, project, execution plan, or notes before generating a repository intelligence profile.';
+        undxRepositoryIntelligenceNotes?.focus();
+        return;
+      }
+      const profile = undxBuildRepositoryProfileFromSource(source);
+      const profiles = undxLoadRepositoryProfiles();
+      undxSaveRepositoryProfiles([profile, ...profiles]);
+      undxRenderRepositoryProfiles();
+      undxOpenRepositoryProfile(profile.profileId, false);
+      if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = `${profile.profileId} stored in Repository Intelligence Registry.`;
+    }
     function undxNormalizeRepositoryPlan(plan){
       return {
         id: String(plan.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`),
@@ -23039,6 +23519,7 @@ def pulse_premium_undx_page():
     function undxDeleteRepositoryPlan(planId){
       const plans = undxLoadRepositoryPlans().filter(plan => plan.id !== planId);
       undxSaveRepositoryPlans(plans);
+      if(undxSelectedRepositoryPlanId === planId) undxSelectedRepositoryPlanId = null;
       const projects = undxLoadProjects().map(project => ({
         ...project,
         linkedRepositories: (project.linkedRepositories || []).filter(plan => plan.id !== planId)
@@ -23076,6 +23557,7 @@ def pulse_premium_undx_page():
       actions.append(
         undxProjectActionButton('Send To UNDX Chat', () => undxSendRepositoryPlanToChat(plan), true),
         undxProjectActionButton('Attach To Project', () => undxAttachRepositoryPlanToProject(plan)),
+        undxProjectActionButton('Use For Intelligence', () => undxSelectRepositoryPlanForIntelligence(plan)),
         undxProjectActionButton('Delete Plan', () => undxDeleteRepositoryPlan(plan.id))
       );
       article.append(title, purpose, meta, actions);
@@ -23107,10 +23589,12 @@ def pulse_premium_undx_page():
       });
       const plans = undxLoadRepositoryPlans();
       undxSaveRepositoryPlans([plan, ...plans]);
+      undxSelectedRepositoryPlanId = plan.id;
       undxRenderRepositoryPlans();
       if(undxRepositoryPlanForm) undxRepositoryPlanForm.reset();
       if(undxRepoAccessLevel) undxRepoAccessLevel.value = 'Planning Only';
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} registered as a planning-only repository plan.`;
+      undxRefreshRepositoryProfileSourcePreview();
     }
     function undxExecutionApprovalCheckpoints(){
       return [
@@ -23258,6 +23742,7 @@ def pulse_premium_undx_page():
       }
       if(source.project) areas.push(`Project workspace record: ${source.project.projectId}`);
       if(source.linkedRepository) areas.push(`Planned repository target: ${source.linkedRepository.path} (future access disabled)`);
+      if(source.repositoryProfile) areas.push(`Repository intelligence profile: ${source.repositoryProfile.profileId}`, 'Future read-only repository inspection boundary');
       return [...new Set(areas)].slice(0,8);
     }
     function undxExecutionTaskBreakdown(source){
@@ -23270,6 +23755,7 @@ def pulse_premium_undx_page():
       ];
       if(source.project) tasks.push('Map project tasks, milestones, memory notes, and linked repository plans');
       if(source.linkedRepository) tasks.push('Confirm repository access level remains planning-only before any future review');
+      if(source.repositoryProfile) tasks.push('Compare conceptual repository intelligence against approved read-only inspection results later');
       return tasks;
     }
     function undxExecutionRecommendedNextAction(riskLevel){
@@ -23287,6 +23773,7 @@ def pulse_premium_undx_page():
         taskBreakdown: undxExecutionTaskBreakdown(source),
         suggestedFiles: undxExecutionSuggestedFiles(source),
         approvalCheckpoints: undxExecutionApprovalCheckpoints(),
+        requiredGates: source.requiredGates || undefined,
         riskLevel,
         rollbackStrategy: undxExecutionRollbackStrategy(),
         recommendedNextAction: undxExecutionRecommendedNextAction(riskLevel),
@@ -23776,6 +24263,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedRepositoryIntelligenceProfiles(project, card){
+      const section = undxWorkspaceSection('Linked Repository Intelligence Profiles');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedRepositoryIntelligenceProfiles || []).length){
+        list.appendChild(undxWorkspaceEmpty('No repository intelligence profiles linked yet. Attach a conceptual profile after opening this workspace.'));
+      }else{
+        project.linkedRepositoryIntelligenceProfiles.forEach(profile => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${profile.profileId} · ${profile.name}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Repository Type: ${profile.repositoryType} · Conceptual Stack Guess: ${profile.stackGuess} · Confidence Level: ${profile.confidenceLevel} · Status: ${profile.status || 'Intelligence Profile'}`;
+          const purpose = document.createElement('p');
+          purpose.textContent = profile.corePurpose || '';
+          item.append(title, meta, purpose);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -23852,6 +24362,7 @@ def pulse_premium_undx_page():
       );
       card.append(label, title, grid, actions);
       undxRenderLinkedRepositoryPlans(project, card);
+      undxRenderLinkedRepositoryIntelligenceProfiles(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -23859,6 +24370,7 @@ def pulse_premium_undx_page():
       undxRenderBuildDirective(project, card);
       undxProjectDetailContent.replaceChildren(card);
       undxRefreshExecutionSourcePreview();
+      undxRefreshRepositoryProfileSourcePreview();
       if(shouldScroll) document.getElementById('undx-project-creator')?.scrollIntoView({behavior:'smooth', block:'start'});
     }
     function undxSendProjectToBuilder(project){
@@ -23921,6 +24433,7 @@ def pulse_premium_undx_page():
         memoryNotes: [],
         linkedRepositories: [],
         linkedExecutionPlans: [],
+        linkedRepositoryIntelligenceProfiles: [],
         lastBuildDirective: '',
         aiEnhancement: {
           source: 'Pending',
@@ -24392,6 +24905,9 @@ def pulse_premium_undx_page():
     undxExecutionPlannerForm?.addEventListener('submit', undxGenerateExecutionPlan);
     undxExecutionSourceSelect?.addEventListener('change', undxRefreshExecutionSourcePreview);
     undxSimulateApprovalRequest?.addEventListener('click', undxSimulateApprovalRequestFlow);
+    undxRepositoryIntelligenceForm?.addEventListener('submit', undxGenerateRepositoryProfile);
+    undxRepositoryIntelligenceSourceSelect?.addEventListener('change', undxRefreshRepositoryProfileSourcePreview);
+    undxRepositoryIntelligenceNotes?.addEventListener('input', undxRefreshRepositoryProfileSourcePreview);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -24402,8 +24918,10 @@ def pulse_premium_undx_page():
     undxRenderApprovalProtocol();
     undxRenderApprovalHistory();
     undxRenderApprovalRequest(null);
+    undxRenderRepositoryProfiles();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
+    undxRefreshRepositoryProfileSourcePreview();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 

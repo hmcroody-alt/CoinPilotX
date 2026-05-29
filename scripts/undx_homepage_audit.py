@@ -120,6 +120,12 @@ def main():
     require("Approval Core: Active" not in feed_html, "UNDX approval core status absent from Pulse feed")
     require("Trust Protocol: Active" not in feed_html, "UNDX trust protocol status absent from Pulse feed")
     require("Simulate Approval Request" not in feed_html, "UNDX approval simulator absent from Pulse feed")
+    require("UNDX Repository Intelligence" not in feed_html, "UNDX repository intelligence absent from Pulse feed")
+    require("Generate Repository Intelligence Profile" not in feed_html, "UNDX repository intelligence action absent from Pulse feed")
+    require("Repository Intelligence Registry" not in feed_html, "UNDX repository intelligence registry absent from Pulse feed")
+    require("Repository Intelligence Boundary" not in feed_html, "UNDX repository intelligence boundary absent from Pulse feed")
+    require("Repository Intelligence: Active" not in feed_html, "UNDX repository intelligence status absent from Pulse feed")
+    require("Profile Mode: Conceptual" not in feed_html, "UNDX repository profile mode absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
@@ -417,6 +423,41 @@ def main():
         "Phase: 12",
         "Approval Status",
         "Required Gates",
+        "UNDX Repository Intelligence",
+        "Analyze planned codebases conceptually before UNDX receives file access or execution permissions.",
+        "Generate Repository Intelligence Profile",
+        "Profile Sources",
+        "Selected Repository Plan",
+        "Selected/open Project Workspace",
+        "Linked Execution Plan",
+        "Manual Repository Notes",
+        "Describe the repo structure, stack, modules, risks, or goals...",
+        "Add a repository plan, project, execution plan, or notes before generating a repository intelligence profile.",
+        "Repository Intelligence Registry",
+        "Repository Intelligence Profile Detail",
+        "Profile ID",
+        "RIP-UNDX-",
+        "Repository / Project Name",
+        "Repository Type",
+        "Conceptual Stack Guess",
+        "Core Purpose",
+        "Likely Important Modules",
+        "Possible Risks",
+        "Suggested Improvements",
+        "Recommended Next Inspection",
+        "Required Approval Gates",
+        "Confidence Level",
+        "undxRepositoryIntelligenceProfiles",
+        "Status: ${profile.status || 'Intelligence Profile'}",
+        "Open Profile",
+        "Generate Execution Plan From Profile",
+        "Delete Profile",
+        "Linked Repository Intelligence Profiles",
+        "Repository Intelligence: Active",
+        "Profile Mode: Conceptual",
+        "Phase: 13",
+        "Repository Intelligence Boundary",
+        "UNDX is only analyzing provided planning context. It has not accessed repository files, local folders, GitHub content, secrets, terminals, or deployments.",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
