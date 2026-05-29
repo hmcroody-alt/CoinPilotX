@@ -147,6 +147,11 @@ def main():
     require("Future Desktop Connector Vision" not in feed_html, "UNDX desktop connector vision absent from Pulse feed")
     require("Preview Gateway: Active" not in feed_html, "UNDX preview gateway status absent from Pulse feed")
     require("Read Access: Disabled" not in feed_html, "UNDX read access disabled status absent from Pulse feed")
+    require("UNDX Repository Context Engine" not in feed_html, "UNDX repository context engine absent from Pulse feed")
+    require("Analyze Repository" not in feed_html, "UNDX repository analyze action absent from Pulse feed")
+    require("Generate Context-Aware Directive" not in feed_html, "UNDX context directive action absent from Pulse feed")
+    require("Repository Context: Read-Only" not in feed_html, "UNDX repository context status absent from Pulse feed")
+    require("undxRepositoryContext" not in feed_html, "UNDX repository context storage absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
     require("Awaiting router" not in undx_html, "UNDX Agent Council no longer shows router placeholder text")
 
@@ -683,6 +688,34 @@ def main():
         "execute commands",
         "without future approved phases.",
         "undxPreviewManifests",
+        "UNDX Repository Context Engine",
+        "Repository Context: Read-Only",
+        "undxRepositoryContext",
+        "Analyze Repository",
+        "Generate Context-Aware Directive",
+        "Repository Status",
+        "Indexed",
+        "Files Known",
+        "Routes Known",
+        "Workers Known",
+        "Database Tables Known",
+        "Last Scan",
+        "Repository Profile",
+        "Application Name",
+        "Framework",
+        "Main Entry File",
+        "Database Type",
+        "Workers",
+        "Premium Modules",
+        "Known Routes",
+        "Known Services",
+        "Context-Aware Directive",
+        "Repository Context Boundary",
+        "CoinPilotX Architecture",
+        "No file access",
+        "No repository modification",
+        "No GitHub integration",
+        "No deployment actions",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

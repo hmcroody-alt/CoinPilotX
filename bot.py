@@ -21764,14 +21764,23 @@ def pulse_premium_undx_page():
     .undx-gateway-step strong{color:#dffcff}
     .undx-gateway-step em{font-style:normal;color:rgba(223,246,255,.46);font-weight:950}
     .undx-preview-gateway textarea{min-height:100px}
+    .undx-repository-context{position:relative;overflow:hidden;border-color:rgba(110,223,246,.26);background:radial-gradient(circle at 16% 12%,rgba(110,223,246,.14),transparent 25rem),radial-gradient(circle at 80% 18%,rgba(255,209,102,.11),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.082),rgba(255,255,255,.03))}
+    .undx-repository-context:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.085),transparent 32%,rgba(54,229,143,.055));pointer-events:none}
+    .undx-repository-context>*{position:relative;z-index:1}
+    .undx-context-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+    .undx-context-controls,.undx-context-sidebar,.undx-context-profile,.undx-context-directive{display:grid;gap:12px}
+    .undx-context-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(5,21,35,.82),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-context-card h3,.undx-context-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-context-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-context-status-grid{display:grid;gap:10px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22521,6 +22530,86 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-repository-context' id='undx-repository-context-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Context: Read-Only</span>
+            <h2>UNDX Repository Context Engine</h2>
+          </div>
+          <p>Build a read-only CoinPilotX architecture profile that UNDX can use for context-aware directives.</p>
+        </div>
+        <div class='undx-context-layout'>
+          <div class='undx-context-controls'>
+            <div class='undx-memory-status' aria-label='UNDX repository context engine status'>
+              <span aria-label='Repository Context: Read-Only'>Repository Context: <strong>Read-Only</strong></span>
+              <span aria-label='Context Storage: undxRepositoryContext'>Context Storage: <strong>undxRepositoryContext</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 16'>Phase: <strong>16</strong></span>
+            </div>
+            <section class='undx-context-card' aria-label='Repository Context Controls'>
+              <span class='undx-core-label'>Repository Context Engine</span>
+              <h3>Repository Context</h3>
+              <p>Analyze the known CoinPilotX architecture profile from approved planning metadata only. This does not open files, read folders, call GitHub, execute commands, or deploy.</p>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxAnalyzeRepository'>Analyze Repository</button>
+                <button class='button' type='button' id='undxGenerateContextDirective'>Generate Context-Aware Directive</button>
+              </div>
+              <p class='undx-project-message' id='undxRepositoryContextMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-project-registry' aria-label='Repository Status cards'>
+              <h3>Repository Status</h3>
+              <div class='undx-context-status-grid'>
+                <p class='undx-status-item' aria-label='Indexed'><span>Indexed</span><strong id='undxContextIndexed'>No</strong></p>
+                <p class='undx-status-item' aria-label='Files Known'><span>Files Known</span><strong id='undxContextFilesKnown'>0</strong></p>
+                <p class='undx-status-item' aria-label='Routes Known'><span>Routes Known</span><strong id='undxContextRoutesKnown'>0</strong></p>
+                <p class='undx-status-item' aria-label='Workers Known'><span>Workers Known</span><strong id='undxContextWorkersKnown'>0</strong></p>
+                <p class='undx-status-item' aria-label='Database Tables Known'><span>Database Tables Known</span><strong id='undxContextTablesKnown'>0</strong></p>
+                <p class='undx-status-item' aria-label='Last Scan'><span>Last Scan</span><strong id='undxContextLastScan'>Never</strong></p>
+              </div>
+            </section>
+            <section class='undx-project-detail' aria-label='Repository Profile'>
+              <h3>Repository Profile</h3>
+              <div class='undx-evolution-empty' id='undxRepositoryContextEmpty'>No repository context stored yet. Analyze Repository to initialize the read-only context engine.</div>
+              <div class='undx-context-profile' id='undxRepositoryContextProfile' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-detail' aria-label='Context-Aware Directive'>
+              <h3>Context-Aware Directive</h3>
+              <pre class='undx-directive-output' id='undxRepositoryContextDirective'>No context-aware directive generated yet.</pre>
+            </section>
+          </div>
+          <aside class='undx-context-sidebar'>
+            <article class='undx-context-card' aria-label='Repository Context Boundary'>
+              <span class='undx-core-label'>Read-Only Boundary</span>
+              <h3>Repository Context Boundary</h3>
+              <p>This engine stores known CoinPilotX architecture context from planning metadata only. No file access, repository modification, GitHub integration, command execution, or deployment action exists in this phase.</p>
+            </article>
+            <article class='undx-context-card' aria-label='Known CoinPilotX Architecture'>
+              <span class='undx-core-label'>CoinPilotX Architecture</span>
+              <h3>Known Context Targets</h3>
+              <ul class='undx-safety-list'>
+                <li>Flask application shell</li>
+                <li>Pulse premium routes</li>
+                <li>UNDX command center</li>
+                <li>UNDX Intelligence Router</li>
+                <li>Railway-ready worker context</li>
+              </ul>
+            </article>
+            <article class='undx-context-card' aria-label='Repository Context Safety'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>File Access: Disabled</h3>
+              <p>Execution Access: Disabled</p>
+              <ul class='undx-safety-list'>
+                <li>No filesystem access</li>
+                <li>No GitHub connection</li>
+                <li>No terminal commands</li>
+                <li>No code edits</li>
+                <li>No deployment actions</li>
+              </ul>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22665,6 +22754,18 @@ def pulse_premium_undx_page():
     const undxPreviewManifestList = document.getElementById('undxPreviewManifestList');
     const undxPreviewManifestDetailEmpty = document.getElementById('undxPreviewManifestDetailEmpty');
     const undxPreviewManifestDetail = document.getElementById('undxPreviewManifestDetail');
+    const undxAnalyzeRepository = document.getElementById('undxAnalyzeRepository');
+    const undxGenerateContextDirective = document.getElementById('undxGenerateContextDirective');
+    const undxRepositoryContextMessage = document.getElementById('undxRepositoryContextMessage');
+    const undxRepositoryContextEmpty = document.getElementById('undxRepositoryContextEmpty');
+    const undxRepositoryContextProfile = document.getElementById('undxRepositoryContextProfile');
+    const undxRepositoryContextDirective = document.getElementById('undxRepositoryContextDirective');
+    const undxContextIndexed = document.getElementById('undxContextIndexed');
+    const undxContextFilesKnown = document.getElementById('undxContextFilesKnown');
+    const undxContextRoutesKnown = document.getElementById('undxContextRoutesKnown');
+    const undxContextWorkersKnown = document.getElementById('undxContextWorkersKnown');
+    const undxContextTablesKnown = document.getElementById('undxContextTablesKnown');
+    const undxContextLastScan = document.getElementById('undxContextLastScan');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -22675,6 +22776,7 @@ def pulse_premium_undx_page():
     const undxRepositoryIntelligenceProfilesKey = 'undxRepositoryIntelligenceProfiles';
     const undxReadOnlyAccessRequestsKey = 'undxReadOnlyAccessRequests';
     const undxPreviewManifestsKey = 'undxPreviewManifests';
+    const undxRepositoryContextKey = 'undxRepositoryContext';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -24092,6 +24194,143 @@ def pulse_premium_undx_page():
       undxRenderPreviewManifests();
       undxOpenPreviewManifest(manifest.manifestId, false);
       if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = `${manifest.manifestId} generated in simulation mode. No files were opened.`;
+    }
+    function undxRepositoryContextDefaults(){
+      return {
+        applicationName: 'CoinPilotXAI',
+        framework: 'Flask/Python',
+        mainEntryFile: 'bot.py',
+        databaseType: 'SQLite application database',
+        workers: ['coinpilotx-undx-worker', 'undx_worker.py', 'UNDX Intelligence Router worker context'],
+        premiumModules: ['Pulse Premium', 'UNDX Core', 'Builder Intelligence Console', 'UNDX Chat Interface', 'Agent Council', 'Project Workspace', 'Repository Planner', 'Read-Only Preview Gateway'],
+        knownRoutes: ['/pulse', '/pulse/premium', '/pulse/premium/undx', '/api/undx/chat', '/api/undx/agent-council'],
+        knownServices: ['UNDX Intelligence Router', 'OpenAI bridge with server-side secrets', 'Multi-provider Agent Council routing', 'Mission Memory', 'Project Registry', 'Preview Manifest simulation', 'Premium and UNDX audit scripts'],
+        filesKnown: ['bot.py', 'undx_router.py', 'undx_worker.py', 'scripts/undx_homepage_audit.py'],
+        databaseTablesKnown: ['users', 'pulse posts/media records', 'premium entitlement records', 'project planning stored in localStorage'],
+        indexed: true,
+        lastScan: new Date().toISOString(),
+        safetyMode: 'Read-Only Context',
+        status: 'Indexed'
+      };
+    }
+    function undxNormalizeRepositoryContext(context){
+      const source = context && typeof context === 'object' ? context : undxRepositoryContextDefaults();
+      return {
+        applicationName: String(source.applicationName || 'CoinPilotXAI').slice(0,120),
+        framework: String(source.framework || 'Flask/Python').slice(0,120),
+        mainEntryFile: String(source.mainEntryFile || 'bot.py').slice(0,120),
+        databaseType: String(source.databaseType || 'SQLite application database').slice(0,160),
+        workers: undxNormalizeExecutionList(source.workers, ['coinpilotx-undx-worker', 'undx_worker.py'], 10, 180),
+        premiumModules: undxNormalizeExecutionList(source.premiumModules, ['Pulse Premium', 'UNDX Core'], 16, 180),
+        knownRoutes: undxNormalizeExecutionList(source.knownRoutes, ['/pulse/premium/undx'], 16, 180),
+        knownServices: undxNormalizeExecutionList(source.knownServices, ['UNDX Intelligence Router'], 16, 220),
+        filesKnown: undxNormalizeExecutionList(source.filesKnown, ['bot.py', 'undx_router.py', 'undx_worker.py'], 20, 180),
+        databaseTablesKnown: undxNormalizeExecutionList(source.databaseTablesKnown, ['users', 'premium entitlement records'], 12, 180),
+        indexed: Boolean(source.indexed),
+        lastScan: source.lastScan || new Date().toISOString(),
+        safetyMode: String(source.safetyMode || 'Read-Only Context').slice(0,100),
+        status: String(source.status || 'Indexed').slice(0,100)
+      };
+    }
+    function undxLoadRepositoryContext(){
+      try{
+        const raw = localStorage.getItem(undxRepositoryContextKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && parsed.applicationName ? undxNormalizeRepositoryContext(parsed) : null;
+      }catch(error){
+        return null;
+      }
+    }
+    function undxSaveRepositoryContext(context){
+      try{
+        localStorage.setItem(undxRepositoryContextKey, JSON.stringify(undxNormalizeRepositoryContext(context)));
+      }catch(error){
+        if(undxRepositoryContextMessage) undxRepositoryContextMessage.textContent = 'Repository context could not be stored.';
+      }
+    }
+    function undxRenderRepositoryContext(context = undxLoadRepositoryContext()){
+      const profile = context ? undxNormalizeRepositoryContext(context) : null;
+      if(undxContextIndexed) undxContextIndexed.textContent = profile?.indexed ? 'Yes' : 'No';
+      if(undxContextFilesKnown) undxContextFilesKnown.textContent = String(profile?.filesKnown?.length || 0);
+      if(undxContextRoutesKnown) undxContextRoutesKnown.textContent = String(profile?.knownRoutes?.length || 0);
+      if(undxContextWorkersKnown) undxContextWorkersKnown.textContent = String(profile?.workers?.length || 0);
+      if(undxContextTablesKnown) undxContextTablesKnown.textContent = String(profile?.databaseTablesKnown?.length || 0);
+      if(undxContextLastScan) undxContextLastScan.textContent = profile?.lastScan ? undxFormatMemoryTime(profile.lastScan) : 'Never';
+      if(undxRepositoryContextEmpty) undxRepositoryContextEmpty.hidden = Boolean(profile);
+      if(!undxRepositoryContextProfile) return;
+      undxRepositoryContextProfile.replaceChildren();
+      if(!profile) return;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Repository Profile Indexed';
+      const title = document.createElement('h3');
+      title.textContent = profile.applicationName;
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Application Name', profile.applicationName),
+        undxBlock('Framework', profile.framework),
+        undxBlock('Main Entry File', profile.mainEntryFile),
+        undxBlock('Database Type', profile.databaseType),
+        undxBlock('Workers', profile.workers),
+        undxBlock('Premium Modules', profile.premiumModules),
+        undxBlock('Known Routes', profile.knownRoutes),
+        undxBlock('Known Services', profile.knownServices),
+        undxBlock('Safety Mode', `${profile.safetyMode}. No file access, no repository modification, no GitHub integration, and no deployment actions.`)
+      );
+      card.append(label, title, grid);
+      undxRepositoryContextProfile.appendChild(card);
+    }
+    function undxAnalyzeRepositoryContext(){
+      const context = undxNormalizeRepositoryContext(undxRepositoryContextDefaults());
+      undxSaveRepositoryContext(context);
+      undxRenderRepositoryContext(context);
+      if(undxRepositoryContextMessage) undxRepositoryContextMessage.textContent = 'Repository context indexed from known CoinPilotX planning metadata. No files were accessed.';
+    }
+    function undxRepositoryContextDirectiveText(context){
+      const profile = undxNormalizeRepositoryContext(context);
+      const mission = (undxMissionInput?.value || '').trim() || 'Prepare the next UNDX build phase using existing CoinPilotX architecture context.';
+      return [
+        'UNDX Context-Aware Directive',
+        '',
+        `Mission: ${mission}`,
+        '',
+        'Repository Context:',
+        `- Application Name: ${profile.applicationName}`,
+        `- Framework: ${profile.framework}`,
+        `- Main Entry File: ${profile.mainEntryFile}`,
+        `- Database Type: ${profile.databaseType}`,
+        `- Workers: ${profile.workers.join(', ')}`,
+        `- Premium Modules: ${profile.premiumModules.join(', ')}`,
+        `- Known Routes: ${profile.knownRoutes.join(', ')}`,
+        `- Known Services: ${profile.knownServices.join(', ')}`,
+        '',
+        'Context-Aware Build Guidance:',
+        '- Reference the CoinPilotXAI Flask application shell instead of generic app files.',
+        '- Keep UNDX work isolated to /pulse/premium and /pulse/premium/undx unless the user approves broader changes.',
+        '- Treat bot.py as the known route surface, undx_router.py as the intelligence-router surface, and undx_worker.py as the worker context.',
+        '- Preserve server-side secret handling for OpenAI and routed providers.',
+        '- Validate premium foundation, UNDX placement, site function, performance, and Pulse feed isolation after UI changes.',
+        '',
+        'Safety Boundary:',
+        '- Read-only context only.',
+        '- No file access.',
+        '- No repository modification.',
+        '- No GitHub integration.',
+        '- No deployment actions.'
+      ].join('\\n');
+    }
+    function undxGenerateRepositoryContextDirective(){
+      const context = undxLoadRepositoryContext();
+      if(!context){
+        if(undxRepositoryContextMessage) undxRepositoryContextMessage.textContent = 'Analyze repository context before generating a context-aware directive.';
+        return;
+      }
+      const directive = undxRepositoryContextDirectiveText(context);
+      if(undxRepositoryContextDirective) undxRepositoryContextDirective.textContent = directive;
+      if(undxRepositoryContextMessage) undxRepositoryContextMessage.textContent = 'Context-aware directive generated from stored CoinPilotX repository context.';
     }
     function undxNormalizeRepositoryPlan(plan){
       return {
@@ -25652,6 +25891,8 @@ def pulse_premium_undx_page():
     undxRepositoryIntelligenceNotes?.addEventListener('input', undxRefreshRepositoryProfileSourcePreview);
     undxAccessRequestForm?.addEventListener('submit', undxGenerateAccessRequest);
     undxPreviewManifestForm?.addEventListener('submit', undxGeneratePreviewManifest);
+    undxAnalyzeRepository?.addEventListener('click', undxAnalyzeRepositoryContext);
+    undxGenerateContextDirective?.addEventListener('click', undxGenerateRepositoryContextDirective);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -25666,6 +25907,7 @@ def pulse_premium_undx_page():
     undxRenderRepositoryProfiles();
     undxRenderAccessRequest(null);
     undxRenderPreviewManifests();
+    undxRenderRepositoryContext();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
