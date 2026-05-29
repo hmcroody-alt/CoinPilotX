@@ -152,6 +152,11 @@ def main():
     require("Generate Context-Aware Directive" not in feed_html, "UNDX context directive action absent from Pulse feed")
     require("Repository Context: Read-Only" not in feed_html, "UNDX repository context status absent from Pulse feed")
     require("undxRepositoryContext" not in feed_html, "UNDX repository context storage absent from Pulse feed")
+    require("UNDX Intelligence Workspace" not in feed_html, "UNDX intelligence workspace absent from Pulse feed")
+    require("Workspace Graph" not in feed_html, "UNDX workspace graph absent from Pulse feed")
+    require("Generate Workspace Summary" not in feed_html, "UNDX workspace summary action absent from Pulse feed")
+    require("Workspace Intelligence: Active" not in feed_html, "UNDX workspace status absent from Pulse feed")
+    require("undxWorkspaceSummaries" not in feed_html, "UNDX workspace summary storage absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
     require("Awaiting router" not in undx_html, "UNDX Agent Council no longer shows router placeholder text")
 
@@ -716,6 +721,47 @@ def main():
         "No repository modification",
         "No GitHub integration",
         "No deployment actions",
+        "UNDX Intelligence Workspace",
+        "Connect projects, missions, repository context, execution plans, approvals, and agent reviews into one operating layer.",
+        "Workspace Graph",
+        "Projects",
+        "Mission Memory",
+        "UNDX Chat Missions",
+        "Agent Council Outputs",
+        "Execution Plans",
+        "Repository Plans",
+        "Repository Intelligence Profiles",
+        "Repository Context",
+        "Preview Manifests",
+        "Repository Analyses",
+        "Approval Protocol",
+        "Active Projects",
+        "Stored Missions",
+        "Repository Profiles",
+        "Approval Trust Score",
+        "Project Intelligence Snapshot",
+        "Recommended Next Action",
+        "Workspace Health Score",
+        "Build Readiness Level",
+        "Concept",
+        "Planned",
+        "Reviewed",
+        "Analysis Ready",
+        "Build Candidate",
+        "Generate Workspace Summary",
+        "Send Workspace Summary To UNDX Chat",
+        "Save Workspace Summary To Mission Memory",
+        "Generate Execution Plan From Workspace",
+        "undxWorkspaceSummaries",
+        "Workspace Summary Registry",
+        "WORKSPACE-UNDX-",
+        "Workspace Intelligence: Active",
+        "Context Engine: Online",
+        "Approval Protocol: Active",
+        "File Access: Disabled",
+        "Execution Access: Disabled",
+        "Phase: 17",
+        "Read-only intelligence only",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

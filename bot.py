@@ -21773,14 +21773,27 @@ def pulse_premium_undx_page():
     .undx-context-card h3,.undx-context-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
     .undx-context-card p{margin:0;color:rgba(223,246,255,.72)}
     .undx-context-status-grid{display:grid;gap:10px}
+    .undx-intelligence-workspace{position:relative;overflow:hidden;border-color:rgba(156,124,255,.28);background:radial-gradient(circle at 14% 12%,rgba(156,124,255,.15),transparent 25rem),radial-gradient(circle at 82% 18%,rgba(54,229,143,.12),transparent 26rem),linear-gradient(180deg,rgba(255,255,255,.084),rgba(255,255,255,.03))}
+    .undx-intelligence-workspace:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.085),transparent 30%,rgba(110,223,246,.058));pointer-events:none}
+    .undx-intelligence-workspace>*{position:relative;z-index:1}
+    .undx-workspace-intel-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;align-items:start}
+    .undx-workspace-intel-main,.undx-workspace-intel-sidebar,.undx-workspace-summary-list,.undx-workspace-snapshot{display:grid;gap:12px}
+    .undx-workspace-intel-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(13,16,37,.84),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-workspace-intel-card h3,.undx-workspace-intel-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-workspace-intel-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-workspace-graph{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}
+    .undx-workspace-node{display:grid;gap:5px;border:1px solid rgba(156,124,255,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
+    .undx-workspace-node strong{color:#dffcff}
+    .undx-workspace-node span{color:rgba(223,246,255,.62);font-size:.82rem;font-weight:850}
+    .undx-health-score{font-size:clamp(42px,7vw,64px);line-height:1;color:#36e58f;font-weight:950;text-shadow:0 0 28px rgba(54,229,143,.22)}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22610,6 +22623,86 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-intelligence-workspace' id='undx-intelligence-workspace'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Workspace Intelligence: Active</span>
+            <h2>UNDX Intelligence Workspace</h2>
+          </div>
+          <p>Connect projects, missions, repository context, execution plans, approvals, and agent reviews into one operating layer.</p>
+        </div>
+        <div class='undx-workspace-intel-layout'>
+          <div class='undx-workspace-intel-main'>
+            <div class='undx-memory-status' aria-label='UNDX intelligence workspace status'>
+              <span aria-label='Workspace Intelligence: Active'>Workspace Intelligence: <strong>Active</strong></span>
+              <span aria-label='Context Engine: Online'>Context Engine: <strong>Online</strong></span>
+              <span aria-label='Approval Protocol: Active'>Approval Protocol: <strong>Active</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 17'>Phase: <strong>17</strong></span>
+            </div>
+            <section class='undx-workspace-intel-card' aria-label='Workspace Graph'>
+              <span class='undx-core-label'>Workspace Graph</span>
+              <h3>Workspace Graph</h3>
+              <div class='undx-workspace-graph' id='undxWorkspaceGraph' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-registry' aria-label='Workspace Status Cards'>
+              <h3>Workspace Status</h3>
+              <div class='undx-status-grid'>
+                <p class='undx-status-item'><span>Active Projects</span><strong id='undxWorkspaceActiveProjects'>0</strong></p>
+                <p class='undx-status-item'><span>Stored Missions</span><strong id='undxWorkspaceStoredMissions'>0</strong></p>
+                <p class='undx-status-item'><span>Execution Plans</span><strong id='undxWorkspaceExecutionPlans'>0</strong></p>
+                <p class='undx-status-item'><span>Repository Profiles</span><strong id='undxWorkspaceRepositoryProfiles'>0</strong></p>
+                <p class='undx-status-item'><span>Preview Manifests</span><strong id='undxWorkspacePreviewManifests'>0</strong></p>
+                <p class='undx-status-item'><span>Repository Analyses</span><strong id='undxWorkspaceRepositoryAnalyses'>0</strong></p>
+                <p class='undx-status-item'><span>Approval Trust Score</span><strong id='undxWorkspaceTrustScore'>100</strong></p>
+              </div>
+            </section>
+            <section class='undx-project-detail' aria-label='Project Intelligence Snapshot'>
+              <h3>Project Intelligence Snapshot</h3>
+              <div class='undx-evolution-empty' id='undxWorkspaceSnapshotEmpty'>Open a project to connect missions, plans, approvals, repository context, and agent intelligence.</div>
+              <div class='undx-workspace-snapshot' id='undxWorkspaceSnapshot' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-detail' aria-label='Workspace Summary Registry'>
+              <h3>Workspace Summary Registry</h3>
+              <div class='undx-memory-empty' id='undxWorkspaceSummaryEmpty'>No workspace summaries stored yet. Generate a workspace summary to activate the registry.</div>
+              <div class='undx-workspace-summary-list' id='undxWorkspaceSummaryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-workspace-intel-sidebar'>
+            <article class='undx-workspace-intel-card' aria-label='Workspace Health Score'>
+              <span class='undx-core-label'>Workspace Health Score</span>
+              <h3>Workspace Health Score</h3>
+              <p class='undx-health-score' id='undxWorkspaceHealthScore'>0/100</p>
+              <p>Build Readiness Level: <strong id='undxWorkspaceReadinessLevel'>Concept</strong></p>
+            </article>
+            <article class='undx-workspace-intel-card' aria-label='Recommended Next Action'>
+              <span class='undx-core-label'>Recommended Next Action</span>
+              <h3>Recommended Next Action</h3>
+              <p id='undxWorkspaceNextAction'>Open or create a project to activate workspace recommendations.</p>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateWorkspaceSummary'>Generate Workspace Summary</button>
+                <button class='button' type='button' id='undxSendWorkspaceSummaryToChat'>Send Workspace Summary To UNDX Chat</button>
+                <button class='button' type='button' id='undxSaveWorkspaceSummaryToMemory'>Save Workspace Summary To Mission Memory</button>
+                <button class='button' type='button' id='undxGenerateWorkspaceExecutionPlan'>Generate Execution Plan From Workspace</button>
+              </div>
+              <p class='undx-project-message' id='undxWorkspaceMessage' aria-live='polite'></p>
+            </article>
+            <article class='undx-workspace-intel-card' aria-label='Workspace Safety'>
+              <span class='undx-core-label'>Read-Only Intelligence</span>
+              <h3>Safety Status</h3>
+              <ul class='undx-safety-list'>
+                <li>No file access</li>
+                <li>No repository modification</li>
+                <li>No GitHub integration</li>
+                <li>No command execution</li>
+                <li>No deployment</li>
+                <li>Read-only intelligence only</li>
+              </ul>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22766,6 +22859,26 @@ def pulse_premium_undx_page():
     const undxContextWorkersKnown = document.getElementById('undxContextWorkersKnown');
     const undxContextTablesKnown = document.getElementById('undxContextTablesKnown');
     const undxContextLastScan = document.getElementById('undxContextLastScan');
+    const undxWorkspaceGraph = document.getElementById('undxWorkspaceGraph');
+    const undxWorkspaceActiveProjects = document.getElementById('undxWorkspaceActiveProjects');
+    const undxWorkspaceStoredMissions = document.getElementById('undxWorkspaceStoredMissions');
+    const undxWorkspaceExecutionPlans = document.getElementById('undxWorkspaceExecutionPlans');
+    const undxWorkspaceRepositoryProfiles = document.getElementById('undxWorkspaceRepositoryProfiles');
+    const undxWorkspacePreviewManifests = document.getElementById('undxWorkspacePreviewManifests');
+    const undxWorkspaceRepositoryAnalyses = document.getElementById('undxWorkspaceRepositoryAnalyses');
+    const undxWorkspaceTrustScore = document.getElementById('undxWorkspaceTrustScore');
+    const undxWorkspaceSnapshotEmpty = document.getElementById('undxWorkspaceSnapshotEmpty');
+    const undxWorkspaceSnapshot = document.getElementById('undxWorkspaceSnapshot');
+    const undxWorkspaceSummaryEmpty = document.getElementById('undxWorkspaceSummaryEmpty');
+    const undxWorkspaceSummaryList = document.getElementById('undxWorkspaceSummaryList');
+    const undxWorkspaceHealthScore = document.getElementById('undxWorkspaceHealthScore');
+    const undxWorkspaceReadinessLevel = document.getElementById('undxWorkspaceReadinessLevel');
+    const undxWorkspaceNextAction = document.getElementById('undxWorkspaceNextAction');
+    const undxGenerateWorkspaceSummary = document.getElementById('undxGenerateWorkspaceSummary');
+    const undxSendWorkspaceSummaryToChat = document.getElementById('undxSendWorkspaceSummaryToChat');
+    const undxSaveWorkspaceSummaryToMemory = document.getElementById('undxSaveWorkspaceSummaryToMemory');
+    const undxGenerateWorkspaceExecutionPlan = document.getElementById('undxGenerateWorkspaceExecutionPlan');
+    const undxWorkspaceMessage = document.getElementById('undxWorkspaceMessage');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -22777,6 +22890,8 @@ def pulse_premium_undx_page():
     const undxReadOnlyAccessRequestsKey = 'undxReadOnlyAccessRequests';
     const undxPreviewManifestsKey = 'undxPreviewManifests';
     const undxRepositoryContextKey = 'undxRepositoryContext';
+    const undxRepositoryAnalysesKey = 'undxRepositoryAnalyses';
+    const undxWorkspaceSummariesKey = 'undxWorkspaceSummaries';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -22787,6 +22902,7 @@ def pulse_premium_undx_page():
     let undxSelectedRepositoryPlanId = null;
     let undxSelectedRepositoryProfileId = null;
     let undxSelectedPreviewManifestId = null;
+    let undxLastWorkspaceSummary = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -22873,6 +22989,7 @@ def pulse_premium_undx_page():
       const next = [blueprint, ...current].slice(0,24);
       undxSaveMemory(next);
       undxRenderMemory();
+      undxRenderIntelligenceWorkspace();
     }
     function undxLoadMissionIntoConsole(text, message){
       if(!undxMissionInput) return;
@@ -22991,6 +23108,13 @@ def pulse_premium_undx_page():
       const linkedExecutionPlans = Array.isArray(project.linkedExecutionPlans) ? project.linkedExecutionPlans.filter(plan => plan && plan.id && plan.objective).slice(0,24).map(undxNormalizeExecutionPlan) : [];
       const linkedRepositoryIntelligenceProfiles = Array.isArray(project.linkedRepositoryIntelligenceProfiles) ? project.linkedRepositoryIntelligenceProfiles.filter(profile => profile && profile.profileId && profile.name).slice(0,24).map(undxNormalizeRepositoryProfile) : [];
       const linkedPreviewManifests = Array.isArray(project.linkedPreviewManifests) ? project.linkedPreviewManifests.filter(manifest => manifest && manifest.manifestId && manifest.repositoryName).slice(0,24).map(undxNormalizePreviewManifest) : [];
+      const linkedRepositoryAnalyses = Array.isArray(project.linkedRepositoryAnalyses) ? project.linkedRepositoryAnalyses.filter(item => item && (item.analysisId || item.id)).slice(0,24).map(item => ({
+        analysisId: String(item.analysisId || item.id || '').slice(0,44),
+        repositoryName: String(item.repositoryName || item.name || 'Repository Analysis').slice(0,140),
+        confidenceLevel: String(item.confidenceLevel || 'Medium').slice(0,80),
+        createdAt: item.createdAt || new Date().toISOString(),
+        status: String(item.status || 'Analysis Complete').slice(0,120)
+      })) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -23002,6 +23126,7 @@ def pulse_premium_undx_page():
         linkedExecutionPlans,
         linkedRepositoryIntelligenceProfiles,
         linkedPreviewManifests,
+        linkedRepositoryAnalyses,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         lastBuildDirective: project.lastBuildDirective || ''
       };
@@ -23080,6 +23205,7 @@ def pulse_premium_undx_page():
       undxSaveProjects(next);
       undxRenderProjects();
       if(undxSelectedProjectId === projectId) undxOpenProject(projectId, false);
+      undxRenderIntelligenceWorkspace();
     }
     async function undxEnhanceProject(projectId){
       const project = undxLoadProjects().find(item => item.projectId === projectId);
@@ -23318,6 +23444,7 @@ def pulse_premium_undx_page():
       undxSaveApprovalProtocol(gates);
       undxRenderApprovalProtocol();
       if(undxApprovalMessage) undxApprovalMessage.textContent = `${gateType} now requires ${permissionLevel}. File and execution access remain disabled.`;
+      undxRenderIntelligenceWorkspace();
     }
     function undxCreateApprovalGateCard(gate){
       const article = document.createElement('article');
@@ -23463,6 +23590,7 @@ def pulse_premium_undx_page():
       undxActiveApprovalRequest = null;
       undxRenderApprovalRequest(null);
       undxRenderApprovalHistory();
+      undxRenderIntelligenceWorkspace();
     }
     function undxExecutionRequiredGates(plan){
       const text = `${plan?.objective || ''} ${plan?.sourceType || ''} ${(plan?.approvalCheckpoints || []).join(' ')}`.toLowerCase();
@@ -23743,6 +23871,7 @@ def pulse_premium_undx_page():
         return {...project, linkedRepositoryIntelligenceProfiles: next};
       });
       if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = `${profile.profileId} attached to the selected project workspace.`;
+      undxRenderIntelligenceWorkspace();
     }
     function undxDeleteRepositoryProfile(profileId){
       const profiles = undxLoadRepositoryProfiles().filter(profile => profile.profileId !== profileId);
@@ -23761,6 +23890,7 @@ def pulse_premium_undx_page():
       undxRenderProjects();
       if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
       if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = 'Repository intelligence profile deleted.';
+      undxRenderIntelligenceWorkspace();
     }
     function undxGenerateExecutionPlanFromProfile(profile){
       const source = {
@@ -23880,6 +24010,7 @@ def pulse_premium_undx_page():
       undxRenderRepositoryProfiles();
       undxOpenRepositoryProfile(profile.profileId, false);
       if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = `${profile.profileId} stored in Repository Intelligence Registry.`;
+      undxRenderIntelligenceWorkspace();
     }
     function undxNormalizeAccessRequest(request){
       return {
@@ -24074,6 +24205,7 @@ def pulse_premium_undx_page():
         return {...project, linkedPreviewManifests: next};
       });
       if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = `${manifest.manifestId} attached to the selected project workspace.`;
+      undxRenderIntelligenceWorkspace();
     }
     function undxDeletePreviewManifest(manifestId){
       const manifests = undxLoadPreviewManifests().filter(manifest => manifest.manifestId !== manifestId);
@@ -24092,6 +24224,7 @@ def pulse_premium_undx_page():
       undxRenderProjects();
       if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
       if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = 'Preview manifest deleted.';
+      undxRenderIntelligenceWorkspace();
     }
     function undxCreatePreviewManifestCard(manifest){
       const article = document.createElement('article');
@@ -24194,6 +24327,7 @@ def pulse_premium_undx_page():
       undxRenderPreviewManifests();
       undxOpenPreviewManifest(manifest.manifestId, false);
       if(undxPreviewManifestMessage) undxPreviewManifestMessage.textContent = `${manifest.manifestId} generated in simulation mode. No files were opened.`;
+      undxRenderIntelligenceWorkspace();
     }
     function undxRepositoryContextDefaults(){
       return {
@@ -24288,6 +24422,7 @@ def pulse_premium_undx_page():
       undxSaveRepositoryContext(context);
       undxRenderRepositoryContext(context);
       if(undxRepositoryContextMessage) undxRepositoryContextMessage.textContent = 'Repository context indexed from known CoinPilotX planning metadata. No files were accessed.';
+      undxRenderIntelligenceWorkspace();
     }
     function undxRepositoryContextDirectiveText(context){
       const profile = undxNormalizeRepositoryContext(context);
@@ -24331,6 +24466,399 @@ def pulse_premium_undx_page():
       const directive = undxRepositoryContextDirectiveText(context);
       if(undxRepositoryContextDirective) undxRepositoryContextDirective.textContent = directive;
       if(undxRepositoryContextMessage) undxRepositoryContextMessage.textContent = 'Context-aware directive generated from stored CoinPilotX repository context.';
+      undxRenderIntelligenceWorkspace();
+    }
+    function undxNormalizeRepositoryAnalysis(analysis){
+      return {
+        analysisId: String(analysis.analysisId || analysis.id || `ANALYSIS-UNDX-${Date.now()}`).slice(0,44),
+        repositoryName: String(analysis.repositoryName || analysis.name || 'Repository Analysis').slice(0,140),
+        confidenceLevel: String(analysis.confidenceLevel || 'Medium').slice(0,80),
+        createdAt: analysis.createdAt || new Date().toISOString(),
+        status: String(analysis.status || 'Analysis Complete').slice(0,120)
+      };
+    }
+    function undxLoadRepositoryAnalyses(){
+      try{
+        const raw = localStorage.getItem(undxRepositoryAnalysesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && (item.analysisId || item.id)).slice(0,48).map(undxNormalizeRepositoryAnalysis) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxNormalizeWorkspaceSummary(summary){
+      return {
+        summaryId: String(summary.summaryId || `WORKSPACE-UNDX-${Date.now()}`).slice(0,44),
+        projectId: String(summary.projectId || '').slice(0,44),
+        projectName: String(summary.projectName || 'No Project Selected').slice(0,140),
+        readinessLevel: String(summary.readinessLevel || 'Concept').slice(0,80),
+        healthScore: Math.max(0, Math.min(100, Number(summary.healthScore || 0))),
+        connectedAssets: undxNormalizeExecutionList(summary.connectedAssets, [], 24, 220),
+        missingAssets: undxNormalizeExecutionList(summary.missingAssets, [], 24, 220),
+        nextRecommendedAction: String(summary.nextRecommendedAction || 'Open or create a project').slice(0,260),
+        safetyStatus: String(summary.safetyStatus || 'Read-only intelligence only. File access and execution access disabled.').slice(0,360),
+        suggestedNextPhase: String(summary.suggestedNextPhase || 'Continue workspace planning').slice(0,260),
+        summaryText: String(summary.summaryText || '').slice(0,7000),
+        createdAt: summary.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadWorkspaceSummaries(){
+      try{
+        const raw = localStorage.getItem(undxWorkspaceSummariesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.summaryId).slice(0,48).map(undxNormalizeWorkspaceSummary) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveWorkspaceSummaries(summaries){
+      try{
+        localStorage.setItem(undxWorkspaceSummariesKey, JSON.stringify(summaries.slice(0,48)));
+      }catch(error){
+        if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = 'Workspace Summary Registry could not be updated.';
+      }
+    }
+    function undxNextWorkspaceSummaryId(summaries){
+      const max = summaries.reduce((highest, summary) => {
+        const match = String(summary.summaryId || '').match(/^WORKSPACE-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `WORKSPACE-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxWorkspaceSelectedProject(){
+      return undxCurrentProject() || undxLoadProjects()[0] || null;
+    }
+    function undxApprovalTrustScoreValue(){
+      const history = undxLoadApprovalHistory();
+      const rejected = history.filter(item => item.decision === 'Rejected').length;
+      return Math.max(0, Math.min(100, 100 - rejected * 2));
+    }
+    function undxWorkspaceTaskProgress(project){
+      const tasks = project?.tasks || [];
+      const done = tasks.filter(task => task.status === 'Done').length;
+      return {total: tasks.length, done, percent: tasks.length ? Math.round((done / tasks.length) * 100) : 0};
+    }
+    function undxWorkspaceMilestoneProgress(project){
+      const milestones = project?.milestones || [];
+      const done = milestones.filter(milestone => milestone.status === 'Complete').length;
+      return {total: milestones.length, done, percent: milestones.length ? Math.round((done / milestones.length) * 100) : 0};
+    }
+    function undxWorkspaceConnectedAssets(project){
+      const assets = [];
+      if(project) assets.push('Project selected');
+      if(project?.linkedMission || project?.source) assets.push('Linked mission');
+      if((project?.linkedExecutionPlans || []).length) assets.push('Execution plans linked');
+      if((project?.linkedRepositories || []).length) assets.push('Repository plans linked');
+      if((project?.linkedRepositoryIntelligenceProfiles || []).length) assets.push('Repository intelligence profiles linked');
+      if((project?.linkedPreviewManifests || []).length) assets.push('Preview manifests linked');
+      if((project?.linkedRepositoryAnalyses || []).length || undxLoadRepositoryAnalyses().length) assets.push('Repository analyses available');
+      if(undxLoadRepositoryContext()) assets.push('Repository context indexed');
+      if(undxLoadApprovalProtocol().length) assets.push('Approval protocol active');
+      if(undxLoadMemory().length) assets.push('Mission memory available');
+      if(undxLoadChat().filter(item => item.role === 'undx' && item.type === 'response').length) assets.push('UNDX chat missions available');
+      return assets;
+    }
+    function undxWorkspaceMissingAssets(project){
+      if(!project) return ['Selected project'];
+      const missing = [];
+      if(!(project.linkedExecutionPlans || []).length) missing.push('Execution plan');
+      if(!undxLoadApprovalHistory().length) missing.push('Approval gate review');
+      if(!undxLoadRepositoryContext()) missing.push('Repository context');
+      if(!(project.linkedPreviewManifests || []).length) missing.push('Preview manifest');
+      if(!(project.linkedRepositoryAnalyses || []).length && !undxLoadRepositoryAnalyses().length) missing.push('Repository analysis');
+      if(!(project.linkedRepositoryIntelligenceProfiles || []).length) missing.push('Repository intelligence profile');
+      return missing;
+    }
+    function undxWorkspaceRecommendedNextAction(project){
+      if(!project) return 'Open or create a project';
+      if(!(project.linkedExecutionPlans || []).length) return 'Generate Execution Plan';
+      if(!undxLoadApprovalHistory().length) return 'Review Approval Gates';
+      if(!undxLoadRepositoryContext()) return 'Analyze Repository Context';
+      if(!(project.linkedPreviewManifests || []).length) return 'Generate Preview Manifest';
+      if(!(project.linkedRepositoryAnalyses || []).length && !undxLoadRepositoryAnalyses().length) return 'Generate Repository Analysis';
+      return 'Prepare Diff Intelligence Phase';
+    }
+    function undxWorkspaceHealth(project){
+      let score = 0;
+      if(project) score += 15;
+      if(project?.linkedMission || project?.source) score += 10;
+      if((project?.linkedExecutionPlans || []).length) score += 15;
+      if(undxLoadRepositoryContext()) score += 15;
+      if(undxLoadApprovalProtocol().length) score += 10;
+      if((project?.linkedPreviewManifests || []).length) score += 10;
+      if((project?.linkedRepositoryAnalyses || []).length || undxLoadRepositoryAnalyses().length) score += 10;
+      const taskProgress = undxWorkspaceTaskProgress(project);
+      const milestoneProgress = undxWorkspaceMilestoneProgress(project);
+      score += Math.round((taskProgress.percent / 100) * 8);
+      score += Math.round((milestoneProgress.percent / 100) * 7);
+      return Math.max(0, Math.min(100, score));
+    }
+    function undxWorkspaceReadiness(score){
+      if(score >= 85) return 'Build Candidate';
+      if(score >= 70) return 'Analysis Ready';
+      if(score >= 50) return 'Reviewed';
+      if(score >= 25) return 'Planned';
+      return 'Concept';
+    }
+    function undxWorkspaceSuggestedNextPhase(action, readiness){
+      if(action === 'Prepare Diff Intelligence Phase') return 'Phase 18 - Diff Intelligence Planning';
+      if(action === 'Generate Repository Analysis') return 'Phase 17 continuation - Repository Analysis alignment';
+      if(action === 'Generate Preview Manifest') return 'Phase 15 - Preview Gateway completion';
+      if(action === 'Analyze Repository Context') return 'Phase 16 - Repository Context indexing';
+      if(action === 'Review Approval Gates') return 'Phase 12 - Approval Protocol review';
+      if(action === 'Generate Execution Plan') return 'Phase 11 - Execution Plan readiness';
+      return `${readiness} workspace planning`;
+    }
+    function undxRenderWorkspaceGraph(){
+      if(!undxWorkspaceGraph) return;
+      const projects = undxLoadProjects();
+      const memory = undxLoadMemory();
+      const chatMissions = undxLoadChat().filter(item => item.role === 'undx' && item.type === 'response');
+      const councilOutputs = memory.filter(item => item.type === 'Council Output');
+      const executionPlans = undxLoadExecutionPlans();
+      const repositoryPlans = undxLoadRepositoryPlans();
+      const profiles = undxLoadRepositoryProfiles();
+      const context = undxLoadRepositoryContext();
+      const manifests = undxLoadPreviewManifests();
+      const analyses = undxLoadRepositoryAnalyses();
+      const approvalHistory = undxLoadApprovalHistory();
+      const nodes = [
+        ['Projects', projects.length, 'Project Registry'],
+        ['Mission Memory', memory.length, 'Stored missions'],
+        ['UNDX Chat Missions', chatMissions.length, 'OpenAI directives'],
+        ['Agent Council Outputs', councilOutputs.length, 'Multi-agent reviews'],
+        ['Execution Plans', executionPlans.length, 'Planned build paths'],
+        ['Repository Plans', repositoryPlans.length, 'Trusted targets'],
+        ['Repository Intelligence Profiles', profiles.length, 'Conceptual repo maps'],
+        ['Repository Context', context ? 1 : 0, context ? 'Indexed' : 'Not indexed'],
+        ['Preview Manifests', manifests.length, 'Read-only simulations'],
+        ['Repository Analyses', analyses.length, 'Analysis registry'],
+        ['Approval Protocol', approvalHistory.length, 'Trust decisions']
+      ];
+      undxWorkspaceGraph.replaceChildren();
+      nodes.forEach(([name, count, detail]) => {
+        const node = document.createElement('article');
+        node.className = 'undx-workspace-node';
+        const strong = document.createElement('strong');
+        strong.textContent = name;
+        const metric = document.createElement('span');
+        metric.textContent = String(count);
+        const note = document.createElement('p');
+        note.textContent = detail;
+        node.append(strong, metric, note);
+        undxWorkspaceGraph.appendChild(node);
+      });
+    }
+    function undxWorkspacePillList(values, fallback){
+      const wrap = document.createElement('p');
+      const items = values && values.length ? values : [fallback];
+      items.forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        wrap.appendChild(pill);
+        wrap.append(' ');
+      });
+      return wrap;
+    }
+    function undxRenderWorkspaceSnapshot(project){
+      if(undxWorkspaceSnapshotEmpty) undxWorkspaceSnapshotEmpty.hidden = Boolean(project);
+      if(!undxWorkspaceSnapshot) return;
+      undxWorkspaceSnapshot.replaceChildren();
+      if(!project) return;
+      const taskProgress = undxWorkspaceTaskProgress(project);
+      const milestoneProgress = undxWorkspaceMilestoneProgress(project);
+      const repositoryAnalyses = (project.linkedRepositoryAnalyses || []).length ? project.linkedRepositoryAnalyses : undxLoadRepositoryAnalyses();
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Selected Project', `${project.projectId} · ${project.name}`),
+        undxBlock('Linked Mission', project.linkedMission || project.source || 'Mission Source'),
+        undxBlock('Linked Repository Plans', undxWorkspacePillList((project.linkedRepositories || []).map(item => item.name), 'None linked')),
+        undxBlock('Linked Execution Plans', undxWorkspacePillList((project.linkedExecutionPlans || []).map(item => item.id), 'None linked')),
+        undxBlock('Linked Repository Intelligence Profiles', undxWorkspacePillList((project.linkedRepositoryIntelligenceProfiles || []).map(item => item.profileId), 'None linked')),
+        undxBlock('Linked Preview Manifests', undxWorkspacePillList((project.linkedPreviewManifests || []).map(item => item.manifestId), 'None linked')),
+        undxBlock('Linked Repository Analyses', undxWorkspacePillList(repositoryAnalyses.map(item => item.analysisId), 'None linked')),
+        undxBlock('Approval Status', undxProjectApprovalStatus(project)),
+        undxBlock('Task Progress', `${taskProgress.done}/${taskProgress.total} complete (${taskProgress.percent}%)`),
+        undxBlock('Milestone Progress', `${milestoneProgress.done}/${milestoneProgress.total} complete (${milestoneProgress.percent}%)`),
+        undxBlock('Memory Notes Count', String((project.memoryNotes || []).length))
+      );
+      undxWorkspaceSnapshot.appendChild(grid);
+    }
+    function undxWorkspaceSummaryText(summary){
+      return [
+        'UNDX Intelligence Workspace Summary',
+        '',
+        `Summary ID: ${summary.summaryId}`,
+        `Selected Project: ${summary.projectName}${summary.projectId ? ` (${summary.projectId})` : ''}`,
+        `Readiness Level: ${summary.readinessLevel}`,
+        `Workspace Health Score: ${summary.healthScore}/100`,
+        '',
+        'Connected Assets:',
+        ...(summary.connectedAssets.length ? summary.connectedAssets.map(item => `- ${item}`) : ['- None connected yet.']),
+        '',
+        'Missing Assets:',
+        ...(summary.missingAssets.length ? summary.missingAssets.map(item => `- ${item}`) : ['- Major workspace assets connected.']),
+        '',
+        `Recommended Next Action: ${summary.nextRecommendedAction}`,
+        `Safety Status: ${summary.safetyStatus}`,
+        `Suggested Next Phase: ${summary.suggestedNextPhase}`,
+        '',
+        'Workspace Boundary:',
+        '- File Access: Disabled',
+        '- Execution Access: Disabled',
+        '- No repository modification',
+        '- No GitHub integration',
+        '- No deployment'
+      ].join('\\n');
+    }
+    function undxCreateWorkspaceSummary(){
+      const project = undxWorkspaceSelectedProject();
+      const summaries = undxLoadWorkspaceSummaries();
+      const healthScore = undxWorkspaceHealth(project);
+      const readinessLevel = undxWorkspaceReadiness(healthScore);
+      const nextRecommendedAction = undxWorkspaceRecommendedNextAction(project);
+      const summary = undxNormalizeWorkspaceSummary({
+        summaryId: undxNextWorkspaceSummaryId(summaries),
+        projectId: project?.projectId || '',
+        projectName: project?.name || 'No Project Selected',
+        readinessLevel,
+        healthScore,
+        connectedAssets: undxWorkspaceConnectedAssets(project),
+        missingAssets: undxWorkspaceMissingAssets(project),
+        nextRecommendedAction,
+        safetyStatus: 'Read-only intelligence only. File Access: Disabled. Execution Access: Disabled.',
+        suggestedNextPhase: undxWorkspaceSuggestedNextPhase(nextRecommendedAction, readinessLevel),
+        createdAt: new Date().toISOString()
+      });
+      summary.summaryText = undxWorkspaceSummaryText(summary);
+      return undxNormalizeWorkspaceSummary(summary);
+    }
+    function undxGenerateWorkspaceSummaryFlow(){
+      const summary = undxCreateWorkspaceSummary();
+      const summaries = undxLoadWorkspaceSummaries();
+      undxSaveWorkspaceSummaries([summary, ...summaries]);
+      undxLastWorkspaceSummary = summary;
+      undxRenderWorkspaceSummaries();
+      if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = `${summary.summaryId} stored in Workspace Summary Registry.`;
+      return summary;
+    }
+    function undxCreateWorkspaceSummaryCard(summary){
+      const article = document.createElement('article');
+      article.className = 'undx-workspace-intel-card';
+      const title = document.createElement('h4');
+      title.textContent = `${summary.summaryId} · ${summary.projectName}`;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        `Summary ID: ${summary.summaryId}`,
+        `Project Name: ${summary.projectName}`,
+        `Readiness Level: ${summary.readinessLevel}`,
+        `Health Score: ${summary.healthScore}/100`,
+        `Created Date: ${undxFormatMemoryTime(summary.createdAt)}`
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const output = document.createElement('pre');
+      output.className = 'undx-directive-output';
+      output.textContent = summary.summaryText || undxWorkspaceSummaryText(summary);
+      article.append(title, meta, output);
+      return article;
+    }
+    function undxRenderWorkspaceSummaries(){
+      const summaries = undxLoadWorkspaceSummaries();
+      if(undxWorkspaceSummaryEmpty) undxWorkspaceSummaryEmpty.hidden = summaries.length > 0;
+      if(!undxWorkspaceSummaryList) return;
+      undxWorkspaceSummaryList.replaceChildren();
+      summaries.forEach(summary => undxWorkspaceSummaryList.appendChild(undxCreateWorkspaceSummaryCard(summary)));
+    }
+    function undxRenderIntelligenceWorkspace(){
+      const project = undxWorkspaceSelectedProject();
+      const projects = undxLoadProjects();
+      const memory = undxLoadMemory();
+      const executionPlans = undxLoadExecutionPlans();
+      const profiles = undxLoadRepositoryProfiles();
+      const manifests = undxLoadPreviewManifests();
+      const analyses = undxLoadRepositoryAnalyses();
+      const trustScore = undxApprovalTrustScoreValue();
+      const health = undxWorkspaceHealth(project);
+      const readiness = undxWorkspaceReadiness(health);
+      if(undxWorkspaceActiveProjects) undxWorkspaceActiveProjects.textContent = String(projects.filter(item => item.status === 'Active').length || projects.length);
+      if(undxWorkspaceStoredMissions) undxWorkspaceStoredMissions.textContent = String(memory.length);
+      if(undxWorkspaceExecutionPlans) undxWorkspaceExecutionPlans.textContent = String(executionPlans.length);
+      if(undxWorkspaceRepositoryProfiles) undxWorkspaceRepositoryProfiles.textContent = String(profiles.length);
+      if(undxWorkspacePreviewManifests) undxWorkspacePreviewManifests.textContent = String(manifests.length);
+      if(undxWorkspaceRepositoryAnalyses) undxWorkspaceRepositoryAnalyses.textContent = String(analyses.length + (project?.linkedRepositoryAnalyses || []).length);
+      if(undxWorkspaceTrustScore) undxWorkspaceTrustScore.textContent = `${trustScore}/100`;
+      if(undxWorkspaceHealthScore) undxWorkspaceHealthScore.textContent = `${health}/100`;
+      if(undxWorkspaceReadinessLevel) undxWorkspaceReadinessLevel.textContent = readiness;
+      if(undxWorkspaceNextAction) undxWorkspaceNextAction.textContent = undxWorkspaceRecommendedNextAction(project);
+      undxRenderWorkspaceGraph();
+      undxRenderWorkspaceSnapshot(project);
+      undxRenderWorkspaceSummaries();
+    }
+    function undxSendWorkspaceSummaryToChatFlow(){
+      const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
+      if(!summary || !undxChatInput) return;
+      undxChatInput.value = summary.summaryText || undxWorkspaceSummaryText(summary);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = `${summary.summaryId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSaveWorkspaceSummaryToMemoryFlow(){
+      const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
+      if(!summary) return;
+      undxStoreBlueprint({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name: `Workspace Summary ${summary.projectName}`.slice(0,140),
+        objective: summary.summaryText || undxWorkspaceSummaryText(summary),
+        type: 'Workspace Summary',
+        source: 'UNDX Intelligence Workspace',
+        createdAt: new Date().toISOString(),
+        phase: 'Phase 17',
+        status: 'Stored'
+      });
+      if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = `${summary.summaryId} saved to Mission Memory.`;
+      undxRenderIntelligenceWorkspace();
+    }
+    function undxGenerateExecutionPlanFromWorkspaceFlow(){
+      const project = undxWorkspaceSelectedProject();
+      if(!project){
+        if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = 'Open or create a project before generating an execution plan from the workspace.';
+        return;
+      }
+      const health = undxWorkspaceHealth(project);
+      const readiness = undxWorkspaceReadiness(health);
+      const nextAction = undxWorkspaceRecommendedNextAction(project);
+      const source = {
+        sourceType: 'UNDX Intelligence Workspace',
+        objective: `Advance workspace for ${project.name}: ${nextAction}`,
+        project,
+        requiredContext: [
+          `Project ID: ${project.projectId}`,
+          `Readiness Level: ${readiness}`,
+          `Workspace Health Score: ${health}/100`,
+          `Connected Assets: ${undxWorkspaceConnectedAssets(project).join(', ') || 'None'}`,
+          `Missing Assets: ${undxWorkspaceMissingAssets(project).join(', ') || 'None'}`
+        ],
+        requiredGates: ['Repository Read Access', 'File Edit Access', 'Terminal Command Access', 'Git Commit Access']
+      };
+      const plan = undxBuildExecutionPlanFromSource(source);
+      const plans = undxLoadExecutionPlans();
+      undxSaveExecutionPlans([plan, ...plans]);
+      undxRenderExecutionPlans();
+      undxOpenExecutionPlan(plan.id, false);
+      if(undxSelectedProjectId){
+        undxAttachExecutionPlanToProject(plan);
+      }
+      if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = `${plan.id} generated from UNDX Intelligence Workspace.`;
+      document.getElementById('undx-task-execution-planner')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxRenderIntelligenceWorkspace();
     }
     function undxNormalizeRepositoryPlan(plan){
       return {
@@ -24401,6 +24929,7 @@ def pulse_premium_undx_page():
       });
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} attached to the selected project workspace.`;
       undxRefreshExecutionSourcePreview();
+      undxRenderIntelligenceWorkspace();
     }
     function undxDeleteRepositoryPlan(planId){
       const plans = undxLoadRepositoryPlans().filter(plan => plan.id !== planId);
@@ -24416,6 +24945,7 @@ def pulse_premium_undx_page():
       if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = 'Repository plan deleted.';
       undxRefreshExecutionSourcePreview();
+      undxRenderIntelligenceWorkspace();
     }
     function undxCreateRepositoryPlanCard(plan){
       const article = document.createElement('article');
@@ -24481,6 +25011,7 @@ def pulse_premium_undx_page():
       if(undxRepoAccessLevel) undxRepoAccessLevel.value = 'Planning Only';
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} registered as a planning-only repository plan.`;
       undxRefreshRepositoryProfileSourcePreview();
+      undxRenderIntelligenceWorkspace();
     }
     function undxExecutionApprovalCheckpoints(){
       return [
@@ -24712,6 +25243,7 @@ def pulse_premium_undx_page():
       });
       if(undxExecutionMessage) undxExecutionMessage.textContent = `${plan.id} attached to the selected project workspace.`;
       undxRefreshExecutionSourcePreview();
+      undxRenderIntelligenceWorkspace();
     }
     function undxUpdateExecutionPlan(planId, updater){
       const plans = undxLoadExecutionPlans();
@@ -24719,6 +25251,7 @@ def pulse_premium_undx_page():
       undxSaveExecutionPlans(next);
       undxRenderExecutionPlans();
       if(undxSelectedExecutionPlanId === planId) undxOpenExecutionPlan(planId, false);
+      undxRenderIntelligenceWorkspace();
     }
     function undxDeleteExecutionPlan(planId){
       const plans = undxLoadExecutionPlans().filter(plan => plan.id !== planId);
@@ -24737,6 +25270,7 @@ def pulse_premium_undx_page():
       undxRenderProjects();
       if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
       if(undxExecutionMessage) undxExecutionMessage.textContent = 'Execution plan deleted.';
+      undxRenderIntelligenceWorkspace();
     }
     function undxCreateExecutionPlanCard(plan){
       const article = document.createElement('article');
@@ -24791,6 +25325,7 @@ def pulse_premium_undx_page():
       undxRenderExecutionPlans();
       undxOpenExecutionPlan(plan.id, false);
       if(undxExecutionMessage) undxExecutionMessage.textContent = `${plan.id} stored in Execution Plan Registry.`;
+      undxRenderIntelligenceWorkspace();
     }
     function undxGenerateCodexDirectiveText(plan){
       return [
@@ -25195,6 +25730,28 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedRepositoryAnalyses(project, card){
+      const section = undxWorkspaceSection('Linked Repository Analyses');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      const analyses = (project.linkedRepositoryAnalyses || []).length ? project.linkedRepositoryAnalyses : undxLoadRepositoryAnalyses();
+      if(!analyses.length){
+        list.appendChild(undxWorkspaceEmpty('No repository analyses linked yet. Future repository analysis remains read-only and approval-gated.'));
+      }else{
+        analyses.forEach(analysis => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${analysis.analysisId} · ${analysis.repositoryName}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Confidence Level: ${analysis.confidenceLevel} · Status: ${analysis.status || 'Analysis Complete'} · Created: ${undxFormatMemoryTime(analysis.createdAt)}`;
+          item.append(title, meta);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -25274,6 +25831,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedRepositoryPlans(project, card);
       undxRenderLinkedRepositoryIntelligenceProfiles(project, card);
       undxRenderLinkedPreviewManifests(project, card);
+      undxRenderLinkedRepositoryAnalyses(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -25282,6 +25840,7 @@ def pulse_premium_undx_page():
       undxProjectDetailContent.replaceChildren(card);
       undxRefreshExecutionSourcePreview();
       undxRefreshRepositoryProfileSourcePreview();
+      undxRenderIntelligenceWorkspace();
       if(shouldScroll) document.getElementById('undx-project-creator')?.scrollIntoView({behavior:'smooth', block:'start'});
     }
     function undxSendProjectToBuilder(project){
@@ -25346,6 +25905,7 @@ def pulse_premium_undx_page():
         linkedExecutionPlans: [],
         linkedRepositoryIntelligenceProfiles: [],
         linkedPreviewManifests: [],
+        linkedRepositoryAnalyses: [],
         readOnlyAccessStatus: 'Not Connected',
         lastBuildDirective: '',
         aiEnhancement: {
@@ -25361,6 +25921,7 @@ def pulse_premium_undx_page():
       if(undxProjectForm) undxProjectForm.hidden = true;
       if(undxProjectMessage) undxProjectMessage.textContent = `${project.projectId} stored in Project Registry.`;
       undxEnhanceProject(project.projectId);
+      undxRenderIntelligenceWorkspace();
     }
     const undxInitialChatText = 'UNDX Core online. OpenAI intelligence bridge active. What mission should CoinPilotXAI evolve next?';
     function undxChatMessage(role, text, extra = {}){
@@ -25467,6 +26028,7 @@ def pulse_premium_undx_page():
       messages.forEach(message => undxChatHistory.appendChild(undxCreateChatBubble(message)));
       undxChatHistory.scrollTop = undxChatHistory.scrollHeight;
       undxRefreshExecutionSourcePreview();
+      undxRenderIntelligenceWorkspace();
     }
     async function undxSendChatDirective(){
       const directive = (undxChatInput?.value || '').trim();
@@ -25893,6 +26455,10 @@ def pulse_premium_undx_page():
     undxPreviewManifestForm?.addEventListener('submit', undxGeneratePreviewManifest);
     undxAnalyzeRepository?.addEventListener('click', undxAnalyzeRepositoryContext);
     undxGenerateContextDirective?.addEventListener('click', undxGenerateRepositoryContextDirective);
+    undxGenerateWorkspaceSummary?.addEventListener('click', undxGenerateWorkspaceSummaryFlow);
+    undxSendWorkspaceSummaryToChat?.addEventListener('click', undxSendWorkspaceSummaryToChatFlow);
+    undxSaveWorkspaceSummaryToMemory?.addEventListener('click', undxSaveWorkspaceSummaryToMemoryFlow);
+    undxGenerateWorkspaceExecutionPlan?.addEventListener('click', undxGenerateExecutionPlanFromWorkspaceFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -25908,6 +26474,7 @@ def pulse_premium_undx_page():
     undxRenderAccessRequest(null);
     undxRenderPreviewManifests();
     undxRenderRepositoryContext();
+    undxRenderIntelligenceWorkspace();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
