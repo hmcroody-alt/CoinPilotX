@@ -21684,12 +21684,23 @@ def pulse_premium_undx_page():
     .undx-workspace-item p{margin:0;color:rgba(223,246,255,.72)}
     .undx-workspace-empty{border:1px dashed rgba(110,223,246,.20);border-radius:16px;padding:12px;background:rgba(5,11,20,.28);color:rgba(223,246,255,.70);font-weight:850}
     .undx-directive-output{min-height:150px;max-height:360px;overflow:auto;white-space:pre-wrap;border:1px solid rgba(110,223,246,.18);border-radius:16px;padding:12px;background:rgba(3,8,17,.58);color:rgba(223,246,255,.82);font:inherit;line-height:1.45}
+    .undx-repo-planner{position:relative;overflow:hidden;border-color:rgba(255,209,102,.22);background:radial-gradient(circle at 16% 12%,rgba(255,209,102,.10),transparent 22rem),radial-gradient(circle at 84% 18%,rgba(110,223,246,.13),transparent 25rem),linear-gradient(180deg,rgba(255,255,255,.074),rgba(255,255,255,.03))}
+    .undx-repo-planner:before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,rgba(255,255,255,.08),transparent 33%,rgba(54,229,143,.055));pointer-events:none}
+    .undx-repo-planner>*{position:relative;z-index:1}
+    .undx-repo-layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;align-items:start}
+    .undx-repo-controls{display:grid;gap:12px}
+    .undx-repo-list{display:grid;gap:12px}
+    .undx-repo-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(7,18,32,.78),rgba(255,255,255,.04));box-shadow:0 18px 54px rgba(0,0,0,.20)}
+    .undx-repo-card h3,.undx-repo-card h4{margin:0;font-size:clamp(19px,2.2vw,26px)}
+    .undx-repo-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-safety-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+    .undx-safety-list li{border:1px solid rgba(110,223,246,.13);border-radius:14px;padding:10px 12px;background:rgba(5,11,20,.36);color:rgba(223,246,255,.76);font-weight:850}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
     @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
@@ -21906,6 +21917,83 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-repo-planner' id='undx-repository-planner'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Core: Planning</span>
+            <h2>UNDX Repository Connection Planner</h2>
+          </div>
+          <p>Prepare trusted codebases for future UNDX analysis, file access, and build execution.</p>
+        </div>
+        <div class='undx-repo-layout'>
+          <div class='undx-repo-controls'>
+            <div class='undx-memory-status' aria-label='UNDX repository planner status'>
+              <span aria-label='Repository Core: Planning'>Repository Core: <strong>Planning</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 10'>Phase: <strong>10</strong></span>
+            </div>
+            <form class='undx-project-form' id='undxRepositoryPlanForm'>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'>
+                  <span>Repository / Folder Name</span>
+                  <input id='undxRepoName' type='text' autocomplete='off' placeholder='CoinPilotXAI main app'>
+                </label>
+                <label class='undx-project-field'>
+                  <span>Repository Type</span>
+                  <select id='undxRepoType'>
+                    <option>Local Folder</option>
+                    <option>GitHub Repository</option>
+                    <option>Railway Project</option>
+                    <option>Vercel Project</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label class='undx-project-field'>
+                  <span>Planned Path or URL</span>
+                  <input id='undxRepoPath' type='text' autocomplete='off' placeholder='Planning-only path or URL'>
+                </label>
+                <label class='undx-project-field'>
+                  <span>Access Level</span>
+                  <select id='undxRepoAccessLevel'>
+                    <option>Planning Only</option>
+                    <option>Read-Only Future Access</option>
+                    <option>Read + Suggest Changes</option>
+                    <option>Read + Edit With Approval</option>
+                    <option>Full Build Agent With Approval</option>
+                  </select>
+                </label>
+                <label class='undx-project-field undx-project-field-wide'>
+                  <span>Purpose / Notes</span>
+                  <textarea id='undxRepoPurpose' placeholder='Why should UNDX prepare this codebase for future analysis?'></textarea>
+                </label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='submit'>Register Repository Plan</button>
+              </div>
+            </form>
+            <p class='undx-project-message' id='undxRepositoryMessage' aria-live='polite'></p>
+            <section class='undx-project-registry' aria-label='Trusted Repository Plans'>
+              <h3>Trusted Repository Plans</h3>
+              <div class='undx-memory-empty' id='undxRepositoryEmpty'>No repository plans registered yet. Add a planning-only codebase connection.</div>
+              <div class='undx-repo-list' id='undxRepositoryPlanList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-repo-card' aria-label='Repository Access Protocol'>
+            <span class='undx-core-label'>Repository Access Protocol</span>
+            <h3>Repository Access Protocol</h3>
+            <p>UNDX will only access code folders after explicit permission. Future phases must use read-only previews, file diffs, backups, and approval checkpoints before edits or commands.</p>
+            <ul class='undx-safety-list'>
+              <li>Explicit permission required</li>
+              <li>Read-only before edit access</li>
+              <li>Show diffs before changes</li>
+              <li>Backup before destructive changes</li>
+              <li>Confirm before terminal commands</li>
+              <li>Never expose secrets</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -21998,9 +22086,19 @@ def pulse_premium_undx_page():
     const undxCompletedTasksCount = document.getElementById('undxCompletedTasksCount');
     const undxProjectMemoryNotesCount = document.getElementById('undxProjectMemoryNotesCount');
     const undxCompletedMilestonesCount = document.getElementById('undxCompletedMilestonesCount');
+    const undxRepositoryPlanForm = document.getElementById('undxRepositoryPlanForm');
+    const undxRepoName = document.getElementById('undxRepoName');
+    const undxRepoType = document.getElementById('undxRepoType');
+    const undxRepoPath = document.getElementById('undxRepoPath');
+    const undxRepoAccessLevel = document.getElementById('undxRepoAccessLevel');
+    const undxRepoPurpose = document.getElementById('undxRepoPurpose');
+    const undxRepositoryMessage = document.getElementById('undxRepositoryMessage');
+    const undxRepositoryEmpty = document.getElementById('undxRepositoryEmpty');
+    const undxRepositoryPlanList = document.getElementById('undxRepositoryPlanList');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
+    const undxRepositoryPlansKey = 'undxRepositoryPlans';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
@@ -22196,6 +22294,16 @@ def pulse_premium_undx_page():
         text: String(note.text || '').slice(0,1200),
         createdAt: note.createdAt || new Date().toISOString()
       })) : [];
+      const linkedRepositories = Array.isArray(project.linkedRepositories) ? project.linkedRepositories.filter(plan => plan && plan.id && plan.name).slice(0,24).map(plan => ({
+        id: String(plan.id || ''),
+        name: String(plan.name || '').slice(0,120),
+        type: String(plan.type || 'Other').slice(0,80),
+        path: String(plan.path || '').slice(0,300),
+        accessLevel: String(plan.accessLevel || 'Planning Only').slice(0,80),
+        purpose: String(plan.purpose || '').slice(0,1000),
+        createdAt: plan.createdAt || new Date().toISOString(),
+        status: 'Planned'
+      })) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -22203,6 +22311,7 @@ def pulse_premium_undx_page():
         tasks,
         milestones,
         memoryNotes,
+        linkedRepositories,
         lastBuildDirective: project.lastBuildDirective || ''
       };
     }
@@ -22453,6 +22562,150 @@ def pulse_premium_undx_page():
       label.append(span, control);
       return label;
     }
+    function undxNormalizeRepositoryPlan(plan){
+      return {
+        id: String(plan.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`),
+        name: String(plan.name || '').slice(0,120),
+        type: String(plan.type || 'Other').slice(0,80),
+        path: String(plan.path || '').slice(0,300),
+        accessLevel: String(plan.accessLevel || 'Planning Only').slice(0,80),
+        purpose: String(plan.purpose || '').slice(0,1000),
+        createdAt: plan.createdAt || new Date().toISOString(),
+        status: 'Planned'
+      };
+    }
+    function undxLoadRepositoryPlans(){
+      try{
+        const raw = localStorage.getItem(undxRepositoryPlansKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(plan => plan && plan.name && plan.path).slice(0,48).map(undxNormalizeRepositoryPlan) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveRepositoryPlans(plans){
+      try{
+        localStorage.setItem(undxRepositoryPlansKey, JSON.stringify(plans.slice(0,48)));
+      }catch(error){
+        if(undxRepositoryMessage) undxRepositoryMessage.textContent = 'Repository plans could not be updated.';
+      }
+    }
+    function undxRepositoryPlanChatDirective(plan){
+      return [
+        'UNDX Repository Plan',
+        '',
+        `Name: ${plan.name}`,
+        `Type: ${plan.type}`,
+        `Planned Path or URL: ${plan.path}`,
+        `Access Level: ${plan.accessLevel}`,
+        `Purpose / Notes: ${plan.purpose || 'No notes provided.'}`,
+        `Status: ${plan.status || 'Planned'}`,
+        '',
+        'Repository Access Protocol:',
+        '- Explicit permission required',
+        '- Read-only before edit access',
+        '- Show diffs before changes',
+        '- Backup before destructive changes',
+        '- Confirm before terminal commands',
+        '- Never expose secrets',
+        '',
+        'Safety Boundary: Planning only. Do not read files, run terminal commands, or modify repositories.'
+      ].join('\\n');
+    }
+    function undxSendRepositoryPlanToChat(plan){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxRepositoryPlanChatDirective(plan);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Repository plan loaded into UNDX Chat Interface.';
+    }
+    function undxAttachRepositoryPlanToProject(plan){
+      if(!undxSelectedProjectId){
+        if(undxRepositoryMessage) undxRepositoryMessage.textContent = 'Open a project workspace before attaching a repository plan.';
+        return;
+      }
+      undxUpdateProject(undxSelectedProjectId, project => {
+        const current = Array.isArray(project.linkedRepositories) ? project.linkedRepositories : [];
+        const next = [undxNormalizeRepositoryPlan(plan), ...current.filter(item => item.id !== plan.id)].slice(0,24);
+        return {...project, linkedRepositories: next};
+      });
+      if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} attached to the selected project workspace.`;
+    }
+    function undxDeleteRepositoryPlan(planId){
+      const plans = undxLoadRepositoryPlans().filter(plan => plan.id !== planId);
+      undxSaveRepositoryPlans(plans);
+      const projects = undxLoadProjects().map(project => ({
+        ...project,
+        linkedRepositories: (project.linkedRepositories || []).filter(plan => plan.id !== planId)
+      }));
+      undxSaveProjects(projects);
+      undxRenderRepositoryPlans();
+      undxRenderProjects();
+      if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
+      if(undxRepositoryMessage) undxRepositoryMessage.textContent = 'Repository plan deleted.';
+    }
+    function undxCreateRepositoryPlanCard(plan){
+      const article = document.createElement('article');
+      article.className = 'undx-repo-card';
+      const title = document.createElement('h4');
+      title.textContent = plan.name;
+      const purpose = document.createElement('p');
+      purpose.textContent = plan.purpose || 'No purpose notes provided.';
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        plan.type,
+        plan.path,
+        `Access Level: ${plan.accessLevel}`,
+        `Created: ${undxFormatMemoryTime(plan.createdAt)}`,
+        `Status: ${plan.status || 'Planned'}`
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendRepositoryPlanToChat(plan), true),
+        undxProjectActionButton('Attach To Project', () => undxAttachRepositoryPlanToProject(plan)),
+        undxProjectActionButton('Delete Plan', () => undxDeleteRepositoryPlan(plan.id))
+      );
+      article.append(title, purpose, meta, actions);
+      return article;
+    }
+    function undxRenderRepositoryPlans(){
+      const plans = undxLoadRepositoryPlans();
+      if(undxRepositoryEmpty) undxRepositoryEmpty.hidden = plans.length > 0;
+      if(!undxRepositoryPlanList) return;
+      undxRepositoryPlanList.replaceChildren();
+      plans.forEach(plan => undxRepositoryPlanList.appendChild(undxCreateRepositoryPlanCard(plan)));
+    }
+    function undxRegisterRepositoryPlan(event){
+      event?.preventDefault();
+      const name = (undxRepoName?.value || '').trim().slice(0,120);
+      const path = (undxRepoPath?.value || '').trim().slice(0,300);
+      if(!name || !path){
+        if(undxRepositoryMessage) undxRepositoryMessage.textContent = 'Enter a repository name and planned path or URL.';
+        return;
+      }
+      const plan = undxNormalizeRepositoryPlan({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name,
+        type: undxRepoType?.value || 'Other',
+        path,
+        accessLevel: undxRepoAccessLevel?.value || 'Planning Only',
+        purpose: (undxRepoPurpose?.value || '').trim().slice(0,1000),
+        createdAt: new Date().toISOString()
+      });
+      const plans = undxLoadRepositoryPlans();
+      undxSaveRepositoryPlans([plan, ...plans]);
+      undxRenderRepositoryPlans();
+      if(undxRepositoryPlanForm) undxRepositoryPlanForm.reset();
+      if(undxRepoAccessLevel) undxRepoAccessLevel.value = 'Planning Only';
+      if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} registered as a planning-only repository plan.`;
+    }
     function undxAddProjectTask(projectId, title, status){
       const cleanTitle = String(title || '').trim().slice(0,180);
       if(!cleanTitle){
@@ -22669,6 +22922,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedRepositoryPlans(project, card){
+      const section = undxWorkspaceSection('Linked Repository Plans');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedRepositories || []).length){
+        list.appendChild(undxWorkspaceEmpty('No repository plans linked yet. Attach a trusted repository plan after opening this workspace.'));
+      }else{
+        project.linkedRepositories.forEach(plan => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = plan.name;
+          const meta = document.createElement('p');
+          meta.textContent = `${plan.type} · ${plan.path} · Access Level: ${plan.accessLevel} · Status: ${plan.status || 'Planned'}`;
+          const purpose = document.createElement('p');
+          purpose.textContent = plan.purpose || 'No purpose notes provided.';
+          item.append(title, meta, purpose);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderBuildDirective(project, card){
       const section = undxWorkspaceSection('Build Directive', 'Generate a clean instruction-style build directive from this project for Codex or future UNDX.');
       const actions = document.createElement('div');
@@ -22720,6 +22996,7 @@ def pulse_premium_undx_page():
         undxProjectActionButton('Run Agent Council', () => undxRunProjectCouncil(project))
       );
       card.append(label, title, grid, actions);
+      undxRenderLinkedRepositoryPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
       undxRenderProjectMemory(project, card);
@@ -22785,6 +23062,7 @@ def pulse_premium_undx_page():
           completedAt: ''
         })),
         memoryNotes: [],
+        linkedRepositories: [],
         lastBuildDirective: '',
         aiEnhancement: {
           source: 'Pending',
@@ -23248,10 +23526,12 @@ def pulse_premium_undx_page():
       undxRefreshProjectSourcePreview();
     });
     undxMissionInput?.addEventListener('input', undxRefreshProjectSourcePreview);
+    undxRepositoryPlanForm?.addEventListener('submit', undxRegisterRepositoryPlan);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
     undxRenderChat();
     undxRenderProjects();
+    undxRenderRepositoryPlans();
     undxRefreshProjectSourcePreview();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)

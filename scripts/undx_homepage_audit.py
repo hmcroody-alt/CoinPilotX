@@ -99,6 +99,12 @@ def main():
     require("Project Memory" not in feed_html, "UNDX project memory absent from Pulse feed")
     require("Generate Build Directive" not in feed_html, "UNDX build directive action absent from Pulse feed")
     require("Send Directive To UNDX Chat" not in feed_html, "UNDX directive chat handoff absent from Pulse feed")
+    require("UNDX Repository Connection Planner" not in feed_html, "UNDX repository planner absent from Pulse feed")
+    require("Trusted Repository Plans" not in feed_html, "UNDX repository plans absent from Pulse feed")
+    require("Repository Access Protocol" not in feed_html, "UNDX repository protocol absent from Pulse feed")
+    require("Repository Core: Planning" not in feed_html, "UNDX repository planning status absent from Pulse feed")
+    require("File Access: Disabled" not in feed_html, "UNDX file access status absent from Pulse feed")
+    require("Execution Access: Disabled" not in feed_html, "UNDX execution access status absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
@@ -267,6 +273,41 @@ def main():
         "Send Directive To UNDX Chat",
         "UNDX Build Directive",
         "Recommended Next Action",
+        "UNDX Repository Connection Planner",
+        "Prepare trusted codebases for future UNDX analysis, file access, and build execution.",
+        "Repository / Folder Name",
+        "Repository Type",
+        "Local Folder",
+        "GitHub Repository",
+        "Railway Project",
+        "Vercel Project",
+        "Planned Path or URL",
+        "Access Level",
+        "Planning Only",
+        "Read-Only Future Access",
+        "Read + Suggest Changes",
+        "Read + Edit With Approval",
+        "Full Build Agent With Approval",
+        "Purpose / Notes",
+        "Register Repository Plan",
+        "undxRepositoryPlans",
+        "Trusted Repository Plans",
+        "Status: ${plan.status || 'Planned'}",
+        "Attach To Project",
+        "Delete Plan",
+        "Repository Access Protocol",
+        "UNDX will only access code folders after explicit permission. Future phases must use read-only previews, file diffs, backups, and approval checkpoints before edits or commands.",
+        "Explicit permission required",
+        "Read-only before edit access",
+        "Show diffs before changes",
+        "Backup before destructive changes",
+        "Confirm before terminal commands",
+        "Never expose secrets",
+        "Repository Core: Planning",
+        "File Access: Disabled",
+        "Execution Access: Disabled",
+        "Phase: 10",
+        "Linked Repository Plans",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
