@@ -16214,6 +16214,40 @@ def pulse_live_now_homepage_html(user_id=0):
     )
 
 
+def pulse_undx_core_homepage_html():
+    features = [
+        ("Recursive Builder Intelligence", "Learns from product signals and prepares safer build paths for CoinPilotXAI expansion."),
+        ("Autonomous Code Evolution", "Premium planning layer for future controlled refactors, audits, and system hardening."),
+        ("Crypto Security Expansion", "Threat modeling, scam pattern research, and trust infrastructure for the Pulse ecosystem."),
+        ("AI Research Engine", "Turns market, product, and community intelligence into structured next-step recommendations."),
+        ("Product Growth Intelligence", "Reads creator momentum, retention signals, and feature adoption without drowning the feed."),
+        ("Mission Control Automation", "Future command layer for orchestrating workers, diagnostics, and launch readiness."),
+    ]
+    feature_html = "".join(
+        "<article class='undx-feature-card'>"
+        f"<span>{clean_html(str(index).zfill(2))}</span>"
+        f"<h3>{clean_html(title)}</h3>"
+        f"<p>{clean_html(body)}</p>"
+        "</article>"
+        for index, (title, body) in enumerate(features, start=1)
+    )
+    return (
+        "<section class='card pulse-undx-core' data-undx-core>"
+        "<div class='undx-orbit' aria-hidden='true'><span></span><span></span><span></span></div>"
+        "<header class='undx-hero'>"
+        "<div>"
+        "<span class='badge undx-premium-badge'>Coming Soon: Premium Intelligence Layer</span>"
+        "<h2>UNDX Core: Build Beyond the Known.</h2>"
+        "<p>The premium intelligence engine designed to help CoinPilotXAI evolve, build, analyze, secure, and expand into unknown destinations.</p>"
+        "</div>"
+        "<a class='button primary undx-cta' href='/pulse/premium'>Unlock UNDX</a>"
+        "</header>"
+        f"<div class='undx-feature-grid'>{feature_html}</div>"
+        "<footer class='undx-footer'><strong>UNDX = Unknown Destination X</strong><span>Hidden builder intelligence for the next era of Pulse.</span></footer>"
+        "</section>"
+    )
+
+
 def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     user = require_account()
     if not user:
@@ -16273,6 +16307,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     desktop_right_rail_html = pulse_desktop_right_rail_html()
     status_rail_html = pulse_status_rail_html()
     live_now_html = pulse_live_now_homepage_html(int(user.get("user_id") or 0))
+    undx_core_html = pulse_undx_core_homepage_html()
     html = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -16321,6 +16356,7 @@ __DESKTOP_LEFT_RAIL__
 <section class="layout pulse-grid"><div>
 __PULSE_STATUS_RAIL__
 __LIVE_NOW_HUB__
+__UNDX_CORE__
 <section class="card composer pulse-publisher-card" id="pulseComposer"><div class="smart-composer-bar"><span class="smart-compose-avatar">P</span><textarea id="postBody" placeholder="What's happening in crypto today?"></textarea></div><div class="composer-primary-actions" data-pulse-media-picker="composer"><button type="button" data-open-media data-pulse-media-trigger data-expand-composer="pulseComposer" data-media-input="postMedia" data-media-accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime">Media</button><button type="button" data-composer-reel>Reel</button><a class="button" href="/pulse/live">Live</a><button type="button" data-composer-music>Music</button><button type="button" id="aiBtn" aria-label="Enhance with AI">AI</button><button type="button" data-composer-audience>Audience</button><button class="primary" id="publishBtn" type="button">Publish</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" placeholder="Optional title"><select id="postType" class="post-type-select"><option value="text">Text</option><option value="poll">Question</option><option value="image">Photo</option><option value="video">Short Video</option><option value="gif">GIF</option><option value="scam_report">Scam Warning</option><option value="arena_result">Arena Highlight</option><option value="roast_clip">Roast Clip</option><option value="replay">Replay Card</option></select><div class="composer-tools"><button class="active" type="button" data-type="text">Text</button><button type="button" data-type="poll">Question</button><button type="button" data-type="scam_report">Scam</button><button type="button" data-type="roast_clip">Roast</button><button type="button" data-type="image">Photo</button><button type="button" data-type="video">Video</button></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="actions pulse-actions"><a class="button" href="/scam-shield/scan">Run Scam Shield</a><button type="button" data-collapse-composer>Done</button></div><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><div class="pulse-upload-progress-track" data-upload-progress aria-label="Pulse upload progress"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small></div><p class="muted composer-hint" id="composeMsg">Media, Reels, Live, Music, AI, and Audience tools stay one tap away. Unsafe links are scanned before publishing.</p></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your Pulse is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="/pulse/create">Create Another</a><a class="button" href="/pulse">Pulse Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="trending">Trending</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
@@ -16454,6 +16490,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{if(state.loading)retu
         .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
         .replace("__PULSE_STATUS_RAIL__", status_rail_html)
         .replace("__LIVE_NOW_HUB__", live_now_html)
+        .replace("__UNDX_CORE__", undx_core_html)
         .replace("__DAILY_MENTOR_CARD__", pulse_daily_mentor_card_html())
         .replace("__DESKTOP_RIGHT_RAIL__", desktop_right_rail_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
