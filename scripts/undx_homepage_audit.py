@@ -67,12 +67,15 @@ def main():
     undx_html = page_html(client, "/pulse/premium/undx")
 
     require("data-undx-premium-entry" not in feed_html, "UNDX entry absent from Pulse feed")
+    require("/pulse/premium/undx" not in feed_html, "UNDX premium route absent from Pulse feed")
+    require("Enter the Unknown Destination" not in feed_html, "UNDX Command Center hero absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     for token in [
         "data-undx-premium-entry",
         "Enter UNDX",
         "Open the Unknown Destination intelligence layer.",
+        "UNDX Core",
         "/pulse/premium/undx",
     ]:
         require(token in premium_html, f"Pulse Premium contains {token}")
@@ -80,8 +83,28 @@ def main():
     for token in [
         "data-undx-core-page",
         "UNDX Core",
-        "Unknown Destination X — the premium intelligence layer powering the future of CoinPilotXAI.",
+        "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.",
+        "Enter the Unknown Destination",
         "Premium Intelligence Layer",
+        "Initialize UNDX Core",
+        "View Core Modules",
+        "Core Modules",
+        "Builder Intelligence",
+        "Security Expansion",
+        "Crypto Research Engine",
+        "Autonomous Debugging",
+        "Product Growth Intelligence",
+        "Mission Control Automation",
+        "UNDX Mission Panel",
+        "Core Status:",
+        "Access Level:",
+        "Build Phase:",
+        "Intelligence Mode:",
+        "Future Features Preview",
+        "AI Builder Console",
+        "Repo Intelligence",
+        "Agent Council",
+        "Memory Core",
     ]:
         require(token in undx_html, f"UNDX page contains {token}")
 

@@ -29,6 +29,7 @@ ROUTES = [
     "/pulse/marketplace",
     "/pulse/profile",
     "/pulse/premium",
+    "/pulse/premium/undx",
     "/admin/global-command",
     "/admin/performance",
 ]

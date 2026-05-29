@@ -84,6 +84,7 @@ def main():
         "/pulse/assistant",
         "/pulse/camera",
         "/pulse/premium",
+        "/pulse/premium/undx",
         "/admin/command-center",
         "/admin/global-command",
         "/admin/capability-matrix",

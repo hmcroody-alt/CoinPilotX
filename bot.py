@@ -21368,7 +21368,7 @@ def pulse_premium_page():
 	        <div>
 	          <span class='prestige-cycle'>Coming Soon: Premium Intelligence Layer</span>
 	          <h2>UNDX Core</h2>
-	          <p>Open the Unknown Destination intelligence layer.</p>
+	          <p>Open the Unknown Destination intelligence layer. Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.</p>
 	          <div class='undx-core-sparks'><span>Recursive builder intelligence</span><span>Security expansion</span><span>Mission control automation</span></div>
 	        </div>
 	        <a class='button primary undx-premium-cta' href='/pulse/premium/undx'>Enter UNDX</a>
@@ -21406,37 +21406,110 @@ def pulse_premium_undx_page():
     main = """
     <style>
     .undx-core-page{position:relative;display:grid;gap:18px;isolation:isolate}
-    .undx-core-page:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 16% 10%,rgba(110,223,246,.16),transparent 27rem),radial-gradient(circle at 84% 20%,rgba(155,92,255,.16),transparent 25rem),radial-gradient(circle at 48% 82%,rgba(54,229,143,.10),transparent 30rem)}
-    .undx-core-hero{position:relative;min-height:560px;display:grid;align-content:end;gap:18px;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:30px;padding:clamp(18px,4vw,42px);background:radial-gradient(circle at 18% 12%,rgba(110,223,246,.22),transparent 26rem),radial-gradient(circle at 86% 18%,rgba(155,92,255,.18),transparent 27rem),linear-gradient(145deg,#050812,#0c182d 62%,#050b14);box-shadow:0 34px 120px rgba(0,0,0,.44),0 0 70px rgba(54,229,143,.10)}
-    .undx-core-hero:before{content:"";position:absolute;inset:-30%;background:linear-gradient(120deg,transparent 18%,rgba(110,223,246,.12) 44%,transparent 62%),radial-gradient(circle,rgba(255,255,255,.13) 0 1px,transparent 1px);background-size:auto,48px 48px;opacity:.3;transform:rotate(-7deg);animation:undxCoreDrift 18s ease-in-out infinite}
+    .undx-core-page:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 16% 10%,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 84% 20%,rgba(155,92,255,.14),transparent 27rem),radial-gradient(circle at 44% 84%,rgba(54,229,143,.11),transparent 31rem)}
+    .undx-command-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border:1px solid rgba(110,223,246,.16);border-radius:18px;padding:10px 12px;background:rgba(255,255,255,.045);backdrop-filter:blur(16px)}
+    .undx-command-bar span{color:rgba(223,246,255,.7);font-weight:850}
+    .undx-core-hero{position:relative;min-height:590px;display:grid;align-content:end;gap:18px;overflow:hidden;border:1px solid rgba(110,223,246,.24);border-radius:30px;padding:clamp(18px,4vw,44px);background:radial-gradient(circle at 17% 14%,rgba(110,223,246,.26),transparent 27rem),radial-gradient(circle at 84% 16%,rgba(255,209,102,.14),transparent 24rem),radial-gradient(circle at 62% 70%,rgba(54,229,143,.13),transparent 28rem),linear-gradient(145deg,#040711,#0b1628 58%,#050b14);box-shadow:0 34px 120px rgba(0,0,0,.46),0 0 76px rgba(54,229,143,.12)}
+    .undx-core-hero:before{content:"";position:absolute;inset:-30%;background:linear-gradient(120deg,transparent 18%,rgba(110,223,246,.13) 44%,transparent 62%),radial-gradient(circle,rgba(255,255,255,.14) 0 1px,transparent 1px);background-size:auto,48px 48px;opacity:.32;transform:rotate(-7deg);animation:undxCoreDrift 18s ease-in-out infinite}
+    .undx-core-hero:after{content:"";position:absolute;inset:16px;border:1px solid rgba(110,223,246,.13);border-radius:22px;pointer-events:none;box-shadow:inset 0 0 70px rgba(110,223,246,.05)}
     .undx-core-hero>*{position:relative;z-index:1}
-    .undx-core-label{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(110,223,246,.34);border-radius:999px;padding:8px 12px;background:rgba(110,223,246,.08);color:#dffcff;font-weight:950;box-shadow:0 0 28px rgba(110,223,246,.12)}
-    .undx-core-hero h1{max-width:900px;margin:0;font-size:clamp(48px,10vw,120px);line-height:.84;letter-spacing:0}
-    .undx-core-hero p{max-width:900px;margin:0;color:rgba(223,246,255,.78);font-size:clamp(17px,2vw,24px)}
-    .undx-core-actions{display:flex;gap:10px;flex-wrap:wrap}.undx-core-actions .button{min-height:48px;border-radius:16px}
-    .undx-core-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.undx-core-card{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:18px;background:rgba(255,255,255,.06);backdrop-filter:blur(16px);box-shadow:0 22px 70px rgba(0,0,0,.22)}.undx-core-card h2{margin-top:0}
+    .undx-core-label{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(110,223,246,.36);border-radius:999px;padding:8px 12px;background:rgba(110,223,246,.09);color:#dffcff;font-weight:950;box-shadow:0 0 28px rgba(110,223,246,.13)}
+    .undx-core-hero h1{max-width:940px;margin:0;font-size:clamp(46px,9vw,116px);line-height:.86;letter-spacing:0}
+    .undx-core-hero p{max-width:910px;margin:0;color:rgba(223,246,255,.8);font-size:clamp(16px,2vw,23px)}
+    .undx-core-actions{display:flex;gap:10px;flex-wrap:wrap}
+    .undx-core-actions .button{min-height:50px;border-radius:16px}
+    .undx-section-panel{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:clamp(16px,2vw,22px);background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.032));backdrop-filter:blur(18px);box-shadow:0 22px 70px rgba(0,0,0,.24)}
+    .undx-section-panel h2,.undx-core-card h3{margin-top:0}
+    .undx-section-heading{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .undx-section-heading p{max-width:680px;margin:0;color:rgba(223,246,255,.68)}
+    .undx-core-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+    .undx-core-card{position:relative;min-height:224px;display:grid;align-content:space-between;gap:14px;overflow:hidden;border:1px solid rgba(110,223,246,.17);border-radius:20px;padding:18px;background:radial-gradient(circle at 24% 16%,rgba(110,223,246,.13),transparent 12rem),linear-gradient(180deg,rgba(255,255,255,.072),rgba(255,255,255,.032));box-shadow:0 22px 70px rgba(0,0,0,.22)}
+    .undx-core-card:before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,rgba(255,255,255,.11),transparent 32%,rgba(54,229,143,.08));opacity:.58;pointer-events:none}
+    .undx-core-card>*{position:relative;z-index:1}
+    .undx-core-card p{margin:0;color:rgba(223,246,255,.7)}
+    .undx-module-label{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(255,209,102,.28);border-radius:999px;padding:6px 9px;background:rgba(255,209,102,.075);color:#fff2b8;font-size:.78rem;font-weight:950}
+    .undx-dashboard-row{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}
+    .undx-mission-panel p{font-size:clamp(16px,1.7vw,20px);color:rgba(229,247,255,.82)}
+    .undx-status-grid{display:grid;gap:10px}
+    .undx-status-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid rgba(110,223,246,.14);border-radius:15px;padding:12px;background:rgba(5,11,20,.38)}
+    .undx-status-item span{color:rgba(223,246,255,.66);font-weight:850}
+    .undx-status-item strong{color:#36e58f;text-align:right}
+    .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
+    .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
+    .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:800px){.undx-core-hero{min-height:430px;border-radius:22px}.undx-core-grid{grid-template-columns:1fr}.undx-core-actions .button{width:100%}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button{width:100%}.undx-command-bar{align-items:stretch}.undx-command-bar .button{width:100%}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
+      <nav class='undx-command-bar' aria-label='UNDX premium navigation'>
+        <span>UNDX Core / Command Center</span>
+        <a class='button' href='/pulse/premium'>Back to Pulse Premium</a>
+      </nav>
       <section class='undx-core-hero'>
         <span class='undx-core-label'>Premium Intelligence Layer</span>
-        <h1>UNDX Core</h1>
-        <p>Unknown Destination X — the premium intelligence layer powering the future of CoinPilotXAI.</p>
+        <h1>Enter the Unknown Destination</h1>
+        <p>UNDX is the intelligence engine behind future CoinPilotXAI expansion, built to coordinate premium analysis, secure growth, autonomous building, and the next unknown layer of product evolution.</p>
         <div class='undx-core-actions'>
-          <a class='button primary' href='/pulse/premium'>Back to Pulse Premium</a>
-          <a class='button' href='/pulse/creator/dashboard'>Open Creator Intelligence</a>
+          <a class='button primary' href='#undx-system-status'>Initialize UNDX Core</a>
+          <a class='button' href='#undx-core-modules'>View Core Modules</a>
         </div>
       </section>
-      <section class='undx-core-grid'>
-        <article class='undx-core-card'><h2>Build Beyond the Known</h2><p class='muted'>UNDX is the future premium builder intelligence layer for product evolution, safer automation, and expansion planning.</p></article>
-        <article class='undx-core-card'><h2>Hidden Mission Control</h2><p class='muted'>Designed to become the command layer for diagnostics, security research, worker orchestration, and launch readiness.</p></article>
-        <article class='undx-core-card'><h2>AI-Native Expansion</h2><p class='muted'>A premium foundation for analysis, creation, trust systems, and Unknown Destination X roadmaps.</p></article>
+      <section class='undx-section-panel' id='undx-core-modules'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Core Modules Grid</span>
+            <h2>Core Modules</h2>
+          </div>
+          <p>Premium systems queued for phased activation inside the hidden CoinPilotXAI intelligence layer.</p>
+        </div>
+        <div class='undx-core-grid'>
+          <article class='undx-core-card'><span class='undx-module-label'>Initializing</span><div><h3>Builder Intelligence</h3><p>Plans app structures, product flows, launch paths, and future software-building missions.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Security Expansion</h3><p>Prepares scam defense, hardening reviews, trust layers, and premium security intelligence.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Crypto Research Engine</h3><p>Turns market, wallet, token, and education signals into safer research workflows.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Autonomous Debugging</h3><p>Designed to inspect failures, explain risk, and guide repairs across CoinPilotXAI systems.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Coming Soon</span><div><h3>Product Growth Intelligence</h3><p>Reads adoption signals, creator momentum, conversion paths, and expansion opportunities.</p></div></article>
+          <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Mission Control Automation</h3><p>Coordinates future jobs, audits, release readiness, and command-center operations.</p></div></article>
+        </div>
+      </section>
+      <section class='undx-dashboard-row'>
+        <article class='undx-section-panel undx-mission-panel'>
+          <span class='undx-core-label'>UNDX Mission Panel</span>
+          <h2>Mission Layer</h2>
+          <p>UNDX is being built as the internal intelligence system that will help expand CoinPilotXAI phase by phase — from crypto intelligence to security, automation, software building, and autonomous research.</p>
+        </article>
+        <article class='undx-section-panel' id='undx-system-status'>
+          <span class='undx-core-label'>System Status Panel</span>
+          <h2>System Status</h2>
+          <div class='undx-status-grid'>
+            <p class='undx-status-item'><span>Core Status:</span><strong>Initializing</strong></p>
+            <p class='undx-status-item'><span>Access Level:</span><strong>Premium</strong></p>
+            <p class='undx-status-item'><span>Build Phase:</span><strong>Phase 2</strong></p>
+            <p class='undx-status-item'><span>Intelligence Mode:</span><strong>Command Center</strong></p>
+          </div>
+        </article>
+      </section>
+      <section class='undx-section-panel'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Future Features Preview</span>
+            <h2>Future Features Preview</h2>
+          </div>
+          <p>The next UNDX surface is being shaped as a premium operating layer, not a feed item.</p>
+        </div>
+        <div class='undx-preview-grid'>
+          <article class='undx-preview-item'><span>01</span><strong>AI Builder Console</strong></article>
+          <article class='undx-preview-item'><span>02</span><strong>Repo Intelligence</strong></article>
+          <article class='undx-preview-item'><span>03</span><strong>Agent Council</strong></article>
+          <article class='undx-preview-item'><span>04</span><strong>Memory Core</strong></article>
+        </div>
       </section>
     </section>
     """
-    return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer powering the future of CoinPilotXAI.", main)
+    return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main)
 
 
 def premium_user_is_grantable(user):
