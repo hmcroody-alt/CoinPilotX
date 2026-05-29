@@ -71,6 +71,8 @@ def main():
     require("Enter the Unknown Destination" not in feed_html, "UNDX Command Center hero absent from Pulse feed")
     require("Builder Intelligence Console" not in feed_html, "UNDX builder console absent from Pulse feed")
     require("Generate Mission Blueprint" not in feed_html, "UNDX blueprint action absent from Pulse feed")
+    require("Mission Memory" not in feed_html, "UNDX mission memory absent from Pulse feed")
+    require("Clear Mission Memory" not in feed_html, "UNDX clear memory action absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     for token in [
@@ -105,6 +107,13 @@ def main():
         "Build Steps",
         "Security Notes",
         "Next Action",
+        "Mission Memory",
+        "UNDX remembers generated missions so future build phases can learn from previous objectives, patterns, and system evolution.",
+        "Memory Core: Active",
+        "Stored Missions",
+        "Clear Mission Memory",
+        "No missions stored yet. Generate a blueprint to initialize UNDX memory.",
+        "undxMissionMemory",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

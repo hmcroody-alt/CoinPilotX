@@ -21452,6 +21452,19 @@ def pulse_premium_undx_page():
     .undx-blueprint-block strong{display:block;margin-bottom:6px;color:#dffcff}
     .undx-blueprint-block p,.undx-blueprint-block ol{margin:0;color:rgba(223,246,255,.72)}
     .undx-blueprint-block ol{padding-left:18px}
+    .undx-memory-panel{position:relative;overflow:hidden;border-color:rgba(110,223,246,.20);background:radial-gradient(circle at 18% 12%,rgba(110,223,246,.12),transparent 24rem),radial-gradient(circle at 82% 18%,rgba(255,209,102,.08),transparent 22rem),linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03))}
+    .undx-memory-panel:before{content:"";position:absolute;inset:0;background:linear-gradient(145deg,rgba(255,255,255,.08),transparent 32%,rgba(54,229,143,.06));pointer-events:none}
+    .undx-memory-panel>*{position:relative;z-index:1}
+    .undx-memory-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    .undx-memory-status{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-memory-status span{display:inline-flex;align-items:center;border:1px solid rgba(110,223,246,.18);border-radius:999px;padding:7px 10px;background:rgba(5,11,20,.38);color:#dffcff;font-weight:900;font-size:.86rem}
+    .undx-memory-status strong{color:#36e58f}
+    .undx-memory-list{display:grid;gap:12px}
+    .undx-memory-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(7,18,32,.74),rgba(255,255,255,.035));box-shadow:0 18px 54px rgba(0,0,0,.20)}
+    .undx-memory-card h3{margin:0;font-size:clamp(19px,2.2vw,26px)}
+    .undx-memory-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-memory-meta{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-memory-empty{border:1px dashed rgba(110,223,246,.22);border-radius:18px;padding:16px;background:rgba(5,11,20,.32);color:rgba(223,246,255,.72);font-weight:850}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
@@ -21498,6 +21511,24 @@ def pulse_premium_undx_page():
           </aside>
         </div>
         <div class='undx-blueprint-output' id='undxBlueprintOutput' aria-live='polite'></div>
+      </section>
+      <section class='undx-section-panel undx-memory-panel' id='undx-mission-memory'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Memory Core: Active</span>
+            <h2>Mission Memory</h2>
+          </div>
+          <p>UNDX remembers generated missions so future build phases can learn from previous objectives, patterns, and system evolution.</p>
+        </div>
+        <div class='undx-memory-toolbar'>
+          <div class='undx-memory-status' aria-label='UNDX mission memory status'>
+            <span>Memory Core: <strong>Active</strong></span>
+            <span>Stored Missions: <strong id='undxStoredMissionCount'>0</strong></span>
+          </div>
+          <button class='button' type='button' id='undxClearMemory'>Clear Mission Memory</button>
+        </div>
+        <div class='undx-memory-empty' id='undxMemoryEmpty'>No missions stored yet. Generate a blueprint to initialize UNDX memory.</div>
+        <div class='undx-memory-list' id='undxMemoryList' aria-live='polite'></div>
       </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
@@ -21555,6 +21586,11 @@ def pulse_premium_undx_page():
     const undxGenerateBlueprint = document.getElementById('undxGenerateBlueprint');
     const undxBlueprintOutput = document.getElementById('undxBlueprintOutput');
     const undxConsoleMessage = document.querySelector('[data-undx-console-message]');
+    const undxMemoryList = document.getElementById('undxMemoryList');
+    const undxMemoryEmpty = document.getElementById('undxMemoryEmpty');
+    const undxStoredMissionCount = document.getElementById('undxStoredMissionCount');
+    const undxClearMemory = document.getElementById('undxClearMemory');
+    const undxMemoryStorageKey = 'undxMissionMemory';
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
       const words = text.replace(/[^a-zA-Z0-9\\s-]/g,' ').trim().split(/\\s+/).filter(Boolean).slice(0,5);
@@ -21568,6 +21604,64 @@ def pulse_premium_undx_page():
       if(lower.includes('debug') || lower.includes('fix') || lower.includes('audit')) modules.push('Autonomous Debugging');
       if(lower.includes('dashboard') || lower.includes('premium') || lower.includes('automation')) modules.push('Mission Control Automation');
       return [...new Set(modules)].slice(0,4);
+    }
+    function undxLoadMemory(){
+      try{
+        const raw = localStorage.getItem(undxMemoryStorageKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.name && item.objective).slice(0,24) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveMemory(items){
+      try{
+        localStorage.setItem(undxMemoryStorageKey, JSON.stringify(items.slice(0,24)));
+      }catch(error){
+        if(undxConsoleMessage) undxConsoleMessage.textContent = 'Mission generated, but local memory could not be updated.';
+      }
+    }
+    function undxFormatMemoryTime(value){
+      const date = value ? new Date(value) : new Date();
+      if(Number.isNaN(date.getTime())) return 'Timestamp unavailable';
+      return date.toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+    }
+    function undxCreateMemoryCard(item){
+      const article = document.createElement('article');
+      article.className = 'undx-memory-card';
+      const title = document.createElement('h3');
+      title.textContent = item.name || 'Mission Unknown Destination';
+      const objective = document.createElement('p');
+      objective.textContent = item.objective || '';
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        `Mission Name: ${item.name || 'Mission Unknown Destination'}`,
+        `Created: ${undxFormatMemoryTime(item.createdAt)}`,
+        item.phase || 'Phase 4',
+        item.status || 'Stored'
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      article.append(title, objective, meta);
+      return article;
+    }
+    function undxRenderMemory(){
+      const memory = undxLoadMemory();
+      if(undxStoredMissionCount) undxStoredMissionCount.textContent = String(memory.length);
+      if(undxMemoryEmpty) undxMemoryEmpty.hidden = memory.length > 0;
+      if(!undxMemoryList) return;
+      undxMemoryList.replaceChildren();
+      memory.forEach(item => undxMemoryList.appendChild(undxCreateMemoryCard(item)));
+    }
+    function undxStoreBlueprint(blueprint){
+      const current = undxLoadMemory();
+      const next = [blueprint, ...current].slice(0,24);
+      undxSaveMemory(next);
+      undxRenderMemory();
     }
     function undxBuildBlueprint(){
       const mission = (undxMissionInput?.value || '').trim();
@@ -21587,6 +21681,18 @@ def pulse_premium_undx_page():
         'Build the first safe prototype inside the CoinPilotXAI pattern.',
         'Run focused audits, then prepare the next phase upgrade.'
       ];
+      const blueprint = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name,
+        objective: mission,
+        modules,
+        steps,
+        securityNotes: 'Keep secrets server-side, validate inputs, preserve premium boundaries, and add an audit before launch.',
+        nextAction: 'Create the smallest command-center prototype, then connect real intelligence once the workflow is proven.',
+        createdAt: new Date().toISOString(),
+        phase: 'Phase 4',
+        status: 'Stored'
+      };
       undxBlueprintOutput.innerHTML = `
         <article class="undx-blueprint-card">
           <span class="undx-core-label">Mission Blueprint Generated</span>
@@ -21600,11 +21706,20 @@ def pulse_premium_undx_page():
             <section class="undx-blueprint-block"><strong>Next Action</strong><p>Create the smallest command-center prototype, then connect real intelligence once the workflow is proven.</p></section>
           </div>
         </article>`;
+      undxStoreBlueprint(blueprint);
     }
     undxGenerateBlueprint?.addEventListener('click', undxBuildBlueprint);
+    undxClearMemory?.addEventListener('click', () => {
+      try{
+        localStorage.removeItem(undxMemoryStorageKey);
+      }catch(error){}
+      undxRenderMemory();
+      if(undxConsoleMessage) undxConsoleMessage.textContent = '';
+    });
     undxMissionInput?.addEventListener('keydown', event => {
       if((event.metaKey || event.ctrlKey) && event.key === 'Enter') undxBuildBlueprint();
     });
+    undxRenderMemory();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 
