@@ -21695,14 +21695,28 @@ def pulse_premium_undx_page():
     .undx-repo-card p{margin:0;color:rgba(223,246,255,.72)}
     .undx-safety-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
     .undx-safety-list li{border:1px solid rgba(110,223,246,.13);border-radius:14px;padding:10px 12px;background:rgba(5,11,20,.36);color:rgba(223,246,255,.76);font-weight:850}
+    .undx-execution-planner{position:relative;overflow:hidden;border-color:rgba(156,124,255,.24);background:radial-gradient(circle at 18% 12%,rgba(156,124,255,.13),transparent 24rem),radial-gradient(circle at 78% 18%,rgba(255,209,102,.10),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.078),rgba(255,255,255,.028))}
+    .undx-execution-planner:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08),transparent 31%,rgba(110,223,246,.055));pointer-events:none}
+    .undx-execution-planner>*{position:relative;z-index:1}
+    .undx-execution-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+    .undx-execution-controls{display:grid;gap:12px}
+    .undx-execution-list,.undx-execution-detail{display:grid;gap:12px}
+    .undx-execution-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(8,14,34,.80),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-execution-card h3,.undx-execution-card h4{margin:0;font-size:clamp(19px,2.2vw,26px)}
+    .undx-execution-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-execution-planner h2,.undx-execution-planner .undx-project-source,.undx-execution-card{overflow-wrap:anywhere}
+    .undx-execution-planner .undx-memory-status span{max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere}
+    .undx-execution-planner .undx-project-field,.undx-execution-planner select,.undx-execution-planner .button{min-width:0}
+    .undx-execution-source-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+    .undx-execution-source-list li{border:1px solid rgba(156,124,255,.17);border-radius:14px;padding:10px 12px;background:rgba(5,11,20,.34);color:rgba(223,246,255,.76);font-weight:850}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -21994,6 +22008,74 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-execution-planner' id='undx-task-execution-planner'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Execution Core: Planning</span>
+            <h2>UNDX Task Execution Planner</h2>
+          </div>
+          <p>Convert missions, projects, and repository plans into structured execution tasks before UNDX gains build access.</p>
+        </div>
+        <div class='undx-execution-layout'>
+          <div class='undx-execution-controls'>
+            <div class='undx-memory-status' aria-label='UNDX task execution planner status'>
+              <span aria-label='Execution Core: Planning'>Execution Core: <strong>Planning</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Command Execution: Disabled'>Command Execution: <strong>Disabled</strong></span>
+              <span aria-label='Approval Protocol: Required'>Approval Protocol: <strong>Required</strong></span>
+              <span aria-label='Phase: 11'>Phase: <strong>11</strong></span>
+            </div>
+            <form class='undx-project-form' id='undxExecutionPlannerForm'>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field undx-project-field-wide'>
+                  <span>Execution Plan Sources</span>
+                  <select id='undxExecutionSourceSelect'>
+                    <option value='builder'>Builder Console Text</option>
+                    <option value='chat'>Latest Chat Response</option>
+                    <option value='memory'>Mission Memory Item</option>
+                    <option value='project'>Open Project Workspace</option>
+                    <option value='repository'>Linked Repository Plan</option>
+                  </select>
+                </label>
+              </div>
+              <div class='undx-project-source' id='undxExecutionSourcePreview'>Execution Source: Waiting for mission input.</div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='submit'>Generate Execution Plan</button>
+              </div>
+            </form>
+            <p class='undx-project-message' id='undxExecutionMessage' aria-live='polite'></p>
+            <section class='undx-project-registry' aria-label='Execution Plan Registry'>
+              <h3>Execution Plan Registry</h3>
+              <div class='undx-memory-empty' id='undxExecutionEmpty'>No execution plans stored yet. Generate an execution plan to activate Phase 11 planning.</div>
+              <div class='undx-execution-list' id='undxExecutionPlanList' aria-live='polite'></div>
+            </section>
+            <section class='undx-project-detail' aria-label='Execution Plan Detail'>
+              <h3>Execution Plan Detail</h3>
+              <div class='undx-evolution-empty' id='undxExecutionDetailEmpty'>Open a stored execution plan to view its task breakdown, approvals, rollback strategy, and Codex-style directive.</div>
+              <div class='undx-execution-detail' id='undxExecutionPlanDetail' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-execution-card' aria-label='Execution Planning Protocol'>
+            <span class='undx-core-label'>Execution Planning Protocol</span>
+            <h3>Execution Sources</h3>
+            <ul class='undx-execution-source-list'>
+              <li>Current Builder Intelligence Console text</li>
+              <li>Latest UNDX Chat response</li>
+              <li>Selected Mission Memory item</li>
+              <li>Selected/open Project Workspace</li>
+              <li>Linked Repository Plan if attached to the selected project</li>
+            </ul>
+            <h3>Approval Checkpoints</h3>
+            <ul class='undx-safety-list'>
+              <li>Approve before file reading</li>
+              <li>Approve before edits</li>
+              <li>Approve before terminal commands</li>
+              <li>Approve before Git commits</li>
+              <li>Approve before deployment</li>
+            </ul>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22095,14 +22177,24 @@ def pulse_premium_undx_page():
     const undxRepositoryMessage = document.getElementById('undxRepositoryMessage');
     const undxRepositoryEmpty = document.getElementById('undxRepositoryEmpty');
     const undxRepositoryPlanList = document.getElementById('undxRepositoryPlanList');
+    const undxExecutionPlannerForm = document.getElementById('undxExecutionPlannerForm');
+    const undxExecutionSourceSelect = document.getElementById('undxExecutionSourceSelect');
+    const undxExecutionSourcePreview = document.getElementById('undxExecutionSourcePreview');
+    const undxExecutionMessage = document.getElementById('undxExecutionMessage');
+    const undxExecutionEmpty = document.getElementById('undxExecutionEmpty');
+    const undxExecutionPlanList = document.getElementById('undxExecutionPlanList');
+    const undxExecutionDetailEmpty = document.getElementById('undxExecutionDetailEmpty');
+    const undxExecutionPlanDetail = document.getElementById('undxExecutionPlanDetail');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
     const undxRepositoryPlansKey = 'undxRepositoryPlans';
+    const undxExecutionPlansKey = 'undxExecutionPlans';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
     let undxSelectedProjectId = null;
+    let undxSelectedExecutionPlanId = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -22304,6 +22396,7 @@ def pulse_premium_undx_page():
         createdAt: plan.createdAt || new Date().toISOString(),
         status: 'Planned'
       })) : [];
+      const linkedExecutionPlans = Array.isArray(project.linkedExecutionPlans) ? project.linkedExecutionPlans.filter(plan => plan && plan.id && plan.objective).slice(0,24).map(undxNormalizeExecutionPlan) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -22312,6 +22405,7 @@ def pulse_premium_undx_page():
         milestones,
         memoryNotes,
         linkedRepositories,
+        linkedExecutionPlans,
         lastBuildDirective: project.lastBuildDirective || ''
       };
     }
@@ -22630,6 +22724,7 @@ def pulse_premium_undx_page():
         return {...project, linkedRepositories: next};
       });
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} attached to the selected project workspace.`;
+      undxRefreshExecutionSourcePreview();
     }
     function undxDeleteRepositoryPlan(planId){
       const plans = undxLoadRepositoryPlans().filter(plan => plan.id !== planId);
@@ -22643,6 +22738,7 @@ def pulse_premium_undx_page():
       undxRenderProjects();
       if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = 'Repository plan deleted.';
+      undxRefreshExecutionSourcePreview();
     }
     function undxCreateRepositoryPlanCard(plan){
       const article = document.createElement('article');
@@ -22705,6 +22801,423 @@ def pulse_premium_undx_page():
       if(undxRepositoryPlanForm) undxRepositoryPlanForm.reset();
       if(undxRepoAccessLevel) undxRepoAccessLevel.value = 'Planning Only';
       if(undxRepositoryMessage) undxRepositoryMessage.textContent = `${plan.name} registered as a planning-only repository plan.`;
+    }
+    function undxExecutionApprovalCheckpoints(){
+      return [
+        'Approve before file reading',
+        'Approve before edits',
+        'Approve before terminal commands',
+        'Approve before Git commits',
+        'Approve before deployment'
+      ];
+    }
+    function undxExecutionRollbackStrategy(){
+      return [
+        'Create Git checkpoint before changes',
+        'Show diff before commit',
+        'Keep backup of modified files',
+        'Provide manual rollback instructions'
+      ];
+    }
+    function undxNormalizeExecutionList(value, fallback, limit = 12, itemLimit = 260){
+      const source = Array.isArray(value) && value.length ? value : fallback;
+      return source.filter(Boolean).slice(0,limit).map(item => String(item || '').slice(0,itemLimit));
+    }
+    function undxNormalizeExecutionPlan(plan){
+      return {
+        id: String(plan.id || `EXEC-UNDX-${Date.now()}`).slice(0,40),
+        sourceType: String(plan.sourceType || 'Mission Source').slice(0,120),
+        objective: String(plan.objective || '').slice(0,1400),
+        requiredContext: undxNormalizeExecutionList(plan.requiredContext, ['Mission objective and current UNDX planning context.']),
+        taskBreakdown: undxNormalizeExecutionList(plan.taskBreakdown, [
+          'Understand the mission',
+          'Review existing project context',
+          'Identify files or modules likely affected',
+          'Draft implementation plan',
+          'Prepare safe build directive'
+        ]),
+        suggestedFiles: undxNormalizeExecutionList(plan.suggestedFiles, ['UNDX premium planning surfaces', 'Relevant route, UI, and audit areas']),
+        approvalCheckpoints: undxNormalizeExecutionList(plan.approvalCheckpoints, undxExecutionApprovalCheckpoints()),
+        riskLevel: ['Low', 'Medium', 'High'].includes(plan.riskLevel) ? plan.riskLevel : 'Low',
+        rollbackStrategy: undxNormalizeExecutionList(plan.rollbackStrategy, undxExecutionRollbackStrategy()),
+        recommendedNextAction: String(plan.recommendedNextAction || 'Review the execution plan, then decide whether to approve future file review.').slice(0,600),
+        createdAt: plan.createdAt || new Date().toISOString(),
+        status: 'Planned',
+        codexDirective: String(plan.codexDirective || '').slice(0,7000)
+      };
+    }
+    function undxLoadExecutionPlans(){
+      try{
+        const raw = localStorage.getItem(undxExecutionPlansKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(plan => plan && plan.id && plan.objective).slice(0,48).map(undxNormalizeExecutionPlan) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveExecutionPlans(plans){
+      try{
+        localStorage.setItem(undxExecutionPlansKey, JSON.stringify(plans.slice(0,48)));
+      }catch(error){
+        if(undxExecutionMessage) undxExecutionMessage.textContent = 'Execution Plan Registry could not be updated.';
+      }
+    }
+    function undxNextExecutionPlanId(plans){
+      const max = plans.reduce((highest, plan) => {
+        const match = String(plan.id || '').match(/^EXEC-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `EXEC-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxCurrentProject(){
+      return undxSelectedProjectId ? undxLoadProjects().find(project => project.projectId === undxSelectedProjectId) || null : null;
+    }
+    function undxExecutionSourceOptions(){
+      const typedMission = (undxMissionInput?.value || '').trim();
+      const chatMission = undxLatestChatResponse();
+      const memoryMission = undxSelectedEvolutionMission && (undxSelectedEvolutionMission.objective || '').trim() ? undxSelectedEvolutionMission : null;
+      const project = undxCurrentProject();
+      const linkedRepository = (project?.linkedRepositories || [])[0] || null;
+      return {
+        builder: typedMission ? {
+          sourceType: 'Current Builder Intelligence Console text',
+          objective: typedMission,
+          requiredContext: ['Builder Intelligence Console contains the active mission text.', 'Execution remains planning-only until explicit approval.']
+        } : null,
+        chat: chatMission ? {
+          sourceType: 'Latest UNDX Chat response',
+          objective: chatMission.builderDirective || chatMission.text || '',
+          requiredContext: [`Chat response source: ${chatMission.source || 'UNDX Chat Interface'}`, `Created: ${undxFormatMemoryTime(chatMission.createdAt)}`]
+        } : null,
+        memory: memoryMission ? {
+          sourceType: 'Selected Mission Memory item',
+          objective: memoryMission.objective || '',
+          requiredContext: [`Mission Memory item: ${memoryMission.name || 'Stored mission'}`, `Status: ${memoryMission.status || 'Stored'}`]
+        } : null,
+        project: project ? {
+          sourceType: 'Selected/open Project Workspace',
+          objective: `${project.name}: ${project.objective}`,
+          project,
+          requiredContext: [
+            `Project ID: ${project.projectId}`,
+            `Project Type: ${project.type || 'Other'}`,
+            `Priority: ${project.priority || 'Medium'}`,
+            `Status: ${project.status || 'Planning'}`,
+            `Linked Repository Plans: ${(project.linkedRepositories || []).length}`
+          ]
+        } : null,
+        repository: linkedRepository ? {
+          sourceType: 'Linked Repository Plan',
+          objective: `Prepare future UNDX execution planning for ${linkedRepository.name}: ${linkedRepository.purpose || linkedRepository.path}`,
+          project,
+          linkedRepository,
+          requiredContext: [
+            `Repository Plan: ${linkedRepository.name}`,
+            `Repository Type: ${linkedRepository.type}`,
+            `Planned Path or URL: ${linkedRepository.path}`,
+            `Access Level: ${linkedRepository.accessLevel}`,
+            `Selected Project: ${project.projectId} ${project.name}`
+          ]
+        } : null
+      };
+    }
+    function undxResolveExecutionSource(preferred = 'builder'){
+      const sources = undxExecutionSourceOptions();
+      return sources[preferred] || sources.builder || sources.chat || sources.memory || sources.project || sources.repository || null;
+    }
+    function undxRefreshExecutionSourcePreview(){
+      if(!undxExecutionSourcePreview) return;
+      const source = undxResolveExecutionSource(undxExecutionSourceSelect?.value || 'builder');
+      undxExecutionSourcePreview.textContent = source ? `Execution Source: ${source.sourceType} · ${source.objective.slice(0,180)}` : 'Execution Source: Waiting for mission input.';
+    }
+    function undxExecutionRiskLevel(text){
+      const lower = String(text || '').toLowerCase();
+      if(/security|wallet|api|auth|payment|secret|deploy|production/.test(lower)) return 'High';
+      if(/ui|dashboard|copy|style|layout/.test(lower)) return 'Medium';
+      return 'Low';
+    }
+    function undxExecutionSuggestedFiles(source){
+      const text = `${source.objective || ''} ${(source.requiredContext || []).join(' ')}`.toLowerCase();
+      const areas = ['UNDX premium route and page section', 'Frontend state and localStorage handlers', 'Focused UNDX audit coverage'];
+      if(/ui|dashboard|copy|style|layout|page|interface/.test(text)){
+        areas.push('Scoped premium/UNDX styles', 'Responsive desktop and mobile layout surfaces');
+      }
+      if(/security|wallet|api|auth|payment|secret|deploy|production/.test(text)){
+        areas.push('Server-side route boundaries', 'Secret handling and deployment configuration review');
+      }
+      if(source.project) areas.push(`Project workspace record: ${source.project.projectId}`);
+      if(source.linkedRepository) areas.push(`Planned repository target: ${source.linkedRepository.path} (future access disabled)`);
+      return [...new Set(areas)].slice(0,8);
+    }
+    function undxExecutionTaskBreakdown(source){
+      const tasks = [
+        'Understand the mission',
+        'Review existing project context',
+        'Identify files or modules likely affected',
+        'Draft implementation plan',
+        'Prepare safe build directive'
+      ];
+      if(source.project) tasks.push('Map project tasks, milestones, memory notes, and linked repository plans');
+      if(source.linkedRepository) tasks.push('Confirm repository access level remains planning-only before any future review');
+      return tasks;
+    }
+    function undxExecutionRecommendedNextAction(riskLevel){
+      if(riskLevel === 'High') return 'Keep the plan in approval mode, define a review checkpoint, and require explicit permission before any future file or command access.';
+      if(riskLevel === 'Medium') return 'Review the likely UI or product surfaces, then approve a narrow inspection plan before implementation begins.';
+      return 'Convert this plan into a Codex-style directive and review it before approving future build access.';
+    }
+    function undxBuildExecutionPlanFromSource(source){
+      const riskLevel = undxExecutionRiskLevel(`${source.objective || ''} ${(source.requiredContext || []).join(' ')}`);
+      return undxNormalizeExecutionPlan({
+        id: undxNextExecutionPlanId(undxLoadExecutionPlans()),
+        sourceType: source.sourceType,
+        objective: source.objective,
+        requiredContext: source.requiredContext || [],
+        taskBreakdown: undxExecutionTaskBreakdown(source),
+        suggestedFiles: undxExecutionSuggestedFiles(source),
+        approvalCheckpoints: undxExecutionApprovalCheckpoints(),
+        riskLevel,
+        rollbackStrategy: undxExecutionRollbackStrategy(),
+        recommendedNextAction: undxExecutionRecommendedNextAction(riskLevel),
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxExecutionPlanChatDirective(plan){
+      if(plan.codexDirective) return plan.codexDirective;
+      return [
+        'UNDX Execution Plan',
+        '',
+        `Execution Plan ID: ${plan.id}`,
+        `Source Type: ${plan.sourceType}`,
+        `Risk Level: ${plan.riskLevel}`,
+        `Status: ${plan.status || 'Planned'}`,
+        '',
+        `Objective: ${plan.objective}`,
+        '',
+        'Task Breakdown:',
+        ...(plan.taskBreakdown || []).map(item => `- ${item}`),
+        '',
+        'Suggested Files/Folders to Review:',
+        ...(plan.suggestedFiles || []).map(item => `- ${item}`),
+        '',
+        'Approval Checkpoints:',
+        ...(plan.approvalCheckpoints || []).map(item => `- ${item}`),
+        '',
+        'Safety Boundary: Planning only. Do not read files, edit repositories, run terminal commands, or deploy without explicit approval.'
+      ].join('\\n');
+    }
+    function undxSendExecutionPlanToChat(plan){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxExecutionPlanChatDirective(plan);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Execution plan loaded into UNDX Chat Interface.';
+    }
+    function undxAttachExecutionPlanToProject(plan){
+      if(!undxSelectedProjectId){
+        if(undxExecutionMessage) undxExecutionMessage.textContent = 'Open a project workspace before attaching an execution plan.';
+        return;
+      }
+      undxUpdateProject(undxSelectedProjectId, project => {
+        const current = Array.isArray(project.linkedExecutionPlans) ? project.linkedExecutionPlans : [];
+        const next = [undxNormalizeExecutionPlan(plan), ...current.filter(item => item.id !== plan.id)].slice(0,24);
+        return {...project, linkedExecutionPlans: next};
+      });
+      if(undxExecutionMessage) undxExecutionMessage.textContent = `${plan.id} attached to the selected project workspace.`;
+      undxRefreshExecutionSourcePreview();
+    }
+    function undxUpdateExecutionPlan(planId, updater){
+      const plans = undxLoadExecutionPlans();
+      const next = plans.map(plan => plan.id === planId ? undxNormalizeExecutionPlan(updater({...plan})) : plan);
+      undxSaveExecutionPlans(next);
+      undxRenderExecutionPlans();
+      if(undxSelectedExecutionPlanId === planId) undxOpenExecutionPlan(planId, false);
+    }
+    function undxDeleteExecutionPlan(planId){
+      const plans = undxLoadExecutionPlans().filter(plan => plan.id !== planId);
+      undxSaveExecutionPlans(plans);
+      const projects = undxLoadProjects().map(project => ({
+        ...project,
+        linkedExecutionPlans: (project.linkedExecutionPlans || []).filter(plan => plan.id !== planId)
+      }));
+      undxSaveProjects(projects);
+      if(undxSelectedExecutionPlanId === planId){
+        undxSelectedExecutionPlanId = null;
+        if(undxExecutionDetailEmpty) undxExecutionDetailEmpty.hidden = false;
+        if(undxExecutionPlanDetail) undxExecutionPlanDetail.replaceChildren();
+      }
+      undxRenderExecutionPlans();
+      undxRenderProjects();
+      if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
+      if(undxExecutionMessage) undxExecutionMessage.textContent = 'Execution plan deleted.';
+    }
+    function undxCreateExecutionPlanCard(plan){
+      const article = document.createElement('article');
+      article.className = 'undx-execution-card';
+      const title = document.createElement('h4');
+      title.textContent = plan.id;
+      const objective = document.createElement('p');
+      objective.textContent = plan.objective || '';
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [
+        `Plan ID: ${plan.id}`,
+        `Risk Level: ${plan.riskLevel}`,
+        `Source Type: ${plan.sourceType}`,
+        `Created: ${undxFormatMemoryTime(plan.createdAt)}`,
+        `Status: ${plan.status || 'Planned'}`
+      ].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Plan', () => undxOpenExecutionPlan(plan.id), true),
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendExecutionPlanToChat(plan)),
+        undxProjectActionButton('Attach To Project', () => undxAttachExecutionPlanToProject(plan)),
+        undxProjectActionButton('Delete Plan', () => undxDeleteExecutionPlan(plan.id))
+      );
+      article.append(title, objective, meta, actions);
+      return article;
+    }
+    function undxRenderExecutionPlans(){
+      const plans = undxLoadExecutionPlans();
+      if(undxExecutionEmpty) undxExecutionEmpty.hidden = plans.length > 0;
+      if(!undxExecutionPlanList) return;
+      undxExecutionPlanList.replaceChildren();
+      plans.forEach(plan => undxExecutionPlanList.appendChild(undxCreateExecutionPlanCard(plan)));
+    }
+    function undxGenerateExecutionPlan(event){
+      event?.preventDefault();
+      const source = undxResolveExecutionSource(undxExecutionSourceSelect?.value || 'builder');
+      if(!source){
+        if(undxExecutionMessage) undxExecutionMessage.textContent = 'Add a mission, chat directive, project, or repository plan before generating an execution plan.';
+        undxMissionInput?.focus();
+        return;
+      }
+      const plan = undxBuildExecutionPlanFromSource(source);
+      const plans = undxLoadExecutionPlans();
+      undxSaveExecutionPlans([plan, ...plans]);
+      undxRenderExecutionPlans();
+      undxOpenExecutionPlan(plan.id, false);
+      if(undxExecutionMessage) undxExecutionMessage.textContent = `${plan.id} stored in Execution Plan Registry.`;
+    }
+    function undxGenerateCodexDirectiveText(plan){
+      return [
+        'UNDX Codex-Style Directive',
+        '',
+        'Goal:',
+        plan.objective,
+        '',
+        'Files/areas to inspect:',
+        ...(plan.suggestedFiles || []).map(item => `- ${item}`),
+        '',
+        'Steps to perform:',
+        ...(plan.taskBreakdown || []).map(item => `- ${item}`),
+        '',
+        'Safety requirements:',
+        '- Do not access files until explicit permission is granted.',
+        '- Do not edit repositories until changes are approved.',
+        '- Do not run terminal commands without user confirmation.',
+        '- Do not expose secrets or copy sensitive values into frontend code.',
+        '- Keep generated directives planning-only until the user approves execution.',
+        '',
+        'Validation requirements:',
+        '- Python compile check if applicable',
+        '- UNDX audit',
+        '- Premium foundation audit',
+        '- Site functional audit',
+        '- Performance audit',
+        '- Pulse feed layout audit',
+        '- Browser desktop/mobile check when UI changes are approved',
+        '',
+        'Git commands:',
+        '- git status',
+        '- git add .',
+        '- git commit -m "<approved message>"',
+        '- git push origin main',
+        '',
+        'Approval Checkpoints:',
+        ...(plan.approvalCheckpoints || []).map(item => `- ${item}`),
+        '',
+        'Rollback Strategy:',
+        ...(plan.rollbackStrategy || []).map(item => `- ${item}`),
+        '',
+        `Recommended Next Action: ${plan.recommendedNextAction}`,
+        '',
+        'Do not execute this directive automatically. It is a planning artifact until the user approves execution.'
+      ].join('\\n');
+    }
+    function undxStoreExecutionDirective(planId){
+      const plan = undxLoadExecutionPlans().find(item => item.id === planId);
+      if(!plan) return '';
+      const directive = undxGenerateCodexDirectiveText(plan);
+      undxUpdateExecutionPlan(planId, current => ({...current, codexDirective: directive}));
+      if(undxExecutionMessage) undxExecutionMessage.textContent = 'Codex-style directive generated.';
+      return directive;
+    }
+    async function undxCopyExecutionDirective(planId){
+      const plan = undxLoadExecutionPlans().find(item => item.id === planId);
+      if(!plan) return;
+      const directive = plan.codexDirective || undxStoreExecutionDirective(planId);
+      try{
+        await navigator.clipboard.writeText(directive);
+        if(undxExecutionMessage) undxExecutionMessage.textContent = 'Codex-style directive copied.';
+      }catch(error){
+        if(undxExecutionMessage) undxExecutionMessage.textContent = 'Copy unavailable. The Codex-style directive is visible in the execution detail.';
+      }
+    }
+    function undxSendExecutionDirectiveToChat(planId){
+      const plan = undxLoadExecutionPlans().find(item => item.id === planId);
+      if(!plan || !undxChatInput) return;
+      const directive = plan.codexDirective || undxStoreExecutionDirective(planId);
+      undxChatInput.value = directive;
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChatMessageStatus) undxChatMessageStatus.textContent = 'Codex-style directive loaded into UNDX Chat Interface.';
+    }
+    function undxOpenExecutionPlan(planId, shouldScroll = true){
+      const plan = undxLoadExecutionPlans().find(item => item.id === planId);
+      if(!plan || !undxExecutionPlanDetail) return;
+      undxSelectedExecutionPlanId = plan.id;
+      if(undxExecutionDetailEmpty) undxExecutionDetailEmpty.hidden = true;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Execution Plan Detail';
+      const title = document.createElement('h3');
+      title.textContent = plan.id;
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Execution Plan ID', plan.id),
+        undxBlock('Source Type', plan.sourceType),
+        undxBlock('Objective', plan.objective),
+        undxBlock('Required Context', plan.requiredContext),
+        undxBlock('Task Breakdown', plan.taskBreakdown),
+        undxBlock('Suggested Files/Folders to Review', plan.suggestedFiles),
+        undxBlock('Approval Checkpoints', plan.approvalCheckpoints),
+        undxBlock('Risk Level', plan.riskLevel),
+        undxBlock('Rollback Strategy', plan.rollbackStrategy),
+        undxBlock('Recommended Next Action', plan.recommendedNextAction)
+      );
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Generate Codex-Style Directive', () => undxStoreExecutionDirective(plan.id), true),
+        undxProjectActionButton('Copy Codex-Style Directive', () => undxCopyExecutionDirective(plan.id)),
+        undxProjectActionButton('Send Directive To UNDX Chat', () => undxSendExecutionDirectiveToChat(plan.id))
+      );
+      const output = document.createElement('pre');
+      output.className = 'undx-directive-output';
+      output.textContent = plan.codexDirective || 'No Codex-style directive generated yet.';
+      card.append(label, title, grid, actions, output);
+      undxExecutionPlanDetail.replaceChildren(card);
+      if(shouldScroll) document.getElementById('undx-task-execution-planner')?.scrollIntoView({behavior:'smooth', block:'start'});
     }
     function undxAddProjectTask(projectId, title, status){
       const cleanTitle = String(title || '').trim().slice(0,180);
@@ -22945,6 +23458,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedExecutionPlans(project, card){
+      const section = undxWorkspaceSection('Linked Execution Plans');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedExecutionPlans || []).length){
+        list.appendChild(undxWorkspaceEmpty('No execution plans linked yet. Attach a stored execution plan after opening this workspace.'));
+      }else{
+        project.linkedExecutionPlans.forEach(plan => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = plan.id;
+          const meta = document.createElement('p');
+          meta.textContent = `Risk Level: ${plan.riskLevel} · Source Type: ${plan.sourceType} · Status: ${plan.status || 'Planned'}`;
+          const objective = document.createElement('p');
+          objective.textContent = plan.objective || '';
+          item.append(title, meta, objective);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderBuildDirective(project, card){
       const section = undxWorkspaceSection('Build Directive', 'Generate a clean instruction-style build directive from this project for Codex or future UNDX.');
       const actions = document.createElement('div');
@@ -22997,11 +23533,13 @@ def pulse_premium_undx_page():
       );
       card.append(label, title, grid, actions);
       undxRenderLinkedRepositoryPlans(project, card);
+      undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
       undxRenderProjectMemory(project, card);
       undxRenderBuildDirective(project, card);
       undxProjectDetailContent.replaceChildren(card);
+      undxRefreshExecutionSourcePreview();
       if(shouldScroll) document.getElementById('undx-project-creator')?.scrollIntoView({behavior:'smooth', block:'start'});
     }
     function undxSendProjectToBuilder(project){
@@ -23063,6 +23601,7 @@ def pulse_premium_undx_page():
         })),
         memoryNotes: [],
         linkedRepositories: [],
+        linkedExecutionPlans: [],
         lastBuildDirective: '',
         aiEnhancement: {
           source: 'Pending',
@@ -23182,6 +23721,7 @@ def pulse_premium_undx_page():
       undxChatHistory.replaceChildren();
       messages.forEach(message => undxChatHistory.appendChild(undxCreateChatBubble(message)));
       undxChatHistory.scrollTop = undxChatHistory.scrollHeight;
+      undxRefreshExecutionSourcePreview();
     }
     async function undxSendChatDirective(){
       const directive = (undxChatInput?.value || '').trim();
@@ -23406,9 +23946,11 @@ def pulse_premium_undx_page():
       undxSelectedEvolutionMission = null;
       if(undxEvolutionEmpty) undxEvolutionEmpty.hidden = false;
       if(undxEvolutionContent) undxEvolutionContent.replaceChildren();
+      undxRefreshExecutionSourcePreview();
     }
     function undxRenderEvolution(item){
       undxSelectedEvolutionMission = item;
+      undxRefreshExecutionSourcePreview();
       if(undxEvolutionEmpty) undxEvolutionEmpty.hidden = true;
       if(!undxEvolutionContent) return;
       const card = document.createElement('article');
@@ -23490,6 +24032,7 @@ def pulse_premium_undx_page():
           </div>
         </article>`;
       undxStoreBlueprint(blueprint);
+      undxRefreshExecutionSourcePreview();
     }
     undxGenerateBlueprint?.addEventListener('click', undxBuildBlueprint);
     undxClearMemory?.addEventListener('click', () => {
@@ -23527,12 +24070,17 @@ def pulse_premium_undx_page():
     });
     undxMissionInput?.addEventListener('input', undxRefreshProjectSourcePreview);
     undxRepositoryPlanForm?.addEventListener('submit', undxRegisterRepositoryPlan);
+    undxExecutionPlannerForm?.addEventListener('submit', undxGenerateExecutionPlan);
+    undxExecutionSourceSelect?.addEventListener('change', undxRefreshExecutionSourcePreview);
+    undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
     undxRenderChat();
     undxRenderProjects();
     undxRenderRepositoryPlans();
+    undxRenderExecutionPlans();
     undxRefreshProjectSourcePreview();
+    undxRefreshExecutionSourcePreview();
     """
     return pulse_social_shell("UNDX Core", "Unknown Destination X — the premium intelligence layer designed to help CoinPilotXAI build, analyze, secure, and evolve.", main, "", script)
 

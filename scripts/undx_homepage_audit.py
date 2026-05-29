@@ -105,6 +105,14 @@ def main():
     require("Repository Core: Planning" not in feed_html, "UNDX repository planning status absent from Pulse feed")
     require("File Access: Disabled" not in feed_html, "UNDX file access status absent from Pulse feed")
     require("Execution Access: Disabled" not in feed_html, "UNDX execution access status absent from Pulse feed")
+    require("UNDX Task Execution Planner" not in feed_html, "UNDX task execution planner absent from Pulse feed")
+    require("Generate Execution Plan" not in feed_html, "UNDX execution action absent from Pulse feed")
+    require("Execution Plan Registry" not in feed_html, "UNDX execution registry absent from Pulse feed")
+    require("Execution Core: Planning" not in feed_html, "UNDX execution core status absent from Pulse feed")
+    require("Command Execution: Disabled" not in feed_html, "UNDX command execution status absent from Pulse feed")
+    require("Approval Protocol: Required" not in feed_html, "UNDX approval protocol status absent from Pulse feed")
+    require("Generate Codex-Style Directive" not in feed_html, "UNDX Codex directive action absent from Pulse feed")
+    require("Copy Codex-Style Directive" not in feed_html, "UNDX Codex copy action absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
@@ -308,6 +316,50 @@ def main():
         "Execution Access: Disabled",
         "Phase: 10",
         "Linked Repository Plans",
+        "UNDX Task Execution Planner",
+        "Convert missions, projects, and repository plans into structured execution tasks before UNDX gains build access.",
+        "Generate Execution Plan",
+        "Execution Plan Sources",
+        "Current Builder Intelligence Console text",
+        "Latest UNDX Chat response",
+        "Selected Mission Memory item",
+        "Selected/open Project Workspace",
+        "Linked Repository Plan if attached to the selected project",
+        "Add a mission, chat directive, project, or repository plan before generating an execution plan.",
+        "Execution Plan ID",
+        "EXEC-UNDX-",
+        "Source Type",
+        "Required Context",
+        "Task Breakdown",
+        "Understand the mission",
+        "Review existing project context",
+        "Identify files or modules likely affected",
+        "Draft implementation plan",
+        "Prepare safe build directive",
+        "Suggested Files/Folders to Review",
+        "Approval Checkpoints",
+        "Approve before file reading",
+        "Approve before edits",
+        "Approve before terminal commands",
+        "Approve before Git commits",
+        "Approve before deployment",
+        "Risk Level",
+        "Rollback Strategy",
+        "Create Git checkpoint before changes",
+        "Show diff before commit",
+        "Keep backup of modified files",
+        "Provide manual rollback instructions",
+        "Execution Plan Registry",
+        "undxExecutionPlans",
+        "Open Plan",
+        "Generate Codex-Style Directive",
+        "Copy Codex-Style Directive",
+        "Git commands:",
+        "Execution Core: Planning",
+        "Command Execution: Disabled",
+        "Approval Protocol: Required",
+        "Phase: 11",
+        "Linked Execution Plans",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
