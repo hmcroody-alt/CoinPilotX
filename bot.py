@@ -21471,14 +21471,31 @@ def pulse_premium_undx_page():
     .undx-evolution-content{display:grid;gap:12px}
     .undx-evolution-empty{border:1px dashed rgba(255,209,102,.22);border-radius:18px;padding:16px;background:rgba(5,11,20,.34);color:rgba(223,246,255,.72);font-weight:850}
     .undx-evolution-score{font-size:clamp(32px,5vw,54px);line-height:1;color:#36e58f;font-weight:950;text-shadow:0 0 28px rgba(54,229,143,.22)}
+    .undx-agent-council{position:relative;overflow:hidden;border-color:rgba(155,92,255,.22);background:radial-gradient(circle at 16% 12%,rgba(155,92,255,.13),transparent 23rem),radial-gradient(circle at 82% 18%,rgba(54,229,143,.10),transparent 24rem),linear-gradient(180deg,rgba(255,255,255,.074),rgba(255,255,255,.03))}
+    .undx-agent-council:before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,rgba(255,255,255,.085),transparent 32%,rgba(110,223,246,.07));pointer-events:none}
+    .undx-agent-council>*{position:relative;z-index:1}
+    .undx-agent-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .undx-agent-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .undx-agent-actions .button{min-height:44px;border-radius:14px}
+    .undx-agent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .undx-agent-card{position:relative;min-height:210px;display:grid;align-content:space-between;gap:12px;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(10,21,39,.78),rgba(255,255,255,.04));box-shadow:0 20px 58px rgba(0,0,0,.20)}
+    .undx-agent-card:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 24% 18%,rgba(110,223,246,.10),transparent 12rem),linear-gradient(130deg,rgba(255,255,255,.08),transparent 42%);pointer-events:none}
+    .undx-agent-card>*{position:relative;z-index:1}
+    .undx-agent-card h3{margin:0;font-size:clamp(18px,2vw,24px)}
+    .undx-agent-role{margin:0;color:rgba(223,246,255,.66);font-weight:850}
+    .undx-agent-output{margin:0;color:rgba(223,246,255,.76)}
+    .undx-agent-status{display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(110,223,246,.23);border-radius:999px;padding:6px 9px;background:rgba(110,223,246,.075);color:#dffcff;font-size:.78rem;font-weight:950}
+    .undx-agent-status[data-status="Active"]{border-color:rgba(54,229,143,.38);background:rgba(54,229,143,.10);color:#c8ffdf;box-shadow:0 0 24px rgba(54,229,143,.12)}
+    .undx-council-message{min-height:24px;margin:0 0 10px;color:#ffb8c1;font-weight:850}
+    .undx-council-summary{display:grid;gap:12px;margin-top:12px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button{width:100%}.undx-command-bar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid{grid-template-columns:1fr}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid{grid-template-columns:1fr}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -21547,6 +21564,36 @@ def pulse_premium_undx_page():
         <div class='undx-evolution-empty' id='undxEvolutionEmpty'>Select a stored mission to view its evolution path.</div>
         <div class='undx-evolution-content' id='undxEvolutionContent' aria-live='polite'></div>
       </section>
+      <section class='undx-section-panel undx-agent-council' id='undx-agent-council'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Council Mode: Multi-Agent</span>
+            <h2>UNDX Agent Council</h2>
+          </div>
+          <p>Six specialized intelligence agents evaluate each mission before CoinPilotXAI enters the next build phase.</p>
+        </div>
+        <div class='undx-agent-toolbar'>
+          <div class='undx-memory-status' aria-label='UNDX agent council status'>
+            <span>Council Mode: <strong>Multi-Agent</strong></span>
+            <span>Active Agents: <strong>6</strong></span>
+            <span>Council Phase: <strong>Phase 6</strong></span>
+          </div>
+          <div class='undx-agent-actions'>
+            <button class='button primary' type='button' id='undxRunCouncil'>Run Agent Council</button>
+            <button class='button' type='button' id='undxSaveCouncilOutput'>Save Council Output to Mission Memory</button>
+          </div>
+        </div>
+        <p class='undx-council-message' id='undxCouncilMessage' aria-live='polite'></p>
+        <div class='undx-agent-grid' id='undxAgentGrid' aria-live='polite'>
+          <article class='undx-agent-card' data-undx-agent-card='architect'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Architect Agent</h3><p class='undx-agent-role'>System design and mission architecture</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before mapping structure, data boundaries, and command flow.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='builder'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Builder Agent</h3><p class='undx-agent-role'>Implementation path and build sequencing</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing a phased implementation track.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='security'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Security Agent</h3><p class='undx-agent-role'>Risk controls and trust boundaries</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before scanning for abuse cases, data risk, and premium boundary concerns.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='research'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Research Agent</h3><p class='undx-agent-role'>Evidence, market, and technical discovery</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before identifying source material and validation questions.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='product'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Product Agent</h3><p class='undx-agent-role'>User value and premium experience</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before translating the build into user-facing value.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='deployment'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Deployment Agent</h3><p class='undx-agent-role'>Release readiness and rollout safety</p></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before defining tests, audits, and rollout gates.</p></article>
+        </div>
+        <div class='undx-council-summary' id='undxCouncilSummary' hidden aria-live='polite'></div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -21609,8 +21656,13 @@ def pulse_premium_undx_page():
     const undxClearMemory = document.getElementById('undxClearMemory');
     const undxEvolutionEmpty = document.getElementById('undxEvolutionEmpty');
     const undxEvolutionContent = document.getElementById('undxEvolutionContent');
+    const undxRunCouncil = document.getElementById('undxRunCouncil');
+    const undxSaveCouncilOutput = document.getElementById('undxSaveCouncilOutput');
+    const undxCouncilMessage = document.getElementById('undxCouncilMessage');
+    const undxCouncilSummary = document.getElementById('undxCouncilSummary');
     const undxMemoryStorageKey = 'undxMissionMemory';
     let undxSelectedEvolutionMission = null;
+    let undxLastCouncilOutput = null;
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
       const words = text.replace(/[^a-zA-Z0-9\\s-]/g,' ').trim().split(/\\s+/).filter(Boolean).slice(0,5);
@@ -21638,7 +21690,7 @@ def pulse_premium_undx_page():
       try{
         localStorage.setItem(undxMemoryStorageKey, JSON.stringify(items.slice(0,24)));
       }catch(error){
-        if(undxConsoleMessage) undxConsoleMessage.textContent = 'Mission generated, but local memory could not be updated.';
+        if(undxConsoleMessage) undxConsoleMessage.textContent = 'Mission memory could not be updated.';
       }
     }
     function undxFormatMemoryTime(value){
@@ -21658,6 +21710,7 @@ def pulse_premium_undx_page():
       [
         `Mission Name: ${item.name || 'Mission Unknown Destination'}`,
         `Created: ${undxFormatMemoryTime(item.createdAt)}`,
+        item.type || 'Mission Blueprint',
         item.phase || 'Phase 4',
         item.status || 'Stored'
       ].forEach(value => {
@@ -21777,6 +21830,168 @@ def pulse_premium_undx_page():
       });
       return wrap;
     }
+    function undxCouncilPriority(mission){
+      const text = String(mission || '').toLowerCase();
+      if(/security|wallet|scam|risk|secure/.test(text)) return 'Security Expansion';
+      if(/ui|dashboard|page|design|interface|premium/.test(text)) return 'Product Experience';
+      if(/ai|agent|memory|automation|autonomous/.test(text)) return 'Intelligence Expansion';
+      return 'Core Build Expansion';
+    }
+    function undxCouncilKeywordCount(mission){
+      const text = String(mission || '').toLowerCase();
+      return (text.match(/security|wallet|scam|risk|secure|ui|dashboard|page|design|interface|premium|ai|agent|memory|automation|autonomous|crypto|audit|debug|research/g) || []).length;
+    }
+    function undxCouncilComplexity(mission){
+      const length = String(mission || '').trim().length;
+      const keywordCount = undxCouncilKeywordCount(mission);
+      if(length > 115 || keywordCount >= 5) return 'High';
+      if(length > 45 || keywordCount >= 2) return 'Medium';
+      return 'Low';
+    }
+    function undxCouncilNextAction(priority){
+      if(priority === 'Security Expansion') return 'Build a guarded prototype with threat modeling, trust labels, and audit coverage before live user exposure.';
+      if(priority === 'Product Experience') return 'Prototype the premium workflow, test desktop and mobile scanning, then confirm it stays isolated from the Pulse feed.';
+      if(priority === 'Intelligence Expansion') return 'Define supervised agent boundaries, memory checkpoints, and manual approval points before expanding automation.';
+      return 'Ship the smallest useful command-center prototype, validate it, then promote the next module.';
+    }
+    function undxCouncilActiveMission(){
+      const typedMission = (undxMissionInput?.value || '').trim();
+      if(typedMission) return {name: undxMissionName(typedMission), objective: typedMission};
+      const selectedObjective = (undxSelectedEvolutionMission?.objective || '').trim();
+      if(selectedObjective) return {name: undxSelectedEvolutionMission?.name || undxMissionName(selectedObjective), objective: selectedObjective};
+      return null;
+    }
+    function undxCouncilAgents(mission, priority){
+      const recommendations = {
+        'Security Expansion': {
+          architect: 'Separate the risk engine, explanation layer, and premium interface so wallet or scam signals stay traceable.',
+          builder: 'Start with a static analyzer prototype, then add guarded data adapters and focused audit fixtures.',
+          security: 'Define abuse cases, false-positive handling, safe wallet language, and no-secret collection rules before release.',
+          research: 'Compare trusted risk signals, scam pattern sources, and explainability examples before ranking threats.',
+          product: 'Frame the value around safer decisions, confidence labels, and clear next steps without financial advice.',
+          deployment: 'Roll out behind premium access, run security audits, and monitor errors before widening availability.'
+        },
+        'Product Experience': {
+          architect: 'Define the route, state model, and reusable premium panels before extending the interface.',
+          builder: 'Build the tightest useful workflow first, then layer status, saved outputs, and responsive states.',
+          security: 'Keep premium gates intact, sanitize user text, and verify the new surface does not leak into Pulse feed views.',
+          research: 'Review current dashboard behavior, user intent signals, and comparable command-center patterns.',
+          product: 'Prioritize fast scanning, clear hierarchy, and one obvious next action for premium users.',
+          deployment: 'Validate desktop and mobile layouts, then ship with focused functional and performance audits.'
+        },
+        'Intelligence Expansion': {
+          architect: 'Map agent responsibilities, memory boundaries, and human-control points before adding autonomy.',
+          builder: 'Implement frontend-only orchestration first, then graduate proven flows into durable services later.',
+          security: 'Require explicit user intent, safe persistence, and no hidden background actions from agent outputs.',
+          research: 'Investigate task decomposition, memory scoring, and evaluation methods for multi-agent workflows.',
+          product: 'Make the intelligence feel useful through clear recommendations, editable prompts, and visible confidence.',
+          deployment: 'Gate the rollout with manual checks, memory persistence tests, and clear recovery paths.'
+        },
+        'Core Build Expansion': {
+          architect: 'Turn the mission into a small system map with inputs, outputs, route boundaries, and audit points.',
+          builder: 'Create a narrow prototype, connect the minimum UI state, and keep follow-up modules optional.',
+          security: 'Validate inputs, keep sensitive data out of local storage, and preserve premium-only access.',
+          research: 'Clarify assumptions, dependencies, user examples, and the smallest proof needed to move forward.',
+          product: 'Tie the build to a visible user win and avoid adding controls that do not support the mission.',
+          deployment: 'Run the standard audit set, verify responsive behavior, and ship in one reversible phase.'
+        }
+      };
+      const set = recommendations[priority] || recommendations['Core Build Expansion'];
+      return [
+        {key:'architect', name:'Architect Agent', role:'System design and mission architecture', output:set.architect},
+        {key:'builder', name:'Builder Agent', role:'Implementation path and build sequencing', output:set.builder},
+        {key:'security', name:'Security Agent', role:'Risk controls and trust boundaries', output:set.security},
+        {key:'research', name:'Research Agent', role:'Evidence, market, and technical discovery', output:set.research},
+        {key:'product', name:'Product Agent', role:'User value and premium experience', output:set.product},
+        {key:'deployment', name:'Deployment Agent', role:'Release readiness and rollout safety', output:set.deployment}
+      ];
+    }
+    function undxRenderCouncilAgents(agents){
+      agents.forEach(agent => {
+        const card = document.querySelector(`[data-undx-agent-card="${agent.key}"]`);
+        if(!card) return;
+        const status = card.querySelector('[data-undx-agent-status]');
+        const output = card.querySelector('[data-undx-agent-output]');
+        if(status){
+          status.textContent = 'Status: Active';
+          status.dataset.status = 'Active';
+        }
+        if(output) output.textContent = agent.output;
+      });
+    }
+    function undxRenderCouncilSummary(summary){
+      if(!undxCouncilSummary) return;
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Council status: Complete';
+      const title = document.createElement('h3');
+      title.textContent = 'Council Summary';
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Mission analyzed', summary.objective),
+        undxBlock('Strategic priority', summary.priority),
+        undxBlock('Build complexity', summary.complexity),
+        undxBlock('Recommended next action', summary.nextAction),
+        undxBlock('Council status: Complete', 'Complete')
+      );
+      card.append(label, title, grid);
+      undxCouncilSummary.replaceChildren(card);
+      undxCouncilSummary.hidden = false;
+    }
+    function undxRunAgentCouncil(){
+      const mission = undxCouncilActiveMission();
+      if(!mission){
+        if(undxCouncilMessage) undxCouncilMessage.textContent = 'Enter or select a mission before running the Agent Council.';
+        undxMissionInput?.focus();
+        return;
+      }
+      if(undxCouncilMessage) undxCouncilMessage.textContent = '';
+      const priority = undxCouncilPriority(mission.objective);
+      const complexity = undxCouncilComplexity(mission.objective);
+      const nextAction = undxCouncilNextAction(priority);
+      const agents = undxCouncilAgents(mission.objective, priority);
+      undxLastCouncilOutput = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name: mission.name,
+        objective: mission.objective,
+        priority,
+        complexity,
+        nextAction,
+        agents,
+        createdAt: new Date().toISOString(),
+        status: 'Complete'
+      };
+      undxRenderCouncilAgents(agents);
+      undxRenderCouncilSummary(undxLastCouncilOutput);
+    }
+    function undxSaveCouncilToMemory(){
+      if(!undxLastCouncilOutput){
+        if(undxCouncilMessage) undxCouncilMessage.textContent = 'Run the Agent Council before saving council output.';
+        return;
+      }
+      const label = undxLastCouncilOutput.name.replace(/^Mission\\s+/,'');
+      undxStoreBlueprint({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name: `Council Output ${label}`,
+        objective: undxLastCouncilOutput.objective,
+        type: 'Council Output',
+        councilSummary: {
+          missionAnalyzed: undxLastCouncilOutput.objective,
+          strategicPriority: undxLastCouncilOutput.priority,
+          buildComplexity: undxLastCouncilOutput.complexity,
+          recommendedNextAction: undxLastCouncilOutput.nextAction,
+          councilStatus: 'Complete'
+        },
+        councilAgents: undxLastCouncilOutput.agents,
+        createdAt: new Date().toISOString(),
+        phase: 'Phase 6',
+        status: 'Stored'
+      });
+      if(undxCouncilMessage) undxCouncilMessage.textContent = 'Council Output saved to Mission Memory.';
+    }
     function undxRenderEvolutionEmpty(){
       undxSelectedEvolutionMission = null;
       if(undxEvolutionEmpty) undxEvolutionEmpty.hidden = false;
@@ -21878,6 +22093,8 @@ def pulse_premium_undx_page():
     undxMissionInput?.addEventListener('keydown', event => {
       if((event.metaKey || event.ctrlKey) && event.key === 'Enter') undxBuildBlueprint();
     });
+    undxRunCouncil?.addEventListener('click', undxRunAgentCouncil);
+    undxSaveCouncilOutput?.addEventListener('click', undxSaveCouncilToMemory);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
     """

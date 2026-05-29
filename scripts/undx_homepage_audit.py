@@ -76,6 +76,12 @@ def main():
     require("Replay Mission" not in feed_html, "UNDX replay action absent from Pulse feed")
     require("View Evolution" not in feed_html, "UNDX evolution action absent from Pulse feed")
     require("Mission Evolution" not in feed_html, "UNDX mission evolution absent from Pulse feed")
+    require("UNDX Agent Council" not in feed_html, "UNDX agent council absent from Pulse feed")
+    require("Run Agent Council" not in feed_html, "UNDX agent council action absent from Pulse feed")
+    require("Architect Agent" not in feed_html, "UNDX architect agent absent from Pulse feed")
+    require("Security Agent" not in feed_html, "UNDX security agent absent from Pulse feed")
+    require("Council Mode: Multi-Agent" not in feed_html, "UNDX council mode absent from Pulse feed")
+    require("Save Council Output to Mission Memory" not in feed_html, "UNDX council save action absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
 
     for token in [
@@ -131,6 +137,26 @@ def main():
         "UNDX Evolution Score",
         "Use as Next Blueprint",
         "Evolve this mission into the next build phase:",
+        "UNDX Agent Council",
+        "Six specialized intelligence agents evaluate each mission before CoinPilotXAI enters the next build phase.",
+        "Run Agent Council",
+        "Architect Agent",
+        "Builder Agent",
+        "Security Agent",
+        "Research Agent",
+        "Product Agent",
+        "Deployment Agent",
+        "Council Mode: Multi-Agent",
+        "Active Agents: <strong>6</strong>",
+        "Council Phase: <strong>Phase 6</strong>",
+        "Save Council Output to Mission Memory",
+        "Enter or select a mission before running the Agent Council.",
+        "Mission analyzed",
+        "Strategic priority",
+        "Build complexity",
+        "Recommended next action",
+        "Council status: Complete",
+        "Council Output",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",
