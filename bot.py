@@ -21731,14 +21731,28 @@ def pulse_premium_undx_page():
     .undx-repo-intel-card h3,.undx-repo-intel-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
     .undx-repo-intel-card p{margin:0;color:rgba(223,246,255,.72)}
     .undx-repo-intelligence textarea{min-height:130px}
+    .undx-read-blueprint{position:relative;overflow:hidden;border-color:rgba(255,209,102,.24);background:radial-gradient(circle at 17% 12%,rgba(255,209,102,.12),transparent 24rem),radial-gradient(circle at 82% 16%,rgba(110,223,246,.12),transparent 26rem),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+    .undx-read-blueprint:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08),transparent 30%,rgba(54,229,143,.05));pointer-events:none}
+    .undx-read-blueprint>*{position:relative;z-index:1}
+    .undx-read-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+    .undx-read-controls,.undx-read-sidebar,.undx-read-output{display:grid;gap:12px}
+    .undx-read-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(18,18,30,.82),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-read-card h3,.undx-read-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-read-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-access-flow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:stretch}
+    .undx-access-step{display:grid;gap:6px;align-content:start;min-height:128px;border:1px solid rgba(110,223,246,.14);border-radius:16px;padding:12px;background:rgba(5,11,20,.38)}
+    .undx-access-step span{color:#fff2b8;font-size:.78rem;font-weight:950;text-transform:uppercase}
+    .undx-access-step strong{color:#dffcff}
+    .undx-access-step em{font-style:normal;color:rgba(223,246,255,.46);font-weight:950}
+    .undx-read-blueprint textarea{min-height:100px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22221,6 +22235,134 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-read-blueprint' id='undx-read-only-access-blueprint'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Read Access Core: Blueprint</span>
+            <h2>UNDX Read-Only Access Blueprint</h2>
+          </div>
+          <p>Design the future trust architecture for repository and local folder analysis.</p>
+        </div>
+        <div class='undx-read-layout'>
+          <div class='undx-read-controls'>
+            <div class='undx-memory-status' aria-label='UNDX read-only access blueprint status'>
+              <span aria-label='Read Access Core: Blueprint'>Read Access Core: <strong>Blueprint</strong></span>
+              <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
+              <span aria-label='Secret Access: Disabled'>Secret Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 14'>Phase: <strong>14</strong></span>
+            </div>
+            <section class='undx-read-card' aria-label='Future Access Workflow'>
+              <span class='undx-core-label'>Future Access Workflow</span>
+              <h3>Future Access Workflow</h3>
+              <div class='undx-access-flow'>
+                <article class='undx-access-step'><span>Step 1</span><strong>Repository registered</strong><em>↓</em></article>
+                <article class='undx-access-step'><span>Step 2</span><strong>Read-only access requested</strong><em>↓</em></article>
+                <article class='undx-access-step'><span>Step 3</span><strong>User approves request</strong><em>↓</em></article>
+                <article class='undx-access-step'><span>Step 4</span><strong>UNDX previews files</strong><em>↓</em></article>
+                <article class='undx-access-step'><span>Step 5</span><strong>UNDX generates analysis</strong><em>↓</em></article>
+                <article class='undx-access-step'><span>Step 6</span><strong>User reviews results</strong><em>↓</em></article>
+                <article class='undx-access-step'><span>Step 7</span><strong>Future edit permissions remain separate</strong></article>
+              </div>
+            </section>
+            <section class='undx-read-card' aria-label='Access Request Simulator'>
+              <span class='undx-core-label'>Access Request Simulator</span>
+              <h3>Access Request Simulator</h3>
+              <form class='undx-project-form' id='undxAccessRequestForm'>
+                <div class='undx-project-fields'>
+                  <label class='undx-project-field'>
+                    <span>Requested Resource</span>
+                    <input id='undxAccessRequestedResource' type='text' autocomplete='off' placeholder='README.md, authentication.py, or .env'>
+                  </label>
+                  <label class='undx-project-field'>
+                    <span>Reason</span>
+                    <input id='undxAccessReason' type='text' autocomplete='off' placeholder='Explain why read-only access would be requested'>
+                  </label>
+                  <label class='undx-project-field undx-project-field-wide'>
+                    <span>Expected Outcome</span>
+                    <textarea id='undxAccessExpectedOutcome' placeholder='Describe the future analysis result the user would review'></textarea>
+                  </label>
+                </div>
+                <div class='undx-project-actions'>
+                  <button class='button primary' type='submit'>Generate Access Request</button>
+                </div>
+              </form>
+              <p class='undx-project-message' id='undxAccessRequestMessage' aria-live='polite'></p>
+              <div class='undx-read-output' id='undxAccessRequestOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-read-card' aria-label='Future Read-Only Preview'>
+              <span class='undx-core-label'>Future Read-Only Preview</span>
+              <h3>Future Read-Only Preview</h3>
+              <div class='undx-blueprint-grid'>
+                <section class='undx-blueprint-block'><strong>Repository</strong><p>CoinPilotXAI</p></section>
+                <section class='undx-blueprint-block'><strong>File Preview</strong><ol><li>bot.py</li><li>static/js/main.js</li><li>templates/pulse.html</li></ol></section>
+                <section class='undx-blueprint-block'><strong>Status</strong><p>Preview Only</p></section>
+              </div>
+            </section>
+          </div>
+          <aside class='undx-read-sidebar'>
+            <article class='undx-read-card' aria-label='Protected Areas'>
+              <span class='undx-core-label'>Protected Areas</span>
+              <h3>Protected Areas</h3>
+              <ul class='undx-safety-list'>
+                <li>.env files — Protected</li>
+                <li>API keys — Protected</li>
+                <li>secrets — Protected</li>
+                <li>tokens — Protected</li>
+                <li>credentials — Protected</li>
+                <li>production configuration — Protected</li>
+              </ul>
+            </article>
+            <article class='undx-read-card' aria-label='Future Analysis Capabilities'>
+              <span class='undx-core-label'>Future Analysis Capabilities</span>
+              <h3>Future Analysis Capabilities</h3>
+              <ul class='undx-safety-list'>
+                <li>summarize repositories</li>
+                <li>explain architecture</li>
+                <li>identify risks</li>
+                <li>suggest improvements</li>
+                <li>map dependencies</li>
+                <li>create build plans</li>
+              </ul>
+            </article>
+            <article class='undx-read-card' aria-label='Future Restrictions'>
+              <span class='undx-core-label'>Future Restrictions</span>
+              <h3>Future Restrictions</h3>
+              <ul class='undx-safety-list'>
+                <li>edit files without approval</li>
+                <li>run commands without approval</li>
+                <li>commit without approval</li>
+                <li>deploy without approval</li>
+                <li>access secrets</li>
+              </ul>
+            </article>
+            <article class='undx-read-card' aria-label='Secret Protection Layer'>
+              <span class='undx-core-label'>Secret Protection Layer</span>
+              <h3>Secret Protection Layer</h3>
+              <p>Secrets always hidden.</p>
+              <ul class='undx-safety-list'>
+                <li>redact secrets</li>
+                <li>avoid displaying credentials</li>
+                <li>block protected values</li>
+                <li>require additional approval for sensitive resources</li>
+              </ul>
+            </article>
+            <article class='undx-read-card' aria-label='Future Trust Roadmap'>
+              <span class='undx-core-label'>Future Trust Roadmap</span>
+              <h3>Future Trust Roadmap</h3>
+              <ul class='undx-safety-list'>
+                <li>Phase 14 — Blueprint</li>
+                <li>Phase 15 — Read-only previews</li>
+                <li>Phase 16 — Repository analysis</li>
+                <li>Phase 17 — Diff generation</li>
+                <li>Phase 18 — Edit proposals</li>
+                <li>Phase 19 — Approved edits</li>
+                <li>Phase 20 — Controlled execution</li>
+              </ul>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22349,6 +22491,12 @@ def pulse_premium_undx_page():
     const undxRepositoryIntelligenceList = document.getElementById('undxRepositoryIntelligenceList');
     const undxRepositoryIntelligenceDetailEmpty = document.getElementById('undxRepositoryIntelligenceDetailEmpty');
     const undxRepositoryIntelligenceDetail = document.getElementById('undxRepositoryIntelligenceDetail');
+    const undxAccessRequestForm = document.getElementById('undxAccessRequestForm');
+    const undxAccessRequestedResource = document.getElementById('undxAccessRequestedResource');
+    const undxAccessReason = document.getElementById('undxAccessReason');
+    const undxAccessExpectedOutcome = document.getElementById('undxAccessExpectedOutcome');
+    const undxAccessRequestMessage = document.getElementById('undxAccessRequestMessage');
+    const undxAccessRequestOutput = document.getElementById('undxAccessRequestOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -22357,6 +22505,7 @@ def pulse_premium_undx_page():
     const undxApprovalProtocolKey = 'undxApprovalProtocol';
     const undxApprovalHistoryKey = 'undxApprovalHistory';
     const undxRepositoryIntelligenceProfilesKey = 'undxRepositoryIntelligenceProfiles';
+    const undxReadOnlyAccessRequestsKey = 'undxReadOnlyAccessRequests';
     const undxChatEndpoint = '/api/undx/chat';
     let undxSelectedEvolutionMission = null;
     let undxLastCouncilOutput = null;
@@ -22578,6 +22727,7 @@ def pulse_premium_undx_page():
         linkedRepositories,
         linkedExecutionPlans,
         linkedRepositoryIntelligenceProfiles,
+        readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         lastBuildDirective: project.lastBuildDirective || ''
       };
     }
@@ -23068,6 +23218,7 @@ def pulse_premium_undx_page():
         recommendedNextInspection: String(profile.recommendedNextInspection || 'Request approval for read-only repository inspection before opening files.').slice(0,600),
         requiredApprovalGates: undxNormalizeExecutionList(profile.requiredApprovalGates, ['Repository Read Access'], 6, 90),
         confidenceLevel: ['Low', 'Medium', 'High'].includes(profile.confidenceLevel) ? profile.confidenceLevel : 'Low',
+        accessBlueprintStatus: String(profile.accessBlueprintStatus || 'Planned').slice(0,80),
         sourceType: String(profile.sourceType || 'Planning Context').slice(0,120),
         sourceRef: String(profile.sourceRef || '').slice(0,220),
         createdAt: profile.createdAt || new Date().toISOString(),
@@ -23246,6 +23397,7 @@ def pulse_premium_undx_page():
         recommendedNextInspection: undxRepositoryNextInspection(stackGuess, confidenceLevel),
         requiredApprovalGates,
         confidenceLevel,
+        accessBlueprintStatus: 'Planned',
         sourceType: source.sourceType,
         sourceRef: source.sourceRef,
         createdAt: new Date().toISOString(),
@@ -23260,6 +23412,7 @@ def pulse_premium_undx_page():
         `Repository / Project Name: ${profile.name}`,
         `Repository Type: ${profile.repositoryType}`,
         `Conceptual Stack Guess: ${profile.stackGuess}`,
+        `Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'}`,
         `Confidence Level: ${profile.confidenceLevel}`,
         `Status: ${profile.status || 'Intelligence Profile'}`,
         '',
@@ -23366,6 +23519,7 @@ def pulse_premium_undx_page():
         `Profile ID: ${profile.profileId}`,
         `Repository Type: ${profile.repositoryType}`,
         `Confidence Level: ${profile.confidenceLevel}`,
+        `Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'}`,
         `Created: ${undxFormatMemoryTime(profile.createdAt)}`,
         `Status: ${profile.status || 'Intelligence Profile'}`
       ].forEach(value => {
@@ -23418,6 +23572,7 @@ def pulse_premium_undx_page():
         undxBlock('Suggested Improvements', profile.suggestedImprovements),
         undxBlock('Recommended Next Inspection', profile.recommendedNextInspection),
         undxBlock('Required Approval Gates', profile.requiredApprovalGates),
+        undxBlock('Access Blueprint Status', profile.accessBlueprintStatus || 'Planned'),
         undxBlock('Confidence Level', profile.confidenceLevel)
       );
       const actions = document.createElement('div');
@@ -23445,6 +23600,105 @@ def pulse_premium_undx_page():
       undxRenderRepositoryProfiles();
       undxOpenRepositoryProfile(profile.profileId, false);
       if(undxRepositoryIntelligenceMessage) undxRepositoryIntelligenceMessage.textContent = `${profile.profileId} stored in Repository Intelligence Registry.`;
+    }
+    function undxNormalizeAccessRequest(request){
+      return {
+        requestId: String(request.requestId || `ACCESS-UNDX-${Date.now()}`).slice(0,42),
+        requestedResource: String(request.requestedResource || '').slice(0,220),
+        reason: String(request.reason || '').slice(0,700),
+        expectedOutcome: String(request.expectedOutcome || '').slice(0,700),
+        approvalRequired: 'Yes',
+        estimatedRisk: ['Low', 'Medium', 'High'].includes(request.estimatedRisk) ? request.estimatedRisk : 'Low',
+        protectedAreas: Array.isArray(request.protectedAreas) ? request.protectedAreas.filter(Boolean).slice(0,8).map(item => String(item).slice(0,120)) : undxProtectedAreas(),
+        createdAt: request.createdAt || new Date().toISOString(),
+        status: 'Blueprint Request'
+      };
+    }
+    function undxLoadAccessRequests(){
+      try{
+        const raw = localStorage.getItem(undxReadOnlyAccessRequestsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.requestId && item.requestedResource).slice(0,48).map(undxNormalizeAccessRequest) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveAccessRequests(requests){
+      try{
+        localStorage.setItem(undxReadOnlyAccessRequestsKey, JSON.stringify(requests.slice(0,48)));
+      }catch(error){
+        if(undxAccessRequestMessage) undxAccessRequestMessage.textContent = 'Access request blueprint could not be stored.';
+      }
+    }
+    function undxNextAccessRequestId(requests){
+      const max = requests.reduce((highest, request) => {
+        const match = String(request.requestId || '').match(/^ACCESS-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `ACCESS-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxProtectedAreas(){
+      return ['.env files', 'API keys', 'secrets', 'tokens', 'credentials', 'production configuration'];
+    }
+    function undxAccessRisk(resource){
+      const lower = String(resource || '').toLowerCase();
+      if(/(^|\\/|\\.)env($|\\.)|secret|token|credential|api[_-]?key|production|prod|private|password/.test(lower)) return 'High';
+      if(/auth|authentication|login|account|billing|payment|wallet|admin|config|database|settings/.test(lower)) return 'Medium';
+      return 'Low';
+    }
+    function undxRenderAccessRequest(request){
+      if(!undxAccessRequestOutput) return;
+      if(!request){
+        const latest = undxLoadAccessRequests()[0] || null;
+        if(!latest){
+          undxAccessRequestOutput.replaceChildren();
+          return;
+        }
+        request = latest;
+      }
+      const card = document.createElement('article');
+      card.className = 'undx-blueprint-card';
+      const label = document.createElement('span');
+      label.className = 'undx-core-label';
+      label.textContent = 'Access Request Blueprint';
+      const title = document.createElement('h3');
+      title.textContent = request.requestId;
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Request ID', request.requestId),
+        undxBlock('Requested Resource', request.requestedResource),
+        undxBlock('Reason', request.reason),
+        undxBlock('Expected Outcome', request.expectedOutcome),
+        undxBlock('Approval Required', request.approvalRequired),
+        undxBlock('Estimated Risk', request.estimatedRisk),
+        undxBlock('Protected Areas', request.protectedAreas.map(item => `${item} — Protected`))
+      );
+      card.append(label, title, grid);
+      undxAccessRequestOutput.replaceChildren(card);
+    }
+    function undxGenerateAccessRequest(event){
+      event?.preventDefault();
+      const requestedResource = (undxAccessRequestedResource?.value || '').trim().slice(0,220);
+      const reason = (undxAccessReason?.value || '').trim().slice(0,700);
+      const expectedOutcome = (undxAccessExpectedOutcome?.value || '').trim().slice(0,700);
+      if(!requestedResource || !reason || !expectedOutcome){
+        if(undxAccessRequestMessage) undxAccessRequestMessage.textContent = 'Enter a requested resource, reason, and expected outcome before generating an access request.';
+        return;
+      }
+      const requests = undxLoadAccessRequests();
+      const request = undxNormalizeAccessRequest({
+        requestId: undxNextAccessRequestId(requests),
+        requestedResource,
+        reason,
+        expectedOutcome,
+        estimatedRisk: undxAccessRisk(requestedResource),
+        protectedAreas: undxProtectedAreas(),
+        createdAt: new Date().toISOString()
+      });
+      undxSaveAccessRequests([request, ...requests]);
+      undxRenderAccessRequest(request);
+      if(undxAccessRequestMessage) undxAccessRequestMessage.textContent = `${request.requestId} generated as a blueprint only. No files were accessed.`;
     }
     function undxNormalizeRepositoryPlan(plan){
       return {
@@ -24276,7 +24530,7 @@ def pulse_premium_undx_page():
           const title = document.createElement('strong');
           title.textContent = `${profile.profileId} · ${profile.name}`;
           const meta = document.createElement('p');
-          meta.textContent = `Repository Type: ${profile.repositoryType} · Conceptual Stack Guess: ${profile.stackGuess} · Confidence Level: ${profile.confidenceLevel} · Status: ${profile.status || 'Intelligence Profile'}`;
+          meta.textContent = `Repository Type: ${profile.repositoryType} · Conceptual Stack Guess: ${profile.stackGuess} · Access Blueprint Status: ${profile.accessBlueprintStatus || 'Planned'} · Confidence Level: ${profile.confidenceLevel} · Status: ${profile.status || 'Intelligence Profile'}`;
           const purpose = document.createElement('p');
           purpose.textContent = profile.corePurpose || '';
           item.append(title, meta, purpose);
@@ -24350,6 +24604,7 @@ def pulse_premium_undx_page():
         undxBlock('Objective', project.objective),
         undxBlock('Linked Mission', project.linkedMission || project.source || 'Mission Source'),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
+        undxBlock('Read-Only Access Status', project.readOnlyAccessStatus || 'Not Connected'),
         undxBlock('Project Summary', enhancement.summary || 'Project summary pending.'),
         undxBlock('Recommended Modules', undxModulePills(enhancement.modules || undxSuggestedModules(project.objective))),
         undxBlock('Enhancement Source', enhancement.source || 'Pending')
@@ -24434,6 +24689,7 @@ def pulse_premium_undx_page():
         linkedRepositories: [],
         linkedExecutionPlans: [],
         linkedRepositoryIntelligenceProfiles: [],
+        readOnlyAccessStatus: 'Not Connected',
         lastBuildDirective: '',
         aiEnhancement: {
           source: 'Pending',
@@ -24908,6 +25164,7 @@ def pulse_premium_undx_page():
     undxRepositoryIntelligenceForm?.addEventListener('submit', undxGenerateRepositoryProfile);
     undxRepositoryIntelligenceSourceSelect?.addEventListener('change', undxRefreshRepositoryProfileSourcePreview);
     undxRepositoryIntelligenceNotes?.addEventListener('input', undxRefreshRepositoryProfileSourcePreview);
+    undxAccessRequestForm?.addEventListener('submit', undxGenerateAccessRequest);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -24919,6 +25176,7 @@ def pulse_premium_undx_page():
     undxRenderApprovalHistory();
     undxRenderApprovalRequest(null);
     undxRenderRepositoryProfiles();
+    undxRenderAccessRequest(null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
