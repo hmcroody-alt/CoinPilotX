@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22116,7 +22116,7 @@ def pulse_premium_undx_page():
             <div class='undx-memory-status' aria-label='UNDX repository planner status'>
               <span aria-label='Repository Core: Planning'>Repository Core: <strong>Planning</strong></span>
               <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
-              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
               <span aria-label='Phase: 10'>Phase: <strong>10</strong></span>
             </div>
             <form class='undx-project-form' id='undxRepositoryPlanForm'>
@@ -22260,7 +22260,7 @@ def pulse_premium_undx_page():
           <div class='undx-approval-controls'>
             <div class='undx-memory-status' aria-label='UNDX approval protocol status'>
               <span aria-label='Approval Core: Active'>Approval Core: <strong>Active</strong></span>
-              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
               <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
               <span aria-label='Trust Protocol: Active'>Trust Protocol: <strong>Active</strong></span>
               <span aria-label='Phase: 12'>Phase: <strong>12</strong></span>
@@ -22318,7 +22318,7 @@ def pulse_premium_undx_page():
             <div class='undx-memory-status' aria-label='UNDX repository intelligence status'>
               <span aria-label='Repository Intelligence: Active'>Repository Intelligence: <strong>Active</strong></span>
               <span aria-label='File Access: Disabled'>File Access: <strong>Disabled</strong></span>
-              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
               <span aria-label='Profile Mode: Conceptual'>Profile Mode: <strong>Conceptual</strong></span>
               <span aria-label='Phase: 13'>Phase: <strong>13</strong></span>
             </div>
@@ -23468,6 +23468,178 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-code-intelligence' id='undx-universal-code-intelligence'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Code Intelligence: Online</span>
+            <h2>UNDX Universal Code Intelligence</h2>
+          </div>
+          <p>Understand programming languages, frameworks, APIs, architectures, and unknown syntax systems.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX universal code intelligence status'>
+              <span aria-label='Code Intelligence: Online'>Code Intelligence: <strong>Online</strong></span>
+              <span aria-label='Language Engine: Online'>Language Engine: <strong>Online</strong></span>
+              <span aria-label='Framework Engine: Online'>Framework Engine: <strong>Online</strong></span>
+              <span aria-label='Translation Engine: Online'>Translation Engine: <strong>Online</strong></span>
+              <span aria-label='Unknown Language Engine: Online'>Unknown Language Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 23'>Phase: <strong>23</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Intelligence Library</span>
+              <h3>Language Intelligence Library</h3>
+              <p>Python · JavaScript · TypeScript · Go · Rust · Java · C · C++ · C# · PHP · Ruby · Swift · Kotlin · SQL · Solidity · Bash · PowerShell · HTML · CSS · Lua · R · Dart · Scala · Elixir · Haskell · Assembly</p>
+              <div class='undx-system-impact-grid' id='undxLanguageLibraryGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework Intelligence Library</span>
+              <h3>Framework Intelligence Library</h3>
+              <p>Flask · Django · FastAPI · React · Next.js · Vue · Angular · Express · Laravel · Rails · Spring · .NET · TensorFlow · PyTorch</p>
+              <div class='undx-system-impact-grid' id='undxFrameworkLibraryGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>API / SDK Intelligence</span>
+              <h3>API / SDK Intelligence</h3>
+              <p>OpenAI · Anthropic · Gemini · DeepSeek · Groq · Mistral · Perplexity · HuggingFace · LangChain · LlamaIndex</p>
+              <div class='undx-system-impact-grid' id='undxSdkLibraryGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Analyzer</span>
+              <h3>Language Analyzer</h3>
+              <label class='undx-project-field'><span>Language Name</span><input id='undxCodeLanguageInput' type='text' placeholder='Python'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxAnalyzeLanguage'>Analyze Language</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework Analyzer</span>
+              <h3>Framework Analyzer</h3>
+              <p>Framework Intelligence Report includes Strengths, Weaknesses, Learning Curve, Scalability, Maintainability, and Best Practices.</p>
+              <label class='undx-project-field'><span>Framework Name</span><input id='undxCodeFrameworkInput' type='text' placeholder='React'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxAnalyzeFramework'>Analyze Framework</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Comparison Engine</span>
+              <h3>Language Comparison Engine</h3>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'><span>Language A</span><input id='undxCompareLanguageA' type='text' placeholder='Python'></label>
+                <label class='undx-project-field'><span>Language B</span><input id='undxCompareLanguageB' type='text' placeholder='TypeScript'></label>
+              </div>
+              <div class='undx-project-actions'><button class='button' type='button' id='undxCompareLanguages'>Compare Languages</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework Comparison Engine</span>
+              <h3>Framework Comparison Engine</h3>
+              <p>Architecture Comparison · Scalability Comparison · Complexity Comparison · Developer Experience Comparison</p>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'><span>Framework A</span><input id='undxCompareFrameworkA' type='text' placeholder='Flask'></label>
+                <label class='undx-project-field'><span>Framework B</span><input id='undxCompareFrameworkB' type='text' placeholder='FastAPI'></label>
+              </div>
+              <div class='undx-project-actions'><button class='button' type='button' id='undxCompareFrameworks'>Compare Frameworks</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Translation Planner</span>
+              <h3>Code Translation Planner</h3>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'><span>Source</span><input id='undxTranslationSource' type='text' placeholder='Python'></label>
+                <label class='undx-project-field'><span>Target</span><input id='undxTranslationTarget' type='text' placeholder='TypeScript'></label>
+              </div>
+              <div class='undx-project-actions'><button class='button' type='button' id='undxGenerateTranslationPlan'>Generate Migration Strategy</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Unknown Language Engine</span>
+              <h3>Unknown Language Engine</h3>
+              <label class='undx-project-field undx-project-field-wide'><span>Unknown Syntax</span><textarea id='undxUnknownSyntaxInput' placeholder='Paste unknown syntax or symbolic structure for pattern analysis only.'></textarea></label>
+              <div class='undx-project-actions'><button class='button' type='button' id='undxProfileUnknownSyntax'>Profile Unknown Syntax</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Architecture Pattern Engine</span>
+              <h3>Architecture Pattern Engine</h3>
+              <p>MVC · Microservices · Monolith · Event Driven · Serverless · Layered Architecture · Modular Architecture</p>
+              <div class='undx-chain-list' id='undxArchitecturePatternList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Security Pattern Engine</span>
+              <h3>Security Pattern Engine</h3>
+              <div class='undx-risk-grid' id='undxCodeSecurityPatternGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Dependency Intelligence</span>
+              <h3>Dependency Intelligence</h3>
+              <p>Dependency Complexity Score: <strong id='undxDependencyComplexityScore'>Low</strong></p>
+              <p>Low · Medium · High · Critical</p>
+              <div class='undx-chain-list' id='undxDependencyRecommendations'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Report</span>
+              <h3>Language Profile</h3>
+              <div class='undx-evolution-empty' id='undxCodeIntelligenceEmpty'>Analyze a language, framework, migration path, or unknown syntax to generate read-only code intelligence.</div>
+              <div class='undx-simulation-output' id='undxCodeIntelligenceOutput' aria-live='polite'></div>
+              <p class='undx-project-message' id='undxCodeIntelligenceMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Registry</span>
+              <h3>Code Intelligence Registry</h3>
+              <div class='undx-memory-empty' id='undxCodeRegistryEmpty'>No language profiles stored yet. Analyze Python, React, or unknown syntax to activate Universal Code Intelligence.</div>
+              <div class='undx-simulation-registry' id='undxCodeRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Dashboard</span>
+              <h3>Code Intelligence Dashboard</h3>
+              <p>Languages Analyzed: <strong id='undxLanguagesAnalyzed'>0</strong></p>
+              <p>Frameworks Analyzed: <strong id='undxFrameworksAnalyzed'>0</strong></p>
+              <p>SDKs Analyzed: <strong id='undxSdksAnalyzed'>0</strong></p>
+              <p>Unknown Languages Profiled: <strong id='undxUnknownLanguagesProfiled'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Code Review</span>
+              <h3>Multi-Brain Code Intelligence Review</h3>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxRunCodeReview'>Run Multi-Brain Code Intelligence Review</button></div>
+              <div id='undxCodeReviewOutput'><p>Architecture Review, Research Review, Builder Review, Optimization Review, Rapid Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Knowledge Graph Integration</h3>
+              <p>Language Relationships: <strong id='undxLanguageRelationships'>0</strong></p>
+              <p>Framework Relationships: <strong id='undxFrameworkRelationships'>0</strong></p>
+              <p>SDK Relationships: <strong id='undxSdkRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Strategic Integration</span>
+              <h3>Strategic Plans</h3>
+              <p>Recommended Languages: <strong id='undxRecommendedLanguages'>Python · TypeScript</strong></p>
+              <p>Recommended Frameworks: <strong id='undxRecommendedFrameworks'>Flask · React</strong></p>
+              <p>Recommended SDKs: <strong id='undxRecommendedSdks'>OpenAI · Groq</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Simulation Integration</span>
+              <h3>Build Simulations</h3>
+              <p>Recommended Technology Stack: <strong id='undxRecommendedTechnologyStack'>Python · Flask · JavaScript · OpenAI</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this analysis using language intelligence, framework intelligence, SDK intelligence, strategic planning, repository context, and knowledge graph relationships only.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Read-only code intelligence only.</li></ul>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 23<br><strong>Universal Code Intelligence</strong></span>
+                <span>Phase 24<br><strong>Workspace Memory Graph Expansion</strong></span>
+                <span>Phase 25<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 26<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -23821,6 +23993,46 @@ def pulse_premium_undx_page():
     const undxSimulationDeferredModules = document.getElementById('undxSimulationDeferredModules');
     const undxSimulationObjects = document.getElementById('undxSimulationObjects');
     const undxSimulationLoad = document.getElementById('undxSimulationLoad');
+    const undxLanguageLibraryGrid = document.getElementById('undxLanguageLibraryGrid');
+    const undxFrameworkLibraryGrid = document.getElementById('undxFrameworkLibraryGrid');
+    const undxSdkLibraryGrid = document.getElementById('undxSdkLibraryGrid');
+    const undxCodeLanguageInput = document.getElementById('undxCodeLanguageInput');
+    const undxAnalyzeLanguage = document.getElementById('undxAnalyzeLanguage');
+    const undxCodeFrameworkInput = document.getElementById('undxCodeFrameworkInput');
+    const undxAnalyzeFramework = document.getElementById('undxAnalyzeFramework');
+    const undxCompareLanguageA = document.getElementById('undxCompareLanguageA');
+    const undxCompareLanguageB = document.getElementById('undxCompareLanguageB');
+    const undxCompareLanguages = document.getElementById('undxCompareLanguages');
+    const undxCompareFrameworkA = document.getElementById('undxCompareFrameworkA');
+    const undxCompareFrameworkB = document.getElementById('undxCompareFrameworkB');
+    const undxCompareFrameworks = document.getElementById('undxCompareFrameworks');
+    const undxTranslationSource = document.getElementById('undxTranslationSource');
+    const undxTranslationTarget = document.getElementById('undxTranslationTarget');
+    const undxGenerateTranslationPlan = document.getElementById('undxGenerateTranslationPlan');
+    const undxUnknownSyntaxInput = document.getElementById('undxUnknownSyntaxInput');
+    const undxProfileUnknownSyntax = document.getElementById('undxProfileUnknownSyntax');
+    const undxArchitecturePatternList = document.getElementById('undxArchitecturePatternList');
+    const undxCodeSecurityPatternGrid = document.getElementById('undxCodeSecurityPatternGrid');
+    const undxDependencyComplexityScore = document.getElementById('undxDependencyComplexityScore');
+    const undxDependencyRecommendations = document.getElementById('undxDependencyRecommendations');
+    const undxCodeIntelligenceEmpty = document.getElementById('undxCodeIntelligenceEmpty');
+    const undxCodeIntelligenceOutput = document.getElementById('undxCodeIntelligenceOutput');
+    const undxCodeIntelligenceMessage = document.getElementById('undxCodeIntelligenceMessage');
+    const undxCodeRegistryEmpty = document.getElementById('undxCodeRegistryEmpty');
+    const undxCodeRegistryList = document.getElementById('undxCodeRegistryList');
+    const undxLanguagesAnalyzed = document.getElementById('undxLanguagesAnalyzed');
+    const undxFrameworksAnalyzed = document.getElementById('undxFrameworksAnalyzed');
+    const undxSdksAnalyzed = document.getElementById('undxSdksAnalyzed');
+    const undxUnknownLanguagesProfiled = document.getElementById('undxUnknownLanguagesProfiled');
+    const undxRunCodeReview = document.getElementById('undxRunCodeReview');
+    const undxCodeReviewOutput = document.getElementById('undxCodeReviewOutput');
+    const undxLanguageRelationships = document.getElementById('undxLanguageRelationships');
+    const undxFrameworkRelationships = document.getElementById('undxFrameworkRelationships');
+    const undxSdkRelationships = document.getElementById('undxSdkRelationships');
+    const undxRecommendedLanguages = document.getElementById('undxRecommendedLanguages');
+    const undxRecommendedFrameworks = document.getElementById('undxRecommendedFrameworks');
+    const undxRecommendedSdks = document.getElementById('undxRecommendedSdks');
+    const undxRecommendedTechnologyStack = document.getElementById('undxRecommendedTechnologyStack');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -23839,6 +24051,7 @@ def pulse_premium_undx_page():
     const undxStrategicPlansKey = 'undxStrategicPlans';
     const undxPortfolioAnalysesKey = 'undxPortfolioAnalyses';
     const undxBuildSimulationsKey = 'undxBuildSimulations';
+    const undxLanguageProfilesKey = 'undxLanguageProfiles';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -23861,6 +24074,8 @@ def pulse_premium_undx_page():
     let undxLastPortfolioAnalysis = null;
     let undxSelectedBuildSimulationId = null;
     let undxLastBuildSimulation = null;
+    let undxSelectedLanguageProfileId = null;
+    let undxLastCodeProfile = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -27796,6 +28011,474 @@ def pulse_premium_undx_page():
         if(undxSimulationMessage) undxSimulationMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    const undxLanguageIntelligenceLibrary = [
+      ['Python','General Purpose',62,96,68,34], ['JavaScript','Web Runtime',58,98,62,38], ['TypeScript','Web Runtime',64,92,64,46], ['Go','Systems/Cloud',55,78,86,42], ['Rust','Systems',82,74,95,78], ['Java','Enterprise',70,88,78,58], ['C','Systems',86,82,96,82], ['C++','Systems',90,78,94,88], ['C#','Enterprise',66,80,76,52], ['PHP','Web Backend',50,72,56,36], ['Ruby','Web Backend',54,66,54,40], ['Swift','Apple',62,70,82,54], ['Kotlin','Android/JVM',65,72,78,52], ['SQL','Data Query',46,94,72,44], ['Solidity','Blockchain',78,58,60,76], ['Bash','Shell',42,82,54,45], ['PowerShell','Shell',48,62,58,48], ['HTML','Markup',24,99,50,18], ['CSS','Styling',38,96,48,42], ['Lua','Embedded/Scripting',44,48,72,36], ['R','Data Science',58,58,50,54], ['Dart','App UI',54,52,68,44], ['Scala','JVM/Data',78,48,76,72], ['Elixir','Concurrent Web',68,42,78,62], ['Haskell','Functional',92,36,70,90], ['Assembly','Machine-Level',96,42,100,96]
+    ].map(([name, category, complexity, popularity, performance, learning]) => ({name, category, complexity, popularity, performance, learning}));
+    const undxFrameworkIntelligenceLibrary = [
+      ['Flask','Minimal Python web framework','Flexible, lightweight, fast to prototype','Requires discipline for large architecture','APIs, dashboards, internal tools',46],
+      ['Django','Batteries-included Python platform','Admin, ORM, security defaults','Can feel heavy for small services','Full-stack products, admin systems',68],
+      ['FastAPI','Modern Python API framework','Typed APIs, docs, async support','Async complexity and ecosystem choices','AI APIs, services, high-throughput endpoints',56],
+      ['React','Component UI library','Large ecosystem, flexible composition','State and tooling can sprawl','Interactive dashboards and app UI',58],
+      ['Next.js','React application framework','Routing, SSR, deployment ecosystem','Platform complexity and caching pitfalls','Product sites and full-stack React apps',70],
+      ['Vue','Progressive UI framework','Approachable, clear patterns','Smaller enterprise hiring pool','Fast UI builds and embedded dashboards',48],
+      ['Angular','Enterprise UI framework','Strong structure, batteries included','Steeper learning curve','Large enterprise frontends',76],
+      ['Express','Node web framework','Simple, mature, flexible','Manual structure and security choices','Node APIs and lightweight services',50],
+      ['Laravel','PHP web framework','Productive, full-featured','PHP deployment and scaling tradeoffs','SaaS backends and admin workflows',62],
+      ['Rails','Ruby web framework','Convention, speed, full-stack maturity','Runtime scaling and magic can surprise','CRUD apps and startup products',64],
+      ['Spring','Java enterprise framework','Resilience, ecosystem, enterprise fit','Configuration and complexity','Large backend services',82],
+      ['.NET','Microsoft application platform','Performance, tooling, enterprise support','Platform conventions require buy-in','Enterprise APIs and desktop/cloud apps',70],
+      ['TensorFlow','ML framework','Production ML, broad tooling','Steeper model-building complexity','ML training and deployment',78],
+      ['PyTorch','ML framework','Research-friendly, Pythonic','Production path needs discipline','AI research, model prototyping',72]
+    ].map(([name, profile, strengths, weaknesses, useCases, complexity]) => ({name, profile, strengths, weaknesses, useCases, complexity}));
+    const undxSdkIntelligenceLibrary = [
+      ['OpenAI','AI model and agent SDK','Medium','Strong reasoning, tool calling, broad docs','Cost and prompt design discipline','Mission planning, builders, chat intelligence'],
+      ['Anthropic','Claude AI API','Medium','Long-context analysis and careful reasoning','Provider-specific integration patterns','Architecture reviews and long-form analysis'],
+      ['Gemini','Google AI API','Medium','Multimodal ecosystem and Google integration','Model differences require testing','Research synthesis and broad context'],
+      ['DeepSeek','Reasoning/code model API','Medium','Code and optimization focus','Provider maturity varies by deployment','Optimization and code intelligence'],
+      ['Groq','Fast inference API','Low','Low-latency responses','Model selection is specialized','Rapid response and triage'],
+      ['Mistral','Open model API','Medium','Efficient models and EU ecosystem','Capability varies by model','Cost-sensitive AI features'],
+      ['Perplexity','Answer/research API','Medium','Search-grounded research','Less build-agent oriented','Market and source discovery'],
+      ['HuggingFace','Model hub and inference','High','Model breadth and open tooling','Operational complexity','Custom ML workflows'],
+      ['LangChain','LLM orchestration framework','High','Chains, tools, retrieval patterns','Abstraction churn and complexity','Complex agent prototypes'],
+      ['LlamaIndex','Data and retrieval framework','Medium','RAG and data connectors','Indexing choices need care','Repository and knowledge retrieval']
+    ].map(([name, profile, complexity, strengths, weaknesses, usage]) => ({name, profile, complexity, strengths, weaknesses, usage}));
+    function undxFindCodeLibraryItem(items, name){
+      const lower = String(name || '').trim().toLowerCase();
+      return items.find(item => item.name.toLowerCase() === lower) || items.find(item => item.name.toLowerCase().includes(lower) || lower.includes(item.name.toLowerCase()));
+    }
+    function undxCodeFallbackScore(text, base = 50){
+      const value = String(text || '');
+      return Math.max(18, Math.min(96, base + Math.min(30, value.length % 37)));
+    }
+    function undxNextCodeProfileId(profiles){
+      const max = profiles.reduce((highest, profile) => {
+        const match = String(profile.profileId || '').match(/^CODE-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `CODE-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxNormalizeCodeProfile(profile){
+      return {
+        profileId: String(profile.profileId || `CODE-UNDX-${Date.now()}`).slice(0,44),
+        profileType: String(profile.profileType || 'Language').slice(0,80),
+        languageName: String(profile.languageName || profile.frameworkName || profile.sdkName || 'Unknown Language').slice(0,120),
+        category: String(profile.category || 'Universal Code Intelligence').slice(0,120),
+        complexityScore: Math.max(0, Math.min(100, Number(profile.complexityScore || 50))),
+        popularityScore: Math.max(0, Math.min(100, Number(profile.popularityScore || 50))),
+        performanceScore: Math.max(0, Math.min(100, Number(profile.performanceScore || 50))),
+        learningDifficulty: Math.max(0, Math.min(100, Number(profile.learningDifficulty || 50))),
+        syntaxStyle: String(profile.syntaxStyle || '').slice(0,600),
+        architectureStyle: String(profile.architectureStyle || '').slice(0,600),
+        dependencyPatterns: undxNormalizeExecutionList(profile.dependencyPatterns, ['Package-managed dependencies', 'Version pinning recommended'], 8, 180),
+        securityConsiderations: undxNormalizeExecutionList(profile.securityConsiderations, ['Injection risks', 'Authentication risks', 'Dependency risks', 'Secrets management risks', 'API security risks'], 8, 200),
+        performanceCharacteristics: String(profile.performanceCharacteristics || '').slice(0,700),
+        recommendedUseCases: undxNormalizeExecutionList(profile.recommendedUseCases, ['Read-only planning', 'Architecture comparison', 'Migration evaluation'], 8, 180),
+        strengths: undxNormalizeExecutionList(profile.strengths, ['Strong ecosystem', 'Useful for build planning'], 8, 180),
+        weaknesses: undxNormalizeExecutionList(profile.weaknesses, ['Requires project-specific validation'], 8, 180),
+        comparison: profile.comparison || null,
+        translationPlan: profile.translationPlan || null,
+        unknownProfile: profile.unknownProfile || null,
+        architecturePatternReport: undxNormalizeExecutionList(profile.architecturePatternReport, ['MVC: common web separation', 'Modular Architecture: recommended for UNDX phases'], 8, 180),
+        dependencyComplexity: String(profile.dependencyComplexity || 'Medium').slice(0,80),
+        dependencyRecommendations: undxNormalizeExecutionList(profile.dependencyRecommendations, ['Keep dependencies minimal', 'Pin versions', 'Audit SDK boundaries'], 8, 180),
+        review: profile.review || null,
+        createdAt: profile.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadLanguageProfiles(){
+      try{
+        const raw = localStorage.getItem(undxLanguageProfilesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.profileId).slice(0,64).map(undxNormalizeCodeProfile) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveLanguageProfiles(profiles){
+      try{
+        localStorage.setItem(undxLanguageProfilesKey, JSON.stringify(profiles.slice(0,64)));
+      }catch(error){
+        if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = 'Code Intelligence Registry could not be updated.';
+      }
+    }
+    function undxBuildLanguageProfile(name){
+      const profiles = undxLoadLanguageProfiles();
+      const requested = String(name || '').trim() || 'Python';
+      const item = undxFindCodeLibraryItem(undxLanguageIntelligenceLibrary, requested) || {name:requested, category:'Unknown / Emerging Syntax', complexity:undxCodeFallbackScore(requested, 58), popularity:42, performance:60, learning:62};
+      return undxNormalizeCodeProfile({
+        profileId: undxNextCodeProfileId(profiles),
+        profileType: 'Language',
+        languageName: item.name,
+        category: item.category,
+        complexityScore: item.complexity,
+        popularityScore: item.popularity,
+        performanceScore: item.performance,
+        learningDifficulty: item.learning,
+        syntaxStyle: `${item.name} uses ${item.category.toLowerCase()} conventions with readable structure, explicit boundaries, and ecosystem-specific idioms.`,
+        architectureStyle: /JavaScript|TypeScript|HTML|CSS|PHP|Ruby|Python/.test(item.name) ? 'Commonly used in web, service, and product architectures.' : /C\\+\\+|C|Rust|Go|Assembly/.test(item.name) ? 'Commonly used for systems, infrastructure, performance-sensitive services, or low-level integrations.' : 'Architecture depends on ecosystem conventions and runtime targets.',
+        dependencyPatterns: [`${item.name} dependency strategy should be reviewed before build execution.`, 'Prefer locked versions and audited packages.', 'Keep provider SDK boundaries explicit.'],
+        securityConsiderations: ['Injection Risks', 'Authentication Risks', 'Dependency Risks', 'Secrets Management Risks', 'API Security Risks'],
+        performanceCharacteristics: `${item.name} performance score is ${item.performance}/100 in the UNDX language intelligence library.`,
+        recommendedUseCases: item.category === 'Markup' || item.category === 'Styling' ? ['Interface structure and presentation', 'Premium UI surfaces', 'Static rendering workflows'] : ['CoinPilotX feature planning', 'Architecture comparison', 'Migration and integration analysis'],
+        strengths: ['Known ecosystem patterns', 'Readable planning surface', 'Useful for cross-stack comparison'],
+        weaknesses: ['Requires repository-specific confirmation before future implementation', 'No file access in Phase 23'],
+        dependencyComplexity: item.complexity >= 80 ? 'High' : item.complexity >= 60 ? 'Medium' : 'Low',
+        dependencyRecommendations: ['Map package manager expectations', 'Validate security defaults', 'Keep migration plans test-first']
+      });
+    }
+    function undxBuildFrameworkProfile(name){
+      const profiles = undxLoadLanguageProfiles();
+      const requested = String(name || '').trim() || 'React';
+      const item = undxFindCodeLibraryItem(undxFrameworkIntelligenceLibrary, requested) || {name:requested, profile:'Framework profile generated from unknown framework name', strengths:'Flexible if documented', weaknesses:'Unknown maturity and ecosystem risk', useCases:'Prototype only until researched', complexity:undxCodeFallbackScore(requested, 60)};
+      return undxNormalizeCodeProfile({
+        profileId: undxNextCodeProfileId(profiles),
+        profileType: 'Framework',
+        languageName: item.name,
+        category: 'Framework Intelligence',
+        complexityScore: item.complexity,
+        popularityScore: undxCodeFallbackScore(item.name, 55),
+        performanceScore: Math.max(30, 100 - Math.round(item.complexity * .35)),
+        learningDifficulty: item.complexity,
+        syntaxStyle: `${item.name} framework conventions shape routing, components, services, or model boundaries.`,
+        architectureStyle: item.profile,
+        dependencyPatterns: ['Framework plugins and extensions should stay minimal.', 'Prefer documented upgrade paths.', 'Separate UI, data, and provider integration concerns.'],
+        securityConsiderations: ['Authentication Risks', 'Dependency Risks', 'API Security Risks', 'Secrets Management Risks'],
+        performanceCharacteristics: `Complexity score ${item.complexity}/100. Scalability depends on framework structure and deployment model.`,
+        recommendedUseCases: [item.useCases, 'CoinPilotX module planning', 'Read-only architecture comparison'],
+        strengths: [item.strengths],
+        weaknesses: [item.weaknesses],
+        dependencyComplexity: item.complexity >= 75 ? 'High' : item.complexity >= 55 ? 'Medium' : 'Low',
+        dependencyRecommendations: ['Review framework lifecycle', 'Document deployment assumptions', 'Add focused tests before implementation']
+      });
+    }
+    function undxBuildLanguageComparison(a, b){
+      const left = undxBuildLanguageProfile(a);
+      const right = undxBuildLanguageProfile(b);
+      return undxNormalizeCodeProfile({
+        ...left,
+        profileId: undxNextCodeProfileId(undxLoadLanguageProfiles()),
+        profileType: 'Language Comparison',
+        languageName: `${left.languageName} vs ${right.languageName}`,
+        complexityScore: Math.round((left.complexityScore + right.complexityScore) / 2),
+        comparison: {
+          performance: `${left.languageName}: ${left.performanceScore}/100 vs ${right.languageName}: ${right.performanceScore}/100`,
+          security: `${left.languageName} and ${right.languageName} both require dependency review, injection protection, authentication boundaries, and secrets protection.`,
+          complexity: `${left.languageName}: ${left.complexityScore}/100 vs ${right.languageName}: ${right.complexityScore}/100`,
+          ecosystem: `${left.languageName} category: ${left.category}. ${right.languageName} category: ${right.category}.`,
+          recommendation: left.learningDifficulty <= right.learningDifficulty ? `${left.languageName} is easier to onboard; use ${right.languageName} when its ecosystem or runtime fit is stronger.` : `${right.languageName} is easier to onboard; use ${left.languageName} when its runtime and performance profile matter more.`
+        }
+      });
+    }
+    function undxBuildFrameworkComparison(a, b){
+      const left = undxBuildFrameworkProfile(a);
+      const right = undxBuildFrameworkProfile(b);
+      return undxNormalizeCodeProfile({
+        ...left,
+        profileId: undxNextCodeProfileId(undxLoadLanguageProfiles()),
+        profileType: 'Framework Comparison',
+        languageName: `${left.languageName} vs ${right.languageName}`,
+        complexityScore: Math.round((left.complexityScore + right.complexityScore) / 2),
+        comparison: {
+          architecture: `${left.languageName}: ${left.architectureStyle} ${right.languageName}: ${right.architectureStyle}`,
+          scalability: `${left.languageName} scalability depends on disciplined structure. ${right.languageName} should be evaluated against deployment needs.`,
+          complexity: `${left.languageName}: ${left.complexityScore}/100 vs ${right.languageName}: ${right.complexityScore}/100`,
+          developerExperience: `${left.languageName} strengths: ${left.strengths.join(', ')}. ${right.languageName} strengths: ${right.strengths.join(', ')}.`,
+          recommendation: left.complexityScore <= right.complexityScore ? `Start with ${left.languageName} for faster planning unless ${right.languageName} has a stronger architecture fit.` : `Start with ${right.languageName} for lower complexity unless ${left.languageName} has stronger project fit.`
+        }
+      });
+    }
+    function undxBuildTranslationPlan(source, target){
+      const from = String(source || '').trim() || 'Python';
+      const to = String(target || '').trim() || 'TypeScript';
+      return undxNormalizeCodeProfile({
+        profileId: undxNextCodeProfileId(undxLoadLanguageProfiles()),
+        profileType: 'Translation Plan',
+        languageName: `${from} → ${to}`,
+        category: 'Code Translation Planner',
+        complexityScore: /Flask|FastAPI|React|Vue|REST|GraphQL/i.test(`${from} ${to}`) ? 68 : 58,
+        syntaxStyle: 'Conceptual translation plan only. No code generation and no file access.',
+        architectureStyle: `Plan migration from ${from} to ${to} by preserving behavior, interfaces, tests, and deployment assumptions.`,
+        translationPlan: {
+          migrationStrategy: [`Inventory ${from} concepts and map them to ${to}.`, 'Preserve public interfaces before changing implementation.', 'Migrate one module boundary at a time.'],
+          riskAnalysis: ['Behavior drift', 'Dependency mismatch', 'Security regressions', 'Testing gaps'],
+          dependencyConsiderations: ['Compare package managers and runtime requirements.', 'Replace unsupported SDKs deliberately.', 'Document all version constraints.'],
+          testingRecommendations: ['Add characterization tests first.', 'Run integration tests after each boundary migration.', 'Keep rollback path available.']
+        },
+        dependencyComplexity: 'High',
+        dependencyRecommendations: ['Create migration inventory', 'Write tests before translation', 'Keep execution approval separate']
+      });
+    }
+    function undxBuildUnknownLanguageProfile(syntax){
+      const text = String(syntax || '').trim();
+      const symbols = (text.match(/[{}()[\\];:=<>$#@]/g) || []).length;
+      const words = (text.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []).length;
+      const probable = text.includes('{') && text.includes(';') ? 'C / JavaScript family' : text.includes('def ') || text.includes(':') ? 'Python-like family' : text.includes('<') && text.includes('>') ? 'Markup/XML family' : 'Unknown structured syntax family';
+      return undxNormalizeCodeProfile({
+        profileId: undxNextCodeProfileId(undxLoadLanguageProfiles()),
+        profileType: 'Unknown Language Profile',
+        languageName: 'Unknown Syntax Profile',
+        category: 'Unknown Language Engine',
+        complexityScore: Math.max(30, Math.min(92, 42 + symbols + Math.floor(words / 2))),
+        syntaxStyle: 'Unknown Language Profile generated from pasted syntax patterns only.',
+        architectureStyle: `Probable Language Family: ${probable}`,
+        unknownProfile: {
+          patternAnalysis: `Detected ${symbols} structural symbols and ${words} token-like words.`,
+          tokenAnalysis: text ? text.slice(0,300) : 'No syntax provided; using generic unknown syntax baseline.',
+          structureInference: symbols > words ? 'Symbol-heavy grammar' : 'Identifier-heavy grammar',
+          similarityMatching: probable,
+          probableLanguageFamily: probable,
+          complexityEstimate: symbols + words > 40 ? 'High' : symbols + words > 18 ? 'Medium' : 'Low'
+        },
+        dependencyComplexity: symbols + words > 40 ? 'High' : 'Medium',
+        dependencyRecommendations: ['Request examples before implementation planning', 'Classify syntax family', 'Keep analysis read-only']
+      });
+    }
+    function undxCodeProfileText(profile){
+      const lines = [
+        'UNDX Universal Code Intelligence',
+        '',
+        `Profile ID: ${profile.profileId}`,
+        `Profile Type: ${profile.profileType}`,
+        `Language Name: ${profile.languageName}`,
+        `Category: ${profile.category}`,
+        `Complexity Score: ${profile.complexityScore}/100`,
+        `Popularity Score: ${profile.popularityScore}/100`,
+        `Performance Score: ${profile.performanceScore}/100`,
+        `Learning Difficulty: ${profile.learningDifficulty}/100`,
+        '',
+        `Syntax Style: ${profile.syntaxStyle}`,
+        `Architecture Style: ${profile.architectureStyle}`,
+        `Performance Characteristics: ${profile.performanceCharacteristics}`,
+        '',
+        'Security Considerations:',
+        ...profile.securityConsiderations.map(item => `- ${item}`),
+        '',
+        'Recommended Use Cases:',
+        ...profile.recommendedUseCases.map(item => `- ${item}`),
+        '',
+        `Dependency Complexity Score: ${profile.dependencyComplexity}`,
+        'Dependency Recommendations:',
+        ...profile.dependencyRecommendations.map(item => `- ${item}`)
+      ];
+      if(profile.comparison){
+        lines.push('', 'Comparison:', ...Object.entries(profile.comparison).map(([key,value]) => `- ${key}: ${value}`));
+      }
+      if(profile.translationPlan){
+        lines.push('', 'Migration Strategy:', ...profile.translationPlan.migrationStrategy.map(item => `- ${item}`), 'Risk Analysis:', ...profile.translationPlan.riskAnalysis.map(item => `- ${item}`), 'Dependency Considerations:', ...profile.translationPlan.dependencyConsiderations.map(item => `- ${item}`), 'Testing Recommendations:', ...profile.translationPlan.testingRecommendations.map(item => `- ${item}`));
+      }
+      if(profile.unknownProfile){
+        lines.push('', 'Unknown Language Profile:', ...Object.entries(profile.unknownProfile).map(([key,value]) => `- ${key}: ${value}`));
+      }
+      lines.push('', 'Safety Boundary: No repository files were accessed. No commands were executed. No deployments were performed.');
+      return lines.join('\\n');
+    }
+    function undxRenderCodeLibraries(){
+      const render = (container, items, type) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.slice(0,6).forEach(item => {
+          const node = document.createElement('article');
+          node.className = 'undx-system-impact';
+          const score = item.complexity || item.complexityScore || item.complexity;
+          node.append(Object.assign(document.createElement('strong'), {textContent: item.name}), Object.assign(document.createElement('span'), {textContent: `${type} · Complexity ${score || item.complexity || 'Medium'}`}));
+          container.appendChild(node);
+        });
+      };
+      render(undxLanguageLibraryGrid, undxLanguageIntelligenceLibrary, 'Language');
+      render(undxFrameworkLibraryGrid, undxFrameworkIntelligenceLibrary, 'Framework');
+      render(undxSdkLibraryGrid, undxSdkIntelligenceLibrary, 'SDK');
+    }
+    function undxRenderCodePatternEngines(){
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      fillList(undxArchitecturePatternList, ['MVC: separates model, view, and controller responsibilities.', 'Microservices: separates deployable service boundaries.', 'Monolith: keeps one deployable application surface.', 'Event Driven: coordinates behavior through asynchronous events.', 'Serverless: delegates runtime operations to platform triggers.', 'Layered Architecture: separates presentation, domain, and data layers.', 'Modular Architecture: recommended for phased UNDX expansion.']);
+      if(undxCodeSecurityPatternGrid){
+        undxCodeSecurityPatternGrid.replaceChildren();
+        ['Injection Risks', 'Authentication Risks', 'Dependency Risks', 'Secrets Management Risks', 'API Security Risks'].forEach(item => {
+          const node = document.createElement('article');
+          node.className = 'undx-risk-item';
+          node.append(Object.assign(document.createElement('strong'), {textContent: item}), Object.assign(document.createElement('span'), {textContent: 'Review before future implementation'}));
+          undxCodeSecurityPatternGrid.appendChild(node);
+        });
+      }
+      fillList(undxDependencyRecommendations, ['Dependency Recommendations: keep package scope minimal.', 'Pin versions and document SDK boundaries.', 'Score dependency complexity as Low, Medium, High, or Critical before implementation.']);
+    }
+    function undxRenderCodeProfile(profile){
+      undxLastCodeProfile = profile || null;
+      if(profile) undxSelectedLanguageProfileId = profile.profileId;
+      if(undxCodeIntelligenceEmpty) undxCodeIntelligenceEmpty.hidden = Boolean(profile);
+      if(undxCodeIntelligenceOutput){
+        undxCodeIntelligenceOutput.replaceChildren();
+        if(profile){
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Profile ID', profile.profileId),
+            undxBlock('Language Name', profile.languageName),
+            undxBlock('Syntax Style', profile.syntaxStyle),
+            undxBlock('Architecture Style', profile.architectureStyle),
+            undxBlock('Dependency Patterns', profile.dependencyPatterns),
+            undxBlock('Security Considerations', profile.securityConsiderations),
+            undxBlock('Performance Characteristics', profile.performanceCharacteristics),
+            undxBlock('Recommended Use Cases', profile.recommendedUseCases)
+          );
+          if(profile.comparison){
+            grid.append(undxBlock('Performance Comparison', profile.comparison.performance || profile.comparison.architecture), undxBlock('Security Comparison', profile.comparison.security || profile.comparison.scalability), undxBlock('Complexity Comparison', profile.comparison.complexity), undxBlock('Ecosystem Comparison', profile.comparison.ecosystem || profile.comparison.developerExperience), undxBlock('Recommendation', profile.comparison.recommendation));
+          }
+          if(profile.translationPlan){
+            grid.append(undxBlock('Migration Strategy', profile.translationPlan.migrationStrategy), undxBlock('Risk Analysis', profile.translationPlan.riskAnalysis), undxBlock('Dependency Considerations', profile.translationPlan.dependencyConsiderations), undxBlock('Testing Recommendations', profile.translationPlan.testingRecommendations));
+          }
+          if(profile.unknownProfile){
+            grid.append(undxBlock('Pattern Analysis', profile.unknownProfile.patternAnalysis), undxBlock('Token Analysis', profile.unknownProfile.tokenAnalysis), undxBlock('Structure Inference', profile.unknownProfile.structureInference), undxBlock('Similarity Matching', profile.unknownProfile.similarityMatching), undxBlock('Probable Language Family', profile.unknownProfile.probableLanguageFamily), undxBlock('Complexity Estimate', profile.unknownProfile.complexityEstimate));
+          }
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxCodeProfileText(profile);
+          undxCodeIntelligenceOutput.append(grid, output);
+        }
+      }
+      if(undxDependencyComplexityScore) undxDependencyComplexityScore.textContent = profile?.dependencyComplexity || 'Low';
+      undxRenderCodeDashboard();
+    }
+    function undxStoreCodeProfile(profile){
+      const normalized = undxNormalizeCodeProfile(profile);
+      undxSaveLanguageProfiles([normalized, ...undxLoadLanguageProfiles().filter(item => item.profileId !== normalized.profileId)]);
+      undxRenderCodeProfile(normalized);
+      undxRenderCodeRegistry();
+      if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = `${normalized.profileId} stored in Code Intelligence Registry.`;
+      return normalized;
+    }
+    function undxAnalyzeLanguageFlow(){
+      return undxStoreCodeProfile(undxBuildLanguageProfile(undxCodeLanguageInput?.value || 'Python'));
+    }
+    function undxAnalyzeFrameworkFlow(){
+      return undxStoreCodeProfile(undxBuildFrameworkProfile(undxCodeFrameworkInput?.value || 'React'));
+    }
+    function undxCompareLanguagesFlow(){
+      return undxStoreCodeProfile(undxBuildLanguageComparison(undxCompareLanguageA?.value || 'Python', undxCompareLanguageB?.value || 'TypeScript'));
+    }
+    function undxCompareFrameworksFlow(){
+      return undxStoreCodeProfile(undxBuildFrameworkComparison(undxCompareFrameworkA?.value || 'Flask', undxCompareFrameworkB?.value || 'FastAPI'));
+    }
+    function undxGenerateTranslationPlanFlow(){
+      return undxStoreCodeProfile(undxBuildTranslationPlan(undxTranslationSource?.value || 'Python', undxTranslationTarget?.value || 'TypeScript'));
+    }
+    function undxProfileUnknownSyntaxFlow(){
+      return undxStoreCodeProfile(undxBuildUnknownLanguageProfile(undxUnknownSyntaxInput?.value || ''));
+    }
+    function undxSendCodeProfileToChat(profile){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxCodeProfileText(profile);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = `${profile.profileId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSaveCodeProfileToMemory(profile){
+      undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Code Intelligence ${profile.profileId}`, objective:undxCodeProfileText(profile), type:'Universal Code Intelligence', source:'UNDX Universal Code Intelligence', createdAt:new Date().toISOString(), phase:'Phase 23', status:'Stored'});
+      if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = `${profile.profileId} saved to Mission Memory.`;
+    }
+    function undxCompareFromCodeProfile(profile){
+      if(undxCompareLanguageA) undxCompareLanguageA.value = profile.languageName;
+      if(undxCompareLanguageB) undxCompareLanguageB.value = profile.languageName === 'Python' ? 'TypeScript' : 'Python';
+      undxCompareLanguagesFlow();
+    }
+    function undxDeleteCodeProfile(profileId){
+      undxSaveLanguageProfiles(undxLoadLanguageProfiles().filter(item => item.profileId !== profileId));
+      if(undxSelectedLanguageProfileId === profileId) undxRenderCodeProfile(undxLoadLanguageProfiles()[0] || null);
+      undxRenderCodeRegistry();
+      if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = 'Code intelligence profile deleted.';
+    }
+    function undxCreateCodeProfileCard(profile){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = profile.profileId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Profile ID: ${profile.profileId}`, `Language Name: ${profile.languageName}`, `Profile Type: ${profile.profileType}`, `Complexity Score: ${profile.complexityScore}/100`, `Created Date: ${undxFormatMemoryTime(profile.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Profile', () => undxRenderCodeProfile(profile), true),
+        undxProjectActionButton('Send To Chat', () => undxSendCodeProfileToChat(profile)),
+        undxProjectActionButton('Save To Mission Memory', () => undxSaveCodeProfileToMemory(profile)),
+        undxProjectActionButton('Compare Languages', () => undxCompareFromCodeProfile(profile)),
+        undxProjectActionButton('Delete Profile', () => undxDeleteCodeProfile(profile.profileId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderCodeRegistry(){
+      const profiles = undxLoadLanguageProfiles();
+      if(undxCodeRegistryEmpty) undxCodeRegistryEmpty.hidden = profiles.length > 0;
+      if(undxCodeRegistryList){
+        undxCodeRegistryList.replaceChildren();
+        profiles.forEach(profile => undxCodeRegistryList.appendChild(undxCreateCodeProfileCard(profile)));
+      }
+      undxRenderCodeDashboard();
+    }
+    function undxRenderCodeDashboard(){
+      const profiles = undxLoadLanguageProfiles();
+      const languages = profiles.filter(item => item.profileType === 'Language' || item.profileType === 'Language Comparison').length;
+      const frameworks = profiles.filter(item => item.profileType === 'Framework' || item.profileType === 'Framework Comparison').length;
+      const unknown = profiles.filter(item => item.profileType === 'Unknown Language Profile').length;
+      if(undxLanguagesAnalyzed) undxLanguagesAnalyzed.textContent = String(languages);
+      if(undxFrameworksAnalyzed) undxFrameworksAnalyzed.textContent = String(frameworks);
+      if(undxSdksAnalyzed) undxSdksAnalyzed.textContent = String(undxSdkIntelligenceLibrary.length);
+      if(undxUnknownLanguagesProfiled) undxUnknownLanguagesProfiled.textContent = String(unknown);
+      if(undxLanguageRelationships) undxLanguageRelationships.textContent = String(languages + undxLanguageIntelligenceLibrary.length);
+      if(undxFrameworkRelationships) undxFrameworkRelationships.textContent = String(frameworks + undxFrameworkIntelligenceLibrary.length);
+      if(undxSdkRelationships) undxSdkRelationships.textContent = String(undxSdkIntelligenceLibrary.length);
+      const recent = profiles.slice(0,4).map(item => item.languageName);
+      const recommendedLanguages = recent.filter(name => undxFindCodeLibraryItem(undxLanguageIntelligenceLibrary, name)).slice(0,3);
+      const recommendedFrameworks = recent.filter(name => undxFindCodeLibraryItem(undxFrameworkIntelligenceLibrary, name)).slice(0,3);
+      if(undxRecommendedLanguages) undxRecommendedLanguages.textContent = (recommendedLanguages.length ? recommendedLanguages : ['Python','TypeScript']).join(' · ');
+      if(undxRecommendedFrameworks) undxRecommendedFrameworks.textContent = (recommendedFrameworks.length ? recommendedFrameworks : ['Flask','React']).join(' · ');
+      if(undxRecommendedSdks) undxRecommendedSdks.textContent = ['OpenAI','Groq','Gemini'].join(' · ');
+      if(undxRecommendedTechnologyStack) undxRecommendedTechnologyStack.textContent = [...new Set([...(recommendedLanguages.length ? recommendedLanguages : ['Python','TypeScript']), ...(recommendedFrameworks.length ? recommendedFrameworks : ['Flask','React']), 'OpenAI'])].join(' · ');
+    }
+    async function undxRunCodeReviewFlow(){
+      let profile = undxLastCodeProfile || (undxSelectedLanguageProfileId ? undxLoadLanguageProfiles().find(item => item.profileId === undxSelectedLanguageProfileId) : null);
+      if(!profile) profile = undxAnalyzeLanguageFlow();
+      if(!profile) return;
+      if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = 'Routing code intelligence review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission: undxCodeProfileText(profile)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        profile = undxNormalizeCodeProfile({...profile, review:{
+          architectureReview: agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Review: map language and framework boundaries.',
+          researchReview: agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: validate ecosystem and SDK fit.',
+          builderReview: agents.find(agent => agent.key === 'builder')?.recommendation || 'Builder Review: convert intelligence into phased implementation planning.',
+          optimizationReview: agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: reduce dependency and migration complexity.',
+          rapidReview: agents.find(agent => agent.key === 'rapid')?.recommendation || 'Rapid Review: choose the next safest comparison.',
+          combinedRecommendation: 'Use Universal Code Intelligence to select the smallest safe technology path before future build phases.'
+        }});
+        undxSaveLanguageProfiles([profile, ...undxLoadLanguageProfiles().filter(item => item.profileId !== profile.profileId)]);
+        undxRenderCodeProfile(profile);
+        undxRenderCodeRegistry();
+        if(undxCodeReviewOutput) undxCodeReviewOutput.replaceChildren(undxBlock('Architecture Review', profile.review.architectureReview), undxBlock('Research Review', profile.review.researchReview), undxBlock('Builder Review', profile.review.builderReview), undxBlock('Optimization Review', profile.review.optimizationReview), undxBlock('Rapid Review', profile.review.rapidReview), undxBlock('Combined Recommendation', profile.review.combinedRecommendation));
+        if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = 'Multi-brain code intelligence review complete.';
+      }catch(error){
+        if(undxCodeReviewOutput) undxCodeReviewOutput.replaceChildren(undxBlock('Architecture Review', 'OpenAI fallback recommended: preserve architecture boundaries.'), undxBlock('Research Review', 'OpenAI fallback recommended: verify ecosystem fit.'), undxBlock('Builder Review', 'OpenAI fallback recommended: keep translation planning conceptual.'), undxBlock('Optimization Review', 'OpenAI fallback recommended: reduce dependency complexity.'), undxBlock('Rapid Review', 'OpenAI fallback recommended: choose one next comparison.'), undxBlock('Combined Recommendation', 'Fallback → OpenAI. Universal Code Intelligence remains read-only with no file access, commands, or deployments.'));
+        if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
@@ -27817,6 +28500,7 @@ def pulse_premium_undx_page():
       ['undx-strategic-planning','Strategic Planning'],
       ['undx-multi-project-coordination','Portfolio Coordination'],
       ['undx-build-simulation','Build Simulation'],
+      ['undx-universal-code-intelligence','Universal Code Intelligence'],
       ['undx-core-modules','Core Modules'],
       ['undx-mission-status-view','Mission Status'],
       ['undx-future-preview','Future Preview']
@@ -29571,6 +30255,13 @@ def pulse_premium_undx_page():
     undxRunPortfolioReview?.addEventListener('click', undxRunPortfolioReviewFlow);
     undxGenerateBuildSimulation?.addEventListener('click', undxGenerateBuildSimulationFlow);
     undxRunSimulationReview?.addEventListener('click', undxRunSimulationReviewFlow);
+    undxAnalyzeLanguage?.addEventListener('click', undxAnalyzeLanguageFlow);
+    undxAnalyzeFramework?.addEventListener('click', undxAnalyzeFrameworkFlow);
+    undxCompareLanguages?.addEventListener('click', undxCompareLanguagesFlow);
+    undxCompareFrameworks?.addEventListener('click', undxCompareFrameworksFlow);
+    undxGenerateTranslationPlan?.addEventListener('click', undxGenerateTranslationPlanFlow);
+    undxProfileUnknownSyntax?.addEventListener('click', undxProfileUnknownSyntaxFlow);
+    undxRunCodeReview?.addEventListener('click', undxRunCodeReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -29598,6 +30289,10 @@ def pulse_premium_undx_page():
     undxRenderPortfolioAnalysis(undxLoadPortfolioAnalyses()[0] || null);
     undxRenderSimulationRegistry();
     undxRenderBuildSimulation(undxLoadBuildSimulations()[0] || null);
+    undxRenderCodeLibraries();
+    undxRenderCodePatternEngines();
+    undxRenderCodeRegistry();
+    undxRenderCodeProfile(undxLoadLanguageProfiles()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
