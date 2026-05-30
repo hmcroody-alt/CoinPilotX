@@ -25394,6 +25394,202 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-read-only-repository-connector' id='undx-read-only-repository-connector'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Connector: Online</span>
+            <h2>UNDX Read-Only Repository Connector</h2>
+          </div>
+          <p>Secure repository visibility and repository understanding without modification access.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX read-only repository connector status'>
+              <span>Repository Connector: <strong>Online</strong></span>
+              <span>Repository Access: <strong>Read Only</strong></span>
+              <span>File Editing: <strong>Disabled</strong></span>
+              <span>Command Execution: <strong>Disabled</strong></span>
+              <span>Deployment Access: <strong>Disabled</strong></span>
+              <span>Phase: <strong>36</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Connection Center</span>
+              <h3>Repository Connection Center</h3>
+              <p>Connection Status · Repository Name · Connection Type · Repository Visibility · Trust Level · Read-Only Status</p>
+              <label>Repository Name<input id='undxConnectorRepositoryName' value='CoinPilotXAI' placeholder='Example: CoinPilotXAI'></label>
+              <label>Repository Description<textarea id='undxConnectorRepositoryDescription' rows='3' placeholder='Approved repository metadata only. No secrets or file contents.'>CoinPilotXAI premium Pulse and UNDX command-center application.</textarea></label>
+              <label>Connection Type<select id='undxConnectorConnectionType'>
+                <option>Workspace Repository</option><option>GitHub Repository</option><option>Local Repository</option><option>Future GitLab</option><option>Future Bitbucket</option>
+              </select></label>
+              <label>Repository Visibility<select id='undxConnectorVisibility'>
+                <option>Private</option><option>Internal</option><option>Public</option>
+              </select></label>
+              <label>Trust Level<select id='undxConnectorTrustLevel'>
+                <option>Observed</option><option>Unknown</option><option>Verified</option><option>Approved</option><option>Trusted</option>
+              </select></label>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxCreateRepositoryConnection'>Create Repository Connection</button>
+              </div>
+              <p class='undx-project-message' id='undxRepositoryConnectorMessage' aria-live='polite'></p>
+              <div class='undx-system-impact-grid' id='undxRepositoryConnectionCenter'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Manifest Reader</span>
+              <h3>Repository Manifest Reader</h3>
+              <p>Repository Name · Repository Description · Top-Level Folders · Top-Level Files · Language Indicators · Framework Indicators · Worker Indicators · Module Indicators · Repository Size Estimate</p>
+              <p><strong>No file contents.</strong> Structure metadata only.</p>
+              <label>Top-Level Folders<textarea id='undxConnectorFolders' rows='3'>templates
+static
+scripts
+services
+workers</textarea></label>
+              <label>Top-Level Files<textarea id='undxConnectorFiles' rows='3'>bot.py
+undx_router.py
+undx_worker.py
+requirements.txt
+README.md</textarea></label>
+              <label>Dependency Indicators<textarea id='undxConnectorDependencies' rows='3'>Flask
+OpenAI
+requests
+gunicorn
+sqlite</textarea></label>
+              <label>Repository Size Estimate<input id='undxConnectorSizeEstimate' value='Large application shell'></label>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Registry</span>
+              <h3>Repository Registry</h3>
+              <p>Storage: <strong>undxRepositoryConnections</strong> · Format: <strong>REPOCON-UNDX-0001</strong></p>
+              <p class='undx-memory-empty' id='undxRepositoryConnectionEmpty'>No repository connections stored yet. Create a read-only connection to activate repository visibility.</p>
+              <div class='undx-simulation-registry' id='undxRepositoryConnectionList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Structure View</span>
+              <h3>Repository Structure Map</h3>
+              <p>Folder Tree · Module Tree · Service Tree · Route Groups · Template Groups · Static Asset Groups · Worker Groups</p>
+              <div class='undx-chain-list' id='undxRepositoryStructureMap'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Detection</span>
+              <h3>Repository Language Detection</h3>
+              <p>Python · JavaScript · TypeScript · Go · Rust · Java · PHP · Ruby · C# · Swift · Kotlin · Other</p>
+              <div class='undx-system-impact-grid' id='undxRepositoryLanguageDetection'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework Detection</span>
+              <h3>Framework Profile</h3>
+              <p>Flask · Django · FastAPI · React · Next.js · Vue · Angular · Express · ASP.NET · Spring · Laravel · Rails</p>
+              <div class='undx-system-impact-grid' id='undxRepositoryFrameworkDetection'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Module Detection</span>
+              <h3>Module Inventory</h3>
+              <p>Authentication · Premium · Messaging · AI · Payments · Admin · Analytics · UNDX · Workers · Services</p>
+              <div class='undx-risk-grid' id='undxRepositoryModuleDetection'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Dependency Awareness</span>
+              <h3>Dependency Inventory</h3>
+              <p>Dependency Inventory · Dependency Categories · Critical Dependencies · Potential Risks · No package installation · No execution</p>
+              <div class='undx-risk-grid' id='undxRepositoryDependencyAwareness'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Intelligence Report</span>
+              <h3>Repository Intelligence Report</h3>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateConnectorReport'>Generate Repository Intelligence Report</button>
+                <button class='button' type='button' id='undxRunConnectorAnalysis'>Run Multi-Brain Repository Analysis</button>
+              </div>
+              <p>Storage: <strong>undxRepositoryConnectorReports</strong> · Format: <strong>REPOR-UNDX-0001</strong></p>
+              <div class='undx-memory-empty' id='undxConnectorReportEmpty'>No connector reports stored yet. Generate repository intelligence from an approved read-only connection.</div>
+              <div class='undx-simulation-registry' id='undxConnectorReportList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Open Connector Report</span>
+              <h3>Repository Connector Report</h3>
+              <div class='undx-evolution-empty' id='undxConnectorReportDetailEmpty'>Open a repository report to view overview, architecture indicators, language profile, framework profile, module inventory, dependencies, risks, and readiness.</div>
+              <div class='undx-simulation-output' id='undxConnectorReportDetail' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Questions Engine</span>
+              <h3>Repository Questions Engine</h3>
+              <p>Where are services located? Where are routes defined? Where are templates stored? Where are tests stored? Where are workers stored? Which modules appear critical?</p>
+              <div class='undx-chain-list' id='undxConnectorQuestionsOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Risk Engine</span>
+              <h3>Repository Risk Engine</h3>
+              <p>Complexity Risk · Dependency Risk · Security Review Needed · Testing Review Needed · Architecture Review Needed</p>
+              <div class='undx-risk-grid' id='undxConnectorRiskOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Repository Analysis</span>
+              <h3>Multi-Brain Repository Analysis</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Testing → OpenAI · Security → Claude/OpenAI fallback · Documentation → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxConnectorAnalysisOutput'><p>Architecture Analysis, Technology Analysis, Security Analysis, Testing Analysis, Documentation Analysis, and Combined Recommendation will appear after review.</p></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Trust System</span>
+              <h3>Repository Trust System</h3>
+              <p>Levels: Unknown · Observed · Verified · Approved · Trusted</p>
+              <p>Repository Trust Score: <strong id='undxConnectorTrustScore'>0</strong></p>
+              <p>Repository Intelligence Score: <strong id='undxConnectorIntelligenceScore'>0</strong></p>
+              <p>Repository Readiness: <strong id='undxConnectorReadiness'>Not Connected</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Connected Repository: <strong id='undxProjectConnectedRepository'>Not Connected</strong></p>
+              <p>Repository Intelligence Score: <strong id='undxProjectConnectorIntelligenceScore'>0</strong></p>
+              <p>Repository Trust Score: <strong id='undxProjectConnectorTrustScore'>0</strong></p>
+              <p>Repository Reports: <strong id='undxProjectConnectorReports'>0</strong></p>
+              <p>Repository Risks: <strong id='undxProjectConnectorRisks'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Graph Integrations</span>
+              <h3>Memory Graph Integration</h3>
+              <p>Repository Connections · Repository Reviews · Repository Reports · Repository Trust Decisions</p>
+              <h3>Knowledge Graph Integration</h3>
+              <p>Repository Relationships · Technology Relationships · Module Relationships · Dependency Relationships</p>
+              <h3>Agent System Integration</h3>
+              <p>Agents can review repository reports. Review only. No file access. No file editing.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Connector Safety Center</span>
+              <h3>Connector Safety Center</h3>
+              <p><strong>Allowed:</strong> Read repository structure · Read repository metadata · Generate reports · Generate intelligence</p>
+              <p><strong>Not Allowed:</strong> Edit files · Delete files · Run commands · Push commits · Deploy applications · Access secrets</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Read-Only Enforcement</span>
+              <h3>Read-Only Enforcement</h3>
+              <p>Read Only Mode Enabled</p>
+              <p>File Editing Disabled</p>
+              <p>Command Execution Disabled</p>
+              <p>Deployment Disabled</p>
+              <p>Git Write Disabled</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Read-Only Repository Connector may read approved repository metadata and structure only. It must not edit files, create files, delete files, run commands, execute code, perform Git operations, push commits, deploy applications, access secrets, or modify repositories.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 36<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 37<br><strong>Repository Indexing Engine</strong></span>
+                <span>Phase 38<br><strong>Task Execution Sandbox</strong></span>
+                <span>Phase 39<br><strong>Controlled Code Generation</strong></span>
+                <span>Phase 40<br><strong>Human Approved Repository Actions</strong></span>
+                <span>Phase 41<br><strong>Controlled File Editing Engine</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -26585,6 +26781,42 @@ def pulse_premium_undx_page():
     const undxProjectCodingReadiness = document.getElementById('undxProjectCodingReadiness');
     const undxProjectCodingRisk = document.getElementById('undxProjectCodingRisk');
     const undxProjectImplementationPattern = document.getElementById('undxProjectImplementationPattern');
+    const undxConnectorRepositoryName = document.getElementById('undxConnectorRepositoryName');
+    const undxConnectorRepositoryDescription = document.getElementById('undxConnectorRepositoryDescription');
+    const undxConnectorConnectionType = document.getElementById('undxConnectorConnectionType');
+    const undxConnectorVisibility = document.getElementById('undxConnectorVisibility');
+    const undxConnectorTrustLevel = document.getElementById('undxConnectorTrustLevel');
+    const undxConnectorFolders = document.getElementById('undxConnectorFolders');
+    const undxConnectorFiles = document.getElementById('undxConnectorFiles');
+    const undxConnectorDependencies = document.getElementById('undxConnectorDependencies');
+    const undxConnectorSizeEstimate = document.getElementById('undxConnectorSizeEstimate');
+    const undxCreateRepositoryConnection = document.getElementById('undxCreateRepositoryConnection');
+    const undxRepositoryConnectorMessage = document.getElementById('undxRepositoryConnectorMessage');
+    const undxRepositoryConnectionCenter = document.getElementById('undxRepositoryConnectionCenter');
+    const undxRepositoryConnectionEmpty = document.getElementById('undxRepositoryConnectionEmpty');
+    const undxRepositoryConnectionList = document.getElementById('undxRepositoryConnectionList');
+    const undxRepositoryStructureMap = document.getElementById('undxRepositoryStructureMap');
+    const undxRepositoryLanguageDetection = document.getElementById('undxRepositoryLanguageDetection');
+    const undxRepositoryFrameworkDetection = document.getElementById('undxRepositoryFrameworkDetection');
+    const undxRepositoryModuleDetection = document.getElementById('undxRepositoryModuleDetection');
+    const undxRepositoryDependencyAwareness = document.getElementById('undxRepositoryDependencyAwareness');
+    const undxGenerateConnectorReport = document.getElementById('undxGenerateConnectorReport');
+    const undxRunConnectorAnalysis = document.getElementById('undxRunConnectorAnalysis');
+    const undxConnectorReportEmpty = document.getElementById('undxConnectorReportEmpty');
+    const undxConnectorReportList = document.getElementById('undxConnectorReportList');
+    const undxConnectorReportDetailEmpty = document.getElementById('undxConnectorReportDetailEmpty');
+    const undxConnectorReportDetail = document.getElementById('undxConnectorReportDetail');
+    const undxConnectorQuestionsOutput = document.getElementById('undxConnectorQuestionsOutput');
+    const undxConnectorRiskOutput = document.getElementById('undxConnectorRiskOutput');
+    const undxConnectorAnalysisOutput = document.getElementById('undxConnectorAnalysisOutput');
+    const undxConnectorTrustScore = document.getElementById('undxConnectorTrustScore');
+    const undxConnectorIntelligenceScore = document.getElementById('undxConnectorIntelligenceScore');
+    const undxConnectorReadiness = document.getElementById('undxConnectorReadiness');
+    const undxProjectConnectedRepository = document.getElementById('undxProjectConnectedRepository');
+    const undxProjectConnectorIntelligenceScore = document.getElementById('undxProjectConnectorIntelligenceScore');
+    const undxProjectConnectorTrustScore = document.getElementById('undxProjectConnectorTrustScore');
+    const undxProjectConnectorReports = document.getElementById('undxProjectConnectorReports');
+    const undxProjectConnectorRisks = document.getElementById('undxProjectConnectorRisks');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -26623,6 +26855,8 @@ def pulse_premium_undx_page():
     const undxFeatureCodeMapsKey = 'undxFeatureCodeMaps';
     const undxContextAwareDirectivesKey = 'undxContextAwareDirectives';
     const undxContextAwareCodingReportsKey = 'undxContextAwareCodingReports';
+    const undxRepositoryConnectionsKey = 'undxRepositoryConnections';
+    const undxRepositoryConnectorReportsKey = 'undxRepositoryConnectorReports';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -26658,6 +26892,8 @@ def pulse_premium_undx_page():
     let undxLastMemoryGraphRecord = null;
     let undxSelectedTaskPackageId = null;
     let undxLastTaskPackage = null;
+    let undxSelectedRepositoryConnectionId = null;
+    let undxSelectedConnectorReportId = null;
     let undxSelectedExecutionRequestId = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -26883,6 +27119,8 @@ def pulse_premium_undx_page():
       const linkedAgentMemories = Array.isArray(project.linkedAgentMemories) ? project.linkedAgentMemories.filter(item => item && item.memoryId).slice(0,24).map(undxNormalizeAgentMemory) : [];
       const linkedRepositoryIntelligenceReports = Array.isArray(project.linkedRepositoryIntelligenceReports) ? project.linkedRepositoryIntelligenceReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryIntelligenceRecord) : [];
       const linkedContextAwareCodingReports = Array.isArray(project.linkedContextAwareCodingReports) ? project.linkedContextAwareCodingReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeContextAwareCodingReport) : [];
+      const linkedRepositoryConnectorReports = Array.isArray(project.linkedRepositoryConnectorReports) ? project.linkedRepositoryConnectorReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryConnectorReport) : [];
+      const connectedRepository = project.connectedRepository ? undxNormalizeRepositoryConnection(project.connectedRepository) : null;
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -26906,6 +27144,8 @@ def pulse_premium_undx_page():
         linkedAgentMemories,
         linkedRepositoryIntelligenceReports,
         linkedContextAwareCodingReports,
+        linkedRepositoryConnectorReports,
+        connectedRepository,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -32949,6 +33189,250 @@ def pulse_premium_undx_page():
       const report=undxLoadContextAwareCodingReports()[0] || undxBuildContextAwareCodingReport();
       undxRenderCodePlacement(report.placement); undxRenderModuleBoundary(report.boundary); undxRenderImplementationPattern(report.pattern); undxRenderFeatureCodeMap(report.featureMap); undxRenderContextAwareDirective(report.directive); undxRenderFileImpact(report); undxRenderCodingRisk(report); undxRenderCodingReadiness(report); undxRenderResponsibilityMatrix(); undxRenderCodingReportRegistry();
     }
+    function undxConnectorLines(value, fallback){
+      const parsed = String(value || '').split(/[\\n,]+/).map(item => item.trim()).filter(Boolean).slice(0,60).map(item => item.slice(0,180));
+      return parsed.length ? [...new Set(parsed)] : fallback;
+    }
+    function undxConnectorTrustScoreFor(level){
+      return ({Unknown:18, Observed:42, Verified:68, Approved:84, Trusted:96})[level] || 42;
+    }
+    function undxNormalizeRepositoryConnection(connection){
+      const folders = undxNormalizeExecutionList(connection?.folders, ['templates','static','scripts','services','workers'], 60, 180);
+      const files = undxNormalizeExecutionList(connection?.files, ['bot.py','undx_router.py','undx_worker.py','requirements.txt','README.md'], 60, 180);
+      const dependencies = undxNormalizeExecutionList(connection?.dependencies, ['Flask','OpenAI','requests','gunicorn','sqlite'], 40, 120);
+      const trustLevel = ['Unknown','Observed','Verified','Approved','Trusted'].includes(connection?.trustLevel) ? connection.trustLevel : 'Observed';
+      return {
+        connectionId:String(connection?.connectionId || `REPOCON-UNDX-${Date.now()}`).slice(0,44),
+        repositoryName:String(connection?.repositoryName || 'CoinPilotXAI').slice(0,140),
+        repositoryDescription:String(connection?.repositoryDescription || 'Approved repository metadata only.').slice(0,700),
+        connectionType:String(connection?.connectionType || 'Workspace Repository').slice(0,80),
+        repositoryVisibility:String(connection?.repositoryVisibility || 'Private').slice(0,80),
+        trustLevel,
+        trustScore:Math.max(0, Math.min(100, Number(connection?.trustScore || undxConnectorTrustScoreFor(trustLevel)))),
+        readOnlyStatus:'Read Only',
+        status:['Not Connected','Connected','Disconnected'].includes(connection?.status) ? connection.status : 'Connected',
+        connectedDate:connection?.connectedDate || new Date().toISOString(),
+        folders,
+        files,
+        dependencies,
+        sizeEstimate:String(connection?.sizeEstimate || 'Large application shell').slice(0,160)
+      };
+    }
+    function undxLoadRepositoryConnections(){return undxRepoIqLoad(undxRepositoryConnectionsKey, undxNormalizeRepositoryConnection);}
+    function undxLoadRepositoryConnectorReports(){return undxRepoIqLoad(undxRepositoryConnectorReportsKey, undxNormalizeRepositoryConnectorReport);}
+    function undxConnectorLanguageProfile(connection){
+      const files = (connection.files || []).join(' ').toLowerCase();
+      const deps = (connection.dependencies || []).join(' ').toLowerCase();
+      const languages = [];
+      if(/\\.py|flask|django|fastapi|python/.test(files + deps)) languages.push('Python');
+      if(/\\.js|javascript|node|express|react|vue|angular/.test(files + deps)) languages.push('JavaScript');
+      if(/\\.ts|typescript|next/.test(files + deps)) languages.push('TypeScript');
+      ['Go','Rust','Java','PHP','Ruby','C#','Swift','Kotlin'].forEach(lang => { if((files + deps).includes(lang.toLowerCase())) languages.push(lang); });
+      const unique = [...new Set(languages)];
+      return {primaryLanguage:unique[0] || 'Python', secondaryLanguages:unique.slice(1,5), languageConfidence:unique.length ? 88 : 52};
+    }
+    function undxConnectorFrameworkProfile(connection){
+      const signal = `${(connection.files || []).join(' ')} ${(connection.folders || []).join(' ')} ${(connection.dependencies || []).join(' ')}`.toLowerCase();
+      const frameworks = ['Flask','Django','FastAPI','React','Next.js','Vue','Angular','Express','ASP.NET','Spring','Laravel','Rails'].filter(name => signal.includes(name.toLowerCase().replace('.js','')));
+      return {frameworks:frameworks.length ? frameworks : ['Flask'], primaryFramework:(frameworks[0] || 'Flask'), confidence:frameworks.length ? 86 : 64};
+    }
+    function undxConnectorModules(connection){
+      const signal = `${connection.repositoryName} ${connection.repositoryDescription} ${(connection.folders || []).join(' ')} ${(connection.files || []).join(' ')}`.toLowerCase();
+      return ['Authentication','Premium','Messaging','AI','Payments','Admin','Analytics','UNDX','Workers','Services'].filter(module => signal.includes(module.toLowerCase()) || (module === 'UNDX' && signal.includes('undx')) || (module === 'AI' && /openai|router|agent/.test(signal)) || (module === 'Services' && signal.includes('service')) || (module === 'Workers' && /worker|queue/.test(signal)));
+    }
+    function undxConnectorRisks(connection){
+      const modules = undxConnectorModules(connection);
+      return {
+        complexityRisk: connection.files.length + connection.folders.length > 9 ? 'Medium' : 'Low',
+        dependencyRisk: connection.dependencies.length > 6 ? 'Medium' : 'Low',
+        securityReviewNeeded: modules.some(item => /Authentication|Payments|Admin|AI/.test(item)) ? 'Yes' : 'Optional',
+        testingReviewNeeded:'Yes',
+        architectureReviewNeeded:'Yes'
+      };
+    }
+    function undxBuildRepositoryConnection(){
+      const connections = undxLoadRepositoryConnections();
+      return undxNormalizeRepositoryConnection({
+        connectionId:undxRepoIqNextId(connections, 'REPOCON-UNDX', 'connectionId'),
+        repositoryName:(undxConnectorRepositoryName?.value || 'CoinPilotXAI').trim(),
+        repositoryDescription:(undxConnectorRepositoryDescription?.value || '').trim(),
+        connectionType:undxConnectorConnectionType?.value || 'Workspace Repository',
+        repositoryVisibility:undxConnectorVisibility?.value || 'Private',
+        trustLevel:undxConnectorTrustLevel?.value || 'Observed',
+        folders:undxConnectorLines(undxConnectorFolders?.value, ['templates','static','scripts','services','workers']),
+        files:undxConnectorLines(undxConnectorFiles?.value, ['bot.py','undx_router.py','undx_worker.py','requirements.txt','README.md']),
+        dependencies:undxConnectorLines(undxConnectorDependencies?.value, ['Flask','OpenAI','requests','gunicorn','sqlite']),
+        sizeEstimate:(undxConnectorSizeEstimate?.value || 'Large application shell').trim(),
+        connectedDate:new Date().toISOString(),
+        status:'Connected'
+      });
+    }
+    function undxNormalizeRepositoryConnectorReport(report){
+      const connection = undxNormalizeRepositoryConnection(report?.connection || {});
+      const languageProfile = report?.languageProfile || undxConnectorLanguageProfile(connection);
+      const frameworkProfile = report?.frameworkProfile || undxConnectorFrameworkProfile(connection);
+      const moduleInventory = undxNormalizeExecutionList(report?.moduleInventory, undxConnectorModules(connection), 16, 120);
+      const risk = report?.risk || undxConnectorRisks(connection);
+      const readiness = report?.repositoryReadiness || (connection.trustScore >= 80 ? 'Verified Read-Only Intelligence' : 'Observed Read-Only Intelligence');
+      const score = Math.max(0, Math.min(100, Number(report?.repositoryIntelligenceScore || Math.round((connection.trustScore + languageProfile.languageConfidence + frameworkProfile.confidence) / 3))));
+      return {
+        reportId:String(report?.reportId || `REPOR-UNDX-${Date.now()}`).slice(0,44),
+        connection,
+        repositoryOverview:String(report?.repositoryOverview || `${connection.repositoryName} connected in read-only mode using approved metadata and structure only.`).slice(0,700),
+        architectureIndicators:undxNormalizeExecutionList(report?.architectureIndicators, ['Flask application shell','Premium Pulse route surface','UNDX command center','Router-backed AI services','Worker context'], 14, 180),
+        languageProfile,
+        frameworkProfile,
+        moduleInventory,
+        dependencyInventory:undxNormalizeExecutionList(report?.dependencyInventory, connection.dependencies, 24, 120),
+        dependencyCategories:undxNormalizeExecutionList(report?.dependencyCategories, ['Web framework','AI provider SDK','Runtime service','Database layer'], 12, 140),
+        criticalDependencies:undxNormalizeExecutionList(report?.criticalDependencies, connection.dependencies.slice(0,4), 8, 120),
+        potentialRisks:undxNormalizeExecutionList(report?.potentialRisks, ['Secrets remain protected','No command execution','Route changes require audit','AI provider fallback must remain server-side'], 10, 180),
+        questions:undxNormalizeExecutionList(report?.questions, ['Where are services located?','Where are routes defined?','Where are templates stored?','Where are tests stored?','Where are workers stored?','Which modules appear critical?'], 12, 180),
+        risk,
+        repositoryReadiness:readiness,
+        repositoryTrustScore:connection.trustScore,
+        repositoryIntelligenceScore:score,
+        createdAt:report?.createdAt || new Date().toISOString(),
+        status:'Read-Only Report'
+      };
+    }
+    function undxBuildRepositoryConnectorReport(connection = undxLoadRepositoryConnections()[0] || undxBuildRepositoryConnection()){
+      const reports = undxLoadRepositoryConnectorReports();
+      return undxNormalizeRepositoryConnectorReport({reportId:undxRepoIqNextId(reports, 'REPOR-UNDX', 'reportId'), connection, createdAt:new Date().toISOString()});
+    }
+    function undxRepositoryConnectorReportText(report){
+      return ['UNDX Read-Only Repository Connector','',`Report ID: ${report.reportId}`,`Repository: ${report.connection.repositoryName}`,`Connection ID: ${report.connection.connectionId}`,`Repository Access: Read Only`,`File Editing: Disabled`,`Command Execution: Disabled`,`Deployment Access: Disabled`,`Git Write Disabled`,`Repository Trust Score: ${report.repositoryTrustScore}/100`,`Repository Intelligence Score: ${report.repositoryIntelligenceScore}/100`,'','Repository Overview:',report.repositoryOverview,'','Language Profile:',`- Primary Language: ${report.languageProfile.primaryLanguage}`,`- Secondary Languages: ${report.languageProfile.secondaryLanguages.join(', ') || 'None'}`,`- Language Confidence: ${report.languageProfile.languageConfidence}`,'','Framework Profile:',`- Primary Framework: ${report.frameworkProfile.primaryFramework}`,`- Frameworks: ${report.frameworkProfile.frameworks.join(', ')}`,'','Module Inventory:',...report.moduleInventory.map(item => `- ${item}`),'','Dependency Inventory:',...report.dependencyInventory.map(item => `- ${item}`),'','Potential Risks:',...report.potentialRisks.map(item => `- ${item}`),'','Safety: read-only metadata and structure only. No file contents, edits, commands, Git operations, deployments, or secrets.'].join('\\n');
+    }
+    function undxRenderRepositoryConnector(connection = undxLoadRepositoryConnections()[0] || null){
+      if(undxRepositoryConnectionCenter) undxRepositoryConnectionCenter.replaceChildren(
+        undxBlock('Connection Status', connection?.status || 'Not Connected'),
+        undxBlock('Repository Name', connection?.repositoryName || 'Not Connected'),
+        undxBlock('Connection Type', connection?.connectionType || 'Workspace Repository'),
+        undxBlock('Repository Visibility', connection?.repositoryVisibility || 'Private'),
+        undxBlock('Trust Level', connection?.trustLevel || 'Unknown'),
+        undxBlock('Read-Only Status', connection?.readOnlyStatus || 'Read Only')
+      );
+      const language = connection ? undxConnectorLanguageProfile(connection) : undxConnectorLanguageProfile(undxNormalizeRepositoryConnection({}));
+      const framework = connection ? undxConnectorFrameworkProfile(connection) : undxConnectorFrameworkProfile(undxNormalizeRepositoryConnection({}));
+      const modules = connection ? undxConnectorModules(connection) : ['Authentication','Premium','AI','UNDX','Workers','Services'];
+      const risks = connection ? undxConnectorRisks(connection) : undxConnectorRisks(undxNormalizeRepositoryConnection({}));
+      if(undxRepositoryStructureMap) undxRepositoryStructureMap.replaceChildren(...['Folder Tree','Module Tree','Service Tree','Route Groups','Template Groups','Static Asset Groups','Worker Groups'].map(label => undxBlock(label, connection ? `${label}: ${(connection.folders || []).join(' · ')} ${(connection.files || []).slice(0,3).join(' · ')}` : 'Awaiting connection.')));
+      if(undxRepositoryLanguageDetection) undxRepositoryLanguageDetection.replaceChildren(undxBlock('Primary Language', language.primaryLanguage), undxBlock('Secondary Languages', language.secondaryLanguages), undxBlock('Language Confidence', `${language.languageConfidence}/100`));
+      if(undxRepositoryFrameworkDetection) undxRepositoryFrameworkDetection.replaceChildren(undxBlock('Framework Profile', framework.frameworks), undxBlock('Primary Framework', framework.primaryFramework), undxBlock('Framework Confidence', `${framework.confidence}/100`));
+      if(undxRepositoryModuleDetection) undxRepositoryModuleDetection.replaceChildren(...modules.map(module => undxBlock(module, 'Detected from approved repository metadata and structure indicators.')));
+      if(undxRepositoryDependencyAwareness) undxRepositoryDependencyAwareness.replaceChildren(undxBlock('Dependency Inventory', connection?.dependencies || ['Flask','OpenAI','requests']), undxBlock('Dependency Categories', ['Web framework','AI provider SDK','Runtime service','Database layer']), undxBlock('Critical Dependencies', (connection?.dependencies || ['Flask','OpenAI']).slice(0,4)), undxBlock('Potential Risks', ['No package installation','No execution','No secrets displayed']));
+      if(undxConnectorQuestionsOutput) undxConnectorQuestionsOutput.replaceChildren(...['Where are services located?','Where are routes defined?','Where are templates stored?','Where are tests stored?','Where are workers stored?','Which modules appear critical?'].map(question => undxBlock('Repository Question', question)));
+      if(undxConnectorRiskOutput) undxConnectorRiskOutput.replaceChildren(undxBlock('Complexity Risk', risks.complexityRisk), undxBlock('Dependency Risk', risks.dependencyRisk), undxBlock('Security Review Needed', risks.securityReviewNeeded), undxBlock('Testing Review Needed', risks.testingReviewNeeded), undxBlock('Architecture Review Needed', risks.architectureReviewNeeded));
+    }
+    function undxRenderConnectorDashboard(report = undxLoadRepositoryConnectorReports()[0] || null){
+      const project = undxCurrentProject() || {};
+      const linked = project.linkedRepositoryConnectorReports || [];
+      if(undxConnectorTrustScore) undxConnectorTrustScore.textContent = String(report?.repositoryTrustScore || 0);
+      if(undxConnectorIntelligenceScore) undxConnectorIntelligenceScore.textContent = String(report?.repositoryIntelligenceScore || 0);
+      if(undxConnectorReadiness) undxConnectorReadiness.textContent = report?.repositoryReadiness || 'Not Connected';
+      if(undxProjectConnectedRepository) undxProjectConnectedRepository.textContent = project.connectedRepository?.repositoryName || linked[0]?.connection?.repositoryName || 'Not Connected';
+      if(undxProjectConnectorIntelligenceScore) undxProjectConnectorIntelligenceScore.textContent = String(linked[0]?.repositoryIntelligenceScore || report?.repositoryIntelligenceScore || 0);
+      if(undxProjectConnectorTrustScore) undxProjectConnectorTrustScore.textContent = String(linked[0]?.repositoryTrustScore || report?.repositoryTrustScore || 0);
+      if(undxProjectConnectorReports) undxProjectConnectorReports.textContent = String(linked.length);
+      if(undxProjectConnectorRisks) undxProjectConnectorRisks.textContent = linked[0]?.potentialRisks?.[0] || report?.potentialRisks?.[0] || 'Pending';
+    }
+    function undxCreateRepositoryConnectionFlow(){
+      const connection = undxBuildRepositoryConnection();
+      undxRepoIqSave(undxRepositoryConnectionsKey, [connection, ...undxLoadRepositoryConnections().filter(item => item.connectionId !== connection.connectionId)]);
+      undxSelectedRepositoryConnectionId = connection.connectionId;
+      undxRenderRepositoryConnectionRegistry();
+      undxRenderRepositoryConnector(connection);
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = `${connection.connectionId} connected in read-only mode. No file contents were accessed.`;
+      return connection;
+    }
+    function undxOpenRepositoryConnection(connectionId){
+      const connection = undxLoadRepositoryConnections().find(item => item.connectionId === connectionId);
+      if(!connection) return;
+      undxSelectedRepositoryConnectionId = connection.connectionId;
+      undxRenderRepositoryConnector(connection);
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = `${connection.connectionId} opened. Repository visibility remains read only.`;
+      document.getElementById('undx-read-only-repository-connector')?.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+    function undxAttachRepositoryConnectionToProject(connection){
+      const project = undxCurrentProject();
+      if(!project){ if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = 'Open a project workspace before attaching a repository connection.'; return; }
+      const projects = undxLoadProjects().map(item => item.projectId === project.projectId ? {...item, connectedRepository:connection, readOnlyAccessStatus:'Connected'} : item);
+      undxSaveProjects(projects); undxOpenProject(project.projectId, false); undxRenderConnectorDashboard();
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = `${connection.connectionId} attached to ${project.projectId}.`;
+    }
+    function undxDisconnectRepositoryConnection(connectionId){
+      const connections = undxLoadRepositoryConnections().map(item => item.connectionId === connectionId ? {...item, status:'Disconnected'} : item);
+      undxRepoIqSave(undxRepositoryConnectionsKey, connections);
+      undxRenderRepositoryConnectionRegistry();
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = `${connectionId} disconnected.`;
+    }
+    function undxCreateRepositoryConnectionCard(connection){
+      const card=document.createElement('article'); card.className='undx-memory-card';
+      const title=document.createElement('h3'); title.textContent=`${connection.connectionId} · ${connection.repositoryName}`;
+      const meta=document.createElement('p'); meta.textContent=`Connection Type: ${connection.connectionType} · Connected Date: ${undxFormatMemoryTime(connection.connectedDate)} · Trust Level: ${connection.trustLevel} · Status: ${connection.status}`;
+      const actions=document.createElement('div'); actions.className='undx-memory-actions';
+      actions.append(undxProjectActionButton('Open Connection',()=>undxOpenRepositoryConnection(connection.connectionId),true), undxProjectActionButton('View Repository',()=>undxOpenRepositoryConnection(connection.connectionId)), undxProjectActionButton('Generate Intelligence Report',()=>undxGenerateConnectorReportFlow(connection)), undxProjectActionButton('Attach To Project',()=>undxAttachRepositoryConnectionToProject(connection)), undxProjectActionButton('Disconnect',()=>undxDisconnectRepositoryConnection(connection.connectionId)));
+      card.append(title, meta, actions); return card;
+    }
+    function undxRenderRepositoryConnectionRegistry(){
+      const connections=undxLoadRepositoryConnections();
+      if(undxRepositoryConnectionEmpty) undxRepositoryConnectionEmpty.hidden = connections.length > 0;
+      if(undxRepositoryConnectionList){undxRepositoryConnectionList.replaceChildren(); connections.forEach(connection => undxRepositoryConnectionList.appendChild(undxCreateRepositoryConnectionCard(connection)));}
+      undxRenderRepositoryConnector(connections[0] || null);
+    }
+    function undxOpenConnectorReport(report){
+      if(undxConnectorReportDetailEmpty) undxConnectorReportDetailEmpty.hidden = true;
+      if(undxConnectorReportDetail) undxConnectorReportDetail.replaceChildren(undxBlock('Report ID', report.reportId), undxBlock('Repository Overview', report.repositoryOverview), undxBlock('Architecture Indicators', report.architectureIndicators), undxBlock('Language Profile', [`Primary Language: ${report.languageProfile.primaryLanguage}`, `Secondary Languages: ${report.languageProfile.secondaryLanguages.join(', ') || 'None'}`, `Language Confidence: ${report.languageProfile.languageConfidence}/100`]), undxBlock('Framework Profile', [`Primary Framework: ${report.frameworkProfile.primaryFramework}`, `Frameworks: ${report.frameworkProfile.frameworks.join(', ')}`]), undxBlock('Module Inventory', report.moduleInventory), undxBlock('Dependency Inventory', report.dependencyInventory), undxBlock('Potential Risks', report.potentialRisks), undxBlock('Repository Readiness', report.repositoryReadiness), undxBlock('Read-Only Enforcement', ['Read Only Mode Enabled','File Editing Disabled','Command Execution Disabled','Deployment Disabled','Git Write Disabled']));
+      undxRenderConnectorDashboard(report);
+    }
+    function undxAttachConnectorReportToProject(report){
+      const project=undxCurrentProject();
+      if(!project){ if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent='Open a project workspace before attaching a repository report.'; return; }
+      const projects=undxLoadProjects().map(item => item.projectId === project.projectId ? {...item, connectedRepository:report.connection, readOnlyAccessStatus:'Connected', linkedRepositoryConnectorReports:[report, ...(item.linkedRepositoryConnectorReports || []).filter(existing => existing.reportId !== report.reportId)].slice(0,12)} : item);
+      undxSaveProjects(projects); undxOpenProject(project.projectId, false); undxRenderConnectorDashboard(report);
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent=`${report.reportId} attached to ${project.projectId}.`;
+    }
+    function undxCreateConnectorReportCard(report){
+      const card=document.createElement('article'); card.className='undx-memory-card';
+      const title=document.createElement('h3'); title.textContent=`${report.reportId} · ${report.connection.repositoryName}`;
+      const meta=document.createElement('p'); meta.textContent=`Trust Score: ${report.repositoryTrustScore}/100 · Intelligence Score: ${report.repositoryIntelligenceScore}/100 · Created Date: ${undxFormatMemoryTime(report.createdAt)} · ${report.repositoryReadiness}`;
+      const actions=document.createElement('div'); actions.className='undx-memory-actions';
+      actions.append(undxProjectActionButton('Open Report',()=>undxOpenConnectorReport(report),true), undxProjectActionButton('Send To Chat',()=>undxSendTextToChat(undxRepositoryConnectorReportText(report))), undxProjectActionButton('Save To Memory',()=>undxStoreBlueprint({id:`repor-${report.reportId}`, name:`Repository Connector ${report.reportId}`, objective:undxRepositoryConnectorReportText(report), type:'Read-Only Repository Connector Report', source:'UNDX Read-Only Repository Connector', createdAt:new Date().toISOString(), phase:'Phase 36', status:'Stored'})), undxProjectActionButton('Attach To Project',()=>undxAttachConnectorReportToProject(report)), undxProjectActionButton('Delete Report',()=>{undxRepoIqSave(undxRepositoryConnectorReportsKey, undxLoadRepositoryConnectorReports().filter(item=>item.reportId!==report.reportId)); undxRenderConnectorReportRegistry();}));
+      card.append(title, meta, actions); return card;
+    }
+    function undxRenderConnectorReportRegistry(){
+      const reports=undxLoadRepositoryConnectorReports();
+      if(undxConnectorReportEmpty) undxConnectorReportEmpty.hidden = reports.length > 0;
+      if(undxConnectorReportList){undxConnectorReportList.replaceChildren(); reports.forEach(report => undxConnectorReportList.appendChild(undxCreateConnectorReportCard(report)));}
+      undxRenderConnectorDashboard(reports[0] || null);
+    }
+    function undxGenerateConnectorReportFlow(connection){
+      const selected = connection || undxLoadRepositoryConnections().find(item => item.connectionId === undxSelectedRepositoryConnectionId) || undxLoadRepositoryConnections()[0] || undxCreateRepositoryConnectionFlow();
+      const report = undxBuildRepositoryConnectorReport(selected);
+      undxRepoIqSave(undxRepositoryConnectorReportsKey, [report, ...undxLoadRepositoryConnectorReports()]);
+      undxOpenConnectorReport(report); undxRenderConnectorReportRegistry(); undxRenderRepositoryConnector(selected);
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = `${report.reportId} stored. Read-only mode enforced.`;
+      return report;
+    }
+    async function undxRunConnectorAnalysisFlow(){
+      const report = undxLoadRepositoryConnectorReports()[0] || undxGenerateConnectorReportFlow();
+      if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = 'Routing read-only repository analysis through UNDX Intelligence Router...';
+      try{
+        const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxRepositoryConnectorReportText(report)})});
+        const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents=data.agents || [];
+        if(undxConnectorAnalysisOutput) undxConnectorAnalysisOutput.replaceChildren(undxBlock('Architecture Analysis', agents.find(a=>a.key==='architect')?.recommendation || 'Architecture map ready for read-only indexing.'), undxBlock('Technology Analysis', agents.find(a=>a.key==='research')?.recommendation || 'Language and framework indicators captured.'), undxBlock('Security Analysis', agents.find(a=>a.key==='security')?.recommendation || 'Secrets remain protected; write access disabled.'), undxBlock('Testing Analysis', agents.find(a=>a.key==='testing')?.recommendation || 'Future reports should map tests without execution.'), undxBlock('Documentation Analysis', agents.find(a=>a.key==='documentation')?.recommendation || 'Document repository questions and module inventory.'), undxBlock('Combined Recommendation', 'Proceed with read-only repository intelligence only. Fallback → OpenAI if any provider is unavailable.'));
+        if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = 'Multi-brain repository analysis complete.';
+      }catch(error){
+        if(undxConnectorAnalysisOutput) undxConnectorAnalysisOutput.replaceChildren(undxBlock('Architecture Analysis','OpenAI fallback: keep connector read-only.'),undxBlock('Technology Analysis','OpenAI fallback: use approved metadata indicators only.'),undxBlock('Security Analysis','OpenAI fallback: secrets, files, commands, Git, and deployment remain disabled.'),undxBlock('Testing Analysis','OpenAI fallback: validate with audits and browser route checks.'),undxBlock('Documentation Analysis','OpenAI fallback: document repository questions.'),undxBlock('Combined Recommendation','Fallback → OpenAI. Repository Connector remains read-only.'));
+        if(undxRepositoryConnectorMessage) undxRepositoryConnectorMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxRenderRepositoryConnectorInitial(){
+      undxRenderRepositoryConnectionRegistry();
+      undxRenderConnectorReportRegistry();
+      undxRenderRepositoryConnector(undxLoadRepositoryConnections()[0] || null);
+    }
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -35188,6 +35672,7 @@ def pulse_premium_undx_page():
       ['undx-multi-agent-engineering-system','Multi-Agent Engineering'],
       ['undx-repository-intelligence-engine','Repository Intelligence Engine'],
       ['undx-context-aware-coding-engine','Context-Aware Coding'],
+      ['undx-read-only-repository-connector','Repository Connector'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -36475,6 +36960,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedRepositoryConnectorReports(project, card){
+      const section = undxWorkspaceSection('Linked Read-Only Repository Connector Reports');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedRepositoryConnectorReports || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Repository Connector reports linked yet. Attach a Phase 36 report to preserve Connected Repository, Repository Intelligence Score, Repository Trust Score, Repository Reports, and Repository Risks.'));
+      }else{
+        project.linkedRepositoryConnectorReports.forEach(report => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${report.reportId} · ${report.connection.repositoryName}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Connected Repository: ${report.connection.repositoryName} · Repository Intelligence Score: ${report.repositoryIntelligenceScore}/100 · Repository Trust Score: ${report.repositoryTrustScore}/100 · Repository Risks: ${(report.potentialRisks || []).slice(0,2).join(' · ')}`;
+          const safety = document.createElement('p');
+          safety.textContent = 'Read-only connector report. No file contents were accessed, no files were edited, no commands were executed, no Git operations were performed, and no deployments were run.';
+          item.append(title, meta, safety);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -36540,6 +37048,10 @@ def pulse_premium_undx_page():
         undxBlock('Linked Mission', project.linkedMission || project.source || 'Mission Source'),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
         undxBlock('Read-Only Access Status', project.readOnlyAccessStatus || 'Not Connected'),
+        undxBlock('Connected Repository', project.connectedRepository?.repositoryName || 'Not Connected'),
+        undxBlock('Repository Trust Score', `${project.linkedRepositoryConnectorReports?.[0]?.repositoryTrustScore || project.connectedRepository?.trustScore || 0}/100`),
+        undxBlock('Repository Reports', String((project.linkedRepositoryConnectorReports || []).length)),
+        undxBlock('Repository Risks', project.linkedRepositoryConnectorReports?.[0]?.potentialRisks?.slice(0,3).join(' · ') || 'Pending'),
         undxBlock('Project Summary', enhancement.summary || 'Project summary pending.'),
         undxBlock('Recommended Modules', undxModulePills(enhancement.modules || undxSuggestedModules(project.objective))),
         undxBlock('Enhancement Source', enhancement.source || 'Pending'),
@@ -36577,6 +37089,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedAgentMemories(project, card);
       undxRenderLinkedRepositoryIntelligenceReports(project, card);
       undxRenderLinkedContextAwareCodingReports(project, card);
+      undxRenderLinkedRepositoryConnectorReports(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -37270,6 +37783,9 @@ def pulse_premium_undx_page():
     undxGenerateContextAwareCodingDirective?.addEventListener('click', undxGenerateContextAwareDirectiveFlow);
     undxGenerateContextAwareCodingReport?.addEventListener('click', undxGenerateContextAwareCodingReportFlow);
     undxRunCodingReview?.addEventListener('click', undxRunCodingReviewFlow);
+    undxCreateRepositoryConnection?.addEventListener('click', undxCreateRepositoryConnectionFlow);
+    undxGenerateConnectorReport?.addEventListener('click', () => undxGenerateConnectorReportFlow());
+    undxRunConnectorAnalysis?.addEventListener('click', undxRunConnectorAnalysisFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -37337,6 +37853,7 @@ def pulse_premium_undx_page():
     undxRenderAgentDashboard();
     undxRenderRepositoryEngineInitial();
     undxRenderCodingEngineInitial();
+    undxRenderRepositoryConnectorInitial();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
