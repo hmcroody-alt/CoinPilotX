@@ -179,6 +179,9 @@ def main():
     require("Generate Build Simulation" not in feed_html, "UNDX build simulation action absent from Pulse feed")
     require("Simulation Registry" not in feed_html, "UNDX simulation registry absent from Pulse feed")
     require("undxBuildSimulations" not in feed_html, "UNDX simulation storage absent from Pulse feed")
+    require("UNDX Command Center Refactor" not in feed_html, "UNDX command center refactor absent from Pulse feed")
+    require("Command Views" not in feed_html, "UNDX command views absent from Pulse feed")
+    require("undxCommandCenterViews" not in feed_html, "UNDX command view storage absent from Pulse feed")
     require("UNDX Core: Build Beyond the Known" not in feed_html, "old UNDX feed headline absent")
     require("Awaiting router" not in undx_html, "UNDX Agent Council no longer shows router placeholder text")
 
@@ -1249,6 +1252,22 @@ def main():
         "STRICTLY SIMULATION ONLY.",
         "Simulation Objects",
         "Estimated Intelligence Load",
+        "UNDX Command Center Refactor",
+        "Command Views",
+        "Left sidebar navigation converts UNDX modules into lazy-loaded views while keeping existing functionality intact.",
+        "Lazy Loading:",
+        "Active View:",
+        "Loaded Views:",
+        "Deferred Views:",
+        "Page Size Strategy",
+        "View-based rendering",
+        "Phase 22.5",
+        "undxCommandCenterViews",
+        "data-undx-view-target",
+        "undx-command-shell",
+        "undx-view-sidebar",
+        "undx-view-hidden",
+        "content-visibility",
         "Core Modules",
         "Builder Intelligence",
         "Security Expansion",

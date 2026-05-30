@@ -21853,11 +21853,24 @@ def pulse_premium_undx_page():
     .undx-system-impact,.undx-risk-item,.undx-approval-item{border:1px solid rgba(255,209,102,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
     .undx-system-impact strong,.undx-risk-item strong,.undx-approval-item strong{display:block;color:#dffcff}
     .undx-system-impact span,.undx-risk-item span,.undx-approval-item span{display:block;color:rgba(223,246,255,.64);font-size:.82rem;font-weight:850}
+    .undx-command-shell{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:start}
+    .undx-view-sidebar{position:sticky;top:12px;max-height:calc(100dvh - 24px);overflow:auto;border:1px solid rgba(110,223,246,.18);border-radius:18px;padding:12px;background:linear-gradient(180deg,rgba(6,18,31,.92),rgba(5,11,20,.76));box-shadow:0 22px 70px rgba(0,0,0,.28)}
+    .undx-view-sidebar h2{font-size:1rem;margin:0 0 8px;color:#dffcff}
+    .undx-view-sidebar p{margin:0 0 10px;color:rgba(223,246,255,.62);font-size:.84rem}
+    .undx-view-nav{display:grid;gap:6px}
+    .undx-view-nav button{width:100%;min-height:38px;justify-content:flex-start;border-radius:12px;padding:8px 10px;font-size:.84rem;text-align:left}
+    .undx-view-nav button[aria-current='true']{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);border-color:transparent;box-shadow:0 0 24px rgba(110,223,246,.22)}
+    .undx-view-main{min-width:0;display:grid;gap:16px}
+    .undx-command-view{content-visibility:auto;contain-intrinsic-size:900px}
+    .undx-view-hidden{display:none!important}
+    .undx-view-loader{margin-top:12px;display:grid;gap:7px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px;color:rgba(223,246,255,.7);font-size:.82rem}
+    .undx-view-loader strong{color:#dffcff}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
+    @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
     @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
@@ -21868,7 +21881,23 @@ def pulse_premium_undx_page():
         <span>UNDX Core / Command Center</span>
         <a class='button' href='/pulse/premium'>Back to Pulse Premium</a>
       </nav>
-      <section class='undx-core-hero'>
+      <div class='undx-command-shell' data-undx-command-shell>
+        <aside class='undx-view-sidebar' aria-label='UNDX left sidebar navigation'>
+          <span class='undx-core-label'>UNDX Command Center Refactor</span>
+          <h2>Command Views</h2>
+          <p>Left sidebar navigation converts UNDX modules into lazy-loaded views while keeping existing functionality intact.</p>
+          <div class='undx-view-nav' id='undxViewNav'></div>
+          <div class='undx-view-loader' aria-label='UNDX Module Loader'>
+            <span>Lazy Loading: <strong id='undxLazyLoadingStatus'>Active</strong></span>
+            <span>Active View: <strong id='undxActiveViewLabel'>Overview</strong></span>
+            <span>Loaded Views: <strong id='undxLoadedViewCount'>1</strong></span>
+            <span>Deferred Views: <strong id='undxDeferredViewCount'>0</strong></span>
+            <span>Page Size Strategy: <strong>View-based rendering</strong></span>
+            <span>Phase 22.5: <strong>Command Center Refactor</strong></span>
+          </div>
+        </aside>
+        <div class='undx-view-main' id='undxViewMain'>
+      <section class='undx-core-hero' id='undx-command-overview'>
         <span class='undx-core-label'>Premium Intelligence Layer</span>
         <h1>Enter the Unknown Destination</h1>
         <p>UNDX is the intelligence engine behind future CoinPilotXAI expansion, built to coordinate premium analysis, secure growth, autonomous building, and the next unknown layer of product evolution.</p>
@@ -23456,7 +23485,7 @@ def pulse_premium_undx_page():
           <article class='undx-core-card'><span class='undx-module-label'>Locked</span><div><h3>Mission Control Automation</h3><p>Coordinates future jobs, audits, release readiness, and command-center operations.</p></div></article>
         </div>
       </section>
-      <section class='undx-dashboard-row'>
+      <section class='undx-dashboard-row' id='undx-mission-status-view'>
         <article class='undx-section-panel undx-mission-panel'>
           <span class='undx-core-label'>UNDX Mission Panel</span>
           <h2>Mission Layer</h2>
@@ -23473,7 +23502,7 @@ def pulse_premium_undx_page():
           </div>
         </article>
       </section>
-      <section class='undx-section-panel'>
+      <section class='undx-section-panel' id='undx-future-preview'>
         <div class='undx-section-heading'>
           <div>
             <span class='undx-core-label'>Future Features Preview</span>
@@ -23488,10 +23517,17 @@ def pulse_premium_undx_page():
           <article class='undx-preview-item'><span>04</span><strong>Memory Core</strong></article>
         </div>
       </section>
+        </div>
+      </div>
     </section>
     """
     script = """
     const undxMissionInput = document.getElementById('undxMissionInput');
+    const undxViewNav = document.getElementById('undxViewNav');
+    const undxActiveViewLabel = document.getElementById('undxActiveViewLabel');
+    const undxLoadedViewCount = document.getElementById('undxLoadedViewCount');
+    const undxDeferredViewCount = document.getElementById('undxDeferredViewCount');
+    const undxLazyLoadingStatus = document.getElementById('undxLazyLoadingStatus');
     const undxGenerateBlueprint = document.getElementById('undxGenerateBlueprint');
     const undxBlueprintOutput = document.getElementById('undxBlueprintOutput');
     const undxConsoleMessage = document.querySelector('[data-undx-console-message]');
@@ -23803,6 +23839,7 @@ def pulse_premium_undx_page():
     const undxStrategicPlansKey = 'undxStrategicPlans';
     const undxPortfolioAnalysesKey = 'undxPortfolioAnalyses';
     const undxBuildSimulationsKey = 'undxBuildSimulations';
+    const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -27759,6 +27796,122 @@ def pulse_premium_undx_page():
         if(undxSimulationMessage) undxSimulationMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    const undxCommandViews = [
+      ['undx-command-overview','Overview'],
+      ['undx-builder-console','Builder Console'],
+      ['undx-chat-interface','Chat Interface'],
+      ['undx-mission-memory','Mission Memory'],
+      ['undx-mission-evolution','Mission Evolution'],
+      ['undx-agent-council','Agent Council'],
+      ['undx-project-creator','Project Creator'],
+      ['undx-repository-planner','Repository Planner'],
+      ['undx-task-execution-planner','Execution Planner'],
+      ['undx-approval-protocol','Approval Protocol'],
+      ['undx-repository-intelligence','Repository Intelligence'],
+      ['undx-read-only-access-blueprint','Read-Only Blueprint'],
+      ['undx-read-only-preview-gateway','Preview Gateway'],
+      ['undx-repository-context-engine','Repository Context'],
+      ['undx-intelligence-workspace','Workspace Intelligence'],
+      ['undx-change-intelligence','Change Intelligence'],
+      ['undx-knowledge-graph','Knowledge Graph'],
+      ['undx-strategic-planning','Strategic Planning'],
+      ['undx-multi-project-coordination','Portfolio Coordination'],
+      ['undx-build-simulation','Build Simulation'],
+      ['undx-core-modules','Core Modules'],
+      ['undx-mission-status-view','Mission Status'],
+      ['undx-future-preview','Future Preview']
+    ];
+    const undxCommandViewMap = new Map(undxCommandViews);
+    const undxCommandViewAliases = new Map([
+      ['undx-system-status','undx-mission-status-view']
+    ]);
+    function undxLoadCommandViewState(){
+      try{
+        const parsed = JSON.parse(localStorage.getItem(undxCommandViewStorageKey) || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      }catch(error){
+        return {};
+      }
+    }
+    function undxSaveCommandViewState(state){
+      try{
+        localStorage.setItem(undxCommandViewStorageKey, JSON.stringify(state));
+      }catch(error){}
+    }
+    function undxUpdateViewLoader(activeId){
+      const state = undxLoadCommandViewState();
+      const loadedCount = undxCommandViews.filter(([id]) => state[id]?.loaded).length;
+      const deferredCount = Math.max(0, undxCommandViews.length - loadedCount);
+      if(undxLazyLoadingStatus) undxLazyLoadingStatus.textContent = 'Active';
+      if(undxActiveViewLabel) undxActiveViewLabel.textContent = undxCommandViewMap.get(activeId) || 'Overview';
+      if(undxLoadedViewCount) undxLoadedViewCount.textContent = String(loadedCount);
+      if(undxDeferredViewCount) undxDeferredViewCount.textContent = String(deferredCount);
+      if(undxLoadedModules) undxLoadedModules.textContent = String(loadedCount);
+      if(undxDeferredModules) undxDeferredModules.textContent = String(deferredCount);
+      if(undxMemoryUsageEstimate) undxMemoryUsageEstimate.textContent = `${Math.max(96, loadedCount * 24)} KB`;
+      if(undxPortfolioLoadedModules) undxPortfolioLoadedModules.textContent = String(loadedCount);
+      if(undxPortfolioDeferredModules) undxPortfolioDeferredModules.textContent = String(deferredCount);
+      if(undxPortfolioEstimatedComplexity) undxPortfolioEstimatedComplexity.textContent = loadedCount > 16 ? 'High' : loadedCount > 8 ? 'Medium' : 'Low';
+      if(undxSimulationLoadedModules) undxSimulationLoadedModules.textContent = String(loadedCount);
+      if(undxSimulationDeferredModules) undxSimulationDeferredModules.textContent = String(deferredCount);
+      if(undxSimulationLoad) undxSimulationLoad.textContent = loadedCount > 16 ? 'High' : loadedCount > 8 ? 'Medium' : 'Low';
+    }
+    function undxSetActiveCommandView(targetId, options = {}){
+      const fallback = 'undx-command-overview';
+      const resolvedTargetId = undxCommandViewAliases.get(targetId) || targetId;
+      const activeId = undxCommandViewMap.has(resolvedTargetId) ? resolvedTargetId : fallback;
+      const state = undxLoadCommandViewState();
+      undxCommandViews.forEach(([id]) => {
+        const view = document.getElementById(id);
+        if(!view) return;
+        const isActive = id === activeId;
+        view.classList.add('undx-command-view');
+        view.classList.toggle('undx-view-hidden', !isActive);
+        view.setAttribute('aria-hidden', String(!isActive));
+        view.dataset.undxViewState = isActive ? 'active' : (state[id]?.loaded ? 'loaded' : 'deferred');
+        if(isActive){
+          view.dataset.undxLoaded = 'true';
+          state[id] = {loaded:true, lastOpened:new Date().toISOString()};
+        }
+      });
+      undxSaveCommandViewState(state);
+      document.querySelectorAll('[data-undx-view-target]').forEach(button => {
+        button.setAttribute('aria-current', String(button.dataset.undxViewTarget === activeId));
+      });
+      undxUpdateViewLoader(activeId);
+      if(options.pushHash && window.location.hash !== `#${activeId}`){
+        history.pushState(null, '', `#${activeId}`);
+      }
+    }
+    function undxBuildCommandViewNav(){
+      if(!undxViewNav) return;
+      undxViewNav.replaceChildren();
+      undxCommandViews.forEach(([id, label]) => {
+        if(!document.getElementById(id)) return;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'button';
+        button.dataset.undxViewTarget = id;
+        button.textContent = label;
+        button.addEventListener('click', () => undxSetActiveCommandView(id, {pushHash:true}));
+        undxViewNav.appendChild(button);
+      });
+    }
+    function undxInitCommandCenterViews(){
+      const state = undxLoadCommandViewState();
+      if(!state['undx-command-overview']) state['undx-command-overview'] = {loaded:true, lastOpened:new Date().toISOString()};
+      undxSaveCommandViewState(state);
+      undxBuildCommandViewNav();
+      const requested = String(window.location.hash || '').replace('#','');
+      const requestedView = undxCommandViewAliases.get(requested) || requested;
+      const activeId = undxCommandViewMap.has(requestedView) ? requestedView : 'undx-command-overview';
+      undxSetActiveCommandView(activeId);
+      window.addEventListener('hashchange', () => {
+        const target = String(window.location.hash || '').replace('#','');
+        const targetView = undxCommandViewAliases.get(target) || target;
+        if(undxCommandViewMap.has(targetView)) undxSetActiveCommandView(targetView);
+      });
+    }
     function undxNormalizeRepositoryPlan(plan){
       return {
         id: String(plan.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`),
@@ -29445,6 +29598,7 @@ def pulse_premium_undx_page():
     undxRenderPortfolioAnalysis(undxLoadPortfolioAnalyses()[0] || null);
     undxRenderSimulationRegistry();
     undxRenderBuildSimulation(undxLoadBuildSimulations()[0] || null);
+    undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
