@@ -21827,14 +21827,26 @@ def pulse_premium_undx_page():
     .undx-roadmap-item,.undx-forecast-item{border:1px solid rgba(110,223,246,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
     .undx-roadmap-item strong,.undx-forecast-item strong{display:block;color:#dffcff}
     .undx-loader-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+    .undx-portfolio-coordination{position:relative;overflow:hidden;border-color:rgba(156,124,255,.3);background:radial-gradient(circle at 10% 12%,rgba(156,124,255,.15),transparent 24rem),radial-gradient(circle at 86% 15%,rgba(54,229,143,.12),transparent 27rem),linear-gradient(180deg,rgba(255,255,255,.084),rgba(255,255,255,.03))}
+    .undx-portfolio-coordination:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(156,124,255,.075),transparent 34%,rgba(54,229,143,.055));pointer-events:none}
+    .undx-portfolio-coordination>*{position:relative;z-index:1}
+    .undx-portfolio-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;align-items:start}
+    .undx-portfolio-main,.undx-portfolio-sidebar,.undx-portfolio-registry,.undx-portfolio-output{display:grid;gap:12px}
+    .undx-portfolio-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(16,13,37,.86),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-portfolio-card h3,.undx-portfolio-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-portfolio-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-portfolio-grid,.undx-allocation-grid,.undx-initiative-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}
+    .undx-portfolio-project,.undx-allocation-item,.undx-initiative-item{border:1px solid rgba(156,124,255,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
+    .undx-portfolio-project strong,.undx-allocation-item strong,.undx-initiative-item strong{display:block;color:#dffcff}
+    .undx-portfolio-project span,.undx-allocation-item span,.undx-initiative-item span{display:block;color:rgba(223,246,255,.64);font-size:.82rem;font-weight:850}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -23104,6 +23116,158 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-portfolio-coordination' id='undx-multi-project-coordination'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Coordination Engine: Online</span>
+            <h2>UNDX Multi-Project Coordination Center</h2>
+          </div>
+          <p>Coordinate projects, priorities, resources, dependencies, and strategic execution across the UNDX ecosystem.</p>
+        </div>
+        <div class='undx-portfolio-layout'>
+          <div class='undx-portfolio-main'>
+            <div class='undx-memory-status' aria-label='UNDX multi-project coordination status'>
+              <span aria-label='Coordination Engine: Online'>Coordination Engine: <strong>Online</strong></span>
+              <span aria-label='Portfolio Manager: Online'>Portfolio Manager: <strong>Online</strong></span>
+              <span aria-label='Dependency Coordinator: Online'>Dependency Coordinator: <strong>Online</strong></span>
+              <span aria-label='Conflict Detector: Online'>Conflict Detector: <strong>Online</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 21'>Phase: <strong>21</strong></span>
+            </div>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Project Portfolio View</span>
+              <h3>All Projects</h3>
+              <div class='undx-portfolio-grid' id='undxPortfolioProjects'></div>
+            </section>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Coordination Analysis</span>
+              <h3>Portfolio Analysis</h3>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGeneratePortfolioAnalysis'>Generate Portfolio Analysis</button>
+                <button class='button' type='button' id='undxRunPortfolioReview'>Run Multi-Brain Portfolio Review</button>
+              </div>
+              <p class='undx-project-message' id='undxPortfolioMessage' aria-live='polite'></p>
+              <div class='undx-evolution-empty' id='undxPortfolioEmpty'>Generate portfolio analysis to coordinate projects across UNDX.</div>
+              <div class='undx-portfolio-output' id='undxPortfolioOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Dependency Coordinator</span>
+              <h3>Dependency Coordinator</h3>
+              <p>Project Dependencies include examples such as Project B depends on Project A, Project C depends on Repository Analysis, and Project D depends on Approval Gates.</p>
+              <div class='undx-chain-list' id='undxPortfolioDependencies'></div>
+            </section>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Resource Allocation Simulator</span>
+              <h3>Resource Allocation Simulator</h3>
+              <p>Recommended Allocation balances Engineering, Research, Architecture, Security, and Optimization.</p>
+              <div class='undx-allocation-grid' id='undxPortfolioAllocation'></div>
+            </section>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Execution Order Engine</span>
+              <h3>Recommended Build Sequence</h3>
+              <div class='undx-chain-list' id='undxPortfolioBuildSequence'></div>
+            </section>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Strategic Initiative Tracker</span>
+              <h3>Top 5 Initiatives</h3>
+              <div class='undx-initiative-grid' id='undxPortfolioInitiatives'></div>
+            </section>
+            <section class='undx-portfolio-card'>
+              <span class='undx-core-label'>Portfolio Registry</span>
+              <h3>Portfolio Registry</h3>
+              <div class='undx-memory-empty' id='undxPortfolioRegistryEmpty'>No portfolio analyses stored yet. Generate a portfolio analysis to activate coordination.</div>
+              <div class='undx-portfolio-registry' id='undxPortfolioRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-portfolio-sidebar'>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Coordination Dashboard</span>
+              <h3>Coordination Dashboard</h3>
+              <p>Total Projects: <strong id='undxPortfolioTotalProjects'>0</strong></p>
+              <p>Active Projects: <strong id='undxPortfolioActiveProjects'>0</strong></p>
+              <p>Projects Ready To Build: <strong id='undxPortfolioReadyProjects'>0</strong></p>
+              <p>Projects Blocked: <strong id='undxPortfolioBlockedProjects'>0</strong></p>
+              <p>Projects Missing Approval: <strong id='undxPortfolioMissingApproval'>0</strong></p>
+              <p>Projects Missing Context: <strong id='undxPortfolioMissingContext'>0</strong></p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Portfolio Health Score</span>
+              <h3>Portfolio Health Score</h3>
+              <div class='undx-health-score' id='undxPortfolioHealthScore'>0/100</div>
+              <p>Factors: Project Readiness · Approval Completion · Strategic Planning · Dependency Health · Knowledge Coverage</p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Conflict Detector</span>
+              <h3>Conflict Detector</h3>
+              <p>Priority Conflicts: <strong id='undxPriorityConflicts'>0</strong></p>
+              <p>Resource Conflicts: <strong id='undxResourceConflicts'>0</strong></p>
+              <p>Dependency Conflicts: <strong id='undxDependencyConflicts'>0</strong></p>
+              <p>Approval Conflicts: <strong id='undxApprovalConflicts'>0</strong></p>
+              <p>Strategic Conflicts: <strong id='undxStrategicConflicts'>0</strong></p>
+              <p>Conflict Severity: <strong id='undxConflictSeverity'>Low</strong></p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Coordination Insights</span>
+              <h3>Coordination Insights</h3>
+              <p>Most Important Project: <strong id='undxMostImportantProject'>Pending</strong></p>
+              <p>Most Connected Project: <strong id='undxMostConnectedProject'>Pending</strong></p>
+              <p>Most Blocked Project: <strong id='undxMostBlockedProject'>Pending</strong></p>
+              <p>Most Ready Project: <strong id='undxMostReadyProject'>Pending</strong></p>
+              <p>Most Strategic Initiative: <strong id='undxMostStrategicInitiative'>Pending</strong></p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Portfolio Relationships</span>
+              <h3>Knowledge Graph Integration</h3>
+              <p>Portfolio Relationships: <strong id='undxPortfolioRelationships'>0</strong></p>
+              <p>Project Connections: <strong id='undxPortfolioProjectConnections'>0</strong></p>
+              <p>Dependency Networks: <strong id='undxPortfolioDependencyNetworks'>0</strong></p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Strategic Planning Integration</span>
+              <h3>Strategic Planning Integration</h3>
+              <p>Strategic Plans Linked: <strong id='undxPortfolioStrategicPlans'>0</strong></p>
+              <p>Roadmaps Linked: <strong id='undxPortfolioRoadmaps'>0</strong></p>
+              <p>Forecasts Linked: <strong id='undxPortfolioForecasts'>0</strong></p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Multi-Brain Portfolio Review</span>
+              <h3>Multi-Brain Portfolio Review</h3>
+              <div id='undxPortfolioReviewOutput'><p>Architecture Review, Research Review, Build Review, Optimization Review, Rapid Review, and Combined Portfolio Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>UNDX Scalability Status</span>
+              <h3>Scalability Status</h3>
+              <p>Loaded Modules: <strong id='undxPortfolioLoadedModules'>21</strong></p>
+              <p>Deferred Modules: <strong id='undxPortfolioDeferredModules'>4</strong></p>
+              <p>Estimated Complexity: <strong id='undxPortfolioEstimatedComplexity'>Medium</strong></p>
+              <p>Portfolio Objects Managed: <strong id='undxPortfolioObjectsManaged'>0</strong></p>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Portfolio Roadmap</span>
+              <h3>Portfolio Roadmap</h3>
+              <div class='undx-roadmap-grid' id='undxPortfolioRoadmap'></div>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Coordination Boundary</span>
+              <h3>Coordination Boundary</h3>
+              <p>UNDX generated this portfolio analysis using project intelligence, workspace intelligence, strategic plans, knowledge graphs, repository context, repository analyses, change analyses, and mission memory only.</p>
+              <p>No repository files were accessed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Read-only intelligence only.</li></ul>
+            </article>
+            <article class='undx-portfolio-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 21<br><strong>Multi-Project Coordination</strong></span>
+                <span>Phase 22<br><strong>Autonomous Build Simulation</strong></span>
+                <span>Phase 23<br><strong>Workspace Memory Graph Expansion</strong></span>
+                <span>Phase 24<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 25<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -23368,6 +23532,48 @@ def pulse_premium_undx_page():
     const undxLoadedModules = document.getElementById('undxLoadedModules');
     const undxDeferredModules = document.getElementById('undxDeferredModules');
     const undxMemoryUsageEstimate = document.getElementById('undxMemoryUsageEstimate');
+    const undxPortfolioProjects = document.getElementById('undxPortfolioProjects');
+    const undxGeneratePortfolioAnalysis = document.getElementById('undxGeneratePortfolioAnalysis');
+    const undxRunPortfolioReview = document.getElementById('undxRunPortfolioReview');
+    const undxPortfolioMessage = document.getElementById('undxPortfolioMessage');
+    const undxPortfolioEmpty = document.getElementById('undxPortfolioEmpty');
+    const undxPortfolioOutput = document.getElementById('undxPortfolioOutput');
+    const undxPortfolioDependencies = document.getElementById('undxPortfolioDependencies');
+    const undxPortfolioAllocation = document.getElementById('undxPortfolioAllocation');
+    const undxPortfolioBuildSequence = document.getElementById('undxPortfolioBuildSequence');
+    const undxPortfolioInitiatives = document.getElementById('undxPortfolioInitiatives');
+    const undxPortfolioRegistryEmpty = document.getElementById('undxPortfolioRegistryEmpty');
+    const undxPortfolioRegistryList = document.getElementById('undxPortfolioRegistryList');
+    const undxPortfolioTotalProjects = document.getElementById('undxPortfolioTotalProjects');
+    const undxPortfolioActiveProjects = document.getElementById('undxPortfolioActiveProjects');
+    const undxPortfolioReadyProjects = document.getElementById('undxPortfolioReadyProjects');
+    const undxPortfolioBlockedProjects = document.getElementById('undxPortfolioBlockedProjects');
+    const undxPortfolioMissingApproval = document.getElementById('undxPortfolioMissingApproval');
+    const undxPortfolioMissingContext = document.getElementById('undxPortfolioMissingContext');
+    const undxPortfolioHealthScore = document.getElementById('undxPortfolioHealthScore');
+    const undxPriorityConflicts = document.getElementById('undxPriorityConflicts');
+    const undxResourceConflicts = document.getElementById('undxResourceConflicts');
+    const undxDependencyConflicts = document.getElementById('undxDependencyConflicts');
+    const undxApprovalConflicts = document.getElementById('undxApprovalConflicts');
+    const undxStrategicConflicts = document.getElementById('undxStrategicConflicts');
+    const undxConflictSeverity = document.getElementById('undxConflictSeverity');
+    const undxMostImportantProject = document.getElementById('undxMostImportantProject');
+    const undxMostConnectedProject = document.getElementById('undxMostConnectedProject');
+    const undxMostBlockedProject = document.getElementById('undxMostBlockedProject');
+    const undxMostReadyProject = document.getElementById('undxMostReadyProject');
+    const undxMostStrategicInitiative = document.getElementById('undxMostStrategicInitiative');
+    const undxPortfolioRelationships = document.getElementById('undxPortfolioRelationships');
+    const undxPortfolioProjectConnections = document.getElementById('undxPortfolioProjectConnections');
+    const undxPortfolioDependencyNetworks = document.getElementById('undxPortfolioDependencyNetworks');
+    const undxPortfolioStrategicPlans = document.getElementById('undxPortfolioStrategicPlans');
+    const undxPortfolioRoadmaps = document.getElementById('undxPortfolioRoadmaps');
+    const undxPortfolioForecasts = document.getElementById('undxPortfolioForecasts');
+    const undxPortfolioReviewOutput = document.getElementById('undxPortfolioReviewOutput');
+    const undxPortfolioLoadedModules = document.getElementById('undxPortfolioLoadedModules');
+    const undxPortfolioDeferredModules = document.getElementById('undxPortfolioDeferredModules');
+    const undxPortfolioEstimatedComplexity = document.getElementById('undxPortfolioEstimatedComplexity');
+    const undxPortfolioObjectsManaged = document.getElementById('undxPortfolioObjectsManaged');
+    const undxPortfolioRoadmap = document.getElementById('undxPortfolioRoadmap');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -23384,6 +23590,7 @@ def pulse_premium_undx_page():
     const undxChangeAnalysesKey = 'undxChangeAnalyses';
     const undxKnowledgeGraphsKey = 'undxKnowledgeGraphs';
     const undxStrategicPlansKey = 'undxStrategicPlans';
+    const undxPortfolioAnalysesKey = 'undxPortfolioAnalyses';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -23401,6 +23608,8 @@ def pulse_premium_undx_page():
     let undxLastKnowledgeGraph = null;
     let undxSelectedStrategicPlanId = null;
     let undxLastStrategicPlan = null;
+    let undxSelectedPortfolioAnalysisId = null;
+    let undxLastPortfolioAnalysis = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -25230,6 +25439,7 @@ def pulse_premium_undx_page():
       const latestChange = undxLastChangeAnalysis || (project?.linkedChangeAnalyses || [])[0] || undxLoadChangeAnalyses()[0] || null;
       const latestGraph = undxLastKnowledgeGraph || (project?.linkedKnowledgeGraphs || [])[0] || undxLoadKnowledgeGraphs()[0] || null;
       const latestStrategicPlan = undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null;
+      const latestPortfolio = undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || null;
       const healthScore = undxWorkspaceHealth(project);
       const readinessLevel = undxWorkspaceReadiness(healthScore);
       const nextRecommendedAction = undxWorkspaceRecommendedNextAction(project);
@@ -25251,6 +25461,9 @@ def pulse_premium_undx_page():
       }
       if(latestStrategicPlan){
         summary.connectedAssets = [...summary.connectedAssets, `Latest Strategic Plan: ${latestStrategicPlan.planId}`, `Priority Score: ${latestStrategicPlan.priority.score}`, `Success Forecast: ${latestStrategicPlan.forecast.successProbability}/100`, `Strategic Status: ${latestStrategicPlan.readinessAssessment}`];
+      }
+      if(latestPortfolio){
+        summary.connectedAssets = [...summary.connectedAssets, `Portfolio Position: ${latestPortfolio.recommendedBuildOrder.indexOf(project?.name || '') + 1 || 'Pending'}`, `Portfolio Priority: ${latestPortfolio.priorityScore}`, `Portfolio Dependencies: ${latestPortfolio.dependencies.length}`];
       }
       summary.summaryText = undxWorkspaceSummaryText(summary);
       return undxNormalizeWorkspaceSummary(summary);
@@ -25287,6 +25500,9 @@ def pulse_premium_undx_page():
         `Priority Score: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).priority?.score ?? 'Pending'}`,
         `Success Forecast: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).forecast?.successProbability ?? 'Pending'}`,
         `Strategic Status: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).readinessAssessment || 'Pending'}`,
+        `Portfolio Position: ${((undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || {}).recommendedBuildOrder || []).indexOf(summary.projectName) + 1 || 'Pending'}`,
+        `Portfolio Priority: ${(undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || {}).priorityScore ?? 'Pending'}`,
+        `Portfolio Dependencies: ${((undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || {}).dependencies || []).length || 'Pending'}`,
         `Created Date: ${undxFormatMemoryTime(summary.createdAt)}`
       ].forEach(value => {
         const pill = document.createElement('span');
@@ -25334,6 +25550,7 @@ def pulse_premium_undx_page():
       undxRefreshChangeSources();
       undxRenderKnowledgeGraph(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || null);
       undxRenderStrategicDashboard();
+      undxRenderPortfolioDashboard();
     }
     function undxSendWorkspaceSummaryToChatFlow(){
       const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
@@ -26572,6 +26789,397 @@ def pulse_premium_undx_page():
       }catch(error){
         if(undxStrategicReviewOutput) undxStrategicReviewOutput.replaceChildren(undxBlock('Architect Review', 'OpenAI fallback recommended: preserve modular boundaries.'), undxBlock('Research Review', 'OpenAI fallback recommended: identify missing context.'), undxBlock('Builder Review', 'OpenAI fallback recommended: convert plan into phased work.'), undxBlock('Optimization Review', 'OpenAI fallback recommended: reduce complexity before execution.'), undxBlock('Rapid Review', 'OpenAI fallback recommended: prepare the next safe checkpoint.'), undxBlock('Combined Strategic Recommendation', 'Fallback → OpenAI. Keep the strategic plan read-only and approval-aware.'));
         if(undxStrategicMessage) undxStrategicMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxPortfolioConflictSeverity(count){
+      if(count >= 9) return 'Critical';
+      if(count >= 6) return 'High';
+      if(count >= 3) return 'Medium';
+      return 'Low';
+    }
+    function undxPortfolioProjectRecords(){
+      const strategic = undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null;
+      return undxLoadProjects().map(project => {
+        const healthScore = undxWorkspaceHealth(project);
+        const readinessLevel = undxWorkspaceReadiness(healthScore);
+        const priorityScore = Math.max(35, Math.min(100, (strategic?.priority?.score || 50) + (project.priority === 'High' ? 12 : project.priority === 'Low' ? -8 : 0)));
+        const linkedPlans = (project.linkedExecutionPlans || []).length + (strategic ? 1 : 0);
+        const linkedAnalyses = (project.linkedRepositoryAnalyses || []).length + (project.linkedChangeAnalyses || []).length;
+        return {
+          projectId: project.projectId,
+          name: project.name,
+          status: project.status || 'Planning',
+          readinessLevel,
+          healthScore,
+          priorityScore,
+          strategicStatus: strategic?.readinessAssessment || readinessLevel,
+          approvalStatus: undxProjectApprovalStatus(project),
+          linkedPlans,
+          linkedAnalyses,
+          missingContext: undxWorkspaceMissingAssets(project).length,
+          riskScore: 100 - healthScore + (project.priority === 'High' ? 8 : 0),
+          valueScore: priorityScore + linkedAnalyses * 4 + linkedPlans * 3
+        };
+      });
+    }
+    function undxNormalizePortfolioAnalysis(analysis){
+      const projects = Array.isArray(analysis.projects) ? analysis.projects.slice(0,48) : [];
+      const healthScore = Math.max(0, Math.min(100, Number(analysis.portfolioHealthScore || 0)));
+      const priorityScore = Math.max(0, Math.min(100, Number(analysis.priorityScore || 0)));
+      return {
+        analysisId: String(analysis.analysisId || `PORTFOLIO-UNDX-${Date.now()}`).slice(0,48),
+        projects,
+        projectCount: Number(analysis.projectCount || projects.length || 0),
+        portfolioHealthScore: healthScore,
+        priorityScore,
+        portfolioSummary: String(analysis.portfolioSummary || '').slice(0,1400),
+        highestPriorityProject: String(analysis.highestPriorityProject || 'None').slice(0,180),
+        highestRiskProject: String(analysis.highestRiskProject || 'None').slice(0,180),
+        highestValueProject: String(analysis.highestValueProject || 'None').slice(0,180),
+        mostDelayedProject: String(analysis.mostDelayedProject || 'None').slice(0,180),
+        recommendedBuildOrder: undxNormalizeExecutionList(analysis.recommendedBuildOrder, ['Create a project to activate build sequencing'], 12, 180),
+        strategicBottlenecks: undxNormalizeExecutionList(analysis.strategicBottlenecks, ['Missing project context'], 12, 220),
+        dependencies: undxNormalizeExecutionList(analysis.dependencies, ['Project B depends on Project A', 'Project C depends on Repository Analysis', 'Project D depends on Approval Gates'], 12, 240),
+        conflicts: analysis.conflicts || {},
+        conflictSeverity: String(analysis.conflictSeverity || 'Low').slice(0,80),
+        allocation: analysis.allocation || {Engineering:30, Research:20, Architecture:20, Security:15, Optimization:15},
+        initiatives: Array.isArray(analysis.initiatives) ? analysis.initiatives.slice(0,5) : [],
+        roadmap: analysis.roadmap || {},
+        insights: analysis.insights || {},
+        review: analysis.review || null,
+        createdAt: analysis.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadPortfolioAnalyses(){
+      try{
+        const raw = localStorage.getItem(undxPortfolioAnalysesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.analysisId).slice(0,48).map(undxNormalizePortfolioAnalysis) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSavePortfolioAnalyses(analyses){
+      try{
+        localStorage.setItem(undxPortfolioAnalysesKey, JSON.stringify(analyses.slice(0,48)));
+      }catch(error){
+        if(undxPortfolioMessage) undxPortfolioMessage.textContent = 'Portfolio Registry could not be updated.';
+      }
+    }
+    function undxNextPortfolioAnalysisId(analyses){
+      const max = analyses.reduce((highest, analysis) => {
+        const match = String(analysis.analysisId || '').match(/^PORTFOLIO-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `PORTFOLIO-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildPortfolioAnalysis(){
+      const analyses = undxLoadPortfolioAnalyses();
+      const projects = undxPortfolioProjectRecords();
+      const strategicPlans = undxLoadStrategicPlans();
+      const knowledge = undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {};
+      const total = projects.length;
+      const avg = key => total ? Math.round(projects.reduce((sum, project) => sum + Number(project[key] || 0), 0) / total) : 0;
+      const ready = projects.filter(project => project.healthScore >= 70);
+      const missingApproval = projects.filter(project => !project.approvalStatus.includes('Ready')).length;
+      const missingContext = projects.filter(project => project.missingContext > 2).length;
+      const priorityConflicts = projects.filter(project => project.priorityScore >= 70 && project.healthScore < 55).length;
+      const resourceConflicts = Math.max(0, total - 3);
+      const dependencyConflicts = projects.filter(project => project.linkedPlans === 0).length;
+      const approvalConflicts = missingApproval;
+      const strategicConflicts = strategicPlans.length ? 0 : Math.min(3, total);
+      const conflictCount = priorityConflicts + resourceConflicts + dependencyConflicts + approvalConflicts + strategicConflicts;
+      const conflictSeverity = undxPortfolioConflictSeverity(conflictCount);
+      const portfolioHealthScore = Math.max(0, Math.min(100, Math.round(avg('healthScore') * .35 + (100 - missingApproval * 8) * .2 + Math.min(100, strategicPlans.length * 20) * .15 + (100 - dependencyConflicts * 8) * .15 + (knowledge.coverageScore || 45) * .15)));
+      const sorted = [...projects].sort((a,b) => (b.priorityScore + b.valueScore + b.healthScore - b.riskScore) - (a.priorityScore + a.valueScore + a.healthScore - a.riskScore));
+      const highestPriority = [...projects].sort((a,b) => b.priorityScore - a.priorityScore)[0];
+      const highestRisk = [...projects].sort((a,b) => b.riskScore - a.riskScore)[0];
+      const highestValue = [...projects].sort((a,b) => b.valueScore - a.valueScore)[0];
+      const delayed = [...projects].sort((a,b) => b.missingContext - a.missingContext || a.healthScore - b.healthScore)[0];
+      const roadmap = {
+        '30-Day Portfolio Roadmap': ['Coordinate ready projects', 'Resolve missing approval gates', 'Generate workspace summaries for blocked projects'],
+        '60-Day Portfolio Roadmap': ['Sequence top strategic initiatives', 'Strengthen dependency networks', 'Attach strategic plans to portfolio decisions'],
+        '90-Day Portfolio Roadmap': ['Prepare autonomous build simulation inputs', 'Expand workspace memory graph', 'Preserve approval-first execution boundaries']
+      };
+      const allocation = {
+        Engineering: Math.max(20, Math.min(45, 30 + ready.length * 3)),
+        Research: Math.max(10, Math.min(30, 18 + missingContext * 3)),
+        Architecture: Math.max(10, Math.min(28, 18 + dependencyConflicts * 2)),
+        Security: Math.max(10, Math.min(30, 14 + missingApproval * 2)),
+        Optimization: Math.max(10, Math.min(26, 20 + priorityConflicts * 2))
+      };
+      return undxNormalizePortfolioAnalysis({
+        analysisId: undxNextPortfolioAnalysisId(analyses),
+        projects,
+        projectCount: total,
+        portfolioHealthScore,
+        priorityScore: avg('priorityScore'),
+        portfolioSummary: `UNDX coordinated ${total} projects with ${ready.length} ready to build, ${missingApproval} missing approval context, and ${missingContext} missing deeper context.`,
+        highestPriorityProject: highestPriority?.name || 'None',
+        highestRiskProject: highestRisk?.name || 'None',
+        highestValueProject: highestValue?.name || 'None',
+        mostDelayedProject: delayed?.name || 'None',
+        recommendedBuildOrder: sorted.map(project => project.name),
+        strategicBottlenecks: ['Missing approvals before future execution', 'Repository previews remain disabled', 'Dependency chains need workspace summaries', 'Strategic plan coverage should be expanded'],
+        dependencies: projects.slice(0,8).map((project, index) => `${project.name} depends on ${index === 0 ? 'Approval Gates' : projects[index - 1]?.name || 'Repository Analysis'}`),
+        conflicts: {priorityConflicts, resourceConflicts, dependencyConflicts, approvalConflicts, strategicConflicts},
+        conflictSeverity,
+        allocation,
+        initiatives: sorted.slice(0,5).map(project => ({name:project.name, priority:project.priorityScore, value:project.valueScore, risk:project.riskScore, readiness:project.readinessLevel})),
+        roadmap,
+        insights: {
+          mostImportantProject: highestPriority?.name || 'None',
+          mostConnectedProject: [...projects].sort((a,b) => (b.linkedPlans + b.linkedAnalyses) - (a.linkedPlans + a.linkedAnalyses))[0]?.name || 'None',
+          mostBlockedProject: delayed?.name || 'None',
+          mostReadyProject: [...projects].sort((a,b) => b.healthScore - a.healthScore)[0]?.name || 'None',
+          mostStrategicInitiative: sorted[0]?.name || 'None'
+        },
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxPortfolioAnalysisText(analysis){
+      return [
+        'UNDX Portfolio Analysis',
+        '',
+        `Portfolio Analysis ID: ${analysis.analysisId}`,
+        `Portfolio Health Score: ${analysis.portfolioHealthScore}/100`,
+        `Project Count: ${analysis.projectCount}`,
+        `Priority Score: ${analysis.priorityScore}`,
+        `Conflict Severity: ${analysis.conflictSeverity}`,
+        '',
+        `Portfolio Summary: ${analysis.portfolioSummary}`,
+        `Highest Priority Project: ${analysis.highestPriorityProject}`,
+        `Highest Risk Project: ${analysis.highestRiskProject}`,
+        `Highest Value Project: ${analysis.highestValueProject}`,
+        `Most Delayed Project: ${analysis.mostDelayedProject}`,
+        '',
+        'Recommended Build Order:',
+        ...analysis.recommendedBuildOrder.map((item, index) => `${index + 1}. ${item}`),
+        '',
+        'Strategic Bottlenecks:',
+        ...analysis.strategicBottlenecks.map(item => `- ${item}`),
+        '',
+        'Coordination Boundary: No repository files were accessed. No repository modification, Git operations, command execution, or deployments occurred.'
+      ].join('\\n');
+    }
+    function undxRenderPortfolioDashboard(analysis = undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || null){
+      const projects = undxPortfolioProjectRecords();
+      const missingApproval = projects.filter(project => !project.approvalStatus.includes('Ready')).length;
+      const missingContext = projects.filter(project => project.missingContext > 2).length;
+      if(undxPortfolioTotalProjects) undxPortfolioTotalProjects.textContent = String(projects.length);
+      if(undxPortfolioActiveProjects) undxPortfolioActiveProjects.textContent = String(projects.filter(project => project.status === 'Active').length || projects.length);
+      if(undxPortfolioReadyProjects) undxPortfolioReadyProjects.textContent = String(projects.filter(project => project.healthScore >= 70).length);
+      if(undxPortfolioBlockedProjects) undxPortfolioBlockedProjects.textContent = String(projects.filter(project => project.healthScore < 45).length);
+      if(undxPortfolioMissingApproval) undxPortfolioMissingApproval.textContent = String(missingApproval);
+      if(undxPortfolioMissingContext) undxPortfolioMissingContext.textContent = String(missingContext);
+      if(undxPortfolioHealthScore) undxPortfolioHealthScore.textContent = `${analysis?.portfolioHealthScore || 0}/100`;
+      if(undxPriorityConflicts) undxPriorityConflicts.textContent = String(analysis?.conflicts?.priorityConflicts || 0);
+      if(undxResourceConflicts) undxResourceConflicts.textContent = String(analysis?.conflicts?.resourceConflicts || 0);
+      if(undxDependencyConflicts) undxDependencyConflicts.textContent = String(analysis?.conflicts?.dependencyConflicts || 0);
+      if(undxApprovalConflicts) undxApprovalConflicts.textContent = String(analysis?.conflicts?.approvalConflicts || 0);
+      if(undxStrategicConflicts) undxStrategicConflicts.textContent = String(analysis?.conflicts?.strategicConflicts || 0);
+      if(undxConflictSeverity) undxConflictSeverity.textContent = analysis?.conflictSeverity || 'Low';
+      if(undxMostImportantProject) undxMostImportantProject.textContent = analysis?.insights?.mostImportantProject || 'Pending';
+      if(undxMostConnectedProject) undxMostConnectedProject.textContent = analysis?.insights?.mostConnectedProject || 'Pending';
+      if(undxMostBlockedProject) undxMostBlockedProject.textContent = analysis?.insights?.mostBlockedProject || 'Pending';
+      if(undxMostReadyProject) undxMostReadyProject.textContent = analysis?.insights?.mostReadyProject || 'Pending';
+      if(undxMostStrategicInitiative) undxMostStrategicInitiative.textContent = analysis?.insights?.mostStrategicInitiative || 'Pending';
+      const graph = undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {};
+      const plans = undxLoadStrategicPlans();
+      if(undxPortfolioRelationships) undxPortfolioRelationships.textContent = String(graph.relationshipCount || 0);
+      if(undxPortfolioProjectConnections) undxPortfolioProjectConnections.textContent = String(graph.connectedProjects || projects.length);
+      if(undxPortfolioDependencyNetworks) undxPortfolioDependencyNetworks.textContent = String((analysis?.dependencies || []).length);
+      if(undxPortfolioStrategicPlans) undxPortfolioStrategicPlans.textContent = String(plans.length);
+      if(undxPortfolioRoadmaps) undxPortfolioRoadmaps.textContent = String(plans.length * 3);
+      if(undxPortfolioForecasts) undxPortfolioForecasts.textContent = String(plans.length);
+      if(undxPortfolioLoadedModules) undxPortfolioLoadedModules.textContent = '21';
+      if(undxPortfolioDeferredModules) undxPortfolioDeferredModules.textContent = '4';
+      if(undxPortfolioEstimatedComplexity) undxPortfolioEstimatedComplexity.textContent = projects.length > 5 ? 'High' : projects.length > 2 ? 'Medium' : 'Low';
+      if(undxPortfolioObjectsManaged) undxPortfolioObjectsManaged.textContent = String(projects.length + plans.length + undxLoadKnowledgeGraphs().length + undxLoadWorkspaceSummaries().length);
+    }
+    function undxRenderPortfolioProjects(){
+      if(!undxPortfolioProjects) return;
+      undxPortfolioProjects.replaceChildren();
+      const projects = undxPortfolioProjectRecords();
+      if(!projects.length){
+        const empty = document.createElement('p');
+        empty.textContent = 'No projects registered yet. Create projects to activate portfolio coordination.';
+        undxPortfolioProjects.appendChild(empty);
+        return;
+      }
+      projects.forEach(project => {
+        const node = document.createElement('article');
+        node.className = 'undx-portfolio-project';
+        node.append(
+          Object.assign(document.createElement('strong'), {textContent: project.name}),
+          Object.assign(document.createElement('span'), {textContent: `Readiness Level: ${project.readinessLevel}`}),
+          Object.assign(document.createElement('span'), {textContent: `Health Score: ${project.healthScore}/100`}),
+          Object.assign(document.createElement('span'), {textContent: `Priority Score: ${project.priorityScore}`}),
+          Object.assign(document.createElement('span'), {textContent: `Strategic Status: ${project.strategicStatus}`}),
+          Object.assign(document.createElement('span'), {textContent: `Approval Status: ${project.approvalStatus}`}),
+          Object.assign(document.createElement('span'), {textContent: `Linked Plans: ${project.linkedPlans}`}),
+          Object.assign(document.createElement('span'), {textContent: `Linked Analyses: ${project.linkedAnalyses}`})
+        );
+        undxPortfolioProjects.appendChild(node);
+      });
+    }
+    function undxRenderPortfolioAnalysis(analysis){
+      undxLastPortfolioAnalysis = analysis || null;
+      if(analysis) undxSelectedPortfolioAnalysisId = analysis.analysisId;
+      if(undxPortfolioEmpty) undxPortfolioEmpty.hidden = Boolean(analysis);
+      if(undxPortfolioOutput){
+        undxPortfolioOutput.replaceChildren();
+        if(analysis){
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Portfolio Analysis ID', analysis.analysisId),
+            undxBlock('Portfolio Summary', analysis.portfolioSummary),
+            undxBlock('Highest Priority Project', analysis.highestPriorityProject),
+            undxBlock('Highest Risk Project', analysis.highestRiskProject),
+            undxBlock('Highest Value Project', analysis.highestValueProject),
+            undxBlock('Most Delayed Project', analysis.mostDelayedProject),
+            undxBlock('Recommended Build Order', analysis.recommendedBuildOrder),
+            undxBlock('Strategic Bottlenecks', analysis.strategicBottlenecks)
+          );
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxPortfolioAnalysisText(analysis);
+          undxPortfolioOutput.append(grid, output);
+        }
+      }
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        (items || []).forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      fillList(undxPortfolioDependencies, analysis?.dependencies || []);
+      fillList(undxPortfolioBuildSequence, (analysis?.recommendedBuildOrder || []).map((item,index) => `${index + 1}. ${item}`));
+      if(undxPortfolioAllocation){
+        undxPortfolioAllocation.replaceChildren();
+        Object.entries(analysis?.allocation || {}).forEach(([name, value]) => {
+          const node = document.createElement('article');
+          node.className = 'undx-allocation-item';
+          node.append(Object.assign(document.createElement('strong'), {textContent: `${value}%`}), Object.assign(document.createElement('span'), {textContent: name}));
+          undxPortfolioAllocation.appendChild(node);
+        });
+      }
+      if(undxPortfolioInitiatives){
+        undxPortfolioInitiatives.replaceChildren();
+        (analysis?.initiatives || []).forEach(item => {
+          const node = document.createElement('article');
+          node.className = 'undx-initiative-item';
+          node.append(Object.assign(document.createElement('strong'), {textContent: item.name}), Object.assign(document.createElement('span'), {textContent: `Priority: ${item.priority}`}), Object.assign(document.createElement('span'), {textContent: `Value: ${item.value}`}), Object.assign(document.createElement('span'), {textContent: `Risk: ${item.risk}`}), Object.assign(document.createElement('span'), {textContent: `Readiness: ${item.readiness}`}));
+          undxPortfolioInitiatives.appendChild(node);
+        });
+      }
+      if(undxPortfolioRoadmap){
+        undxPortfolioRoadmap.replaceChildren();
+        Object.entries(analysis?.roadmap || {}).forEach(([name, items]) => {
+          const card = document.createElement('article');
+          card.className = 'undx-roadmap-item';
+          card.append(Object.assign(document.createElement('strong'), {textContent: name}), Object.assign(document.createElement('span'), {textContent: (items || []).join(' · ')}));
+          undxPortfolioRoadmap.appendChild(card);
+        });
+      }
+      undxRenderPortfolioProjects();
+      undxRenderPortfolioDashboard(analysis);
+    }
+    function undxGeneratePortfolioAnalysisFlow(){
+      const analysis = undxBuildPortfolioAnalysis();
+      undxSavePortfolioAnalyses([analysis, ...undxLoadPortfolioAnalyses()]);
+      undxRenderPortfolioAnalysis(analysis);
+      undxRenderPortfolioRegistry();
+      if(undxPortfolioMessage) undxPortfolioMessage.textContent = `${analysis.analysisId} stored in Portfolio Registry.`;
+      return analysis;
+    }
+    function undxSendPortfolioToChat(analysis){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxPortfolioAnalysisText(analysis);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxPortfolioMessage) undxPortfolioMessage.textContent = `${analysis.analysisId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSavePortfolioToMemory(analysis){
+      undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Portfolio Analysis ${analysis.analysisId}`, objective:undxPortfolioAnalysisText(analysis), type:'Portfolio Analysis', source:'UNDX Multi-Project Coordination Center', createdAt:new Date().toISOString(), phase:'Phase 21', status:'Stored'});
+      if(undxPortfolioMessage) undxPortfolioMessage.textContent = `${analysis.analysisId} saved to Mission Memory.`;
+    }
+    function undxGenerateStrategicPlanFromPortfolio(analysis){
+      undxLastPortfolioAnalysis = analysis;
+      const plan = undxGenerateStrategicPlanFlow();
+      if(undxPortfolioMessage) undxPortfolioMessage.textContent = `${plan.planId} generated from ${analysis.analysisId}.`;
+    }
+    function undxDeletePortfolioAnalysis(analysisId){
+      undxSavePortfolioAnalyses(undxLoadPortfolioAnalyses().filter(item => item.analysisId !== analysisId));
+      if(undxSelectedPortfolioAnalysisId === analysisId) undxRenderPortfolioAnalysis(undxLoadPortfolioAnalyses()[0] || null);
+      undxRenderPortfolioRegistry();
+      if(undxPortfolioMessage) undxPortfolioMessage.textContent = 'Portfolio analysis deleted.';
+    }
+    function undxCreatePortfolioCard(analysis){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = analysis.analysisId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Portfolio Analysis ID: ${analysis.analysisId}`, `Portfolio Health Score: ${analysis.portfolioHealthScore}`, `Project Count: ${analysis.projectCount}`, `Priority Score: ${analysis.priorityScore}`, `Created Date: ${undxFormatMemoryTime(analysis.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Analysis', () => undxRenderPortfolioAnalysis(analysis), true),
+        undxProjectActionButton('Send To Chat', () => undxSendPortfolioToChat(analysis)),
+        undxProjectActionButton('Save To Mission Memory', () => undxSavePortfolioToMemory(analysis)),
+        undxProjectActionButton('Generate Strategic Plan', () => undxGenerateStrategicPlanFromPortfolio(analysis)),
+        undxProjectActionButton('Delete Analysis', () => undxDeletePortfolioAnalysis(analysis.analysisId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderPortfolioRegistry(){
+      const analyses = undxLoadPortfolioAnalyses();
+      if(undxPortfolioRegistryEmpty) undxPortfolioRegistryEmpty.hidden = analyses.length > 0;
+      if(!undxPortfolioRegistryList) return;
+      undxPortfolioRegistryList.replaceChildren();
+      analyses.forEach(analysis => undxPortfolioRegistryList.appendChild(undxCreatePortfolioCard(analysis)));
+      undxRenderPortfolioDashboard(analyses[0] || null);
+    }
+    async function undxRunPortfolioReviewFlow(){
+      let analysis = undxLastPortfolioAnalysis || (undxSelectedPortfolioAnalysisId ? undxLoadPortfolioAnalyses().find(item => item.analysisId === undxSelectedPortfolioAnalysisId) : null);
+      if(!analysis) analysis = undxGeneratePortfolioAnalysisFlow();
+      if(!analysis) return;
+      if(undxPortfolioMessage) undxPortfolioMessage.textContent = 'Routing portfolio review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission: undxPortfolioAnalysisText(analysis)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        analysis = undxNormalizePortfolioAnalysis({...analysis, review:{
+          architectureReview: agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Review: sequence dependencies before execution.',
+          researchReview: agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: fill missing context for blocked projects.',
+          buildReview: agents.find(agent => agent.key === 'builder')?.recommendation || 'Build Review: prioritize ready high-value initiatives.',
+          optimizationReview: agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: reduce resource conflicts.',
+          rapidReview: agents.find(agent => agent.key === 'rapid')?.recommendation || 'Rapid Review: prepare the next coordination checkpoint.',
+          combinedPortfolioRecommendation: 'Advance the ready, high-value project first while resolving approval and context blockers.'
+        }});
+        undxSavePortfolioAnalyses([analysis, ...undxLoadPortfolioAnalyses().filter(item => item.analysisId !== analysis.analysisId)]);
+        undxRenderPortfolioAnalysis(analysis);
+        undxRenderPortfolioRegistry();
+        if(undxPortfolioReviewOutput) undxPortfolioReviewOutput.replaceChildren(undxBlock('Architecture Review', analysis.review.architectureReview), undxBlock('Research Review', analysis.review.researchReview), undxBlock('Build Review', analysis.review.buildReview), undxBlock('Optimization Review', analysis.review.optimizationReview), undxBlock('Rapid Review', analysis.review.rapidReview), undxBlock('Combined Portfolio Recommendation', analysis.review.combinedPortfolioRecommendation));
+        if(undxPortfolioMessage) undxPortfolioMessage.textContent = 'Multi-brain portfolio review complete.';
+      }catch(error){
+        if(undxPortfolioReviewOutput) undxPortfolioReviewOutput.replaceChildren(undxBlock('Architecture Review', 'OpenAI fallback recommended: map dependencies first.'), undxBlock('Research Review', 'OpenAI fallback recommended: identify missing context.'), undxBlock('Build Review', 'OpenAI fallback recommended: build ready initiatives first.'), undxBlock('Optimization Review', 'OpenAI fallback recommended: reduce conflicts.'), undxBlock('Rapid Review', 'OpenAI fallback recommended: checkpoint the next decision.'), undxBlock('Combined Portfolio Recommendation', 'Fallback → OpenAI. Keep portfolio coordination read-only and approval-aware.'));
+        if(undxPortfolioMessage) undxPortfolioMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
     function undxNormalizeRepositoryPlan(plan){
@@ -28229,6 +28837,8 @@ def pulse_premium_undx_page():
     undxGenerateStrategicPlan?.addEventListener('click', undxGenerateStrategicPlanFlow);
     undxGenerateStrategicRoadmap?.addEventListener('click', undxGenerateStrategicPlanFlow);
     undxRunStrategicReview?.addEventListener('click', undxRunStrategicReviewFlow);
+    undxGeneratePortfolioAnalysis?.addEventListener('click', undxGeneratePortfolioAnalysisFlow);
+    undxRunPortfolioReview?.addEventListener('click', undxRunPortfolioReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -28252,6 +28862,8 @@ def pulse_premium_undx_page():
     undxRenderKnowledgeGraph(undxLoadKnowledgeGraphs()[0] || null);
     undxRenderStrategicRegistry();
     undxRenderStrategicPlan(undxLoadStrategicPlans()[0] || null);
+    undxRenderPortfolioRegistry();
+    undxRenderPortfolioAnalysis(undxLoadPortfolioAnalyses()[0] || null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
