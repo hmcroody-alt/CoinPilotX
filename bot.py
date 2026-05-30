@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status,.undx-human-execution-framework .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span,.undx-human-execution-framework .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2,.undx-human-execution-framework .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status,.undx-human-execution-framework .undx-memory-status,.undx-language-mastery .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span,.undx-human-execution-framework .undx-memory-status span,.undx-language-mastery .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2,.undx-human-execution-framework .undx-section-heading h2,.undx-language-mastery .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -24534,6 +24534,193 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-language-mastery' id='undx-language-mastery-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Language Mastery: Online</span>
+            <h2>UNDX Language Mastery Engine</h2>
+          </div>
+          <p>Master language ecosystems, versions, toolchains, best practices, performance, and security patterns.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX language mastery status'>
+              <span aria-label='Language Mastery: Online'>Language Mastery: <strong>Online</strong></span>
+              <span aria-label='Version Intelligence: Online'>Version Intelligence: <strong>Online</strong></span>
+              <span aria-label='Toolchain Intelligence: Online'>Toolchain Intelligence: <strong>Online</strong></span>
+              <span aria-label='Best Practices Engine: Online'>Best Practices Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 31'>Phase: <strong>31</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Mastery Library</span>
+              <h3>Language Mastery Library</h3>
+              <p>Python · JavaScript · TypeScript · Go · Rust · Java · C · C++ · C# · PHP · Ruby · Swift · Kotlin · SQL · Solidity · Bash · PowerShell · HTML · CSS · Dart · Lua · R · Scala · Elixir · Haskell · Assembly</p>
+              <p>Each profile includes Language family, Common use cases, Syntax style, Runtime model, Type system, Package managers, Common frameworks, Testing tools, Security concerns, Performance characteristics, Best practices, and Common pitfalls.</p>
+              <div class='undx-system-impact-grid' id='undxMasteryLanguageGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Version Intelligence</span>
+              <h3>Version Intelligence</h3>
+              <p>Current major version awareness · Compatibility notes · Migration concerns · Deprecated patterns · Future evolution notes</p>
+              <p>General guidance only. UNDX avoids stale version claims unless marked as conceptual.</p>
+              <div class='undx-chain-list' id='undxVersionIntelligenceList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework Ecosystem Map</span>
+              <h3>Framework Ecosystem Map</h3>
+              <p>Python: Flask, Django, FastAPI · JavaScript/TypeScript: React, Next.js, Vue, Angular, Express · Go: Gin, Fiber, Echo · Rust: Actix, Axum, Rocket · Java: Spring, Jakarta EE · PHP: Laravel, Symfony · Ruby: Rails, Sinatra · C#: ASP.NET · Swift: SwiftUI, UIKit · Kotlin: Android, Ktor · Solidity: Hardhat, Foundry</p>
+              <div class='undx-system-impact-grid' id='undxFrameworkEcosystemGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Toolchain Intelligence</span>
+              <h3>Toolchain Intelligence</h3>
+              <p>Package managers · Build tools · Linters · Formatters · Test runners · Dependency managers</p>
+              <p>Python: pip, poetry, pytest, ruff, black · JavaScript: npm, yarn, pnpm, vitest, eslint, prettier · Rust: cargo, clippy, rustfmt · Go: go test, gofmt</p>
+              <div class='undx-system-impact-grid' id='undxToolchainIntelligenceGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Best Practices Engine</span>
+              <h3>Best Practices Engine</h3>
+              <p>Python: virtual environments, type hints, pytest, secrets via env vars · JavaScript: strict linting, dependency audits, input validation · Rust: ownership safety, error handling, cargo tests · SQL: parameterized queries, migrations, indexing</p>
+              <div class='undx-chain-list' id='undxBestPracticesList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Security Pattern Library</span>
+              <h3>Security Pattern Library</h3>
+              <p>Injection · Insecure deserialization · Weak authentication · Unsafe secrets handling · Dependency vulnerabilities · XSS · CSRF · Path traversal · Command injection · Unsafe eval · Crypto misuse</p>
+              <div class='undx-risk-grid' id='undxLanguageSecurityPatternGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Performance Intelligence</span>
+              <h3>Performance Intelligence</h3>
+              <p>execution speed · memory management · concurrency model · scaling model · runtime overhead · deployment complexity</p>
+              <div class='undx-system-impact-grid' id='undxPerformanceIntelligenceGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Recommendation Engine</span>
+              <h3>Recommend Language Stack</h3>
+              <p>Output: Recommended Language · Recommended Framework · Recommended Toolchain · Reasoning · Tradeoffs · Risk Notes</p>
+              <div class='undx-project-fields'>
+                <label class='undx-project-field'><span>Project Type</span><input id='undxLanguageProjectType' type='text' placeholder='Crypto security feature'></label>
+                <label class='undx-project-field'><span>Performance Need</span><select id='undxLanguagePerformanceNeed'><option>Balanced</option><option>High</option><option>Low</option></select></label>
+                <label class='undx-project-field'><span>Security Need</span><select id='undxLanguageSecurityNeed'><option>High</option><option>Balanced</option><option>Low</option></select></label>
+                <label class='undx-project-field'><span>Team Familiarity</span><input id='undxLanguageTeamFamiliarity' type='text' placeholder='Python, TypeScript'></label>
+                <label class='undx-project-field'><span>Deployment Target</span><input id='undxLanguageDeploymentTarget' type='text' placeholder='Railway web app'></label>
+              </div>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxRecommendLanguageStack'>Recommend Language Stack</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Mastery Analyzer</span>
+              <h3>Analyze Language Mastery</h3>
+              <p>Language Mastery Report covers ecosystem, syntax style, toolchain, testing, security, performance, best practices, and migration concerns.</p>
+              <label class='undx-project-field'><span>Language Name</span><input id='undxMasteryLanguageInput' type='text' placeholder='Python'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxAnalyzeLanguageMastery'>Analyze Language Mastery</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework Mastery Analyzer</span>
+              <h3>Analyze Framework Mastery</h3>
+              <p>Framework Mastery Report covers language, use cases, strengths, weaknesses, scaling considerations, testing approach, security notes, and common pitfalls.</p>
+              <label class='undx-project-field'><span>Framework Name</span><input id='undxMasteryFrameworkInput' type='text' placeholder='React'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxAnalyzeFrameworkMastery'>Analyze Framework Mastery</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Evolution Tracker</span>
+              <h3>Language Evolution Tracker</h3>
+              <p>Stable · Growing · Emerging · Legacy · Specialized</p>
+              <div class='undx-system-impact-grid' id='undxLanguageEvolutionGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Mastery Report</span>
+              <h3>Language Mastery Report</h3>
+              <div class='undx-evolution-empty' id='undxLanguageMasteryEmpty'>Analyze a language, analyze a framework, or recommend a stack to generate Language Mastery intelligence.</div>
+              <div class='undx-simulation-output' id='undxLanguageMasteryOutput' aria-live='polite'></div>
+              <p class='undx-project-message' id='undxLanguageMasteryMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Decision Record</span>
+              <h3>Language Decision Record</h3>
+              <p>Format: <strong>LDR-UNDX-0001</strong></p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxCreateLanguageDecisionRecord'>Create Language Decision Record</button></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Decision Registry</span>
+              <h3>Language Decision Registry</h3>
+              <p>Storage: <strong>undxLanguageDecisionRecords</strong></p>
+              <div class='undx-memory-empty' id='undxLanguageDecisionEmpty'>No language decision records stored yet. Recommend a stack, then create an LDR.</div>
+              <div class='undx-simulation-registry' id='undxLanguageDecisionRegistry' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Mastery Dashboard</span>
+              <h3>Language Mastery Dashboard</h3>
+              <p>Languages Profiled: <strong id='undxMasteryLanguagesProfiled'>0</strong></p>
+              <p>Frameworks Profiled: <strong id='undxMasteryFrameworksProfiled'>0</strong></p>
+              <p>Toolchains Mapped: <strong id='undxMasteryToolchainsMapped'>0</strong></p>
+              <p>Security Patterns Tracked: <strong id='undxMasterySecurityPatternsTracked'>0</strong></p>
+              <p>Decision Records Created: <strong id='undxLanguageDecisionRecordsCreated'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Integration</span>
+              <h3>Universal Code Intelligence</h3>
+              <p>Language Mastery Links: <strong id='undxLanguageMasteryLinks'>0</strong></p>
+              <p>Framework Mastery Links: <strong id='undxFrameworkMasteryLinks'>0</strong></p>
+              <p>Recommended Toolchains: <strong id='undxRecommendedToolchains'>Python · TypeScript</strong></p>
+              <p>Security Patterns: <strong id='undxMasterySecurityPatternLinks'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Packages</h3>
+              <p>Recommended Language Stack: <strong id='undxTaskRecommendedLanguageStack'>Python · Flask · TypeScript</strong></p>
+              <p>Testing Toolchain: <strong id='undxTaskTestingToolchain'>pytest · vitest</strong></p>
+              <p>Security Requirements: <strong id='undxTaskSecurityRequirements'>Input validation · secrets via env vars</strong></p>
+              <p>Performance Considerations: <strong id='undxTaskPerformanceConsiderations'>Cache hot paths · monitor DB queries</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Strategic Integration</span>
+              <h3>Strategic Plans</h3>
+              <p>Technology Fit: <strong id='undxStrategicTechnologyFit'>Strong</strong></p>
+              <p>Long-Term Maintainability: <strong id='undxStrategicMaintainability'>High</strong></p>
+              <p>Ecosystem Risk: <strong id='undxStrategicEcosystemRisk'>Medium</strong></p>
+              <p>Migration Pressure: <strong id='undxStrategicMigrationPressure'>Low</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Language Stack Recommendation: <strong id='undxProjectLanguageStackRecommendation'>Pending</strong></p>
+              <p>Framework Recommendation: <strong id='undxProjectFrameworkRecommendation'>Pending</strong></p>
+              <p>Toolchain Recommendation: <strong id='undxProjectToolchainRecommendation'>Pending</strong></p>
+              <p>Language Decision Records: <strong id='undxProjectLanguageDecisionRecords'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Language Review</span>
+              <h3>Multi-Brain Language Review</h3>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxRunLanguageReview'>Run Multi-Brain Language Review</button></div>
+              <div id='undxLanguageReviewOutput'><p>Architecture Fit Review, Research Review, Implementation Review, Optimization Review, Risk Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this language mastery intelligence using internal language profiles, framework maps, SDK knowledge, code intelligence records, strategic plans, and project metadata only.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 31<br><strong>Language Mastery Engine</strong></span>
+                <span>Phase 32<br><strong>Testing Intelligence Engine</strong></span>
+                <span>Phase 33<br><strong>Multi-Agent Engineering System</strong></span>
+                <span>Phase 34<br><strong>Repository Intelligence Engine</strong></span>
+                <span>Phase 35<br><strong>Context-Aware Coding Engine</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -25261,6 +25448,53 @@ def pulse_premium_undx_page():
     const undxRecommendedFrameworks = document.getElementById('undxRecommendedFrameworks');
     const undxRecommendedSdks = document.getElementById('undxRecommendedSdks');
     const undxRecommendedTechnologyStack = document.getElementById('undxRecommendedTechnologyStack');
+    const undxMasteryLanguageGrid = document.getElementById('undxMasteryLanguageGrid');
+    const undxVersionIntelligenceList = document.getElementById('undxVersionIntelligenceList');
+    const undxFrameworkEcosystemGrid = document.getElementById('undxFrameworkEcosystemGrid');
+    const undxToolchainIntelligenceGrid = document.getElementById('undxToolchainIntelligenceGrid');
+    const undxBestPracticesList = document.getElementById('undxBestPracticesList');
+    const undxLanguageSecurityPatternGrid = document.getElementById('undxLanguageSecurityPatternGrid');
+    const undxPerformanceIntelligenceGrid = document.getElementById('undxPerformanceIntelligenceGrid');
+    const undxLanguageProjectType = document.getElementById('undxLanguageProjectType');
+    const undxLanguagePerformanceNeed = document.getElementById('undxLanguagePerformanceNeed');
+    const undxLanguageSecurityNeed = document.getElementById('undxLanguageSecurityNeed');
+    const undxLanguageTeamFamiliarity = document.getElementById('undxLanguageTeamFamiliarity');
+    const undxLanguageDeploymentTarget = document.getElementById('undxLanguageDeploymentTarget');
+    const undxRecommendLanguageStack = document.getElementById('undxRecommendLanguageStack');
+    const undxMasteryLanguageInput = document.getElementById('undxMasteryLanguageInput');
+    const undxAnalyzeLanguageMastery = document.getElementById('undxAnalyzeLanguageMastery');
+    const undxMasteryFrameworkInput = document.getElementById('undxMasteryFrameworkInput');
+    const undxAnalyzeFrameworkMastery = document.getElementById('undxAnalyzeFrameworkMastery');
+    const undxLanguageEvolutionGrid = document.getElementById('undxLanguageEvolutionGrid');
+    const undxLanguageMasteryEmpty = document.getElementById('undxLanguageMasteryEmpty');
+    const undxLanguageMasteryOutput = document.getElementById('undxLanguageMasteryOutput');
+    const undxLanguageMasteryMessage = document.getElementById('undxLanguageMasteryMessage');
+    const undxCreateLanguageDecisionRecord = document.getElementById('undxCreateLanguageDecisionRecord');
+    const undxLanguageDecisionEmpty = document.getElementById('undxLanguageDecisionEmpty');
+    const undxLanguageDecisionRegistry = document.getElementById('undxLanguageDecisionRegistry');
+    const undxMasteryLanguagesProfiled = document.getElementById('undxMasteryLanguagesProfiled');
+    const undxMasteryFrameworksProfiled = document.getElementById('undxMasteryFrameworksProfiled');
+    const undxMasteryToolchainsMapped = document.getElementById('undxMasteryToolchainsMapped');
+    const undxMasterySecurityPatternsTracked = document.getElementById('undxMasterySecurityPatternsTracked');
+    const undxLanguageDecisionRecordsCreated = document.getElementById('undxLanguageDecisionRecordsCreated');
+    const undxLanguageMasteryLinks = document.getElementById('undxLanguageMasteryLinks');
+    const undxFrameworkMasteryLinks = document.getElementById('undxFrameworkMasteryLinks');
+    const undxRecommendedToolchains = document.getElementById('undxRecommendedToolchains');
+    const undxMasterySecurityPatternLinks = document.getElementById('undxMasterySecurityPatternLinks');
+    const undxTaskRecommendedLanguageStack = document.getElementById('undxTaskRecommendedLanguageStack');
+    const undxTaskTestingToolchain = document.getElementById('undxTaskTestingToolchain');
+    const undxTaskSecurityRequirements = document.getElementById('undxTaskSecurityRequirements');
+    const undxTaskPerformanceConsiderations = document.getElementById('undxTaskPerformanceConsiderations');
+    const undxStrategicTechnologyFit = document.getElementById('undxStrategicTechnologyFit');
+    const undxStrategicMaintainability = document.getElementById('undxStrategicMaintainability');
+    const undxStrategicEcosystemRisk = document.getElementById('undxStrategicEcosystemRisk');
+    const undxStrategicMigrationPressure = document.getElementById('undxStrategicMigrationPressure');
+    const undxProjectLanguageStackRecommendation = document.getElementById('undxProjectLanguageStackRecommendation');
+    const undxProjectFrameworkRecommendation = document.getElementById('undxProjectFrameworkRecommendation');
+    const undxProjectToolchainRecommendation = document.getElementById('undxProjectToolchainRecommendation');
+    const undxProjectLanguageDecisionRecords = document.getElementById('undxProjectLanguageDecisionRecords');
+    const undxRunLanguageReview = document.getElementById('undxRunLanguageReview');
+    const undxLanguageReviewOutput = document.getElementById('undxLanguageReviewOutput');
     const undxMemoryEntityTypes = document.getElementById('undxMemoryEntityTypes');
     const undxGenerateMemoryGraph = document.getElementById('undxGenerateMemoryGraph');
     const undxRunMemoryReview = document.getElementById('undxRunMemoryReview');
@@ -25553,6 +25787,7 @@ def pulse_premium_undx_page():
     const undxPortfolioAnalysesKey = 'undxPortfolioAnalyses';
     const undxBuildSimulationsKey = 'undxBuildSimulations';
     const undxLanguageProfilesKey = 'undxLanguageProfiles';
+    const undxLanguageDecisionRecordsKey = 'undxLanguageDecisionRecords';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -25808,6 +26043,7 @@ def pulse_premium_undx_page():
       const linkedStructureModels = Array.isArray(project.linkedStructureModels) ? project.linkedStructureModels.filter(item => item && item.modelId).slice(0,24).map(undxNormalizeStructureModel) : [];
       const linkedChangeProposals = Array.isArray(project.linkedChangeProposals) ? project.linkedChangeProposals.filter(item => item && item.proposalId).slice(0,24).map(undxNormalizeChangeProposal) : [];
       const linkedExecutionRequests = Array.isArray(project.linkedExecutionRequests) ? project.linkedExecutionRequests.filter(item => item && item.requestId).slice(0,24).map(undxNormalizeExecutionRequest) : [];
+      const linkedLanguageDecisionRecords = Array.isArray(project.linkedLanguageDecisionRecords) ? project.linkedLanguageDecisionRecords.filter(item => item && item.recordId).slice(0,24).map(undxNormalizeLanguageDecisionRecord) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -25826,6 +26062,7 @@ def pulse_premium_undx_page():
         linkedStructureModels,
         linkedChangeProposals,
         linkedExecutionRequests,
+        linkedLanguageDecisionRecords,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -30019,6 +30256,367 @@ def pulse_premium_undx_page():
         if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    const undxLanguageMasteryProfiles = [
+      ['Python','High-level scripting','Web apps, automation, data, AI, APIs','Indentation-first, expressive','Interpreter / VM','Gradual / dynamic','pip, poetry','Flask, Django, FastAPI','pytest, unittest','dependency risk, unsafe deserialization, injection','Balanced speed, strong ecosystem','Use virtual environments, type hints, pytest, env secrets','Global state, dependency drift, blocking I/O'],
+      ['JavaScript','Web scripting','Frontend apps, APIs, tooling','Prototype-based, flexible','Browser and Node runtimes','Dynamic','npm, yarn, pnpm','React, Vue, Angular, Express','vitest, jest','XSS, dependency vulnerabilities, unsafe eval','Fast enough for UI and APIs; event-loop limits','Strict linting, dependency audits, input validation','Callback complexity, package sprawl'],
+      ['TypeScript','Typed JavaScript','Large frontend apps, APIs, SDKs','JavaScript with static types','Transpiled to JavaScript','Structural static typing','npm, yarn, pnpm','React, Next.js, Vue, Angular, Express','vitest, jest','type bypasses, dependency vulnerabilities, XSS','Strong developer velocity with JS runtime tradeoffs','Strict mode, schema validation, typed APIs','Over-complex generics, false confidence at runtime'],
+      ['Go','Compiled systems','APIs, CLIs, workers, infrastructure','Simple C-like syntax','Native binary','Static','go modules','Gin, Fiber, Echo','go test','race conditions, auth mistakes, injection','Fast startup, good concurrency','gofmt, small interfaces, context cancellation','Over-shared state, ignored errors'],
+      ['Rust','Systems language','Security-critical services, CLIs, embedded, performance','Expression-oriented, ownership-based','Native binary','Static with ownership','cargo','Actix, Axum, Rocket','cargo test','unsafe blocks, supply chain risk','Excellent speed and memory safety','explicit errors, cargo tests, minimize unsafe','steep learning curve, compile-time friction'],
+      ['Java','Enterprise JVM','Enterprise APIs, Android legacy, distributed systems','Class-based OOP','JVM','Static','Maven, Gradle','Spring, Jakarta EE','JUnit','deserialization, dependency drift, injection','Strong throughput, JVM tuning needed','dependency hygiene, structured layers, tests','verbose code, config complexity'],
+      ['C','Systems language','OS, embedded, native libraries','Procedural, low-level','Native binary','Static','make, cmake','POSIX, embedded SDKs','CTest, custom','memory corruption, buffer overflow','Very fast, manual memory','bounds checks, sanitizers, minimal unsafe surfaces','manual memory errors'],
+      ['C++','Systems / application','Games, performance apps, native systems','Multi-paradigm, template-heavy','Native binary','Static','cmake, vcpkg, conan','Qt, Boost','GoogleTest, Catch2','memory safety, undefined behavior','Very fast, complex optimization','RAII, sanitizers, modern standards','template complexity, lifetime bugs'],
+      ['C#','.NET language','Enterprise apps, games, desktop, APIs','Modern OOP / functional mix','.NET CLR','Static','NuGet','ASP.NET','xUnit, NUnit','injection, auth, dependency risk','Strong runtime performance','nullable refs, dependency scans, layered services','framework coupling'],
+      ['PHP','Web scripting','CMS, server-rendered web, APIs','C-like scripting','PHP runtime','Dynamic','Composer','Laravel, Symfony','PHPUnit','injection, auth, unsafe uploads','Good web throughput with tuning','parameterized queries, framework guards','legacy patterns'],
+      ['Ruby','Dynamic scripting','Web apps, automation, developer tooling','Expressive object model','Ruby VM','Dynamic','Bundler, RubyGems','Rails, Sinatra','RSpec, Minitest','mass assignment, injection, dependency risk','Developer-friendly, runtime overhead','conventions, tests, dependency hygiene','magic-heavy code'],
+      ['Swift','Apple ecosystem','iOS, macOS apps','Modern typed syntax','Native / Apple runtime','Static','Swift Package Manager','SwiftUI, UIKit','XCTest','client-side secrets, unsafe networking','Fast native apps','secure storage, clear architecture','platform coupling'],
+      ['Kotlin','JVM / Android','Android, backend APIs','Concise JVM syntax','JVM / native targets','Static','Gradle','Android, Ktor','JUnit, Kotest','mobile secrets, injection','Strong JVM performance','null safety, coroutines discipline','Android lifecycle complexity'],
+      ['SQL','Query language','Data modeling, analytics, transactions','Declarative relational','Database engine','Schema typed','database-native tools','PostgreSQL, MySQL, SQLite','migration tests','injection, privilege misuse','Data-local performance depends on indexes','parameterized queries, migrations, indexing','N+1 queries, unbounded scans'],
+      ['Solidity','Smart contract','EVM contracts, tokens, protocols','Contract-oriented','EVM','Static','npm, foundry','Hardhat, Foundry','forge test, hardhat test','reentrancy, oracle risk, access control','Gas-sensitive execution','audits, invariants, minimal trust','irreversible bugs'],
+      ['Bash','Shell scripting','Automation, glue scripts, CI tasks','Command pipeline syntax','Shell interpreter','Dynamic strings','system packages','GNU tools','bats','command injection, unsafe expansion','Fast startup, poor structure at scale','quote variables, shellcheck, fail fast','word splitting, hidden failures'],
+      ['PowerShell','Shell scripting','Windows automation, cloud scripts','Object pipeline syntax','PowerShell runtime','Dynamic / .NET objects','PowerShellGet','Azure modules','Pester','command injection, credential exposure','Good admin automation','secure credentials, strict mode','platform assumptions'],
+      ['HTML','Markup','Documents, app structure, semantics','Tag-based markup','Browser parser','Document schema','npm tooling','Web Components','browser tests','XSS sinks, unsafe forms','Depends on DOM complexity','semantic markup, accessibility','div sprawl'],
+      ['CSS','Styling language','Layouts, themes, responsive UI','Selector and rule based','Browser engine','Cascade model','npm tooling','Tailwind, Sass','visual tests','style injection, clickjacking related UI risk','Rendering performance depends on selectors/layout','responsive constraints, design tokens','specificity wars'],
+      ['Dart','App language','Flutter apps, cross-platform UI','Class-based, typed','Dart VM / native compile','Static','pub','Flutter','flutter test','client secrets, insecure storage','Good mobile UI performance','state discipline, secure storage','large widget trees'],
+      ['Lua','Embedded scripting','Games, plugins, embedded systems','Small dynamic syntax','Lua VM','Dynamic','LuaRocks','OpenResty, game engines','busted','sandbox escapes, injection','Tiny runtime, fast embedding','sandboxing, small modules','global variables'],
+      ['R','Statistical language','Analytics, research, visualization','Vectorized scripting','R runtime','Dynamic','CRAN, renv','Shiny, tidyverse','testthat','unsafe data loading, package risk','Great analytics, not general backend speed','renv, reproducible notebooks','stateful notebooks'],
+      ['Scala','JVM functional/OOP','Data platforms, backend systems','Functional / OOP hybrid','JVM','Static','sbt','Akka, Play','ScalaTest','dependency risk, concurrency bugs','High throughput, compile complexity','typed domain models, careful concurrency','implicit complexity'],
+      ['Elixir','BEAM language','Realtime systems, fault-tolerant apps','Functional, actor-oriented','BEAM VM','Dynamic','mix','Phoenix','ExUnit','auth, injection, process misuse','Excellent concurrency and resilience','supervision trees, tests','OTP learning curve'],
+      ['Haskell','Functional language','Compilers, research, correctness-heavy systems','Pure functional','Native / GHC runtime','Static / strong','cabal, stack','Servant, Yesod','Hspec, QuickCheck','dependency risk, integration bugs','Optimizable, abstraction-heavy','types, property tests','steep learning curve'],
+      ['Assembly','Low-level language','Firmware, reverse engineering, kernels','Instruction-level','CPU native','Untyped','assembler toolchains','platform SDKs','emulators, hardware tests','memory corruption, exploit risk','Maximum control, highest complexity','minimal scope, review every instruction','non-portability, brittle code']
+    ].map(([name, family, useCases, syntaxStyle, runtimeModel, typeSystem, packageManagers, frameworks, testingTools, securityConcerns, performanceCharacteristics, bestPractices, commonPitfalls]) => ({name, family, useCases, syntaxStyle, runtimeModel, typeSystem, packageManagers, frameworks, testingTools, securityConcerns, performanceCharacteristics, bestPractices, commonPitfalls, versionNotes:'Conceptual current-major awareness; verify exact versions before execution.', migrationConcerns:'Watch deprecated APIs, runtime support windows, dependency changes, and build tooling shifts.', evolutionNotes:'Track ecosystem maturity, package health, security guidance, and long-term maintainability.'}));
+    const undxFrameworkMasteryProfiles = [
+      ['Flask','Python','Lightweight web apps and APIs','Simple, flexible, easy to reason about','Requires explicit architecture as apps grow','Scale with blueprints, caching, workers, and DB discipline','pytest and Flask test client','CSRF, auth, input validation, secret handling','Global state and route sprawl'],
+      ['Django','Python','Full-stack web apps','Batteries included, ORM, admin, security defaults','Heavier structure and migrations','Scale with app boundaries, caching, async care','Django TestCase, pytest-django','permissions, ORM injection boundaries, admin hardening','Fat models and tightly coupled apps'],
+      ['FastAPI','Python','Typed APIs and async services','OpenAPI, validation, async support','Async complexity and dependency design','Scale with typed schemas and worker separation','pytest, httpx','schema validation, auth, dependency security','blocking calls in async paths'],
+      ['React','JavaScript/TypeScript','Interactive UI','Component ecosystem and flexibility','State and dependency complexity','Scale with routing, design system, data boundaries','vitest, React Testing Library','XSS sinks, unsafe HTML, auth state','over-rendering and prop drilling'],
+      ['Next.js','JavaScript/TypeScript','Full-stack React apps','Routing, SSR, deployment patterns','Framework churn and server/client boundary complexity','Scale with clear server/client separation','vitest, Playwright','server actions, auth, data leaks','hydration surprises'],
+      ['Vue','JavaScript/TypeScript','Progressive UI','Approachable reactivity','Ecosystem choices vary','Scale with composition API and stores','vitest, Vue Test Utils','XSS, dependency risk','implicit state coupling'],
+      ['Angular','TypeScript','Enterprise UI','Opinionated structure','Heavier learning curve','Scale with modules, services, typed boundaries','Karma, Jest, Cypress','XSS, auth guards','overbuilt modules'],
+      ['Express','JavaScript/TypeScript','Node APIs','Minimal, flexible middleware','Security left to app design','Scale with route modules and validation','jest, supertest','middleware order, injection, auth','callback and middleware sprawl'],
+      ['Gin','Go','Fast Go APIs','Simple routing and middleware','Less full-stack structure','Scale with packages and context patterns','go test','auth, injection, validation','ignored errors'],
+      ['Fiber','Go','High-performance Go APIs','Express-like ergonomics','Different net/http assumptions','Scale with careful middleware','go test','input validation, auth','framework-specific coupling'],
+      ['Echo','Go','Go APIs','Balanced router and middleware','Requires architecture discipline','Scale with clear packages','go test','auth, injection','route sprawl'],
+      ['Actix','Rust','High-performance Rust web','Powerful actor/web model','Complexity','Scale with strong types','cargo test','unsafe and auth mistakes','lifetime complexity'],
+      ['Axum','Rust','Typed Rust web services','Tower ecosystem, type safety','Compile complexity','Scale with typed extractors','cargo test','auth, validation','generic complexity'],
+      ['Rocket','Rust','Rust web apps','Ergonomic routing','Ecosystem tradeoffs','Scale with modular services','cargo test','auth, validation','macro complexity'],
+      ['Spring','Java','Enterprise services','Mature ecosystem','Configuration complexity','Scale with layered services','JUnit','deserialization, auth','overconfiguration'],
+      ['Jakarta EE','Java','Enterprise standards','Standardized APIs','Ceremony','Scale with containers','JUnit','auth, injection','legacy patterns'],
+      ['Laravel','PHP','Product web apps','Fast full-stack development','Magic and coupling risk','Scale with queues and service layers','PHPUnit','mass assignment, auth','fat controllers'],
+      ['Symfony','PHP','Structured PHP apps','Components, architecture discipline','More setup','Scale with explicit services','PHPUnit','auth, injection','configuration burden'],
+      ['Rails','Ruby','Full-stack web apps','Convention speed','Magic and monolith drift','Scale with service boundaries and jobs','RSpec','mass assignment, auth','callback complexity'],
+      ['Sinatra','Ruby','Small web services','Minimal','Needs structure at scale','Scale by extracting services','RSpec','input validation','route sprawl'],
+      ['ASP.NET','C#','Enterprise APIs and web apps','Strong .NET tooling','Framework conventions','Scale with DI and hosted services','xUnit, NUnit','auth, injection','over-layering'],
+      ['SwiftUI','Swift','Apple UI','Declarative UI','Platform-specific behaviors','Scale with state architecture','XCTest','client secrets','state bugs'],
+      ['UIKit','Swift','Apple UI','Mature imperative UI','Boilerplate','Scale with coordinators','XCTest','client secrets','controller bloat'],
+      ['Android','Kotlin','Android apps','Native platform reach','Lifecycle complexity','Scale with architecture components','JUnit, Espresso','client secrets','activity lifecycle bugs'],
+      ['Ktor','Kotlin','Kotlin services','Lightweight async services','Less batteries included','Scale with coroutines discipline','Kotest','auth, injection','coroutine misuse'],
+      ['Hardhat','Solidity','Smart contract dev','JS ecosystem integration','Node dependency risk','Scale with scripted tests','hardhat test','private keys, reentrancy','script mistakes'],
+      ['Foundry','Solidity','Smart contract dev','Fast Solidity-native tests','Learning curve','Scale with invariant tests','forge test','private keys, reentrancy','unchecked assumptions']
+    ].map(([name, language, useCases, strengths, weaknesses, scaling, testing, security, pitfalls]) => ({name, language, useCases, strengths, weaknesses, scaling, testing, security, pitfalls}));
+    const undxLanguageSecurityPatterns = ['injection','insecure deserialization','weak authentication','unsafe secrets handling','dependency vulnerabilities','XSS','CSRF','path traversal','command injection','unsafe eval','crypto misuse'];
+    let undxLastLanguageMasteryReport = null;
+    function undxFindMasteryLanguage(name){
+      const lower = String(name || '').trim().toLowerCase();
+      return undxLanguageMasteryProfiles.find(item => item.name.toLowerCase() === lower) || undxLanguageMasteryProfiles.find(item => item.name.toLowerCase().includes(lower) || lower.includes(item.name.toLowerCase())) || undxLanguageMasteryProfiles[0];
+    }
+    function undxFindMasteryFramework(name){
+      const lower = String(name || '').trim().toLowerCase();
+      return undxFrameworkMasteryProfiles.find(item => item.name.toLowerCase() === lower) || undxFrameworkMasteryProfiles.find(item => item.name.toLowerCase().includes(lower) || lower.includes(item.name.toLowerCase())) || undxFrameworkMasteryProfiles[0];
+    }
+    function undxRenderLanguageMasteryStaticPanels(){
+      const fillGrid = (container, entries) => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([name, value]) => {
+          const item = document.createElement('article');
+          item.className = 'undx-system-impact';
+          item.append(Object.assign(document.createElement('strong'), {textContent:value}), Object.assign(document.createElement('span'), {textContent:name}));
+          container.appendChild(item);
+        });
+      };
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.forEach(text => {
+          const item = document.createElement('div');
+          item.className = 'undx-chain-item';
+          item.textContent = text;
+          container.appendChild(item);
+        });
+      };
+      fillGrid(undxMasteryLanguageGrid, undxLanguageMasteryProfiles.slice(0,12).map(item => [item.name, item.family]));
+      fillList(undxVersionIntelligenceList, ['current major version awareness: conceptual', 'compatibility notes: verify exact runtime before execution', 'migration concerns: deprecated APIs and dependency shifts', 'deprecated patterns: avoid legacy auth, eval, unsafe secrets', 'future evolution notes: track ecosystem stability and maintainability']);
+      fillGrid(undxFrameworkEcosystemGrid, [['Python','Flask · Django · FastAPI'], ['JavaScript/TypeScript','React · Next.js · Vue · Angular · Express'], ['Go','Gin · Fiber · Echo'], ['Rust','Actix · Axum · Rocket'], ['Java','Spring · Jakarta EE'], ['Solidity','Hardhat · Foundry']]);
+      fillGrid(undxToolchainIntelligenceGrid, [['Python','pip · poetry · pytest · ruff · black'], ['JavaScript','npm · yarn · pnpm · vitest · eslint · prettier'], ['Rust','cargo · clippy · rustfmt'], ['Go','go test · gofmt'], ['Solidity','hardhat · foundry · forge test']]);
+      fillList(undxBestPracticesList, ['Python: virtual environments, type hints, pytest, secrets via env vars', 'JavaScript: strict linting, dependency audits, input validation', 'Rust: ownership safety, error handling, cargo tests', 'SQL: parameterized queries, migrations, indexing']);
+      fillGrid(undxLanguageSecurityPatternGrid, undxLanguageSecurityPatterns.map(pattern => [pattern, 'Tracked']));
+      fillGrid(undxPerformanceIntelligenceGrid, [['Execution speed','Language and runtime dependent'], ['Memory management','Manual, GC, ownership, or runtime-managed'], ['Concurrency model','Threads, async, actors, processes, or event loop'], ['Scaling model','Workers, services, queues, or native concurrency'], ['Runtime overhead','Interpreter, VM, browser, native, or database engine'], ['Deployment complexity','Toolchain and target dependent']]);
+      fillGrid(undxLanguageEvolutionGrid, [['Stable','Python · Java · C# · SQL'], ['Growing','TypeScript · Go · Rust · Kotlin'], ['Emerging','Framework-specific ecosystems'], ['Legacy','C · PHP patterns need modernization'], ['Specialized','Solidity · Assembly · Haskell']]);
+    }
+    function undxLanguageStackRecommendation(){
+      const projectType = String(undxLanguageProjectType?.value || 'Crypto security feature');
+      const lower = projectType.toLowerCase();
+      const securityNeed = undxLanguageSecurityNeed?.value || 'High';
+      const performanceNeed = undxLanguagePerformanceNeed?.value || 'Balanced';
+      const team = String(undxLanguageTeamFamiliarity?.value || 'Python, TypeScript');
+      let language = 'Python';
+      let framework = 'Flask';
+      let toolchain = 'pip · pytest · ruff · black';
+      if(/frontend|ui|dashboard|interface/.test(lower)){ language = 'TypeScript'; framework = 'React'; toolchain = 'npm · vitest · eslint · prettier'; }
+      if(/contract|token|wallet|chain|solidity/.test(lower)){ language = 'Solidity'; framework = 'Foundry'; toolchain = 'forge test · slither-style review · invariant tests'; }
+      if(performanceNeed === 'High' && !/ui|frontend/.test(lower)){ language = 'Go'; framework = 'Gin'; toolchain = 'go test · gofmt · staticcheck'; }
+      if(securityNeed === 'High' && /systems|memory|native/.test(lower)){ language = 'Rust'; framework = 'Axum'; toolchain = 'cargo · clippy · rustfmt · cargo test'; }
+      return {
+        reportType:'Language Stack Recommendation',
+        decisionTitle:`Language stack for ${projectType}`,
+        recommendedLanguage: language,
+        recommendedFramework: framework,
+        recommendedToolchain: toolchain,
+        reasoning:`Recommended ${language} with ${framework} because project type is "${projectType}", team familiarity is "${team}", security need is ${securityNeed}, and performance need is ${performanceNeed}.`,
+        tradeoffs:'Tradeoffs: balance ecosystem maturity, deployment complexity, team familiarity, runtime performance, and future maintenance.',
+        riskNotes:'Risk Notes: verify exact versions before execution, audit dependencies, validate inputs, and keep secrets in environment variables.',
+        createdAt:new Date().toISOString()
+      };
+    }
+    function undxBuildLanguageMasteryReport(name){
+      const language = undxFindMasteryLanguage(name);
+      return {
+        reportType:'Language Mastery Report',
+        decisionTitle:`Mastery report for ${language.name}`,
+        recommendedLanguage: language.name,
+        recommendedFramework: language.frameworks.split(',')[0].trim(),
+        recommendedToolchain: language.packageManagers,
+        ecosystem:`${language.name} ecosystem: ${language.useCases}`,
+        syntaxStyle: language.syntaxStyle,
+        toolchain: `${language.packageManagers}; testing: ${language.testingTools}`,
+        testing: language.testingTools,
+        security: language.securityConcerns,
+        performance: language.performanceCharacteristics,
+        bestPractices: language.bestPractices,
+        migrationConcerns: `${language.versionNotes} ${language.migrationConcerns}`,
+        reason:`${language.name} fits ${language.useCases} with ${language.typeSystem} typing and ${language.runtimeModel}.`,
+        tradeoffs: language.commonPitfalls,
+        riskNotes: language.securityConcerns,
+        createdAt:new Date().toISOString()
+      };
+    }
+    function undxBuildFrameworkMasteryReport(name){
+      const framework = undxFindMasteryFramework(name);
+      return {
+        reportType:'Framework Mastery Report',
+        decisionTitle:`Mastery report for ${framework.name}`,
+        recommendedLanguage: framework.language,
+        recommendedFramework: framework.name,
+        recommendedToolchain: framework.testing,
+        language: framework.language,
+        useCases: framework.useCases,
+        strengths: framework.strengths,
+        weaknesses: framework.weaknesses,
+        scalingConsiderations: framework.scaling,
+        testingApproach: framework.testing,
+        securityNotes: framework.security,
+        commonPitfalls: framework.pitfalls,
+        reason:`${framework.name} is useful for ${framework.useCases}.`,
+        tradeoffs: framework.weaknesses,
+        riskNotes: framework.security,
+        createdAt:new Date().toISOString()
+      };
+    }
+    function undxRenderLanguageMasteryReport(report){
+      undxLastLanguageMasteryReport = report;
+      if(undxLanguageMasteryEmpty) undxLanguageMasteryEmpty.hidden = Boolean(report);
+      if(undxLanguageMasteryOutput){
+        undxLanguageMasteryOutput.replaceChildren();
+        if(report){
+          Object.entries(report).filter(([key]) => !['createdAt'].includes(key)).forEach(([key, value]) => {
+            const title = key.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase());
+            undxLanguageMasteryOutput.appendChild(undxBlock(title, value));
+          });
+        }
+      }
+      undxRenderLanguageMasteryDashboard();
+    }
+    function undxNormalizeLanguageDecisionRecord(record){
+      return {
+        recordId: String(record.recordId || `LDR-UNDX-${Date.now()}`).slice(0,44),
+        decisionTitle: String(record.decisionTitle || 'Language Decision Record').slice(0,180),
+        recommendedLanguage: String(record.recommendedLanguage || 'Python').slice(0,80),
+        recommendedFramework: String(record.recommendedFramework || 'Flask').slice(0,100),
+        recommendedToolchain: String(record.recommendedToolchain || 'pytest · ruff').slice(0,240),
+        reason: String(record.reason || record.reasoning || 'Recommended for CoinPilotXAI planning.').slice(0,1000),
+        tradeoffs: String(record.tradeoffs || 'Balance speed, safety, team familiarity, and maintainability.').slice(0,1000),
+        riskNotes: String(record.riskNotes || 'Audit dependencies and protect secrets.').slice(0,1000),
+        createdAt: record.createdAt || new Date().toISOString()
+      };
+    }
+    function undxLoadLanguageDecisionRecords(){
+      try{
+        const raw = localStorage.getItem(undxLanguageDecisionRecordsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.recordId).slice(0,64).map(undxNormalizeLanguageDecisionRecord) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveLanguageDecisionRecords(records){
+      try{
+        localStorage.setItem(undxLanguageDecisionRecordsKey, JSON.stringify(records.slice(0,64)));
+      }catch(error){
+        if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = 'Language Decision Registry could not be updated.';
+      }
+    }
+    function undxNextLanguageDecisionRecordId(records){
+      const max = records.reduce((highest, record) => {
+        const match = String(record.recordId || '').match(/^LDR-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `LDR-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxLanguageDecisionText(record){
+      return [`Language Decision Record: ${record.recordId}`, `Decision Title: ${record.decisionTitle}`, `Recommended Language: ${record.recommendedLanguage}`, `Recommended Framework: ${record.recommendedFramework}`, `Recommended Toolchain: ${record.recommendedToolchain}`, `Reason: ${record.reason}`, `Tradeoffs: ${record.tradeoffs}`, `Risk Notes: ${record.riskNotes}`, 'Safety Boundary: read-only language mastery. No files, commands, Git operations, repositories, or deployments.'].join('\\n');
+    }
+    function undxCreateLanguageDecisionRecordFlow(){
+      const report = undxLastLanguageMasteryReport || undxLanguageStackRecommendation();
+      const record = undxNormalizeLanguageDecisionRecord({...report, recordId:undxNextLanguageDecisionRecordId(undxLoadLanguageDecisionRecords())});
+      undxSaveLanguageDecisionRecords([record, ...undxLoadLanguageDecisionRecords()]);
+      undxRenderLanguageDecisionRegistry();
+      undxRenderLanguageMasteryReport(report);
+      if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${record.recordId} stored in Language Decision Registry.`;
+      return record;
+    }
+    function undxAttachLanguageDecisionToProject(record){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = 'Open or create a project before attaching a Language Decision Record.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, languageStackRecommendation:record.recommendedLanguage, frameworkRecommendation:record.recommendedFramework, toolchainRecommendation:record.recommendedToolchain, linkedLanguageDecisionRecords:[record, ...(project.linkedLanguageDecisionRecords || []).filter(item => item.recordId !== record.recordId)].slice(0,12)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      undxRenderLanguageMasteryDashboard();
+      if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${record.recordId} attached to ${projectId}.`;
+    }
+    function undxCreateLanguageDecisionCard(record){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = record.recordId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Recommended Language: ${record.recommendedLanguage}`, `Recommended Framework: ${record.recommendedFramework}`, `Created Date: ${undxFormatMemoryTime(record.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Record', () => undxRenderLanguageMasteryReport({...record, reportType:'Language Decision Record'}), true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxLanguageDecisionText(record);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Language Decision ${record.recordId}`, objective:undxLanguageDecisionText(record), type:'Language Decision Record', source:'UNDX Language Mastery Engine', createdAt:new Date().toISOString(), phase:'Phase 31', status:'Stored'});
+          if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${record.recordId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Attach To Project', () => undxAttachLanguageDecisionToProject(record)),
+        undxProjectActionButton('Delete Record', () => {
+          undxSaveLanguageDecisionRecords(undxLoadLanguageDecisionRecords().filter(item => item.recordId !== record.recordId));
+          undxRenderLanguageDecisionRegistry();
+          if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = 'Language Decision Record deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderLanguageDecisionRegistry(){
+      const records = undxLoadLanguageDecisionRecords();
+      if(undxLanguageDecisionEmpty) undxLanguageDecisionEmpty.hidden = records.length > 0;
+      if(undxLanguageDecisionRegistry){
+        undxLanguageDecisionRegistry.replaceChildren();
+        records.forEach(record => undxLanguageDecisionRegistry.appendChild(undxCreateLanguageDecisionCard(record)));
+      }
+      undxRenderLanguageMasteryDashboard();
+    }
+    function undxRenderLanguageMasteryDashboard(){
+      const records = undxLoadLanguageDecisionRecords();
+      const profiles = undxLoadLanguageProfiles();
+      const frameworks = new Set(undxFrameworkMasteryProfiles.map(item => item.name));
+      const selectedProject = undxCurrentProject() || {};
+      const latest = records[0];
+      if(undxMasteryLanguagesProfiled) undxMasteryLanguagesProfiled.textContent = String(undxLanguageMasteryProfiles.length);
+      if(undxMasteryFrameworksProfiled) undxMasteryFrameworksProfiled.textContent = String(undxFrameworkMasteryProfiles.length);
+      if(undxMasteryToolchainsMapped) undxMasteryToolchainsMapped.textContent = String(undxLanguageMasteryProfiles.length);
+      if(undxMasterySecurityPatternsTracked) undxMasterySecurityPatternsTracked.textContent = String(undxLanguageSecurityPatterns.length);
+      if(undxLanguageDecisionRecordsCreated) undxLanguageDecisionRecordsCreated.textContent = String(records.length);
+      if(undxLanguageMasteryLinks) undxLanguageMasteryLinks.textContent = String(profiles.filter(item => item.profileType === 'Language').length + records.length);
+      if(undxFrameworkMasteryLinks) undxFrameworkMasteryLinks.textContent = String(profiles.filter(item => frameworks.has(item.languageName)).length + records.length);
+      if(undxRecommendedToolchains) undxRecommendedToolchains.textContent = latest?.recommendedToolchain || 'Python · TypeScript · pytest · vitest';
+      if(undxMasterySecurityPatternLinks) undxMasterySecurityPatternLinks.textContent = String(undxLanguageSecurityPatterns.length);
+      if(undxTaskRecommendedLanguageStack) undxTaskRecommendedLanguageStack.textContent = latest ? `${latest.recommendedLanguage} · ${latest.recommendedFramework}` : 'Python · Flask · TypeScript';
+      if(undxTaskTestingToolchain) undxTaskTestingToolchain.textContent = latest?.recommendedToolchain || 'pytest · vitest';
+      if(undxTaskSecurityRequirements) undxTaskSecurityRequirements.textContent = 'Input validation · secrets via env vars · dependency audits';
+      if(undxTaskPerformanceConsiderations) undxTaskPerformanceConsiderations.textContent = 'Profile hot paths · cache carefully · monitor database queries';
+      if(undxStrategicTechnologyFit) undxStrategicTechnologyFit.textContent = latest ? 'Strong' : 'Pending';
+      if(undxStrategicMaintainability) undxStrategicMaintainability.textContent = latest ? 'High' : 'Pending';
+      if(undxStrategicEcosystemRisk) undxStrategicEcosystemRisk.textContent = latest?.riskNotes?.includes('dependency') ? 'Medium' : 'Low';
+      if(undxStrategicMigrationPressure) undxStrategicMigrationPressure.textContent = 'Low';
+      if(undxProjectLanguageStackRecommendation) undxProjectLanguageStackRecommendation.textContent = selectedProject.languageStackRecommendation || latest?.recommendedLanguage || 'Pending';
+      if(undxProjectFrameworkRecommendation) undxProjectFrameworkRecommendation.textContent = selectedProject.frameworkRecommendation || latest?.recommendedFramework || 'Pending';
+      if(undxProjectToolchainRecommendation) undxProjectToolchainRecommendation.textContent = selectedProject.toolchainRecommendation || latest?.recommendedToolchain || 'Pending';
+      if(undxProjectLanguageDecisionRecords) undxProjectLanguageDecisionRecords.textContent = String((selectedProject.linkedLanguageDecisionRecords || []).length || records.length);
+    }
+    function undxRecommendLanguageStackFlow(){
+      const report = undxLanguageStackRecommendation();
+      undxRenderLanguageMasteryReport(report);
+      if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = 'Language stack recommendation generated.';
+      return report;
+    }
+    function undxAnalyzeLanguageMasteryFlow(){
+      const report = undxBuildLanguageMasteryReport(undxMasteryLanguageInput?.value || 'Python');
+      undxRenderLanguageMasteryReport(report);
+      if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${report.recommendedLanguage} Language Mastery Report generated.`;
+      return report;
+    }
+    function undxAnalyzeFrameworkMasteryFlow(){
+      const report = undxBuildFrameworkMasteryReport(undxMasteryFrameworkInput?.value || 'React');
+      undxRenderLanguageMasteryReport(report);
+      if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${report.recommendedFramework} Framework Mastery Report generated.`;
+      return report;
+    }
+    async function undxRunLanguageReviewFlow(){
+      const report = undxLastLanguageMasteryReport || undxRecommendLanguageStackFlow();
+      if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = 'Routing language mastery review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review language mastery decision. ${JSON.stringify(report).slice(0,1200)} No files may be accessed and no commands may run.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxLanguageReviewOutput) undxLanguageReviewOutput.replaceChildren(
+          undxBlock('Architecture Fit Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Fit Review: keep stack consistent with CoinPilotXAI boundaries.'),
+          undxBlock('Research Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: validate ecosystem and migration pressure.'),
+          undxBlock('Implementation Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Implementation Review: convert recommendations into planning tasks only.'),
+          undxBlock('Optimization Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: optimize for maintainability before speed.'),
+          undxBlock('Risk Review', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Risk Review: audit dependencies and secrets handling.'),
+          undxBlock('Combined Recommendation', 'Use Language Mastery as read-only planning intelligence before future testing and engineering phases.')
+        );
+        if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = 'Multi-brain language review complete.';
+      }catch(error){
+        if(undxLanguageReviewOutput) undxLanguageReviewOutput.replaceChildren(
+          undxBlock('Architecture Fit Review', 'OpenAI fallback: choose the smallest stack that fits the project.'),
+          undxBlock('Research Review', 'OpenAI fallback: verify exact versions before future execution.'),
+          undxBlock('Implementation Review', 'OpenAI fallback: keep recommendations planning-only.'),
+          undxBlock('Optimization Review', 'OpenAI fallback: reduce toolchain complexity.'),
+          undxBlock('Risk Review', 'OpenAI fallback: protect secrets and audit dependencies.'),
+          undxBlock('Combined Recommendation', 'Fallback → OpenAI. No repository files, commands, Git operations, or deployments were accessed.')
+        );
+        if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -32253,6 +32851,7 @@ def pulse_premium_undx_page():
       ['undx-multi-project-coordination','Portfolio Coordination'],
       ['undx-build-simulation','Build Simulation'],
       ['undx-universal-code-intelligence','Universal Code Intelligence'],
+      ['undx-language-mastery-engine','Language Mastery'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -33425,6 +34024,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedLanguageDecisionRecords(project, card){
+      const section = undxWorkspaceSection('Language Decision Records');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedLanguageDecisionRecords || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Language Decision Records linked yet. Attach a Phase 31 LDR to preserve stack rationale.'));
+      }else{
+        project.linkedLanguageDecisionRecords.forEach(record => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${record.recordId} · ${record.decisionTitle}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Language Stack Recommendation: ${record.recommendedLanguage} · Framework Recommendation: ${record.recommendedFramework} · Toolchain Recommendation: ${record.recommendedToolchain}`;
+          const reason = document.createElement('p');
+          reason.textContent = record.reason;
+          item.append(title, meta, reason);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -33492,7 +34114,10 @@ def pulse_premium_undx_page():
         undxBlock('Read-Only Access Status', project.readOnlyAccessStatus || 'Not Connected'),
         undxBlock('Project Summary', enhancement.summary || 'Project summary pending.'),
         undxBlock('Recommended Modules', undxModulePills(enhancement.modules || undxSuggestedModules(project.objective))),
-        undxBlock('Enhancement Source', enhancement.source || 'Pending')
+        undxBlock('Enhancement Source', enhancement.source || 'Pending'),
+        undxBlock('Language Stack Recommendation', project.languageStackRecommendation || 'Pending'),
+        undxBlock('Framework Recommendation', project.frameworkRecommendation || 'Pending'),
+        undxBlock('Toolchain Recommendation', project.toolchainRecommendation || 'Pending')
       );
       const actions = document.createElement('div');
       actions.className = 'undx-project-actions';
@@ -33513,6 +34138,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedStructureModels(project, card);
       undxRenderLinkedChangeProposals(project, card);
       undxRenderLinkedExecutionRequests(project, card);
+      undxRenderLinkedLanguageDecisionRecords(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -34162,6 +34788,11 @@ def pulse_premium_undx_page():
     undxGenerateTranslationPlan?.addEventListener('click', undxGenerateTranslationPlanFlow);
     undxProfileUnknownSyntax?.addEventListener('click', undxProfileUnknownSyntaxFlow);
     undxRunCodeReview?.addEventListener('click', undxRunCodeReviewFlow);
+    undxRecommendLanguageStack?.addEventListener('click', undxRecommendLanguageStackFlow);
+    undxAnalyzeLanguageMastery?.addEventListener('click', undxAnalyzeLanguageMasteryFlow);
+    undxAnalyzeFrameworkMastery?.addEventListener('click', undxAnalyzeFrameworkMasteryFlow);
+    undxCreateLanguageDecisionRecord?.addEventListener('click', undxCreateLanguageDecisionRecordFlow);
+    undxRunLanguageReview?.addEventListener('click', undxRunLanguageReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -34216,6 +34847,9 @@ def pulse_premium_undx_page():
     undxRenderCodePatternEngines();
     undxRenderCodeRegistry();
     undxRenderCodeProfile(undxLoadLanguageProfiles()[0] || null);
+    undxRenderLanguageMasteryStaticPanels();
+    undxRenderLanguageDecisionRegistry();
+    undxRenderLanguageMasteryDashboard();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
