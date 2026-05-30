@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22267,6 +22267,171 @@ def pulse_premium_undx_page():
               <p>No commands were executed.</p>
               <p>No deployments were performed.</p>
               <p>No credentials were read.</p>
+            </article>
+          </aside>
+        </div>
+      </section>
+      <section class='undx-section-panel undx-repository-awareness' id='undx-controlled-repository-awareness'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Awareness: Active</span>
+            <h2>UNDX Controlled Repository Awareness</h2>
+          </div>
+          <p>Understand repository structure through approved manifests and metadata without direct file access.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX controlled repository awareness status'>
+              <span aria-label='Repository Awareness: Active'>Repository Awareness: <strong>Active</strong></span>
+              <span aria-label='Manifest Source: Required'>Manifest Source: <strong>Required</strong></span>
+              <span aria-label='Structure Engine: Online'>Structure Engine: <strong>Online</strong></span>
+              <span aria-label='Secret Protection: Online'>Secret Protection: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 28'>Phase: <strong>28</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Awareness Input Sources</span>
+              <h3>Generate Repository Structure Model</h3>
+              <p>Generate controlled repository awareness from manifests, repository plans, context, project workspace metadata, and user-provided repository notes only.</p>
+              <div class='undx-simulation-inputs' id='undxStructureSourceInputs'>
+                <label><input type='checkbox' value='repositoryPlans' checked>Repository Plans</label>
+                <label><input type='checkbox' value='workspaceManifests' checked>Workspace Manifests</label>
+                <label><input type='checkbox' value='previewManifests' checked>Preview Manifests</label>
+                <label><input type='checkbox' value='repositoryProfiles' checked>Repository Intelligence Profiles</label>
+                <label><input type='checkbox' value='repositoryContext' checked>Repository Context</label>
+                <label><input type='checkbox' value='projectWorkspace' checked>Project Workspace metadata</label>
+              </div>
+              <label class='undx-project-field undx-project-field-wide'>
+                <span>User-provided repository notes</span>
+                <textarea id='undxStructureUserNotes' placeholder='Describe known routes, templates, entry points, services, workers, or protected areas without pasting secrets.'></textarea>
+              </label>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateStructureModel'>Generate Repository Structure Model</button>
+                <button class='button' type='button' id='undxRunStructureReview'>Run Multi-Brain Structure Review</button>
+              </div>
+              <p class='undx-project-message' id='undxStructureMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Structure Model Output</span>
+              <h3>Repository Structure Model</h3>
+              <p>Structure Model ID format: <strong>STRUCT-UNDX-0001</strong></p>
+              <div class='undx-evolution-empty' id='undxStructureModelEmpty'>Generate a structure model to activate controlled repository awareness.</div>
+              <div class='undx-simulation-output' id='undxStructureModelOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Conceptual Folder Map</span>
+              <h3>Conceptual Folder Map</h3>
+              <p>Routes · Templates · Static Assets · Services · Workers · Scripts · Config · Tests · Database · Docs</p>
+              <p>No real file access.</p>
+              <div class='undx-system-impact-grid' id='undxStructureFolderMap'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Entry Point Detector</span>
+              <h3>Entry Point Detector</h3>
+              <p>Likely entry points are inferred from metadata and marked as Inferred.</p>
+              <div class='undx-chain-list' id='undxStructureEntryPoints'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Protected Area Detector</span>
+              <h3>Protected Area Detector</h3>
+              <div class='undx-approval-grid' id='undxStructureProtectedAreas'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Questions Engine</span>
+              <h3>Questions UNDX needs answered before future file access</h3>
+              <div class='undx-chain-list' id='undxStructureQuestions'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Controlled Awareness Registry</span>
+              <h3>Controlled Awareness Registry</h3>
+              <div class='undx-memory-empty' id='undxStructureRegistryEmpty'>No structure models stored yet. Generate a model to preserve manifest-based repository awareness.</div>
+              <div class='undx-simulation-registry' id='undxStructureRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Awareness Dashboard</span>
+              <h3>Repository Awareness Dashboard</h3>
+              <p>Total Structure Models: <strong id='undxTotalStructureModels'>0</strong></p>
+              <p>Average Awareness Score: <strong id='undxAverageAwarenessScore'>0</strong></p>
+              <p>Repositories Modeled: <strong id='undxRepositoriesModeled'>0</strong></p>
+              <p>Protected Areas Detected: <strong id='undxProtectedAreasDetected'>0</strong></p>
+              <p>Entry Points Inferred: <strong id='undxEntryPointsInferred'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Awareness Score</span>
+              <h3>Repository Awareness Score</h3>
+              <p>Range: 0-100</p>
+              <p>Levels: Low · Partial · Strong · Comprehensive</p>
+              <p>Score: <strong id='undxRepositoryAwarenessScore'>0</strong></p>
+              <p>Level: <strong id='undxRepositoryAwarenessLevel'>Low</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Structure Risk Assessment</span>
+              <h3>Structure Risk Assessment</h3>
+              <p>Unknown Area Risk · Secret Exposure Risk · Monolith Complexity Risk · Worker Coordination Risk · Deployment Risk</p>
+              <div class='undx-approval-grid' id='undxStructureRiskGrid'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Workspace Manifest Integration</span>
+              <h3>Workspace Manifests</h3>
+              <p>Structure Model Links: <strong id='undxWorkspaceManifestStructureLinks'>0</strong></p>
+              <p>Awareness Status: <strong id='undxWorkspaceManifestAwarenessStatus'>Planned</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Context Integration</span>
+              <h3>Repository Context</h3>
+              <p>Structure Model Links: <strong id='undxRepositoryContextStructureLinks'>0</strong></p>
+              <p>Entry Point Confidence: <strong id='undxEntryPointConfidence'>Inferred</strong></p>
+              <p>Protected Area Status: <strong>Protected / Not Accessible</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Repository Structure Relationships</h3>
+              <p>Repository Structure Relationships: <strong id='undxRepositoryStructureRelationships'>0</strong></p>
+              <p>Entry Point Relationships: <strong id='undxEntryPointRelationships'>0</strong></p>
+              <p>Protected Area Relationships: <strong id='undxProtectedAreaRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Repository Awareness Memory</h3>
+              <p>Repository Awareness Events: <strong id='undxRepositoryAwarenessEvents'>0</strong></p>
+              <p>Structure Decisions: <strong id='undxStructureDecisions'>0</strong></p>
+              <p>Entry Point Assumptions: <strong id='undxEntryPointAssumptions'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Structure References</h3>
+              <p>Structure Model References: <strong id='undxTaskStructureModelReferences'>0</strong></p>
+              <p>Potential File Areas: <strong id='undxTaskPotentialFileAreas'>0</strong></p>
+              <p>Protected Areas: <strong id='undxTaskProtectedAreas'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Structure Review</span>
+              <h3>Multi-Brain Structure Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxStructureReviewOutput'><p>Architecture Review, Security Review, Structure Review, Optimization Review, Readiness Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this repository awareness using approved manifests, repository plans, repository context, workspace metadata, and user-provided notes only.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <p>No credentials were read.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 28<br><strong>Controlled Repository Awareness</strong></span>
+                <span>Phase 29<br><strong>Controlled Editing Proposals</strong></span>
+                <span>Phase 30<br><strong>Human Approved Execution</strong></span>
+                <span>Phase 31<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 32<br><strong>Diff Preview Gateway</strong></span>
+                <span>Phase 33<br><strong>Approved Patch Application</strong></span>
+              </div>
             </article>
           </aside>
         </div>
@@ -24896,6 +25061,41 @@ def pulse_premium_undx_page():
     const undxTaskReferencedWorkspaces = document.getElementById('undxTaskReferencedWorkspaces');
     const undxTaskReferencedTechnologyProfiles = document.getElementById('undxTaskReferencedTechnologyProfiles');
     const undxConnectorReviewOutput = document.getElementById('undxConnectorReviewOutput');
+    const undxStructureSourceInputs = document.getElementById('undxStructureSourceInputs');
+    const undxStructureUserNotes = document.getElementById('undxStructureUserNotes');
+    const undxGenerateStructureModel = document.getElementById('undxGenerateStructureModel');
+    const undxRunStructureReview = document.getElementById('undxRunStructureReview');
+    const undxStructureMessage = document.getElementById('undxStructureMessage');
+    const undxStructureModelEmpty = document.getElementById('undxStructureModelEmpty');
+    const undxStructureModelOutput = document.getElementById('undxStructureModelOutput');
+    const undxStructureFolderMap = document.getElementById('undxStructureFolderMap');
+    const undxStructureEntryPoints = document.getElementById('undxStructureEntryPoints');
+    const undxStructureProtectedAreas = document.getElementById('undxStructureProtectedAreas');
+    const undxStructureQuestions = document.getElementById('undxStructureQuestions');
+    const undxStructureRegistryEmpty = document.getElementById('undxStructureRegistryEmpty');
+    const undxStructureRegistryList = document.getElementById('undxStructureRegistryList');
+    const undxTotalStructureModels = document.getElementById('undxTotalStructureModels');
+    const undxAverageAwarenessScore = document.getElementById('undxAverageAwarenessScore');
+    const undxRepositoriesModeled = document.getElementById('undxRepositoriesModeled');
+    const undxProtectedAreasDetected = document.getElementById('undxProtectedAreasDetected');
+    const undxEntryPointsInferred = document.getElementById('undxEntryPointsInferred');
+    const undxRepositoryAwarenessScore = document.getElementById('undxRepositoryAwarenessScore');
+    const undxRepositoryAwarenessLevel = document.getElementById('undxRepositoryAwarenessLevel');
+    const undxStructureRiskGrid = document.getElementById('undxStructureRiskGrid');
+    const undxWorkspaceManifestStructureLinks = document.getElementById('undxWorkspaceManifestStructureLinks');
+    const undxWorkspaceManifestAwarenessStatus = document.getElementById('undxWorkspaceManifestAwarenessStatus');
+    const undxRepositoryContextStructureLinks = document.getElementById('undxRepositoryContextStructureLinks');
+    const undxEntryPointConfidence = document.getElementById('undxEntryPointConfidence');
+    const undxRepositoryStructureRelationships = document.getElementById('undxRepositoryStructureRelationships');
+    const undxEntryPointRelationships = document.getElementById('undxEntryPointRelationships');
+    const undxProtectedAreaRelationships = document.getElementById('undxProtectedAreaRelationships');
+    const undxRepositoryAwarenessEvents = document.getElementById('undxRepositoryAwarenessEvents');
+    const undxStructureDecisions = document.getElementById('undxStructureDecisions');
+    const undxEntryPointAssumptions = document.getElementById('undxEntryPointAssumptions');
+    const undxTaskStructureModelReferences = document.getElementById('undxTaskStructureModelReferences');
+    const undxTaskPotentialFileAreas = document.getElementById('undxTaskPotentialFileAreas');
+    const undxTaskProtectedAreas = document.getElementById('undxTaskProtectedAreas');
+    const undxStructureReviewOutput = document.getElementById('undxStructureReviewOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -24919,6 +25119,7 @@ def pulse_premium_undx_page():
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
     const undxWorkspaceManifestsKey = 'undxWorkspaceManifests';
+    const undxRepositoryStructureModelsKey = 'undxRepositoryStructureModels';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -25163,6 +25364,7 @@ def pulse_premium_undx_page():
       const linkedChangeAnalyses = Array.isArray(project.linkedChangeAnalyses) ? project.linkedChangeAnalyses.filter(item => item && item.analysisId).slice(0,24).map(undxNormalizeChangeAnalysis) : [];
       const linkedKnowledgeGraphs = Array.isArray(project.linkedKnowledgeGraphs) ? project.linkedKnowledgeGraphs.filter(item => item && item.graphId).slice(0,24).map(undxNormalizeKnowledgeGraph) : [];
       const linkedWorkspaceManifests = Array.isArray(project.linkedWorkspaceManifests) ? project.linkedWorkspaceManifests.filter(item => item && item.manifestId).slice(0,24).map(undxNormalizeWorkspaceManifest) : [];
+      const linkedStructureModels = Array.isArray(project.linkedStructureModels) ? project.linkedStructureModels.filter(item => item && item.modelId).slice(0,24).map(undxNormalizeStructureModel) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -25178,8 +25380,10 @@ def pulse_premium_undx_page():
         linkedChangeAnalyses,
         linkedKnowledgeGraphs,
         linkedWorkspaceManifests,
+        linkedStructureModels,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
+        repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
         lastBuildDirective: project.lastBuildDirective || ''
       };
     }
@@ -26746,6 +26950,10 @@ def pulse_premium_undx_page():
         undxBlock('Workspace Type', (project.linkedWorkspaceManifests || [])[0]?.workspaceType || 'Not Connected'),
         undxBlock('Manifest Count', String((project.linkedWorkspaceManifests || []).length)),
         undxBlock('Desktop Awareness Status', project.desktopAwarenessStatus || 'Planned'),
+        undxBlock('Linked Structure Models', undxWorkspacePillList((project.linkedStructureModels || []).map(item => item.modelId), 'None linked')),
+        undxBlock('Repository Awareness Score', `${project.repositoryAwarenessScore || 0}/100`),
+        undxBlock('Known Entry Points', undxWorkspacePillList(((project.linkedStructureModels || [])[0]?.entryPoints || []), 'None inferred')),
+        undxBlock('Known Protected Areas', undxWorkspacePillList(((project.linkedStructureModels || [])[0]?.protectedAreas || []), 'Protected areas not linked yet')),
         undxBlock('Task Package Count', String((project.linkedTaskPackages || []).length)),
         undxBlock('Latest Task Package', (project.linkedTaskPackages || [])[0]?.packageId || 'None linked'),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
@@ -30576,9 +30784,331 @@ def pulse_premium_undx_page():
         if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxStructureProtectedList(){
+      return ['.env', 'secrets', 'tokens', 'credentials', 'keys', 'certificates', 'production config'];
+    }
+    function undxStructureFolderGroups(){
+      return ['Routes', 'Templates', 'Static Assets', 'Services', 'Workers', 'Scripts', 'Config', 'Tests', 'Database', 'Docs'];
+    }
+    function undxSelectedStructureSources(){
+      const boxes = undxStructureSourceInputs ? Array.from(undxStructureSourceInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['repositoryPlans','workspaceManifests','previewManifests','repositoryProfiles','repositoryContext','projectWorkspace'];
+    }
+    function undxStructureAwarenessLevel(score){
+      if(score >= 86) return 'Comprehensive';
+      if(score >= 66) return 'Strong';
+      if(score >= 36) return 'Partial';
+      return 'Low';
+    }
+    function undxNormalizeStructureModel(model){
+      return {
+        modelId: String(model.modelId || `STRUCT-UNDX-${Date.now()}`).slice(0,44),
+        repositoryName: String(model.repositoryName || 'CoinPilotXAI Repository').slice(0,140),
+        repositoryType: String(model.repositoryType || 'Flask/Python application').slice(0,120),
+        conceptualFolderMap: undxNormalizeExecutionList(model.conceptualFolderMap, undxStructureFolderGroups(), 12, 120),
+        entryPoints: undxNormalizeExecutionList(model.entryPoints, ['bot.py', 'app.py', 'main.py', 'server.js', 'index.ts', 'package.json', 'requirements.txt'], 12, 120),
+        frontendAreas: undxNormalizeExecutionList(model.frontendAreas, ['templates', 'static/js', 'static/css', 'Pulse premium surfaces'], 10, 160),
+        backendAreas: undxNormalizeExecutionList(model.backendAreas, ['Flask routes', 'API routes', 'database helpers', 'UNDX router'], 10, 160),
+        apiAreas: undxNormalizeExecutionList(model.apiAreas, ['/api/undx/chat', '/api/undx/agent-council', 'Pulse APIs'], 10, 160),
+        databaseAreas: undxNormalizeExecutionList(model.databaseAreas, ['SQLite application database', 'users', 'premium entitlement records'], 10, 160),
+        workerAreas: undxNormalizeExecutionList(model.workerAreas, ['undx_worker.py', 'coinpilotx-undx-worker'], 10, 160),
+        staticAssets: undxNormalizeExecutionList(model.staticAssets, ['static/js', 'static/css', 'static/uploads'], 10, 160),
+        templates: undxNormalizeExecutionList(model.templates, ['templates', 'premium views', 'Pulse templates'], 10, 160),
+        protectedAreas: undxNormalizeExecutionList(model.protectedAreas, undxStructureProtectedList(), 12, 120),
+        unknownAreas: undxNormalizeExecutionList(model.unknownAreas, ['Unverified file tree', 'Unopened repository folders', 'Unconfirmed route ownership'], 10, 180),
+        questions: undxNormalizeExecutionList(model.questions, ['Which file is the main entry point?', 'Where are routes defined?', 'Where are premium templates stored?', 'Where are worker files stored?', 'Where are secrets configured?'], 10, 220),
+        risks: {
+          unknownAreaRisk: String(model.risks?.unknownAreaRisk || 'Medium'),
+          secretExposureRisk: String(model.risks?.secretExposureRisk || 'High'),
+          monolithComplexityRisk: String(model.risks?.monolithComplexityRisk || 'Medium'),
+          workerCoordinationRisk: String(model.risks?.workerCoordinationRisk || 'Medium'),
+          deploymentRisk: String(model.risks?.deploymentRisk || 'Medium')
+        },
+        awarenessScore: Math.max(0, Math.min(100, Number(model.awarenessScore || 0))),
+        awarenessLevel: String(model.awarenessLevel || undxStructureAwarenessLevel(Number(model.awarenessScore || 0))).slice(0,80),
+        sourceTypes: Array.isArray(model.sourceTypes) ? model.sourceTypes.slice(0,12) : [],
+        createdAt: model.createdAt || new Date().toISOString(),
+        status: 'Controlled Awareness'
+      };
+    }
+    function undxLoadStructureModels(){
+      try{
+        const raw = localStorage.getItem(undxRepositoryStructureModelsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.modelId).slice(0,48).map(undxNormalizeStructureModel) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveStructureModels(models){
+      try{
+        localStorage.setItem(undxRepositoryStructureModelsKey, JSON.stringify(models.slice(0,48)));
+      }catch(error){
+        if(undxStructureMessage) undxStructureMessage.textContent = 'Controlled Awareness Registry could not be updated.';
+      }
+    }
+    function undxNextStructureModelId(models){
+      const max = models.reduce((highest, model) => {
+        const match = String(model.modelId || '').match(/^STRUCT-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `STRUCT-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildStructureModel(){
+      const models = undxLoadStructureModels();
+      const selected = undxSelectedStructureSources();
+      const plans = undxLoadRepositoryPlans();
+      const workspaceManifests = undxLoadWorkspaceManifests();
+      const previewManifests = undxLoadPreviewManifests();
+      const profiles = undxLoadRepositoryProfiles();
+      const context = undxLoadRepositoryContext() || undxRepositoryContextDefaults();
+      const project = undxCurrentProject() || undxLoadProjects()[0] || null;
+      const notes = (undxStructureUserNotes?.value || '').trim();
+      const sourceStrength = [
+        selected.includes('repositoryPlans') && plans.length,
+        selected.includes('workspaceManifests') && workspaceManifests.length,
+        selected.includes('previewManifests') && previewManifests.length,
+        selected.includes('repositoryProfiles') && profiles.length,
+        selected.includes('repositoryContext') && context,
+        selected.includes('projectWorkspace') && project,
+        notes
+      ].filter(Boolean).length;
+      const repositoryName = plans[0]?.name || workspaceManifests[0]?.workspaceName || previewManifests[0]?.repositoryName || profiles[0]?.name || context.applicationName || 'CoinPilotXAI Repository';
+      const repositoryType = plans[0]?.type || workspaceManifests[0]?.projectType || previewManifests[0]?.repositoryType || profiles[0]?.repositoryType || context.framework || 'Flask/Python application';
+      const entryPoints = [...new Set([context.mainEntryFile, ...(context.filesKnown || []), 'bot.py', 'app.py', 'main.py', 'server.js', 'index.ts', 'package.json', 'requirements.txt'].filter(Boolean))].slice(0,10);
+      const knownModules = (context.premiumModules || []).length + (context.knownServices || []).length + profiles.length + workspaceManifests.length;
+      const awarenessScore = Math.min(100, 18 + sourceStrength * 10 + entryPoints.length * 3 + Math.min(20, knownModules));
+      const highUnknown = sourceStrength < 3 ? 'High' : sourceStrength < 5 ? 'Medium' : 'Low';
+      return undxNormalizeStructureModel({
+        modelId: undxNextStructureModelId(models),
+        repositoryName,
+        repositoryType,
+        conceptualFolderMap: undxStructureFolderGroups(),
+        entryPoints,
+        frontendAreas: ['templates', 'static assets', 'Pulse Premium pages', 'UNDX command views'],
+        backendAreas: ['Flask route handlers', 'UNDX API routes', 'Repository context engine', 'Agent Council routing'],
+        apiAreas: context.knownRoutes || ['/api/undx/chat', '/api/undx/agent-council'],
+        databaseAreas: context.databaseTablesKnown || ['SQLite application database'],
+        workerAreas: context.workers || ['undx_worker.py'],
+        staticAssets: ['static/js', 'static/css', 'static/uploads'],
+        templates: ['templates', 'Pulse shell templates', 'premium command views'],
+        protectedAreas: undxStructureProtectedList(),
+        unknownAreas: ['Unopened directory tree', 'Unverified file ownership', 'Unconfirmed dependency graph'],
+        questions: ['Which file is the main entry point?', 'Where are routes defined?', 'Where are premium templates stored?', 'Where are worker files stored?', 'Where are secrets configured?'],
+        risks: {unknownAreaRisk: highUnknown, secretExposureRisk: 'High', monolithComplexityRisk: context.mainEntryFile === 'bot.py' ? 'High' : 'Medium', workerCoordinationRisk: (context.workers || []).length ? 'Medium' : 'Low', deploymentRisk: 'Medium'},
+        awarenessScore,
+        awarenessLevel: undxStructureAwarenessLevel(awarenessScore),
+        sourceTypes: selected,
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxStructureModelText(model){
+      return [
+        'UNDX Controlled Repository Awareness',
+        '',
+        `Structure Model ID: ${model.modelId}`,
+        `Repository Name: ${model.repositoryName}`,
+        `Repository Type: ${model.repositoryType}`,
+        `Repository Awareness Score: ${model.awarenessScore}/100 (${model.awarenessLevel})`,
+        '',
+        'Conceptual Folder Map:',
+        ...model.conceptualFolderMap.map(item => `- ${item}`),
+        '',
+        'Expected Entry Points:',
+        ...model.entryPoints.map(item => `- ${item}: Inferred`),
+        '',
+        'Protected Areas:',
+        ...model.protectedAreas.map(item => `- ${item}: Protected / Not Accessible`),
+        '',
+        'Questions Before Future File Access:',
+        ...model.questions.map(item => `- ${item}`),
+        '',
+        'Safety Boundary: No repository files were accessed. No commands were executed. No deployments were performed. No credentials were read.'
+      ].join('\\n');
+    }
+    function undxRenderStructureModel(model){
+      if(undxStructureModelEmpty) undxStructureModelEmpty.hidden = Boolean(model);
+      if(undxStructureModelOutput){
+        undxStructureModelOutput.replaceChildren();
+        if(model){
+          undxStructureModelOutput.append(
+            undxBlock('Structure Model ID', model.modelId),
+            undxBlock('Repository Name', model.repositoryName),
+            undxBlock('Repository Type', model.repositoryType),
+            undxBlock('Conceptual Folder Map', model.conceptualFolderMap),
+            undxBlock('Expected Entry Points', model.entryPoints.map(item => `${item}: Inferred`)),
+            undxBlock('Expected Frontend Areas', model.frontendAreas),
+            undxBlock('Expected Backend Areas', model.backendAreas),
+            undxBlock('Expected API Areas', model.apiAreas),
+            undxBlock('Expected Database Areas', model.databaseAreas),
+            undxBlock('Expected Worker Areas', model.workerAreas),
+            undxBlock('Expected Static Assets', model.staticAssets),
+            undxBlock('Expected Templates', model.templates),
+            undxBlock('Protected Areas', model.protectedAreas.map(item => `${item}: Protected / Not Accessible`)),
+            undxBlock('Unknown Areas', model.unknownAreas)
+          );
+        }
+      }
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        (items || []).forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      if(undxStructureFolderMap){
+        undxStructureFolderMap.replaceChildren();
+        (model?.conceptualFolderMap || undxStructureFolderGroups()).forEach(item => {
+          const node = document.createElement('article');
+          node.className = 'undx-system-impact';
+          node.append(Object.assign(document.createElement('strong'), {textContent:'Conceptual'}), Object.assign(document.createElement('span'), {textContent:item}));
+          undxStructureFolderMap.appendChild(node);
+        });
+      }
+      fillList(undxStructureEntryPoints, (model?.entryPoints || ['bot.py','app.py','main.py','server.js','index.ts','package.json','requirements.txt']).map(item => `${item}: Inferred`));
+      fillList(undxStructureQuestions, model?.questions || ['Which file is the main entry point?', 'Where are routes defined?', 'Where are premium templates stored?', 'Where are worker files stored?', 'Where are secrets configured?']);
+      const fillGrid = (container, entries) => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([name, status]) => {
+          const node = document.createElement('article');
+          node.className = 'undx-approval-item';
+          node.append(Object.assign(document.createElement('strong'), {textContent: status}), Object.assign(document.createElement('span'), {textContent: name}));
+          container.appendChild(node);
+        });
+      };
+      fillGrid(undxStructureProtectedAreas, (model?.protectedAreas || undxStructureProtectedList()).map(item => [item, 'Protected / Not Accessible']));
+      fillGrid(undxStructureRiskGrid, Object.entries(model?.risks || {unknownAreaRisk:'Medium', secretExposureRisk:'High', monolithComplexityRisk:'Medium', workerCoordinationRisk:'Medium', deploymentRisk:'Medium'}).map(([name, level]) => [name.replace(/([A-Z])/g,' $1').trim(), level]));
+      if(undxRepositoryAwarenessScore) undxRepositoryAwarenessScore.textContent = model ? `${model.awarenessScore}/100` : '0';
+      if(undxRepositoryAwarenessLevel) undxRepositoryAwarenessLevel.textContent = model?.awarenessLevel || 'Low';
+    }
+    function undxGenerateStructureModelFlow(){
+      const model = undxBuildStructureModel();
+      undxSaveStructureModels([model, ...undxLoadStructureModels()]);
+      undxRenderStructureModel(model);
+      undxRenderStructureRegistry();
+      if(undxStructureMessage) undxStructureMessage.textContent = `${model.modelId} stored in Controlled Awareness Registry.`;
+      return model;
+    }
+    function undxAttachStructureModelToProject(model){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxStructureMessage) undxStructureMessage.textContent = 'Open or create a project before attaching a structure model.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, repositoryAwarenessScore:model.awarenessScore, linkedStructureModels:[model, ...(project.linkedStructureModels || []).filter(item => item.modelId !== model.modelId)].slice(0,10)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxStructureMessage) undxStructureMessage.textContent = `${model.modelId} attached to ${projectId}.`;
+    }
+    function undxGenerateExecutionPlanFromStructureModel(model){
+      const plan = undxBuildExecutionPlanFromSource({sourceType:'Controlled Repository Awareness', objective:`Prepare a future approved implementation plan using ${model.modelId} for ${model.repositoryName}.`, requiredContext:[`Repository Awareness Score: ${model.awarenessScore}/100`, `Known Entry Points: ${model.entryPoints.join(', ')}`, `Protected Areas: ${model.protectedAreas.join(', ')}`], requiredGates:['Repository Read Access', 'File Edit Access', 'Secret Management Access']});
+      undxSaveExecutionPlans([plan, ...undxLoadExecutionPlans()]);
+      undxRenderExecutionPlans();
+      if(undxStructureMessage) undxStructureMessage.textContent = `${plan.id} generated from ${model.modelId}.`;
+    }
+    function undxCreateStructureModelCard(model){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = `${model.modelId} · ${model.repositoryName}`;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Structure Model ID: ${model.modelId}`, `Repository Name: ${model.repositoryName}`, `Awareness Score: ${model.awarenessScore}/100`, `Created Date: ${undxFormatMemoryTime(model.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Model', () => undxRenderStructureModel(model), true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxStructureModelText(model);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Structure Model ${model.modelId}`, objective:undxStructureModelText(model), type:'Controlled Repository Awareness', source:'UNDX Controlled Repository Awareness', createdAt:new Date().toISOString(), phase:'Phase 28', status:'Stored'});
+          if(undxStructureMessage) undxStructureMessage.textContent = `${model.modelId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Attach To Project', () => undxAttachStructureModelToProject(model)),
+        undxProjectActionButton('Generate Execution Plan', () => undxGenerateExecutionPlanFromStructureModel(model)),
+        undxProjectActionButton('Delete Model', () => {
+          undxSaveStructureModels(undxLoadStructureModels().filter(item => item.modelId !== model.modelId));
+          undxRenderStructureRegistry();
+          if(undxStructureMessage) undxStructureMessage.textContent = 'Structure model deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderStructureRegistry(){
+      const models = undxLoadStructureModels();
+      if(undxStructureRegistryEmpty) undxStructureRegistryEmpty.hidden = models.length > 0;
+      if(undxStructureRegistryList){
+        undxStructureRegistryList.replaceChildren();
+        models.forEach(model => undxStructureRegistryList.appendChild(undxCreateStructureModelCard(model)));
+      }
+      const avg = models.length ? Math.round(models.reduce((sum, model) => sum + model.awarenessScore, 0) / models.length) : 0;
+      if(undxTotalStructureModels) undxTotalStructureModels.textContent = String(models.length);
+      if(undxAverageAwarenessScore) undxAverageAwarenessScore.textContent = String(avg);
+      if(undxRepositoriesModeled) undxRepositoriesModeled.textContent = String(new Set(models.map(model => model.repositoryName)).size);
+      if(undxProtectedAreasDetected) undxProtectedAreasDetected.textContent = String(models.reduce((sum, model) => sum + model.protectedAreas.length, 0));
+      if(undxEntryPointsInferred) undxEntryPointsInferred.textContent = String(models.reduce((sum, model) => sum + model.entryPoints.length, 0));
+      if(undxWorkspaceManifestStructureLinks) undxWorkspaceManifestStructureLinks.textContent = String(models.length);
+      if(undxWorkspaceManifestAwarenessStatus) undxWorkspaceManifestAwarenessStatus.textContent = models.length ? 'Structure Linked' : 'Planned';
+      if(undxRepositoryContextStructureLinks) undxRepositoryContextStructureLinks.textContent = String(models.length);
+      if(undxEntryPointConfidence) undxEntryPointConfidence.textContent = models.length && avg > 65 ? 'Strong Inference' : 'Inferred';
+      if(undxRepositoryStructureRelationships) undxRepositoryStructureRelationships.textContent = String(models.length * 5);
+      if(undxEntryPointRelationships) undxEntryPointRelationships.textContent = String(models.reduce((sum, model) => sum + model.entryPoints.length, 0));
+      if(undxProtectedAreaRelationships) undxProtectedAreaRelationships.textContent = String(models.reduce((sum, model) => sum + model.protectedAreas.length, 0));
+      if(undxRepositoryAwarenessEvents) undxRepositoryAwarenessEvents.textContent = String(models.length);
+      if(undxStructureDecisions) undxStructureDecisions.textContent = String(models.length * 2);
+      if(undxEntryPointAssumptions) undxEntryPointAssumptions.textContent = String(models.reduce((sum, model) => sum + model.entryPoints.length, 0));
+      if(undxTaskStructureModelReferences) undxTaskStructureModelReferences.textContent = String(models.length);
+      if(undxTaskPotentialFileAreas) undxTaskPotentialFileAreas.textContent = String(models.reduce((sum, model) => sum + model.conceptualFolderMap.length, 0));
+      if(undxTaskProtectedAreas) undxTaskProtectedAreas.textContent = String(models.reduce((sum, model) => sum + model.protectedAreas.length, 0));
+    }
+    async function undxRunStructureReviewFlow(){
+      let model = undxLoadStructureModels()[0] || undxGenerateStructureModelFlow();
+      if(undxStructureMessage) undxStructureMessage.textContent = 'Routing structure review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review controlled repository awareness model ${model.modelId}. Awareness score ${model.awarenessScore}. Protected areas are not accessible. Execution Access Disabled.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxStructureReviewOutput) undxStructureReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Review: keep structure model manifest-based.'),
+          undxBlock('Security Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Security Review: protected areas remain inaccessible.'),
+          undxBlock('Structure Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Structure Review: entry points remain inferred until future approval.'),
+          undxBlock('Optimization Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: reduce unknown areas before file access phases.'),
+          undxBlock('Readiness Review', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Readiness Review: prepare questions before future connector access.'),
+          undxBlock('Combined Recommendation', 'Keep Phase 28 read-only and advance only with explicit future connector approvals.')
+        );
+        if(undxStructureMessage) undxStructureMessage.textContent = 'Multi-brain structure review complete.';
+      }catch(error){
+        if(undxStructureReviewOutput) undxStructureReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', 'OpenAI fallback: keep model generation manifest-based.'),
+          undxBlock('Security Review', 'OpenAI fallback: protected areas remain inaccessible.'),
+          undxBlock('Structure Review', 'OpenAI fallback: mark entry points as inferred only.'),
+          undxBlock('Optimization Review', 'OpenAI fallback: document unknown areas before future access.'),
+          undxBlock('Readiness Review', 'OpenAI fallback: require approval before repository connector phases.'),
+          undxBlock('Combined Recommendation', 'Fallback → OpenAI. No repository files, commands, deployments, Git operations, or credentials were accessed.')
+        );
+        if(undxStructureMessage) undxStructureMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-operating-system','UNDX Home'],
       ['undx-desktop-connector-architecture','Desktop Connector'],
+      ['undx-controlled-repository-awareness','Repository Awareness'],
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
       ['undx-chat-interface','Chat Interface'],
@@ -31703,6 +32233,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedStructureModels(project, card){
+      const section = undxWorkspaceSection('Linked Structure Models');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedStructureModels || []).length){
+        list.appendChild(undxWorkspaceEmpty('No controlled repository awareness models linked yet. Attach a Phase 28 model to preserve inferred entry points and protected areas.'));
+      }else{
+        project.linkedStructureModels.forEach(model => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${model.modelId} · ${model.repositoryName}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Repository Awareness Score: ${model.awarenessScore}/100 · Known Entry Points: ${(model.entryPoints || []).join(', ')} · Known Protected Areas: ${(model.protectedAreas || []).join(', ')}`;
+          const safety = document.createElement('p');
+          safety.textContent = 'Manifest-based only. No repository files were accessed.';
+          item.append(title, meta, safety);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -31788,6 +32341,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedMemoryRecords(project, card);
       undxRenderLinkedTaskPackages(project, card);
       undxRenderLinkedWorkspaceManifests(project, card);
+      undxRenderLinkedStructureModels(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -32450,6 +33004,8 @@ def pulse_premium_undx_page():
     undxWorkspaceManifestForm?.addEventListener('submit', undxGenerateWorkspaceManifestFlow);
     undxSimulateDesktopConnection?.addEventListener('click', undxSimulateDesktopConnectionFlow);
     undxRunConnectorReview?.addEventListener('click', undxRunConnectorReviewFlow);
+    undxGenerateStructureModel?.addEventListener('click', undxGenerateStructureModelFlow);
+    undxRunStructureReview?.addEventListener('click', undxRunStructureReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -32489,6 +33045,8 @@ def pulse_premium_undx_page():
     undxRenderOperatingSystem();
     undxRenderWorkspaceManifestRegistry();
     undxRenderWorkspaceManifest(undxLoadWorkspaceManifests()[0] || null);
+    undxRenderStructureRegistry();
+    undxRenderStructureModel(undxLoadStructureModels()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
