@@ -102,6 +102,9 @@ def main():
     require("UNDX Project Workspace" not in feed_html, "UNDX project workspace absent from Pulse feed")
     require("Autonomous Project Lifecycle" not in feed_html, "UNDX autonomous project lifecycle absent from Pulse feed")
     require("Run Full Planning Chain" not in feed_html, "UNDX lifecycle action absent from Pulse feed")
+    require("UNDX Unified Agent Runtime" not in feed_html, "UNDX unified agent runtime absent from Pulse feed")
+    require("Run Unified Runtime Review" not in feed_html, "UNDX runtime review action absent from Pulse feed")
+    require("Runtime Session Registry" not in feed_html, "UNDX runtime registry absent from Pulse feed")
     require("Project Tasks" not in feed_html, "UNDX project tasks absent from Pulse feed")
     require("Project Milestones" not in feed_html, "UNDX project milestones absent from Pulse feed")
     require("Project Memory" not in feed_html, "UNDX project memory absent from Pulse feed")
@@ -482,6 +485,23 @@ def main():
         "undxCreateLifecycleCodeProposal",
         "undxCreateLifecycleApprovalRequest",
         "full planning chain complete",
+        "UNDX Unified Agent Runtime",
+        "Agent Runtime Dashboard",
+        "Agent Orchestration Engine",
+        "Runtime Session Registry",
+        "Conflict Detection",
+        "Consensus Engine",
+        "Lifecycle Integration",
+        "Project Integration",
+        "Run Unified Runtime Review",
+        "Execution Access: <strong>Disabled</strong>",
+        "undxAgentRuntimeSessions",
+        "RUNTIME-UNDX-0001",
+        "Generate Sandbox Plan",
+        "Generate Code Proposal",
+        "undxRunUnifiedRuntimeReview",
+        "undxAttachRuntimeToProject",
+        "undxRenderLinkedRuntimeSessions",
         "Store Project",
         "Project Summary",
         "Suggested Milestones",
