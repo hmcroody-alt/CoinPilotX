@@ -64,7 +64,26 @@ def main():
     reply_payload = client.post(f"/api/pulse/status/{status_id}/reply", json={"body": "Reply from audit"}).get_json() or {}
     expect(reply_payload.get("ok") is True and reply_payload.get("reply", {}).get("id"), "status reply API works")
     html = client.get("/pulse").get_data(as_text=True)
-    for token in ["pulse-status-rail", "data-pulse-status-version='2.0'", "pulse-status-empty", "No Pulse Status yet", "Create the first Pulse Status", "Music Status", "Camera Status", "Live Status", "AI Story", "Following Stories", "Trending Stories", "Global Stories", "pulse-status-viewer", "data-status-card", "data-status-story-viewer", "pulseStatusForm", "pulseStatusMedia", "pulseStatusSound", "/pulse/camera?target=status"]:
+    for token in [
+        "pulse-status2",
+        "data-pulse-status-version='fresh-1'",
+        "data-status2-strip",
+        "data-status2-open",
+        "data-status2-modal",
+        "data-status2-form",
+        "Create Pulse Status",
+        "Create the first Pulse Status",
+        "data-status2-type='text'",
+        "data-status2-type='photo'",
+        "data-status2-type='video'",
+        "data-status2-type='music'",
+        "data-status2-type='camera'",
+        "data-status2-type='ai'",
+        "data-status2-type='live'",
+        "pulseStatus2Media",
+        "/api/pulse/status",
+        "/api/pulse/media/upload",
+    ]:
         expect(token in html, f"status UI contains {token}")
     print("pulse status audit ok")
 

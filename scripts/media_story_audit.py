@@ -17,13 +17,13 @@ def expect(ok: bool, label: str):
 def main():
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text(encoding="utf-8")
-    expect("Photo or Video" in source and "data-status-start='upload'" in source, "photo/video story entry exists")
-    expect("data-status-start='upload'" in source, "photo/video flow opens upload/camera picker path")
-    expect("pulseStatusMedia" in source and "multiple" in source, "media story supports multiple image/video selection")
-    expect("renderStatusPreview" in source and "data-status-preview-stage" in source, "media story has pre-publish preview")
+    expect('"photo"' in source and '"video"' in source and "data-status2-type" in source, "photo/video story entry exists")
+    expect("data-status2-pick-media" in source, "photo/video flow opens upload picker path")
+    expect("pulseStatus2Media" in source and "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" in source, "media story supports image/video selection")
+    expect("renderMediaPreview" in source and "data-status2-preview" in source, "media story has pre-publish preview")
     expect("PulseUploadManager.upload" in source, "media story publishes with upload progress")
     expect("object-fit: contain" in css, "media preview preserves aspect ratio")
-    expect(".pulse-status-effects-tray" in css and "data-status-effect='cinematic'" in source, "creative tools unlock after media selection")
+    expect(".pulse-status2-state" in css and "Video preview ready" in source and "Photo preview ready" in source, "media preview has clear success state")
     print("media story audit ok")
 
 

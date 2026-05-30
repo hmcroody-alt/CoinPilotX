@@ -116,33 +116,37 @@ def main():
 
     html = client.get("/pulse").get_data(as_text=True)
     required_tokens = [
-        "data-status-card",
-        "data-status-mode='create'",
-        "pulseStatusMedia",
+        "data-pulse-status-version='fresh-1'",
+        "data-status2-open",
+        "data-status2-modal",
+        "data-status2-form",
+        "Create Pulse Status",
+        "data-status2-type='text'",
+        "data-status2-type='photo'",
+        "data-status2-type='video'",
+        "data-status2-type='music'",
+        "data-status2-type='camera'",
+        "data-status2-type='ai'",
+        "data-status2-type='live'",
+        "pulseStatus2Media",
         "type='file'",
-        "multiple",
         "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime",
-        "data-status-editor",
-        "data-status-preview-stage",
-        "data-status-tool='stickers'",
-        "data-status-tool='text'",
-        "data-status-tool='music'",
-        "data-status-tool='filters'",
-        "data-status-tool='mention'",
-        "data-status-tool='links'",
-        "data-status-tool='choose'",
-        "pulseStatusPrivacy",
-        "data-status-effects-tray",
-        "data-status-effect='cinematic'",
-        "data-upload-progress",
+        "data-status2-preview",
+        "data-status2-body",
+        "data-status2-privacy",
+        "data-status2-duration",
+        "data-status2-cancel",
+        "data-status2-post",
+        "initPulseStatusFresh",
+        "renderMediaPreview",
+        "URL.createObjectURL",
         "PulseUploadManager.upload",
-        "openStatusGalleryCreator",
-        "Choose an image or video from your gallery.",
         "/api/pulse/status",
+        "/api/pulse/media/upload",
     ]
     for token in required_tokens:
         expect(token in html, f"Create Status UI contains {token}")
-    expect("capture" not in html[html.find("pulseStatusMedia") : html.find("pulseStatusMedia") + 260], "Create Status picker does not force camera capture")
+    expect("capture" not in html[html.find("pulseStatus2Media") : html.find("pulseStatus2Media") + 260], "Create Status picker does not force camera capture")
     expect("location.href='/pulse/status'" not in html, "Create Status publish does not redirect away from editor flow")
 
     image_media = upload_media(client, "status-audit.png", "image/png", PNG_BYTES)
@@ -158,7 +162,7 @@ def main():
     expect(int(video_status["status_id"]) in rail_ids, "video status appears in rail immediately")
 
     css = (ROOT / "static/css/pulse_status_system.css").read_text(encoding="utf-8")
-    for token in ["100dvh", ".pulse-status-tool-rail", ".pulse-status-bottom-bar", ".pulse-status-upload-progress", "object-fit: contain"]:
+    for token in ["100dvh", ".pulse-status2-type-grid", ".pulse-status2-preview", ".pulse-status2-state", "object-fit: contain"]:
         expect(token in css, f"Status preview CSS contains {token}")
     print("create status flow audit ok")
 

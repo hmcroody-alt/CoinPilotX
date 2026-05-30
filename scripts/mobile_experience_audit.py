@@ -27,19 +27,19 @@ def main():
     combined = source + "\n" + status_css + "\n" + mobile_css
     require("env(safe-area-inset-top)" in combined and "env(safe-area-inset-bottom)" in combined, "mobile safe-area rules are present")
     require("100dvh" in combined, "dynamic viewport height is used for fullscreen mobile surfaces")
-    require("pulse-status-mode-picker" in status_css and "pulse-status-bottom-bar" in status_css, "Status mobile editor has immersive controls")
-    require("pulseStatusMedia" in source and "capture" not in source[source.find("pulseStatusMedia") : source.find("pulseStatusMedia") + 320], "Create Status upload does not force camera capture")
+    require("pulse-status2-modal" in status_css and "pulse-status2-composer" in status_css, "Status mobile editor has immersive controls")
+    require("pulseStatus2Media" in source and "capture" not in source[source.find("pulseStatus2Media") : source.find("pulseStatus2Media") + 320], "Create Status upload does not force camera capture")
     require("pulse_environment_engine.js" in source and "prefers-reduced-motion" in env_js, "ambient environment engine is loaded and respects reduced motion")
     require(
         "input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source.replace(" ", ""),
         "homepage raw Choose File controls are globally hidden behind custom triggers",
     )
     require(
-        "data-status-start='upload'" in source
-        and "data-status-start='text'" in source
-        and "Camera Status" in source
-        and "data-status-start='camera'" in source
-        and "routeStatusIntent" in source,
+        '"photo"' in source
+        and '"text"' in source
+        and "Camera" in source
+        and '"camera"' in source
+        and "initPulseStatusFresh" in source,
         "Status creator and camera actions are real, separated controls",
     )
     print("mobile experience audit ok")
