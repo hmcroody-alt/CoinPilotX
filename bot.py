@@ -21813,14 +21813,28 @@ def pulse_premium_undx_page():
     .undx-entity-node strong,.undx-map-node strong{display:block;color:#dffcff}
     .undx-entity-node span,.undx-map-node span{display:block;color:rgba(223,246,255,.64);font-size:.82rem;font-weight:850}
     .undx-chain-list{display:grid;gap:8px}.undx-chain-item{border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px;background:rgba(255,255,255,.04);white-space:pre-line}
+    .undx-strategic-planning{position:relative;overflow:hidden;border-color:rgba(110,223,246,.28);background:radial-gradient(circle at 8% 12%,rgba(110,223,246,.14),transparent 24rem),radial-gradient(circle at 90% 14%,rgba(255,209,102,.12),transparent 27rem),linear-gradient(180deg,rgba(255,255,255,.084),rgba(255,255,255,.03))}
+    .undx-strategic-planning:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(110,223,246,.07),transparent 34%,rgba(255,209,102,.055));pointer-events:none}
+    .undx-strategic-planning>*{position:relative;z-index:1}
+    .undx-strategic-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;align-items:start}
+    .undx-strategic-main,.undx-strategic-sidebar,.undx-strategic-registry,.undx-strategic-output{display:grid;gap:12px}
+    .undx-strategic-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(7,24,35,.86),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-strategic-card h3,.undx-strategic-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-strategic-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-strategic-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+    .undx-strategic-inputs label{display:flex;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px;background:rgba(5,11,20,.36);font-weight:850;color:#dffcff}
+    .undx-roadmap-grid,.undx-forecast-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}
+    .undx-roadmap-item,.undx-forecast-item{border:1px solid rgba(110,223,246,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
+    .undx-roadmap-item strong,.undx-forecast-item strong{display:block;color:#dffcff}
+    .undx-loader-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22915,6 +22929,9 @@ def pulse_premium_undx_page():
               <h3>Graph Intelligence Report</h3>
               <p>Knowledge Graph ID: <strong id='undxKnowledgeGraphId'>KG-UNDX-0000</strong></p>
               <p>Context Coverage Score: <strong id='undxKnowledgeCoverageLabel'>Sparse</strong></p>
+              <p>Strategic Plans Linked: <strong id='undxKnowledgeStrategicPlans'>0</strong></p>
+              <p>Priority Relationships: <strong id='undxKnowledgePriorityRelationships'>0</strong></p>
+              <p>Roadmap Relationships: <strong id='undxKnowledgeRoadmapRelationships'>0</strong></p>
               <p>Most Active Project: <strong id='undxMostActiveProject'>Pending</strong></p>
               <p>Most Active Mission: <strong id='undxMostActiveMission'>Pending</strong></p>
               <p>Most Referenced Repository: <strong id='undxMostReferencedRepository'>Pending</strong></p>
@@ -22946,6 +22963,136 @@ def pulse_premium_undx_page():
               <h3>Future Evolution Panel</h3>
               <div class='undx-access-flow'>
                 <span>Phase 19<br><strong>Knowledge Graph Engine</strong></span>
+                <span>Phase 20<br><strong>Strategic Planning Engine</strong></span>
+                <span>Phase 21<br><strong>Multi-Project Coordination</strong></span>
+                <span>Phase 22<br><strong>Autonomous Build Simulation</strong></span>
+                <span>Phase 23<br><strong>Workspace Memory Graph Expansion</strong></span>
+                <span>Phase 24<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 25<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
+      <section class='undx-section-panel undx-strategic-planning' id='undx-strategic-planning'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Strategic Planner: Online</span>
+            <h2>UNDX Strategic Planning Center</h2>
+          </div>
+          <p>Generate priorities, roadmaps, forecasts, and strategic recommendations across all intelligence systems.</p>
+        </div>
+        <div class='undx-strategic-layout'>
+          <div class='undx-strategic-main'>
+            <div class='undx-memory-status' aria-label='UNDX strategic planning status'>
+              <span aria-label='Strategic Planner: Online'>Strategic Planner: <strong>Online</strong></span>
+              <span aria-label='Roadmap Engine: Online'>Roadmap Engine: <strong>Online</strong></span>
+              <span aria-label='Priority Engine: Online'>Priority Engine: <strong>Online</strong></span>
+              <span aria-label='Forecast Engine: Online'>Forecast Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 20'>Phase: <strong>20</strong></span>
+            </div>
+            <section class='undx-strategic-card'>
+              <span class='undx-core-label'>Strategic Inputs</span>
+              <h3>Strategic Inputs</h3>
+              <p>Select one or more intelligence layers for planning.</p>
+              <div class='undx-strategic-inputs' id='undxStrategicInputs'>
+                <label><input type='checkbox' value='knowledge' checked>Knowledge Graph</label>
+                <label><input type='checkbox' value='workspace' checked>Workspace Summary</label>
+                <label><input type='checkbox' value='repository' checked>Repository Analysis</label>
+                <label><input type='checkbox' value='change' checked>Change Analysis</label>
+                <label><input type='checkbox' value='memory' checked>Mission Memory</label>
+                <label><input type='checkbox' value='council' checked>Agent Council Review</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateStrategicPlan'>Generate Strategic Plan</button>
+                <button class='button' type='button' id='undxGenerateStrategicRoadmap'>Generate Roadmap</button>
+                <button class='button' type='button' id='undxRunStrategicReview'>Run Multi-Brain Strategic Review</button>
+              </div>
+              <p class='undx-project-message' id='undxStrategicMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-strategic-card'>
+              <span class='undx-core-label'>Strategic Plan Output</span>
+              <h3>Strategic Plan Output</h3>
+              <p>Bottleneck Detection checks Missing Context, Missing Approvals, Dependency Gaps, High-Risk Areas, Knowledge Gaps, and Planning Gaps.</p>
+              <div class='undx-evolution-empty' id='undxStrategicEmpty'>Generate a strategic plan to determine what should happen next.</div>
+              <div class='undx-strategic-output' id='undxStrategicOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-strategic-card'>
+              <span class='undx-core-label'>Roadmap Engine</span>
+              <h3>30-Day Roadmap · 60-Day Roadmap · 90-Day Roadmap</h3>
+              <p>Recommended Development Sequence is generated from dependencies, impact, risk, and strategic value.</p>
+              <div class='undx-roadmap-grid' id='undxStrategicRoadmap'></div>
+            </section>
+            <section class='undx-strategic-card'>
+              <span class='undx-core-label'>Forecast Engine</span>
+              <h3>Forecast Engine</h3>
+              <div class='undx-forecast-grid' id='undxStrategicForecast'></div>
+            </section>
+            <section class='undx-strategic-card'>
+              <span class='undx-core-label'>Strategic Registry</span>
+              <h3>Strategic Registry</h3>
+              <div class='undx-memory-empty' id='undxStrategicRegistryEmpty'>No strategic plans stored yet. Generate a plan to activate Strategic Planning.</div>
+              <div class='undx-strategic-registry' id='undxStrategicRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-strategic-sidebar'>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>Strategic Dashboard</span>
+              <h3>Strategic Dashboard</h3>
+              <p>Total Strategic Plans: <strong id='undxStrategicTotalPlans'>0</strong></p>
+              <p>Average Priority Score: <strong id='undxStrategicAveragePriority'>0</strong></p>
+              <p>Average Success Probability: <strong id='undxStrategicAverageSuccess'>0</strong></p>
+              <p>Active Strategic Initiatives: <strong id='undxStrategicActiveInitiatives'>0</strong></p>
+              <p>Strategic Readiness Score: <strong id='undxStrategicReadinessScore'>0</strong></p>
+            </article>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>Priority Engine</span>
+              <h3>Priority Engine</h3>
+              <p>Impact: <strong id='undxStrategicImpact'>0</strong></p>
+              <p>Complexity: <strong id='undxStrategicComplexity'>0</strong></p>
+              <p>Risk: <strong id='undxStrategicRisk'>0</strong></p>
+              <p>Revenue Potential: <strong id='undxStrategicRevenue'>0</strong></p>
+              <p>User Value: <strong id='undxStrategicUserValue'>0</strong></p>
+              <p>Strategic Alignment: <strong id='undxStrategicAlignment'>0</strong></p>
+              <p>Priority Score: <strong id='undxStrategicPriorityScore'>0</strong></p>
+              <p>Priority Level: <strong id='undxStrategicPriorityLevel'>Low</strong></p>
+            </article>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>Strategic Insights</span>
+              <h3>Strategic Insights</h3>
+              <p>Highest Value Project: <strong id='undxHighestValueProject'>Pending</strong></p>
+              <p>Highest Risk Project: <strong id='undxHighestRiskProject'>Pending</strong></p>
+              <p>Most Strategic Mission: <strong id='undxMostStrategicMission'>Pending</strong></p>
+              <p>Most Connected Initiative: <strong id='undxMostConnectedInitiative'>Pending</strong></p>
+              <p>Most Delayed Dependency: <strong id='undxMostDelayedDependency'>Pending</strong></p>
+            </article>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>Multi-Brain Strategic Review</span>
+              <h3>Multi-Brain Strategic Review</h3>
+              <div id='undxStrategicReviewOutput'><p>Architect Review, Research Review, Builder Review, Optimization Review, Rapid Review, and Combined Strategic Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>UNDX Scalability Status</span>
+              <h3>UNDX Module Loader</h3>
+              <div class='undx-loader-grid'>
+                <p class='undx-status-item'><span>Loaded Modules</span><strong id='undxLoadedModules'>0</strong></p>
+                <p class='undx-status-item'><span>Deferred Modules</span><strong id='undxDeferredModules'>0</strong></p>
+                <p class='undx-status-item'><span>Memory Usage Estimate</span><strong id='undxMemoryUsageEstimate'>0 KB</strong></p>
+              </div>
+              <p>Module Loader Present. Foundation only; no functionality changed.</p>
+            </article>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>Strategic Boundary</span>
+              <h3>Strategic Boundary</h3>
+              <p>UNDX generated this strategic plan using mission memory, workspace intelligence, repository context, repository analyses, change analyses, knowledge graphs, and agent council reviews only.</p>
+              <p>No repository files were accessed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Read-only intelligence only.</li></ul>
+            </article>
+            <article class='undx-strategic-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
                 <span>Phase 20<br><strong>Strategic Planning Engine</strong></span>
                 <span>Phase 21<br><strong>Multi-Project Coordination</strong></span>
                 <span>Phase 22<br><strong>Autonomous Build Simulation</strong></span>
@@ -23185,6 +23332,42 @@ def pulse_premium_undx_page():
     const undxMemoryGraphObjects = document.getElementById('undxMemoryGraphObjects');
     const undxMemoryGraphStatus = document.getElementById('undxMemoryGraphStatus');
     const undxKnowledgeReviewOutput = document.getElementById('undxKnowledgeReviewOutput');
+    const undxKnowledgeStrategicPlans = document.getElementById('undxKnowledgeStrategicPlans');
+    const undxKnowledgePriorityRelationships = document.getElementById('undxKnowledgePriorityRelationships');
+    const undxKnowledgeRoadmapRelationships = document.getElementById('undxKnowledgeRoadmapRelationships');
+    const undxStrategicInputs = document.getElementById('undxStrategicInputs');
+    const undxGenerateStrategicPlan = document.getElementById('undxGenerateStrategicPlan');
+    const undxGenerateStrategicRoadmap = document.getElementById('undxGenerateStrategicRoadmap');
+    const undxRunStrategicReview = document.getElementById('undxRunStrategicReview');
+    const undxStrategicMessage = document.getElementById('undxStrategicMessage');
+    const undxStrategicEmpty = document.getElementById('undxStrategicEmpty');
+    const undxStrategicOutput = document.getElementById('undxStrategicOutput');
+    const undxStrategicRoadmap = document.getElementById('undxStrategicRoadmap');
+    const undxStrategicForecast = document.getElementById('undxStrategicForecast');
+    const undxStrategicRegistryEmpty = document.getElementById('undxStrategicRegistryEmpty');
+    const undxStrategicRegistryList = document.getElementById('undxStrategicRegistryList');
+    const undxStrategicTotalPlans = document.getElementById('undxStrategicTotalPlans');
+    const undxStrategicAveragePriority = document.getElementById('undxStrategicAveragePriority');
+    const undxStrategicAverageSuccess = document.getElementById('undxStrategicAverageSuccess');
+    const undxStrategicActiveInitiatives = document.getElementById('undxStrategicActiveInitiatives');
+    const undxStrategicReadinessScore = document.getElementById('undxStrategicReadinessScore');
+    const undxStrategicImpact = document.getElementById('undxStrategicImpact');
+    const undxStrategicComplexity = document.getElementById('undxStrategicComplexity');
+    const undxStrategicRisk = document.getElementById('undxStrategicRisk');
+    const undxStrategicRevenue = document.getElementById('undxStrategicRevenue');
+    const undxStrategicUserValue = document.getElementById('undxStrategicUserValue');
+    const undxStrategicAlignment = document.getElementById('undxStrategicAlignment');
+    const undxStrategicPriorityScore = document.getElementById('undxStrategicPriorityScore');
+    const undxStrategicPriorityLevel = document.getElementById('undxStrategicPriorityLevel');
+    const undxHighestValueProject = document.getElementById('undxHighestValueProject');
+    const undxHighestRiskProject = document.getElementById('undxHighestRiskProject');
+    const undxMostStrategicMission = document.getElementById('undxMostStrategicMission');
+    const undxMostConnectedInitiative = document.getElementById('undxMostConnectedInitiative');
+    const undxMostDelayedDependency = document.getElementById('undxMostDelayedDependency');
+    const undxStrategicReviewOutput = document.getElementById('undxStrategicReviewOutput');
+    const undxLoadedModules = document.getElementById('undxLoadedModules');
+    const undxDeferredModules = document.getElementById('undxDeferredModules');
+    const undxMemoryUsageEstimate = document.getElementById('undxMemoryUsageEstimate');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -23200,6 +23383,7 @@ def pulse_premium_undx_page():
     const undxWorkspaceSummariesKey = 'undxWorkspaceSummaries';
     const undxChangeAnalysesKey = 'undxChangeAnalyses';
     const undxKnowledgeGraphsKey = 'undxKnowledgeGraphs';
+    const undxStrategicPlansKey = 'undxStrategicPlans';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -23215,6 +23399,8 @@ def pulse_premium_undx_page():
     let undxLastChangeAnalysis = null;
     let undxSelectedKnowledgeGraphId = null;
     let undxLastKnowledgeGraph = null;
+    let undxSelectedStrategicPlanId = null;
+    let undxLastStrategicPlan = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -25043,6 +25229,7 @@ def pulse_premium_undx_page():
       const summaries = undxLoadWorkspaceSummaries();
       const latestChange = undxLastChangeAnalysis || (project?.linkedChangeAnalyses || [])[0] || undxLoadChangeAnalyses()[0] || null;
       const latestGraph = undxLastKnowledgeGraph || (project?.linkedKnowledgeGraphs || [])[0] || undxLoadKnowledgeGraphs()[0] || null;
+      const latestStrategicPlan = undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null;
       const healthScore = undxWorkspaceHealth(project);
       const readinessLevel = undxWorkspaceReadiness(healthScore);
       const nextRecommendedAction = undxWorkspaceRecommendedNextAction(project);
@@ -25061,6 +25248,9 @@ def pulse_premium_undx_page():
       });
       if(latestGraph){
         summary.connectedAssets = [...summary.connectedAssets, `Knowledge Graph Coverage: ${latestGraph.coverageScore}/100`, `Relationship Count: ${latestGraph.relationshipCount}`, `Connected Missions: ${latestGraph.connectedMissions}`, `Connected Projects: ${latestGraph.connectedProjects}`];
+      }
+      if(latestStrategicPlan){
+        summary.connectedAssets = [...summary.connectedAssets, `Latest Strategic Plan: ${latestStrategicPlan.planId}`, `Priority Score: ${latestStrategicPlan.priority.score}`, `Success Forecast: ${latestStrategicPlan.forecast.successProbability}/100`, `Strategic Status: ${latestStrategicPlan.readinessAssessment}`];
       }
       summary.summaryText = undxWorkspaceSummaryText(summary);
       return undxNormalizeWorkspaceSummary(summary);
@@ -25093,6 +25283,10 @@ def pulse_premium_undx_page():
         `Relationship Count: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).relationshipCount ?? 'Pending'}`,
         `Connected Missions: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).connectedMissions ?? 'Pending'}`,
         `Connected Projects: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).connectedProjects ?? 'Pending'}`,
+        `Latest Strategic Plan: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).planId || 'None'}`,
+        `Priority Score: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).priority?.score ?? 'Pending'}`,
+        `Success Forecast: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).forecast?.successProbability ?? 'Pending'}`,
+        `Strategic Status: ${(undxLastStrategicPlan || undxLoadStrategicPlans()[0] || {}).readinessAssessment || 'Pending'}`,
         `Created Date: ${undxFormatMemoryTime(summary.createdAt)}`
       ].forEach(value => {
         const pill = document.createElement('span');
@@ -25139,6 +25333,7 @@ def pulse_premium_undx_page():
       undxRenderWorkspaceSummaries();
       undxRefreshChangeSources();
       undxRenderKnowledgeGraph(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || null);
+      undxRenderStrategicDashboard();
     }
     function undxSendWorkspaceSummaryToChatFlow(){
       const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
@@ -25452,6 +25647,7 @@ def pulse_premium_undx_page():
       }
       const grid = document.createElement('div');
       grid.className = 'undx-blueprint-grid';
+      const strategicPlan = undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null;
       grid.append(
         undxBlock('Change Analysis ID', analysis.analysisId),
         undxBlock('Source A', analysis.sourceA),
@@ -25463,6 +25659,9 @@ def pulse_premium_undx_page():
         undxBlock('Testing Recommendations', analysis.testingRecommendations),
         undxBlock('Rollout Considerations', analysis.rolloutConsiderations),
         undxBlock('Readiness Recommendation', analysis.readinessRecommendation),
+        undxBlock('Strategic Impact', strategicPlan ? `Aligned to ${strategicPlan.planId} with priority score ${strategicPlan.priority.score}.` : 'Generate Strategic Plan to connect impact.'),
+        undxBlock('Strategic Priority', strategicPlan?.priority?.level || 'Pending'),
+        undxBlock('Forecasted Readiness', strategicPlan ? `${strategicPlan.forecast.readinessForecast}/100` : 'Pending'),
         undxBlock('Recommended Next Action', analysis.recommendedNextAction)
       );
       const output = document.createElement('pre');
@@ -26013,6 +26212,366 @@ def pulse_premium_undx_page():
       }catch(error){
         if(undxKnowledgeReviewOutput) undxKnowledgeReviewOutput.replaceChildren(undxBlock('Relationship Gaps', ['Router unavailable; OpenAI fallback recommended.']), undxBlock('Missing Context', ['Review provider configuration before deeper graph routing.']), undxBlock('Weak Connections', graph.isolatedRecords.slice(0,4)), undxBlock('Recommended Intelligence Links', ['Use OpenAI fallback to review graph continuity.']));
         if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxPriorityLevel(score){
+      if(score >= 85) return 'Critical';
+      if(score >= 70) return 'High';
+      if(score >= 45) return 'Moderate';
+      return 'Low';
+    }
+    function undxSelectedStrategicInputTypes(){
+      const boxes = undxStrategicInputs ? Array.from(undxStrategicInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['knowledge','workspace','repository','change','memory','council'];
+    }
+    function undxStrategicSources(){
+      return {
+        knowledge: undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || null,
+        workspace: undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || null,
+        repository: undxLoadRepositoryAnalyses()[0] || null,
+        change: undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || null,
+        memory: undxLoadMemory()[0] || null,
+        council: undxLoadMemory().find(item => item.type === 'Council Output') || null
+      };
+    }
+    function undxNormalizeStrategicPlan(plan){
+      const priority = plan.priority || {};
+      const forecast = plan.forecast || {};
+      return {
+        planId: String(plan.planId || `PLAN-UNDX-${Date.now()}`).slice(0,44),
+        selectedInputs: Array.isArray(plan.selectedInputs) ? plan.selectedInputs.slice(0,12) : [],
+        executiveSummary: String(plan.executiveSummary || '').slice(0,1400),
+        strategicObjective: String(plan.strategicObjective || '').slice(0,1000),
+        recommendedPriorities: undxNormalizeExecutionList(plan.recommendedPriorities, ['Strengthen active premium intelligence modules'], 10, 220),
+        recommendedBuildOrder: undxNormalizeExecutionList(plan.recommendedBuildOrder, ['Project Registry', 'Builder Console', 'Agent Council'], 10, 180),
+        keyRisks: undxNormalizeExecutionList(plan.keyRisks, ['Missing context can reduce planning confidence'], 10, 220),
+        opportunityAnalysis: undxNormalizeExecutionList(plan.opportunityAnalysis, ['Turn stored missions into sequenced build candidates'], 10, 220),
+        readinessAssessment: String(plan.readinessAssessment || 'Planning Ready').slice(0,180),
+        recommendedNextActions: undxNormalizeExecutionList(plan.recommendedNextActions, ['Generate a workspace summary and review approval gates'], 10, 220),
+        priority: {
+          impact: Number(priority.impact || 0),
+          complexity: Number(priority.complexity || 0),
+          risk: Number(priority.risk || 0),
+          revenuePotential: Number(priority.revenuePotential || 0),
+          userValue: Number(priority.userValue || 0),
+          strategicAlignment: Number(priority.strategicAlignment || 0),
+          score: Math.max(0, Math.min(100, Number(priority.score || 0))),
+          level: String(priority.level || undxPriorityLevel(priority.score || 0)).slice(0,80)
+        },
+        roadmap: plan.roadmap || {},
+        forecast: {
+          successProbability: Math.max(0, Math.min(100, Number(forecast.successProbability || 0))),
+          riskProbability: Math.max(0, Math.min(100, Number(forecast.riskProbability || 0))),
+          complexityForecast: Math.max(0, Math.min(100, Number(forecast.complexityForecast || 0))),
+          readinessForecast: Math.max(0, Math.min(100, Number(forecast.readinessForecast || 0)))
+        },
+        bottlenecks: {
+          missingContext: undxNormalizeExecutionList(plan.bottlenecks?.missingContext, ['Repository previews remain future-phase only'], 8, 200),
+          missingApprovals: undxNormalizeExecutionList(plan.bottlenecks?.missingApprovals, ['Execution gates remain disabled'], 8, 200),
+          dependencyGaps: undxNormalizeExecutionList(plan.bottlenecks?.dependencyGaps, ['Link strategic plans to workspace summaries'], 8, 200),
+          highRiskAreas: undxNormalizeExecutionList(plan.bottlenecks?.highRiskAreas, ['Security-sensitive plans need approval protocol review'], 8, 200),
+          knowledgeGaps: undxNormalizeExecutionList(plan.bottlenecks?.knowledgeGaps, ['Knowledge graph coverage can be expanded'], 8, 200),
+          planningGaps: undxNormalizeExecutionList(plan.bottlenecks?.planningGaps, ['Roadmap needs owner and acceptance criteria'], 8, 200)
+        },
+        insights: plan.insights || {},
+        review: plan.review || null,
+        createdAt: plan.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadStrategicPlans(){
+      try{
+        const raw = localStorage.getItem(undxStrategicPlansKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.planId).slice(0,48).map(undxNormalizeStrategicPlan) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveStrategicPlans(plans){
+      try{
+        localStorage.setItem(undxStrategicPlansKey, JSON.stringify(plans.slice(0,48)));
+      }catch(error){
+        if(undxStrategicMessage) undxStrategicMessage.textContent = 'Strategic Registry could not be updated.';
+      }
+    }
+    function undxNextStrategicPlanId(plans){
+      const max = plans.reduce((highest, plan) => {
+        const match = String(plan.planId || '').match(/^PLAN-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `PLAN-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildStrategicPlan(){
+      const plans = undxLoadStrategicPlans();
+      const sources = undxStrategicSources();
+      const selectedInputs = undxSelectedStrategicInputTypes();
+      const projects = undxLoadProjects();
+      const memory = undxLoadMemory();
+      const graph = sources.knowledge || {};
+      const change = sources.change || {};
+      const workspace = sources.workspace || {};
+      const sourceStrength = selectedInputs.filter(key => sources[key]).length;
+      const impact = Math.min(100, 48 + (projects.length * 6) + (graph.connectedProjects || 0) + (change.impactScore || 0) / 4);
+      const complexity = Math.min(100, 34 + (undxLoadExecutionPlans().length * 7) + (change.riskScore || 0) / 3 + (graph.relationshipCount || 0) / 8);
+      const risk = Math.min(100, 26 + (change.riskScore || 0) / 2 + Math.max(0, 6 - sourceStrength) * 6);
+      const revenuePotential = Math.min(100, 46 + projects.length * 5 + memory.length * 2);
+      const userValue = Math.min(100, 52 + (workspace.healthScore || 0) / 3 + memory.length * 2);
+      const strategicAlignment = Math.min(100, 50 + sourceStrength * 7 + (graph.coverageScore || 0) / 3);
+      const score = Math.round((impact + revenuePotential + userValue + strategicAlignment - (risk * .35) - (complexity * .18)) / 3.2);
+      const priorityScore = Math.max(0, Math.min(100, score));
+      const highestProject = projects[0]?.name || 'UNDX Core';
+      const missionName = memory[0]?.name || 'Unknown Destination Expansion';
+      const buildOrder = projects.length ? projects.slice(0,5).sort((a,b) => (b.priority === 'High') - (a.priority === 'High')).map(project => project.name) : ['UNDX Strategic Planning Center', 'Knowledge Graph Engine', 'Intelligence Workspace'];
+      const roadmap = {
+        '30-Day Roadmap': ['Generate strategic plans from graph and workspace intelligence', 'Attach priority plans to active projects', 'Review approval gates before any future execution'],
+        '60-Day Roadmap': ['Coordinate multi-project dependencies', 'Expand workspace memory graph coverage', 'Convert top strategic plan into execution-ready blueprint'],
+        '90-Day Roadmap': ['Prepare autonomous build simulation', 'Create Codex-style task generation protocol', 'Preserve read-only and approval boundaries']
+      };
+      return undxNormalizeStrategicPlan({
+        planId: undxNextStrategicPlanId(plans),
+        selectedInputs,
+        executiveSummary: `UNDX reviewed ${selectedInputs.length} intelligence input groups and recommends focusing the next build phase on ${highestProject} while strengthening ${missionName}.`,
+        strategicObjective: 'Determine what should happen next across CoinPilotXAI by prioritizing high-value, lower-risk, approval-aware UNDX initiatives.',
+        recommendedPriorities: ['Advance the highest-value active project', 'Increase Knowledge Graph coverage', 'Convert workspace summaries into execution candidates', 'Review approval gates before future file or command access'],
+        recommendedBuildOrder: buildOrder,
+        keyRisks: ['Strategic plans remain conceptual until future approved execution phases', 'Missing repository previews reduce implementation confidence', 'High-risk security or payment areas require explicit approval gates'],
+        opportunityAnalysis: ['Use Mission Memory to identify recurring premium product needs', 'Use Change Intelligence to avoid risky sequencing', 'Use Agent Council reviews to strengthen planning confidence'],
+        readinessAssessment: priorityScore >= 75 ? 'Build Candidate' : priorityScore >= 55 ? 'Review Ready' : 'Planning Ready',
+        recommendedNextActions: ['Run Multi-Brain Strategic Review', 'Generate Workspace Summary', 'Attach plan to Mission Memory', 'Review approval protocol before any future execution'],
+        priority: {impact, complexity, risk, revenuePotential, userValue, strategicAlignment, score: priorityScore, level: undxPriorityLevel(priorityScore)},
+        roadmap,
+        forecast: {
+          successProbability: Math.max(0, Math.min(100, Math.round(52 + sourceStrength * 6 + priorityScore / 5 - risk / 8))),
+          riskProbability: Math.max(0, Math.min(100, Math.round(risk))),
+          complexityForecast: Math.max(0, Math.min(100, Math.round(complexity))),
+          readinessForecast: Math.max(0, Math.min(100, Math.round((workspace.healthScore || 50) * .45 + priorityScore * .55)))
+        },
+        bottlenecks: {
+          missingContext: sourceStrength < selectedInputs.length ? ['Some selected strategic inputs have no stored records yet'] : ['Repository read-only previews remain disabled by design'],
+          missingApprovals: undxLoadApprovalHistory().length ? ['Review latest rejected approval decisions'] : ['Approval history is empty'],
+          dependencyGaps: ['Strategic plans should be linked to workspace summaries and knowledge graphs'],
+          highRiskAreas: ['File Access: Disabled', 'Execution Access: Disabled', 'Deployment Access: Disabled'],
+          knowledgeGaps: graph.coverageScore ? [`Knowledge Graph coverage is ${graph.coverageScore}/100`] : ['Generate Knowledge Graph for stronger context'],
+          planningGaps: ['Assign next action, success criteria, and review owner before future execution']
+        },
+        insights: {
+          highestValueProject: highestProject,
+          highestRiskProject: projects.find(project => project.priority === 'High')?.name || highestProject,
+          mostStrategicMission: missionName,
+          mostConnectedInitiative: graph.insights?.mostActiveProject || highestProject,
+          mostDelayedDependency: change.recommendedNextAction || 'Approval gate review'
+        },
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxStrategicPlanText(plan){
+      return [
+        'UNDX Strategic Plan',
+        '',
+        `Strategic Plan ID: ${plan.planId}`,
+        `Priority Score: ${plan.priority.score} (${plan.priority.level})`,
+        `Success Probability: ${plan.forecast.successProbability}/100`,
+        `Risk Probability: ${plan.forecast.riskProbability}/100`,
+        '',
+        `Executive Summary: ${plan.executiveSummary}`,
+        `Strategic Objective: ${plan.strategicObjective}`,
+        '',
+        'Recommended Priorities:',
+        ...plan.recommendedPriorities.map(item => `- ${item}`),
+        '',
+        'Recommended Build Order:',
+        ...plan.recommendedBuildOrder.map((item, index) => `${index + 1}. ${item}`),
+        '',
+        'Key Risks:',
+        ...plan.keyRisks.map(item => `- ${item}`),
+        '',
+        'Opportunity Analysis:',
+        ...plan.opportunityAnalysis.map(item => `- ${item}`),
+        '',
+        `Readiness Assessment: ${plan.readinessAssessment}`,
+        '',
+        'Recommended Next Actions:',
+        ...plan.recommendedNextActions.map(item => `- ${item}`),
+        '',
+        'Strategic Boundary: No repository files were accessed. No repository modification, Git operations, command execution, or deployments occurred.'
+      ].join('\\n');
+    }
+    function undxRenderStrategicRoadmap(plan){
+      if(!undxStrategicRoadmap) return;
+      undxStrategicRoadmap.replaceChildren();
+      Object.entries(plan?.roadmap || {}).forEach(([name, items]) => {
+        const card = document.createElement('article');
+        card.className = 'undx-roadmap-item';
+        card.append(Object.assign(document.createElement('strong'), {textContent: name}), Object.assign(document.createElement('span'), {textContent: (items || []).join(' · ')}));
+        undxStrategicRoadmap.appendChild(card);
+      });
+    }
+    function undxRenderStrategicForecast(plan){
+      if(!undxStrategicForecast) return;
+      undxStrategicForecast.replaceChildren();
+      [['Success Probability', plan?.forecast?.successProbability], ['Risk Probability', plan?.forecast?.riskProbability], ['Complexity Forecast', plan?.forecast?.complexityForecast], ['Readiness Forecast', plan?.forecast?.readinessForecast]].forEach(([name, value]) => {
+        const card = document.createElement('article');
+        card.className = 'undx-forecast-item';
+        card.append(Object.assign(document.createElement('strong'), {textContent: `${value || 0}/100`}), Object.assign(document.createElement('span'), {textContent: name}));
+        undxStrategicForecast.appendChild(card);
+      });
+    }
+    function undxRenderStrategicPlan(plan){
+      undxLastStrategicPlan = plan || null;
+      if(plan) undxSelectedStrategicPlanId = plan.planId;
+      if(undxStrategicEmpty) undxStrategicEmpty.hidden = Boolean(plan);
+      if(undxStrategicOutput){
+        undxStrategicOutput.replaceChildren();
+        if(plan){
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Strategic Plan ID', plan.planId),
+            undxBlock('Executive Summary', plan.executiveSummary),
+            undxBlock('Strategic Objective', plan.strategicObjective),
+            undxBlock('Recommended Priorities', plan.recommendedPriorities),
+            undxBlock('Recommended Build Order', plan.recommendedBuildOrder),
+            undxBlock('Key Risks', plan.keyRisks),
+            undxBlock('Opportunity Analysis', plan.opportunityAnalysis),
+            undxBlock('Readiness Assessment', plan.readinessAssessment),
+            undxBlock('Recommended Next Actions', plan.recommendedNextActions),
+            undxBlock('Bottleneck Detection', [...plan.bottlenecks.missingContext, ...plan.bottlenecks.missingApprovals, ...plan.bottlenecks.dependencyGaps, ...plan.bottlenecks.highRiskAreas, ...plan.bottlenecks.knowledgeGaps, ...plan.bottlenecks.planningGaps])
+          );
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxStrategicPlanText(plan);
+          undxStrategicOutput.append(grid, output);
+        }
+      }
+      const priority = plan?.priority || {};
+      if(undxStrategicImpact) undxStrategicImpact.textContent = String(Math.round(priority.impact || 0));
+      if(undxStrategicComplexity) undxStrategicComplexity.textContent = String(Math.round(priority.complexity || 0));
+      if(undxStrategicRisk) undxStrategicRisk.textContent = String(Math.round(priority.risk || 0));
+      if(undxStrategicRevenue) undxStrategicRevenue.textContent = String(Math.round(priority.revenuePotential || 0));
+      if(undxStrategicUserValue) undxStrategicUserValue.textContent = String(Math.round(priority.userValue || 0));
+      if(undxStrategicAlignment) undxStrategicAlignment.textContent = String(Math.round(priority.strategicAlignment || 0));
+      if(undxStrategicPriorityScore) undxStrategicPriorityScore.textContent = String(priority.score || 0);
+      if(undxStrategicPriorityLevel) undxStrategicPriorityLevel.textContent = priority.level || 'Low';
+      if(undxHighestValueProject) undxHighestValueProject.textContent = plan?.insights?.highestValueProject || 'Pending';
+      if(undxHighestRiskProject) undxHighestRiskProject.textContent = plan?.insights?.highestRiskProject || 'Pending';
+      if(undxMostStrategicMission) undxMostStrategicMission.textContent = plan?.insights?.mostStrategicMission || 'Pending';
+      if(undxMostConnectedInitiative) undxMostConnectedInitiative.textContent = plan?.insights?.mostConnectedInitiative || 'Pending';
+      if(undxMostDelayedDependency) undxMostDelayedDependency.textContent = plan?.insights?.mostDelayedDependency || 'Pending';
+      undxRenderStrategicRoadmap(plan);
+      undxRenderStrategicForecast(plan);
+      undxRenderStrategicDashboard();
+    }
+    function undxGenerateStrategicPlanFlow(){
+      const plan = undxBuildStrategicPlan();
+      undxSaveStrategicPlans([plan, ...undxLoadStrategicPlans()]);
+      undxRenderStrategicPlan(plan);
+      undxRenderStrategicRegistry();
+      undxRenderIntelligenceWorkspace();
+      if(undxStrategicMessage) undxStrategicMessage.textContent = `${plan.planId} stored in Strategic Registry.`;
+      return plan;
+    }
+    function undxSendStrategicPlanToChat(plan){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxStrategicPlanText(plan);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxStrategicMessage) undxStrategicMessage.textContent = `${plan.planId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSaveStrategicPlanToMemory(plan){
+      undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Strategic Plan ${plan.planId}`, objective:undxStrategicPlanText(plan), type:'Strategic Plan', source:'UNDX Strategic Planning Center', createdAt:new Date().toISOString(), phase:'Phase 20', status:'Stored'});
+      if(undxStrategicMessage) undxStrategicMessage.textContent = `${plan.planId} saved to Mission Memory.`;
+      undxRenderStrategicDashboard();
+    }
+    function undxGenerateWorkspaceSummaryFromStrategicPlan(plan){
+      undxLastStrategicPlan = plan;
+      const summary = undxGenerateWorkspaceSummaryFlow();
+      if(undxStrategicMessage) undxStrategicMessage.textContent = `${summary.summaryId} generated with strategic plan ${plan.planId}.`;
+    }
+    function undxDeleteStrategicPlan(planId){
+      undxSaveStrategicPlans(undxLoadStrategicPlans().filter(item => item.planId !== planId));
+      if(undxSelectedStrategicPlanId === planId) undxRenderStrategicPlan(undxLoadStrategicPlans()[0] || null);
+      undxRenderStrategicRegistry();
+      undxRenderIntelligenceWorkspace();
+      if(undxStrategicMessage) undxStrategicMessage.textContent = 'Strategic plan deleted.';
+    }
+    function undxCreateStrategicPlanCard(plan){
+      const article = document.createElement('article');
+      article.className = 'undx-strategic-card';
+      const title = document.createElement('h4');
+      title.textContent = plan.planId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Plan ID: ${plan.planId}`, `Priority Score: ${plan.priority.score}`, `Success Probability: ${plan.forecast.successProbability}`, `Risk Probability: ${plan.forecast.riskProbability}`, `Created Date: ${undxFormatMemoryTime(plan.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Plan', () => undxRenderStrategicPlan(plan), true),
+        undxProjectActionButton('Send To Chat', () => undxSendStrategicPlanToChat(plan)),
+        undxProjectActionButton('Save To Mission Memory', () => undxSaveStrategicPlanToMemory(plan)),
+        undxProjectActionButton('Generate Workspace Summary', () => undxGenerateWorkspaceSummaryFromStrategicPlan(plan)),
+        undxProjectActionButton('Delete Plan', () => undxDeleteStrategicPlan(plan.planId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderStrategicRegistry(){
+      const plans = undxLoadStrategicPlans();
+      if(undxStrategicRegistryEmpty) undxStrategicRegistryEmpty.hidden = plans.length > 0;
+      if(!undxStrategicRegistryList) return;
+      undxStrategicRegistryList.replaceChildren();
+      plans.forEach(plan => undxStrategicRegistryList.appendChild(undxCreateStrategicPlanCard(plan)));
+      undxRenderStrategicDashboard();
+    }
+    function undxRenderStrategicDashboard(){
+      const plans = undxLoadStrategicPlans();
+      const avg = key => plans.length ? Math.round(plans.reduce((sum, plan) => sum + Number(key(plan) || 0), 0) / plans.length) : 0;
+      const avgPriority = avg(plan => plan.priority.score);
+      const avgSuccess = avg(plan => plan.forecast.successProbability);
+      if(undxStrategicTotalPlans) undxStrategicTotalPlans.textContent = String(plans.length);
+      if(undxStrategicAveragePriority) undxStrategicAveragePriority.textContent = String(avgPriority);
+      if(undxStrategicAverageSuccess) undxStrategicAverageSuccess.textContent = String(avgSuccess);
+      if(undxStrategicActiveInitiatives) undxStrategicActiveInitiatives.textContent = String(plans.filter(plan => plan.priority.score >= 55).length);
+      if(undxStrategicReadinessScore) undxStrategicReadinessScore.textContent = String(Math.round((avgPriority + avgSuccess) / 2));
+      if(undxKnowledgeStrategicPlans) undxKnowledgeStrategicPlans.textContent = String(plans.length);
+      if(undxKnowledgePriorityRelationships) undxKnowledgePriorityRelationships.textContent = String(plans.filter(plan => plan.priority.score >= 55).length);
+      if(undxKnowledgeRoadmapRelationships) undxKnowledgeRoadmapRelationships.textContent = String(plans.length * 3);
+      if(undxLoadedModules) undxLoadedModules.textContent = '20';
+      if(undxDeferredModules) undxDeferredModules.textContent = '5';
+      if(undxMemoryUsageEstimate) undxMemoryUsageEstimate.textContent = `${Math.max(96, 96 + plans.length * 12)} KB`;
+    }
+    async function undxRunStrategicReviewFlow(){
+      let plan = undxLastStrategicPlan || (undxSelectedStrategicPlanId ? undxLoadStrategicPlans().find(item => item.planId === undxSelectedStrategicPlanId) : null);
+      if(!plan) plan = undxGenerateStrategicPlanFlow();
+      if(!plan) return;
+      if(undxStrategicMessage) undxStrategicMessage.textContent = 'Routing strategic review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission: undxStrategicPlanText(plan)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        plan = undxNormalizeStrategicPlan({...plan, review:{
+          architectReview: agents.find(agent => agent.key === 'architect')?.recommendation || 'Architect Review: keep plan modular and approval-aware.',
+          researchReview: agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: validate assumptions before build.',
+          builderReview: agents.find(agent => agent.key === 'builder')?.recommendation || 'Builder Review: sequence roadmap into small build candidates.',
+          optimizationReview: agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: reduce complexity before execution.',
+          rapidReview: agents.find(agent => agent.key === 'rapid')?.recommendation || 'Rapid Review: prepare next action and checkpoint.',
+          combinedStrategicRecommendation: 'Advance the highest-value plan while preserving read-only boundaries and approval gates.'
+        }});
+        undxSaveStrategicPlans([plan, ...undxLoadStrategicPlans().filter(item => item.planId !== plan.planId)]);
+        undxRenderStrategicPlan(plan);
+        undxRenderStrategicRegistry();
+        if(undxStrategicReviewOutput) undxStrategicReviewOutput.replaceChildren(undxBlock('Architect Review', plan.review.architectReview), undxBlock('Research Review', plan.review.researchReview), undxBlock('Builder Review', plan.review.builderReview), undxBlock('Optimization Review', plan.review.optimizationReview), undxBlock('Rapid Review', plan.review.rapidReview), undxBlock('Combined Strategic Recommendation', plan.review.combinedStrategicRecommendation));
+        if(undxStrategicMessage) undxStrategicMessage.textContent = 'Multi-brain strategic review complete.';
+      }catch(error){
+        if(undxStrategicReviewOutput) undxStrategicReviewOutput.replaceChildren(undxBlock('Architect Review', 'OpenAI fallback recommended: preserve modular boundaries.'), undxBlock('Research Review', 'OpenAI fallback recommended: identify missing context.'), undxBlock('Builder Review', 'OpenAI fallback recommended: convert plan into phased work.'), undxBlock('Optimization Review', 'OpenAI fallback recommended: reduce complexity before execution.'), undxBlock('Rapid Review', 'OpenAI fallback recommended: prepare the next safe checkpoint.'), undxBlock('Combined Strategic Recommendation', 'Fallback → OpenAI. Keep the strategic plan read-only and approval-aware.'));
+        if(undxStrategicMessage) undxStrategicMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
     function undxNormalizeRepositoryPlan(plan){
@@ -27667,6 +28226,9 @@ def pulse_premium_undx_page():
     undxRunImpactReview?.addEventListener('click', undxRunImpactReviewFlow);
     undxGenerateKnowledgeGraph?.addEventListener('click', undxGenerateKnowledgeGraphFlow);
     undxRunKnowledgeReview?.addEventListener('click', undxRunKnowledgeReviewFlow);
+    undxGenerateStrategicPlan?.addEventListener('click', undxGenerateStrategicPlanFlow);
+    undxGenerateStrategicRoadmap?.addEventListener('click', undxGenerateStrategicPlanFlow);
+    undxRunStrategicReview?.addEventListener('click', undxRunStrategicReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -27688,6 +28250,8 @@ def pulse_premium_undx_page():
     undxRenderChangeAnalysis(undxLoadChangeAnalyses()[0] || null);
     undxRenderKnowledgeRegistry();
     undxRenderKnowledgeGraph(undxLoadKnowledgeGraphs()[0] || null);
+    undxRenderStrategicRegistry();
+    undxRenderStrategicPlan(undxLoadStrategicPlans()[0] || null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
