@@ -25049,6 +25049,191 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-repository-intelligence-engine' id='undx-repository-intelligence-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Intelligence: Online</span>
+            <h2>UNDX Repository Intelligence Engine</h2>
+          </div>
+          <p>Repository understanding, architecture mapping, dependency intelligence, and system reasoning.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX repository intelligence engine status'>
+              <span>Repository Intelligence: <strong>Online</strong></span>
+              <span>Architecture Mapper: <strong>Online</strong></span>
+              <span>Dependency Intelligence: <strong>Online</strong></span>
+              <span>Service Relationship Engine: <strong>Online</strong></span>
+              <span>Execution Access: <strong>Disabled</strong></span>
+              <span>Phase: <strong>34</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Architecture Mapper</span>
+              <h3>Repository Architecture Mapper</h3>
+              <p>Frontend Layer · Backend Layer · Database Layer · API Layer · Authentication Layer · AI Layer · Infrastructure Layer · Worker Layer · Premium Layer</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateArchitectureModel'>Generate Architecture Model</button></div>
+              <p>Storage: <strong>undxArchitectureModels</strong> · Format: <strong>ARCH-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxArchitectureModelOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Dependency Intelligence</span>
+              <h3>Dependency Intelligence Engine</h3>
+              <p>Services · Modules · Routes · Libraries · Packages · Frameworks · SDKs · Workers · Premium modules</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateDependencyMap'>Generate Dependency Map</button></div>
+              <p>Storage: <strong>undxDependencyMaps</strong> · Format: <strong>DEP-UNDX-0001</strong></p>
+              <div class='undx-risk-grid' id='undxDependencyMapOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Service Relationship Engine</span>
+              <h3>Service Relationship Engine</h3>
+              <p>Service → Service · Route → Service · API → Database · Frontend → Backend · Worker → Database · Premium Module → API · AI Provider → UNDX Router</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateServiceRelationship'>Generate Service Relationship Graph</button></div>
+              <p>Storage: <strong>undxServiceRelationships</strong> · Format: <strong>REL-UNDX-0001</strong></p>
+              <div class='undx-chain-list' id='undxServiceRelationshipOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Route Intelligence</span>
+              <h3>Route Intelligence</h3>
+              <p>Public Routes · Protected Routes · Admin Routes · API Routes · Premium Routes · Pulse Routes · UNDX Routes</p>
+              <p>Route Coverage · Route Complexity · Route Risk · Route Recommendations</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateRouteModel'>Generate Route Model</button></div>
+              <p>Storage: <strong>undxRouteModels</strong> · Format: <strong>ROUTE-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxRouteModelOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Data Flow Intelligence</span>
+              <h3>Data Flow Intelligence</h3>
+              <p>User Input → Frontend → API → Service → Database → Response</p>
+              <p>Authentication Flow · Premium Access Flow · Messaging Flow · UNDX Chat Flow · AI Provider Flow</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateDataFlow'>Generate Data Flow</button></div>
+              <p>Storage: <strong>undxDataFlows</strong> · Format: <strong>FLOW-UNDX-0001</strong></p>
+              <div class='undx-chain-list' id='undxDataFlowOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Component Intelligence</span>
+              <h3>Component Intelligence</h3>
+              <p>Pages · Widgets · Components · Templates · Layouts · Modules · Dashboards · Navigation · Forms</p>
+              <p>Component Complexity · Component Reuse · Component Risk · Component Recommendations</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateComponentProfile'>Generate Component Profile</button></div>
+              <p>Storage: <strong>undxComponentProfiles</strong> · Format: <strong>COMP-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxComponentProfileOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Health Engine</span>
+              <h3>Repository Health Engine</h3>
+              <p>Architecture Score · Dependency Score · Route Score · Service Score · Security Readiness · Testing Readiness · Maintainability Score · Repository Intelligence Score</p>
+              <div class='undx-risk-grid' id='undxRepositoryHealthOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Critical Area Detection</span>
+              <h3>Critical Area Detection</h3>
+              <p>Authentication · Payments · Premium Access · User Data · AI Systems · Messaging · Administration · Database · Workers · Deployment</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateCriticalAreaModel'>Generate Critical Area Model</button></div>
+              <p>Storage: <strong>undxCriticalAreas</strong> · Format: <strong>CRITICAL-UNDX-0001</strong></p>
+              <div class='undx-risk-grid' id='undxCriticalAreaOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Impact Intelligence</span>
+              <h3>Change Impact Intelligence</h3>
+              <p>Homepage · Authentication · Messaging · Premium · AI · UNDX · Database · Worker</p>
+              <label>Change Area<input id='undxImpactAreaInput' value='UNDX' placeholder='Example: Premium, AI, Database, Worker'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateImpactModel'>Generate Impact Model</button></div>
+              <p>Storage: <strong>undxImpactModels</strong> · Format: <strong>IMPACT-UNDX-0001</strong></p>
+              <div class='undx-simulation-output' id='undxImpactModelOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Questions Engine</span>
+              <h3>Repository Questions Engine</h3>
+              <p>Which files define primary routes? Where are premium templates stored? Where are services located? Where are database models defined? Which tests cover this module? Which workers depend on this feature? Which routes are protected?</p>
+              <div class='undx-chain-list' id='undxRepositoryQuestionsOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Intelligence Registry</span>
+              <h3>Repository Intelligence Registry</h3>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateRepositoryIntelligenceReport'>Generate Repository Intelligence Report</button>
+                <button class='button' type='button' id='undxRunRepositoryReview'>Run Multi-Brain Repository Review</button>
+              </div>
+              <p>Storage: <strong>undxRepositoryIntelligenceRecords</strong> · Format: <strong>REPOIQ-UNDX-0001</strong></p>
+              <p class='undx-project-message' id='undxRepositoryEngineMessage' aria-live='polite'></p>
+              <div class='undx-memory-empty' id='undxRepositoryReportEmpty'>No repository intelligence reports stored yet. Generate a report to activate repository reasoning.</div>
+              <div class='undx-simulation-registry' id='undxRepositoryReportList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Intelligence Report</span>
+              <h3>Open Report</h3>
+              <div class='undx-evolution-empty' id='undxRepositoryReportDetailEmpty'>Open a repository intelligence report to view architecture, dependency, route, service, data-flow, component, health, critical-area, impact, and recommendation intelligence.</div>
+              <div class='undx-simulation-output' id='undxRepositoryReportDetail' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Engineering Review Board</span>
+              <h3>Repository Engineering Review Board</h3>
+              <div id='undxRepositoryEngineeringReviewOutput'><p>Architecture Review, Dependency Review, Security Review, Testing Review, Documentation Review, and Final Repository Intelligence Recommendation will appear after review.</p></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Dashboard</span>
+              <h3>Repository Dashboard</h3>
+              <p>Architecture Score: <strong id='undxRepositoryArchitectureScore'>0</strong></p>
+              <p>Dependency Score: <strong id='undxRepositoryDependencyScore'>0</strong></p>
+              <p>Route Score: <strong id='undxRepositoryRouteScore'>0</strong></p>
+              <p>Health Score: <strong id='undxRepositoryHealthScore'>0</strong></p>
+              <p>Critical Areas Count: <strong id='undxRepositoryCriticalAreasCount'>0</strong></p>
+              <p>Most Connected Service: <strong id='undxRepositoryMostConnectedService'>None</strong></p>
+              <p>Most Connected Component: <strong id='undxRepositoryMostConnectedComponent'>None</strong></p>
+              <p>Highest Risk Area: <strong id='undxRepositoryHighestRiskArea'>None</strong></p>
+              <p>Repository Readiness: <strong id='undxRepositoryReadiness'>Planning Ready</strong></p>
+              <p>Planning Ready · Architecture Ready · Testing Ready · Security Ready · Execution Ready</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Integrations</span>
+              <h3>Knowledge Graph Integration</h3>
+              <p>Repository relationships · Architecture relationships · Dependency relationships</p>
+              <h3>Memory Graph Integration</h3>
+              <p>Repository reviews · Architecture decisions · Dependency decisions · Risk reviews</p>
+              <h3>Task Engine Integration</h3>
+              <p>Repository intelligence references · Potential affected areas · Suggested task package sources</p>
+              <h3>Testing Intelligence Integration</h3>
+              <p>Suggested validation areas · Testing readiness · Coverage gaps</p>
+              <h3>Multi-Agent Engineering Integration</h3>
+              <p>Agent findings · Consensus score · Disagreement detection</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Linked Repository Intelligence Reports: <strong id='undxProjectLinkedRepositoryReports'>0</strong></p>
+              <p>Repository Intelligence Score: <strong id='undxProjectRepositoryIntelligenceScore'>0</strong></p>
+              <p>Highest Risk Area: <strong id='undxProjectRepositoryHighestRiskArea'>Pending</strong></p>
+              <p>Repository Readiness: <strong id='undxProjectRepositoryReadiness'>Planning Ready</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Repository Review</span>
+              <h3>Multi-Brain Repository Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Testing → OpenAI · Security → Claude/OpenAI fallback · Documentation → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxRepositoryReviewOutput'><p>Architecture Findings, Dependency Findings, Security Findings, Testing Findings, Documentation Findings, Strategic Findings, and Combined Repository Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Repository Intelligence Engine is read-only. No repositories were accessed. No files were modified. No commands were executed. No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 34<br><strong>Repository Intelligence Engine</strong></span>
+                <span>Phase 35<br><strong>Context-Aware Coding Engine</strong></span>
+                <span>Phase 36<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 37<br><strong>Repository Indexing Engine</strong></span>
+                <span>Phase 38<br><strong>Task Execution Sandbox</strong></span>
+                <span>Phase 39<br><strong>Controlled Code Generation</strong></span>
+                <span>Phase 40<br><strong>Human Approved Repository Actions</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -26165,6 +26350,47 @@ def pulse_premium_undx_page():
     const undxLanguageArchitectureAgentReview = document.getElementById('undxLanguageArchitectureAgentReview');
     const undxLanguageBuilderAgentReview = document.getElementById('undxLanguageBuilderAgentReview');
     const undxMultiBrainAgentCouncilOutput = document.getElementById('undxMultiBrainAgentCouncilOutput');
+    const undxGenerateArchitectureModel = document.getElementById('undxGenerateArchitectureModel');
+    const undxArchitectureModelOutput = document.getElementById('undxArchitectureModelOutput');
+    const undxGenerateDependencyMap = document.getElementById('undxGenerateDependencyMap');
+    const undxDependencyMapOutput = document.getElementById('undxDependencyMapOutput');
+    const undxGenerateServiceRelationship = document.getElementById('undxGenerateServiceRelationship');
+    const undxServiceRelationshipOutput = document.getElementById('undxServiceRelationshipOutput');
+    const undxGenerateRouteModel = document.getElementById('undxGenerateRouteModel');
+    const undxRouteModelOutput = document.getElementById('undxRouteModelOutput');
+    const undxGenerateDataFlow = document.getElementById('undxGenerateDataFlow');
+    const undxDataFlowOutput = document.getElementById('undxDataFlowOutput');
+    const undxGenerateComponentProfile = document.getElementById('undxGenerateComponentProfile');
+    const undxComponentProfileOutput = document.getElementById('undxComponentProfileOutput');
+    const undxRepositoryHealthOutput = document.getElementById('undxRepositoryHealthOutput');
+    const undxGenerateCriticalAreaModel = document.getElementById('undxGenerateCriticalAreaModel');
+    const undxCriticalAreaOutput = document.getElementById('undxCriticalAreaOutput');
+    const undxImpactAreaInput = document.getElementById('undxImpactAreaInput');
+    const undxGenerateImpactModel = document.getElementById('undxGenerateImpactModel');
+    const undxImpactModelOutput = document.getElementById('undxImpactModelOutput');
+    const undxRepositoryQuestionsOutput = document.getElementById('undxRepositoryQuestionsOutput');
+    const undxGenerateRepositoryIntelligenceReport = document.getElementById('undxGenerateRepositoryIntelligenceReport');
+    const undxRunRepositoryReview = document.getElementById('undxRunRepositoryReview');
+    const undxRepositoryEngineMessage = document.getElementById('undxRepositoryEngineMessage');
+    const undxRepositoryReportEmpty = document.getElementById('undxRepositoryReportEmpty');
+    const undxRepositoryReportList = document.getElementById('undxRepositoryReportList');
+    const undxRepositoryReportDetailEmpty = document.getElementById('undxRepositoryReportDetailEmpty');
+    const undxRepositoryReportDetail = document.getElementById('undxRepositoryReportDetail');
+    const undxRepositoryEngineeringReviewOutput = document.getElementById('undxRepositoryEngineeringReviewOutput');
+    const undxRepositoryArchitectureScore = document.getElementById('undxRepositoryArchitectureScore');
+    const undxRepositoryDependencyScore = document.getElementById('undxRepositoryDependencyScore');
+    const undxRepositoryRouteScore = document.getElementById('undxRepositoryRouteScore');
+    const undxRepositoryHealthScore = document.getElementById('undxRepositoryHealthScore');
+    const undxRepositoryCriticalAreasCount = document.getElementById('undxRepositoryCriticalAreasCount');
+    const undxRepositoryMostConnectedService = document.getElementById('undxRepositoryMostConnectedService');
+    const undxRepositoryMostConnectedComponent = document.getElementById('undxRepositoryMostConnectedComponent');
+    const undxRepositoryHighestRiskArea = document.getElementById('undxRepositoryHighestRiskArea');
+    const undxRepositoryReadiness = document.getElementById('undxRepositoryReadiness');
+    const undxProjectLinkedRepositoryReports = document.getElementById('undxProjectLinkedRepositoryReports');
+    const undxProjectRepositoryIntelligenceScore = document.getElementById('undxProjectRepositoryIntelligenceScore');
+    const undxProjectRepositoryHighestRiskArea = document.getElementById('undxProjectRepositoryHighestRiskArea');
+    const undxProjectRepositoryReadiness = document.getElementById('undxProjectRepositoryReadiness');
+    const undxRepositoryReviewOutput = document.getElementById('undxRepositoryReviewOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -26188,6 +26414,15 @@ def pulse_premium_undx_page():
     const undxTestStrategiesKey = 'undxTestStrategies';
     const undxAgentMemoriesKey = 'undxAgentMemories';
     const undxEngineeringAgentsKey = 'undxEngineeringAgents';
+    const undxArchitectureModelsKey = 'undxArchitectureModels';
+    const undxDependencyMapsKey = 'undxDependencyMaps';
+    const undxServiceRelationshipsKey = 'undxServiceRelationships';
+    const undxRouteModelsKey = 'undxRouteModels';
+    const undxDataFlowsKey = 'undxDataFlows';
+    const undxComponentProfilesKey = 'undxComponentProfiles';
+    const undxCriticalAreasKey = 'undxCriticalAreas';
+    const undxImpactModelsKey = 'undxImpactModels';
+    const undxRepositoryIntelligenceRecordsKey = 'undxRepositoryIntelligenceRecords';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -26446,6 +26681,7 @@ def pulse_premium_undx_page():
       const linkedLanguageDecisionRecords = Array.isArray(project.linkedLanguageDecisionRecords) ? project.linkedLanguageDecisionRecords.filter(item => item && item.recordId).slice(0,24).map(undxNormalizeLanguageDecisionRecord) : [];
       const linkedTestStrategies = Array.isArray(project.linkedTestStrategies) ? project.linkedTestStrategies.filter(item => item && item.strategyId).slice(0,24).map(undxNormalizeTestStrategy) : [];
       const linkedAgentMemories = Array.isArray(project.linkedAgentMemories) ? project.linkedAgentMemories.filter(item => item && item.memoryId).slice(0,24).map(undxNormalizeAgentMemory) : [];
+      const linkedRepositoryIntelligenceReports = Array.isArray(project.linkedRepositoryIntelligenceReports) ? project.linkedRepositoryIntelligenceReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryIntelligenceRecord) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -26467,6 +26703,7 @@ def pulse_premium_undx_page():
         linkedLanguageDecisionRecords,
         linkedTestStrategies,
         linkedAgentMemories,
+        linkedRepositoryIntelligenceReports,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -31780,6 +32017,546 @@ def pulse_premium_undx_page():
         if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxRepoIqLoad(key, normalizer){
+      try{
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(parsed) ? parsed.map(normalizer).slice(0,80) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxRepoIqSave(key, items){
+      try{ localStorage.setItem(key, JSON.stringify(items.slice(0,80))); }catch(error){}
+    }
+    function undxRepoIqNextId(items, prefix, field){
+      const pattern = new RegExp(`^${prefix}-(\\\\d{4,})$`);
+      const max = items.reduce((highest, item) => {
+        const match = String(item[field] || '').match(pattern);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `${prefix}-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxReadinessForScore(score){
+      if(score >= 92) return 'Execution Ready';
+      if(score >= 84) return 'Security Ready';
+      if(score >= 76) return 'Testing Ready';
+      if(score >= 66) return 'Architecture Ready';
+      return 'Planning Ready';
+    }
+    function undxNormalizeArchitectureModel(model){
+      return {
+        modelId: String(model?.modelId || '').slice(0,44),
+        layers: Array.isArray(model?.layers) ? model.layers.slice(0,16) : ['Frontend Layer','Backend Layer','Database Layer','API Layer','Authentication Layer','AI Layer','Infrastructure Layer','Worker Layer','Premium Layer'],
+        architectureScore: Number(model?.architectureScore || 84),
+        recommendations: undxNormalizeExecutionList(model?.recommendations, ['Preserve premium route boundaries.', 'Keep UNDX command views isolated from Pulse feed.', 'Document service ownership before future repository access.'], 8, 220),
+        createdAt: model?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeDependencyMap(map){
+      return {
+        mapId: String(map?.mapId || '').slice(0,44),
+        dependencyRiskScore: Number(map?.dependencyRiskScore || 28),
+        criticalDependencies: undxNormalizeExecutionList(map?.criticalDependencies, ['Flask routing', 'SQLite/Postgres database layer', 'OpenAI and UNDX Router', 'Premium entitlement checks'], 12, 160),
+        singlePointsOfFailure: undxNormalizeExecutionList(map?.singlePointsOfFailure, ['Monolithic bot.py surface', 'Provider key availability', 'Premium session gating'], 8, 180),
+        recommendations: undxNormalizeExecutionList(map?.recommendations, ['Keep provider fallback active.', 'Split future repository intelligence into approved read-only services.', 'Audit premium and UNDX routes before release.'], 8, 220),
+        createdAt: map?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeServiceRelationship(rel){
+      return {
+        relationshipId: String(rel?.relationshipId || '').slice(0,44),
+        relationships: undxNormalizeExecutionList(rel?.relationships, ['Service → Service: premium entitlement service informs premium routes', 'Route → Service: UNDX routes call intelligence router', 'API → Database: Pulse APIs persist user activity', 'Frontend → Backend: command views call API endpoints', 'Worker → Database: background jobs update status', 'Premium Module → API: premium modules call gated endpoints', 'AI Provider → UNDX Router: providers route through OpenAI fallback'], 14, 220),
+        relationshipStrength: Number(rel?.relationshipStrength || 86),
+        dependencyWeight: Number(rel?.dependencyWeight || 72),
+        criticalPaths: undxNormalizeExecutionList(rel?.criticalPaths, ['Login → premium access → UNDX route', 'UNDX chat → router → provider fallback', 'Pulse feed → isolated from premium modules'], 8, 220),
+        createdAt: rel?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeRouteModel(route){
+      return {
+        routeId: String(route?.routeId || '').slice(0,44),
+        groups: undxNormalizeExecutionList(route?.groups, ['Public Routes','Protected Routes','Admin Routes','API Routes','Premium Routes','Pulse Routes','UNDX Routes'], 12, 120),
+        routeCoverage: Number(route?.routeCoverage || 82),
+        routeComplexity: Number(route?.routeComplexity || 68),
+        routeRisk: Number(route?.routeRisk || 34),
+        recommendations: undxNormalizeExecutionList(route?.recommendations, ['Keep UNDX out of Pulse feed.', 'Protect premium routes with account checks.', 'Validate API routes with functional audit coverage.'], 8, 220),
+        createdAt: route?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeDataFlow(flow){
+      return {
+        flowId: String(flow?.flowId || '').slice(0,44),
+        flows: undxNormalizeExecutionList(flow?.flows, ['User Input → Frontend → API → Service → Database → Response', 'Authentication Flow: login → session → protected route', 'Premium Access Flow: account → entitlement → premium module', 'Messaging Flow: composer → API → storage → feed/view', 'UNDX Chat Flow: chat UI → /api/undx/chat → router → provider', 'AI Provider Flow: UNDX Router → provider health → OpenAI fallback'], 12, 240),
+        riskLevel: String(flow?.riskLevel || 'Medium').slice(0,80),
+        recommendations: undxNormalizeExecutionList(flow?.recommendations, ['Redact secrets in all provider paths.', 'Keep user input safely rendered.', 'Preserve approval gates before future execution.'], 8, 220),
+        createdAt: flow?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeComponentProfile(profile){
+      return {
+        componentId: String(profile?.componentId || '').slice(0,44),
+        components: undxNormalizeExecutionList(profile?.components, ['Pages','Widgets','Components','Templates','Layouts','Modules','Dashboards','Navigation','Forms'], 16, 120),
+        componentComplexity: Number(profile?.componentComplexity || 74),
+        componentReuse: Number(profile?.componentReuse || 70),
+        componentRisk: Number(profile?.componentRisk || 31),
+        recommendations: undxNormalizeExecutionList(profile?.recommendations, ['Keep command views lazy-loaded.', 'Use scoped UNDX IDs and storage keys.', 'Avoid placing premium UI in Pulse feed.'], 8, 220),
+        createdAt: profile?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeCriticalArea(area){
+      return {
+        criticalId: String(area?.criticalId || '').slice(0,44),
+        areas: Array.isArray(area?.areas) ? area.areas.slice(0,20) : [
+          {name:'Authentication', criticalityScore:95, riskLevel:'High', requiredReviewType:'Security Review'},
+          {name:'Payments', criticalityScore:91, riskLevel:'High', requiredReviewType:'Security + Product Review'},
+          {name:'Premium Access', criticalityScore:88, riskLevel:'High', requiredReviewType:'Premium Boundary Review'},
+          {name:'User Data', criticalityScore:93, riskLevel:'High', requiredReviewType:'Privacy Review'},
+          {name:'AI Systems', criticalityScore:86, riskLevel:'Medium', requiredReviewType:'Provider + Safety Review'},
+          {name:'Messaging', criticalityScore:79, riskLevel:'Medium', requiredReviewType:'Functional Review'},
+          {name:'Administration', criticalityScore:90, riskLevel:'High', requiredReviewType:'Admin Security Review'},
+          {name:'Database', criticalityScore:92, riskLevel:'High', requiredReviewType:'Data Integrity Review'},
+          {name:'Workers', criticalityScore:75, riskLevel:'Medium', requiredReviewType:'Operational Review'},
+          {name:'Deployment', criticalityScore:89, riskLevel:'High', requiredReviewType:'Deployment Approval Review'}
+        ],
+        createdAt: area?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeImpactModel(model){
+      return {
+        impactId: String(model?.impactId || '').slice(0,44),
+        changeArea: String(model?.changeArea || 'UNDX').slice(0,120),
+        affectedSystems: undxNormalizeExecutionList(model?.affectedSystems, ['Premium Command Center','UNDX localStorage registries','Agent Council router','Project workspace'], 12, 160),
+        affectedRoutes: undxNormalizeExecutionList(model?.affectedRoutes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160),
+        affectedComponents: undxNormalizeExecutionList(model?.affectedComponents, ['Command views','Sidebar navigation','Repository dashboard','Report registry'], 12, 160),
+        affectedServices: undxNormalizeExecutionList(model?.affectedServices, ['UNDX Router','Premium entitlement checks','Mission Memory','Task Generation Center'], 12, 160),
+        affectedTests: undxNormalizeExecutionList(model?.affectedTests, ['Python compile','JS parse','UNDX audit','Premium foundation audit','Pulse feed isolation audit','Browser route check'], 12, 160),
+        riskLevel: String(model?.riskLevel || 'Medium').slice(0,80),
+        createdAt: model?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeRepositoryIntelligenceRecord(record){
+      return {
+        reportId: String(record?.reportId || '').slice(0,44),
+        architectureScore: Number(record?.architectureScore || 84),
+        dependencyScore: Number(record?.dependencyScore || 78),
+        routeScore: Number(record?.routeScore || 82),
+        serviceScore: Number(record?.serviceScore || 80),
+        securityReadiness: Number(record?.securityReadiness || 76),
+        testingReadiness: Number(record?.testingReadiness || 79),
+        maintainabilityScore: Number(record?.maintainabilityScore || 74),
+        repositoryIntelligenceScore: Number(record?.repositoryIntelligenceScore || 79),
+        highestRiskArea: String(record?.highestRiskArea || 'Authentication').slice(0,120),
+        repositoryReadiness: record?.repositoryReadiness || undxReadinessForScore(Number(record?.repositoryIntelligenceScore || 79)),
+        architectureModel: undxNormalizeArchitectureModel(record?.architectureModel || {}),
+        dependencyMap: undxNormalizeDependencyMap(record?.dependencyMap || {}),
+        relationshipModel: undxNormalizeServiceRelationship(record?.relationshipModel || {}),
+        routeModel: undxNormalizeRouteModel(record?.routeModel || {}),
+        dataFlow: undxNormalizeDataFlow(record?.dataFlow || {}),
+        componentProfile: undxNormalizeComponentProfile(record?.componentProfile || {}),
+        criticalAreas: undxNormalizeCriticalArea(record?.criticalAreas || {}),
+        impactModel: undxNormalizeImpactModel(record?.impactModel || {}),
+        questions: undxNormalizeExecutionList(record?.questions, ['Which files define primary routes?', 'Where are premium templates stored?', 'Where are services located?', 'Where are database models defined?', 'Which tests cover this module?', 'Which workers depend on this feature?', 'Which routes are protected?'], 12, 220),
+        review: record?.review || null,
+        createdAt: record?.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    const undxLoadArchitectureModels = () => undxRepoIqLoad(undxArchitectureModelsKey, undxNormalizeArchitectureModel);
+    const undxLoadDependencyMaps = () => undxRepoIqLoad(undxDependencyMapsKey, undxNormalizeDependencyMap);
+    const undxLoadServiceRelationships = () => undxRepoIqLoad(undxServiceRelationshipsKey, undxNormalizeServiceRelationship);
+    const undxLoadRouteModels = () => undxRepoIqLoad(undxRouteModelsKey, undxNormalizeRouteModel);
+    const undxLoadDataFlows = () => undxRepoIqLoad(undxDataFlowsKey, undxNormalizeDataFlow);
+    const undxLoadComponentProfiles = () => undxRepoIqLoad(undxComponentProfilesKey, undxNormalizeComponentProfile);
+    const undxLoadCriticalAreas = () => undxRepoIqLoad(undxCriticalAreasKey, undxNormalizeCriticalArea);
+    const undxLoadImpactModels = () => undxRepoIqLoad(undxImpactModelsKey, undxNormalizeImpactModel);
+    const undxLoadRepositoryIntelligenceRecords = () => undxRepoIqLoad(undxRepositoryIntelligenceRecordsKey, undxNormalizeRepositoryIntelligenceRecord);
+    function undxBuildArchitectureModel(){
+      const items = undxLoadArchitectureModels();
+      return undxNormalizeArchitectureModel({modelId:undxRepoIqNextId(items, 'ARCH-UNDX', 'modelId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildDependencyMap(){
+      const items = undxLoadDependencyMaps();
+      return undxNormalizeDependencyMap({mapId:undxRepoIqNextId(items, 'DEP-UNDX', 'mapId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildServiceRelationship(){
+      const items = undxLoadServiceRelationships();
+      return undxNormalizeServiceRelationship({relationshipId:undxRepoIqNextId(items, 'REL-UNDX', 'relationshipId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildRouteModel(){
+      const items = undxLoadRouteModels();
+      return undxNormalizeRouteModel({routeId:undxRepoIqNextId(items, 'ROUTE-UNDX', 'routeId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildDataFlow(){
+      const items = undxLoadDataFlows();
+      return undxNormalizeDataFlow({flowId:undxRepoIqNextId(items, 'FLOW-UNDX', 'flowId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildComponentProfile(){
+      const items = undxLoadComponentProfiles();
+      return undxNormalizeComponentProfile({componentId:undxRepoIqNextId(items, 'COMP-UNDX', 'componentId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildCriticalAreaModel(){
+      const items = undxLoadCriticalAreas();
+      return undxNormalizeCriticalArea({criticalId:undxRepoIqNextId(items, 'CRITICAL-UNDX', 'criticalId'), createdAt:new Date().toISOString()});
+    }
+    function undxBuildImpactModel(){
+      const items = undxLoadImpactModels();
+      const area = (undxImpactAreaInput?.value || 'UNDX').trim() || 'UNDX';
+      const high = /auth|payment|premium|database|worker|deploy/i.test(area);
+      return undxNormalizeImpactModel({
+        impactId:undxRepoIqNextId(items, 'IMPACT-UNDX', 'impactId'),
+        changeArea:area,
+        riskLevel:high ? 'High' : 'Medium',
+        createdAt:new Date().toISOString()
+      });
+    }
+    function undxBuildRepositoryIntelligenceRecord(){
+      const records = undxLoadRepositoryIntelligenceRecords();
+      const architectureModel = undxLoadArchitectureModels()[0] || undxBuildArchitectureModel();
+      const dependencyMap = undxLoadDependencyMaps()[0] || undxBuildDependencyMap();
+      const relationshipModel = undxLoadServiceRelationships()[0] || undxBuildServiceRelationship();
+      const routeModel = undxLoadRouteModels()[0] || undxBuildRouteModel();
+      const dataFlow = undxLoadDataFlows()[0] || undxBuildDataFlow();
+      const componentProfile = undxLoadComponentProfiles()[0] || undxBuildComponentProfile();
+      const criticalAreas = undxLoadCriticalAreas()[0] || undxBuildCriticalAreaModel();
+      const impactModel = undxLoadImpactModels()[0] || undxBuildImpactModel();
+      const architectureScore = architectureModel.architectureScore;
+      const dependencyScore = Math.max(0, 100 - dependencyMap.dependencyRiskScore);
+      const routeScore = routeModel.routeCoverage;
+      const serviceScore = relationshipModel.relationshipStrength;
+      const securityReadiness = 76;
+      const testingReadiness = 79;
+      const maintainabilityScore = Math.round((componentProfile.componentReuse + architectureScore) / 2);
+      const repositoryIntelligenceScore = Math.round((architectureScore + dependencyScore + routeScore + serviceScore + securityReadiness + testingReadiness + maintainabilityScore) / 7);
+      const highestRiskArea = (criticalAreas.areas || []).slice().sort((a,b) => Number(b.criticalityScore || 0) - Number(a.criticalityScore || 0))[0]?.name || 'Authentication';
+      return undxNormalizeRepositoryIntelligenceRecord({
+        reportId:undxRepoIqNextId(records, 'REPOIQ-UNDX', 'reportId'),
+        architectureScore,
+        dependencyScore,
+        routeScore,
+        serviceScore,
+        securityReadiness,
+        testingReadiness,
+        maintainabilityScore,
+        repositoryIntelligenceScore,
+        highestRiskArea,
+        repositoryReadiness:undxReadinessForScore(repositoryIntelligenceScore),
+        architectureModel,
+        dependencyMap,
+        relationshipModel,
+        routeModel,
+        dataFlow,
+        componentProfile,
+        criticalAreas,
+        impactModel,
+        createdAt:new Date().toISOString()
+      });
+    }
+    function undxRenderRepositoryQuestions(){
+      if(!undxRepositoryQuestionsOutput) return;
+      undxRepositoryQuestionsOutput.replaceChildren(
+        ...['Which files define primary routes?','Where are premium templates stored?','Where are services located?','Where are database models defined?','Which tests cover this module?','Which workers depend on this feature?','Which routes are protected?'].map(question => undxBlock('Repository Question', question))
+      );
+    }
+    function undxRenderRepositoryHealth(record){
+      const report = record || undxLoadRepositoryIntelligenceRecords()[0] || undxBuildRepositoryIntelligenceRecord();
+      if(undxRepositoryHealthOutput) undxRepositoryHealthOutput.replaceChildren(
+        undxBlock('Architecture Score', `${report.architectureScore}/100`),
+        undxBlock('Dependency Score', `${report.dependencyScore}/100`),
+        undxBlock('Route Score', `${report.routeScore}/100`),
+        undxBlock('Service Score', `${report.serviceScore}/100`),
+        undxBlock('Security Readiness', `${report.securityReadiness}/100`),
+        undxBlock('Testing Readiness', `${report.testingReadiness}/100`),
+        undxBlock('Maintainability Score', `${report.maintainabilityScore}/100`),
+        undxBlock('Repository Intelligence Score', `${report.repositoryIntelligenceScore}/100`)
+      );
+    }
+    function undxRenderRepositoryDashboard(record){
+      const reports = undxLoadRepositoryIntelligenceRecords();
+      const latest = record || reports[0] || null;
+      if(undxRepositoryArchitectureScore) undxRepositoryArchitectureScore.textContent = String(latest?.architectureScore || 0);
+      if(undxRepositoryDependencyScore) undxRepositoryDependencyScore.textContent = String(latest?.dependencyScore || 0);
+      if(undxRepositoryRouteScore) undxRepositoryRouteScore.textContent = String(latest?.routeScore || 0);
+      if(undxRepositoryHealthScore) undxRepositoryHealthScore.textContent = String(latest?.repositoryIntelligenceScore || 0);
+      if(undxRepositoryCriticalAreasCount) undxRepositoryCriticalAreasCount.textContent = String(latest?.criticalAreas?.areas?.length || 0);
+      if(undxRepositoryMostConnectedService) undxRepositoryMostConnectedService.textContent = 'UNDX Router';
+      if(undxRepositoryMostConnectedComponent) undxRepositoryMostConnectedComponent.textContent = 'Command Views';
+      if(undxRepositoryHighestRiskArea) undxRepositoryHighestRiskArea.textContent = latest?.highestRiskArea || 'None';
+      if(undxRepositoryReadiness) undxRepositoryReadiness.textContent = latest?.repositoryReadiness || 'Planning Ready';
+      const project = undxCurrentProject() || {};
+      const linked = project.linkedRepositoryIntelligenceReports || [];
+      if(undxProjectLinkedRepositoryReports) undxProjectLinkedRepositoryReports.textContent = String(linked.length);
+      if(undxProjectRepositoryIntelligenceScore) undxProjectRepositoryIntelligenceScore.textContent = String(linked[0]?.repositoryIntelligenceScore || latest?.repositoryIntelligenceScore || 0);
+      if(undxProjectRepositoryHighestRiskArea) undxProjectRepositoryHighestRiskArea.textContent = linked[0]?.highestRiskArea || latest?.highestRiskArea || 'Pending';
+      if(undxProjectRepositoryReadiness) undxProjectRepositoryReadiness.textContent = linked[0]?.repositoryReadiness || latest?.repositoryReadiness || 'Planning Ready';
+    }
+    function undxRenderArchitectureModel(model){
+      if(undxArchitectureModelOutput) undxArchitectureModelOutput.replaceChildren(...model.layers.map(layer => undxBlock(layer, `Architecture Model ID: ${model.modelId} · Conceptual layer mapped for future read-only repository analysis.`)));
+    }
+    function undxRenderDependencyMap(map){
+      if(undxDependencyMapOutput) undxDependencyMapOutput.replaceChildren(
+        undxBlock('Dependency Risk Score', `${map.dependencyRiskScore}/100`),
+        undxBlock('Critical Dependencies', map.criticalDependencies),
+        undxBlock('Single Points of Failure', map.singlePointsOfFailure),
+        undxBlock('Dependency Recommendations', map.recommendations)
+      );
+    }
+    function undxRenderServiceRelationship(rel){
+      if(undxServiceRelationshipOutput) undxServiceRelationshipOutput.replaceChildren(
+        undxBlock('Relationship Strength', `${rel.relationshipStrength}/100`),
+        undxBlock('Dependency Weight', `${rel.dependencyWeight}/100`),
+        undxBlock('Critical Paths', rel.criticalPaths),
+        ...rel.relationships.map(item => undxBlock('Relationship', item))
+      );
+    }
+    function undxRenderRouteModel(route){
+      if(undxRouteModelOutput) undxRouteModelOutput.replaceChildren(
+        undxBlock('Route Coverage', `${route.routeCoverage}/100`),
+        undxBlock('Route Complexity', `${route.routeComplexity}/100`),
+        undxBlock('Route Risk', `${route.routeRisk}/100`),
+        ...route.groups.map(group => undxBlock(group, 'Conceptual route group included in read-only route intelligence.'))
+      );
+    }
+    function undxRenderDataFlow(flow){
+      if(undxDataFlowOutput) undxDataFlowOutput.replaceChildren(
+        undxBlock('Risk Level', flow.riskLevel),
+        undxBlock('Data Flow Recommendations', flow.recommendations),
+        ...flow.flows.map(item => undxBlock('Flow', item))
+      );
+    }
+    function undxRenderComponentProfile(profile){
+      if(undxComponentProfileOutput) undxComponentProfileOutput.replaceChildren(
+        undxBlock('Component Complexity', `${profile.componentComplexity}/100`),
+        undxBlock('Component Reuse', `${profile.componentReuse}/100`),
+        undxBlock('Component Risk', `${profile.componentRisk}/100`),
+        ...profile.components.map(item => undxBlock(item, 'Conceptual component group tracked for future repository intelligence.'))
+      );
+    }
+    function undxRenderCriticalArea(area){
+      if(undxCriticalAreaOutput) undxCriticalAreaOutput.replaceChildren(...(area.areas || []).map(item => undxBlock(item.name, [`Criticality Score: ${item.criticalityScore}`, `Risk Level: ${item.riskLevel}`, `Required Review Type: ${item.requiredReviewType}`])));
+    }
+    function undxRenderImpactModel(model){
+      if(undxImpactModelOutput) undxImpactModelOutput.replaceChildren(
+        undxBlock('Change Area', model.changeArea),
+        undxBlock('Potentially Affected Systems', model.affectedSystems),
+        undxBlock('Potentially Affected Routes', model.affectedRoutes),
+        undxBlock('Potentially Affected Components', model.affectedComponents),
+        undxBlock('Potentially Affected Services', model.affectedServices),
+        undxBlock('Potentially Affected Tests', model.affectedTests),
+        undxBlock('Risk Level', model.riskLevel)
+      );
+    }
+    function undxGenerateArchitectureModelFlow(){
+      const model = undxBuildArchitectureModel();
+      undxRepoIqSave(undxArchitectureModelsKey, [model, ...undxLoadArchitectureModels()]);
+      undxRenderArchitectureModel(model);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${model.modelId} stored. No repository files were accessed.`;
+      return model;
+    }
+    function undxGenerateDependencyMapFlow(){
+      const map = undxBuildDependencyMap();
+      undxRepoIqSave(undxDependencyMapsKey, [map, ...undxLoadDependencyMaps()]);
+      undxRenderDependencyMap(map);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${map.mapId} stored. Dependency intelligence remains conceptual.`;
+      return map;
+    }
+    function undxGenerateServiceRelationshipFlow(){
+      const rel = undxBuildServiceRelationship();
+      undxRepoIqSave(undxServiceRelationshipsKey, [rel, ...undxLoadServiceRelationships()]);
+      undxRenderServiceRelationship(rel);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${rel.relationshipId} stored. Service relationships are simulated.`;
+      return rel;
+    }
+    function undxGenerateRouteModelFlow(){
+      const route = undxBuildRouteModel();
+      undxRepoIqSave(undxRouteModelsKey, [route, ...undxLoadRouteModels()]);
+      undxRenderRouteModel(route);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${route.routeId} stored. Route intelligence is read-only.`;
+      return route;
+    }
+    function undxGenerateDataFlowFlow(){
+      const flow = undxBuildDataFlow();
+      undxRepoIqSave(undxDataFlowsKey, [flow, ...undxLoadDataFlows()]);
+      undxRenderDataFlow(flow);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${flow.flowId} stored. Data flow map is conceptual.`;
+      return flow;
+    }
+    function undxGenerateComponentProfileFlow(){
+      const profile = undxBuildComponentProfile();
+      undxRepoIqSave(undxComponentProfilesKey, [profile, ...undxLoadComponentProfiles()]);
+      undxRenderComponentProfile(profile);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${profile.componentId} stored. Component intelligence is conceptual.`;
+      return profile;
+    }
+    function undxGenerateCriticalAreaFlow(){
+      const area = undxBuildCriticalAreaModel();
+      undxRepoIqSave(undxCriticalAreasKey, [area, ...undxLoadCriticalAreas()]);
+      undxRenderCriticalArea(area);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${area.criticalId} stored. Critical areas require future review before execution.`;
+      return area;
+    }
+    function undxGenerateImpactModelFlow(){
+      const model = undxBuildImpactModel();
+      undxRepoIqSave(undxImpactModelsKey, [model, ...undxLoadImpactModels()]);
+      undxRenderImpactModel(model);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${model.impactId} stored for ${model.changeArea}.`;
+      return model;
+    }
+    function undxRepositoryReportText(report){
+      return [
+        'UNDX Repository Intelligence Engine',
+        '',
+        `Report ID: ${report.reportId}`,
+        `Repository Intelligence Score: ${report.repositoryIntelligenceScore}/100`,
+        `Repository Readiness: ${report.repositoryReadiness}`,
+        `Highest Risk Area: ${report.highestRiskArea}`,
+        `Architecture Score: ${report.architectureScore}/100`,
+        `Dependency Score: ${report.dependencyScore}/100`,
+        `Route Score: ${report.routeScore}/100`,
+        `Service Score: ${report.serviceScore}/100`,
+        `Security Readiness: ${report.securityReadiness}/100`,
+        `Testing Readiness: ${report.testingReadiness}/100`,
+        '',
+        'Repository Questions:',
+        ...report.questions.map(item => `- ${item}`),
+        '',
+        'Safety: read-only. No repositories were accessed. No files were modified. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxOpenRepositoryReport(report){
+      if(undxRepositoryReportDetailEmpty) undxRepositoryReportDetailEmpty.hidden = true;
+      if(undxRepositoryReportDetail) undxRepositoryReportDetail.replaceChildren(
+        undxBlock('Report ID', report.reportId),
+        undxBlock('Repository Intelligence Score', `${report.repositoryIntelligenceScore}/100`),
+        undxBlock('Repository Readiness', report.repositoryReadiness),
+        undxBlock('Highest Risk Area', report.highestRiskArea),
+        undxBlock('Architecture Review', `Architecture Score: ${report.architectureScore}/100 · Layers: ${report.architectureModel.layers.join(' · ')}`),
+        undxBlock('Dependency Review', `Dependency Score: ${report.dependencyScore}/100 · Critical Dependencies: ${report.dependencyMap.criticalDependencies.join(' · ')}`),
+        undxBlock('Security Review', `Security Readiness: ${report.securityReadiness}/100 · Highest Risk Area: ${report.highestRiskArea}`),
+        undxBlock('Testing Review', `Testing Readiness: ${report.testingReadiness}/100 · Coverage gaps require future approved test discovery.`),
+        undxBlock('Documentation Review', 'Document architecture, dependencies, critical areas, route groups, and future questions before coding.'),
+        undxBlock('Final Repository Intelligence Recommendation', 'Continue read-only repository reasoning. Require explicit approval before file previews, repository access, commands, Git, or deployment.')
+      );
+      undxRenderRepositoryDashboard(report);
+    }
+    function undxAttachRepositoryReportToProject(report){
+      const project = undxCurrentProject();
+      if(!project){
+        if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = 'Open a project workspace before attaching a repository intelligence report.';
+        return;
+      }
+      const projects = undxLoadProjects().map(item => item.projectId === project.projectId ? {...item, linkedRepositoryIntelligenceReports:[report, ...(item.linkedRepositoryIntelligenceReports || []).filter(existing => existing.reportId !== report.reportId)].slice(0,12)} : item);
+      undxSaveProjects(projects);
+      undxOpenProject(project.projectId, false);
+      undxRenderRepositoryDashboard(report);
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${report.reportId} attached to ${project.projectId}.`;
+    }
+    function undxGenerateTaskPackageFromRepositoryReport(report){
+      if(undxMissionInput) undxMissionInput.value = `Create a task package from Repository Intelligence Report ${report.reportId}. Focus on ${report.highestRiskArea}, repository readiness ${report.repositoryReadiness}, and validation for ${report.impactModel.affectedSystems.join(', ')}.`;
+      undxGenerateTaskPackageFlow();
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${report.reportId} sent to Task Generation Center.`;
+    }
+    function undxCreateRepositoryReportCard(report){
+      const card = document.createElement('article');
+      card.className = 'undx-memory-card';
+      const title = document.createElement('h3');
+      title.textContent = report.reportId;
+      const meta = document.createElement('p');
+      meta.textContent = `Repository Intelligence Score: ${report.repositoryIntelligenceScore}/100 · Highest Risk Area: ${report.highestRiskArea} · Created Date: ${undxFormatMemoryTime(report.createdAt)} · ${report.repositoryReadiness}`;
+      const actions = document.createElement('div');
+      actions.className = 'undx-memory-actions';
+      actions.append(
+        undxProjectActionButton('Open Report', () => undxOpenRepositoryReport(report), true),
+        undxProjectActionButton('Send To Chat', () => undxSendTextToChat(undxRepositoryReportText(report))),
+        undxProjectActionButton('Save To Memory', () => undxStoreBlueprint({id:`repoiq-${report.reportId}`, name:`Repository Intelligence ${report.reportId}`, objective:undxRepositoryReportText(report), type:'Repository Intelligence Report', source:'UNDX Repository Intelligence Engine', createdAt:new Date().toISOString(), phase:'Phase 34', status:'Stored'})),
+        undxProjectActionButton('Attach To Project', () => undxAttachRepositoryReportToProject(report)),
+        undxProjectActionButton('Generate Task Package', () => undxGenerateTaskPackageFromRepositoryReport(report)),
+        undxProjectActionButton('Delete Report', () => {
+          undxRepoIqSave(undxRepositoryIntelligenceRecordsKey, undxLoadRepositoryIntelligenceRecords().filter(item => item.reportId !== report.reportId));
+          undxRenderRepositoryReportRegistry();
+          if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${report.reportId} deleted.`;
+        })
+      );
+      card.append(title, meta, actions);
+      return card;
+    }
+    function undxRenderRepositoryReportRegistry(){
+      const reports = undxLoadRepositoryIntelligenceRecords();
+      if(undxRepositoryReportEmpty) undxRepositoryReportEmpty.hidden = reports.length > 0;
+      if(undxRepositoryReportList){
+        undxRepositoryReportList.replaceChildren();
+        reports.forEach(report => undxRepositoryReportList.appendChild(undxCreateRepositoryReportCard(report)));
+      }
+      undxRenderRepositoryDashboard(reports[0] || null);
+      undxRenderRepositoryHealth(reports[0] || null);
+    }
+    function undxGenerateRepositoryIntelligenceReportFlow(){
+      const report = undxBuildRepositoryIntelligenceRecord();
+      undxRepoIqSave(undxRepositoryIntelligenceRecordsKey, [report, ...undxLoadRepositoryIntelligenceRecords()]);
+      undxOpenRepositoryReport(report);
+      undxRenderRepositoryReportRegistry();
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${report.reportId} stored in Repository Intelligence Registry.`;
+      return report;
+    }
+    async function undxRunRepositoryReviewFlow(){
+      const report = undxLoadRepositoryIntelligenceRecords()[0] || undxGenerateRepositoryIntelligenceReportFlow();
+      if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = 'Routing repository review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:undxRepositoryReportText(report)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        const reviewBlocks = [
+          undxBlock('Architecture Findings', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture is ready for future read-only indexing after approval.'),
+          undxBlock('Dependency Findings', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Dependency map should isolate provider fallback and premium boundaries.'),
+          undxBlock('Security Findings', agents.find(agent => agent.key === 'security')?.recommendation || 'No secrets, files, commands, Git, or deployment access allowed.'),
+          undxBlock('Testing Findings', agents.find(agent => agent.key === 'testing')?.recommendation || 'Validation should include route, feed isolation, and browser checks.'),
+          undxBlock('Documentation Findings', agents.find(agent => agent.key === 'documentation')?.recommendation || 'Document repository questions before coding phases.'),
+          undxBlock('Strategic Findings', agents.find(agent => agent.key === 'research')?.recommendation || 'Use repository intelligence to guide Phase 35 context-aware coding.'),
+          undxBlock('Combined Repository Recommendation', 'Proceed with read-only repository intelligence only. Future file access must pass explicit approval.')
+        ];
+        if(undxRepositoryReviewOutput) undxRepositoryReviewOutput.replaceChildren(...reviewBlocks);
+        if(undxRepositoryEngineeringReviewOutput) undxRepositoryEngineeringReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture mapping complete.'),
+          undxBlock('Dependency Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Dependency intelligence complete.'),
+          undxBlock('Security Review', agents.find(agent => agent.key === 'security')?.recommendation || 'Security review keeps execution disabled.'),
+          undxBlock('Testing Review', agents.find(agent => agent.key === 'testing')?.recommendation || 'Testing readiness remains planning-only.'),
+          undxBlock('Documentation Review', agents.find(agent => agent.key === 'documentation')?.recommendation || 'Documentation package ready.'),
+          undxBlock('Final Repository Intelligence Recommendation', 'Repository Intelligence is ready for future approved read-only connector phases.')
+        );
+        if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = 'Multi-brain repository review complete.';
+      }catch(error){
+        if(undxRepositoryReviewOutput) undxRepositoryReviewOutput.replaceChildren(
+          undxBlock('Architecture Findings', 'OpenAI fallback: preserve command-center boundaries.'),
+          undxBlock('Dependency Findings', 'OpenAI fallback: keep dependency reasoning conceptual.'),
+          undxBlock('Security Findings', 'OpenAI fallback: no file, command, Git, secret, or deployment access.'),
+          undxBlock('Testing Findings', 'OpenAI fallback: require compile, JS parse, audits, and browser route checks.'),
+          undxBlock('Documentation Findings', 'OpenAI fallback: document unanswered repository questions.'),
+          undxBlock('Strategic Findings', 'OpenAI fallback: prepare for Phase 35 context-aware coding.'),
+          undxBlock('Combined Repository Recommendation', 'Fallback → OpenAI. Repository Intelligence remains read-only.')
+        );
+        if(undxRepositoryEngineMessage) undxRepositoryEngineMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxRenderRepositoryEngineInitial(){
+      const arch = undxLoadArchitectureModels()[0] || undxBuildArchitectureModel();
+      const dep = undxLoadDependencyMaps()[0] || undxBuildDependencyMap();
+      const rel = undxLoadServiceRelationships()[0] || undxBuildServiceRelationship();
+      const route = undxLoadRouteModels()[0] || undxBuildRouteModel();
+      const flow = undxLoadDataFlows()[0] || undxBuildDataFlow();
+      const component = undxLoadComponentProfiles()[0] || undxBuildComponentProfile();
+      const critical = undxLoadCriticalAreas()[0] || undxBuildCriticalAreaModel();
+      const impact = undxLoadImpactModels()[0] || undxBuildImpactModel();
+      undxRenderArchitectureModel(arch);
+      undxRenderDependencyMap(dep);
+      undxRenderServiceRelationship(rel);
+      undxRenderRouteModel(route);
+      undxRenderDataFlow(flow);
+      undxRenderComponentProfile(component);
+      undxRenderCriticalArea(critical);
+      undxRenderImpactModel(impact);
+      undxRenderRepositoryQuestions();
+      undxRenderRepositoryReportRegistry();
+    }
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -34017,6 +34794,7 @@ def pulse_premium_undx_page():
       ['undx-language-mastery-engine','Language Mastery'],
       ['undx-testing-intelligence-engine','Testing Intelligence'],
       ['undx-multi-agent-engineering-system','Multi-Agent Engineering'],
+      ['undx-repository-intelligence-engine','Repository Intelligence Engine'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -35258,6 +36036,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedRepositoryIntelligenceReports(project, card){
+      const section = undxWorkspaceSection('Linked Repository Intelligence Reports');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedRepositoryIntelligenceReports || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Repository Intelligence Reports linked yet. Attach a Phase 34 report to preserve repository score, highest risk area, and readiness.'));
+      }else{
+        project.linkedRepositoryIntelligenceReports.forEach(report => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = report.reportId;
+          const meta = document.createElement('p');
+          meta.textContent = `Repository Intelligence Score: ${report.repositoryIntelligenceScore}/100 · Highest Risk Area: ${report.highestRiskArea} · Repository Readiness: ${report.repositoryReadiness}`;
+          const safety = document.createElement('p');
+          safety.textContent = 'Read-only report. No repositories were accessed, no files were modified, no commands were executed, and no deployments were performed.';
+          item.append(title, meta, safety);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -35358,6 +36159,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedLanguageDecisionRecords(project, card);
       undxRenderLinkedTestStrategies(project, card);
       undxRenderLinkedAgentMemories(project, card);
+      undxRenderLinkedRepositoryIntelligenceReports(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -36034,6 +36836,16 @@ def pulse_premium_undx_page():
     undxRunTestingReview?.addEventListener('click', undxRunTestingReviewFlow);
     undxAssignToAgents?.addEventListener('click', undxAssignAgentsFlow);
     undxRunEngineeringReviewBoard?.addEventListener('click', undxRunEngineeringBoardFlow);
+    undxGenerateArchitectureModel?.addEventListener('click', undxGenerateArchitectureModelFlow);
+    undxGenerateDependencyMap?.addEventListener('click', undxGenerateDependencyMapFlow);
+    undxGenerateServiceRelationship?.addEventListener('click', undxGenerateServiceRelationshipFlow);
+    undxGenerateRouteModel?.addEventListener('click', undxGenerateRouteModelFlow);
+    undxGenerateDataFlow?.addEventListener('click', undxGenerateDataFlowFlow);
+    undxGenerateComponentProfile?.addEventListener('click', undxGenerateComponentProfileFlow);
+    undxGenerateCriticalAreaModel?.addEventListener('click', undxGenerateCriticalAreaFlow);
+    undxGenerateImpactModel?.addEventListener('click', undxGenerateImpactModelFlow);
+    undxGenerateRepositoryIntelligenceReport?.addEventListener('click', undxGenerateRepositoryIntelligenceReportFlow);
+    undxRunRepositoryReview?.addEventListener('click', undxRunRepositoryReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -36099,6 +36911,7 @@ def pulse_premium_undx_page():
     undxRenderAgentMemoryRegistry();
     undxRenderAgentMemory(undxLoadAgentMemories()[0] || null);
     undxRenderAgentDashboard();
+    undxRenderRepositoryEngineInitial();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
