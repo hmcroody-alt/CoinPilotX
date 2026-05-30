@@ -105,6 +105,10 @@ def main():
     require("UNDX Unified Agent Runtime" not in feed_html, "UNDX unified agent runtime absent from Pulse feed")
     require("Run Unified Runtime Review" not in feed_html, "UNDX runtime review action absent from Pulse feed")
     require("Runtime Session Registry" not in feed_html, "UNDX runtime registry absent from Pulse feed")
+    require("UNDX Repository Intelligence Foundation" not in feed_html, "UNDX repository intelligence foundation absent from Pulse feed")
+    require("Repository Profiles" not in feed_html, "UNDX repository profiles absent from Pulse feed")
+    require("Technology Detection" not in feed_html, "UNDX technology detection absent from Pulse feed")
+    require("Repository Health Score" not in feed_html, "UNDX repository health score absent from Pulse feed")
     require("Project Tasks" not in feed_html, "UNDX project tasks absent from Pulse feed")
     require("Project Milestones" not in feed_html, "UNDX project milestones absent from Pulse feed")
     require("Project Memory" not in feed_html, "UNDX project memory absent from Pulse feed")
@@ -502,6 +506,40 @@ def main():
         "undxRunUnifiedRuntimeReview",
         "undxAttachRuntimeToProject",
         "undxRenderLinkedRuntimeSessions",
+        "UNDX Repository Intelligence Foundation",
+        "Build repository understanding, architecture awareness, and engineering intelligence from connected repositories.",
+        "Repository Awareness: <strong>Online</strong>",
+        "Repository Profiling: <strong>Online</strong>",
+        "Architecture Analysis: <strong>Online</strong>",
+        "Technology Detection: <strong>Online</strong>",
+        "Repository Writes: <strong>Disabled</strong>",
+        "Repository Profiles",
+        "undxRepositoryProfiles",
+        "REPO-UNDX-0001",
+        "Repository Profile",
+        "Technology Intelligence Report",
+        "Architecture Intelligence",
+        "Architecture Report",
+        "Repository Knowledge Graph",
+        "Engineering Recommendations",
+        "undxEngineeringRecommendations",
+        "Repository Health Score",
+        "Repository Memory",
+        "undxRepositoryMemory",
+        "Agent Runtime Integration",
+        "Project Integration",
+        "Lifecycle Integration",
+        "undxCreateRepositoryFoundationProfile",
+        "undxGenerateTechnologyReportFlow",
+        "undxGenerateArchitectureReportFlow",
+        "undxGenerateRepositoryHealthFlow",
+        "undxGenerateEngineeringRecommendationsFlow",
+        "undxRenderLinkedRepositoryFoundationProfiles",
+        "File Editing Disabled",
+        "Command Execution Disabled",
+        "Git Disabled",
+        "Deployment Disabled",
+        "Secret Access Disabled",
         "Store Project",
         "Project Summary",
         "Suggested Milestones",
