@@ -25775,6 +25775,205 @@ sqlite</textarea></label>
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-task-execution-sandbox' id='undx-task-execution-sandbox'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Sandbox Status: Online</span>
+            <h2>UNDX Task Execution Sandbox</h2>
+          </div>
+          <p>Safe execution planning, simulation, validation, and readiness analysis without performing real actions.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX task execution sandbox status'>
+              <span>Sandbox Status: <strong>Online</strong></span>
+              <span>Execution Simulation: <strong>Online</strong></span>
+              <span>Validation Simulation: <strong>Online</strong></span>
+              <span>Rollback Simulation: <strong>Online</strong></span>
+              <span>Real Execution: <strong>Disabled</strong></span>
+              <span>Phase: <strong>38</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Sandbox Center</span>
+              <h3>Task Sandbox Center</h3>
+              <p>Input Sources: Task Package · Change Proposal · Repository Report · Repository Index Report · Strategic Plan · Project · Context-Aware Coding Report</p>
+              <label>Sandbox Source<select id='undxSandboxSourceType'>
+                <option>Repository Index Report</option><option>Task Package</option><option>Change Proposal</option><option>Repository Report</option><option>Strategic Plan</option><option>Project</option><option>Context-Aware Coding Report</option>
+              </select></label>
+              <label>Task Objective<textarea id='undxSandboxObjective' rows='3' placeholder='Describe the task to simulate without executing anything.'>Simulate the next UNDX repository intelligence build phase.</textarea></label>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxSimulateTask'>Simulate Task</button>
+                <button class='button' type='button' id='undxGenerateSandboxPlan'>Generate Sandbox Plan</button>
+                <button class='button' type='button' id='undxGenerateValidationPlan'>Generate Validation Plan</button>
+                <button class='button' type='button' id='undxGenerateRollbackPlan'>Generate Rollback Plan</button>
+              </div>
+              <p class='undx-project-message' id='undxSandboxMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Simulation Engine</span>
+              <h3>Execution Simulation Engine</h3>
+              <p>Task Objective · Execution Phases · Execution Steps · Expected Outputs · Expected Risks · Expected Dependencies · Estimated Complexity · Estimated Duration</p>
+              <p>Storage: <strong>undxExecutionSimulations</strong> · Format: <strong>SIMEXEC-UNDX-0001</strong></p>
+              <div class='undx-simulation-output' id='undxExecutionSimulationOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Sandbox Step Generator</span>
+              <h3>Sandbox Step Generator</h3>
+              <p>Step 1 · Step 2 · Step 3 · Step 4 · Step 5</p>
+              <p>Each step includes purpose, dependencies, expected outcome, and validation method.</p>
+              <div class='undx-chain-list' id='undxSandboxStepOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Validation Simulation Engine</span>
+              <h3>Validation Simulation Engine</h3>
+              <p>Validation Plan · Expected Success Criteria · Testing Requirements · Coverage Requirements · Review Requirements · Approval Requirements</p>
+              <p>Storage: <strong>undxValidationSimulations</strong> · Format: <strong>VALSIM-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxValidationSimulationOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Rollback Simulation Engine</span>
+              <h3>Rollback Simulation Engine</h3>
+              <p>Rollback Strategy · Rollback Trigger Conditions · Rollback Scope · Rollback Validation · Recovery Recommendations</p>
+              <p>Storage: <strong>undxRollbackSimulations</strong> · Format: <strong>ROLLSIM-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxRollbackSimulationOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Risk Engine</span>
+              <h3>Execution Risk Engine</h3>
+              <p>Architecture Risk · Dependency Risk · Security Risk · Testing Risk · Regression Risk · Deployment Risk · Complexity Risk · Overall Sandbox Risk Score</p>
+              <div class='undx-risk-grid' id='undxSandboxRiskOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Readiness Engine</span>
+              <h3>Execution Readiness Engine</h3>
+              <p>Planning Ready · Architecture Ready · Testing Ready · Security Ready · Rollback Ready · Approval Ready · Execution Candidate</p>
+              <p>Levels: Not Ready · Partially Ready · Ready</p>
+              <div class='undx-system-impact-grid' id='undxSandboxReadinessOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Impact Engine</span>
+              <h3>Task Impact Engine</h3>
+              <p>Potentially Affected: Modules · Routes · Services · Components · Dependencies · Tests · Users</p>
+              <p>Storage: <strong>undxTaskImpacts</strong> · Format: <strong>TASKIMP-UNDX-0001</strong></p>
+              <div class='undx-risk-grid' id='undxTaskImpactOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Failure Scenario Engine</span>
+              <h3>Failure Scenario Engine</h3>
+              <p>Potential Failures · Dependency Failure · Route Failure · Service Failure · Testing Failure · Approval Failure · Security Failure · Mitigation Recommendations</p>
+              <div class='undx-chain-list' id='undxFailureScenarioOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Sandbox Reports</span>
+              <h3>Sandbox Report Generator</h3>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateSandboxReport'>Generate Sandbox Report</button>
+                <button class='button' type='button' id='undxRunSandboxReview'>Run Multi-Agent Sandbox Review</button>
+              </div>
+              <p>Storage: <strong>undxSandboxReports</strong> · Format: <strong>SANDBOX-UNDX-0001</strong></p>
+              <div class='undx-memory-empty' id='undxSandboxReportEmpty'>No sandbox reports stored yet. Generate a report to preserve execution simulation intelligence.</div>
+              <div class='undx-simulation-registry' id='undxSandboxReportList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Open Sandbox Report</span>
+              <h3>Sandbox Report</h3>
+              <div class='undx-evolution-empty' id='undxSandboxReportDetailEmpty'>Open a sandbox report to view task summary, execution plan, validation plan, rollback plan, risk assessment, readiness score, and recommendations.</div>
+              <div class='undx-simulation-output' id='undxSandboxReportDetail' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Agent Sandbox Review</span>
+              <h3>Multi-Agent Sandbox Review</h3>
+              <div id='undxSandboxReviewOutput'><p>Architecture Review, Implementation Review, Testing Review, Security Review, Documentation Review, and Combined Recommendation will appear after review.</p></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Engineering Review Board</span>
+              <h3>Engineering Review Board</h3>
+              <p>Execution Recommendation · Approve for Future Execution · Needs More Validation · Needs More Testing · Needs More Review · Not Recommended</p>
+              <div id='undxSandboxBoardOutput'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Sandbox Dashboard</span>
+              <h3>Sandbox Dashboard</h3>
+              <p>Total Simulations: <strong id='undxSandboxTotalSimulations'>0</strong></p>
+              <p>Average Risk: <strong id='undxSandboxAverageRisk'>0</strong></p>
+              <p>Average Readiness: <strong id='undxSandboxAverageReadiness'>0</strong></p>
+              <p>Most Simulated Project: <strong id='undxSandboxMostSimulatedProject'>None</strong></p>
+              <p>Highest Risk Task: <strong id='undxSandboxHighestRiskTask'>None</strong></p>
+              <p>Most Common Failure Type: <strong id='undxSandboxCommonFailure'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Sandbox Reports: <strong id='undxProjectSandboxReports'>0</strong></p>
+              <p>Execution Readiness: <strong id='undxProjectExecutionReadiness'>Not Ready</strong></p>
+              <p>Validation Readiness: <strong id='undxProjectValidationReadiness'>Not Ready</strong></p>
+              <p>Rollback Readiness: <strong id='undxProjectRollbackReadiness'>Not Ready</strong></p>
+              <p>Risk Score: <strong id='undxProjectSandboxRiskScore'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Engine Integration</h3>
+              <p>Task Packages display Sandbox Simulations · Execution Readiness · Validation Readiness · Rollback Readiness</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Indexing Integration</span>
+              <h3>Repository Indexing Integration</h3>
+              <p>Impacted Modules · Impacted Services · Impacted Routes · Impacted Dependencies</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Memory Graph Integration</h3>
+              <p>Sandbox Reports · Sandbox Reviews · Sandbox Recommendations · Execution Readiness History</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Knowledge Graph Integration</h3>
+              <p>Task Relationships · Execution Relationships · Dependency Relationships · Risk Relationships</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Sandbox Activity Log</span>
+              <h3>Sandbox Activity Log</h3>
+              <p>Simulation Created · Validation Generated · Rollback Generated · Review Generated · No actual execution events.</p>
+              <div class='undx-chain-list' id='undxSandboxActivityLog'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Center</span>
+              <h3>Safety Center</h3>
+              <p><strong>Allowed:</strong> Simulation · Planning · Validation · Rollback Planning · Risk Analysis</p>
+              <p><strong>Not Allowed:</strong> Run Commands · Execute Code · Modify Files · Push Commits · Deploy Applications · Access Secrets</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Hard Execution Lock</span>
+              <h3>Hard Execution Lock</h3>
+              <p>Execution Disabled</p>
+              <p>Command Execution Disabled</p>
+              <p>File Editing Disabled</p>
+              <p>Git Write Disabled</p>
+              <p>Deployment Disabled</p>
+              <p>Repository Write Disabled</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Task Execution Sandbox is simulation-only. It does not execute code, edit repositories, run commands, perform Git operations, push commits, deploy applications, access secrets, or modify files.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 38<br><strong>Task Execution Sandbox</strong></span>
+                <span>Phase 39<br><strong>Controlled Code Generation</strong></span>
+                <span>Phase 40<br><strong>Human Approved Repository Actions</strong></span>
+                <span>Phase 41<br><strong>Controlled File Editing Engine</strong></span>
+                <span>Phase 42<br><strong>Autonomous Engineering Workspace</strong></span>
+                <span>Phase 43<br><strong>Controlled Test Execution</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -27042,6 +27241,41 @@ sqlite</textarea></label>
     const undxProjectHighestRiskDependency = document.getElementById('undxProjectHighestRiskDependency');
     const undxIndexTestingIntegration = document.getElementById('undxIndexTestingIntegration');
     const undxIndexCodingIntegration = document.getElementById('undxIndexCodingIntegration');
+    const undxSandboxSourceType = document.getElementById('undxSandboxSourceType');
+    const undxSandboxObjective = document.getElementById('undxSandboxObjective');
+    const undxSimulateTask = document.getElementById('undxSimulateTask');
+    const undxGenerateSandboxPlan = document.getElementById('undxGenerateSandboxPlan');
+    const undxGenerateValidationPlan = document.getElementById('undxGenerateValidationPlan');
+    const undxGenerateRollbackPlan = document.getElementById('undxGenerateRollbackPlan');
+    const undxSandboxMessage = document.getElementById('undxSandboxMessage');
+    const undxExecutionSimulationOutput = document.getElementById('undxExecutionSimulationOutput');
+    const undxSandboxStepOutput = document.getElementById('undxSandboxStepOutput');
+    const undxValidationSimulationOutput = document.getElementById('undxValidationSimulationOutput');
+    const undxRollbackSimulationOutput = document.getElementById('undxRollbackSimulationOutput');
+    const undxSandboxRiskOutput = document.getElementById('undxSandboxRiskOutput');
+    const undxSandboxReadinessOutput = document.getElementById('undxSandboxReadinessOutput');
+    const undxTaskImpactOutput = document.getElementById('undxTaskImpactOutput');
+    const undxFailureScenarioOutput = document.getElementById('undxFailureScenarioOutput');
+    const undxGenerateSandboxReport = document.getElementById('undxGenerateSandboxReport');
+    const undxRunSandboxReview = document.getElementById('undxRunSandboxReview');
+    const undxSandboxReportEmpty = document.getElementById('undxSandboxReportEmpty');
+    const undxSandboxReportList = document.getElementById('undxSandboxReportList');
+    const undxSandboxReportDetailEmpty = document.getElementById('undxSandboxReportDetailEmpty');
+    const undxSandboxReportDetail = document.getElementById('undxSandboxReportDetail');
+    const undxSandboxReviewOutput = document.getElementById('undxSandboxReviewOutput');
+    const undxSandboxBoardOutput = document.getElementById('undxSandboxBoardOutput');
+    const undxSandboxTotalSimulations = document.getElementById('undxSandboxTotalSimulations');
+    const undxSandboxAverageRisk = document.getElementById('undxSandboxAverageRisk');
+    const undxSandboxAverageReadiness = document.getElementById('undxSandboxAverageReadiness');
+    const undxSandboxMostSimulatedProject = document.getElementById('undxSandboxMostSimulatedProject');
+    const undxSandboxHighestRiskTask = document.getElementById('undxSandboxHighestRiskTask');
+    const undxSandboxCommonFailure = document.getElementById('undxSandboxCommonFailure');
+    const undxProjectSandboxReports = document.getElementById('undxProjectSandboxReports');
+    const undxProjectExecutionReadiness = document.getElementById('undxProjectExecutionReadiness');
+    const undxProjectValidationReadiness = document.getElementById('undxProjectValidationReadiness');
+    const undxProjectRollbackReadiness = document.getElementById('undxProjectRollbackReadiness');
+    const undxProjectSandboxRiskScore = document.getElementById('undxProjectSandboxRiskScore');
+    const undxSandboxActivityLog = document.getElementById('undxSandboxActivityLog');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -27089,6 +27323,12 @@ sqlite</textarea></label>
     const undxDependencyIndexesKey = 'undxDependencyIndexes';
     const undxRepositoryKnowledgeKey = 'undxRepositoryKnowledge';
     const undxRepositoryIndexReportsKey = 'undxRepositoryIndexReports';
+    const undxExecutionSimulationsKey = 'undxExecutionSimulations';
+    const undxValidationSimulationsKey = 'undxValidationSimulations';
+    const undxRollbackSimulationsKey = 'undxRollbackSimulations';
+    const undxTaskImpactsKey = 'undxTaskImpacts';
+    const undxSandboxReportsKey = 'undxSandboxReports';
+    const undxSandboxActivityLogKey = 'undxSandboxActivityLog';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -27353,6 +27593,7 @@ sqlite</textarea></label>
       const linkedContextAwareCodingReports = Array.isArray(project.linkedContextAwareCodingReports) ? project.linkedContextAwareCodingReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeContextAwareCodingReport) : [];
       const linkedRepositoryConnectorReports = Array.isArray(project.linkedRepositoryConnectorReports) ? project.linkedRepositoryConnectorReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryConnectorReport) : [];
       const linkedRepositoryIndexReports = Array.isArray(project.linkedRepositoryIndexReports) ? project.linkedRepositoryIndexReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryIndexReport) : [];
+      const linkedSandboxReports = Array.isArray(project.linkedSandboxReports) ? project.linkedSandboxReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeSandboxReport) : [];
       const connectedRepository = project.connectedRepository ? undxNormalizeRepositoryConnection(project.connectedRepository) : null;
       return {
         ...project,
@@ -27379,6 +27620,7 @@ sqlite</textarea></label>
         linkedContextAwareCodingReports,
         linkedRepositoryConnectorReports,
         linkedRepositoryIndexReports,
+        linkedSandboxReports,
         connectedRepository,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
@@ -33785,6 +34027,74 @@ sqlite</textarea></label>
     function undxGenerateRepositoryIndexReportFlow(){const reports=undxLoadRepositoryIndexReports(); const index=undxLoadRepositoryIndexes()[0] || undxGenerateRepositoryIndexFlow(); const dep=undxLoadDependencyIndexes()[0] || undxGenerateDependencyIndexFlow(); const impact=undxLoadRepositoryImpacts()[0] || undxGenerateRepositoryImpactFlow(); const report=undxNormalizeRepositoryIndexReport({reportId:undxRepoIqNextId(reports,'RIDXREP-UNDX','reportId'), index, dependencyIndex:dep, impact, createdAt:new Date().toISOString()}); undxRepoIqSave(undxRepositoryIndexReportsKey,[report,...reports]); undxOpenRepositoryIndexReport(report); undxRenderRepositoryIndexReportRegistry(); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${report.reportId} stored in Repository Intelligence Reports.`; return report;}
     async function undxRunRepositoryIndexReviewFlow(){const report=undxLoadRepositoryIndexReports()[0] || undxGenerateRepositoryIndexReportFlow(); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent='Routing repository index review through UNDX Intelligence Router...'; try{const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxRepositoryIndexReportText(report)})}); const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.'); const agents=data.agents || []; if(undxRepositoryIndexReviewOutput) undxRepositoryIndexReviewOutput.replaceChildren(undxBlock('Architecture Findings',agents.find(a=>a.key==='architect')?.recommendation || 'Architecture relationships mapped.'),undxBlock('Dependency Findings',agents.find(a=>a.key==='optimization')?.recommendation || 'Dependency chains indexed.'),undxBlock('Security Findings',agents.find(a=>a.key==='security')?.recommendation || 'Read-only boundary preserved.'),undxBlock('Testing Findings',agents.find(a=>a.key==='testing')?.recommendation || 'Impacted tests identified.'),undxBlock('Documentation Findings',agents.find(a=>a.key==='documentation')?.recommendation || 'Repository questions captured.'),undxBlock('Optimization Findings',agents.find(a=>a.key==='optimization')?.recommendation || 'Reduce dependency coupling before future edits.'),undxBlock('Combined Repository Recommendation','Continue read-only indexing. Future execution requires approved phases.')); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent='Multi-agent repository review complete.';}catch(error){if(undxRepositoryIndexReviewOutput) undxRepositoryIndexReviewOutput.replaceChildren(undxBlock('Architecture Findings','OpenAI fallback: index remains read-only.'),undxBlock('Dependency Findings','OpenAI fallback: dependency map stored only.'),undxBlock('Security Findings','OpenAI fallback: no file editing, commands, Git, secrets, or deployments.'),undxBlock('Testing Findings','OpenAI fallback: run audits and browser checks.'),undxBlock('Documentation Findings','OpenAI fallback: preserve repository questions.'),undxBlock('Optimization Findings','OpenAI fallback: reduce coupling.'),undxBlock('Combined Repository Recommendation','Fallback → OpenAI. Repository indexing remains read-only.')); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${error.message || 'Router unavailable.'} OpenAI fallback active.`;}}
     function undxRenderRepositoryIndexingInitial(){undxRenderRepositoryIndexRegistry(); undxRenderRelationshipGraph(); undxRenderRepositorySearch(); undxRenderRepositoryImpact(); undxRenderDependencyIndex(); undxRenderRepositoryKnowledge(); undxRenderRepositoryIndex(undxLoadRepositoryIndexes()[0] || null); undxRenderRepositoryIndexReportRegistry();}
+    function undxSandboxReadinessLevel(score){return score >= 78 ? 'Ready' : score >= 48 ? 'Partially Ready' : 'Not Ready';}
+    function undxSandboxObjectiveText(){return String((undxSandboxObjective?.value || '').trim() || 'Simulate the next UNDX repository intelligence build phase.').slice(0,700);}
+    function undxSandboxSourceSummary(){
+      const sourceType = undxSandboxSourceType?.value || 'Repository Index Report';
+      const project = undxCurrentProject() || {};
+      const source = sourceType === 'Task Package' ? undxLoadTaskPackages()[0] : sourceType === 'Change Proposal' ? undxLoadChangeProposals()[0] : sourceType === 'Repository Report' ? undxLoadRepositoryIntelligenceRecords()[0] : sourceType === 'Strategic Plan' ? undxLoadStrategicPlans()[0] : sourceType === 'Project' ? project : sourceType === 'Context-Aware Coding Report' ? undxLoadContextAwareCodingReports()[0] : undxLoadRepositoryIndexReports()[0];
+      return {sourceType, source:source || {}, projectName:project.name || project.projectId || 'CoinPilotXAI'};
+    }
+    function undxSandboxSteps(objective){
+      return ['Define simulated scope','Map dependencies and impacted systems','Plan implementation sequence','Plan validation and review gates','Prepare rollback and approval checkpoint'].map((purpose,index)=>({step:`Step ${index+1}`, purpose, dependencies:['Repository Index','Approval Protocol','Testing Intelligence'].slice(0,(index%3)+1), expectedOutcome:`${purpose} completed in simulation only.`, validationMethod:index < 3 ? 'Review generated plan against read-only intelligence.' : 'Confirm execution remains disabled.'}));
+    }
+    function undxNormalizeExecutionSimulation(sim){
+      const objective = String(sim?.taskObjective || undxSandboxObjectiveText()).slice(0,700);
+      const steps = Array.isArray(sim?.steps) ? sim.steps : undxSandboxSteps(objective);
+      return {simulationId:String(sim?.simulationId || `SIMEXEC-UNDX-${Date.now()}`).slice(0,44), sourceType:String(sim?.sourceType || undxSandboxSourceSummary().sourceType).slice(0,120), taskObjective:objective, executionPhases:undxNormalizeExecutionList(sim?.executionPhases, ['Planning','Architecture simulation','Validation simulation','Rollback simulation','Approval checkpoint'], 10, 160), executionSteps:steps.slice(0,8), expectedOutputs:undxNormalizeExecutionList(sim?.expectedOutputs, ['Sandbox plan','Validation plan','Rollback plan','Risk assessment','Readiness score'], 10, 180), expectedRisks:undxNormalizeExecutionList(sim?.expectedRisks, ['Dependency drift','Testing gaps','Approval delay','Regression risk'], 10, 180), expectedDependencies:undxNormalizeExecutionList(sim?.expectedDependencies, ['Repository Index Report','Task Package','Approval Protocol','Testing Intelligence'], 10, 180), estimatedComplexity:String(sim?.estimatedComplexity || 'Medium').slice(0,80), estimatedDuration:String(sim?.estimatedDuration || '1-2 planning cycles').slice(0,100), createdAt:sim?.createdAt || new Date().toISOString(), status:'Simulated'};
+    }
+    const undxLoadExecutionSimulations = () => undxRepoIqLoad(undxExecutionSimulationsKey, undxNormalizeExecutionSimulation);
+    function undxNormalizeValidationSimulation(val){
+      return {validationId:String(val?.validationId || `VALSIM-UNDX-${Date.now()}`).slice(0,44), validationPlan:undxNormalizeExecutionList(val?.validationPlan, ['Run Python compile','Run JavaScript parse','Run UNDX audit','Run premium foundation audit','Run browser desktop/mobile check'], 12, 180), expectedSuccessCriteria:undxNormalizeExecutionList(val?.expectedSuccessCriteria, ['All audits pass','No Pulse feed leakage','No real execution','Read-only locks visible'], 10, 180), testingRequirements:undxNormalizeExecutionList(val?.testingRequirements, ['Functional route checks','Pulse feed layout audit','Performance audit','Manual sandbox actions'], 10, 180), coverageRequirements:undxNormalizeExecutionList(val?.coverageRequirements, ['Execution plan','Validation plan','Rollback plan','Risk engine','Project integration'], 10, 180), reviewRequirements:undxNormalizeExecutionList(val?.reviewRequirements, ['Architect review','Testing review','Security review','Documentation review'], 10, 180), approvalRequirements:undxNormalizeExecutionList(val?.approvalRequirements, ['Human approval required before future execution','Command access remains disabled'], 8, 180), readinessScore:Math.max(0, Math.min(100, Number(val?.readinessScore || 76))), createdAt:val?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadValidationSimulations = () => undxRepoIqLoad(undxValidationSimulationsKey, undxNormalizeValidationSimulation);
+    function undxNormalizeRollbackSimulation(roll){
+      return {rollbackId:String(roll?.rollbackId || `ROLLSIM-UNDX-${Date.now()}`).slice(0,44), rollbackStrategy:String(roll?.rollbackStrategy || 'Pause future execution, revert to previous approved plan, and preserve all generated reports for review.').slice(0,500), triggerConditions:undxNormalizeExecutionList(roll?.triggerConditions, ['Audit failure','Unexpected route impact','Security concern','Approval rejected','Deployment risk'], 10, 180), rollbackScope:undxNormalizeExecutionList(roll?.rollbackScope, ['Planning records','Generated directives','Linked project references','Future execution eligibility'], 10, 180), rollbackValidation:undxNormalizeExecutionList(roll?.rollbackValidation, ['Confirm no files changed','Confirm no commands executed','Confirm no deployment occurred','Confirm registry state remains recoverable'], 10, 180), recoveryRecommendations:undxNormalizeExecutionList(roll?.recoveryRecommendations, ['Regenerate plan with narrower scope','Request additional approval','Increase test coverage','Document failure scenario'], 10, 180), readinessScore:Math.max(0, Math.min(100, Number(roll?.readinessScore || 72))), createdAt:roll?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadRollbackSimulations = () => undxRepoIqLoad(undxRollbackSimulationsKey, undxNormalizeRollbackSimulation);
+    function undxSandboxRiskProfile(objective){
+      const text = String(objective || '').toLowerCase();
+      const security = /auth|security|wallet|payment|secret|admin/.test(text) ? 74 : 42;
+      const deployment = /deploy|production|railway|release/.test(text) ? 76 : 34;
+      return {architectureRisk:54, dependencyRisk:58, securityRisk:security, testingRisk:62, regressionRisk:56, deploymentRisk:deployment, complexityRisk:text.length > 180 ? 72 : 48};
+    }
+    function undxNormalizeTaskImpact(impact){
+      return {impactId:String(impact?.impactId || `TASKIMP-UNDX-${Date.now()}`).slice(0,44), modules:undxNormalizeExecutionList(impact?.modules, ['UNDX','Premium','Repository Intelligence','Task Engine'], 12, 120), routes:undxNormalizeExecutionList(impact?.routes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160), services:undxNormalizeExecutionList(impact?.services, ['UNDX Intelligence Router','Project Registry','Mission Memory'], 12, 180), components:undxNormalizeExecutionList(impact?.components, ['Command View','Sandbox Dashboard','Report Registry'], 12, 180), dependencies:undxNormalizeExecutionList(impact?.dependencies, ['OpenAI fallback','Premium foundation','LocalStorage registry'], 12, 160), tests:undxNormalizeExecutionList(impact?.tests, ['py_compile','JS parse','UNDX audit','Browser desktop/mobile check'], 12, 180), users:undxNormalizeExecutionList(impact?.users, ['Premium UNDX users','CoinPilotXAI builder workflow'], 8, 180), createdAt:impact?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadTaskImpacts = () => undxRepoIqLoad(undxTaskImpactsKey, undxNormalizeTaskImpact);
+    function undxNormalizeSandboxReport(report){
+      const sim = undxNormalizeExecutionSimulation(report?.simulation || undxLoadExecutionSimulations()[0] || {});
+      const validation = undxNormalizeValidationSimulation(report?.validation || undxLoadValidationSimulations()[0] || {});
+      const rollback = undxNormalizeRollbackSimulation(report?.rollback || undxLoadRollbackSimulations()[0] || {});
+      const impact = undxNormalizeTaskImpact(report?.impact || undxLoadTaskImpacts()[0] || {});
+      const risk = report?.risk || undxSandboxRiskProfile(sim.taskObjective);
+      const overallRiskScore = Math.round(Object.values(risk).reduce((sum,value)=>sum+Number(value || 0),0)/Object.values(risk).length);
+      const readinessScore = Math.round((validation.readinessScore + rollback.readinessScore + Math.max(0,100-overallRiskScore)) / 3);
+      return {reportId:String(report?.reportId || `SANDBOX-UNDX-${Date.now()}`).slice(0,44), taskSummary:String(report?.taskSummary || sim.taskObjective).slice(0,700), simulation:sim, validation, rollback, impact, risk, overallRiskScore, readinessScore, readinessLevel:undxSandboxReadinessLevel(readinessScore), recommendations:undxNormalizeExecutionList(report?.recommendations, ['Keep this task simulation-only','Require approval before future execution','Validate audits before any handoff','Prepare rollback before controlled execution'], 10, 220), createdAt:report?.createdAt || new Date().toISOString(), status:'Sandbox Report'};
+    }
+    const undxLoadSandboxReports = () => undxRepoIqLoad(undxSandboxReportsKey, undxNormalizeSandboxReport);
+    function undxSandboxLog(event){const logs=undxRepoIqLoad(undxSandboxActivityLogKey, item=>({event:String(item?.event || '').slice(0,120), createdAt:item?.createdAt || new Date().toISOString()})); undxRepoIqSave(undxSandboxActivityLogKey,[{event,createdAt:new Date().toISOString()},...logs].slice(0,30)); undxRenderSandboxActivityLog();}
+    function undxRenderExecutionSimulation(sim){if(undxExecutionSimulationOutput) undxExecutionSimulationOutput.replaceChildren(undxBlock('Task Objective', sim.taskObjective),undxBlock('Execution Phases', sim.executionPhases),undxBlock('Expected Outputs', sim.expectedOutputs),undxBlock('Expected Risks', sim.expectedRisks),undxBlock('Expected Dependencies', sim.expectedDependencies),undxBlock('Estimated Complexity', sim.estimatedComplexity),undxBlock('Estimated Duration', sim.estimatedDuration)); if(undxSandboxStepOutput) undxSandboxStepOutput.replaceChildren(...sim.executionSteps.map(step=>undxBlock(step.step,[`Purpose: ${step.purpose}`,`Dependencies: ${step.dependencies.join(', ')}`,`Expected outcome: ${step.expectedOutcome}`,`Validation method: ${step.validationMethod}`])));}
+    function undxRenderValidationSimulation(val){if(undxValidationSimulationOutput) undxValidationSimulationOutput.replaceChildren(undxBlock('Validation Plan', val.validationPlan),undxBlock('Expected Success Criteria', val.expectedSuccessCriteria),undxBlock('Testing Requirements', val.testingRequirements),undxBlock('Coverage Requirements', val.coverageRequirements),undxBlock('Review Requirements', val.reviewRequirements),undxBlock('Approval Requirements', val.approvalRequirements));}
+    function undxRenderRollbackSimulation(roll){if(undxRollbackSimulationOutput) undxRollbackSimulationOutput.replaceChildren(undxBlock('Rollback Strategy', roll.rollbackStrategy),undxBlock('Rollback Trigger Conditions', roll.triggerConditions),undxBlock('Rollback Scope', roll.rollbackScope),undxBlock('Rollback Validation', roll.rollbackValidation),undxBlock('Recovery Recommendations', roll.recoveryRecommendations));}
+    function undxRenderSandboxRisk(risk){const values=risk || undxSandboxRiskProfile(undxSandboxObjectiveText()); const overall=Math.round(Object.values(values).reduce((s,v)=>s+v,0)/Object.values(values).length); if(undxSandboxRiskOutput) undxSandboxRiskOutput.replaceChildren(undxBlock('Architecture Risk', `${values.architectureRisk}/100`),undxBlock('Dependency Risk', `${values.dependencyRisk}/100`),undxBlock('Security Risk', `${values.securityRisk}/100`),undxBlock('Testing Risk', `${values.testingRisk}/100`),undxBlock('Regression Risk', `${values.regressionRisk}/100`),undxBlock('Deployment Risk', `${values.deploymentRisk}/100`),undxBlock('Complexity Risk', `${values.complexityRisk}/100`),undxBlock('Overall Sandbox Risk Score', `${overall}/100`));}
+    function undxRenderSandboxReadiness(report){const score=report?.readinessScore || 0; const level=undxSandboxReadinessLevel(score); if(undxSandboxReadinessOutput) undxSandboxReadinessOutput.replaceChildren(...['Planning Ready','Architecture Ready','Testing Ready','Security Ready','Rollback Ready','Approval Ready','Execution Candidate'].map((item,index)=>undxBlock(item, index < Math.ceil(score/16) ? level : 'Partially Ready')));}
+    function undxRenderTaskImpact(impact){if(undxTaskImpactOutput) undxTaskImpactOutput.replaceChildren(undxBlock('Potentially Affected Modules', impact.modules),undxBlock('Potentially Affected Routes', impact.routes),undxBlock('Potentially Affected Services', impact.services),undxBlock('Potentially Affected Components', impact.components),undxBlock('Potentially Affected Dependencies', impact.dependencies),undxBlock('Potentially Affected Tests', impact.tests),undxBlock('Potentially Affected Users', impact.users));}
+    function undxRenderFailureScenarios(){const failures=['Dependency Failure','Route Failure','Service Failure','Testing Failure','Approval Failure','Security Failure']; if(undxFailureScenarioOutput) undxFailureScenarioOutput.replaceChildren(...failures.map(item=>undxBlock(item, ['Potential Failures tracked in simulation only.', 'Mitigation Recommendations: narrow scope, add validation, require approval, prepare rollback.'])));}
+    function undxRenderSandboxActivityLog(){const logs=undxRepoIqLoad(undxSandboxActivityLogKey, item=>({event:String(item?.event || '').slice(0,120), createdAt:item?.createdAt || new Date().toISOString()})); if(undxSandboxActivityLog) undxSandboxActivityLog.replaceChildren(...(logs.length?logs:[{event:'No actual execution events.',createdAt:new Date().toISOString()}]).map(log=>undxBlock('Sandbox Activity Log', `${log.event} · ${undxFormatMemoryTime(log.createdAt)}`)));}
+    function undxGenerateExecutionSimulationFlow(){const sims=undxLoadExecutionSimulations(); const sim=undxNormalizeExecutionSimulation({simulationId:undxRepoIqNextId(sims,'SIMEXEC-UNDX','simulationId'), taskObjective:undxSandboxObjectiveText(), sourceType:undxSandboxSourceSummary().sourceType, createdAt:new Date().toISOString()}); undxRepoIqSave(undxExecutionSimulationsKey,[sim,...sims]); undxRenderExecutionSimulation(sim); undxRenderSandboxRisk(undxSandboxRiskProfile(sim.taskObjective)); undxSandboxLog('Simulation Created'); if(undxSandboxMessage) undxSandboxMessage.textContent=`${sim.simulationId} generated. No code executed.`; return sim;}
+    function undxGenerateValidationSimulationFlow(){const vals=undxLoadValidationSimulations(); const val=undxNormalizeValidationSimulation({validationId:undxRepoIqNextId(vals,'VALSIM-UNDX','validationId'), createdAt:new Date().toISOString()}); undxRepoIqSave(undxValidationSimulationsKey,[val,...vals]); undxRenderValidationSimulation(val); undxSandboxLog('Validation Generated'); if(undxSandboxMessage) undxSandboxMessage.textContent=`${val.validationId} generated.`; return val;}
+    function undxGenerateRollbackSimulationFlow(){const rolls=undxLoadRollbackSimulations(); const roll=undxNormalizeRollbackSimulation({rollbackId:undxRepoIqNextId(rolls,'ROLLSIM-UNDX','rollbackId'), createdAt:new Date().toISOString()}); undxRepoIqSave(undxRollbackSimulationsKey,[roll,...rolls]); undxRenderRollbackSimulation(roll); undxSandboxLog('Rollback Generated'); if(undxSandboxMessage) undxSandboxMessage.textContent=`${roll.rollbackId} generated.`; return roll;}
+    function undxGenerateTaskImpactFlow(){const impacts=undxLoadTaskImpacts(); const impact=undxNormalizeTaskImpact({impactId:undxRepoIqNextId(impacts,'TASKIMP-UNDX','impactId'), createdAt:new Date().toISOString()}); undxRepoIqSave(undxTaskImpactsKey,[impact,...impacts]); undxRenderTaskImpact(impact); return impact;}
+    function undxSandboxReportText(report){return ['UNDX Task Execution Sandbox','',`Report ID: ${report.reportId}`,`Task Summary: ${report.taskSummary}`,`Readiness Score: ${report.readinessScore}/100`,`Execution Readiness: ${report.readinessLevel}`,`Overall Sandbox Risk Score: ${report.overallRiskScore}/100`,'','Execution Plan:',...report.simulation.executionPhases.map(item=>`- ${item}`),'','Validation Plan:',...report.validation.validationPlan.map(item=>`- ${item}`),'','Rollback Plan:',`- ${report.rollback.rollbackStrategy}`,'','Recommendations:',...report.recommendations.map(item=>`- ${item}`),'','Safety: simulation only. Execution Disabled. Command Execution Disabled. File Editing Disabled. Git Write Disabled. Deployment Disabled. Repository Write Disabled.'].join('\\n');}
+    function undxOpenSandboxReport(report){if(undxSandboxReportDetailEmpty) undxSandboxReportDetailEmpty.hidden=true; if(undxSandboxReportDetail) undxSandboxReportDetail.replaceChildren(undxBlock('Report ID', report.reportId),undxBlock('Task Summary', report.taskSummary),undxBlock('Execution Plan', report.simulation.executionPhases),undxBlock('Validation Plan', report.validation.validationPlan),undxBlock('Rollback Plan', report.rollback.rollbackStrategy),undxBlock('Risk Assessment', `Overall Sandbox Risk Score: ${report.overallRiskScore}/100`),undxBlock('Readiness Score', `${report.readinessScore}/100 · ${report.readinessLevel}`),undxBlock('Recommendations', report.recommendations)); undxRenderSandboxDashboard(report);}
+    function undxAttachSandboxReportToProject(report){const project=undxCurrentProject(); if(!project){if(undxSandboxMessage) undxSandboxMessage.textContent='Open a project workspace before attaching a sandbox report.'; return;} const projects=undxLoadProjects().map(item=>item.projectId===project.projectId ? {...item, linkedSandboxReports:[report,...(item.linkedSandboxReports || []).filter(existing=>existing.reportId!==report.reportId)].slice(0,12)} : item); undxSaveProjects(projects); undxOpenProject(project.projectId,false); undxRenderSandboxDashboard(report); if(undxSandboxMessage) undxSandboxMessage.textContent=`${report.reportId} attached to ${project.projectId}.`;}
+    function undxCreateSandboxReportCard(report){const card=document.createElement('article'); card.className='undx-memory-card'; const title=document.createElement('h3'); title.textContent=report.reportId; const meta=document.createElement('p'); meta.textContent=`Execution Readiness: ${report.readinessLevel} · Risk Score: ${report.overallRiskScore}/100 · Created Date: ${undxFormatMemoryTime(report.createdAt)}`; const actions=document.createElement('div'); actions.className='undx-memory-actions'; actions.append(undxProjectActionButton('Open Report',()=>undxOpenSandboxReport(report),true),undxProjectActionButton('Save To Memory',()=>undxStoreBlueprint({id:`sandbox-${report.reportId}`,name:`Sandbox Report ${report.reportId}`,objective:undxSandboxReportText(report),type:'Sandbox Report',source:'UNDX Task Execution Sandbox',createdAt:new Date().toISOString(),phase:'Phase 38',status:'Stored'})),undxProjectActionButton('Send To Chat',()=>undxSendTextToChat(undxSandboxReportText(report))),undxProjectActionButton('Attach To Project',()=>undxAttachSandboxReportToProject(report)),undxProjectActionButton('Delete Report',()=>{undxRepoIqSave(undxSandboxReportsKey,undxLoadSandboxReports().filter(item=>item.reportId!==report.reportId)); undxRenderSandboxReportRegistry();})); card.append(title,meta,actions); return card;}
+    function undxRenderSandboxReportRegistry(){const reports=undxLoadSandboxReports(); if(undxSandboxReportEmpty) undxSandboxReportEmpty.hidden=reports.length>0; if(undxSandboxReportList){undxSandboxReportList.replaceChildren(); reports.forEach(report=>undxSandboxReportList.appendChild(undxCreateSandboxReportCard(report)));} undxRenderSandboxDashboard(reports[0] || null);}
+    function undxRenderSandboxDashboard(report){const reports=undxLoadSandboxReports(); const latest=report || reports[0] || null; const avgRisk=reports.length?Math.round(reports.reduce((s,r)=>s+r.overallRiskScore,0)/reports.length):0; const avgReady=reports.length?Math.round(reports.reduce((s,r)=>s+r.readinessScore,0)/reports.length):0; const linked=(undxCurrentProject() || {}).linkedSandboxReports || []; if(undxSandboxTotalSimulations) undxSandboxTotalSimulations.textContent=String(undxLoadExecutionSimulations().length); if(undxSandboxAverageRisk) undxSandboxAverageRisk.textContent=String(avgRisk); if(undxSandboxAverageReadiness) undxSandboxAverageReadiness.textContent=String(avgReady); if(undxSandboxMostSimulatedProject) undxSandboxMostSimulatedProject.textContent=undxSandboxSourceSummary().projectName; if(undxSandboxHighestRiskTask) undxSandboxHighestRiskTask.textContent=latest?.taskSummary?.slice(0,80) || 'None'; if(undxSandboxCommonFailure) undxSandboxCommonFailure.textContent='Testing Failure'; if(undxProjectSandboxReports) undxProjectSandboxReports.textContent=String(linked.length); if(undxProjectExecutionReadiness) undxProjectExecutionReadiness.textContent=linked[0]?.readinessLevel || latest?.readinessLevel || 'Not Ready'; if(undxProjectValidationReadiness) undxProjectValidationReadiness.textContent=undxSandboxReadinessLevel(linked[0]?.validation?.readinessScore || latest?.validation?.readinessScore || 0); if(undxProjectRollbackReadiness) undxProjectRollbackReadiness.textContent=undxSandboxReadinessLevel(linked[0]?.rollback?.readinessScore || latest?.rollback?.readinessScore || 0); if(undxProjectSandboxRiskScore) undxProjectSandboxRiskScore.textContent=String(linked[0]?.overallRiskScore || latest?.overallRiskScore || 0);}
+    function undxGenerateSandboxReportFlow(){const reports=undxLoadSandboxReports(); const sim=undxLoadExecutionSimulations()[0] || undxGenerateExecutionSimulationFlow(); const validation=undxLoadValidationSimulations()[0] || undxGenerateValidationSimulationFlow(); const rollback=undxLoadRollbackSimulations()[0] || undxGenerateRollbackSimulationFlow(); const impact=undxLoadTaskImpacts()[0] || undxGenerateTaskImpactFlow(); const report=undxNormalizeSandboxReport({reportId:undxRepoIqNextId(reports,'SANDBOX-UNDX','reportId'), simulation:sim, validation, rollback, impact, createdAt:new Date().toISOString()}); undxRepoIqSave(undxSandboxReportsKey,[report,...reports]); undxOpenSandboxReport(report); undxRenderSandboxReportRegistry(); undxRenderSandboxReadiness(report); undxSandboxLog('Sandbox Report Generated'); if(undxSandboxMessage) undxSandboxMessage.textContent=`${report.reportId} generated. Real execution remains disabled.`; return report;}
+    async function undxRunSandboxReviewFlow(){const report=undxLoadSandboxReports()[0] || undxGenerateSandboxReportFlow(); if(undxSandboxMessage) undxSandboxMessage.textContent='Routing sandbox review through UNDX Intelligence Router...'; try{const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxSandboxReportText(report)})}); const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.'); const agents=data.agents || []; if(undxSandboxReviewOutput) undxSandboxReviewOutput.replaceChildren(undxBlock('Architecture Review',agents.find(a=>a.key==='architect')?.recommendation || 'Simulation architecture is scoped.'),undxBlock('Implementation Review',agents.find(a=>a.key==='builder')?.recommendation || 'No implementation occurs in Phase 38.'),undxBlock('Testing Review',agents.find(a=>a.key==='testing')?.recommendation || 'Validation plan ready.'),undxBlock('Security Review',agents.find(a=>a.key==='security')?.recommendation || 'Execution locks remain active.'),undxBlock('Documentation Review',agents.find(a=>a.key==='documentation')?.recommendation || 'Record sandbox outcomes.'),undxBlock('Combined Recommendation','Needs More Validation before any future controlled execution.')); if(undxSandboxBoardOutput) undxSandboxBoardOutput.replaceChildren(undxBlock('Execution Recommendation','Needs More Validation'),undxBlock('Approve for Future Execution','Not yet. Simulation only.'),undxBlock('Needs More Testing','Yes'),undxBlock('Needs More Review','Yes'),undxBlock('Not Recommended','Real execution is not recommended in Phase 38.')); undxSandboxLog('Review Generated'); if(undxSandboxMessage) undxSandboxMessage.textContent='Multi-agent sandbox review complete.';}catch(error){if(undxSandboxReviewOutput) undxSandboxReviewOutput.replaceChildren(undxBlock('Architecture Review','OpenAI fallback: keep sandbox planning-only.'),undxBlock('Implementation Review','OpenAI fallback: no code execution.'),undxBlock('Testing Review','OpenAI fallback: run audits before handoff.'),undxBlock('Security Review','OpenAI fallback: execution/file/Git/deployment locks remain enabled.'),undxBlock('Documentation Review','OpenAI fallback: preserve report.'),undxBlock('Combined Recommendation','Fallback → OpenAI. Sandbox remains simulation-only.')); if(undxSandboxMessage) undxSandboxMessage.textContent=`${error.message || 'Router unavailable.'} OpenAI fallback active.`;}}
+    function undxRenderSandboxInitial(){const sim=undxLoadExecutionSimulations()[0] || undxNormalizeExecutionSimulation({}); const val=undxLoadValidationSimulations()[0] || undxNormalizeValidationSimulation({}); const roll=undxLoadRollbackSimulations()[0] || undxNormalizeRollbackSimulation({}); const impact=undxLoadTaskImpacts()[0] || undxNormalizeTaskImpact({}); const report=undxLoadSandboxReports()[0] || null; undxRenderExecutionSimulation(sim); undxRenderValidationSimulation(val); undxRenderRollbackSimulation(roll); undxRenderSandboxRisk(report?.risk || undxSandboxRiskProfile(sim.taskObjective)); undxRenderSandboxReadiness(report); undxRenderTaskImpact(impact); undxRenderFailureScenarios(); undxRenderSandboxReportRegistry(); undxRenderSandboxActivityLog();}
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -36026,6 +36336,7 @@ sqlite</textarea></label>
       ['undx-context-aware-coding-engine','Context-Aware Coding'],
       ['undx-read-only-repository-connector','Repository Connector'],
       ['undx-repository-indexing-engine','Repository Indexing'],
+      ['undx-task-execution-sandbox','Task Execution Sandbox'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -37359,6 +37670,29 @@ sqlite</textarea></label>
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedSandboxReports(project, card){
+      const section = undxWorkspaceSection('Linked Sandbox Reports');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedSandboxReports || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Sandbox Reports linked yet. Attach a Phase 38 report to preserve Execution Readiness, Validation Readiness, Rollback Readiness, and Risk Score.'));
+      }else{
+        project.linkedSandboxReports.forEach(report => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = report.reportId;
+          const meta = document.createElement('p');
+          meta.textContent = `Execution Readiness: ${report.readinessLevel} · Validation Readiness: ${undxSandboxReadinessLevel(report.validation.readinessScore)} · Rollback Readiness: ${undxSandboxReadinessLevel(report.rollback.readinessScore)} · Risk Score: ${report.overallRiskScore}/100`;
+          const safety = document.createElement('p');
+          safety.textContent = 'Simulation-only sandbox report. No files were modified, no commands were executed, no Git operations were performed, and no deployments were performed.';
+          item.append(title, meta, safety);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -37467,6 +37801,7 @@ sqlite</textarea></label>
       undxRenderLinkedContextAwareCodingReports(project, card);
       undxRenderLinkedRepositoryConnectorReports(project, card);
       undxRenderLinkedRepositoryIndexReports(project, card);
+      undxRenderLinkedSandboxReports(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -38171,6 +38506,12 @@ sqlite</textarea></label>
     undxGenerateRepositoryKnowledge?.addEventListener('click', undxGenerateRepositoryKnowledgeFlow);
     undxGenerateRepositoryIndexReport?.addEventListener('click', undxGenerateRepositoryIndexReportFlow);
     undxRunRepositoryIndexReview?.addEventListener('click', undxRunRepositoryIndexReviewFlow);
+    undxSimulateTask?.addEventListener('click', undxGenerateExecutionSimulationFlow);
+    undxGenerateSandboxPlan?.addEventListener('click', undxGenerateExecutionSimulationFlow);
+    undxGenerateValidationPlan?.addEventListener('click', undxGenerateValidationSimulationFlow);
+    undxGenerateRollbackPlan?.addEventListener('click', undxGenerateRollbackSimulationFlow);
+    undxGenerateSandboxReport?.addEventListener('click', undxGenerateSandboxReportFlow);
+    undxRunSandboxReview?.addEventListener('click', undxRunSandboxReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -38240,6 +38581,7 @@ sqlite</textarea></label>
     undxRenderCodingEngineInitial();
     undxRenderRepositoryConnectorInitial();
     undxRenderRepositoryIndexingInitial();
+    undxRenderSandboxInitial();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
