@@ -72,7 +72,8 @@ def main():
         "data-status2-modal",
         "data-status2-form",
         "Create Pulse Status",
-        "Create the first Pulse Status",
+        "No Pulse Status yet.",
+        "Create the first Pulse Status.",
         "data-status2-type='text'",
         "data-status2-type='photo'",
         "data-status2-type='video'",
@@ -85,6 +86,14 @@ def main():
         "/api/pulse/media/upload",
     ]:
         expect(token in html, f"status UI contains {token}")
+    expect("data-status2-modal aria-hidden='true' hidden" in html, "Create Status modal is hidden on homepage by default")
+    rail_start = html.find("<section class='pulse-status2'")
+    modal_start = html.find("<section class='pulse-status2-modal'")
+    rail_html = html[rail_start:modal_start]
+    expect(
+        "data-status2-body" not in rail_html and "data-status2-privacy" not in rail_html and "pulseStatus2Media" not in rail_html,
+        "inline Status composer is absent from homepage rail",
+    )
     print("pulse status audit ok")
 
 

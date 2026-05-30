@@ -146,6 +146,9 @@ def main():
     ]
     for token in required_tokens:
         expect(token in html, f"Create Status UI contains {token}")
+    expect("data-status2-modal aria-hidden='true' hidden" in html, "Create Status modal is hidden until opened")
+    expect("Post Status" in html, "Create Status footer has clear post action")
+    expect("No Pulse Status yet.</strong><span>Create the first Pulse Status.</span>" in html, "empty state text is cleanly separated")
     expect("capture" not in html[html.find("pulseStatus2Media") : html.find("pulseStatus2Media") + 260], "Create Status picker does not force camera capture")
     expect("location.href='/pulse/status'" not in html, "Create Status publish does not redirect away from editor flow")
 
