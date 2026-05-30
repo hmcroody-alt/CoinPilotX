@@ -25234,6 +25234,166 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-context-aware-coding' id='undx-context-aware-coding-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Context-Aware Coding: Online</span>
+            <h2>UNDX Context-Aware Coding Engine</h2>
+          </div>
+          <p>Understand where code belongs, how modules connect, and how implementation decisions affect the system.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX context-aware coding engine status'>
+              <span>Context-Aware Coding: <strong>Online</strong></span>
+              <span>Code Placement Engine: <strong>Online</strong></span>
+              <span>Module Boundary Engine: <strong>Online</strong></span>
+              <span>Implementation Pattern Engine: <strong>Online</strong></span>
+              <span>Execution Access: <strong>Disabled</strong></span>
+              <span>Phase: <strong>35</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Placement Engine</span>
+              <h3>Code Placement Engine</h3>
+              <p>routes · services · templates · static assets · workers · database models · migrations · tests · configuration · AI provider modules · premium modules</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateCodePlacementModel'>Generate Code Placement Model</button></div>
+              <p>Storage: <strong>undxCodePlacementModels</strong> · Format: <strong>PLACE-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxCodePlacementOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Module Boundary Engine</span>
+              <h3>Module Boundary Engine</h3>
+              <p>module responsibility · what belongs inside the module · what should stay outside · dependency boundaries · risk of boundary violations · separation-of-concerns score</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateModuleBoundaryModel'>Generate Module Boundary Model</button></div>
+              <p>Storage: <strong>undxModuleBoundaryModels</strong> · Format: <strong>BOUNDARY-UNDX-0001</strong></p>
+              <div class='undx-risk-grid' id='undxModuleBoundaryOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Implementation Pattern Engine</span>
+              <h3>Implementation Pattern Engine</h3>
+              <p>route-controller-service · MVC · service layer · repository pattern · worker queue pattern · event-driven pattern · API gateway pattern · provider abstraction · feature flag pattern · approval gate pattern</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateImplementationPattern'>Generate Implementation Pattern Report</button></div>
+              <p>Storage: <strong>undxImplementationPatterns</strong> · Format: <strong>PATTERN-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxImplementationPatternOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Feature-to-Code Mapper</span>
+              <h3>Feature-to-Code Mapper</h3>
+              <label>Feature Idea<input id='undxFeatureCodeIdeaInput' value='Build Wallet Guardian' placeholder='Example: Build Wallet Guardian'></label>
+              <p>likely frontend areas · likely backend areas · likely API routes · likely database entities · likely services · likely workers · likely tests · likely security checks</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateFeatureCodeMap'>Generate Feature-to-Code Map</button></div>
+              <p>Storage: <strong>undxFeatureCodeMaps</strong> · Format: <strong>FCMAP-UNDX-0001</strong></p>
+              <div class='undx-simulation-output' id='undxFeatureCodeMapOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Responsibility Matrix</span>
+              <h3>Code Responsibility Matrix</h3>
+              <p>UI responsibility · API responsibility · service responsibility · data responsibility · worker responsibility · security responsibility · testing responsibility · documentation responsibility</p>
+              <div class='undx-system-impact-grid' id='undxCodeResponsibilityMatrix'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Context-Aware Directive Generator</span>
+              <h3>Context-Aware Directive Generator</h3>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateContextAwareCodingDirective'>Generate Context-Aware Coding Directive</button></div>
+              <p>Storage: <strong>undxContextAwareDirectives</strong> · Format: <strong>CODEDIR-UNDX-0001</strong></p>
+              <div class='undx-simulation-output' id='undxContextAwareDirectiveOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>File Impact Intelligence</span>
+              <h3>File Impact Intelligence</h3>
+              <p>potential new files · potential modified areas · potential templates · potential static files · potential services · potential routes · potential tests · potential worker updates</p>
+              <p><strong>Inferred / Planning Only</strong></p>
+              <div class='undx-system-impact-grid' id='undxFileImpactOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Coding Risk Engine</span>
+              <h3>Coding Risk Engine</h3>
+              <p>architecture risk · dependency risk · security risk · regression risk · maintainability risk · testing risk</p>
+              <div class='undx-risk-grid' id='undxCodingRiskOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Coding Readiness Score</span>
+              <h3>Coding Readiness Score</h3>
+              <p>Concept Ready · Architecture Ready · Task Ready · Review Ready · Build Candidate</p>
+              <div class='undx-simulation-output' id='undxCodingReadinessOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Context-Aware Coding Registry</span>
+              <h3>Context-Aware Coding Registry</h3>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateContextAwareCodingReport'>Generate Context-Aware Coding Report</button>
+                <button class='button' type='button' id='undxRunCodingReview'>Run Multi-Brain Coding Review</button>
+              </div>
+              <p>Storage: <strong>undxContextAwareCodingReports</strong> · Format: <strong>CODEIQ-UNDX-0001</strong></p>
+              <p class='undx-project-message' id='undxCodingEngineMessage' aria-live='polite'></p>
+              <div class='undx-memory-empty' id='undxCodingReportEmpty'>No context-aware coding reports stored yet. Generate a report to activate coding intelligence.</div>
+              <div class='undx-simulation-registry' id='undxCodingReportList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Context-Aware Coding Report</span>
+              <h3>Open Report</h3>
+              <div class='undx-evolution-empty' id='undxCodingReportDetailEmpty'>Open a report to view placement guidance, module boundaries, implementation patterns, feature maps, directive, file impact, risks, and readiness.</div>
+              <div class='undx-simulation-output' id='undxCodingReportDetail' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Coding Review</span>
+              <h3>Multi-Brain Coding Review</h3>
+              <div id='undxCodingReviewOutput'><p>Architecture Coding Review, Implementation Review, Testing Review, Security Review, Documentation Review, Optimization Review, and Combined Coding Recommendation will appear after review.</p></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Context-Aware Coding Dashboard</span>
+              <h3>Context-Aware Coding Dashboard</h3>
+              <p>Total Coding Reports: <strong id='undxTotalCodingReports'>0</strong></p>
+              <p>Average Coding Readiness: <strong id='undxAverageCodingReadiness'>0</strong></p>
+              <p>Average Risk Score: <strong id='undxAverageCodingRiskScore'>0</strong></p>
+              <p>Most Referenced Module: <strong id='undxMostReferencedCodingModule'>None</strong></p>
+              <p>Most Referenced Pattern: <strong id='undxMostReferencedPattern'>None</strong></p>
+              <p>Most Common Risk: <strong id='undxMostCommonCodingRisk'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Linked Context-Aware Coding Reports: <strong id='undxProjectLinkedCodingReports'>0</strong></p>
+              <p>Suggested Code Areas: <strong id='undxProjectSuggestedCodeAreas'>Pending</strong></p>
+              <p>Coding Readiness: <strong id='undxProjectCodingReadiness'>Concept Ready</strong></p>
+              <p>Coding Risk: <strong id='undxProjectCodingRisk'>0</strong></p>
+              <p>Recommended Implementation Pattern: <strong id='undxProjectImplementationPattern'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Integrations</span>
+              <h3>Task Generation Integration</h3>
+              <p>context-aware code areas · implementation patterns · module boundaries · validation requirements</p>
+              <h3>Change Proposal Integration</h3>
+              <p>referenced coding directive · potential file impact · coding risk · approval readiness</p>
+              <h3>Repository Intelligence Integration</h3>
+              <p>suggested code placement · module boundaries · implementation patterns · feature-to-code maps</p>
+              <h3>Language Mastery Integration</h3>
+              <p>recommended language stack · framework fit · toolchain fit · security patterns for proposed code</p>
+              <h3>Testing Intelligence Integration</h3>
+              <p>tests recommended by code area · regression coverage · likely bug classes · validation checklist</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Context-Aware Coding Engine is read-only. It generates coding intelligence, placement guidance, implementation patterns, and directives only. No files were accessed. No files were modified. No commands were executed. No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 35<br><strong>Context-Aware Coding Engine</strong></span>
+                <span>Phase 36<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 37<br><strong>Repository Indexing Engine</strong></span>
+                <span>Phase 38<br><strong>Task Execution Sandbox</strong></span>
+                <span>Phase 39<br><strong>Controlled Code Generation</strong></span>
+                <span>Phase 40<br><strong>Human Approved Repository Actions</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -26391,6 +26551,40 @@ def pulse_premium_undx_page():
     const undxProjectRepositoryHighestRiskArea = document.getElementById('undxProjectRepositoryHighestRiskArea');
     const undxProjectRepositoryReadiness = document.getElementById('undxProjectRepositoryReadiness');
     const undxRepositoryReviewOutput = document.getElementById('undxRepositoryReviewOutput');
+    const undxGenerateCodePlacementModel = document.getElementById('undxGenerateCodePlacementModel');
+    const undxCodePlacementOutput = document.getElementById('undxCodePlacementOutput');
+    const undxGenerateModuleBoundaryModel = document.getElementById('undxGenerateModuleBoundaryModel');
+    const undxModuleBoundaryOutput = document.getElementById('undxModuleBoundaryOutput');
+    const undxGenerateImplementationPattern = document.getElementById('undxGenerateImplementationPattern');
+    const undxImplementationPatternOutput = document.getElementById('undxImplementationPatternOutput');
+    const undxFeatureCodeIdeaInput = document.getElementById('undxFeatureCodeIdeaInput');
+    const undxGenerateFeatureCodeMap = document.getElementById('undxGenerateFeatureCodeMap');
+    const undxFeatureCodeMapOutput = document.getElementById('undxFeatureCodeMapOutput');
+    const undxCodeResponsibilityMatrix = document.getElementById('undxCodeResponsibilityMatrix');
+    const undxGenerateContextAwareCodingDirective = document.getElementById('undxGenerateContextAwareCodingDirective');
+    const undxContextAwareDirectiveOutput = document.getElementById('undxContextAwareDirectiveOutput');
+    const undxFileImpactOutput = document.getElementById('undxFileImpactOutput');
+    const undxCodingRiskOutput = document.getElementById('undxCodingRiskOutput');
+    const undxCodingReadinessOutput = document.getElementById('undxCodingReadinessOutput');
+    const undxGenerateContextAwareCodingReport = document.getElementById('undxGenerateContextAwareCodingReport');
+    const undxRunCodingReview = document.getElementById('undxRunCodingReview');
+    const undxCodingEngineMessage = document.getElementById('undxCodingEngineMessage');
+    const undxCodingReportEmpty = document.getElementById('undxCodingReportEmpty');
+    const undxCodingReportList = document.getElementById('undxCodingReportList');
+    const undxCodingReportDetailEmpty = document.getElementById('undxCodingReportDetailEmpty');
+    const undxCodingReportDetail = document.getElementById('undxCodingReportDetail');
+    const undxCodingReviewOutput = document.getElementById('undxCodingReviewOutput');
+    const undxTotalCodingReports = document.getElementById('undxTotalCodingReports');
+    const undxAverageCodingReadiness = document.getElementById('undxAverageCodingReadiness');
+    const undxAverageCodingRiskScore = document.getElementById('undxAverageCodingRiskScore');
+    const undxMostReferencedCodingModule = document.getElementById('undxMostReferencedCodingModule');
+    const undxMostReferencedPattern = document.getElementById('undxMostReferencedPattern');
+    const undxMostCommonCodingRisk = document.getElementById('undxMostCommonCodingRisk');
+    const undxProjectLinkedCodingReports = document.getElementById('undxProjectLinkedCodingReports');
+    const undxProjectSuggestedCodeAreas = document.getElementById('undxProjectSuggestedCodeAreas');
+    const undxProjectCodingReadiness = document.getElementById('undxProjectCodingReadiness');
+    const undxProjectCodingRisk = document.getElementById('undxProjectCodingRisk');
+    const undxProjectImplementationPattern = document.getElementById('undxProjectImplementationPattern');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -26423,6 +26617,12 @@ def pulse_premium_undx_page():
     const undxCriticalAreasKey = 'undxCriticalAreas';
     const undxImpactModelsKey = 'undxImpactModels';
     const undxRepositoryIntelligenceRecordsKey = 'undxRepositoryIntelligenceRecords';
+    const undxCodePlacementModelsKey = 'undxCodePlacementModels';
+    const undxModuleBoundaryModelsKey = 'undxModuleBoundaryModels';
+    const undxImplementationPatternsKey = 'undxImplementationPatterns';
+    const undxFeatureCodeMapsKey = 'undxFeatureCodeMaps';
+    const undxContextAwareDirectivesKey = 'undxContextAwareDirectives';
+    const undxContextAwareCodingReportsKey = 'undxContextAwareCodingReports';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -26682,6 +26882,7 @@ def pulse_premium_undx_page():
       const linkedTestStrategies = Array.isArray(project.linkedTestStrategies) ? project.linkedTestStrategies.filter(item => item && item.strategyId).slice(0,24).map(undxNormalizeTestStrategy) : [];
       const linkedAgentMemories = Array.isArray(project.linkedAgentMemories) ? project.linkedAgentMemories.filter(item => item && item.memoryId).slice(0,24).map(undxNormalizeAgentMemory) : [];
       const linkedRepositoryIntelligenceReports = Array.isArray(project.linkedRepositoryIntelligenceReports) ? project.linkedRepositoryIntelligenceReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryIntelligenceRecord) : [];
+      const linkedContextAwareCodingReports = Array.isArray(project.linkedContextAwareCodingReports) ? project.linkedContextAwareCodingReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeContextAwareCodingReport) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -26704,6 +26905,7 @@ def pulse_premium_undx_page():
         linkedTestStrategies,
         linkedAgentMemories,
         linkedRepositoryIntelligenceReports,
+        linkedContextAwareCodingReports,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -32557,6 +32759,196 @@ def pulse_premium_undx_page():
       undxRenderRepositoryQuestions();
       undxRenderRepositoryReportRegistry();
     }
+    function undxCodingReadinessFor(score){
+      if(score >= 88) return 'Build Candidate';
+      if(score >= 78) return 'Review Ready';
+      if(score >= 68) return 'Task Ready';
+      if(score >= 56) return 'Architecture Ready';
+      return 'Concept Ready';
+    }
+    function undxNormalizeCodePlacementModel(model){
+      return {
+        placementId:String(model?.placementId || '').slice(0,44),
+        codeAreas:undxNormalizeExecutionList(model?.codeAreas, ['routes','services','templates','static assets','workers','database models','migrations','tests','configuration','AI provider modules','premium modules'], 16, 120),
+        suggestedFiles:undxNormalizeExecutionList(model?.suggestedFiles, ['routes: premium/UNDX route group', 'services: wallet risk service', 'templates: premium command view', 'static assets: scoped UNDX scripts/styles', 'tests: route and feed isolation checks'], 12, 220),
+        createdAt:model?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeModuleBoundaryModel(model){
+      return {
+        boundaryId:String(model?.boundaryId || '').slice(0,44),
+        moduleResponsibility:String(model?.moduleResponsibility || 'Keep feature logic inside scoped services and command-view state.').slice(0,300),
+        inside:undxNormalizeExecutionList(model?.inside, ['UI state for the feature', 'API request handlers', 'service orchestration', 'validation planning', 'audit hooks'], 10, 180),
+        outside:undxNormalizeExecutionList(model?.outside, ['Pulse feed rendering', 'secrets', 'unapproved filesystem access', 'terminal execution', 'deployment operations'], 10, 180),
+        dependencyBoundaries:undxNormalizeExecutionList(model?.dependencyBoundaries, ['Premium modules depend on premium access checks.', 'AI provider modules depend on UNDX Router fallback.', 'Workers remain separate from UI state.'], 10, 220),
+        boundaryViolationRisk:Number(model?.boundaryViolationRisk || 31),
+        separationScore:Number(model?.separationScore || 84),
+        createdAt:model?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeImplementationPattern(pattern){
+      return {
+        patternId:String(pattern?.patternId || '').slice(0,44),
+        recommendedPatterns:undxNormalizeExecutionList(pattern?.recommendedPatterns, ['route-controller-service','service layer','provider abstraction','feature flag pattern','approval gate pattern'], 10, 120),
+        availablePatterns:undxNormalizeExecutionList(pattern?.availablePatterns, ['route-controller-service','MVC','service layer','repository pattern','worker queue pattern','event-driven pattern','API gateway pattern','provider abstraction','feature flag pattern','approval gate pattern'], 16, 120),
+        recommendation:String(pattern?.recommendation || 'Use route-controller-service with provider abstraction and approval gates for high-impact modules.').slice(0,400),
+        createdAt:pattern?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeFeatureCodeMap(map){
+      return {
+        mapId:String(map?.mapId || '').slice(0,44),
+        featureIdea:String(map?.featureIdea || 'Build Wallet Guardian').slice(0,180),
+        frontendAreas:undxNormalizeExecutionList(map?.frontendAreas, ['premium dashboard UI','UNDX command view','risk status cards'], 10, 160),
+        backendAreas:undxNormalizeExecutionList(map?.backendAreas, ['wallet risk service','risk scoring API','premium access checks'], 10, 160),
+        apiRoutes:undxNormalizeExecutionList(map?.apiRoutes, ['/api/wallet-risk/analyze','/api/undx/chat','/api/undx/agent-council'], 10, 160),
+        databaseEntities:undxNormalizeExecutionList(map?.databaseEntities, ['database risk records','wallet scan history','alert preferences'], 10, 160),
+        services:undxNormalizeExecutionList(map?.services, ['wallet risk service','alert integration','AI provider router'], 10, 160),
+        workers:undxNormalizeExecutionList(map?.workers, ['risk refresh worker','alert delivery worker'], 10, 160),
+        tests:undxNormalizeExecutionList(map?.tests, ['premium route tests','risk scoring unit tests','feed isolation audit','browser route check'], 10, 160),
+        securityChecks:undxNormalizeExecutionList(map?.securityChecks, ['input validation','secret redaction','premium access enforcement','approval gates'], 10, 160),
+        createdAt:map?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeContextAwareDirective(directive){
+      return {
+        directiveId:String(directive?.directiveId || '').slice(0,44),
+        objective:String(directive?.objective || (undxFeatureCodeIdeaInput?.value || 'Build Wallet Guardian')).slice(0,500),
+        codeAreas:undxNormalizeExecutionList(directive?.codeAreas, ['premium modules','routes','services','templates','tests'], 12, 160),
+        fileGroups:undxNormalizeExecutionList(directive?.fileGroups, ['route group: inferred/planning only','service group: inferred/planning only','template group: inferred/planning only','test group: inferred/planning only'], 12, 180),
+        implementationOrder:undxNormalizeExecutionList(directive?.implementationOrder, ['Define objective and boundaries','Map routes/services/templates','Create task package','Run audits and browser checks','Request approval before future execution'], 10, 220),
+        dependencyConsiderations:undxNormalizeExecutionList(directive?.dependencyConsiderations, ['Premium access checks','UNDX Router fallback','localStorage registries','Pulse feed isolation'], 10, 180),
+        securityConsiderations:undxNormalizeExecutionList(directive?.securityConsiderations, ['No secrets in frontend','Validate inputs','Require approval gates','Preserve read-only boundary'], 10, 180),
+        testingConsiderations:undxNormalizeExecutionList(directive?.testingConsiderations, ['Python compile','JS parse','UNDX audit','Pulse feed layout audit','browser route check'], 10, 180),
+        rollbackConsiderations:undxNormalizeExecutionList(directive?.rollbackConsiderations, ['Keep changes scoped','Preserve previous command views','Avoid destructive migration assumptions'], 10, 180),
+        approvalRequirements:undxNormalizeExecutionList(directive?.approvalRequirements, ['Approval required before file access','Approval required before edits','Approval required before commands','Approval required before deployment'], 10, 180),
+        createdAt:directive?.createdAt || new Date().toISOString()
+      };
+    }
+    function undxNormalizeContextAwareCodingReport(report){
+      const risk = Number(report?.riskScore || 34);
+      const readinessScore = Number(report?.readinessScore || 82);
+      return {
+        reportId:String(report?.reportId || '').slice(0,44),
+        placement:undxNormalizeCodePlacementModel(report?.placement || {}),
+        boundary:undxNormalizeModuleBoundaryModel(report?.boundary || {}),
+        pattern:undxNormalizeImplementationPattern(report?.pattern || {}),
+        featureMap:undxNormalizeFeatureCodeMap(report?.featureMap || {}),
+        directive:undxNormalizeContextAwareDirective(report?.directive || {}),
+        fileImpact:undxNormalizeExecutionList(report?.fileImpact, ['potential new files: Inferred / Planning Only','potential modified areas: Inferred / Planning Only','potential templates: Inferred / Planning Only','potential static files: Inferred / Planning Only','potential services: Inferred / Planning Only','potential routes: Inferred / Planning Only','potential tests: Inferred / Planning Only','potential worker updates: Inferred / Planning Only'], 16, 220),
+        risks:report?.risks || {architectureRisk:28, dependencyRisk:32, securityRisk:42, regressionRisk:36, maintainabilityRisk:30, testingRisk:34},
+        riskScore:risk,
+        readinessScore,
+        codingReadiness:report?.codingReadiness || undxCodingReadinessFor(readinessScore),
+        recommendedPattern:String(report?.recommendedPattern || 'route-controller-service').slice(0,120),
+        createdAt:report?.createdAt || new Date().toISOString(),
+        status:'Stored'
+      };
+    }
+    const undxLoadCodePlacementModels = () => undxRepoIqLoad(undxCodePlacementModelsKey, undxNormalizeCodePlacementModel);
+    const undxLoadModuleBoundaryModels = () => undxRepoIqLoad(undxModuleBoundaryModelsKey, undxNormalizeModuleBoundaryModel);
+    const undxLoadImplementationPatterns = () => undxRepoIqLoad(undxImplementationPatternsKey, undxNormalizeImplementationPattern);
+    const undxLoadFeatureCodeMaps = () => undxRepoIqLoad(undxFeatureCodeMapsKey, undxNormalizeFeatureCodeMap);
+    const undxLoadContextAwareDirectives = () => undxRepoIqLoad(undxContextAwareDirectivesKey, undxNormalizeContextAwareDirective);
+    const undxLoadContextAwareCodingReports = () => undxRepoIqLoad(undxContextAwareCodingReportsKey, undxNormalizeContextAwareCodingReport);
+    function undxBuildCodePlacementModel(){return undxNormalizeCodePlacementModel({placementId:undxRepoIqNextId(undxLoadCodePlacementModels(),'PLACE-UNDX','placementId'), createdAt:new Date().toISOString()});}
+    function undxBuildModuleBoundaryModel(){return undxNormalizeModuleBoundaryModel({boundaryId:undxRepoIqNextId(undxLoadModuleBoundaryModels(),'BOUNDARY-UNDX','boundaryId'), createdAt:new Date().toISOString()});}
+    function undxBuildImplementationPattern(){return undxNormalizeImplementationPattern({patternId:undxRepoIqNextId(undxLoadImplementationPatterns(),'PATTERN-UNDX','patternId'), createdAt:new Date().toISOString()});}
+    function undxBuildFeatureCodeMap(){return undxNormalizeFeatureCodeMap({mapId:undxRepoIqNextId(undxLoadFeatureCodeMaps(),'FCMAP-UNDX','mapId'), featureIdea:(undxFeatureCodeIdeaInput?.value || 'Build Wallet Guardian'), createdAt:new Date().toISOString()});}
+    function undxBuildContextAwareDirective(){return undxNormalizeContextAwareDirective({directiveId:undxRepoIqNextId(undxLoadContextAwareDirectives(),'CODEDIR-UNDX','directiveId'), objective:(undxFeatureCodeIdeaInput?.value || 'Build Wallet Guardian'), createdAt:new Date().toISOString()});}
+    function undxBuildContextAwareCodingReport(){
+      const reports = undxLoadContextAwareCodingReports();
+      const placement = undxLoadCodePlacementModels()[0] || undxBuildCodePlacementModel();
+      const boundary = undxLoadModuleBoundaryModels()[0] || undxBuildModuleBoundaryModel();
+      const pattern = undxLoadImplementationPatterns()[0] || undxBuildImplementationPattern();
+      const featureMap = undxLoadFeatureCodeMaps()[0] || undxBuildFeatureCodeMap();
+      const directive = undxLoadContextAwareDirectives()[0] || undxBuildContextAwareDirective();
+      const risks = {architectureRisk:28, dependencyRisk:32, securityRisk:42, regressionRisk:36, maintainabilityRisk:30, testingRisk:34};
+      const riskScore = Math.round(Object.values(risks).reduce((sum, item) => sum + item, 0) / 6);
+      const readinessScore = Math.max(0, Math.min(100, 100 - riskScore + 18));
+      return undxNormalizeContextAwareCodingReport({reportId:undxRepoIqNextId(reports,'CODEIQ-UNDX','reportId'), placement, boundary, pattern, featureMap, directive, risks, riskScore, readinessScore, codingReadiness:undxCodingReadinessFor(readinessScore), recommendedPattern:pattern.recommendedPatterns[0], createdAt:new Date().toISOString()});
+    }
+    function undxRenderCodePlacement(model){if(undxCodePlacementOutput) undxCodePlacementOutput.replaceChildren(...model.codeAreas.map(area => undxBlock(area, 'Suggested code area: Inferred / Planning Only')));}
+    function undxRenderModuleBoundary(model){if(undxModuleBoundaryOutput) undxModuleBoundaryOutput.replaceChildren(undxBlock('module responsibility', model.moduleResponsibility), undxBlock('what belongs inside the module', model.inside), undxBlock('what should stay outside', model.outside), undxBlock('dependency boundaries', model.dependencyBoundaries), undxBlock('risk of boundary violations', `${model.boundaryViolationRisk}/100`), undxBlock('separation-of-concerns score', `${model.separationScore}/100`));}
+    function undxRenderImplementationPattern(pattern){if(undxImplementationPatternOutput) undxImplementationPatternOutput.replaceChildren(...pattern.availablePatterns.map(item => undxBlock(item, pattern.recommendedPatterns.includes(item) ? 'Recommended pattern' : 'Recognized pattern')));}
+    function undxRenderFeatureCodeMap(map){if(undxFeatureCodeMapOutput) undxFeatureCodeMapOutput.replaceChildren(undxBlock('Feature Idea', map.featureIdea), undxBlock('likely frontend areas', map.frontendAreas), undxBlock('likely backend areas', map.backendAreas), undxBlock('likely API routes', map.apiRoutes), undxBlock('likely database entities', map.databaseEntities), undxBlock('likely services', map.services), undxBlock('likely workers', map.workers), undxBlock('likely tests', map.tests), undxBlock('likely security checks', map.securityChecks));}
+    function undxRenderContextAwareDirective(directive){if(undxContextAwareDirectiveOutput) undxContextAwareDirectiveOutput.replaceChildren(undxBlock('Objective', directive.objective), undxBlock('Suggested code areas', directive.codeAreas), undxBlock('Suggested files or conceptual file groups', directive.fileGroups), undxBlock('Implementation order', directive.implementationOrder), undxBlock('Dependency considerations', directive.dependencyConsiderations), undxBlock('Security considerations', directive.securityConsiderations), undxBlock('Testing considerations', directive.testingConsiderations), undxBlock('Rollback considerations', directive.rollbackConsiderations), undxBlock('Approval requirements', directive.approvalRequirements));}
+    function undxRenderCodingRisk(report){if(undxCodingRiskOutput) undxCodingRiskOutput.replaceChildren(...Object.entries(report.risks).map(([key, value]) => undxBlock(key.replace(/([A-Z])/g,' $1').trim(), `${value}/100`)));}
+    function undxRenderFileImpact(report){if(undxFileImpactOutput) undxFileImpactOutput.replaceChildren(...report.fileImpact.map(item => undxBlock('Inferred / Planning Only', item)));}
+    function undxRenderCodingReadiness(report){if(undxCodingReadinessOutput) undxCodingReadinessOutput.replaceChildren(undxBlock('Coding Readiness', report.codingReadiness), undxBlock('Coding Readiness Score', `${report.readinessScore}/100`));}
+    function undxRenderResponsibilityMatrix(){
+      if(!undxCodeResponsibilityMatrix) return;
+      undxCodeResponsibilityMatrix.replaceChildren(...['UI responsibility','API responsibility','service responsibility','data responsibility','worker responsibility','security responsibility','testing responsibility','documentation responsibility'].map(item => undxBlock(item, 'Mapped for future planning only.')));
+    }
+    function undxGenerateCodePlacementModelFlow(){const model=undxBuildCodePlacementModel(); undxRepoIqSave(undxCodePlacementModelsKey,[model,...undxLoadCodePlacementModels()]); undxRenderCodePlacement(model); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${model.placementId} stored.`; return model;}
+    function undxGenerateModuleBoundaryModelFlow(){const model=undxBuildModuleBoundaryModel(); undxRepoIqSave(undxModuleBoundaryModelsKey,[model,...undxLoadModuleBoundaryModels()]); undxRenderModuleBoundary(model); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${model.boundaryId} stored.`; return model;}
+    function undxGenerateImplementationPatternFlow(){const pattern=undxBuildImplementationPattern(); undxRepoIqSave(undxImplementationPatternsKey,[pattern,...undxLoadImplementationPatterns()]); undxRenderImplementationPattern(pattern); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${pattern.patternId} stored.`; return pattern;}
+    function undxGenerateFeatureCodeMapFlow(){const map=undxBuildFeatureCodeMap(); undxRepoIqSave(undxFeatureCodeMapsKey,[map,...undxLoadFeatureCodeMaps()]); undxRenderFeatureCodeMap(map); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${map.mapId} stored.`; return map;}
+    function undxGenerateContextAwareDirectiveFlow(){const directive=undxBuildContextAwareDirective(); undxRepoIqSave(undxContextAwareDirectivesKey,[directive,...undxLoadContextAwareDirectives()]); undxRenderContextAwareDirective(directive); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${directive.directiveId} stored.`; return directive;}
+    function undxContextAwareCodingReportText(report){
+      return ['UNDX Context-Aware Coding Engine','',`Report ID: ${report.reportId}`,`Coding Readiness: ${report.codingReadiness}`,`Risk Score: ${report.riskScore}/100`,`Recommended Implementation Pattern: ${report.recommendedPattern}`,'','Suggested Code Areas:',...report.directive.codeAreas.map(item => `- ${item}`),'','File Impact:',...report.fileImpact.map(item => `- ${item}`),'','Safety: read-only. No files were accessed. No files were modified. No commands were executed. No deployments were performed.'].join('\\n');
+    }
+    function undxOpenCodingReport(report){
+      if(undxCodingReportDetailEmpty) undxCodingReportDetailEmpty.hidden = true;
+      if(undxCodingReportDetail) undxCodingReportDetail.replaceChildren(undxBlock('Report ID', report.reportId), undxBlock('Coding Readiness', report.codingReadiness), undxBlock('Risk Score', `${report.riskScore}/100`), undxBlock('Recommended Implementation Pattern', report.recommendedPattern), undxBlock('Suggested Code Areas', report.directive.codeAreas), undxBlock('Suggested files or conceptual file groups', report.directive.fileGroups), undxBlock('Implementation order', report.directive.implementationOrder), undxBlock('Approval requirements', report.directive.approvalRequirements));
+      undxRenderCodingDashboard(report);
+    }
+    function undxAttachCodingReportToProject(report){
+      const project = undxCurrentProject();
+      if(!project){ if(undxCodingEngineMessage) undxCodingEngineMessage.textContent = 'Open a project workspace before attaching a coding report.'; return; }
+      const projects = undxLoadProjects().map(item => item.projectId === project.projectId ? {...item, linkedContextAwareCodingReports:[report, ...(item.linkedContextAwareCodingReports || []).filter(existing => existing.reportId !== report.reportId)].slice(0,12)} : item);
+      undxSaveProjects(projects); undxOpenProject(project.projectId, false); undxRenderCodingDashboard(report);
+      if(undxCodingEngineMessage) undxCodingEngineMessage.textContent = `${report.reportId} attached to ${project.projectId}.`;
+    }
+    function undxGenerateTaskPackageFromCodingReport(report){ if(undxMissionInput) undxMissionInput.value = `Create a task package from Context-Aware Coding Report ${report.reportId}. Areas: ${report.directive.codeAreas.join(', ')}. Pattern: ${report.recommendedPattern}.`; undxGenerateTaskPackageFlow(); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent = `${report.reportId} sent to Task Generation Center.`; }
+    function undxGenerateChangeProposalFromCodingReport(report){ if(undxMissionInput) undxMissionInput.value = `Create a change proposal from Context-Aware Coding Report ${report.reportId}. Potential file impact: ${report.fileImpact.join('; ')}. Risk score ${report.riskScore}.`; undxGenerateChangeProposalFlow(); if(undxCodingEngineMessage) undxCodingEngineMessage.textContent = `${report.reportId} sent to Change Proposal Engine.`; }
+    function undxCreateCodingReportCard(report){
+      const card=document.createElement('article'); card.className='undx-memory-card';
+      const title=document.createElement('h3'); title.textContent=report.reportId;
+      const meta=document.createElement('p'); meta.textContent=`Coding Readiness: ${report.codingReadiness} · Risk Score: ${report.riskScore}/100 · Created Date: ${undxFormatMemoryTime(report.createdAt)}`;
+      const actions=document.createElement('div'); actions.className='undx-memory-actions';
+      actions.append(undxProjectActionButton('Open Report',()=>undxOpenCodingReport(report),true), undxProjectActionButton('Send To Chat',()=>undxSendTextToChat(undxContextAwareCodingReportText(report))), undxProjectActionButton('Save To Memory',()=>undxStoreBlueprint({id:`codeiq-${report.reportId}`, name:`Context-Aware Coding ${report.reportId}`, objective:undxContextAwareCodingReportText(report), type:'Context-Aware Coding Report', source:'UNDX Context-Aware Coding Engine', createdAt:new Date().toISOString(), phase:'Phase 35', status:'Stored'})), undxProjectActionButton('Attach To Project',()=>undxAttachCodingReportToProject(report)), undxProjectActionButton('Generate Task Package',()=>undxGenerateTaskPackageFromCodingReport(report)), undxProjectActionButton('Generate Change Proposal',()=>undxGenerateChangeProposalFromCodingReport(report)), undxProjectActionButton('Delete Report',()=>{undxRepoIqSave(undxContextAwareCodingReportsKey, undxLoadContextAwareCodingReports().filter(item=>item.reportId!==report.reportId)); undxRenderCodingReportRegistry();}));
+      card.append(title, meta, actions); return card;
+    }
+    function undxRenderCodingReportRegistry(){const reports=undxLoadContextAwareCodingReports(); if(undxCodingReportEmpty) undxCodingReportEmpty.hidden=reports.length>0; if(undxCodingReportList){undxCodingReportList.replaceChildren(); reports.forEach(report=>undxCodingReportList.appendChild(undxCreateCodingReportCard(report)));} undxRenderCodingDashboard(reports[0] || null);}
+    function undxRenderCodingDashboard(report){
+      const reports=undxLoadContextAwareCodingReports(); const latest=report || reports[0] || null; const avgReady=reports.length?Math.round(reports.reduce((s,r)=>s+r.readinessScore,0)/reports.length):0; const avgRisk=reports.length?Math.round(reports.reduce((s,r)=>s+r.riskScore,0)/reports.length):0;
+      if(undxTotalCodingReports) undxTotalCodingReports.textContent=String(reports.length);
+      if(undxAverageCodingReadiness) undxAverageCodingReadiness.textContent=String(avgReady);
+      if(undxAverageCodingRiskScore) undxAverageCodingRiskScore.textContent=String(avgRisk);
+      if(undxMostReferencedCodingModule) undxMostReferencedCodingModule.textContent=latest?.directive?.codeAreas?.[0] || 'None';
+      if(undxMostReferencedPattern) undxMostReferencedPattern.textContent=latest?.recommendedPattern || 'None';
+      if(undxMostCommonCodingRisk) undxMostCommonCodingRisk.textContent='security risk';
+      const project=undxCurrentProject() || {}; const linked=project.linkedContextAwareCodingReports || [];
+      if(undxProjectLinkedCodingReports) undxProjectLinkedCodingReports.textContent=String(linked.length);
+      if(undxProjectSuggestedCodeAreas) undxProjectSuggestedCodeAreas.textContent=(linked[0]?.directive?.codeAreas || latest?.directive?.codeAreas || ['Pending']).slice(0,3).join(' · ');
+      if(undxProjectCodingReadiness) undxProjectCodingReadiness.textContent=linked[0]?.codingReadiness || latest?.codingReadiness || 'Concept Ready';
+      if(undxProjectCodingRisk) undxProjectCodingRisk.textContent=String(linked[0]?.riskScore || latest?.riskScore || 0);
+      if(undxProjectImplementationPattern) undxProjectImplementationPattern.textContent=linked[0]?.recommendedPattern || latest?.recommendedPattern || 'Pending';
+    }
+    function undxGenerateContextAwareCodingReportFlow(){
+      const report=undxBuildContextAwareCodingReport(); undxRepoIqSave(undxContextAwareCodingReportsKey,[report,...undxLoadContextAwareCodingReports()]);
+      undxOpenCodingReport(report); undxRenderCodingReportRegistry(); undxRenderCodePlacement(report.placement); undxRenderModuleBoundary(report.boundary); undxRenderImplementationPattern(report.pattern); undxRenderFeatureCodeMap(report.featureMap); undxRenderContextAwareDirective(report.directive); undxRenderFileImpact(report); undxRenderCodingRisk(report); undxRenderCodingReadiness(report);
+      if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${report.reportId} stored in Context-Aware Coding Registry.`; return report;
+    }
+    async function undxRunCodingReviewFlow(){
+      const report=undxLoadContextAwareCodingReports()[0] || undxGenerateContextAwareCodingReportFlow();
+      if(undxCodingEngineMessage) undxCodingEngineMessage.textContent='Routing coding review through UNDX Intelligence Router...';
+      try{
+        const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxContextAwareCodingReportText(report)})});
+        const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents=data.agents || [];
+        if(undxCodingReviewOutput) undxCodingReviewOutput.replaceChildren(undxBlock('Architecture Coding Review', agents.find(a=>a.key==='architect')?.recommendation || 'Keep modules scoped.'), undxBlock('Implementation Review', agents.find(a=>a.key==='builder')?.recommendation || 'Use route-controller-service pattern.'), undxBlock('Testing Review', agents.find(a=>a.key==='testing')?.recommendation || 'Validate code areas before build.'), undxBlock('Security Review', agents.find(a=>a.key==='security')?.recommendation || 'No secrets or execution access.'), undxBlock('Documentation Review', agents.find(a=>a.key==='documentation')?.recommendation || 'Document placement and boundaries.'), undxBlock('Optimization Review', agents.find(a=>a.key==='optimization')?.recommendation || 'Reduce coupling.'), undxBlock('Combined Coding Recommendation', 'Proceed with read-only coding intelligence only. Future edits require approval.'));
+        if(undxCodingEngineMessage) undxCodingEngineMessage.textContent='Multi-brain coding review complete.';
+      }catch(error){
+        if(undxCodingReviewOutput) undxCodingReviewOutput.replaceChildren(undxBlock('Architecture Coding Review','OpenAI fallback: preserve boundaries.'),undxBlock('Implementation Review','OpenAI fallback: plan only.'),undxBlock('Testing Review','OpenAI fallback: compile, JS parse, audits, browser checks.'),undxBlock('Security Review','OpenAI fallback: no file access, commands, Git, or deployment.'),undxBlock('Documentation Review','OpenAI fallback: document directive.'),undxBlock('Optimization Review','OpenAI fallback: reduce coupling.'),undxBlock('Combined Coding Recommendation','Fallback → OpenAI. Coding engine remains read-only.'));
+        if(undxCodingEngineMessage) undxCodingEngineMessage.textContent=`${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxRenderCodingEngineInitial(){
+      const report=undxLoadContextAwareCodingReports()[0] || undxBuildContextAwareCodingReport();
+      undxRenderCodePlacement(report.placement); undxRenderModuleBoundary(report.boundary); undxRenderImplementationPattern(report.pattern); undxRenderFeatureCodeMap(report.featureMap); undxRenderContextAwareDirective(report.directive); undxRenderFileImpact(report); undxRenderCodingRisk(report); undxRenderCodingReadiness(report); undxRenderResponsibilityMatrix(); undxRenderCodingReportRegistry();
+    }
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -34795,6 +35187,7 @@ def pulse_premium_undx_page():
       ['undx-testing-intelligence-engine','Testing Intelligence'],
       ['undx-multi-agent-engineering-system','Multi-Agent Engineering'],
       ['undx-repository-intelligence-engine','Repository Intelligence Engine'],
+      ['undx-context-aware-coding-engine','Context-Aware Coding'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -36059,6 +36452,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedContextAwareCodingReports(project, card){
+      const section = undxWorkspaceSection('Linked Context-Aware Coding Reports');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedContextAwareCodingReports || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Context-Aware Coding Reports linked yet. Attach a Phase 35 report to preserve suggested code areas, coding readiness, coding risk, and implementation pattern.'));
+      }else{
+        project.linkedContextAwareCodingReports.forEach(report => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = report.reportId;
+          const meta = document.createElement('p');
+          meta.textContent = `Suggested Code Areas: ${(report.directive?.codeAreas || []).slice(0,4).join(' · ')} · Coding Readiness: ${report.codingReadiness} · Coding Risk: ${report.riskScore}/100 · Recommended Implementation Pattern: ${report.recommendedPattern}`;
+          const safety = document.createElement('p');
+          safety.textContent = 'Read-only coding intelligence. No files were accessed, modified, executed, or deployed.';
+          item.append(title, meta, safety);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -36160,6 +36576,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedTestStrategies(project, card);
       undxRenderLinkedAgentMemories(project, card);
       undxRenderLinkedRepositoryIntelligenceReports(project, card);
+      undxRenderLinkedContextAwareCodingReports(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -36846,6 +37263,13 @@ def pulse_premium_undx_page():
     undxGenerateImpactModel?.addEventListener('click', undxGenerateImpactModelFlow);
     undxGenerateRepositoryIntelligenceReport?.addEventListener('click', undxGenerateRepositoryIntelligenceReportFlow);
     undxRunRepositoryReview?.addEventListener('click', undxRunRepositoryReviewFlow);
+    undxGenerateCodePlacementModel?.addEventListener('click', undxGenerateCodePlacementModelFlow);
+    undxGenerateModuleBoundaryModel?.addEventListener('click', undxGenerateModuleBoundaryModelFlow);
+    undxGenerateImplementationPattern?.addEventListener('click', undxGenerateImplementationPatternFlow);
+    undxGenerateFeatureCodeMap?.addEventListener('click', undxGenerateFeatureCodeMapFlow);
+    undxGenerateContextAwareCodingDirective?.addEventListener('click', undxGenerateContextAwareDirectiveFlow);
+    undxGenerateContextAwareCodingReport?.addEventListener('click', undxGenerateContextAwareCodingReportFlow);
+    undxRunCodingReview?.addEventListener('click', undxRunCodingReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -36912,6 +37336,7 @@ def pulse_premium_undx_page():
     undxRenderAgentMemory(undxLoadAgentMemories()[0] || null);
     undxRenderAgentDashboard();
     undxRenderRepositoryEngineInitial();
+    undxRenderCodingEngineInitial();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
