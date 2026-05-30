@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -21897,6 +21897,214 @@ def pulse_premium_undx_page():
           </div>
         </aside>
         <div class='undx-view-main' id='undxViewMain'>
+      <section class='undx-section-panel undx-operating-system' id='undx-operating-system'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>UNDX OS: Online</span>
+            <h2>UNDX Operating System</h2>
+          </div>
+          <p>Unified operating layer for intelligence, planning, simulation, memory, and engineering coordination.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>UNDX Home</span>
+              <h3>UNDX Home</h3>
+              <div class='undx-memory-status' aria-label='UNDX operating system status'>
+                <span aria-label='UNDX OS: Online'>UNDX OS: <strong>Online</strong></span>
+                <span aria-label='Intelligence Core: Online'>Intelligence Core: <strong>Online</strong></span>
+                <span aria-label='Memory Core: Online'>Memory Core: <strong>Online</strong></span>
+                <span aria-label='Planning Core: Online'>Planning Core: <strong>Online</strong></span>
+                <span aria-label='Simulation Core: Online'>Simulation Core: <strong>Online</strong></span>
+                <span aria-label='Task Core: Online'>Task Core: <strong>Online</strong></span>
+                <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+                <span aria-label='Phase: 26'>Phase: <strong>26</strong></span>
+              </div>
+              <div class='undx-system-impact-grid' id='undxOsHomeGrid'>
+                <article class='undx-system-impact'><strong id='undxOsRecommendedNextAction'>Review Approval Gates</strong><span>Recommended Next Action</span></article>
+                <article class='undx-system-impact'><strong id='undxOsMostActiveProject'>None</strong><span>Most Active Project</span></article>
+                <article class='undx-system-impact'><strong id='undxOsHighestPriorityInitiative'>None</strong><span>Highest Priority Initiative</span></article>
+                <article class='undx-system-impact'><strong id='undxOsMostReferencedTechnology'>None</strong><span>Most Referenced Technology</span></article>
+                <article class='undx-system-impact'><strong id='undxOsMostRecentStrategicPlan'>None</strong><span>Most Recent Strategic Plan</span></article>
+                <article class='undx-system-impact'><strong id='undxOsMostRecentTaskPackage'>None</strong><span>Most Recent Task Package</span></article>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateOsSnapshot'>Generate OS Snapshot</button>
+                <button class='button' type='button' id='undxRunOsReview'>Run Multi-Brain OS Review</button>
+              </div>
+              <p class='undx-project-message' id='undxOsMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Intelligence Navigator</span>
+              <h3>Intelligence Navigator</h3>
+              <p>Unified navigation for Dashboard, Chat, Projects, Memory, Knowledge, Strategy, Portfolio, Simulation, Code Intelligence, Tasks, and Settings.</p>
+              <div class='undx-memory-status' aria-label='UNDX Intelligence Navigator'>
+                <span>Dashboard</span>
+                <span>Chat</span>
+                <span>Projects</span>
+                <span>Memory</span>
+                <span>Knowledge</span>
+                <span>Strategy</span>
+                <span>Portfolio</span>
+                <span>Simulation</span>
+                <span>Code Intelligence</span>
+                <span>Tasks</span>
+                <span>Settings</span>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Unified Dashboard</span>
+              <h3>Unified Dashboard</h3>
+              <div class='undx-system-impact-grid'>
+                <article class='undx-system-impact'><strong id='undxOsActiveProjects'>0</strong><span>Active Projects</span></article>
+                <article class='undx-system-impact'><strong id='undxOsActiveMissions'>0</strong><span>Active Missions</span></article>
+                <article class='undx-system-impact'><strong id='undxOsKnowledgeGraphs'>0</strong><span>Knowledge Graphs</span></article>
+                <article class='undx-system-impact'><strong id='undxOsMemoryRecords'>0</strong><span>Memory Records</span></article>
+                <article class='undx-system-impact'><strong id='undxOsStrategicPlans'>0</strong><span>Strategic Plans</span></article>
+                <article class='undx-system-impact'><strong id='undxOsPortfolioAnalyses'>0</strong><span>Portfolio Analyses</span></article>
+                <article class='undx-system-impact'><strong id='undxOsBuildSimulations'>0</strong><span>Build Simulations</span></article>
+                <article class='undx-system-impact'><strong id='undxOsTaskPackages'>0</strong><span>Task Packages</span></article>
+              </div>
+              <div class='undx-memory-status' aria-label='UNDX OS quick metrics'>
+                <span>Total Intelligence Objects: <strong id='undxOsTotalObjects'>0</strong></span>
+                <span>Total Relationships: <strong id='undxOsTotalRelationships'>0</strong></span>
+                <span>Total Decisions: <strong id='undxOsTotalDecisions'>0</strong></span>
+                <span>Total Simulations: <strong id='undxOsTotalSimulations'>0</strong></span>
+                <span>Total Tasks: <strong id='undxOsTotalTasks'>0</strong></span>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>UNDX Universal Search</span>
+              <h3>UNDX Universal Search</h3>
+              <p>Search across Projects, Missions, Memory Records, Knowledge Graphs, Strategic Plans, Portfolio Analyses, Simulations, Task Packages, and Language Profiles.</p>
+              <div class='undx-chat-input-row'>
+                <input class='undx-builder-input' id='undxUniversalSearchInput' type='text' placeholder='Search UNDX intelligence objects...' aria-label='UNDX Universal Search'>
+                <button class='button primary' type='button' id='undxRunUniversalSearch'>Run Search</button>
+              </div>
+              <div class='undx-simulation-output' id='undxUniversalSearchResults' aria-live='polite'>
+                <p>Search Results, Relationship Matches, and Suggested Navigation will appear here.</p>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Global Activity Feed</span>
+              <h3>Recent Intelligence Activity</h3>
+              <div class='undx-chain-list' id='undxGlobalActivityFeed'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>System Relationship Map</span>
+              <h3>UNDX System Overview</h3>
+              <div class='undx-system-impact-grid' id='undxSystemRelationshipMap'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Operating System Registry</span>
+              <h3>Operating System Registry</h3>
+              <p>Snapshot ID format: <strong>OS-UNDX-0001</strong></p>
+              <div class='undx-memory-empty' id='undxOsSnapshotEmpty'>No operating system snapshots stored yet. Generate an OS Snapshot to preserve the current intelligence state.</div>
+              <div class='undx-simulation-registry' id='undxOsSnapshotList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Executive Insights</span>
+              <h3>Executive Insights</h3>
+              <p>Most Important Project: <strong id='undxOsMostImportantProject'>None</strong></p>
+              <p>Most Strategic Initiative: <strong id='undxOsMostStrategicInitiative'>None</strong></p>
+              <p>Highest Risk Initiative: <strong id='undxOsHighestRiskInitiative'>None</strong></p>
+              <p>Most Connected Object: <strong id='undxOsMostConnectedObject'>None</strong></p>
+              <p>Highest Readiness Project: <strong id='undxOsHighestReadinessProject'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>OS Health Score</span>
+              <h3>Operating System Health Score</h3>
+              <p>Range: 0-100</p>
+              <p>OS Health Score: <strong id='undxOsHealthScore'>0</strong></p>
+              <p>Knowledge Coverage · Memory Coverage · Task Coverage · Strategic Coverage · Simulation Coverage</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Recommendation Engine</span>
+              <h3>What should happen next?</h3>
+              <div class='undx-chain-list' id='undxOsRecommendations'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain OS Review</span>
+              <h3>Multi-Brain OS Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxOsReviewOutput'><p>System Review, Planning Review, Memory Review, Knowledge Review, Task Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>UNDX Settings</span>
+              <h3>Settings Center</h3>
+              <p>Default AI Provider: <strong id='undxOsDefaultProvider'>OpenAI</strong></p>
+              <p>Router Status: <strong id='undxOsRouterStatus'>Online</strong></p>
+              <p>Memory Status: <strong>Online</strong></p>
+              <p>Knowledge Status: <strong>Online</strong></p>
+              <p>Simulation Status: <strong>Online</strong></p>
+              <p>Task Engine Status: <strong>Online</strong></p>
+              <p>Feature Toggles: <strong>Read-only informational controls only.</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Recent Decisions</h3>
+              <p>Most Referenced Decisions: <strong id='undxOsReferencedDecisions'>0</strong></p>
+              <p>Decision Trends: <strong id='undxOsDecisionTrends'>Stable</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Most Connected Objects</h3>
+              <p>Relationship Growth: <strong id='undxOsRelationshipGrowth'>0</strong></p>
+              <p>Graph Coverage: <strong id='undxOsGraphCoverage'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Recent Task Packages</h3>
+              <p>Highest Complexity Package: <strong id='undxOsHighestComplexityPackage'>None</strong></p>
+              <p>Most Referenced Package: <strong id='undxOsMostReferencedPackage'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Integration</span>
+              <h3>Top Technologies</h3>
+              <p>Top Languages: <strong id='undxOsTopLanguages'>Python · TypeScript</strong></p>
+              <p>Top Frameworks: <strong id='undxOsTopFrameworks'>Flask · React</strong></p>
+              <p>Top SDKs: <strong id='undxOsTopSdks'>OpenAI · Groq</strong></p>
+              <p>Most Recommended Technology: <strong id='undxOsMostRecommendedTechnology'>OpenAI</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Portfolio Integration</span>
+              <h3>Portfolio Health</h3>
+              <p>Top Strategic Initiative: <strong id='undxOsTopStrategicInitiative'>None</strong></p>
+              <p>Top Priority Project: <strong id='undxOsTopPriorityProject'>None</strong></p>
+              <p>Portfolio Health: <strong id='undxOsPortfolioHealth'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Connector Architecture</span>
+              <h3>Future Connector Architecture</h3>
+              <p>Desktop Connector (Planned): <strong>Not Connected</strong></p>
+              <p>Repository Connector (Planned): <strong>Not Connected</strong></p>
+              <p>Execution Connector (Planned): <strong>Not Connected</strong></p>
+              <p>Deployment Connector (Planned): <strong>Not Connected</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Operating System currently functions as a read-only intelligence, planning, simulation, memory, and task-generation platform.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 26<br><strong>Operating System Layer</strong></span>
+                <span>Phase 27<br><strong>Desktop Connector Architecture</strong></span>
+                <span>Phase 28<br><strong>Controlled Repository Awareness</strong></span>
+                <span>Phase 29<br><strong>Controlled Editing Proposals</strong></span>
+                <span>Phase 30<br><strong>Human Approved Execution</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-core-hero' id='undx-command-overview'>
         <span class='undx-core-label'>Premium Intelligence Layer</span>
         <h1>Enter the Unknown Destination</h1>
@@ -24438,6 +24646,58 @@ def pulse_premium_undx_page():
     const undxTaskRecommendedSdks = document.getElementById('undxTaskRecommendedSdks');
     const undxTaskRecommendedArchitecture = document.getElementById('undxTaskRecommendedArchitecture');
     const undxTaskExportOutput = document.getElementById('undxTaskExportOutput');
+    const undxGenerateOsSnapshot = document.getElementById('undxGenerateOsSnapshot');
+    const undxRunOsReview = document.getElementById('undxRunOsReview');
+    const undxOsMessage = document.getElementById('undxOsMessage');
+    const undxOsRecommendedNextAction = document.getElementById('undxOsRecommendedNextAction');
+    const undxOsMostActiveProject = document.getElementById('undxOsMostActiveProject');
+    const undxOsHighestPriorityInitiative = document.getElementById('undxOsHighestPriorityInitiative');
+    const undxOsMostReferencedTechnology = document.getElementById('undxOsMostReferencedTechnology');
+    const undxOsMostRecentStrategicPlan = document.getElementById('undxOsMostRecentStrategicPlan');
+    const undxOsMostRecentTaskPackage = document.getElementById('undxOsMostRecentTaskPackage');
+    const undxOsActiveProjects = document.getElementById('undxOsActiveProjects');
+    const undxOsActiveMissions = document.getElementById('undxOsActiveMissions');
+    const undxOsKnowledgeGraphs = document.getElementById('undxOsKnowledgeGraphs');
+    const undxOsMemoryRecords = document.getElementById('undxOsMemoryRecords');
+    const undxOsStrategicPlans = document.getElementById('undxOsStrategicPlans');
+    const undxOsPortfolioAnalyses = document.getElementById('undxOsPortfolioAnalyses');
+    const undxOsBuildSimulations = document.getElementById('undxOsBuildSimulations');
+    const undxOsTaskPackages = document.getElementById('undxOsTaskPackages');
+    const undxOsTotalObjects = document.getElementById('undxOsTotalObjects');
+    const undxOsTotalRelationships = document.getElementById('undxOsTotalRelationships');
+    const undxOsTotalDecisions = document.getElementById('undxOsTotalDecisions');
+    const undxOsTotalSimulations = document.getElementById('undxOsTotalSimulations');
+    const undxOsTotalTasks = document.getElementById('undxOsTotalTasks');
+    const undxUniversalSearchInput = document.getElementById('undxUniversalSearchInput');
+    const undxRunUniversalSearch = document.getElementById('undxRunUniversalSearch');
+    const undxUniversalSearchResults = document.getElementById('undxUniversalSearchResults');
+    const undxGlobalActivityFeed = document.getElementById('undxGlobalActivityFeed');
+    const undxSystemRelationshipMap = document.getElementById('undxSystemRelationshipMap');
+    const undxOsSnapshotEmpty = document.getElementById('undxOsSnapshotEmpty');
+    const undxOsSnapshotList = document.getElementById('undxOsSnapshotList');
+    const undxOsMostImportantProject = document.getElementById('undxOsMostImportantProject');
+    const undxOsMostStrategicInitiative = document.getElementById('undxOsMostStrategicInitiative');
+    const undxOsHighestRiskInitiative = document.getElementById('undxOsHighestRiskInitiative');
+    const undxOsMostConnectedObject = document.getElementById('undxOsMostConnectedObject');
+    const undxOsHighestReadinessProject = document.getElementById('undxOsHighestReadinessProject');
+    const undxOsHealthScore = document.getElementById('undxOsHealthScore');
+    const undxOsRecommendations = document.getElementById('undxOsRecommendations');
+    const undxOsReviewOutput = document.getElementById('undxOsReviewOutput');
+    const undxOsDefaultProvider = document.getElementById('undxOsDefaultProvider');
+    const undxOsRouterStatus = document.getElementById('undxOsRouterStatus');
+    const undxOsReferencedDecisions = document.getElementById('undxOsReferencedDecisions');
+    const undxOsDecisionTrends = document.getElementById('undxOsDecisionTrends');
+    const undxOsRelationshipGrowth = document.getElementById('undxOsRelationshipGrowth');
+    const undxOsGraphCoverage = document.getElementById('undxOsGraphCoverage');
+    const undxOsHighestComplexityPackage = document.getElementById('undxOsHighestComplexityPackage');
+    const undxOsMostReferencedPackage = document.getElementById('undxOsMostReferencedPackage');
+    const undxOsTopLanguages = document.getElementById('undxOsTopLanguages');
+    const undxOsTopFrameworks = document.getElementById('undxOsTopFrameworks');
+    const undxOsTopSdks = document.getElementById('undxOsTopSdks');
+    const undxOsMostRecommendedTechnology = document.getElementById('undxOsMostRecommendedTechnology');
+    const undxOsTopStrategicInitiative = document.getElementById('undxOsTopStrategicInitiative');
+    const undxOsTopPriorityProject = document.getElementById('undxOsTopPriorityProject');
+    const undxOsPortfolioHealth = document.getElementById('undxOsPortfolioHealth');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -24459,6 +24719,7 @@ def pulse_premium_undx_page():
     const undxLanguageProfilesKey = 'undxLanguageProfiles';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
+    const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -24574,6 +24835,7 @@ def pulse_premium_undx_page():
       undxSaveMemory(next);
       undxRenderMemory();
       undxRenderIntelligenceWorkspace();
+      if(typeof undxRenderOperatingSystem === 'function') undxRenderOperatingSystem();
     }
     function undxLoadMissionIntoConsole(text, message){
       if(!undxMissionInput) return;
@@ -29590,7 +29852,300 @@ def pulse_premium_undx_page():
         if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxLoadOsSnapshots(){
+      try{
+        const raw = localStorage.getItem(undxOperatingSystemSnapshotsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.snapshotId).slice(0,48) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveOsSnapshots(snapshots){
+      try{
+        localStorage.setItem(undxOperatingSystemSnapshotsKey, JSON.stringify(snapshots.slice(0,48)));
+      }catch(error){
+        if(undxOsMessage) undxOsMessage.textContent = 'Operating System Registry could not be updated.';
+      }
+    }
+    function undxNextOsSnapshotId(snapshots){
+      const max = snapshots.reduce((highest, snapshot) => {
+        const match = String(snapshot.snapshotId || '').match(/^OS-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `OS-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxOsState(){
+      const projects = undxLoadProjects();
+      const missions = undxLoadMemory();
+      const memoryRecords = undxLoadMemoryGraphRecords();
+      const knowledgeGraphs = undxLoadKnowledgeGraphs();
+      const strategicPlans = undxLoadStrategicPlans();
+      const portfolioAnalyses = undxLoadPortfolioAnalyses();
+      const buildSimulations = undxLoadBuildSimulations();
+      const taskPackages = undxLoadTaskPackages();
+      const languageProfiles = undxLoadLanguageProfiles();
+      const workspaceSummaries = undxLoadWorkspaceSummaries();
+      const repositoryAnalyses = undxLoadRepositoryAnalyses();
+      const changeAnalyses = undxLoadChangeAnalyses();
+      const totalTasks = projects.reduce((sum, project) => sum + (project.tasks || []).length, 0) + taskPackages.reduce((sum, pkg) => sum + (pkg.taskTree?.subtasks || []).length + 1, 0);
+      const totalDecisions = memoryRecords.reduce((sum, record) => sum + (record.decisions || []).length, 0);
+      const relationshipCount = knowledgeGraphs.reduce((sum, graph) => sum + (graph.relationships || []).length, 0) + memoryRecords.reduce((sum, record) => sum + (record.relationships || []).length, 0) + taskPackages.length * 4 + projects.length;
+      const objectCount = projects.length + missions.length + memoryRecords.length + knowledgeGraphs.length + strategicPlans.length + portfolioAnalyses.length + buildSimulations.length + taskPackages.length + languageProfiles.length + workspaceSummaries.length + repositoryAnalyses.length + changeAnalyses.length;
+      const coverageParts = [
+        knowledgeGraphs.length ? 20 : 0,
+        memoryRecords.length || missions.length ? 20 : 0,
+        taskPackages.length ? 20 : 0,
+        strategicPlans.length ? 20 : 0,
+        buildSimulations.length ? 20 : 0
+      ];
+      const healthScore = Math.max(0, Math.min(100, coverageParts.reduce((sum, item) => sum + item, 0)));
+      const activeProjects = projects.filter(project => project.status === 'Active');
+      const priorityProject = projects.find(project => /critical|high/i.test(project.priority || '')) || projects[0] || null;
+      const recentStrategicPlan = strategicPlans[0] || null;
+      const recentTaskPackage = taskPackages[0] || null;
+      const highRisk = portfolioAnalyses.find(item => /high|critical/i.test(item.conflictSeverity || '')) || changeAnalyses.find(item => Number(item.riskScore || 0) > 60) || null;
+      const highestComplexity = [...taskPackages].sort((a,b) => (b.complexityScore || 0) - (a.complexityScore || 0))[0] || null;
+      const technologies = [
+        ...taskPackages.flatMap(pkg => pkg.referenced?.technologies || []),
+        ...memoryRecords.flatMap(record => record.technologies || []),
+        ...languageProfiles.map(profile => profile.name || profile.language || profile.framework || profile.sdk || '')
+      ].filter(Boolean);
+      const technologyCounts = technologies.reduce((counts, item) => {
+        const key = String(item || '').trim();
+        if(key) counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {});
+      const mostReferencedTechnology = Object.entries(technologyCounts).sort((a,b) => b[1] - a[1])[0]?.[0] || 'OpenAI';
+      return {projects, missions, memoryRecords, knowledgeGraphs, strategicPlans, portfolioAnalyses, buildSimulations, taskPackages, languageProfiles, workspaceSummaries, repositoryAnalyses, changeAnalyses, activeProjects, priorityProject, recentStrategicPlan, recentTaskPackage, highRisk, highestComplexity, mostReferencedTechnology, totalTasks, totalDecisions, relationshipCount, objectCount, healthScore};
+    }
+    function undxOsRecommendationList(state){
+      const recommendations = [];
+      if(!state.repositoryAnalyses.length) recommendations.push('Generate Repository Analysis');
+      if(!state.strategicPlans.length) recommendations.push('Generate Strategic Plan');
+      if(!state.taskPackages.length) recommendations.push('Create Task Package');
+      if(state.buildSimulations.length) recommendations.push('Review Simulation');
+      recommendations.push('Review Approval Gates');
+      return recommendations.slice(0,5);
+    }
+    function undxOsSnapshotText(snapshot){
+      return [
+        'UNDX Operating System Snapshot',
+        '',
+        `Snapshot ID: ${snapshot.snapshotId}`,
+        `Health Score: ${snapshot.healthScore}/100`,
+        `Object Count: ${snapshot.objectCount}`,
+        `Created Date: ${undxFormatMemoryTime(snapshot.createdAt)}`,
+        '',
+        `Recommended Next Action: ${snapshot.recommendedNextAction}`,
+        `Most Active Project: ${snapshot.mostActiveProject}`,
+        `Most Strategic Initiative: ${snapshot.mostStrategicInitiative}`,
+        '',
+        'Safety Boundary: UNDX Operating System is read-only. No repository files were accessed. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxBuildOsSnapshot(){
+      const snapshots = undxLoadOsSnapshots();
+      const state = undxOsState();
+      return {
+        snapshotId: undxNextOsSnapshotId(snapshots),
+        healthScore: state.healthScore,
+        objectCount: state.objectCount,
+        relationshipCount: state.relationshipCount,
+        decisionCount: state.totalDecisions,
+        simulationCount: state.buildSimulations.length,
+        taskCount: state.totalTasks,
+        recommendedNextAction: undxOsRecommendationList(state)[0] || 'Review Approval Gates',
+        mostActiveProject: state.activeProjects[0]?.name || state.projects[0]?.name || 'None',
+        mostStrategicInitiative: state.recentStrategicPlan?.planId || state.priorityProject?.name || 'None',
+        mostReferencedTechnology: state.mostReferencedTechnology,
+        createdAt: new Date().toISOString()
+      };
+    }
+    function undxCreateOsSnapshotCard(snapshot){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = snapshot.snapshotId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Snapshot ID: ${snapshot.snapshotId}`, `Health Score: ${snapshot.healthScore}`, `Object Count: ${snapshot.objectCount}`, `Created Date: ${undxFormatMemoryTime(snapshot.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Snapshot', () => {
+          if(undxUniversalSearchResults) undxUniversalSearchResults.replaceChildren(undxBlock('Operating System Snapshot', undxOsSnapshotText(snapshot)));
+          if(undxOsMessage) undxOsMessage.textContent = `${snapshot.snapshotId} opened in UNDX Home.`;
+        }, true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxOsSnapshotText(snapshot);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`OS Snapshot ${snapshot.snapshotId}`, objective:undxOsSnapshotText(snapshot), type:'UNDX Operating System Snapshot', source:'UNDX Operating System', createdAt:new Date().toISOString(), phase:'Phase 26', status:'Stored'});
+          if(undxOsMessage) undxOsMessage.textContent = `${snapshot.snapshotId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Delete Snapshot', () => {
+          undxSaveOsSnapshots(undxLoadOsSnapshots().filter(item => item.snapshotId !== snapshot.snapshotId));
+          undxRenderOsSnapshots();
+          if(undxOsMessage) undxOsMessage.textContent = 'Operating system snapshot deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderOsSnapshots(){
+      const snapshots = undxLoadOsSnapshots();
+      if(undxOsSnapshotEmpty) undxOsSnapshotEmpty.hidden = snapshots.length > 0;
+      if(undxOsSnapshotList){
+        undxOsSnapshotList.replaceChildren();
+        snapshots.forEach(snapshot => undxOsSnapshotList.appendChild(undxCreateOsSnapshotCard(snapshot)));
+      }
+    }
+    function undxRenderOperatingSystem(){
+      const state = undxOsState();
+      const recommendations = undxOsRecommendationList(state);
+      const setText = (node, value) => { if(node) node.textContent = String(value); };
+      setText(undxOsRecommendedNextAction, recommendations[0] || 'Review Approval Gates');
+      setText(undxOsMostActiveProject, state.activeProjects[0]?.name || state.projects[0]?.name || 'None');
+      setText(undxOsHighestPriorityInitiative, state.priorityProject?.name || state.recentStrategicPlan?.planId || 'None');
+      setText(undxOsMostReferencedTechnology, state.mostReferencedTechnology);
+      setText(undxOsMostRecentStrategicPlan, state.recentStrategicPlan?.planId || 'None');
+      setText(undxOsMostRecentTaskPackage, state.recentTaskPackage?.packageId || 'None');
+      setText(undxOsActiveProjects, state.activeProjects.length);
+      setText(undxOsActiveMissions, state.missions.length);
+      setText(undxOsKnowledgeGraphs, state.knowledgeGraphs.length);
+      setText(undxOsMemoryRecords, state.memoryRecords.length);
+      setText(undxOsStrategicPlans, state.strategicPlans.length);
+      setText(undxOsPortfolioAnalyses, state.portfolioAnalyses.length);
+      setText(undxOsBuildSimulations, state.buildSimulations.length);
+      setText(undxOsTaskPackages, state.taskPackages.length);
+      setText(undxOsTotalObjects, state.objectCount);
+      setText(undxOsTotalRelationships, state.relationshipCount);
+      setText(undxOsTotalDecisions, state.totalDecisions);
+      setText(undxOsTotalSimulations, state.buildSimulations.length);
+      setText(undxOsTotalTasks, state.totalTasks);
+      setText(undxOsMostImportantProject, state.priorityProject?.name || state.projects[0]?.name || 'None');
+      setText(undxOsMostStrategicInitiative, state.recentStrategicPlan?.planId || state.priorityProject?.name || 'None');
+      setText(undxOsHighestRiskInitiative, state.highRisk?.analysisId || state.highRisk?.projectId || state.highRisk?.name || 'None');
+      setText(undxOsMostConnectedObject, state.knowledgeGraphs[0]?.graphId || state.memoryRecords[0]?.memoryId || state.recentTaskPackage?.packageId || 'None');
+      setText(undxOsHighestReadinessProject, state.projects.find(project => /active|testing|completed/i.test(project.status || ''))?.name || state.projects[0]?.name || 'None');
+      setText(undxOsHealthScore, state.healthScore);
+      setText(undxOsDefaultProvider, 'OpenAI');
+      setText(undxOsRouterStatus, 'Online');
+      setText(undxOsReferencedDecisions, state.totalDecisions);
+      setText(undxOsDecisionTrends, state.totalDecisions > 6 ? 'Growing' : 'Stable');
+      setText(undxOsRelationshipGrowth, state.relationshipCount);
+      setText(undxOsGraphCoverage, state.knowledgeGraphs.length ? `${Math.min(100, state.knowledgeGraphs.length * 20)}/100` : '0');
+      setText(undxOsHighestComplexityPackage, state.highestComplexity?.packageId || 'None');
+      setText(undxOsMostReferencedPackage, state.recentTaskPackage?.packageId || 'None');
+      setText(undxOsTopLanguages, state.languageProfiles.length ? state.languageProfiles.slice(0,3).map(item => item.name || item.language || 'Profile').join(' · ') : 'Python · TypeScript');
+      setText(undxOsTopFrameworks, 'Flask · React');
+      setText(undxOsTopSdks, 'OpenAI · Groq');
+      setText(undxOsMostRecommendedTechnology, state.mostReferencedTechnology);
+      setText(undxOsTopStrategicInitiative, state.recentStrategicPlan?.planId || 'None');
+      setText(undxOsTopPriorityProject, state.priorityProject?.name || 'None');
+      setText(undxOsPortfolioHealth, state.portfolioAnalyses[0]?.portfolioHealthScore ? `${state.portfolioAnalyses[0].portfolioHealthScore}/100` : 'Pending');
+      const fillChain = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      fillChain(undxOsRecommendations, recommendations);
+      fillChain(undxGlobalActivityFeed, [
+        state.memoryRecords[0] ? `Memory Record Created: ${state.memoryRecords[0].memoryId}` : 'Memory Record Created: Awaiting first record',
+        state.knowledgeGraphs[0] ? `Knowledge Graph Generated: ${state.knowledgeGraphs[0].graphId}` : 'Knowledge Graph Generated: Awaiting first graph',
+        state.recentStrategicPlan ? `Strategic Plan Generated: ${state.recentStrategicPlan.planId}` : 'Strategic Plan Generated: Awaiting first plan',
+        state.recentTaskPackage ? `Task Package Generated: ${state.recentTaskPackage.packageId}` : 'Task Package Generated: Awaiting first package',
+        state.buildSimulations[0] ? `Simulation Created: ${state.buildSimulations[0].simulationId}` : 'Simulation Created: Awaiting first simulation'
+      ]);
+      if(undxSystemRelationshipMap){
+        undxSystemRelationshipMap.replaceChildren();
+        [['Projects', state.projects.length], ['Memory', state.memoryRecords.length + state.missions.length], ['Knowledge', state.knowledgeGraphs.length], ['Plans', state.strategicPlans.length], ['Tasks', state.taskPackages.length], ['Simulations', state.buildSimulations.length]].forEach(([name, count]) => {
+          const node = document.createElement('article');
+          node.className = 'undx-system-impact';
+          node.append(Object.assign(document.createElement('strong'), {textContent: String(count)}), Object.assign(document.createElement('span'), {textContent: `${name} relationship counts`}));
+          undxSystemRelationshipMap.appendChild(node);
+        });
+      }
+      undxRenderOsSnapshots();
+    }
+    function undxGenerateOsSnapshotFlow(){
+      const snapshot = undxBuildOsSnapshot();
+      undxSaveOsSnapshots([snapshot, ...undxLoadOsSnapshots()]);
+      undxRenderOperatingSystem();
+      if(undxOsMessage) undxOsMessage.textContent = `${snapshot.snapshotId} stored in Operating System Registry.`;
+      return snapshot;
+    }
+    function undxUniversalSearchFlow(){
+      const query = (undxUniversalSearchInput?.value || '').trim().toLowerCase();
+      const state = undxOsState();
+      const objects = [
+        ...state.projects.map(item => ({type:'Project', name:item.name, detail:item.objective, nav:'Projects'})),
+        ...state.missions.map(item => ({type:'Mission', name:item.name, detail:item.objective, nav:'Memory'})),
+        ...state.memoryRecords.map(item => ({type:'Memory Record', name:item.memoryId, detail:item.title, nav:'Memory'})),
+        ...state.knowledgeGraphs.map(item => ({type:'Knowledge Graph', name:item.graphId, detail:item.summary, nav:'Knowledge'})),
+        ...state.strategicPlans.map(item => ({type:'Strategic Plan', name:item.planId, detail:item.executiveSummary, nav:'Strategy'})),
+        ...state.portfolioAnalyses.map(item => ({type:'Portfolio Analysis', name:item.analysisId, detail:item.executiveSummary, nav:'Portfolio'})),
+        ...state.buildSimulations.map(item => ({type:'Build Simulation', name:item.simulationId, detail:item.executiveSummary, nav:'Simulation'})),
+        ...state.taskPackages.map(item => ({type:'Task Package', name:item.packageId, detail:item.executiveSummary, nav:'Tasks'})),
+        ...state.languageProfiles.map(item => ({type:'Language Profile', name:item.name || item.language || 'Language Profile', detail:item.summary || item.recommendation || '', nav:'Code Intelligence'}))
+      ];
+      const matches = objects.filter(item => !query || `${item.type} ${item.name} ${item.detail}`.toLowerCase().includes(query)).slice(0,8);
+      if(!undxUniversalSearchResults) return;
+      undxUniversalSearchResults.replaceChildren();
+      if(!matches.length){
+        undxUniversalSearchResults.appendChild(undxBlock('Search Results', 'No intelligence objects matched this search yet.'));
+        return;
+      }
+      undxUniversalSearchResults.append(
+        undxBlock('Search Results', matches.map(item => `${item.type}: ${item.name}`)),
+        undxBlock('Relationship Matches', matches.map(item => `${item.name} connects to ${item.nav}`)),
+        undxBlock('Suggested Navigation', [...new Set(matches.map(item => item.nav))])
+      );
+    }
+    async function undxRunOsReviewFlow(){
+      const state = undxOsState();
+      if(undxOsMessage) undxOsMessage.textContent = 'Routing OS review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review the UNDX Operating System. Objects: ${state.objectCount}. Relationships: ${state.relationshipCount}. Health Score: ${state.healthScore}. Recommended action: ${undxOsRecommendationList(state)[0] || 'Review Approval Gates'}.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxOsReviewOutput) undxOsReviewOutput.replaceChildren(
+          undxBlock('System Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'System Review: keep OS navigation unified.'),
+          undxBlock('Planning Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Planning Review: prioritize the next task package.'),
+          undxBlock('Memory Review', 'Memory Review: preserve decisions and activity snapshots.'),
+          undxBlock('Knowledge Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Knowledge Review: expand graph coverage.'),
+          undxBlock('Task Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Task Review: reduce complexity before execution phases.'),
+          undxBlock('Combined Recommendation', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Combined Recommendation: create one high-signal next action.')
+        );
+        if(undxOsMessage) undxOsMessage.textContent = 'Multi-brain OS review complete.';
+      }catch(error){
+        if(undxOsReviewOutput) undxOsReviewOutput.replaceChildren(
+          undxBlock('System Review', 'OpenAI fallback: keep OS layer read-only and unified.'),
+          undxBlock('Planning Review', 'OpenAI fallback: generate the next strategic plan or task package.'),
+          undxBlock('Memory Review', 'OpenAI fallback: preserve decisions and activity history.'),
+          undxBlock('Knowledge Review', 'OpenAI fallback: grow relationship coverage.'),
+          undxBlock('Task Review', 'OpenAI fallback: prepare implementation-grade tasks only after approval.'),
+          undxBlock('Combined Recommendation', 'Fallback → OpenAI. UNDX OS remains read-only with no file access, commands, Git, or deployments.')
+        );
+        if(undxOsMessage) undxOsMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
+      ['undx-operating-system','UNDX Home'],
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
       ['undx-chat-interface','Chat Interface'],
@@ -29654,7 +30209,7 @@ def pulse_premium_undx_page():
       if(undxSimulationLoad) undxSimulationLoad.textContent = loadedCount > 16 ? 'High' : loadedCount > 8 ? 'Medium' : 'Low';
     }
     function undxSetActiveCommandView(targetId, options = {}){
-      const fallback = 'undx-command-overview';
+      const fallback = 'undx-operating-system';
       const resolvedTargetId = undxCommandViewAliases.get(targetId) || targetId;
       const activeId = undxCommandViewMap.has(resolvedTargetId) ? resolvedTargetId : fallback;
       const state = undxLoadCommandViewState();
@@ -29672,6 +30227,7 @@ def pulse_premium_undx_page():
         }
       });
       undxSaveCommandViewState(state);
+      if(activeId === 'undx-operating-system' && typeof undxRenderOperatingSystem === 'function') undxRenderOperatingSystem();
       document.querySelectorAll('[data-undx-view-target]').forEach(button => {
         button.setAttribute('aria-current', String(button.dataset.undxViewTarget === activeId));
       });
@@ -29696,12 +30252,12 @@ def pulse_premium_undx_page():
     }
     function undxInitCommandCenterViews(){
       const state = undxLoadCommandViewState();
-      if(!state['undx-command-overview']) state['undx-command-overview'] = {loaded:true, lastOpened:new Date().toISOString()};
+      if(!state['undx-operating-system']) state['undx-operating-system'] = {loaded:true, lastOpened:new Date().toISOString()};
       undxSaveCommandViewState(state);
       undxBuildCommandViewNav();
       const requested = String(window.location.hash || '').replace('#','');
       const requestedView = undxCommandViewAliases.get(requested) || requested;
-      const activeId = undxCommandViewMap.has(requestedView) ? requestedView : 'undx-command-overview';
+      const activeId = undxCommandViewMap.has(requestedView) ? requestedView : 'undx-operating-system';
       undxSetActiveCommandView(activeId);
       window.addEventListener('hashchange', () => {
         const target = String(window.location.hash || '').replace('#','');
@@ -31428,6 +31984,12 @@ def pulse_premium_undx_page():
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
     undxRunTaskReview?.addEventListener('click', undxRunTaskReviewFlow);
+    undxGenerateOsSnapshot?.addEventListener('click', undxGenerateOsSnapshotFlow);
+    undxRunUniversalSearch?.addEventListener('click', undxUniversalSearchFlow);
+    undxUniversalSearchInput?.addEventListener('keydown', event => {
+      if(event.key === 'Enter') undxUniversalSearchFlow();
+    });
+    undxRunOsReview?.addEventListener('click', undxRunOsReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -31464,6 +32026,7 @@ def pulse_premium_undx_page():
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
     undxRenderTaskRegistry();
     undxRenderTaskPackage(undxLoadTaskPackages()[0] || null);
+    undxRenderOperatingSystem();
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
