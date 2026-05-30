@@ -37,7 +37,8 @@ def main():
     require(
         "data-status-start='upload'" in source
         and "data-status-start='text'" in source
-        and '"Camera", "Capture now", "◎", "camera"' in source
+        and "Camera Status" in source
+        and "data-status-start='camera'" in source
         and "routeStatusIntent" in source,
         "Status creator and camera actions are real, separated controls",
     )

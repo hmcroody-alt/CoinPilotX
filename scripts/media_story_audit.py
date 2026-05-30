@@ -17,7 +17,7 @@ def expect(ok: bool, label: str):
 def main():
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text(encoding="utf-8")
-    expect("Create photo or video story" in source, "photo/video story entry exists")
+    expect("Photo or Video" in source and "data-status-start='upload'" in source, "photo/video story entry exists")
     expect("data-status-start='upload'" in source, "photo/video flow opens upload/camera picker path")
     expect("pulseStatusMedia" in source and "multiple" in source, "media story supports multiple image/video selection")
     expect("renderStatusPreview" in source and "data-status-preview-stage" in source, "media story has pre-publish preview")

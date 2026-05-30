@@ -52,6 +52,9 @@ def main():
     response = client.get("/api/pulse/status/rail")
     payload = response.get_json() or {}
     expect(response.status_code == 200 and payload.get("ok") is True, "status rail API returns ok", response.get_data(as_text=True)[:300])
+    empty_text = client.post("/api/pulse/status", json={"status_type": "text", "body": "   "})
+    empty_text_payload = empty_text.get_json() or {}
+    expect(empty_text.status_code == 400 and empty_text_payload.get("ok") is False, "empty text status validation works", empty_text.get_data(as_text=True)[:300])
     created = client.post("/api/pulse/status", json={"status_type": "text", "body": "Status audit"})
     data = created.get_json() or {}
     expect(created.status_code == 200 and data.get("ok") is True and data.get("status_id"), "status create API works", created.get_data(as_text=True)[:300])
@@ -61,7 +64,7 @@ def main():
     reply_payload = client.post(f"/api/pulse/status/{status_id}/reply", json={"body": "Reply from audit"}).get_json() or {}
     expect(reply_payload.get("ok") is True and reply_payload.get("reply", {}).get("id"), "status reply API works")
     html = client.get("/pulse").get_data(as_text=True)
-    for token in ["pulse-status-rail", "pulse-status-viewer", "data-status-card", "data-status-story-viewer", "pulseStatusForm", "pulseStatusMedia", "pulseStatusSound", "/pulse/camera?target=status"]:
+    for token in ["pulse-status-rail", "data-pulse-status-version='2.0'", "pulse-status-empty", "No Pulse Status yet", "Create the first Pulse Status", "Music Status", "Camera Status", "Live Status", "AI Story", "Following Stories", "Trending Stories", "Global Stories", "pulse-status-viewer", "data-status-card", "data-status-story-viewer", "pulseStatusForm", "pulseStatusMedia", "pulseStatusSound", "/pulse/camera?target=status"]:
         expect(token in html, f"status UI contains {token}")
     print("pulse status audit ok")
 
