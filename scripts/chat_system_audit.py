@@ -24,31 +24,31 @@ def main():
     bot.init_db(); bot.init_db()
     bot_source = (ROOT / "bot.py").read_text()
     recovery_js = (ROOT / "static/js/pulse_chat_recovery.js").read_text()
-    function_start = bot_source.find("def pulse_dashboard_messenger_page")
-    active_return = bot_source.find("return pulse_social_shell(\"Pulse Messenger\", \"Stable Dashboard", function_start)
+    function_start = bot_source.find("def pulse_communications_page")
+    active_return = bot_source.find("return pulse_social_shell(\"Pulse Communications\"", function_start)
     active_pulse_chat = bot_source[function_start:active_return]
-    expect("pulse-dashboard-chat" in active_pulse_chat, "Pulse Messenger uses restored Dashboard chat shell")
-    expect("/api/chat/threads" in active_pulse_chat, "Pulse Messenger loads Dashboard conversation threads")
-    expect("/api/chat/start" in active_pulse_chat, "Pulse Messenger starts private chats through Dashboard chat API")
-    expect("messageLoadUrl" in active_pulse_chat and "messageSendUrl" in active_pulse_chat, "Pulse Messenger uses unified message load/send bridge")
-    expect("/api/pulse/messages/${Number(conversationId)}/messages" in active_pulse_chat, "direct and group messages use canonical Pulse endpoint")
-    expect("/api/pulse/messages/rooms/${room}/messages" in active_pulse_chat, "room messages use canonical Pulse endpoint")
-    expect('/api/messages/${Number(conversationId)}' in active_pulse_chat and 'source_kind:"legacy"' in active_pulse_chat, "legacy Dashboard direct rows keep legacy message bridge")
-    expect("/api/pulse/chatrooms" in active_pulse_chat and "/api/pulse/messages/group-conversations" in active_pulse_chat, "rooms and groups remain wired")
-    expect("messageErrorCopy" in active_pulse_chat and "You do not have access to this chat." in active_pulse_chat and "Conversation not found." in active_pulse_chat, "message panel has status-specific error copy")
+    expect("pulse-comm-platform" in active_pulse_chat, "Pulse Messenger uses Communications Platform shell")
+    expect("/api/pulse/communications/conversations?type=direct" in active_pulse_chat, "direct list uses unified communications API")
+    expect("/api/pulse/communications/rooms" in active_pulse_chat, "rooms list uses unified communications API")
+    expect("/api/pulse/communications/groups" in active_pulse_chat, "groups list uses unified communications API")
+    expect("/api/pulse/communications/conversations/${encodeURIComponent(id)}/messages" in active_pulse_chat, "message loads use unified communications API")
+    expect("/api/pulse/communications/conversations/${encodeURIComponent(state.activeId)}/messages" in active_pulse_chat, "message sends use unified communications API")
+    expect("legacy-" in bot_source and "legacy_dashboard" in bot_source, "legacy Dashboard direct bridge remains available")
+    expect("Voice: Coming Soon" in active_pulse_chat and "UNDX Collaboration: Coming Soon" in active_pulse_chat, "future communication placeholders render")
+    expect("You do not have access to this chat." in active_pulse_chat and "Conversation not found." in active_pulse_chat, "message panel has status-specific error copy")
     expect("pulseMessengerPendingV2" not in active_pulse_chat, "broken Pulse recovery queue is not active in Pulse Messenger shell")
     for primitive in [
-        "loadConversations",
-        "loadRooms",
-        "loadGroups",
+        "loadList",
         "openConversation",
-        "openRoom",
-        "pollActiveConversation",
+        "renderMessages",
+        "setComposer",
     ]:
-        expect(primitive in active_pulse_chat, f"restored Dashboard chat primitive exists: {primitive}")
+        expect(primitive in active_pulse_chat, f"Communications UI primitive exists: {primitive}")
     expect("Messages syncing" not in bot_source and "Messages syncing" not in recovery_js, "fake syncing loop copy removed")
     expect("Loading latest messages" in recovery_js and "Reconnecting..." in recovery_js, "specific chat recovery states exist")
     expect("Something needs attention. Please try again." not in active_pulse_chat, "messenger does not use generic failure copy")
+    result = subprocess.run([sys.executable, str(ROOT / "scripts/pulse_communications_audit.py")], cwd=str(ROOT), text=True, capture_output=True)
+    expect(result.returncode == 0, "unified communications audit", result.stdout + result.stderr)
     result = subprocess.run([sys.executable, str(ROOT / "scripts/messenger_core_audit.py")], cwd=str(ROOT), text=True, capture_output=True)
     expect(result.returncode == 0, "canonical messenger core audit", result.stdout + result.stderr)
     conn = bot.db(); conn.row_factory = bot.sqlite3.Row; cur = conn.cursor()
