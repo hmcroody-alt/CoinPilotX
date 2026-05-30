@@ -21839,14 +21839,28 @@ def pulse_premium_undx_page():
     .undx-portfolio-project,.undx-allocation-item,.undx-initiative-item{border:1px solid rgba(156,124,255,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
     .undx-portfolio-project strong,.undx-allocation-item strong,.undx-initiative-item strong{display:block;color:#dffcff}
     .undx-portfolio-project span,.undx-allocation-item span,.undx-initiative-item span{display:block;color:rgba(223,246,255,.64);font-size:.82rem;font-weight:850}
+    .undx-build-simulation{position:relative;overflow:hidden;border-color:rgba(255,209,102,.3);background:radial-gradient(circle at 8% 14%,rgba(255,209,102,.14),transparent 24rem),radial-gradient(circle at 88% 16%,rgba(110,223,246,.12),transparent 27rem),linear-gradient(180deg,rgba(255,255,255,.084),rgba(255,255,255,.03))}
+    .undx-build-simulation:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,209,102,.075),transparent 34%,rgba(110,223,246,.055));pointer-events:none}
+    .undx-build-simulation>*{position:relative;z-index:1}
+    .undx-simulation-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;align-items:start}
+    .undx-simulation-main,.undx-simulation-sidebar,.undx-simulation-registry,.undx-simulation-output{display:grid;gap:12px}
+    .undx-simulation-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(34,25,13,.86),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-simulation-card h3,.undx-simulation-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-simulation-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-simulation-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+    .undx-simulation-inputs label{display:flex;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px;background:rgba(5,11,20,.36);font-weight:850;color:#dffcff}
+    .undx-system-impact-grid,.undx-risk-grid,.undx-approval-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+    .undx-system-impact,.undx-risk-item,.undx-approval-item{border:1px solid rgba(255,209,102,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
+    .undx-system-impact strong,.undx-risk-item strong,.undx-approval-item strong{display:block;color:#dffcff}
+    .undx-system-impact span,.undx-risk-item span,.undx-approval-item span{display:block;color:rgba(223,246,255,.64);font-size:.82rem;font-weight:850}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -23268,6 +23282,163 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-build-simulation' id='undx-build-simulation'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Simulation Engine: Online</span>
+            <h2>UNDX Autonomous Build Simulation Center</h2>
+          </div>
+          <p>Simulate complete implementation plans before any future execution phases.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX build simulation status'>
+              <span aria-label='Simulation Engine: Online'>Simulation Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Simulator: Online'>Execution Simulator: <strong>Online</strong></span>
+              <span aria-label='Risk Simulator: Online'>Risk Simulator: <strong>Online</strong></span>
+              <span aria-label='Approval Simulator: Online'>Approval Simulator: <strong>Online</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 22'>Phase: <strong>22</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Simulation Inputs</span>
+              <h3>Simulation Inputs</h3>
+              <p>Select one or more read-only intelligence sources for simulation.</p>
+              <div class='undx-simulation-inputs' id='undxSimulationInputs'>
+                <label><input type='checkbox' value='project' checked>Project</label>
+                <label><input type='checkbox' value='workspace' checked>Workspace Summary</label>
+                <label><input type='checkbox' value='strategic' checked>Strategic Plan</label>
+                <label><input type='checkbox' value='execution' checked>Execution Plan</label>
+                <label><input type='checkbox' value='repository' checked>Repository Analysis</label>
+                <label><input type='checkbox' value='change' checked>Change Analysis</label>
+                <label><input type='checkbox' value='portfolio' checked>Portfolio Analysis</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateBuildSimulation'>Generate Build Simulation</button>
+                <button class='button' type='button' id='undxRunSimulationReview'>Run Multi-Brain Build Simulation Review</button>
+              </div>
+              <p class='undx-project-message' id='undxSimulationMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Build Simulation Report</span>
+              <h3>Build Simulation Report</h3>
+              <div class='undx-evolution-empty' id='undxSimulationEmpty'>Generate a build simulation to preview implementation without execution.</div>
+              <div class='undx-simulation-output' id='undxSimulationOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Build Order Simulator</span>
+              <h3>Phase 1 · Phase 2 · Phase 3 · Phase 4 · Phase 5</h3>
+              <p>Estimated sequence only. No code generation that modifies the repository.</p>
+              <div class='undx-chain-list' id='undxSimulationBuildOrder'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Affected Systems Simulator</span>
+              <h3>Simulated Affected Systems</h3>
+              <div class='undx-system-impact-grid' id='undxSimulationAffectedSystems'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Simulator</span>
+              <h3>Simulated Approvals</h3>
+              <div class='undx-approval-grid' id='undxSimulationApprovals'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Testing Simulator</span>
+              <h3>Simulated Testing Plan</h3>
+              <div class='undx-approval-grid' id='undxSimulationTests'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Simulation Registry</span>
+              <h3>Simulation Registry</h3>
+              <div class='undx-memory-empty' id='undxSimulationRegistryEmpty'>No build simulations stored yet. Generate a simulation to activate the registry.</div>
+              <div class='undx-simulation-registry' id='undxSimulationRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Simulation Dashboard</span>
+              <h3>Simulation Dashboard</h3>
+              <p>Total Simulations: <strong id='undxSimulationTotal'>0</strong></p>
+              <p>Average Success Probability: <strong id='undxSimulationAverageSuccess'>0</strong></p>
+              <p>Average Risk Probability: <strong id='undxSimulationAverageRisk'>0</strong></p>
+              <p>Build Candidates: <strong id='undxSimulationBuildCandidates'>0</strong></p>
+              <p>Execution Candidates: <strong id='undxSimulationExecutionCandidates'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Risk Simulator</span>
+              <h3>Risk Simulator</h3>
+              <p>Architecture Risk · Security Risk · Deployment Risk · Maintenance Risk · Scalability Risk</p>
+              <div class='undx-risk-grid' id='undxSimulationRiskGrid'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Success Forecast</span>
+              <h3>Success Forecast</h3>
+              <p>Success Probability: <strong id='undxSimulationSuccessProbability'>0</strong></p>
+              <p>Risk Probability: <strong id='undxSimulationRiskProbability'>0</strong></p>
+              <p>Complexity Probability: <strong id='undxSimulationComplexityProbability'>0</strong></p>
+              <p>Approval Probability: <strong id='undxSimulationApprovalProbability'>0</strong></p>
+              <p>Readiness Level: <strong id='undxSimulationReadinessLevel'>Not Ready</strong></p>
+              <p>Readiness Engine: Not Ready · Planning Ready · Review Ready · Build Candidate · Execution Candidate</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Rollback Simulator</span>
+              <h3>Rollback Simulator</h3>
+              <div id='undxSimulationRollback'>Restore Previous Version · Disable Feature Flag · Revert Release · Database Recovery Procedure</div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Failure Scenario Simulator</span>
+              <h3>Top 5 Potential Failure Scenarios</h3>
+              <p>Dependency Failure · Missing Context · Approval Failure · Security Gap · Scalability Bottleneck</p>
+              <div class='undx-chain-list' id='undxSimulationFailures'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Simulation Review</span>
+              <h3>Multi-Brain Simulation Review</h3>
+              <div id='undxSimulationReviewOutput'><p>Architecture Simulation, Research Simulation, Builder Simulation, Optimization Simulation, Rapid Simulation, and Combined Simulation Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Simulation Integrations</span>
+              <h3>Simulation Integrations</h3>
+              <p>Latest Simulation: <strong id='undxLatestSimulation'>None</strong></p>
+              <p>Simulation Readiness: <strong id='undxSimulationReadinessIntegration'>Pending</strong></p>
+              <p>Simulation Risk Score: <strong id='undxSimulationRiskIntegration'>Pending</strong></p>
+              <p>Simulation Forecast: <strong id='undxSimulationForecastIntegration'>Pending</strong></p>
+              <p>Simulation Dependencies: <strong id='undxSimulationDependenciesIntegration'>Pending</strong></p>
+              <p>Simulation Relationships: <strong id='undxSimulationRelationshipsIntegration'>0</strong></p>
+              <p>Simulation Impact Chains: <strong id='undxSimulationImpactChainsIntegration'>0</strong></p>
+              <p>Portfolio Simulation Readiness: <strong id='undxPortfolioSimulationReadiness'>Pending</strong></p>
+              <p>Portfolio Simulation Risk: <strong id='undxPortfolioSimulationRisk'>Pending</strong></p>
+              <p>Portfolio Simulation Priority: <strong id='undxPortfolioSimulationPriority'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>UNDX Scalability Status</span>
+              <h3>Scalability Integration</h3>
+              <p>Loaded Modules: <strong id='undxSimulationLoadedModules'>22</strong></p>
+              <p>Deferred Modules: <strong id='undxSimulationDeferredModules'>3</strong></p>
+              <p>Simulation Objects: <strong id='undxSimulationObjects'>0</strong></p>
+              <p>Estimated Intelligence Load: <strong id='undxSimulationLoad'>Low</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this simulation using strategic plans, workspace intelligence, knowledge graphs, repository context, repository analyses, change analyses, execution plans, and portfolio analyses only.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>STRICTLY SIMULATION ONLY.</li></ul>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 22<br><strong>Autonomous Build Simulation</strong></span>
+                <span>Phase 23<br><strong>Workspace Memory Graph Expansion</strong></span>
+                <span>Phase 24<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 25<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -23574,6 +23745,46 @@ def pulse_premium_undx_page():
     const undxPortfolioEstimatedComplexity = document.getElementById('undxPortfolioEstimatedComplexity');
     const undxPortfolioObjectsManaged = document.getElementById('undxPortfolioObjectsManaged');
     const undxPortfolioRoadmap = document.getElementById('undxPortfolioRoadmap');
+    const undxSimulationInputs = document.getElementById('undxSimulationInputs');
+    const undxGenerateBuildSimulation = document.getElementById('undxGenerateBuildSimulation');
+    const undxRunSimulationReview = document.getElementById('undxRunSimulationReview');
+    const undxSimulationMessage = document.getElementById('undxSimulationMessage');
+    const undxSimulationEmpty = document.getElementById('undxSimulationEmpty');
+    const undxSimulationOutput = document.getElementById('undxSimulationOutput');
+    const undxSimulationBuildOrder = document.getElementById('undxSimulationBuildOrder');
+    const undxSimulationAffectedSystems = document.getElementById('undxSimulationAffectedSystems');
+    const undxSimulationApprovals = document.getElementById('undxSimulationApprovals');
+    const undxSimulationTests = document.getElementById('undxSimulationTests');
+    const undxSimulationRegistryEmpty = document.getElementById('undxSimulationRegistryEmpty');
+    const undxSimulationRegistryList = document.getElementById('undxSimulationRegistryList');
+    const undxSimulationTotal = document.getElementById('undxSimulationTotal');
+    const undxSimulationAverageSuccess = document.getElementById('undxSimulationAverageSuccess');
+    const undxSimulationAverageRisk = document.getElementById('undxSimulationAverageRisk');
+    const undxSimulationBuildCandidates = document.getElementById('undxSimulationBuildCandidates');
+    const undxSimulationExecutionCandidates = document.getElementById('undxSimulationExecutionCandidates');
+    const undxSimulationRiskGrid = document.getElementById('undxSimulationRiskGrid');
+    const undxSimulationSuccessProbability = document.getElementById('undxSimulationSuccessProbability');
+    const undxSimulationRiskProbability = document.getElementById('undxSimulationRiskProbability');
+    const undxSimulationComplexityProbability = document.getElementById('undxSimulationComplexityProbability');
+    const undxSimulationApprovalProbability = document.getElementById('undxSimulationApprovalProbability');
+    const undxSimulationReadinessLevel = document.getElementById('undxSimulationReadinessLevel');
+    const undxSimulationRollback = document.getElementById('undxSimulationRollback');
+    const undxSimulationFailures = document.getElementById('undxSimulationFailures');
+    const undxSimulationReviewOutput = document.getElementById('undxSimulationReviewOutput');
+    const undxLatestSimulation = document.getElementById('undxLatestSimulation');
+    const undxSimulationReadinessIntegration = document.getElementById('undxSimulationReadinessIntegration');
+    const undxSimulationRiskIntegration = document.getElementById('undxSimulationRiskIntegration');
+    const undxSimulationForecastIntegration = document.getElementById('undxSimulationForecastIntegration');
+    const undxSimulationDependenciesIntegration = document.getElementById('undxSimulationDependenciesIntegration');
+    const undxSimulationRelationshipsIntegration = document.getElementById('undxSimulationRelationshipsIntegration');
+    const undxSimulationImpactChainsIntegration = document.getElementById('undxSimulationImpactChainsIntegration');
+    const undxPortfolioSimulationReadiness = document.getElementById('undxPortfolioSimulationReadiness');
+    const undxPortfolioSimulationRisk = document.getElementById('undxPortfolioSimulationRisk');
+    const undxPortfolioSimulationPriority = document.getElementById('undxPortfolioSimulationPriority');
+    const undxSimulationLoadedModules = document.getElementById('undxSimulationLoadedModules');
+    const undxSimulationDeferredModules = document.getElementById('undxSimulationDeferredModules');
+    const undxSimulationObjects = document.getElementById('undxSimulationObjects');
+    const undxSimulationLoad = document.getElementById('undxSimulationLoad');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -23591,6 +23802,7 @@ def pulse_premium_undx_page():
     const undxKnowledgeGraphsKey = 'undxKnowledgeGraphs';
     const undxStrategicPlansKey = 'undxStrategicPlans';
     const undxPortfolioAnalysesKey = 'undxPortfolioAnalyses';
+    const undxBuildSimulationsKey = 'undxBuildSimulations';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -23610,6 +23822,8 @@ def pulse_premium_undx_page():
     let undxLastStrategicPlan = null;
     let undxSelectedPortfolioAnalysisId = null;
     let undxLastPortfolioAnalysis = null;
+    let undxSelectedBuildSimulationId = null;
+    let undxLastBuildSimulation = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -25440,6 +25654,7 @@ def pulse_premium_undx_page():
       const latestGraph = undxLastKnowledgeGraph || (project?.linkedKnowledgeGraphs || [])[0] || undxLoadKnowledgeGraphs()[0] || null;
       const latestStrategicPlan = undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null;
       const latestPortfolio = undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || null;
+      const latestSimulation = undxLastBuildSimulation || undxLoadBuildSimulations()[0] || null;
       const healthScore = undxWorkspaceHealth(project);
       const readinessLevel = undxWorkspaceReadiness(healthScore);
       const nextRecommendedAction = undxWorkspaceRecommendedNextAction(project);
@@ -25464,6 +25679,9 @@ def pulse_premium_undx_page():
       }
       if(latestPortfolio){
         summary.connectedAssets = [...summary.connectedAssets, `Portfolio Position: ${latestPortfolio.recommendedBuildOrder.indexOf(project?.name || '') + 1 || 'Pending'}`, `Portfolio Priority: ${latestPortfolio.priorityScore}`, `Portfolio Dependencies: ${latestPortfolio.dependencies.length}`];
+      }
+      if(latestSimulation){
+        summary.connectedAssets = [...summary.connectedAssets, `Latest Simulation: ${latestSimulation.simulationId}`, `Simulation Readiness: ${latestSimulation.readinessLevel}`, `Simulation Risk Score: ${latestSimulation.forecast.riskProbability}`];
       }
       summary.summaryText = undxWorkspaceSummaryText(summary);
       return undxNormalizeWorkspaceSummary(summary);
@@ -25503,6 +25721,9 @@ def pulse_premium_undx_page():
         `Portfolio Position: ${((undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || {}).recommendedBuildOrder || []).indexOf(summary.projectName) + 1 || 'Pending'}`,
         `Portfolio Priority: ${(undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || {}).priorityScore ?? 'Pending'}`,
         `Portfolio Dependencies: ${((undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || {}).dependencies || []).length || 'Pending'}`,
+        `Latest Simulation: ${(undxLastBuildSimulation || undxLoadBuildSimulations()[0] || {}).simulationId || 'None'}`,
+        `Simulation Readiness: ${(undxLastBuildSimulation || undxLoadBuildSimulations()[0] || {}).readinessLevel || 'Pending'}`,
+        `Simulation Risk Score: ${(undxLastBuildSimulation || undxLoadBuildSimulations()[0] || {}).forecast?.riskProbability ?? 'Pending'}`,
         `Created Date: ${undxFormatMemoryTime(summary.createdAt)}`
       ].forEach(value => {
         const pill = document.createElement('span');
@@ -25551,6 +25772,7 @@ def pulse_premium_undx_page():
       undxRenderKnowledgeGraph(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || null);
       undxRenderStrategicDashboard();
       undxRenderPortfolioDashboard();
+      undxRenderSimulationDashboard();
     }
     function undxSendWorkspaceSummaryToChatFlow(){
       const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
@@ -27180,6 +27402,361 @@ def pulse_premium_undx_page():
       }catch(error){
         if(undxPortfolioReviewOutput) undxPortfolioReviewOutput.replaceChildren(undxBlock('Architecture Review', 'OpenAI fallback recommended: map dependencies first.'), undxBlock('Research Review', 'OpenAI fallback recommended: identify missing context.'), undxBlock('Build Review', 'OpenAI fallback recommended: build ready initiatives first.'), undxBlock('Optimization Review', 'OpenAI fallback recommended: reduce conflicts.'), undxBlock('Rapid Review', 'OpenAI fallback recommended: checkpoint the next decision.'), undxBlock('Combined Portfolio Recommendation', 'Fallback → OpenAI. Keep portfolio coordination read-only and approval-aware.'));
         if(undxPortfolioMessage) undxPortfolioMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxSimulationReadiness(success, risk, complexity, approvals){
+      const score = (success * .38) + (approvals * .24) - (risk * .2) - (complexity * .08) + 18;
+      if(score >= 80) return 'Execution Candidate';
+      if(score >= 66) return 'Build Candidate';
+      if(score >= 52) return 'Review Ready';
+      if(score >= 36) return 'Planning Ready';
+      return 'Not Ready';
+    }
+    function undxSelectedSimulationInputTypes(){
+      const boxes = undxSimulationInputs ? Array.from(undxSimulationInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['project','workspace','strategic','execution','repository','change','portfolio'];
+    }
+    function undxSimulationSources(){
+      return {
+        project: undxWorkspaceSelectedProject() || undxLoadProjects()[0] || null,
+        workspace: undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || null,
+        strategic: undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null,
+        execution: undxLoadExecutionPlans()[0] || null,
+        repository: undxLoadRepositoryAnalyses()[0] || null,
+        change: undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || null,
+        portfolio: undxLastPortfolioAnalysis || undxLoadPortfolioAnalyses()[0] || null
+      };
+    }
+    function undxNormalizeBuildSimulation(simulation){
+      const forecast = simulation.forecast || {};
+      const risks = simulation.risks || {};
+      return {
+        simulationId: String(simulation.simulationId || `SIM-UNDX-${Date.now()}`).slice(0,44),
+        selectedInputs: Array.isArray(simulation.selectedInputs) ? simulation.selectedInputs.slice(0,12) : [],
+        executiveSummary: String(simulation.executiveSummary || '').slice(0,1400),
+        simulatedObjective: String(simulation.simulatedObjective || '').slice(0,1000),
+        simulatedBuildOrder: undxNormalizeExecutionList(simulation.simulatedBuildOrder, ['Phase 1: Review context', 'Phase 2: Plan implementation', 'Phase 3: Prepare approvals', 'Phase 4: Simulate tests', 'Phase 5: Confirm rollback'], 10, 220),
+        affectedSystems: simulation.affectedSystems || {},
+        risks: {
+          architectureRisk: Math.max(0, Math.min(100, Number(risks.architectureRisk || 0))),
+          securityRisk: Math.max(0, Math.min(100, Number(risks.securityRisk || 0))),
+          deploymentRisk: Math.max(0, Math.min(100, Number(risks.deploymentRisk || 0))),
+          maintenanceRisk: Math.max(0, Math.min(100, Number(risks.maintenanceRisk || 0))),
+          scalabilityRisk: Math.max(0, Math.min(100, Number(risks.scalabilityRisk || 0)))
+        },
+        approvals: undxNormalizeExecutionList(simulation.approvals, ['Architecture Review: Simulated', 'Security Review: Simulated', 'Agent Council Review: Simulated', 'Execution Approval: Simulated', 'Deployment Approval: Simulated'], 8, 180),
+        testingPlan: undxNormalizeExecutionList(simulation.testingPlan, ['Unit Tests: Recommended', 'Integration Tests: Recommended', 'Security Tests: Recommended', 'Performance Tests: Recommended', 'User Acceptance Tests: Recommended'], 8, 180),
+        rollbackStrategy: undxNormalizeExecutionList(simulation.rollbackStrategy, ['Restore Previous Version', 'Disable Feature Flag', 'Revert Release', 'Database Recovery Procedure'], 8, 220),
+        readinessLevel: String(simulation.readinessLevel || 'Planning Ready').slice(0,80),
+        forecast: {
+          successProbability: Math.max(0, Math.min(100, Number(forecast.successProbability || 0))),
+          riskProbability: Math.max(0, Math.min(100, Number(forecast.riskProbability || 0))),
+          complexityProbability: Math.max(0, Math.min(100, Number(forecast.complexityProbability || 0))),
+          approvalProbability: Math.max(0, Math.min(100, Number(forecast.approvalProbability || 0)))
+        },
+        failureScenarios: undxNormalizeExecutionList(simulation.failureScenarios, ['Dependency Failure', 'Missing Context', 'Approval Failure', 'Security Gap', 'Scalability Bottleneck'], 5, 220),
+        review: simulation.review || null,
+        createdAt: simulation.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadBuildSimulations(){
+      try{
+        const raw = localStorage.getItem(undxBuildSimulationsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.simulationId).slice(0,48).map(undxNormalizeBuildSimulation) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveBuildSimulations(simulations){
+      try{
+        localStorage.setItem(undxBuildSimulationsKey, JSON.stringify(simulations.slice(0,48)));
+      }catch(error){
+        if(undxSimulationMessage) undxSimulationMessage.textContent = 'Simulation Registry could not be updated.';
+      }
+    }
+    function undxNextBuildSimulationId(simulations){
+      const max = simulations.reduce((highest, simulation) => {
+        const match = String(simulation.simulationId || '').match(/^SIM-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `SIM-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildSimulation(){
+      const simulations = undxLoadBuildSimulations();
+      const sources = undxSimulationSources();
+      const selectedInputs = undxSelectedSimulationInputTypes();
+      const sourceStrength = selectedInputs.filter(key => sources[key]).length;
+      const project = sources.project || {};
+      const strategic = sources.strategic || {};
+      const portfolio = sources.portfolio || {};
+      const change = sources.change || {};
+      const health = project.projectId ? undxWorkspaceHealth(project) : 42;
+      const riskBase = Math.max(18, Math.min(88, (change.riskScore || 36) + Math.max(0, selectedInputs.length - sourceStrength) * 7));
+      const complexity = Math.max(20, Math.min(92, (portfolio.conflictSeverity === 'Critical' ? 72 : portfolio.conflictSeverity === 'High' ? 62 : 42) + (strategic.priority?.complexity || 36) / 4));
+      const approvalProbability = Math.max(0, Math.min(100, 45 + sourceStrength * 7 - (undxLoadApprovalHistory().filter(item => item.decision === 'Rejected').length * 4)));
+      const successProbability = Math.max(0, Math.min(100, Math.round(42 + sourceStrength * 6 + health * .28 + (strategic.forecast?.successProbability || 0) * .18 - riskBase * .12)));
+      const riskProbability = Math.round(riskBase);
+      const readinessLevel = undxSimulationReadiness(successProbability, riskProbability, complexity, approvalProbability);
+      const affectedSystems = {
+        Frontend: project.name || strategic.planId ? 'High' : 'Medium',
+        Backend: sources.execution ? 'High' : 'Medium',
+        Database: riskBase > 55 ? 'Medium' : 'Low',
+        'AI Providers': sources.strategic || sources.portfolio ? 'High' : 'Medium',
+        Workers: sources.repository ? 'Medium' : 'Low',
+        'Premium Modules': 'High',
+        Infrastructure: riskBase > 70 ? 'High' : 'Medium'
+      };
+      return undxNormalizeBuildSimulation({
+        simulationId: undxNextBuildSimulationId(simulations),
+        selectedInputs,
+        executiveSummary: `UNDX simulated a complete build path for ${project.name || strategic.planId || portfolio.analysisId || 'the selected UNDX initiative'} using ${sourceStrength} available read-only intelligence sources.`,
+        simulatedObjective: 'Preview what would be built, which systems would be affected, which approvals would be required, and what rollback strategy would be needed before any future execution.',
+        simulatedBuildOrder: ['Phase 1: Confirm mission, project, and portfolio context', 'Phase 2: Map affected systems and dependencies', 'Phase 3: Review approval gates and risk controls', 'Phase 4: Prepare recommended test coverage', 'Phase 5: Validate rollback and readiness before future execution'],
+        affectedSystems,
+        risks: {
+          architectureRisk: Math.min(100, Math.round(complexity * .75)),
+          securityRisk: Math.min(100, Math.round(riskBase * .8)),
+          deploymentRisk: Math.min(100, Math.round(riskBase * .7 + 10)),
+          maintenanceRisk: Math.min(100, Math.round(complexity * .62)),
+          scalabilityRisk: Math.min(100, Math.round((portfolio.portfolioHealthScore ? 100 - portfolio.portfolioHealthScore : 48) + 12))
+        },
+        approvals: ['Architecture Review: Simulated', 'Security Review: Simulated', 'Agent Council Review: Simulated', 'Execution Approval: Simulated', 'Deployment Approval: Simulated'],
+        testingPlan: ['Unit Tests: Recommended', 'Integration Tests: Recommended', 'Security Tests: Recommended', 'Performance Tests: Recommended', 'User Acceptance Tests: Recommended'],
+        rollbackStrategy: ['Restore Previous Version', 'Disable Feature Flag', 'Revert Release', 'Database Recovery Procedure'],
+        readinessLevel,
+        forecast: {successProbability, riskProbability, complexityProbability: Math.round(complexity), approvalProbability},
+        failureScenarios: ['Dependency Failure', 'Missing Context', 'Approval Failure', 'Security Gap', 'Scalability Bottleneck'],
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxBuildSimulationText(simulation){
+      return [
+        'UNDX Autonomous Build Simulation',
+        '',
+        `Simulation ID: ${simulation.simulationId}`,
+        `Readiness Level: ${simulation.readinessLevel}`,
+        `Success Probability: ${simulation.forecast.successProbability}/100`,
+        `Risk Probability: ${simulation.forecast.riskProbability}/100`,
+        '',
+        `Executive Summary: ${simulation.executiveSummary}`,
+        `Simulated Objective: ${simulation.simulatedObjective}`,
+        '',
+        'Simulated Build Order:',
+        ...simulation.simulatedBuildOrder.map(item => `- ${item}`),
+        '',
+        'Simulated Affected Systems:',
+        ...Object.entries(simulation.affectedSystems).map(([name, impact]) => `- ${name}: ${impact}`),
+        '',
+        'Simulated Risks:',
+        ...Object.entries(simulation.risks).map(([name, score]) => `- ${name}: ${score}/100`),
+        '',
+        'Simulated Approvals:',
+        ...simulation.approvals.map(item => `- ${item}`),
+        '',
+        'Simulated Testing Plan:',
+        ...simulation.testingPlan.map(item => `- ${item}`),
+        '',
+        'Simulated Rollback Strategy:',
+        ...simulation.rollbackStrategy.map(item => `- ${item}`),
+        '',
+        'Safety Boundary: Simulation only. No repository files were accessed. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxRenderBuildSimulation(simulation){
+      undxLastBuildSimulation = simulation || null;
+      if(simulation) undxSelectedBuildSimulationId = simulation.simulationId;
+      if(undxSimulationEmpty) undxSimulationEmpty.hidden = Boolean(simulation);
+      if(undxSimulationOutput){
+        undxSimulationOutput.replaceChildren();
+        if(simulation){
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Simulation ID', simulation.simulationId),
+            undxBlock('Executive Summary', simulation.executiveSummary),
+            undxBlock('Simulated Objective', simulation.simulatedObjective),
+            undxBlock('Simulated Build Order', simulation.simulatedBuildOrder),
+            undxBlock('Simulated Affected Systems', Object.entries(simulation.affectedSystems).map(([name, impact]) => `${name}: ${impact}`)),
+            undxBlock('Simulated Risks', Object.entries(simulation.risks).map(([name, score]) => `${name}: ${score}/100`)),
+            undxBlock('Simulated Approvals', simulation.approvals),
+            undxBlock('Simulated Testing Plan', simulation.testingPlan),
+            undxBlock('Simulated Rollback Strategy', simulation.rollbackStrategy),
+            undxBlock('Simulated Readiness Assessment', simulation.readinessLevel)
+          );
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxBuildSimulationText(simulation);
+          undxSimulationOutput.append(grid, output);
+        }
+      }
+      const fillChain = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        (items || []).forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      fillChain(undxSimulationBuildOrder, simulation?.simulatedBuildOrder || []);
+      fillChain(undxSimulationFailures, simulation?.failureScenarios || []);
+      if(undxSimulationAffectedSystems){
+        undxSimulationAffectedSystems.replaceChildren();
+        Object.entries(simulation?.affectedSystems || {}).forEach(([name, impact]) => {
+          const node = document.createElement('article');
+          node.className = 'undx-system-impact';
+          node.append(Object.assign(document.createElement('strong'), {textContent: impact}), Object.assign(document.createElement('span'), {textContent: name}));
+          undxSimulationAffectedSystems.appendChild(node);
+        });
+      }
+      if(undxSimulationRiskGrid){
+        undxSimulationRiskGrid.replaceChildren();
+        Object.entries(simulation?.risks || {}).forEach(([name, score]) => {
+          const node = document.createElement('article');
+          node.className = 'undx-risk-item';
+          node.append(Object.assign(document.createElement('strong'), {textContent: `${score}/100`}), Object.assign(document.createElement('span'), {textContent: name.replace(/([A-Z])/g,' $1').trim()}));
+          undxSimulationRiskGrid.appendChild(node);
+        });
+      }
+      const fillStatusGrid = (container, items, className) => {
+        if(!container) return;
+        container.replaceChildren();
+        (items || []).forEach(item => {
+          const [name, status] = String(item).split(':').map(part => part.trim());
+          const node = document.createElement('article');
+          node.className = className;
+          node.append(Object.assign(document.createElement('strong'), {textContent: status || 'Simulated'}), Object.assign(document.createElement('span'), {textContent: name}));
+          container.appendChild(node);
+        });
+      };
+      fillStatusGrid(undxSimulationApprovals, simulation?.approvals || [], 'undx-approval-item');
+      fillStatusGrid(undxSimulationTests, simulation?.testingPlan || [], 'undx-approval-item');
+      if(undxSimulationRollback) undxSimulationRollback.textContent = (simulation?.rollbackStrategy || ['Restore Previous Version', 'Disable Feature Flag', 'Revert Release', 'Database Recovery Procedure']).join(' · ');
+      if(undxSimulationSuccessProbability) undxSimulationSuccessProbability.textContent = String(simulation?.forecast?.successProbability || 0);
+      if(undxSimulationRiskProbability) undxSimulationRiskProbability.textContent = String(simulation?.forecast?.riskProbability || 0);
+      if(undxSimulationComplexityProbability) undxSimulationComplexityProbability.textContent = String(simulation?.forecast?.complexityProbability || 0);
+      if(undxSimulationApprovalProbability) undxSimulationApprovalProbability.textContent = String(simulation?.forecast?.approvalProbability || 0);
+      if(undxSimulationReadinessLevel) undxSimulationReadinessLevel.textContent = simulation?.readinessLevel || 'Not Ready';
+      undxRenderSimulationDashboard();
+    }
+    function undxRenderSimulationDashboard(){
+      const simulations = undxLoadBuildSimulations();
+      const avg = key => simulations.length ? Math.round(simulations.reduce((sum, item) => sum + Number(key(item) || 0), 0) / simulations.length) : 0;
+      const latest = undxLastBuildSimulation || simulations[0] || null;
+      if(undxSimulationTotal) undxSimulationTotal.textContent = String(simulations.length);
+      if(undxSimulationAverageSuccess) undxSimulationAverageSuccess.textContent = String(avg(item => item.forecast.successProbability));
+      if(undxSimulationAverageRisk) undxSimulationAverageRisk.textContent = String(avg(item => item.forecast.riskProbability));
+      if(undxSimulationBuildCandidates) undxSimulationBuildCandidates.textContent = String(simulations.filter(item => item.readinessLevel === 'Build Candidate').length);
+      if(undxSimulationExecutionCandidates) undxSimulationExecutionCandidates.textContent = String(simulations.filter(item => item.readinessLevel === 'Execution Candidate').length);
+      if(undxLatestSimulation) undxLatestSimulation.textContent = latest?.simulationId || 'None';
+      if(undxSimulationReadinessIntegration) undxSimulationReadinessIntegration.textContent = latest?.readinessLevel || 'Pending';
+      if(undxSimulationRiskIntegration) undxSimulationRiskIntegration.textContent = latest ? `${latest.forecast.riskProbability}/100` : 'Pending';
+      if(undxSimulationForecastIntegration) undxSimulationForecastIntegration.textContent = latest ? `${latest.forecast.successProbability}/100` : 'Pending';
+      if(undxSimulationDependenciesIntegration) undxSimulationDependenciesIntegration.textContent = latest ? String(latest.simulatedBuildOrder.length) : 'Pending';
+      if(undxSimulationRelationshipsIntegration) undxSimulationRelationshipsIntegration.textContent = String(simulations.length);
+      if(undxSimulationImpactChainsIntegration) undxSimulationImpactChainsIntegration.textContent = String(latest ? Object.keys(latest.affectedSystems).length : 0);
+      if(undxPortfolioSimulationReadiness) undxPortfolioSimulationReadiness.textContent = latest?.readinessLevel || 'Pending';
+      if(undxPortfolioSimulationRisk) undxPortfolioSimulationRisk.textContent = latest ? `${latest.forecast.riskProbability}/100` : 'Pending';
+      if(undxPortfolioSimulationPriority) undxPortfolioSimulationPriority.textContent = latest ? `${latest.forecast.successProbability}/100` : 'Pending';
+      if(undxSimulationLoadedModules) undxSimulationLoadedModules.textContent = '22';
+      if(undxSimulationDeferredModules) undxSimulationDeferredModules.textContent = '3';
+      if(undxSimulationObjects) undxSimulationObjects.textContent = String(simulations.length);
+      if(undxSimulationLoad) undxSimulationLoad.textContent = simulations.length > 8 ? 'High' : simulations.length > 3 ? 'Medium' : 'Low';
+    }
+    function undxGenerateBuildSimulationFlow(){
+      const simulation = undxBuildSimulation();
+      undxSaveBuildSimulations([simulation, ...undxLoadBuildSimulations()]);
+      undxRenderBuildSimulation(simulation);
+      undxRenderSimulationRegistry();
+      undxRenderIntelligenceWorkspace();
+      if(undxSimulationMessage) undxSimulationMessage.textContent = `${simulation.simulationId} stored in Simulation Registry.`;
+      return simulation;
+    }
+    function undxSendBuildSimulationToChat(simulation){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxBuildSimulationText(simulation);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxSimulationMessage) undxSimulationMessage.textContent = `${simulation.simulationId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSaveBuildSimulationToMemory(simulation){
+      undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Build Simulation ${simulation.simulationId}`, objective:undxBuildSimulationText(simulation), type:'Build Simulation', source:'UNDX Autonomous Build Simulation Center', createdAt:new Date().toISOString(), phase:'Phase 22', status:'Stored'});
+      if(undxSimulationMessage) undxSimulationMessage.textContent = `${simulation.simulationId} saved to Mission Memory.`;
+    }
+    function undxGenerateStrategicPlanFromSimulation(simulation){
+      undxLastBuildSimulation = simulation;
+      const plan = undxGenerateStrategicPlanFlow();
+      if(undxSimulationMessage) undxSimulationMessage.textContent = `${plan.planId} generated from ${simulation.simulationId}.`;
+    }
+    function undxDeleteBuildSimulation(simulationId){
+      undxSaveBuildSimulations(undxLoadBuildSimulations().filter(item => item.simulationId !== simulationId));
+      if(undxSelectedBuildSimulationId === simulationId) undxRenderBuildSimulation(undxLoadBuildSimulations()[0] || null);
+      undxRenderSimulationRegistry();
+      if(undxSimulationMessage) undxSimulationMessage.textContent = 'Build simulation deleted.';
+    }
+    function undxCreateBuildSimulationCard(simulation){
+      const article = document.createElement('article');
+      article.className = 'undx-simulation-card';
+      const title = document.createElement('h4');
+      title.textContent = simulation.simulationId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Simulation ID: ${simulation.simulationId}`, `Readiness Level: ${simulation.readinessLevel}`, `Success Probability: ${simulation.forecast.successProbability}`, `Risk Probability: ${simulation.forecast.riskProbability}`, `Created Date: ${undxFormatMemoryTime(simulation.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Simulation', () => undxRenderBuildSimulation(simulation), true),
+        undxProjectActionButton('Send To Chat', () => undxSendBuildSimulationToChat(simulation)),
+        undxProjectActionButton('Save To Mission Memory', () => undxSaveBuildSimulationToMemory(simulation)),
+        undxProjectActionButton('Generate Strategic Plan', () => undxGenerateStrategicPlanFromSimulation(simulation)),
+        undxProjectActionButton('Delete Simulation', () => undxDeleteBuildSimulation(simulation.simulationId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderSimulationRegistry(){
+      const simulations = undxLoadBuildSimulations();
+      if(undxSimulationRegistryEmpty) undxSimulationRegistryEmpty.hidden = simulations.length > 0;
+      if(!undxSimulationRegistryList) return;
+      undxSimulationRegistryList.replaceChildren();
+      simulations.forEach(simulation => undxSimulationRegistryList.appendChild(undxCreateBuildSimulationCard(simulation)));
+      undxRenderSimulationDashboard();
+    }
+    async function undxRunSimulationReviewFlow(){
+      let simulation = undxLastBuildSimulation || (undxSelectedBuildSimulationId ? undxLoadBuildSimulations().find(item => item.simulationId === undxSelectedBuildSimulationId) : null);
+      if(!simulation) simulation = undxGenerateBuildSimulationFlow();
+      if(!simulation) return;
+      if(undxSimulationMessage) undxSimulationMessage.textContent = 'Routing build simulation review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission: undxBuildSimulationText(simulation)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        simulation = undxNormalizeBuildSimulation({...simulation, review:{
+          architectureSimulation: agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Simulation: validate system boundaries before execution.',
+          researchSimulation: agents.find(agent => agent.key === 'research')?.recommendation || 'Research Simulation: verify assumptions and missing context.',
+          builderSimulation: agents.find(agent => agent.key === 'builder')?.recommendation || 'Builder Simulation: sequence implementation into small phases.',
+          optimizationSimulation: agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Simulation: reduce complexity and maintenance risk.',
+          rapidSimulation: agents.find(agent => agent.key === 'rapid')?.recommendation || 'Rapid Simulation: prepare a review checkpoint.',
+          combinedSimulationRecommendation: 'Keep this strictly simulation-only until future approval phases unlock execution.'
+        }});
+        undxSaveBuildSimulations([simulation, ...undxLoadBuildSimulations().filter(item => item.simulationId !== simulation.simulationId)]);
+        undxRenderBuildSimulation(simulation);
+        undxRenderSimulationRegistry();
+        if(undxSimulationReviewOutput) undxSimulationReviewOutput.replaceChildren(undxBlock('Architecture Simulation', simulation.review.architectureSimulation), undxBlock('Research Simulation', simulation.review.researchSimulation), undxBlock('Builder Simulation', simulation.review.builderSimulation), undxBlock('Optimization Simulation', simulation.review.optimizationSimulation), undxBlock('Rapid Simulation', simulation.review.rapidSimulation), undxBlock('Combined Simulation Recommendation', simulation.review.combinedSimulationRecommendation));
+        if(undxSimulationMessage) undxSimulationMessage.textContent = 'Multi-brain build simulation review complete.';
+      }catch(error){
+        if(undxSimulationReviewOutput) undxSimulationReviewOutput.replaceChildren(undxBlock('Architecture Simulation', 'OpenAI fallback recommended: validate architecture boundaries.'), undxBlock('Research Simulation', 'OpenAI fallback recommended: inspect missing context.'), undxBlock('Builder Simulation', 'OpenAI fallback recommended: keep implementation phased.'), undxBlock('Optimization Simulation', 'OpenAI fallback recommended: lower complexity before execution.'), undxBlock('Rapid Simulation', 'OpenAI fallback recommended: checkpoint next review.'), undxBlock('Combined Simulation Recommendation', 'Fallback → OpenAI. Simulation only; no file access, commands, or deployments.'));
+        if(undxSimulationMessage) undxSimulationMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
     function undxNormalizeRepositoryPlan(plan){
@@ -28839,6 +29416,8 @@ def pulse_premium_undx_page():
     undxRunStrategicReview?.addEventListener('click', undxRunStrategicReviewFlow);
     undxGeneratePortfolioAnalysis?.addEventListener('click', undxGeneratePortfolioAnalysisFlow);
     undxRunPortfolioReview?.addEventListener('click', undxRunPortfolioReviewFlow);
+    undxGenerateBuildSimulation?.addEventListener('click', undxGenerateBuildSimulationFlow);
+    undxRunSimulationReview?.addEventListener('click', undxRunSimulationReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -28864,6 +29443,8 @@ def pulse_premium_undx_page():
     undxRenderStrategicPlan(undxLoadStrategicPlans()[0] || null);
     undxRenderPortfolioRegistry();
     undxRenderPortfolioAnalysis(undxLoadPortfolioAnalyses()[0] || null);
+    undxRenderSimulationRegistry();
+    undxRenderBuildSimulation(undxLoadBuildSimulations()[0] || null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
