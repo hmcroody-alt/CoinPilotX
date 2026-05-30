@@ -100,6 +100,8 @@ def main():
     require("Project Core: Active" not in feed_html, "UNDX project core status absent from Pulse feed")
     require("Registry Status: Online" not in feed_html, "UNDX registry status absent from Pulse feed")
     require("UNDX Project Workspace" not in feed_html, "UNDX project workspace absent from Pulse feed")
+    require("Autonomous Project Lifecycle" not in feed_html, "UNDX autonomous project lifecycle absent from Pulse feed")
+    require("Run Full Planning Chain" not in feed_html, "UNDX lifecycle action absent from Pulse feed")
     require("Project Tasks" not in feed_html, "UNDX project tasks absent from Pulse feed")
     require("Project Milestones" not in feed_html, "UNDX project milestones absent from Pulse feed")
     require("Project Memory" not in feed_html, "UNDX project memory absent from Pulse feed")
@@ -459,6 +461,27 @@ def main():
         "saved to",
         "project memory",
         "undxCouncilOutputToAgentMemory",
+        "Autonomous Project Lifecycle",
+        "Lifecycle Mode: <strong>Planning Only</strong>",
+        "Run Next Step",
+        "Run Full Planning Chain",
+        "Mission Created",
+        "Project Active",
+        "Agent Council Complete",
+        "Repository Plan Generated",
+        "Task Package Generated",
+        "Builder Directive Created",
+        "Sandbox Simulation Created",
+        "Code Proposal Created",
+        "Approval Request Created",
+        "undxLifecycleGrid",
+        "undxRunLifecycleStep",
+        "undxCreateLifecycleRepoPlan",
+        "undxCreateLifecycleTaskPackage",
+        "undxCreateLifecycleSandbox",
+        "undxCreateLifecycleCodeProposal",
+        "undxCreateLifecycleApprovalRequest",
+        "full planning chain complete",
         "Store Project",
         "Project Summary",
         "Suggested Milestones",
