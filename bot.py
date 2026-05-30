@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22101,6 +22101,172 @@ def pulse_premium_undx_page():
                 <span>Phase 29<br><strong>Controlled Editing Proposals</strong></span>
                 <span>Phase 30<br><strong>Human Approved Execution</strong></span>
               </div>
+            </article>
+          </aside>
+        </div>
+      </section>
+      <section class='undx-section-panel undx-desktop-connector' id='undx-desktop-connector-architecture'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Desktop Connector: Planned</span>
+            <h2>UNDX Desktop Connector Architecture</h2>
+          </div>
+          <p>Prepare secure desktop awareness using permission-based connectors and manifest intelligence.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX desktop connector status'>
+              <span aria-label='Desktop Connector: Planned'>Desktop Connector: <strong>Planned</strong></span>
+              <span aria-label='Manifest Engine: Online'>Manifest Engine: <strong>Online</strong></span>
+              <span aria-label='Permission Engine: Online'>Permission Engine: <strong>Online</strong></span>
+              <span aria-label='Secret Protection: Online'>Secret Protection: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 27'>Phase: <strong>27</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Connector Dashboard</span>
+              <h3>Connector Dashboard</h3>
+              <div class='undx-system-impact-grid'>
+                <article class='undx-system-impact'><strong>Planned</strong><span>Connector Status</span></article>
+                <article class='undx-system-impact'><strong id='undxDesktopSelectedWorkspaces'>0</strong><span>Selected Workspaces</span></article>
+                <article class='undx-system-impact'><strong id='undxDesktopKnownManifests'>0</strong><span>Known Manifests</span></article>
+                <article class='undx-system-impact'><strong>6</strong><span>Protected Zones</span></article>
+                <article class='undx-system-impact'><strong>5</strong><span>Permission Requests</span></article>
+                <article class='undx-system-impact'><strong id='undxDesktopAwarenessLevel'>Planned</strong><span>Desktop Awareness Level</span></article>
+              </div>
+              <p>Levels: Disconnected · Planned · Manifest Ready · Connector Ready</p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Manifest Engine</span>
+              <h3>Generate Workspace Manifest</h3>
+              <p>Generate conceptual manifests only. No actual file access.</p>
+              <form class='undx-project-form' id='undxWorkspaceManifestForm'>
+                <div class='undx-project-fields'>
+                  <label class='undx-project-field'><span>Workspace Name</span><input id='undxManifestWorkspaceName' type='text' autocomplete='off' placeholder='CoinPilotXAI Workspace'></label>
+                  <label class='undx-project-field'><span>Workspace Type</span><select id='undxManifestWorkspaceType'><option>Development</option><option>Research</option><option>Design</option><option>Business</option><option>Operations</option><option>Training</option></select></label>
+                  <label class='undx-project-field'><span>Technology Stack</span><input id='undxManifestTechnologyStack' type='text' autocomplete='off' placeholder='Python, Flask, JavaScript, OpenAI'></label>
+                  <label class='undx-project-field'><span>Repository Count</span><input id='undxManifestRepositoryCount' type='number' min='0' max='99' value='1'></label>
+                  <label class='undx-project-field undx-project-field-wide'><span>Folder Categories</span><textarea id='undxManifestFolderCategories' placeholder='app, scripts, templates, static, audits, docs'></textarea></label>
+                </div>
+                <div class='undx-project-actions'>
+                  <button class='button primary' type='submit'>Generate Workspace Manifest</button>
+                  <button class='button' type='button' id='undxSimulateDesktopConnection'>Simulate Desktop Connection</button>
+                  <button class='button' type='button' id='undxRunConnectorReview'>Run Multi-Brain Connector Review</button>
+                </div>
+              </form>
+              <p class='undx-project-message' id='undxDesktopConnectorMessage' aria-live='polite'></p>
+              <div class='undx-evolution-empty' id='undxWorkspaceManifestEmpty'>Generate a conceptual manifest to activate desktop connector planning.</div>
+              <div class='undx-simulation-output' id='undxWorkspaceManifestOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>UNDX Permission Center</span>
+              <h3>UNDX Permission Center</h3>
+              <div class='undx-approval-grid' id='undxDesktopPermissionGrid'>
+                <article class='undx-approval-item'><strong>Not Granted</strong><span>Read Workspace Metadata</span></article>
+                <article class='undx-approval-item'><strong>Not Granted</strong><span>Read Repository Manifest</span></article>
+                <article class='undx-approval-item'><strong>Not Granted</strong><span>Read Project Structure</span></article>
+                <article class='undx-approval-item'><strong>Not Granted</strong><span>Read Documentation</span></article>
+                <article class='undx-approval-item'><strong>Not Granted</strong><span>Read Configuration Metadata</span></article>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Secret Protection Layer</span>
+              <h3>Protected Areas</h3>
+              <div class='undx-approval-grid'>
+                <article class='undx-approval-item'><strong>Protected · Never Accessible</strong><span>.env</span></article>
+                <article class='undx-approval-item'><strong>Protected · Never Accessible</strong><span>credentials</span></article>
+                <article class='undx-approval-item'><strong>Protected · Never Accessible</strong><span>tokens</span></article>
+                <article class='undx-approval-item'><strong>Protected · Never Accessible</strong><span>keys</span></article>
+                <article class='undx-approval-item'><strong>Protected · Never Accessible</strong><span>certificates</span></article>
+              </div>
+              <p>Sensitive Resource Policy: UNDX cannot access Passwords, Secrets, API Keys, Certificates, Authentication Tokens, or Private Credentials even when future connectors exist.</p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Manifest Registry</span>
+              <h3>Manifest Registry</h3>
+              <p>Manifest ID format: <strong>MANIFEST-UNDX-0001</strong></p>
+              <div class='undx-memory-empty' id='undxWorkspaceManifestRegistryEmpty'>No workspace manifests stored yet. Generate a conceptual manifest to begin connector planning.</div>
+              <div class='undx-simulation-registry' id='undxWorkspaceManifestRegistryList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Connector Simulation</span>
+              <h3>Simulate Desktop Connection</h3>
+              <div class='undx-simulation-output' id='undxDesktopSimulationOutput' aria-live='polite'>
+                <p>Connection Readiness, Permission Requirements, Protected Zones, Manifest Availability, and Risk Assessment will appear after simulation. No actual connection.</p>
+              </div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Desktop Readiness Score</span>
+              <h3>Desktop Readiness Score</h3>
+              <p>Range: 0-100</p>
+              <p>Manifest Coverage · Project Coverage · Memory Coverage · Knowledge Coverage · Permission Readiness</p>
+              <p>Score: <strong id='undxDesktopReadinessScore'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Connector Dashboard Insights</span>
+              <h3>Connector Dashboard Insights</h3>
+              <p>Most Prepared Workspace: <strong id='undxMostPreparedWorkspace'>None</strong></p>
+              <p>Highest Complexity Workspace: <strong id='undxHighestComplexityWorkspace'>None</strong></p>
+              <p>Most Referenced Manifest: <strong id='undxMostReferencedManifest'>None</strong></p>
+              <p>Readiness Trend: <strong id='undxReadinessTrend'>Planned</strong></p>
+              <p>Permission Readiness: <strong>Not Granted</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Connector Memory</h3>
+              <p>Manifest Relationships: <strong id='undxManifestRelationships'>0</strong></p>
+              <p>Workspace Relationships: <strong id='undxWorkspaceRelationships'>0</strong></p>
+              <p>Connector Planning Events: <strong id='undxConnectorPlanningEvents'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Connector Knowledge</h3>
+              <p>Workspace Relationships: <strong id='undxConnectorKnowledgeWorkspaces'>0</strong></p>
+              <p>Manifest Relationships: <strong id='undxConnectorKnowledgeManifests'>0</strong></p>
+              <p>Technology Relationships: <strong id='undxConnectorTechnologyRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Package Connector References</h3>
+              <p>Referenced Manifests: <strong id='undxTaskReferencedManifests'>0</strong></p>
+              <p>Referenced Workspaces: <strong id='undxTaskReferencedWorkspaces'>0</strong></p>
+              <p>Referenced Technology Profiles: <strong id='undxTaskReferencedTechnologyProfiles'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Connector Review</span>
+              <h3>Multi-Brain Connector Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxConnectorReviewOutput'><p>Architecture Review, Security Review, Readiness Review, Permission Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Connector Center</span>
+              <h3>Future Connector Center</h3>
+              <p>Desktop Connector Status: <strong>Planned</strong></p>
+              <p>Repository Connector Status: <strong>Planned</strong></p>
+              <p>Execution Connector Status: <strong>Planned</strong></p>
+              <p>Deployment Connector Status: <strong>Planned</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Connector Roadmap</span>
+              <h3>Connector Roadmap</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 27<br><strong>Desktop Connector Architecture</strong></span>
+                <span>Phase 28<br><strong>Controlled Repository Awareness</strong></span>
+                <span>Phase 29<br><strong>Controlled Editing Proposals</strong></span>
+                <span>Phase 30<br><strong>Human Approved Execution</strong></span>
+              </div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Desktop Connector Architecture is planning-only.</p>
+              <p>No files were accessed.</p>
+              <p>No repositories were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <p>No credentials were read.</p>
             </article>
           </aside>
         </div>
@@ -24698,6 +24864,38 @@ def pulse_premium_undx_page():
     const undxOsTopStrategicInitiative = document.getElementById('undxOsTopStrategicInitiative');
     const undxOsTopPriorityProject = document.getElementById('undxOsTopPriorityProject');
     const undxOsPortfolioHealth = document.getElementById('undxOsPortfolioHealth');
+    const undxWorkspaceManifestForm = document.getElementById('undxWorkspaceManifestForm');
+    const undxManifestWorkspaceName = document.getElementById('undxManifestWorkspaceName');
+    const undxManifestWorkspaceType = document.getElementById('undxManifestWorkspaceType');
+    const undxManifestTechnologyStack = document.getElementById('undxManifestTechnologyStack');
+    const undxManifestRepositoryCount = document.getElementById('undxManifestRepositoryCount');
+    const undxManifestFolderCategories = document.getElementById('undxManifestFolderCategories');
+    const undxSimulateDesktopConnection = document.getElementById('undxSimulateDesktopConnection');
+    const undxRunConnectorReview = document.getElementById('undxRunConnectorReview');
+    const undxDesktopConnectorMessage = document.getElementById('undxDesktopConnectorMessage');
+    const undxWorkspaceManifestEmpty = document.getElementById('undxWorkspaceManifestEmpty');
+    const undxWorkspaceManifestOutput = document.getElementById('undxWorkspaceManifestOutput');
+    const undxWorkspaceManifestRegistryEmpty = document.getElementById('undxWorkspaceManifestRegistryEmpty');
+    const undxWorkspaceManifestRegistryList = document.getElementById('undxWorkspaceManifestRegistryList');
+    const undxDesktopSelectedWorkspaces = document.getElementById('undxDesktopSelectedWorkspaces');
+    const undxDesktopKnownManifests = document.getElementById('undxDesktopKnownManifests');
+    const undxDesktopAwarenessLevel = document.getElementById('undxDesktopAwarenessLevel');
+    const undxDesktopSimulationOutput = document.getElementById('undxDesktopSimulationOutput');
+    const undxDesktopReadinessScore = document.getElementById('undxDesktopReadinessScore');
+    const undxMostPreparedWorkspace = document.getElementById('undxMostPreparedWorkspace');
+    const undxHighestComplexityWorkspace = document.getElementById('undxHighestComplexityWorkspace');
+    const undxMostReferencedManifest = document.getElementById('undxMostReferencedManifest');
+    const undxReadinessTrend = document.getElementById('undxReadinessTrend');
+    const undxManifestRelationships = document.getElementById('undxManifestRelationships');
+    const undxWorkspaceRelationships = document.getElementById('undxWorkspaceRelationships');
+    const undxConnectorPlanningEvents = document.getElementById('undxConnectorPlanningEvents');
+    const undxConnectorKnowledgeWorkspaces = document.getElementById('undxConnectorKnowledgeWorkspaces');
+    const undxConnectorKnowledgeManifests = document.getElementById('undxConnectorKnowledgeManifests');
+    const undxConnectorTechnologyRelationships = document.getElementById('undxConnectorTechnologyRelationships');
+    const undxTaskReferencedManifests = document.getElementById('undxTaskReferencedManifests');
+    const undxTaskReferencedWorkspaces = document.getElementById('undxTaskReferencedWorkspaces');
+    const undxTaskReferencedTechnologyProfiles = document.getElementById('undxTaskReferencedTechnologyProfiles');
+    const undxConnectorReviewOutput = document.getElementById('undxConnectorReviewOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -24720,6 +24918,7 @@ def pulse_premium_undx_page():
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
+    const undxWorkspaceManifestsKey = 'undxWorkspaceManifests';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -24963,6 +25162,7 @@ def pulse_premium_undx_page():
       })) : [];
       const linkedChangeAnalyses = Array.isArray(project.linkedChangeAnalyses) ? project.linkedChangeAnalyses.filter(item => item && item.analysisId).slice(0,24).map(undxNormalizeChangeAnalysis) : [];
       const linkedKnowledgeGraphs = Array.isArray(project.linkedKnowledgeGraphs) ? project.linkedKnowledgeGraphs.filter(item => item && item.graphId).slice(0,24).map(undxNormalizeKnowledgeGraph) : [];
+      const linkedWorkspaceManifests = Array.isArray(project.linkedWorkspaceManifests) ? project.linkedWorkspaceManifests.filter(item => item && item.manifestId).slice(0,24).map(undxNormalizeWorkspaceManifest) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -24977,7 +25177,9 @@ def pulse_premium_undx_page():
         linkedRepositoryAnalyses,
         linkedChangeAnalyses,
         linkedKnowledgeGraphs,
+        linkedWorkspaceManifests,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
+        desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         lastBuildDirective: project.lastBuildDirective || ''
       };
     }
@@ -26540,6 +26742,10 @@ def pulse_premium_undx_page():
         undxBlock('Linked Knowledge Graphs', undxWorkspacePillList((project.linkedKnowledgeGraphs || []).map(item => item.graphId), 'None linked')),
         undxBlock('Linked Workspace Memory Records', undxWorkspacePillList((project.linkedMemoryRecords || []).map(item => item.memoryId), 'None linked')),
         undxBlock('Linked Task Packages', undxWorkspacePillList((project.linkedTaskPackages || []).map(item => item.packageId), 'None linked')),
+        undxBlock('Attached Manifests', undxWorkspacePillList((project.linkedWorkspaceManifests || []).map(item => item.manifestId), 'None linked')),
+        undxBlock('Workspace Type', (project.linkedWorkspaceManifests || [])[0]?.workspaceType || 'Not Connected'),
+        undxBlock('Manifest Count', String((project.linkedWorkspaceManifests || []).length)),
+        undxBlock('Desktop Awareness Status', project.desktopAwarenessStatus || 'Planned'),
         undxBlock('Task Package Count', String((project.linkedTaskPackages || []).length)),
         undxBlock('Latest Task Package', (project.linkedTaskPackages || [])[0]?.packageId || 'None linked'),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
@@ -30144,8 +30350,235 @@ def pulse_premium_undx_page():
         if(undxOsMessage) undxOsMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxNormalizeWorkspaceManifest(manifest){
+      const folders = Array.isArray(manifest.folderCategories) ? manifest.folderCategories : String(manifest.folderCategories || '').split(/[,\\n]/);
+      const stack = Array.isArray(manifest.technologyStack) ? manifest.technologyStack : String(manifest.technologyStack || '').split(/[,\\n]/);
+      return {
+        manifestId: String(manifest.manifestId || `MANIFEST-UNDX-${Date.now()}`).slice(0,44),
+        workspaceName: String(manifest.workspaceName || 'UNDX Workspace').slice(0,140),
+        workspaceType: String(manifest.workspaceType || 'Development').slice(0,80),
+        projectType: String(manifest.projectType || manifest.workspaceType || 'Development').slice(0,80),
+        technologyStack: stack.map(item => String(item || '').trim()).filter(Boolean).slice(0,12),
+        folderCategories: folders.map(item => String(item || '').trim()).filter(Boolean).slice(0,12),
+        repositoryCount: Math.max(0, Math.min(99, Number(manifest.repositoryCount || 0))),
+        complexityScore: Math.max(0, Math.min(100, Number(manifest.complexityScore || 0))),
+        estimatedComplexity: String(manifest.estimatedComplexity || 'Moderate').slice(0,80),
+        desktopAwarenessLevel: String(manifest.desktopAwarenessLevel || 'Manifest Ready').slice(0,80),
+        protectedZones: undxNormalizeExecutionList(manifest.protectedZones, ['.env', 'credentials', 'tokens', 'keys', 'certificates'], 8, 80),
+        createdAt: manifest.createdAt || new Date().toISOString(),
+        status: 'Manifest Ready'
+      };
+    }
+    function undxLoadWorkspaceManifests(){
+      try{
+        const raw = localStorage.getItem(undxWorkspaceManifestsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.manifestId).slice(0,48).map(undxNormalizeWorkspaceManifest) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveWorkspaceManifests(manifests){
+      try{
+        localStorage.setItem(undxWorkspaceManifestsKey, JSON.stringify(manifests.slice(0,48)));
+      }catch(error){
+        if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = 'Workspace Manifest Registry could not be updated.';
+      }
+    }
+    function undxNextWorkspaceManifestId(manifests){
+      const max = manifests.reduce((highest, manifest) => {
+        const match = String(manifest.manifestId || '').match(/^MANIFEST-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `MANIFEST-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildWorkspaceManifest(){
+      const manifests = undxLoadWorkspaceManifests();
+      const workspaceName = (undxManifestWorkspaceName?.value || 'CoinPilotXAI Workspace').trim().slice(0,140);
+      const workspaceType = undxManifestWorkspaceType?.value || 'Development';
+      const technologyStack = (undxManifestTechnologyStack?.value || 'Python, Flask, JavaScript, OpenAI').split(/[,\\n]/).map(item => item.trim()).filter(Boolean);
+      const folderCategories = (undxManifestFolderCategories?.value || 'app, scripts, templates, static, audits, docs').split(/[,\\n]/).map(item => item.trim()).filter(Boolean);
+      const repositoryCount = Math.max(0, Math.min(99, Number(undxManifestRepositoryCount?.value || 1)));
+      const complexityScore = Math.min(100, Math.max(18, folderCategories.length * 7 + technologyStack.length * 5 + repositoryCount * 9));
+      const estimatedComplexity = complexityScore > 75 ? 'High' : complexityScore > 45 ? 'Moderate' : 'Low';
+      return undxNormalizeWorkspaceManifest({
+        manifestId: undxNextWorkspaceManifestId(manifests),
+        workspaceName,
+        workspaceType,
+        projectType: workspaceType,
+        technologyStack,
+        folderCategories,
+        repositoryCount,
+        complexityScore,
+        estimatedComplexity,
+        desktopAwarenessLevel: 'Manifest Ready',
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxWorkspaceManifestText(manifest){
+      return [
+        'UNDX Desktop Workspace Manifest',
+        '',
+        `Manifest ID: ${manifest.manifestId}`,
+        `Workspace Name: ${manifest.workspaceName}`,
+        `Workspace Type: ${manifest.workspaceType}`,
+        `Project Type: ${manifest.projectType}`,
+        `Technology Stack: ${manifest.technologyStack.join(', ') || 'Planning only'}`,
+        `Folder Categories: ${manifest.folderCategories.join(', ') || 'Conceptual categories only'}`,
+        `Repository Count: ${manifest.repositoryCount}`,
+        `Estimated Complexity: ${manifest.estimatedComplexity}`,
+        `Complexity Score: ${manifest.complexityScore}/100`,
+        '',
+        'Protected Areas:',
+        ...manifest.protectedZones.map(zone => `- ${zone}: Protected · Never Accessible`),
+        '',
+        'Safety Boundary: Conceptual manifest only. No files were accessed. No repositories were accessed. No commands were executed. No credentials were read.'
+      ].join('\\n');
+    }
+    function undxRenderWorkspaceManifest(manifest){
+      if(undxWorkspaceManifestEmpty) undxWorkspaceManifestEmpty.hidden = Boolean(manifest);
+      if(!undxWorkspaceManifestOutput) return;
+      undxWorkspaceManifestOutput.replaceChildren();
+      if(!manifest) return;
+      undxWorkspaceManifestOutput.append(
+        undxBlock('Manifest ID', manifest.manifestId),
+        undxBlock('Workspace Name', manifest.workspaceName),
+        undxBlock('Project Type', manifest.projectType),
+        undxBlock('Technology Stack', manifest.technologyStack),
+        undxBlock('Folder Categories', manifest.folderCategories),
+        undxBlock('Repository Count', String(manifest.repositoryCount)),
+        undxBlock('Estimated Complexity', `${manifest.estimatedComplexity} · ${manifest.complexityScore}/100`),
+        undxBlock('No actual file access.', 'No files, repositories, commands, deployments, or credentials were accessed.')
+      );
+    }
+    function undxGenerateWorkspaceManifestFlow(event){
+      event?.preventDefault();
+      const manifest = undxBuildWorkspaceManifest();
+      undxSaveWorkspaceManifests([manifest, ...undxLoadWorkspaceManifests()]);
+      undxRenderWorkspaceManifest(manifest);
+      undxRenderWorkspaceManifestRegistry();
+      if(undxWorkspaceManifestForm) undxWorkspaceManifestForm.reset();
+      if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = `${manifest.manifestId} stored in Manifest Registry.`;
+      return manifest;
+    }
+    function undxAttachWorkspaceManifestToProject(manifest){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = 'Open or create a project before attaching a manifest.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, desktopAwarenessStatus:'Manifest Ready', linkedWorkspaceManifests:[manifest, ...(project.linkedWorkspaceManifests || []).filter(item => item.manifestId !== manifest.manifestId)].slice(0,10)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = `${manifest.manifestId} attached to ${projectId}.`;
+    }
+    function undxCreateWorkspaceManifestCard(manifest){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = `${manifest.manifestId} · ${manifest.workspaceName}`;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Manifest ID: ${manifest.manifestId}`, `Workspace Type: ${manifest.workspaceType}`, `Complexity Score: ${manifest.complexityScore}/100`, `Created Date: ${undxFormatMemoryTime(manifest.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Manifest', () => undxRenderWorkspaceManifest(manifest), true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxWorkspaceManifestText(manifest);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Workspace Manifest ${manifest.manifestId}`, objective:undxWorkspaceManifestText(manifest), type:'Desktop Connector Manifest', source:'UNDX Desktop Connector Architecture', createdAt:new Date().toISOString(), phase:'Phase 27', status:'Stored'});
+          if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = `${manifest.manifestId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Attach To Project', () => undxAttachWorkspaceManifestToProject(manifest)),
+        undxProjectActionButton('Delete Manifest', () => {
+          undxSaveWorkspaceManifests(undxLoadWorkspaceManifests().filter(item => item.manifestId !== manifest.manifestId));
+          undxRenderWorkspaceManifestRegistry();
+          if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = 'Workspace manifest deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderWorkspaceManifestRegistry(){
+      const manifests = undxLoadWorkspaceManifests();
+      const projects = undxLoadProjects();
+      const readiness = manifests.length > 2 && projects.length ? 'Connector Ready' : manifests.length ? 'Manifest Ready' : 'Planned';
+      if(undxWorkspaceManifestRegistryEmpty) undxWorkspaceManifestRegistryEmpty.hidden = manifests.length > 0;
+      if(undxWorkspaceManifestRegistryList){
+        undxWorkspaceManifestRegistryList.replaceChildren();
+        manifests.forEach(manifest => undxWorkspaceManifestRegistryList.appendChild(undxCreateWorkspaceManifestCard(manifest)));
+      }
+      if(undxDesktopSelectedWorkspaces) undxDesktopSelectedWorkspaces.textContent = String(projects.filter(project => (project.linkedWorkspaceManifests || []).length).length);
+      if(undxDesktopKnownManifests) undxDesktopKnownManifests.textContent = String(manifests.length);
+      if(undxDesktopAwarenessLevel) undxDesktopAwarenessLevel.textContent = readiness;
+      const score = Math.min(100, manifests.length * 18 + projects.filter(project => (project.linkedWorkspaceManifests || []).length).length * 12 + undxLoadMemoryGraphRecords().length * 5 + undxLoadKnowledgeGraphs().length * 5 + 10);
+      if(undxDesktopReadinessScore) undxDesktopReadinessScore.textContent = String(score);
+      if(undxMostPreparedWorkspace) undxMostPreparedWorkspace.textContent = manifests[0]?.workspaceName || 'None';
+      if(undxHighestComplexityWorkspace) undxHighestComplexityWorkspace.textContent = [...manifests].sort((a,b) => b.complexityScore - a.complexityScore)[0]?.workspaceName || 'None';
+      if(undxMostReferencedManifest) undxMostReferencedManifest.textContent = manifests[0]?.manifestId || 'None';
+      if(undxReadinessTrend) undxReadinessTrend.textContent = readiness;
+      if(undxManifestRelationships) undxManifestRelationships.textContent = String(manifests.length * 3);
+      if(undxWorkspaceRelationships) undxWorkspaceRelationships.textContent = String(manifests.length + projects.length);
+      if(undxConnectorPlanningEvents) undxConnectorPlanningEvents.textContent = String(manifests.length);
+      if(undxConnectorKnowledgeWorkspaces) undxConnectorKnowledgeWorkspaces.textContent = String(manifests.length);
+      if(undxConnectorKnowledgeManifests) undxConnectorKnowledgeManifests.textContent = String(manifests.length * 2);
+      if(undxConnectorTechnologyRelationships) undxConnectorTechnologyRelationships.textContent = String(manifests.reduce((sum, item) => sum + item.technologyStack.length, 0));
+      if(undxTaskReferencedManifests) undxTaskReferencedManifests.textContent = String(manifests.length);
+      if(undxTaskReferencedWorkspaces) undxTaskReferencedWorkspaces.textContent = String(manifests.length);
+      if(undxTaskReferencedTechnologyProfiles) undxTaskReferencedTechnologyProfiles.textContent = String(undxLoadLanguageProfiles().length);
+    }
+    function undxSimulateDesktopConnectionFlow(){
+      const manifests = undxLoadWorkspaceManifests();
+      const latest = manifests[0] || undxBuildWorkspaceManifest();
+      if(undxDesktopSimulationOutput) undxDesktopSimulationOutput.replaceChildren(
+        undxBlock('Connection Readiness', manifests.length ? 'Manifest Ready' : 'Planned'),
+        undxBlock('Permission Requirements', ['Read Workspace Metadata: Not Granted', 'Read Repository Manifest: Not Granted', 'Read Project Structure: Not Granted', 'Read Documentation: Not Granted', 'Read Configuration Metadata: Not Granted']),
+        undxBlock('Protected Zones', ['.env: Protected', 'credentials: Protected', 'tokens: Protected', 'keys: Protected', 'certificates: Protected']),
+        undxBlock('Manifest Availability', latest.manifestId),
+        undxBlock('Risk Assessment', 'Low planning risk. No actual desktop connector, file access, repository access, command execution, or credential reading occurred.')
+      );
+      if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = 'Desktop connection simulation complete. No actual connection was attempted.';
+    }
+    async function undxRunConnectorReviewFlow(){
+      const manifests = undxLoadWorkspaceManifests();
+      if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = 'Routing connector review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review the Phase 27 UNDX Desktop Connector Architecture. Workspace manifests: ${manifests.length}. Execution Access Disabled. Secret Protection Online. Planning-only connector readiness.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxConnectorReviewOutput) undxConnectorReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Review: keep connector boundaries explicit.'),
+          undxBlock('Security Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Security Review: preserve secret protection and permission gates.'),
+          undxBlock('Readiness Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Readiness Review: manifests are planning-only.'),
+          undxBlock('Permission Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Permission Review: no permissions are granted in Phase 27.'),
+          undxBlock('Combined Recommendation', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Combined Recommendation: continue with controlled repository awareness only after approval design remains clear.')
+        );
+        if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = 'Multi-brain connector review complete.';
+      }catch(error){
+        if(undxConnectorReviewOutput) undxConnectorReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', 'OpenAI fallback: keep connector architecture manifest-only.'),
+          undxBlock('Security Review', 'OpenAI fallback: never expose secrets or credentials.'),
+          undxBlock('Readiness Review', 'OpenAI fallback: require user approval before future connector access.'),
+          undxBlock('Permission Review', 'OpenAI fallback: all permissions remain Not Granted.'),
+          undxBlock('Combined Recommendation', 'Fallback → OpenAI. UNDX Desktop Connector remains planning-only with no file access, repository access, commands, Git, or deployments.')
+        );
+        if(undxDesktopConnectorMessage) undxDesktopConnectorMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-operating-system','UNDX Home'],
+      ['undx-desktop-connector-architecture','Desktop Connector'],
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
       ['undx-chat-interface','Chat Interface'],
@@ -31247,6 +31680,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedWorkspaceManifests(project, card){
+      const section = undxWorkspaceSection('Attached Manifests');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedWorkspaceManifests || []).length){
+        list.appendChild(undxWorkspaceEmpty('No desktop workspace manifests attached yet. Attach a conceptual Phase 27 manifest to prepare desktop awareness.'));
+      }else{
+        project.linkedWorkspaceManifests.forEach(manifest => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${manifest.manifestId} · ${manifest.workspaceName}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Workspace Type: ${manifest.workspaceType} · Manifest Count: ${(project.linkedWorkspaceManifests || []).length} · Desktop Awareness Status: ${project.desktopAwarenessStatus || 'Manifest Ready'} · Complexity Score: ${manifest.complexityScore}/100`;
+          const details = document.createElement('p');
+          details.textContent = `Technology Stack: ${(manifest.technologyStack || []).join(', ') || 'Planning only'}`;
+          item.append(title, meta, details);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -31331,6 +31787,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedKnowledgeGraphs(project, card);
       undxRenderLinkedMemoryRecords(project, card);
       undxRenderLinkedTaskPackages(project, card);
+      undxRenderLinkedWorkspaceManifests(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -31990,6 +32447,9 @@ def pulse_premium_undx_page():
       if(event.key === 'Enter') undxUniversalSearchFlow();
     });
     undxRunOsReview?.addEventListener('click', undxRunOsReviewFlow);
+    undxWorkspaceManifestForm?.addEventListener('submit', undxGenerateWorkspaceManifestFlow);
+    undxSimulateDesktopConnection?.addEventListener('click', undxSimulateDesktopConnectionFlow);
+    undxRunConnectorReview?.addEventListener('click', undxRunConnectorReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -32027,6 +32487,8 @@ def pulse_premium_undx_page():
     undxRenderTaskRegistry();
     undxRenderTaskPackage(undxLoadTaskPackages()[0] || null);
     undxRenderOperatingSystem();
+    undxRenderWorkspaceManifestRegistry();
+    undxRenderWorkspaceManifest(undxLoadWorkspaceManifests()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
