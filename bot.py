@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status,.undx-human-execution-framework .undx-memory-status,.undx-language-mastery .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span,.undx-human-execution-framework .undx-memory-status span,.undx-language-mastery .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2,.undx-human-execution-framework .undx-section-heading h2,.undx-language-mastery .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status,.undx-human-execution-framework .undx-memory-status,.undx-language-mastery .undx-memory-status,.undx-testing-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span,.undx-human-execution-framework .undx-memory-status span,.undx-language-mastery .undx-memory-status span,.undx-testing-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2,.undx-human-execution-framework .undx-section-heading h2,.undx-language-mastery .undx-section-heading h2,.undx-testing-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -24721,6 +24721,151 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-testing-intelligence' id='undx-testing-intelligence-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Testing Intelligence: Online</span>
+            <h2>UNDX Testing Intelligence Engine</h2>
+          </div>
+          <p>Design unit, integration, security, performance, regression, and deployment validation strategies before execution.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX testing intelligence status'>
+              <span aria-label='Testing Intelligence: Online'>Testing Intelligence: <strong>Online</strong></span>
+              <span aria-label='Validation Engine: Online'>Validation Engine: <strong>Online</strong></span>
+              <span aria-label='QA Strategy Engine: Online'>QA Strategy Engine: <strong>Online</strong></span>
+              <span aria-label='Regression Engine: Online'>Regression Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 32'>Phase: <strong>32</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Testing Domains</span>
+              <h3>Testing Domains</h3>
+              <p>Unit Testing · Integration Testing · End-to-End Testing · Regression Testing · Security Testing · Performance Testing · Load Testing · Accessibility Testing · User Acceptance Testing · Deployment Validation</p>
+              <div class='undx-system-impact-grid' id='undxTestingDomainGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Framework / Tool Intelligence</span>
+              <h3>Framework / Tool Intelligence</h3>
+              <p>Python: pytest, unittest, coverage · JavaScript/TypeScript: Jest, Vitest, Playwright, Cypress · Backend/API: Postman/Newman, REST validation, contract testing · Security: dependency audits, auth checks, input validation, OWASP-style checks · Performance: load testing, latency checks, database query checks</p>
+              <div class='undx-system-impact-grid' id='undxTestingToolGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Test Strategy Generator</span>
+              <h3>Generate Test Strategy</h3>
+              <p>Inputs: Project · Task Package · Change Proposal · Repository Structure Model · Language Decision Record · Build Simulation</p>
+              <div class='undx-simulation-inputs' id='undxTestStrategySourceInputs'>
+                <label><input type='checkbox' value='project' checked>Project</label>
+                <label><input type='checkbox' value='taskPackage' checked>Task Package</label>
+                <label><input type='checkbox' value='changeProposal' checked>Change Proposal</label>
+                <label><input type='checkbox' value='structureModel' checked>Repository Structure Model</label>
+                <label><input type='checkbox' value='languageDecision' checked>Language Decision Record</label>
+                <label><input type='checkbox' value='buildSimulation' checked>Build Simulation</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateTestStrategy'>Generate Test Strategy</button>
+                <button class='button' type='button' id='undxRunTestingReview'>Run Multi-Brain Testing Review</button>
+              </div>
+              <p>Test Strategy ID: <strong>TEST-UNDX-0001</strong></p>
+              <p class='undx-project-message' id='undxTestStrategyMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Test Strategy Output</span>
+              <h3>Generated Test Strategy</h3>
+              <div class='undx-evolution-empty' id='undxTestStrategyEmpty'>Generate a test strategy to activate Testing Intelligence.</div>
+              <div class='undx-simulation-output' id='undxTestStrategyOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Testing Risk Engine</span>
+              <h3>Testing Risk Engine</h3>
+              <p>Untested Area Risk · Regression Risk · Security Risk · Performance Risk · Deployment Risk</p>
+              <div class='undx-risk-grid' id='undxTestingRiskGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Test Coverage Planner</span>
+              <h3>Test Coverage Planner</h3>
+              <p>Frontend · Backend · Database · API Routes · Workers · AI Providers · Premium Modules · Authentication · Payments/Subscriptions if applicable</p>
+              <div class='undx-system-impact-grid' id='undxTestCoverageGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Bug Prediction Panel</span>
+              <h3>Bug Prediction Panel</h3>
+              <p>Broken API routing · Auth/session mismatch · DB schema mismatch · Frontend state bug · Async/loading state bug · Permission issue · Regression from legacy bridge</p>
+              <div class='undx-chain-list' id='undxBugPredictionList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Validation Checklist Generator</span>
+              <h3>Validation Checklist Generator</h3>
+              <p>Python compile · JS parse · site functional audit · UNDX audit · pulse feed layout audit · performance audit · browser route check · manual QA steps</p>
+              <div class='undx-chain-list' id='undxValidationChecklistList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Test Strategy Registry</span>
+              <h3>Test Strategy Registry</h3>
+              <p>Storage: <strong>undxTestStrategies</strong></p>
+              <div class='undx-memory-empty' id='undxTestStrategyRegistryEmpty'>No test strategies stored yet. Generate a strategy to preserve validation intelligence.</div>
+              <div class='undx-simulation-registry' id='undxTestStrategyRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Testing Dashboard</span>
+              <h3>Testing Dashboard</h3>
+              <p>Total Test Strategies: <strong id='undxTotalTestStrategies'>0</strong></p>
+              <p>Average Release Confidence: <strong id='undxAverageReleaseConfidence'>0</strong></p>
+              <p>Highest Risk Area: <strong id='undxHighestTestingRiskArea'>None</strong></p>
+              <p>Most Tested Project: <strong id='undxMostTestedProject'>None</strong></p>
+              <p>Most Common Bug Class: <strong id='undxMostCommonBugClass'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Linked Test Strategies: <strong id='undxProjectLinkedTestStrategies'>0</strong></p>
+              <p>Test Readiness: <strong id='undxProjectTestReadiness'>Pending</strong></p>
+              <p>Release Confidence: <strong id='undxProjectReleaseConfidence'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Packages</h3>
+              <p>Recommended Test Strategy: <strong id='undxTaskRecommendedTestStrategy'>Pending</strong></p>
+              <p>Validation Checklist: <strong id='undxTaskValidationChecklist'>Pending</strong></p>
+              <p>Regression Coverage: <strong id='undxTaskRegressionCoverage'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Proposal Integration</span>
+              <h3>Change Proposals</h3>
+              <p>Required Tests: <strong id='undxProposalRequiredTests'>Pending</strong></p>
+              <p>Risk-Based Test Plan: <strong id='undxProposalRiskBasedTestPlan'>Pending</strong></p>
+              <p>Release Confidence: <strong id='undxProposalReleaseConfidence'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Testing Review</span>
+              <h3>Multi-Brain Testing Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxTestingReviewOutput'><p>Architecture Test Review, Security Test Review, Implementation Test Review, Regression Review, Release Readiness Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this testing strategy using project metadata, task packages, simulations, change proposals, language mastery, and repository awareness only. No tests were executed. No files were accessed. No commands were run.</p>
+              <p>No Git operations were performed.</p>
+              <p>No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 32<br><strong>Testing Intelligence Engine</strong></span>
+                <span>Phase 33<br><strong>Multi-Agent Engineering System</strong></span>
+                <span>Phase 34<br><strong>Repository Intelligence Engine</strong></span>
+                <span>Phase 35<br><strong>Context-Aware Coding Engine</strong></span>
+                <span>Phase 36<br><strong>Read-Only Repository Connector</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -25495,6 +25640,35 @@ def pulse_premium_undx_page():
     const undxProjectLanguageDecisionRecords = document.getElementById('undxProjectLanguageDecisionRecords');
     const undxRunLanguageReview = document.getElementById('undxRunLanguageReview');
     const undxLanguageReviewOutput = document.getElementById('undxLanguageReviewOutput');
+    const undxTestingDomainGrid = document.getElementById('undxTestingDomainGrid');
+    const undxTestingToolGrid = document.getElementById('undxTestingToolGrid');
+    const undxTestStrategySourceInputs = document.getElementById('undxTestStrategySourceInputs');
+    const undxGenerateTestStrategy = document.getElementById('undxGenerateTestStrategy');
+    const undxRunTestingReview = document.getElementById('undxRunTestingReview');
+    const undxTestStrategyMessage = document.getElementById('undxTestStrategyMessage');
+    const undxTestStrategyEmpty = document.getElementById('undxTestStrategyEmpty');
+    const undxTestStrategyOutput = document.getElementById('undxTestStrategyOutput');
+    const undxTestingRiskGrid = document.getElementById('undxTestingRiskGrid');
+    const undxTestCoverageGrid = document.getElementById('undxTestCoverageGrid');
+    const undxBugPredictionList = document.getElementById('undxBugPredictionList');
+    const undxValidationChecklistList = document.getElementById('undxValidationChecklistList');
+    const undxTestStrategyRegistryEmpty = document.getElementById('undxTestStrategyRegistryEmpty');
+    const undxTestStrategyRegistryList = document.getElementById('undxTestStrategyRegistryList');
+    const undxTotalTestStrategies = document.getElementById('undxTotalTestStrategies');
+    const undxAverageReleaseConfidence = document.getElementById('undxAverageReleaseConfidence');
+    const undxHighestTestingRiskArea = document.getElementById('undxHighestTestingRiskArea');
+    const undxMostTestedProject = document.getElementById('undxMostTestedProject');
+    const undxMostCommonBugClass = document.getElementById('undxMostCommonBugClass');
+    const undxProjectLinkedTestStrategies = document.getElementById('undxProjectLinkedTestStrategies');
+    const undxProjectTestReadiness = document.getElementById('undxProjectTestReadiness');
+    const undxProjectReleaseConfidence = document.getElementById('undxProjectReleaseConfidence');
+    const undxTaskRecommendedTestStrategy = document.getElementById('undxTaskRecommendedTestStrategy');
+    const undxTaskValidationChecklist = document.getElementById('undxTaskValidationChecklist');
+    const undxTaskRegressionCoverage = document.getElementById('undxTaskRegressionCoverage');
+    const undxProposalRequiredTests = document.getElementById('undxProposalRequiredTests');
+    const undxProposalRiskBasedTestPlan = document.getElementById('undxProposalRiskBasedTestPlan');
+    const undxProposalReleaseConfidence = document.getElementById('undxProposalReleaseConfidence');
+    const undxTestingReviewOutput = document.getElementById('undxTestingReviewOutput');
     const undxMemoryEntityTypes = document.getElementById('undxMemoryEntityTypes');
     const undxGenerateMemoryGraph = document.getElementById('undxGenerateMemoryGraph');
     const undxRunMemoryReview = document.getElementById('undxRunMemoryReview');
@@ -25788,6 +25962,7 @@ def pulse_premium_undx_page():
     const undxBuildSimulationsKey = 'undxBuildSimulations';
     const undxLanguageProfilesKey = 'undxLanguageProfiles';
     const undxLanguageDecisionRecordsKey = 'undxLanguageDecisionRecords';
+    const undxTestStrategiesKey = 'undxTestStrategies';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -26044,6 +26219,7 @@ def pulse_premium_undx_page():
       const linkedChangeProposals = Array.isArray(project.linkedChangeProposals) ? project.linkedChangeProposals.filter(item => item && item.proposalId).slice(0,24).map(undxNormalizeChangeProposal) : [];
       const linkedExecutionRequests = Array.isArray(project.linkedExecutionRequests) ? project.linkedExecutionRequests.filter(item => item && item.requestId).slice(0,24).map(undxNormalizeExecutionRequest) : [];
       const linkedLanguageDecisionRecords = Array.isArray(project.linkedLanguageDecisionRecords) ? project.linkedLanguageDecisionRecords.filter(item => item && item.recordId).slice(0,24).map(undxNormalizeLanguageDecisionRecord) : [];
+      const linkedTestStrategies = Array.isArray(project.linkedTestStrategies) ? project.linkedTestStrategies.filter(item => item && item.strategyId).slice(0,24).map(undxNormalizeTestStrategy) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -26063,6 +26239,7 @@ def pulse_premium_undx_page():
         linkedChangeProposals,
         linkedExecutionRequests,
         linkedLanguageDecisionRecords,
+        linkedTestStrategies,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -30617,6 +30794,352 @@ def pulse_premium_undx_page():
         if(undxLanguageMasteryMessage) undxLanguageMasteryMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    const undxTestingDomains = ['Unit Testing','Integration Testing','End-to-End Testing','Regression Testing','Security Testing','Performance Testing','Load Testing','Accessibility Testing','User Acceptance Testing','Deployment Validation'];
+    const undxTestingTools = [
+      ['Python','pytest · unittest · coverage'],
+      ['JavaScript/TypeScript','Jest · Vitest · Playwright · Cypress'],
+      ['Backend/API','Postman/Newman · REST validation · contract testing'],
+      ['Security','dependency audits · auth checks · input validation · OWASP-style checks'],
+      ['Performance','load testing · latency checks · database query checks']
+    ];
+    const undxValidationChecklistBase = ['Python compile','JS parse','site functional audit','UNDX audit','pulse feed layout audit','performance audit','browser route check','manual QA steps'];
+    const undxBugClasses = ['Broken API routing','Auth/session mismatch','DB schema mismatch','Frontend state bug','Async/loading state bug','Permission issue','Regression from legacy bridge'];
+    function undxSelectedTestStrategySources(){
+      const boxes = undxTestStrategySourceInputs ? Array.from(undxTestStrategySourceInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['project','taskPackage','changeProposal','structureModel','languageDecision','buildSimulation'];
+    }
+    function undxRenderTestingStaticPanels(){
+      const fillGrid = (container, entries) => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([name, value]) => {
+          const item = document.createElement('article');
+          item.className = 'undx-system-impact';
+          item.append(Object.assign(document.createElement('strong'), {textContent:value}), Object.assign(document.createElement('span'), {textContent:name}));
+          container.appendChild(item);
+        });
+      };
+      fillGrid(undxTestingDomainGrid, undxTestingDomains.map(domain => [domain, 'Mapped']));
+      fillGrid(undxTestingToolGrid, undxTestingTools);
+    }
+    function undxNormalizeTestStrategy(strategy){
+      const risks = strategy.risks || {};
+      const score = value => Math.max(0, Math.min(100, Number(value || 0)));
+      return {
+        strategyId: String(strategy.strategyId || `TEST-UNDX-${Date.now()}`).slice(0,48),
+        objective: String(strategy.objective || 'Design validation strategy before future execution.').slice(0,1200),
+        recommendedTestTypes: undxNormalizeExecutionList(strategy.recommendedTestTypes, undxTestingDomains.slice(0,6), 12, 180),
+        coveragePlan: strategy.coveragePlan || {},
+        criticalUserFlows: undxNormalizeExecutionList(strategy.criticalUserFlows, ['Premium UNDX route loads', 'Strategy can be generated and stored', 'Pulse feed remains isolated'], 12, 220),
+        apiValidationPlan: String(strategy.apiValidationPlan || 'Validate API routing, auth/session behavior, and response contracts conceptually.').slice(0,1000),
+        securityValidationPlan: String(strategy.securityValidationPlan || 'Validate no secrets exposure, input validation, auth boundaries, and approval gates.').slice(0,1000),
+        regressionPlan: String(strategy.regressionPlan || 'Retest existing Pulse premium, UNDX, feed isolation, and route behavior.').slice(0,1000),
+        performancePlan: String(strategy.performancePlan || 'Track page size, latency, polling frequency, and database query impact.').slice(0,1000),
+        manualQaChecklist: undxNormalizeExecutionList(strategy.manualQaChecklist, undxValidationChecklistBase, 16, 220),
+        bugPredictions: undxNormalizeExecutionList(strategy.bugPredictions, undxBugClasses, 12, 220),
+        releaseConfidenceScore: score(strategy.releaseConfidenceScore || 70),
+        riskScore: score(strategy.riskScore || 40),
+        risks: {
+          untestedAreaRisk: score(risks.untestedAreaRisk || 40),
+          regressionRisk: score(risks.regressionRisk || 35),
+          securityRisk: score(risks.securityRisk || 30),
+          performanceRisk: score(risks.performanceRisk || 35),
+          deploymentRisk: score(risks.deploymentRisk || 25)
+        },
+        referenced: strategy.referenced || {},
+        createdAt: strategy.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadTestStrategies(){
+      try{
+        const raw = localStorage.getItem(undxTestStrategiesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.strategyId).slice(0,64).map(undxNormalizeTestStrategy) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveTestStrategies(strategies){
+      try{
+        localStorage.setItem(undxTestStrategiesKey, JSON.stringify(strategies.slice(0,64)));
+      }catch(error){
+        if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = 'Test Strategy Registry could not be updated.';
+      }
+    }
+    function undxNextTestStrategyId(strategies){
+      const max = strategies.reduce((highest, strategy) => {
+        const match = String(strategy.strategyId || '').match(/^TEST-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `TEST-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildTestStrategy(){
+      const sources = undxSelectedTestStrategySources();
+      const project = undxCurrentProject() || undxLoadProjects()[0] || {};
+      const task = undxLoadTaskPackages()[0] || {};
+      const proposal = undxLoadChangeProposals()[0] || {};
+      const structure = undxLoadStructureModels()[0] || {};
+      const ldr = undxLoadLanguageDecisionRecords()[0] || {};
+      const simulation = undxLoadBuildSimulations()[0] || {};
+      const sourceStrength = [project.projectId, task.packageId, proposal.proposalId, structure.modelId, ldr.recordId, simulation.simulationId].filter(Boolean).length;
+      const riskScore = Math.max(18, Math.min(92, 62 - sourceStrength * 5 + (proposal.riskScores?.riskScore || 35) * .25));
+      const releaseConfidenceScore = Math.max(35, Math.min(96, 62 + sourceStrength * 5 - riskScore * .15));
+      return undxNormalizeTestStrategy({
+        strategyId: undxNextTestStrategyId(undxLoadTestStrategies()),
+        objective: project.objective || task.projectObjective || proposal.businessObjective || 'Validate CoinPilotXAI and UNDX changes before any future execution-capable phase.',
+        recommendedTestTypes: ['Unit Testing','Integration Testing','End-to-End Testing','Regression Testing','Security Testing','Performance Testing','Accessibility Testing','User Acceptance Testing'],
+        coveragePlan: {
+          Frontend:'Validate responsive UNDX panels, state updates, empty states, and localStorage persistence.',
+          Backend:'Validate protected routes and API contracts with test client only.',
+          Database:'Validate schema assumptions and persistence boundaries conceptually.',
+          'API Routes':'Validate /pulse/premium/undx, /pulse/premium, and UNDX API routing.',
+          Workers:'Validate worker assumptions remain isolated and no commands run.',
+          'AI Providers':'Validate router fallback behavior and provider health display.',
+          'Premium Modules':'Validate premium page and UNDX command views.',
+          Authentication:'Validate login redirect and session boundaries.',
+          'Payments/Subscriptions if applicable':'Validate no regression to premium entitlement surfaces.'
+        },
+        criticalUserFlows: ['Generate test strategy', 'Open strategy from registry', 'Attach strategy to project', 'Send strategy to chat', 'Save strategy to memory', 'Generate task package from strategy', 'Delete strategy', 'Refresh and confirm persistence'],
+        apiValidationPlan: 'Use site functional audit and route checks to validate premium routes, UNDX APIs, auth redirects, and response contracts without running external commands from UNDX.',
+        securityValidationPlan: 'Check no API keys appear in frontend JavaScript, no file access exists, no command execution path exists, and Pulse feed remains isolated.',
+        regressionPlan: 'Run UNDX audit, premium foundation audit, site functional audit, performance audit, and pulse feed layout audit after changes.',
+        performancePlan: 'Track UNDX page size, route latency, database timing, and known polling warnings before release.',
+        manualQaChecklist: undxValidationChecklistBase,
+        bugPredictions: undxBugClasses,
+        releaseConfidenceScore: Math.round(releaseConfidenceScore),
+        riskScore: Math.round(riskScore),
+        risks: {
+          untestedAreaRisk: Math.round(riskScore),
+          regressionRisk: Math.round(Math.min(100, riskScore + 8)),
+          securityRisk: Math.round(Math.max(20, riskScore - 6)),
+          performanceRisk: Math.round(Math.min(100, riskScore + 12)),
+          deploymentRisk: Math.round(Math.max(15, riskScore - 10))
+        },
+        referenced: {
+          sources,
+          projectId: project.projectId || '',
+          projectName: project.name || 'CoinPilotXAI',
+          taskPackage: task.packageId || '',
+          changeProposal: proposal.proposalId || '',
+          structureModel: structure.modelId || '',
+          languageDecisionRecord: ldr.recordId || '',
+          buildSimulation: simulation.simulationId || ''
+        },
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxTestStrategyText(strategy){
+      return [
+        'UNDX Testing Intelligence Strategy',
+        '',
+        `Test Strategy ID: ${strategy.strategyId}`,
+        `Release Confidence Score: ${strategy.releaseConfidenceScore}/100`,
+        `Risk Score: ${strategy.riskScore}/100`,
+        '',
+        `Objective: ${strategy.objective}`,
+        '',
+        'Recommended Test Types:',
+        ...strategy.recommendedTestTypes.map(item => `- ${item}`),
+        '',
+        'Test Coverage Plan:',
+        ...Object.entries(strategy.coveragePlan).map(([area, plan]) => `- ${area}: ${plan}`),
+        '',
+        'Critical User Flows:',
+        ...strategy.criticalUserFlows.map(item => `- ${item}`),
+        '',
+        `API Validation Plan: ${strategy.apiValidationPlan}`,
+        `Security Validation Plan: ${strategy.securityValidationPlan}`,
+        `Regression Plan: ${strategy.regressionPlan}`,
+        `Performance Plan: ${strategy.performancePlan}`,
+        '',
+        'Manual QA Checklist:',
+        ...strategy.manualQaChecklist.map(item => `- ${item}`),
+        '',
+        'Safety Boundary: No tests were executed. No files were accessed. No commands were run. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxRenderTestStrategy(strategy){
+      if(undxTestStrategyEmpty) undxTestStrategyEmpty.hidden = Boolean(strategy);
+      if(undxTestStrategyOutput){
+        undxTestStrategyOutput.replaceChildren();
+        if(strategy){
+          undxTestStrategyOutput.append(
+            undxBlock('Test Strategy ID', strategy.strategyId),
+            undxBlock('Objective', strategy.objective),
+            undxBlock('Recommended Test Types', strategy.recommendedTestTypes),
+            undxBlock('Test Coverage Plan', Object.entries(strategy.coveragePlan).map(([area, plan]) => `${area}: ${plan}`)),
+            undxBlock('Critical User Flows', strategy.criticalUserFlows),
+            undxBlock('API Validation Plan', strategy.apiValidationPlan),
+            undxBlock('Security Validation Plan', strategy.securityValidationPlan),
+            undxBlock('Regression Plan', strategy.regressionPlan),
+            undxBlock('Performance Plan', strategy.performancePlan),
+            undxBlock('Manual QA Checklist', strategy.manualQaChecklist),
+            undxBlock('Release Confidence Score', `${strategy.releaseConfidenceScore}/100`)
+          );
+        }
+      }
+      const fillGrid = (container, entries, risk = false) => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([name, value]) => {
+          const item = document.createElement('article');
+          item.className = risk ? 'undx-risk-item' : 'undx-system-impact';
+          item.append(Object.assign(document.createElement('strong'), {textContent:String(value)}), Object.assign(document.createElement('span'), {textContent:name}));
+          container.appendChild(item);
+        });
+      };
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.forEach(text => {
+          const item = document.createElement('div');
+          item.className = 'undx-chain-item';
+          item.textContent = text;
+          container.appendChild(item);
+        });
+      };
+      fillGrid(undxTestingRiskGrid, Object.entries(strategy?.risks || {untestedAreaRisk:0, regressionRisk:0, securityRisk:0, performanceRisk:0, deploymentRisk:0}).map(([name, value]) => [name.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase()), `${value}/100`]), true);
+      fillGrid(undxTestCoverageGrid, Object.entries(strategy?.coveragePlan || {'Frontend':'Planned','Backend':'Planned','Database':'Planned','API Routes':'Planned','Workers':'Planned','AI Providers':'Planned','Premium Modules':'Planned','Authentication':'Planned','Payments/Subscriptions if applicable':'Planned'}));
+      fillList(undxBugPredictionList, strategy?.bugPredictions || undxBugClasses);
+      fillList(undxValidationChecklistList, strategy?.manualQaChecklist || undxValidationChecklistBase);
+    }
+    function undxGenerateTestStrategyFlow(){
+      const strategy = undxBuildTestStrategy();
+      undxSaveTestStrategies([strategy, ...undxLoadTestStrategies()]);
+      undxRenderTestStrategy(strategy);
+      undxRenderTestStrategyRegistry();
+      if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = `${strategy.strategyId} stored in Test Strategy Registry.`;
+      return strategy;
+    }
+    function undxAttachTestStrategyToProject(strategy){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || strategy.referenced?.projectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = 'Open or create a project before attaching a test strategy.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, testReadiness: strategy.releaseConfidenceScore >= 75 ? 'Ready for review' : 'Needs validation', releaseConfidence: strategy.releaseConfidenceScore, linkedTestStrategies:[strategy, ...(project.linkedTestStrategies || []).filter(item => item.strategyId !== strategy.strategyId)].slice(0,12)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = `${strategy.strategyId} attached to ${projectId}.`;
+    }
+    function undxGenerateTaskPackageFromStrategy(strategy){
+      const packages = undxLoadTaskPackages();
+      const packageId = undxNextTaskPackageId(packages);
+      const pkg = undxNormalizeTaskPackage({
+        packageId,
+        selectedInputs:['testStrategy'],
+        executiveSummary:`Generated from ${strategy.strategyId}: convert validation strategy into implementation-ready QA tasks.`,
+        projectObjective: strategy.objective,
+        recommendedBuildStrategy:'Use this task package to prepare tests conceptually before any future execution-capable system touches files.',
+        taskTree:{epic:'Testing Intelligence', feature:'Validation Strategy', task:'Prepare test coverage plan', subtasks:strategy.manualQaChecklist.slice(0,6)},
+        dependencies:['Test Strategy', 'Project metadata', 'Task package context'],
+        acceptanceCriteria:{functional:['Strategy output reviewed.'], security:['No file or command execution occurred.'], completion:['Audits and manual QA checklist defined.']},
+        validationChecklist:{strategy: strategy.manualQaChecklist},
+        rollbackPlan:['Delete generated task package if no longer needed.'],
+        riskNotes: strategy.bugPredictions,
+        readinessAssessment:'Build Candidate',
+        complexityScore: Math.max(30, Math.min(90, strategy.riskScore)),
+        referenced:{project: strategy.referenced?.projectName || 'CoinPilotXAI', technologies:['Testing Intelligence'], testStrategy: strategy.strategyId},
+        createdAt:new Date().toISOString()
+      });
+      undxSaveTaskPackages([pkg, ...packages]);
+      undxRenderTaskRegistry();
+      if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = `${pkg.packageId} generated from ${strategy.strategyId}.`;
+    }
+    function undxCreateTestStrategyCard(strategy){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = strategy.strategyId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Test Strategy ID: ${strategy.strategyId}`, `Release Confidence Score: ${strategy.releaseConfidenceScore}/100`, `Risk Score: ${strategy.riskScore}/100`, `Created Date: ${undxFormatMemoryTime(strategy.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Strategy', () => undxRenderTestStrategy(strategy), true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxTestStrategyText(strategy);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Test Strategy ${strategy.strategyId}`, objective:undxTestStrategyText(strategy), type:'Testing Intelligence Strategy', source:'UNDX Testing Intelligence Engine', createdAt:new Date().toISOString(), phase:'Phase 32', status:'Stored'});
+          if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = `${strategy.strategyId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Attach To Project', () => undxAttachTestStrategyToProject(strategy)),
+        undxProjectActionButton('Generate Task Package', () => undxGenerateTaskPackageFromStrategy(strategy)),
+        undxProjectActionButton('Delete Strategy', () => {
+          undxSaveTestStrategies(undxLoadTestStrategies().filter(item => item.strategyId !== strategy.strategyId));
+          undxRenderTestStrategyRegistry();
+          if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = 'Test strategy deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderTestStrategyRegistry(){
+      const strategies = undxLoadTestStrategies();
+      if(undxTestStrategyRegistryEmpty) undxTestStrategyRegistryEmpty.hidden = strategies.length > 0;
+      if(undxTestStrategyRegistryList){
+        undxTestStrategyRegistryList.replaceChildren();
+        strategies.forEach(strategy => undxTestStrategyRegistryList.appendChild(undxCreateTestStrategyCard(strategy)));
+      }
+      const avg = strategies.length ? Math.round(strategies.reduce((sum, item) => sum + item.releaseConfidenceScore, 0) / strategies.length) : 0;
+      const highestRisk = strategies.slice().sort((a,b) => b.riskScore - a.riskScore)[0];
+      if(undxTotalTestStrategies) undxTotalTestStrategies.textContent = String(strategies.length);
+      if(undxAverageReleaseConfidence) undxAverageReleaseConfidence.textContent = String(avg);
+      if(undxHighestTestingRiskArea) undxHighestTestingRiskArea.textContent = highestRisk ? Object.entries(highestRisk.risks).sort((a,b) => b[1] - a[1])[0][0].replace(/([A-Z])/g, ' $1') : 'None';
+      if(undxMostTestedProject) undxMostTestedProject.textContent = strategies[0]?.referenced?.projectName || 'None';
+      if(undxMostCommonBugClass) undxMostCommonBugClass.textContent = strategies[0]?.bugPredictions?.[0] || 'None';
+      const project = undxCurrentProject() || {};
+      if(undxProjectLinkedTestStrategies) undxProjectLinkedTestStrategies.textContent = String((project.linkedTestStrategies || []).length);
+      if(undxProjectTestReadiness) undxProjectTestReadiness.textContent = project.testReadiness || (strategies[0] ? 'Strategy Ready' : 'Pending');
+      if(undxProjectReleaseConfidence) undxProjectReleaseConfidence.textContent = String(project.releaseConfidence || strategies[0]?.releaseConfidenceScore || 0);
+      if(undxTaskRecommendedTestStrategy) undxTaskRecommendedTestStrategy.textContent = strategies[0]?.strategyId || 'Pending';
+      if(undxTaskValidationChecklist) undxTaskValidationChecklist.textContent = strategies[0]?.manualQaChecklist?.slice(0,3).join(' · ') || 'Pending';
+      if(undxTaskRegressionCoverage) undxTaskRegressionCoverage.textContent = strategies[0] ? 'Regression Testing · Pulse feed isolation · Premium routes' : 'Pending';
+      if(undxProposalRequiredTests) undxProposalRequiredTests.textContent = strategies[0]?.recommendedTestTypes?.slice(0,4).join(' · ') || 'Pending';
+      if(undxProposalRiskBasedTestPlan) undxProposalRiskBasedTestPlan.textContent = strategies[0] ? `Risk Score ${strategies[0].riskScore}/100` : 'Pending';
+      if(undxProposalReleaseConfidence) undxProposalReleaseConfidence.textContent = String(strategies[0]?.releaseConfidenceScore || 0);
+    }
+    async function undxRunTestingReviewFlow(){
+      const strategy = undxLoadTestStrategies()[0] || undxGenerateTestStrategyFlow();
+      if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = 'Routing testing review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review testing strategy ${strategy.strategyId}. Confidence ${strategy.releaseConfidenceScore}. Risk ${strategy.riskScore}. No tests may be executed.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxTestingReviewOutput) undxTestingReviewOutput.replaceChildren(
+          undxBlock('Architecture Test Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Validate architecture boundaries with route and integration checks.'),
+          undxBlock('Security Test Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Prioritize auth, secrets, dependency, and input validation checks.'),
+          undxBlock('Implementation Test Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Translate strategy into test tasks only after approval.'),
+          undxBlock('Regression Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Protect Pulse feed, premium routes, and localStorage workflows.'),
+          undxBlock('Release Readiness Review', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Release only after audits and manual QA pass.'),
+          undxBlock('Combined Recommendation', 'Use Testing Intelligence as read-only validation planning. No tests were executed.')
+        );
+        if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = 'Multi-brain testing review complete.';
+      }catch(error){
+        if(undxTestingReviewOutput) undxTestingReviewOutput.replaceChildren(
+          undxBlock('Architecture Test Review', 'OpenAI fallback: validate premium route and command-view boundaries.'),
+          undxBlock('Security Test Review', 'OpenAI fallback: confirm no secrets, file access, commands, Git, or deployments.'),
+          undxBlock('Implementation Test Review', 'OpenAI fallback: keep strategy planning-only.'),
+          undxBlock('Regression Review', 'OpenAI fallback: retest Pulse feed isolation and existing audits.'),
+          undxBlock('Release Readiness Review', 'OpenAI fallback: require JS parse, audits, and browser route check.'),
+          undxBlock('Combined Recommendation', 'Fallback → OpenAI. Testing Intelligence remains read-only and no tests were executed.')
+        );
+        if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -32852,6 +33375,7 @@ def pulse_premium_undx_page():
       ['undx-build-simulation','Build Simulation'],
       ['undx-universal-code-intelligence','Universal Code Intelligence'],
       ['undx-language-mastery-engine','Language Mastery'],
+      ['undx-testing-intelligence-engine','Testing Intelligence'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -34047,6 +34571,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedTestStrategies(project, card){
+      const section = undxWorkspaceSection('Linked Test Strategies');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedTestStrategies || []).length){
+        list.appendChild(undxWorkspaceEmpty('No test strategies linked yet. Attach a Phase 32 strategy to preserve validation planning.'));
+      }else{
+        project.linkedTestStrategies.forEach(strategy => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = strategy.strategyId;
+          const meta = document.createElement('p');
+          meta.textContent = `Test Readiness: ${project.testReadiness || 'Strategy Ready'} · Release Confidence: ${strategy.releaseConfidenceScore}/100 · Risk Score: ${strategy.riskScore}/100`;
+          const objective = document.createElement('p');
+          objective.textContent = strategy.objective;
+          item.append(title, meta, objective);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -34117,7 +34664,9 @@ def pulse_premium_undx_page():
         undxBlock('Enhancement Source', enhancement.source || 'Pending'),
         undxBlock('Language Stack Recommendation', project.languageStackRecommendation || 'Pending'),
         undxBlock('Framework Recommendation', project.frameworkRecommendation || 'Pending'),
-        undxBlock('Toolchain Recommendation', project.toolchainRecommendation || 'Pending')
+        undxBlock('Toolchain Recommendation', project.toolchainRecommendation || 'Pending'),
+        undxBlock('Test Readiness', project.testReadiness || 'Pending'),
+        undxBlock('Release Confidence', `${project.releaseConfidence || 0}/100`)
       );
       const actions = document.createElement('div');
       actions.className = 'undx-project-actions';
@@ -34139,6 +34688,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedChangeProposals(project, card);
       undxRenderLinkedExecutionRequests(project, card);
       undxRenderLinkedLanguageDecisionRecords(project, card);
+      undxRenderLinkedTestStrategies(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -34793,6 +35343,8 @@ def pulse_premium_undx_page():
     undxAnalyzeFrameworkMastery?.addEventListener('click', undxAnalyzeFrameworkMasteryFlow);
     undxCreateLanguageDecisionRecord?.addEventListener('click', undxCreateLanguageDecisionRecordFlow);
     undxRunLanguageReview?.addEventListener('click', undxRunLanguageReviewFlow);
+    undxGenerateTestStrategy?.addEventListener('click', undxGenerateTestStrategyFlow);
+    undxRunTestingReview?.addEventListener('click', undxRunTestingReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -34850,6 +35402,9 @@ def pulse_premium_undx_page():
     undxRenderLanguageMasteryStaticPanels();
     undxRenderLanguageDecisionRegistry();
     undxRenderLanguageMasteryDashboard();
+    undxRenderTestingStaticPanels();
+    undxRenderTestStrategyRegistry();
+    undxRenderTestStrategy(undxLoadTestStrategies()[0] || null);
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
