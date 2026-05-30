@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22428,6 +22428,179 @@ def pulse_premium_undx_page():
                 <span>Phase 28<br><strong>Controlled Repository Awareness</strong></span>
                 <span>Phase 29<br><strong>Controlled Editing Proposals</strong></span>
                 <span>Phase 30<br><strong>Human Approved Execution</strong></span>
+                <span>Phase 31<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 32<br><strong>Diff Preview Gateway</strong></span>
+                <span>Phase 33<br><strong>Approved Patch Application</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
+      <section class='undx-section-panel undx-change-proposal-engine' id='undx-controlled-editing-proposal-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Proposal Engine: Online</span>
+            <h2>UNDX Controlled Editing Proposal Engine</h2>
+          </div>
+          <p>Generate engineering-grade change proposals with impact analysis, validation plans, rollback plans, and approval readiness.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX controlled editing proposal status'>
+              <span aria-label='Proposal Engine: Online'>Proposal Engine: <strong>Online</strong></span>
+              <span aria-label='Change Planner: Online'>Change Planner: <strong>Online</strong></span>
+              <span aria-label='Impact Analyzer: Online'>Impact Analyzer: <strong>Online</strong></span>
+              <span aria-label='Approval Readiness: Online'>Approval Readiness: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 29'>Phase: <strong>29</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Proposal Input Sources</span>
+              <h3>Generate Change Proposal</h3>
+              <p>Multiple inputs supported. Proposals are engineering plans only and never modify files.</p>
+              <div class='undx-simulation-inputs' id='undxProposalSourceInputs'>
+                <label><input type='checkbox' value='taskPackages' checked>Task Packages</label>
+                <label><input type='checkbox' value='strategicPlans' checked>Strategic Plans</label>
+                <label><input type='checkbox' value='structureModels' checked>Repository Structure Models</label>
+                <label><input type='checkbox' value='buildSimulations' checked>Build Simulations</label>
+                <label><input type='checkbox' value='repositoryAnalyses' checked>Repository Analyses</label>
+                <label><input type='checkbox' value='changeAnalyses' checked>Change Analyses</label>
+                <label><input type='checkbox' value='workspaceSummaries' checked>Workspace Summaries</label>
+                <label><input type='checkbox' value='projects' checked>Projects</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateChangeProposal'>Generate Change Proposal</button>
+                <button class='button' type='button' id='undxRunChangeProposalReview'>Run Multi-Brain Change Review</button>
+              </div>
+              <p class='undx-project-message' id='undxChangeProposalMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Proposal Output</span>
+              <h3>Change Proposal Output</h3>
+              <p>Proposal ID format: <strong>PROPOSAL-UNDX-0001</strong></p>
+              <div class='undx-evolution-empty' id='undxChangeProposalEmpty'>Generate a change proposal to activate the controlled editing proposal engine.</div>
+              <div class='undx-simulation-output' id='undxChangeProposalOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Impact Planner</span>
+              <h3>Change Impact Planner</h3>
+              <p>Potential Files · Potential APIs · Potential Database Changes · Potential Services · Potential Frontend Areas · Potential Workers · Potential Config Areas</p>
+              <p>Inferred · No real file access.</p>
+              <div class='undx-system-impact-grid' id='undxProposalImpactGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Tree Engine</span>
+              <h3>Initiative ↓ Feature ↓ Change Group ↓ Proposed Change</h3>
+              <div class='undx-chain-list' id='undxProposalChangeTree'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Validation Requirements</span>
+              <h3>Validation Requirements</h3>
+              <p>Functional Validation · Security Validation · Performance Validation · Integration Validation · Manual QA Validation</p>
+              <div class='undx-approval-grid' id='undxProposalValidationGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Rollback Engine</span>
+              <h3>Rollback Engine</h3>
+              <p>Rollback Steps · Rollback Dependencies · Rollback Risks · Recovery Considerations</p>
+              <div class='undx-chain-list' id='undxProposalRollbackList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Readiness Engine</span>
+              <h3>Approval Requirements</h3>
+              <p>Architecture Approval · Security Approval · Product Approval · Execution Approval · Deployment Approval</p>
+              <p>Status: <strong>Proposed</strong></p>
+              <div class='undx-approval-grid' id='undxProposalApprovalGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Proposal Registry</span>
+              <h3>Proposal Registry</h3>
+              <div class='undx-memory-empty' id='undxProposalRegistryEmpty'>No change proposals stored yet. Generate a proposal to preserve controlled editing plans.</div>
+              <div class='undx-simulation-registry' id='undxProposalRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Proposal Dashboard</span>
+              <h3>Proposal Dashboard</h3>
+              <p>Total Proposals: <strong id='undxTotalChangeProposals'>0</strong></p>
+              <p>Average Risk Score: <strong id='undxAverageProposalRisk'>0</strong></p>
+              <p>Average Impact Score: <strong id='undxAverageProposalImpact'>0</strong></p>
+              <p>Approval Ready Proposals: <strong id='undxApprovalReadyProposals'>0</strong></p>
+              <p>Most Referenced Project: <strong id='undxProposalMostReferencedProject'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Risk Engine</span>
+              <h3>Change Risk Engine</h3>
+              <p>Complexity Score: <strong id='undxProposalComplexityScore'>0</strong></p>
+              <p>Risk Score: <strong id='undxProposalRiskScore'>0</strong></p>
+              <p>Impact Score: <strong id='undxProposalImpactScore'>0</strong></p>
+              <p>Readiness Score: <strong id='undxProposalReadinessScore'>0</strong></p>
+              <p>Range: 0-100</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Package</span>
+              <h3>Approval Package</h3>
+              <div id='undxProposalApprovalPackage'><p>Approval Summary, Risk Summary, Impact Summary, and Decision Recommendation will appear after proposal generation.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Preview Center</span>
+              <h3>Change Preview Center</h3>
+              <p>Potential Change Areas: <strong id='undxPotentialChangeAreas'>0</strong></p>
+              <p>Potential Dependencies: <strong id='undxPotentialDependencies'>0</strong></p>
+              <p>Potential Validation Scope: <strong id='undxPotentialValidationScope'>0</strong></p>
+              <p>Potential Rollback Scope: <strong id='undxPotentialRollbackScope'>0</strong></p>
+              <p>All items: <strong>Proposed Only</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Proposal Memory</h3>
+              <p>Proposal Decisions: <strong id='undxProposalDecisions'>0</strong></p>
+              <p>Proposal History: <strong id='undxProposalHistory'>0</strong></p>
+              <p>Approval Relationships: <strong id='undxProposalApprovalRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Proposal Relationships</h3>
+              <p>Proposal Relationships: <strong id='undxProposalRelationships'>0</strong></p>
+              <p>Change Relationships: <strong id='undxProposalChangeRelationships'>0</strong></p>
+              <p>Dependency Relationships: <strong id='undxProposalDependencyRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Awareness Integration</span>
+              <h3>Repository Awareness References</h3>
+              <p>Referenced Structure Models: <strong id='undxProposalReferencedStructureModels'>0</strong></p>
+              <p>Referenced Entry Points: <strong id='undxProposalReferencedEntryPoints'>0</strong></p>
+              <p>Referenced Protected Areas: <strong id='undxProposalReferencedProtectedAreas'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Proposal References</h3>
+              <p>Referenced Task Packages: <strong id='undxProposalReferencedTaskPackages'>0</strong></p>
+              <p>Referenced Validation Plans: <strong id='undxProposalReferencedValidationPlans'>0</strong></p>
+              <p>Referenced Rollback Plans: <strong id='undxProposalReferencedRollbackPlans'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Change Review</span>
+              <h3>Multi-Brain Change Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxChangeProposalReviewOutput'><p>Architecture Review, Security Review, Implementation Review, Optimization Review, Risk Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this proposal using repository awareness, task packages, simulations, strategic plans, memory graphs, knowledge graphs, and code intelligence only.</p>
+              <p>No files were modified.</p>
+              <p>No repositories were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 29<br><strong>Controlled Editing Proposal Engine</strong></span>
+                <span>Phase 30<br><strong>Human Approved Execution Framework</strong></span>
                 <span>Phase 31<br><strong>Read-Only Repository Connector</strong></span>
                 <span>Phase 32<br><strong>Diff Preview Gateway</strong></span>
                 <span>Phase 33<br><strong>Approved Patch Application</strong></span>
@@ -25096,6 +25269,46 @@ def pulse_premium_undx_page():
     const undxTaskPotentialFileAreas = document.getElementById('undxTaskPotentialFileAreas');
     const undxTaskProtectedAreas = document.getElementById('undxTaskProtectedAreas');
     const undxStructureReviewOutput = document.getElementById('undxStructureReviewOutput');
+    const undxProposalSourceInputs = document.getElementById('undxProposalSourceInputs');
+    const undxGenerateChangeProposal = document.getElementById('undxGenerateChangeProposal');
+    const undxRunChangeProposalReview = document.getElementById('undxRunChangeProposalReview');
+    const undxChangeProposalMessage = document.getElementById('undxChangeProposalMessage');
+    const undxChangeProposalEmpty = document.getElementById('undxChangeProposalEmpty');
+    const undxChangeProposalOutput = document.getElementById('undxChangeProposalOutput');
+    const undxProposalImpactGrid = document.getElementById('undxProposalImpactGrid');
+    const undxProposalChangeTree = document.getElementById('undxProposalChangeTree');
+    const undxProposalValidationGrid = document.getElementById('undxProposalValidationGrid');
+    const undxProposalRollbackList = document.getElementById('undxProposalRollbackList');
+    const undxProposalApprovalGrid = document.getElementById('undxProposalApprovalGrid');
+    const undxProposalRegistryEmpty = document.getElementById('undxProposalRegistryEmpty');
+    const undxProposalRegistryList = document.getElementById('undxProposalRegistryList');
+    const undxTotalChangeProposals = document.getElementById('undxTotalChangeProposals');
+    const undxAverageProposalRisk = document.getElementById('undxAverageProposalRisk');
+    const undxAverageProposalImpact = document.getElementById('undxAverageProposalImpact');
+    const undxApprovalReadyProposals = document.getElementById('undxApprovalReadyProposals');
+    const undxProposalMostReferencedProject = document.getElementById('undxProposalMostReferencedProject');
+    const undxProposalComplexityScore = document.getElementById('undxProposalComplexityScore');
+    const undxProposalRiskScore = document.getElementById('undxProposalRiskScore');
+    const undxProposalImpactScore = document.getElementById('undxProposalImpactScore');
+    const undxProposalReadinessScore = document.getElementById('undxProposalReadinessScore');
+    const undxProposalApprovalPackage = document.getElementById('undxProposalApprovalPackage');
+    const undxPotentialChangeAreas = document.getElementById('undxPotentialChangeAreas');
+    const undxPotentialDependencies = document.getElementById('undxPotentialDependencies');
+    const undxPotentialValidationScope = document.getElementById('undxPotentialValidationScope');
+    const undxPotentialRollbackScope = document.getElementById('undxPotentialRollbackScope');
+    const undxProposalDecisions = document.getElementById('undxProposalDecisions');
+    const undxProposalHistory = document.getElementById('undxProposalHistory');
+    const undxProposalApprovalRelationships = document.getElementById('undxProposalApprovalRelationships');
+    const undxProposalRelationships = document.getElementById('undxProposalRelationships');
+    const undxProposalChangeRelationships = document.getElementById('undxProposalChangeRelationships');
+    const undxProposalDependencyRelationships = document.getElementById('undxProposalDependencyRelationships');
+    const undxProposalReferencedStructureModels = document.getElementById('undxProposalReferencedStructureModels');
+    const undxProposalReferencedEntryPoints = document.getElementById('undxProposalReferencedEntryPoints');
+    const undxProposalReferencedProtectedAreas = document.getElementById('undxProposalReferencedProtectedAreas');
+    const undxProposalReferencedTaskPackages = document.getElementById('undxProposalReferencedTaskPackages');
+    const undxProposalReferencedValidationPlans = document.getElementById('undxProposalReferencedValidationPlans');
+    const undxProposalReferencedRollbackPlans = document.getElementById('undxProposalReferencedRollbackPlans');
+    const undxChangeProposalReviewOutput = document.getElementById('undxChangeProposalReviewOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -25120,6 +25333,7 @@ def pulse_premium_undx_page():
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
     const undxWorkspaceManifestsKey = 'undxWorkspaceManifests';
     const undxRepositoryStructureModelsKey = 'undxRepositoryStructureModels';
+    const undxChangeProposalsKey = 'undxChangeProposals';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -25365,6 +25579,7 @@ def pulse_premium_undx_page():
       const linkedKnowledgeGraphs = Array.isArray(project.linkedKnowledgeGraphs) ? project.linkedKnowledgeGraphs.filter(item => item && item.graphId).slice(0,24).map(undxNormalizeKnowledgeGraph) : [];
       const linkedWorkspaceManifests = Array.isArray(project.linkedWorkspaceManifests) ? project.linkedWorkspaceManifests.filter(item => item && item.manifestId).slice(0,24).map(undxNormalizeWorkspaceManifest) : [];
       const linkedStructureModels = Array.isArray(project.linkedStructureModels) ? project.linkedStructureModels.filter(item => item && item.modelId).slice(0,24).map(undxNormalizeStructureModel) : [];
+      const linkedChangeProposals = Array.isArray(project.linkedChangeProposals) ? project.linkedChangeProposals.filter(item => item && item.proposalId).slice(0,24).map(undxNormalizeChangeProposal) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -25381,6 +25596,7 @@ def pulse_premium_undx_page():
         linkedKnowledgeGraphs,
         linkedWorkspaceManifests,
         linkedStructureModels,
+        linkedChangeProposals,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -26954,6 +27170,10 @@ def pulse_premium_undx_page():
         undxBlock('Repository Awareness Score', `${project.repositoryAwarenessScore || 0}/100`),
         undxBlock('Known Entry Points', undxWorkspacePillList(((project.linkedStructureModels || [])[0]?.entryPoints || []), 'None inferred')),
         undxBlock('Known Protected Areas', undxWorkspacePillList(((project.linkedStructureModels || [])[0]?.protectedAreas || []), 'Protected areas not linked yet')),
+        undxBlock('Linked Change Proposals', undxWorkspacePillList((project.linkedChangeProposals || []).map(item => item.proposalId), 'None linked')),
+        undxBlock('Latest Proposal', (project.linkedChangeProposals || [])[0]?.proposalId || 'None linked'),
+        undxBlock('Proposal Count', String((project.linkedChangeProposals || []).length)),
+        undxBlock('Proposal Readiness', (project.linkedChangeProposals || [])[0]?.readinessAssessment || 'Not proposed'),
         undxBlock('Task Package Count', String((project.linkedTaskPackages || []).length)),
         undxBlock('Latest Task Package', (project.linkedTaskPackages || [])[0]?.packageId || 'None linked'),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
@@ -31105,10 +31325,330 @@ def pulse_premium_undx_page():
         if(undxStructureMessage) undxStructureMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxSelectedProposalSources(){
+      const boxes = undxProposalSourceInputs ? Array.from(undxProposalSourceInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['taskPackages','strategicPlans','structureModels','buildSimulations','repositoryAnalyses','changeAnalyses','workspaceSummaries','projects'];
+    }
+    function undxNormalizeChangeProposal(proposal){
+      return {
+        proposalId: String(proposal.proposalId || `PROPOSAL-UNDX-${Date.now()}`).slice(0,48),
+        executiveSummary: String(proposal.executiveSummary || '').slice(0,1200),
+        businessObjective: String(proposal.businessObjective || '').slice(0,900),
+        engineeringObjective: String(proposal.engineeringObjective || '').slice(0,900),
+        proposedChanges: undxNormalizeExecutionList(proposal.proposedChanges, ['Create proposed implementation plan', 'Review approval gates', 'Prepare validation scope'], 12, 220),
+        potentialImpactAreas: proposal.potentialImpactAreas || {},
+        validationRequirements: proposal.validationRequirements || {},
+        rollbackStrategy: proposal.rollbackStrategy || {},
+        approvalRequirements: proposal.approvalRequirements || {},
+        readinessAssessment: String(proposal.readinessAssessment || 'Proposal Ready').slice(0,100),
+        changeTree: proposal.changeTree || {initiative:'Controlled Editing Proposal', feature:'Safe Change Planning', changeGroup:'Proposed Change Group', proposedChange:'Prepare engineering-grade proposal'},
+        approvalPackage: proposal.approvalPackage || {},
+        riskScores: {
+          complexityScore: Math.max(0, Math.min(100, Number(proposal.riskScores?.complexityScore || 0))),
+          riskScore: Math.max(0, Math.min(100, Number(proposal.riskScores?.riskScore || 0))),
+          impactScore: Math.max(0, Math.min(100, Number(proposal.riskScores?.impactScore || 0))),
+          readinessScore: Math.max(0, Math.min(100, Number(proposal.riskScores?.readinessScore || 0)))
+        },
+        referenced: proposal.referenced || {},
+        createdAt: proposal.createdAt || new Date().toISOString(),
+        status: 'Proposed'
+      };
+    }
+    function undxLoadChangeProposals(){
+      try{
+        const raw = localStorage.getItem(undxChangeProposalsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.proposalId).slice(0,48).map(undxNormalizeChangeProposal) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveChangeProposals(proposals){
+      try{
+        localStorage.setItem(undxChangeProposalsKey, JSON.stringify(proposals.slice(0,48)));
+      }catch(error){
+        if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = 'Proposal Registry could not be updated.';
+      }
+    }
+    function undxNextChangeProposalId(proposals){
+      const max = proposals.reduce((highest, proposal) => {
+        const match = String(proposal.proposalId || '').match(/^PROPOSAL-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `PROPOSAL-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildChangeProposal(){
+      const selected = undxSelectedProposalSources();
+      const projects = undxLoadProjects();
+      const taskPackages = undxLoadTaskPackages();
+      const structureModels = undxLoadStructureModels();
+      const simulations = undxLoadBuildSimulations();
+      const strategicPlans = undxLoadStrategicPlans();
+      const repositoryAnalyses = undxLoadRepositoryAnalyses();
+      const changeAnalyses = undxLoadChangeAnalyses();
+      const workspaceSummaries = undxLoadWorkspaceSummaries();
+      const project = undxCurrentProject() || projects[0] || {};
+      const sourceStrength = [taskPackages.length, strategicPlans.length, structureModels.length, simulations.length, repositoryAnalyses.length, changeAnalyses.length, workspaceSummaries.length, projects.length].filter(Boolean).length;
+      const riskScore = Math.min(100, 22 + sourceStrength * 5 + (structureModels[0]?.risks?.secretExposureRisk === 'High' ? 10 : 0));
+      const impactScore = Math.min(100, 35 + sourceStrength * 6 + (taskPackages[0]?.complexityScore || 0) * .15);
+      const complexityScore = Math.min(100, 30 + (structureModels[0]?.awarenessScore || 30) * .35 + selected.length * 4);
+      const readinessScore = Math.max(0, Math.min(100, 76 - riskScore * .25 + sourceStrength * 4));
+      const readinessAssessment = readinessScore >= 76 ? 'Approval Ready' : readinessScore >= 56 ? 'Review Ready' : 'Planning Ready';
+      return undxNormalizeChangeProposal({
+        proposalId: undxNextChangeProposalId(undxLoadChangeProposals()),
+        executiveSummary: `UNDX prepared a controlled editing proposal for ${project.name || structureModels[0]?.repositoryName || 'CoinPilotXAI'} using ${sourceStrength} read-only intelligence source groups.`,
+        businessObjective: project.objective || strategicPlans[0]?.executiveSummary || 'Improve CoinPilotXAI safely while preserving premium boundaries and approval controls.',
+        engineeringObjective: 'Convert UNDX planning intelligence into an engineering-grade change proposal without editing files, running commands, or accessing repositories.',
+        proposedChanges: ['Define the proposed implementation scope', 'Map potential impact areas and dependencies', 'Prepare validation and rollback plans', 'Route approvals before future execution', 'Keep all changes proposed-only until human approval'],
+        potentialImpactAreas: {
+          'Potential Files':'Inferred from structure model and task packages',
+          'Potential APIs':'UNDX and Pulse premium APIs',
+          'Potential Database Changes':'Proposed only; none executed',
+          'Potential Services':'UNDX Intelligence Router and premium services',
+          'Potential Frontend Areas':'UNDX command views and project workspace',
+          'Potential Workers':'coinpilotx-undx-worker planning context',
+          'Potential Config Areas':'Protected / Not Accessible'
+        },
+        validationRequirements: {
+          functional:'Functional Validation: verify generated proposal workflows.',
+          security:'Security Validation: confirm secrets remain protected.',
+          performance:'Performance Validation: run performance audit.',
+          integration:'Integration Validation: run UNDX, premium, and site audits.',
+          manual:'Manual QA Validation: generate, open, attach, review, and delete proposal.'
+        },
+        rollbackStrategy: {
+          steps:['Rollback Steps: remove proposal UI or delete localStorage proposal records.', 'Rollback Steps: revert future approved implementation if needed.'],
+          dependencies:['Rollback Dependencies: approval history and project links.'],
+          risks:['Rollback Risks: stale planning references if proposals are deleted.'],
+          recovery:['Recovery Considerations: regenerate proposal from preserved read-only intelligence.']
+        },
+        approvalRequirements: {
+          architecture:'Architecture Approval: Proposed',
+          security:'Security Approval: Proposed',
+          product:'Product Approval: Proposed',
+          execution:'Execution Approval: Proposed',
+          deployment:'Deployment Approval: Proposed'
+        },
+        readinessAssessment,
+        changeTree: {initiative:'CoinPilotXAI Evolution', feature:'Controlled Editing Proposal Engine', changeGroup:'Approval-Gated Engineering Plan', proposedChange:'Generate proposed changes without modifying files'},
+        approvalPackage: {
+          approvalSummary:'Proposal is ready for human review only.',
+          riskSummary:`Risk Score: ${Math.round(riskScore)}/100`,
+          impactSummary:`Impact Score: ${Math.round(impactScore)}/100`,
+          decisionRecommendation: readinessAssessment === 'Approval Ready' ? 'Review approval package before future execution phase.' : 'Strengthen context before approval.'
+        },
+        riskScores: {complexityScore: Math.round(complexityScore), riskScore: Math.round(riskScore), impactScore: Math.round(impactScore), readinessScore: Math.round(readinessScore)},
+        referenced: {
+          project: project.name || 'CoinPilotXAI',
+          structureModels: structureModels.slice(0,3).map(item => item.modelId),
+          entryPoints: structureModels[0]?.entryPoints || ['bot.py'],
+          protectedAreas: structureModels[0]?.protectedAreas || ['.env', 'secrets', 'tokens'],
+          taskPackages: taskPackages.slice(0,3).map(item => item.packageId),
+          validationPlans: taskPackages.slice(0,3).map(item => item.packageId),
+          rollbackPlans: simulations.slice(0,3).map(item => item.simulationId)
+        },
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxChangeProposalText(proposal){
+      return [
+        'UNDX Controlled Editing Proposal',
+        '',
+        `Proposal ID: ${proposal.proposalId}`,
+        `Risk Score: ${proposal.riskScores.riskScore}/100`,
+        `Impact Score: ${proposal.riskScores.impactScore}/100`,
+        `Readiness Assessment: ${proposal.readinessAssessment}`,
+        '',
+        `Executive Summary: ${proposal.executiveSummary}`,
+        `Business Objective: ${proposal.businessObjective}`,
+        `Engineering Objective: ${proposal.engineeringObjective}`,
+        '',
+        'Proposed Changes:',
+        ...proposal.proposedChanges.map(item => `- ${item}`),
+        '',
+        'Validation Requirements:',
+        ...Object.values(proposal.validationRequirements).map(item => `- ${item}`),
+        '',
+        'Rollback Strategy:',
+        ...Object.values(proposal.rollbackStrategy).flat().map(item => `- ${item}`),
+        '',
+        'Approval Requirements:',
+        ...Object.values(proposal.approvalRequirements).map(item => `- ${item}`),
+        '',
+        'Safety Boundary: No files were modified. No repositories were accessed. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxRenderChangeProposal(proposal){
+      if(undxChangeProposalEmpty) undxChangeProposalEmpty.hidden = Boolean(proposal);
+      if(undxChangeProposalOutput){
+        undxChangeProposalOutput.replaceChildren();
+        if(proposal){
+          undxChangeProposalOutput.append(
+            undxBlock('Proposal ID', proposal.proposalId),
+            undxBlock('Executive Summary', proposal.executiveSummary),
+            undxBlock('Business Objective', proposal.businessObjective),
+            undxBlock('Engineering Objective', proposal.engineeringObjective),
+            undxBlock('Proposed Changes', proposal.proposedChanges),
+            undxBlock('Potential Impact Areas', Object.entries(proposal.potentialImpactAreas).map(([name, value]) => `${name}: ${value}`)),
+            undxBlock('Validation Requirements', Object.values(proposal.validationRequirements)),
+            undxBlock('Rollback Strategy', Object.values(proposal.rollbackStrategy).flat()),
+            undxBlock('Approval Requirements', Object.values(proposal.approvalRequirements)),
+            undxBlock('Readiness Assessment', proposal.readinessAssessment)
+          );
+        }
+      }
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      const fillGrid = (container, entries, className = 'undx-approval-item') => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([name, detail]) => {
+          const node = document.createElement('article');
+          node.className = className;
+          node.append(Object.assign(document.createElement('strong'), {textContent: detail}), Object.assign(document.createElement('span'), {textContent: name}));
+          container.appendChild(node);
+        });
+      };
+      fillGrid(undxProposalImpactGrid, Object.entries(proposal?.potentialImpactAreas || {'Potential Files':'Inferred','Potential APIs':'Inferred','Potential Database Changes':'Inferred','Potential Services':'Inferred','Potential Frontend Areas':'Inferred','Potential Workers':'Inferred','Potential Config Areas':'Inferred'}), 'undx-system-impact');
+      fillList(undxProposalChangeTree, proposal ? [`Initiative: ${proposal.changeTree.initiative}`, `Feature: ${proposal.changeTree.feature}`, `Change Group: ${proposal.changeTree.changeGroup}`, `Proposed Change: ${proposal.changeTree.proposedChange}`] : ['Initiative', 'Feature', 'Change Group', 'Proposed Change']);
+      fillGrid(undxProposalValidationGrid, Object.entries(proposal?.validationRequirements || {}).map(([name, value]) => [name, value]));
+      fillList(undxProposalRollbackList, Object.values(proposal?.rollbackStrategy || {steps:['Rollback Steps'], dependencies:['Rollback Dependencies'], risks:['Rollback Risks'], recovery:['Recovery Considerations']}).flat());
+      fillGrid(undxProposalApprovalGrid, Object.entries(proposal?.approvalRequirements || {architecture:'Architecture Approval: Proposed', security:'Security Approval: Proposed', product:'Product Approval: Proposed', execution:'Execution Approval: Proposed', deployment:'Deployment Approval: Proposed'}).map(([name, value]) => [name, value]));
+      if(undxProposalComplexityScore) undxProposalComplexityScore.textContent = String(proposal?.riskScores?.complexityScore || 0);
+      if(undxProposalRiskScore) undxProposalRiskScore.textContent = String(proposal?.riskScores?.riskScore || 0);
+      if(undxProposalImpactScore) undxProposalImpactScore.textContent = String(proposal?.riskScores?.impactScore || 0);
+      if(undxProposalReadinessScore) undxProposalReadinessScore.textContent = String(proposal?.riskScores?.readinessScore || 0);
+      if(undxProposalApprovalPackage) undxProposalApprovalPackage.replaceChildren(undxBlock('Approval Summary', proposal?.approvalPackage?.approvalSummary || 'Approval Summary pending.'), undxBlock('Risk Summary', proposal?.approvalPackage?.riskSummary || 'Risk Summary pending.'), undxBlock('Impact Summary', proposal?.approvalPackage?.impactSummary || 'Impact Summary pending.'), undxBlock('Decision Recommendation', proposal?.approvalPackage?.decisionRecommendation || 'Decision Recommendation pending.'));
+    }
+    function undxGenerateChangeProposalFlow(){
+      const proposal = undxBuildChangeProposal();
+      undxSaveChangeProposals([proposal, ...undxLoadChangeProposals()]);
+      undxRenderChangeProposal(proposal);
+      undxRenderChangeProposalRegistry();
+      if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = `${proposal.proposalId} stored in Proposal Registry.`;
+      return proposal;
+    }
+    function undxAttachChangeProposalToProject(proposal){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = 'Open or create a project before attaching a proposal.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, linkedChangeProposals:[proposal, ...(project.linkedChangeProposals || []).filter(item => item.proposalId !== proposal.proposalId)].slice(0,10)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = `${proposal.proposalId} attached to ${projectId}.`;
+    }
+    function undxCreateChangeProposalCard(proposal){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = proposal.proposalId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Proposal ID: ${proposal.proposalId}`, `Risk Score: ${proposal.riskScores.riskScore}/100`, `Impact Score: ${proposal.riskScores.impactScore}/100`, `Created Date: ${undxFormatMemoryTime(proposal.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Proposal', () => undxRenderChangeProposal(proposal), true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxChangeProposalText(proposal);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Change Proposal ${proposal.proposalId}`, objective:undxChangeProposalText(proposal), type:'Controlled Editing Proposal', source:'UNDX Controlled Editing Proposal Engine', createdAt:new Date().toISOString(), phase:'Phase 29', status:'Stored'});
+          if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = `${proposal.proposalId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Attach To Project', () => undxAttachChangeProposalToProject(proposal)),
+        undxProjectActionButton('Delete Proposal', () => {
+          undxSaveChangeProposals(undxLoadChangeProposals().filter(item => item.proposalId !== proposal.proposalId));
+          undxRenderChangeProposalRegistry();
+          if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = 'Change proposal deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderChangeProposalRegistry(){
+      const proposals = undxLoadChangeProposals();
+      if(undxProposalRegistryEmpty) undxProposalRegistryEmpty.hidden = proposals.length > 0;
+      if(undxProposalRegistryList){
+        undxProposalRegistryList.replaceChildren();
+        proposals.forEach(proposal => undxProposalRegistryList.appendChild(undxCreateChangeProposalCard(proposal)));
+      }
+      const avg = key => proposals.length ? Math.round(proposals.reduce((sum, item) => sum + key(item), 0) / proposals.length) : 0;
+      if(undxTotalChangeProposals) undxTotalChangeProposals.textContent = String(proposals.length);
+      if(undxAverageProposalRisk) undxAverageProposalRisk.textContent = String(avg(item => item.riskScores.riskScore));
+      if(undxAverageProposalImpact) undxAverageProposalImpact.textContent = String(avg(item => item.riskScores.impactScore));
+      if(undxApprovalReadyProposals) undxApprovalReadyProposals.textContent = String(proposals.filter(item => item.readinessAssessment === 'Approval Ready').length);
+      if(undxProposalMostReferencedProject) undxProposalMostReferencedProject.textContent = proposals[0]?.referenced?.project || 'None';
+      if(undxPotentialChangeAreas) undxPotentialChangeAreas.textContent = String(proposals[0] ? Object.keys(proposals[0].potentialImpactAreas).length : 0);
+      if(undxPotentialDependencies) undxPotentialDependencies.textContent = String(proposals[0]?.proposedChanges?.length || 0);
+      if(undxPotentialValidationScope) undxPotentialValidationScope.textContent = String(proposals[0] ? Object.keys(proposals[0].validationRequirements).length : 0);
+      if(undxPotentialRollbackScope) undxPotentialRollbackScope.textContent = String(proposals[0] ? Object.keys(proposals[0].rollbackStrategy).length : 0);
+      if(undxProposalDecisions) undxProposalDecisions.textContent = String(proposals.length);
+      if(undxProposalHistory) undxProposalHistory.textContent = String(proposals.length);
+      if(undxProposalApprovalRelationships) undxProposalApprovalRelationships.textContent = String(proposals.length * 5);
+      if(undxProposalRelationships) undxProposalRelationships.textContent = String(proposals.length * 4);
+      if(undxProposalChangeRelationships) undxProposalChangeRelationships.textContent = String(proposals.length * 3);
+      if(undxProposalDependencyRelationships) undxProposalDependencyRelationships.textContent = String(proposals.reduce((sum, item) => sum + item.proposedChanges.length, 0));
+      if(undxProposalReferencedStructureModels) undxProposalReferencedStructureModels.textContent = String(proposals.reduce((sum, item) => sum + (item.referenced.structureModels || []).length, 0));
+      if(undxProposalReferencedEntryPoints) undxProposalReferencedEntryPoints.textContent = String(proposals.reduce((sum, item) => sum + (item.referenced.entryPoints || []).length, 0));
+      if(undxProposalReferencedProtectedAreas) undxProposalReferencedProtectedAreas.textContent = String(proposals.reduce((sum, item) => sum + (item.referenced.protectedAreas || []).length, 0));
+      if(undxProposalReferencedTaskPackages) undxProposalReferencedTaskPackages.textContent = String(proposals.reduce((sum, item) => sum + (item.referenced.taskPackages || []).length, 0));
+      if(undxProposalReferencedValidationPlans) undxProposalReferencedValidationPlans.textContent = String(proposals.reduce((sum, item) => sum + (item.referenced.validationPlans || []).length, 0));
+      if(undxProposalReferencedRollbackPlans) undxProposalReferencedRollbackPlans.textContent = String(proposals.reduce((sum, item) => sum + (item.referenced.rollbackPlans || []).length, 0));
+    }
+    async function undxRunChangeProposalReviewFlow(){
+      const proposal = undxLoadChangeProposals()[0] || undxGenerateChangeProposalFlow();
+      if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = 'Routing change review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review controlled editing proposal ${proposal.proposalId}. Risk ${proposal.riskScores.riskScore}. Impact ${proposal.riskScores.impactScore}. No files may be modified.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxChangeProposalReviewOutput) undxChangeProposalReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Review: keep proposed changes scoped.'),
+          undxBlock('Security Review', agents.find(agent => agent.key === 'research')?.recommendation || 'Security Review: validate protected areas remain untouched.'),
+          undxBlock('Implementation Review', agents.find(agent => agent.key === 'builder')?.recommendation || 'Implementation Review: proposal is ready for human review only.'),
+          undxBlock('Optimization Review', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: reduce complexity before future execution.'),
+          undxBlock('Risk Review', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Risk Review: require approval before edits.'),
+          undxBlock('Combined Recommendation', 'Keep Phase 29 proposed-only until the human approved execution framework exists.')
+        );
+        if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = 'Multi-brain change review complete.';
+      }catch(error){
+        if(undxChangeProposalReviewOutput) undxChangeProposalReviewOutput.replaceChildren(
+          undxBlock('Architecture Review', 'OpenAI fallback: keep proposal scope narrow.'),
+          undxBlock('Security Review', 'OpenAI fallback: no secrets, files, or repositories accessed.'),
+          undxBlock('Implementation Review', 'OpenAI fallback: proposal remains planning-only.'),
+          undxBlock('Optimization Review', 'OpenAI fallback: lower complexity before future execution.'),
+          undxBlock('Risk Review', 'OpenAI fallback: require explicit approval gates.'),
+          undxBlock('Combined Recommendation', 'Fallback → OpenAI. No files were modified, no repositories accessed, no commands executed, and no deployments performed.')
+        );
+        if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-operating-system','UNDX Home'],
       ['undx-desktop-connector-architecture','Desktop Connector'],
       ['undx-controlled-repository-awareness','Repository Awareness'],
+      ['undx-controlled-editing-proposal-engine','Editing Proposals'],
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
       ['undx-chat-interface','Chat Interface'],
@@ -32256,6 +32796,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedChangeProposals(project, card){
+      const section = undxWorkspaceSection('Linked Change Proposals');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedChangeProposals || []).length){
+        list.appendChild(undxWorkspaceEmpty('No controlled editing proposals linked yet. Attach a Phase 29 proposal to preserve proposed-only change planning.'));
+      }else{
+        project.linkedChangeProposals.forEach(proposal => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = proposal.proposalId;
+          const meta = document.createElement('p');
+          meta.textContent = `Latest Proposal: ${proposal.proposalId} · Proposal Count: ${(project.linkedChangeProposals || []).length} · Proposal Readiness: ${proposal.readinessAssessment} · Risk Score: ${proposal.riskScores.riskScore}/100 · Impact Score: ${proposal.riskScores.impactScore}/100`;
+          const summary = document.createElement('p');
+          summary.textContent = proposal.executiveSummary || '';
+          item.append(title, meta, summary);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -32342,6 +32905,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedTaskPackages(project, card);
       undxRenderLinkedWorkspaceManifests(project, card);
       undxRenderLinkedStructureModels(project, card);
+      undxRenderLinkedChangeProposals(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -33006,6 +33570,8 @@ def pulse_premium_undx_page():
     undxRunConnectorReview?.addEventListener('click', undxRunConnectorReviewFlow);
     undxGenerateStructureModel?.addEventListener('click', undxGenerateStructureModelFlow);
     undxRunStructureReview?.addEventListener('click', undxRunStructureReviewFlow);
+    undxGenerateChangeProposal?.addEventListener('click', undxGenerateChangeProposalFlow);
+    undxRunChangeProposalReview?.addEventListener('click', undxRunChangeProposalReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -33047,6 +33613,8 @@ def pulse_premium_undx_page():
     undxRenderWorkspaceManifest(undxLoadWorkspaceManifests()[0] || null);
     undxRenderStructureRegistry();
     undxRenderStructureModel(undxLoadStructureModels()[0] || null);
+    undxRenderChangeProposalRegistry();
+    undxRenderChangeProposal(undxLoadChangeProposals()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
