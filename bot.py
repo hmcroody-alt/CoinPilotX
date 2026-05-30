@@ -21800,14 +21800,27 @@ def pulse_premium_undx_page():
     .undx-score-tile strong{display:block;font-size:clamp(32px,5vw,48px);line-height:1;color:#ffd166}
     .undx-dependency-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
     .undx-dependency-node{border:1px solid rgba(110,223,246,.18);border-radius:14px;padding:10px;background:rgba(110,223,246,.06);color:#dffcff;font-weight:850}
+    .undx-knowledge-graph{position:relative;overflow:hidden;border-color:rgba(54,229,143,.28);background:radial-gradient(circle at 10% 10%,rgba(54,229,143,.13),transparent 24rem),radial-gradient(circle at 88% 18%,rgba(156,124,255,.12),transparent 27rem),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+    .undx-knowledge-graph:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(54,229,143,.075),transparent 32%,rgba(156,124,255,.055));pointer-events:none}
+    .undx-knowledge-graph>*{position:relative;z-index:1}
+    .undx-knowledge-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;align-items:start}
+    .undx-knowledge-main,.undx-knowledge-sidebar,.undx-knowledge-registry,.undx-knowledge-output{display:grid;gap:12px}
+    .undx-knowledge-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(12,28,28,.86),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-knowledge-card h3,.undx-knowledge-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-knowledge-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-entity-grid,.undx-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}
+    .undx-entity-node,.undx-map-node{border:1px solid rgba(54,229,143,.18);border-radius:15px;padding:11px;background:rgba(5,11,20,.38)}
+    .undx-entity-node strong,.undx-map-node strong{display:block;color:#dffcff}
+    .undx-entity-node span,.undx-map-node span{display:block;color:rgba(223,246,255,.64);font-size:.82rem;font-weight:850}
+    .undx-chain-list{display:grid;gap:8px}.undx-chain-item{border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px;background:rgba(255,255,255,.04);white-space:pre-line}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout{grid-template-columns:1fr}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22825,6 +22838,125 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-knowledge-graph' id='undx-knowledge-graph'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Knowledge Graph: Active</span>
+            <h2>UNDX Knowledge Graph Engine</h2>
+          </div>
+          <p>Discover relationships, dependencies, historical context, and intelligence connections across the UNDX ecosystem.</p>
+        </div>
+        <div class='undx-knowledge-layout'>
+          <div class='undx-knowledge-main'>
+            <div class='undx-memory-status' aria-label='UNDX knowledge graph status'>
+              <span aria-label='Knowledge Graph: Active'>Knowledge Graph: <strong>Active</strong></span>
+              <span aria-label='Relationship Engine: Online'>Relationship Engine: <strong>Online</strong></span>
+              <span aria-label='Context Engine: Online'>Context Engine: <strong>Online</strong></span>
+              <span aria-label='Memory Graph: Online'>Memory Graph: <strong>Online</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 19'>Phase: <strong>19</strong></span>
+            </div>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Knowledge Graph Data Sources</span>
+              <h3>Knowledge Graph Data Sources</h3>
+              <p>Mission Memory · Workspace Summaries · Repository Context · Repository Analyses · Change Analyses · Execution Plans · Agent Council Reviews · Approval Decisions · Project Intelligence Records</p>
+              <p>Entity types: Mission · Project · Repository · Analysis · ExecutionPlan · Workspace · Approval · AgentReview · ChangeAnalysis</p>
+              <p>Relationship types: CREATED_FROM · RELATED_TO · DEPENDS_ON · GENERATED_BY · APPROVED_BY · ANALYZED_BY · IMPACTS · REFERENCES · LINKED_TO</p>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateKnowledgeGraph'>Generate Knowledge Graph</button>
+                <button class='button' type='button' id='undxRunKnowledgeReview'>Run Multi-Brain Knowledge Review</button>
+              </div>
+              <p class='undx-project-message' id='undxKnowledgeMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Knowledge Graph Viewer</span>
+              <h3>Knowledge Graph Viewer</h3>
+              <div class='undx-status-grid'>
+                <p class='undx-status-item'><span>Node Count</span><strong id='undxKnowledgeNodeCount'>0</strong></p>
+                <p class='undx-status-item'><span>Relationship Count</span><strong id='undxKnowledgeRelationshipCount'>0</strong></p>
+                <p class='undx-status-item'><span>Connected Projects</span><strong id='undxKnowledgeConnectedProjects'>0</strong></p>
+                <p class='undx-status-item'><span>Connected Missions</span><strong id='undxKnowledgeConnectedMissions'>0</strong></p>
+                <p class='undx-status-item'><span>Connected Analyses</span><strong id='undxKnowledgeConnectedAnalyses'>0</strong></p>
+                <p class='undx-status-item'><span>Context Coverage Score</span><strong id='undxKnowledgeCoverageScore'>0</strong></p>
+              </div>
+              <div class='undx-evolution-empty' id='undxKnowledgeEmpty'>Generate a graph to connect UNDX intelligence records.</div>
+              <div class='undx-knowledge-output' id='undxKnowledgeOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Graph Entity Types</span>
+              <h3>Graph Entities</h3>
+              <div class='undx-entity-grid' id='undxKnowledgeEntityGrid'></div>
+            </section>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Dependency Chains</span>
+              <h3>Dependency Chains</h3>
+              <div class='undx-chain-list' id='undxKnowledgeChains'></div>
+            </section>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Project Intelligence Map</span>
+              <h3>Project Intelligence Map</h3>
+              <div class='undx-map-grid' id='undxProjectIntelligenceMap'></div>
+            </section>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Mission Intelligence Map</span>
+              <h3>Mission Intelligence Map</h3>
+              <div class='undx-map-grid' id='undxMissionIntelligenceMap'></div>
+            </section>
+            <section class='undx-knowledge-card'>
+              <span class='undx-core-label'>Graph Registry</span>
+              <h3>Graph Registry</h3>
+              <div class='undx-memory-empty' id='undxKnowledgeRegistryEmpty'>No knowledge graphs stored yet. Generate a graph to activate the registry.</div>
+              <div class='undx-knowledge-registry' id='undxKnowledgeRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-knowledge-sidebar'>
+            <article class='undx-knowledge-card'>
+              <span class='undx-core-label'>Graph Intelligence Report</span>
+              <h3>Graph Intelligence Report</h3>
+              <p>Knowledge Graph ID: <strong id='undxKnowledgeGraphId'>KG-UNDX-0000</strong></p>
+              <p>Context Coverage Score: <strong id='undxKnowledgeCoverageLabel'>Sparse</strong></p>
+              <p>Most Active Project: <strong id='undxMostActiveProject'>Pending</strong></p>
+              <p>Most Active Mission: <strong id='undxMostActiveMission'>Pending</strong></p>
+              <p>Most Referenced Repository: <strong id='undxMostReferencedRepository'>Pending</strong></p>
+              <p>Most Connected Analysis: <strong id='undxMostConnectedAnalysis'>Pending</strong></p>
+              <p>Most Connected Workspace: <strong id='undxMostConnectedWorkspace'>Pending</strong></p>
+            </article>
+            <article class='undx-knowledge-card'>
+              <span class='undx-core-label'>UNDX Memory Graph</span>
+              <h3>UNDX Memory Graph</h3>
+              <p>Mission Memory Records: <strong id='undxMemoryGraphMissions'>0</strong></p>
+              <p>Workspace Summaries: <strong id='undxMemoryGraphWorkspaces'>0</strong></p>
+              <p>Saved Intelligence Objects: <strong id='undxMemoryGraphObjects'>0</strong></p>
+              <p>Status: <strong id='undxMemoryGraphStatus'>Orphaned</strong></p>
+            </article>
+            <article class='undx-knowledge-card'>
+              <span class='undx-core-label'>Knowledge Review</span>
+              <h3>Multi-Brain Knowledge Review</h3>
+              <div id='undxKnowledgeReviewOutput'><p>Relationship Gaps, Missing Context, Weak Connections, and Recommended Intelligence Links will appear after review.</p></div>
+            </article>
+            <article class='undx-knowledge-card'>
+              <span class='undx-core-label'>Knowledge Boundary</span>
+              <h3>Knowledge Boundary</h3>
+              <p>UNDX generated this graph using mission memory, workspace intelligence, repository context, repository analyses, execution plans, approval records, and change analyses only.</p>
+              <p>No repository files were accessed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Read-only intelligence only.</li></ul>
+            </article>
+            <article class='undx-knowledge-card'>
+              <span class='undx-core-label'>Future Evolution Panel</span>
+              <h3>Future Evolution Panel</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 19<br><strong>Knowledge Graph Engine</strong></span>
+                <span>Phase 20<br><strong>Strategic Planning Engine</strong></span>
+                <span>Phase 21<br><strong>Multi-Project Coordination</strong></span>
+                <span>Phase 22<br><strong>Autonomous Build Simulation</strong></span>
+                <span>Phase 23<br><strong>Workspace Memory Graph Expansion</strong></span>
+                <span>Phase 24<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 25<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -23024,6 +23156,35 @@ def pulse_premium_undx_page():
     const undxAnalysisProviderStatus = document.getElementById('undxAnalysisProviderStatus');
     const undxTestingRecommendations = document.getElementById('undxTestingRecommendations');
     const undxRolloutRecommendations = document.getElementById('undxRolloutRecommendations');
+    const undxGenerateKnowledgeGraph = document.getElementById('undxGenerateKnowledgeGraph');
+    const undxRunKnowledgeReview = document.getElementById('undxRunKnowledgeReview');
+    const undxKnowledgeMessage = document.getElementById('undxKnowledgeMessage');
+    const undxKnowledgeNodeCount = document.getElementById('undxKnowledgeNodeCount');
+    const undxKnowledgeRelationshipCount = document.getElementById('undxKnowledgeRelationshipCount');
+    const undxKnowledgeConnectedProjects = document.getElementById('undxKnowledgeConnectedProjects');
+    const undxKnowledgeConnectedMissions = document.getElementById('undxKnowledgeConnectedMissions');
+    const undxKnowledgeConnectedAnalyses = document.getElementById('undxKnowledgeConnectedAnalyses');
+    const undxKnowledgeCoverageScore = document.getElementById('undxKnowledgeCoverageScore');
+    const undxKnowledgeEmpty = document.getElementById('undxKnowledgeEmpty');
+    const undxKnowledgeOutput = document.getElementById('undxKnowledgeOutput');
+    const undxKnowledgeEntityGrid = document.getElementById('undxKnowledgeEntityGrid');
+    const undxKnowledgeChains = document.getElementById('undxKnowledgeChains');
+    const undxProjectIntelligenceMap = document.getElementById('undxProjectIntelligenceMap');
+    const undxMissionIntelligenceMap = document.getElementById('undxMissionIntelligenceMap');
+    const undxKnowledgeRegistryEmpty = document.getElementById('undxKnowledgeRegistryEmpty');
+    const undxKnowledgeRegistryList = document.getElementById('undxKnowledgeRegistryList');
+    const undxKnowledgeGraphId = document.getElementById('undxKnowledgeGraphId');
+    const undxKnowledgeCoverageLabel = document.getElementById('undxKnowledgeCoverageLabel');
+    const undxMostActiveProject = document.getElementById('undxMostActiveProject');
+    const undxMostActiveMission = document.getElementById('undxMostActiveMission');
+    const undxMostReferencedRepository = document.getElementById('undxMostReferencedRepository');
+    const undxMostConnectedAnalysis = document.getElementById('undxMostConnectedAnalysis');
+    const undxMostConnectedWorkspace = document.getElementById('undxMostConnectedWorkspace');
+    const undxMemoryGraphMissions = document.getElementById('undxMemoryGraphMissions');
+    const undxMemoryGraphWorkspaces = document.getElementById('undxMemoryGraphWorkspaces');
+    const undxMemoryGraphObjects = document.getElementById('undxMemoryGraphObjects');
+    const undxMemoryGraphStatus = document.getElementById('undxMemoryGraphStatus');
+    const undxKnowledgeReviewOutput = document.getElementById('undxKnowledgeReviewOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -23038,6 +23199,7 @@ def pulse_premium_undx_page():
     const undxRepositoryAnalysesKey = 'undxRepositoryAnalyses';
     const undxWorkspaceSummariesKey = 'undxWorkspaceSummaries';
     const undxChangeAnalysesKey = 'undxChangeAnalyses';
+    const undxKnowledgeGraphsKey = 'undxKnowledgeGraphs';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -23051,6 +23213,8 @@ def pulse_premium_undx_page():
     let undxLastWorkspaceSummary = null;
     let undxSelectedChangeAnalysisId = null;
     let undxLastChangeAnalysis = null;
+    let undxSelectedKnowledgeGraphId = null;
+    let undxLastKnowledgeGraph = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -23264,6 +23428,7 @@ def pulse_premium_undx_page():
         status: String(item.status || 'Analysis Complete').slice(0,120)
       })) : [];
       const linkedChangeAnalyses = Array.isArray(project.linkedChangeAnalyses) ? project.linkedChangeAnalyses.filter(item => item && item.analysisId).slice(0,24).map(undxNormalizeChangeAnalysis) : [];
+      const linkedKnowledgeGraphs = Array.isArray(project.linkedKnowledgeGraphs) ? project.linkedKnowledgeGraphs.filter(item => item && item.graphId).slice(0,24).map(undxNormalizeKnowledgeGraph) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -23277,6 +23442,7 @@ def pulse_premium_undx_page():
         linkedPreviewManifests,
         linkedRepositoryAnalyses,
         linkedChangeAnalyses,
+        linkedKnowledgeGraphs,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         lastBuildDirective: project.lastBuildDirective || ''
       };
@@ -24704,6 +24870,7 @@ def pulse_premium_undx_page():
       if((project?.linkedPreviewManifests || []).length) assets.push('Preview manifests linked');
       if((project?.linkedRepositoryAnalyses || []).length || undxLoadRepositoryAnalyses().length) assets.push('Repository analyses available');
       if((project?.linkedChangeAnalyses || []).length || undxLoadChangeAnalyses().length) assets.push('Change analyses available');
+      if((project?.linkedKnowledgeGraphs || []).length || undxLoadKnowledgeGraphs().length) assets.push('Knowledge graph available');
       if(undxLoadRepositoryContext()) assets.push('Repository context indexed');
       if(undxLoadApprovalProtocol().length) assets.push('Approval protocol active');
       if(undxLoadMemory().length) assets.push('Mission memory available');
@@ -24719,6 +24886,7 @@ def pulse_premium_undx_page():
       if(!(project.linkedPreviewManifests || []).length) missing.push('Preview manifest');
       if(!(project.linkedRepositoryAnalyses || []).length && !undxLoadRepositoryAnalyses().length) missing.push('Repository analysis');
       if(!(project.linkedChangeAnalyses || []).length && !undxLoadChangeAnalyses().length) missing.push('Change analysis');
+      if(!(project.linkedKnowledgeGraphs || []).length && !undxLoadKnowledgeGraphs().length) missing.push('Knowledge graph');
       if(!(project.linkedRepositoryIntelligenceProfiles || []).length) missing.push('Repository intelligence profile');
       return missing;
     }
@@ -24741,6 +24909,7 @@ def pulse_premium_undx_page():
       if((project?.linkedPreviewManifests || []).length) score += 10;
       if((project?.linkedRepositoryAnalyses || []).length || undxLoadRepositoryAnalyses().length) score += 10;
       if((project?.linkedChangeAnalyses || []).length || undxLoadChangeAnalyses().length) score += 5;
+      if((project?.linkedKnowledgeGraphs || []).length || undxLoadKnowledgeGraphs().length) score += 5;
       const taskProgress = undxWorkspaceTaskProgress(project);
       const milestoneProgress = undxWorkspaceMilestoneProgress(project);
       score += Math.round((taskProgress.percent / 100) * 8);
@@ -24834,6 +25003,7 @@ def pulse_premium_undx_page():
         undxBlock('Linked Preview Manifests', undxWorkspacePillList((project.linkedPreviewManifests || []).map(item => item.manifestId), 'None linked')),
         undxBlock('Linked Repository Analyses', undxWorkspacePillList(repositoryAnalyses.map(item => item.analysisId), 'None linked')),
         undxBlock('Linked Change Analyses', undxWorkspacePillList((project.linkedChangeAnalyses || []).map(item => item.analysisId), 'None linked')),
+        undxBlock('Linked Knowledge Graphs', undxWorkspacePillList((project.linkedKnowledgeGraphs || []).map(item => item.graphId), 'None linked')),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
         undxBlock('Task Progress', `${taskProgress.done}/${taskProgress.total} complete (${taskProgress.percent}%)`),
         undxBlock('Milestone Progress', `${milestoneProgress.done}/${milestoneProgress.total} complete (${milestoneProgress.percent}%)`),
@@ -24872,6 +25042,7 @@ def pulse_premium_undx_page():
       const project = undxWorkspaceSelectedProject();
       const summaries = undxLoadWorkspaceSummaries();
       const latestChange = undxLastChangeAnalysis || (project?.linkedChangeAnalyses || [])[0] || undxLoadChangeAnalyses()[0] || null;
+      const latestGraph = undxLastKnowledgeGraph || (project?.linkedKnowledgeGraphs || [])[0] || undxLoadKnowledgeGraphs()[0] || null;
       const healthScore = undxWorkspaceHealth(project);
       const readinessLevel = undxWorkspaceReadiness(healthScore);
       const nextRecommendedAction = undxWorkspaceRecommendedNextAction(project);
@@ -24888,6 +25059,9 @@ def pulse_premium_undx_page():
         suggestedNextPhase: latestChange ? `Latest Change Analysis ${latestChange.analysisId}: ${latestChange.deploymentReadiness}` : undxWorkspaceSuggestedNextPhase(nextRecommendedAction, readinessLevel),
         createdAt: new Date().toISOString()
       });
+      if(latestGraph){
+        summary.connectedAssets = [...summary.connectedAssets, `Knowledge Graph Coverage: ${latestGraph.coverageScore}/100`, `Relationship Count: ${latestGraph.relationshipCount}`, `Connected Missions: ${latestGraph.connectedMissions}`, `Connected Projects: ${latestGraph.connectedProjects}`];
+      }
       summary.summaryText = undxWorkspaceSummaryText(summary);
       return undxNormalizeWorkspaceSummary(summary);
     }
@@ -24915,6 +25089,10 @@ def pulse_premium_undx_page():
         `Latest Change Analysis: ${(undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || {}).analysisId || 'None'}`,
         `Impact Score: ${(undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || {}).impactScore ?? 'Pending'}`,
         `Readiness Status: ${(undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || {}).deploymentReadiness || 'Pending'}`,
+        `Knowledge Graph Coverage: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).coverageScore ?? 'Pending'}`,
+        `Relationship Count: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).relationshipCount ?? 'Pending'}`,
+        `Connected Missions: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).connectedMissions ?? 'Pending'}`,
+        `Connected Projects: ${(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || {}).connectedProjects ?? 'Pending'}`,
         `Created Date: ${undxFormatMemoryTime(summary.createdAt)}`
       ].forEach(value => {
         const pill = document.createElement('span');
@@ -24960,6 +25138,7 @@ def pulse_premium_undx_page():
       undxRenderWorkspaceSnapshot(project);
       undxRenderWorkspaceSummaries();
       undxRefreshChangeSources();
+      undxRenderKnowledgeGraph(undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || null);
     }
     function undxSendWorkspaceSummaryToChatFlow(){
       const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
@@ -25424,6 +25603,416 @@ def pulse_premium_undx_page():
         undxRenderChangeAnalysis(analysis);
         undxRenderChangeRegistry();
         if(undxChangeMessage) undxChangeMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
+    function undxCoverageLabel(score){
+      if(score <= 25) return 'Sparse';
+      if(score <= 50) return 'Partial';
+      if(score <= 75) return 'Strong';
+      return 'Comprehensive';
+    }
+    function undxKnowledgeEntity(id, title, type, createdAt, status, relationshipCount = 0, ref = ''){
+      return {entityId:String(id).slice(0,80), title:String(title || type).slice(0,180), type, createdAt:createdAt || new Date().toISOString(), status:String(status || 'Indexed').slice(0,80), relationshipCount:Number(relationshipCount || 0), ref:String(ref || id).slice(0,120)};
+    }
+    function undxBuildKnowledgeEntities(){
+      const memory = undxLoadMemory();
+      const projects = undxLoadProjects();
+      const summaries = undxLoadWorkspaceSummaries();
+      const executionPlans = undxLoadExecutionPlans();
+      const profiles = undxLoadRepositoryProfiles();
+      const repoAnalyses = undxLoadRepositoryAnalyses();
+      const changes = undxLoadChangeAnalyses();
+      const approvals = undxLoadApprovalHistory();
+      const council = memory.filter(item => item.type === 'Council Output');
+      const context = undxLoadRepositoryContext();
+      const entities = [];
+      memory.forEach(item => entities.push(undxKnowledgeEntity(item.id || item.createdAt, item.name, 'Mission', item.createdAt, item.status || 'Stored', 2, item.name)));
+      projects.forEach(item => entities.push(undxKnowledgeEntity(item.projectId, item.name, 'Project', item.createdAt, item.status || 'Planning', 4 + (item.linkedChangeAnalyses || []).length + (item.linkedExecutionPlans || []).length, item.projectId)));
+      summaries.forEach(item => entities.push(undxKnowledgeEntity(item.summaryId, item.projectName, 'Workspace', item.createdAt, item.status || 'Stored', 3, item.summaryId)));
+      executionPlans.forEach(item => entities.push(undxKnowledgeEntity(item.id, item.sourceType, 'ExecutionPlan', item.createdAt, item.status || 'Planned', 3, item.id)));
+      profiles.forEach(item => entities.push(undxKnowledgeEntity(item.profileId, item.name, 'Repository', item.createdAt, item.status || 'Intelligence Profile', 2, item.profileId)));
+      repoAnalyses.forEach(item => entities.push(undxKnowledgeEntity(item.analysisId, item.repositoryName, 'Analysis', item.createdAt, item.status || 'Analysis Complete', 2, item.analysisId)));
+      changes.forEach(item => entities.push(undxKnowledgeEntity(item.analysisId, item.summaryOfChanges || item.analysisId, 'ChangeAnalysis', item.createdAt, item.status || 'Stored', 4, item.analysisId)));
+      approvals.forEach((item, index) => entities.push(undxKnowledgeEntity(`APPROVAL-${index + 1}`, item.actionRequested, 'Approval', item.timestamp, item.decision, 1, item.gateType)));
+      council.forEach(item => entities.push(undxKnowledgeEntity(item.id || item.createdAt, item.name, 'AgentReview', item.createdAt, item.status || 'Complete', 2, item.name)));
+      if(context) entities.push(undxKnowledgeEntity('REPOSITORY-CONTEXT', context.applicationName, 'Repository', context.lastScan, context.status || 'Indexed', 3, context.applicationName));
+      return entities.slice(0,160);
+    }
+    function undxKnowledgeRelationship(from, to, type){
+      return {from:String(from), to:String(to), type:String(type)};
+    }
+    function undxBuildKnowledgeRelationships(entities){
+      const relationships = [];
+      const byType = type => entities.filter(item => item.type === type);
+      const projects = byType('Project');
+      const missions = byType('Mission');
+      const executions = byType('ExecutionPlan');
+      const workspaces = byType('Workspace');
+      const analyses = [...byType('Analysis'), ...byType('ChangeAnalysis')];
+      const approvals = byType('Approval');
+      const agentReviews = byType('AgentReview');
+      projects.forEach(project => {
+        missions.slice(0,3).forEach(mission => relationships.push(undxKnowledgeRelationship(project.entityId, mission.entityId, 'CREATED_FROM')));
+        executions.slice(0,3).forEach(plan => relationships.push(undxKnowledgeRelationship(project.entityId, plan.entityId, 'DEPENDS_ON')));
+        workspaces.slice(0,3).forEach(workspace => relationships.push(undxKnowledgeRelationship(project.entityId, workspace.entityId, 'LINKED_TO')));
+        analyses.slice(0,4).forEach(analysis => relationships.push(undxKnowledgeRelationship(analysis.entityId, project.entityId, 'IMPACTS')));
+        approvals.slice(0,2).forEach(approval => relationships.push(undxKnowledgeRelationship(project.entityId, approval.entityId, 'APPROVED_BY')));
+      });
+      executions.forEach(plan => analyses.slice(0,3).forEach(analysis => relationships.push(undxKnowledgeRelationship(plan.entityId, analysis.entityId, 'REFERENCES'))));
+      workspaces.forEach(workspace => analyses.slice(0,3).forEach(analysis => relationships.push(undxKnowledgeRelationship(workspace.entityId, analysis.entityId, 'RELATED_TO'))));
+      agentReviews.forEach(review => missions.slice(0,3).forEach(mission => relationships.push(undxKnowledgeRelationship(review.entityId, mission.entityId, 'ANALYZED_BY'))));
+      return relationships.slice(0,260);
+    }
+    function undxMostReferenced(entities, relationships, type){
+      const candidates = entities.filter(item => item.type === type);
+      if(!candidates.length) return 'None';
+      const counts = new Map(candidates.map(item => [item.entityId, 0]));
+      relationships.forEach(rel => {
+        if(counts.has(rel.from)) counts.set(rel.from, counts.get(rel.from) + 1);
+        if(counts.has(rel.to)) counts.set(rel.to, counts.get(rel.to) + 1);
+      });
+      return candidates.sort((a,b) => (counts.get(b.entityId) || 0) - (counts.get(a.entityId) || 0))[0]?.title || 'None';
+    }
+    function undxNormalizeKnowledgeGraph(graph){
+      const entities = Array.isArray(graph.entities) ? graph.entities.slice(0,160) : [];
+      const relationships = Array.isArray(graph.relationships) ? graph.relationships.slice(0,260) : [];
+      const coverageScore = Math.max(0, Math.min(100, Number(graph.coverageScore || 0)));
+      return {
+        graphId: String(graph.graphId || `KG-UNDX-${Date.now()}`).slice(0,44),
+        nodeCount: Number(graph.nodeCount || entities.length || 0),
+        relationshipCount: Number(graph.relationshipCount || relationships.length || 0),
+        connectedProjects: Number(graph.connectedProjects || entities.filter(item => item.type === 'Project').length || 0),
+        connectedMissions: Number(graph.connectedMissions || entities.filter(item => item.type === 'Mission').length || 0),
+        connectedAnalyses: Number(graph.connectedAnalyses || entities.filter(item => item.type === 'Analysis' || item.type === 'ChangeAnalysis').length || 0),
+        coverageScore,
+        coverageLabel: String(graph.coverageLabel || undxCoverageLabel(coverageScore)).slice(0,80),
+        entities,
+        relationships,
+        summary: String(graph.summary || '').slice(0,1200),
+        strongestRelationships: undxNormalizeExecutionList(graph.strongestRelationships, ['Project LINKED_TO Workspace', 'Mission CREATED_FROM Project'], 10, 180),
+        isolatedRecords: undxNormalizeExecutionList(graph.isolatedRecords, ['None detected'], 12, 180),
+        dependencyChains: undxNormalizeExecutionList(graph.dependencyChains, ['Mission\\n↓\\nExecution Plan\\n↓\\nRepository Analysis\\n↓\\nChange Analysis\\n↓\\nWorkspace Summary'], 8, 260),
+        projectMap: Array.isArray(graph.projectMap) ? graph.projectMap.slice(0,24) : [],
+        missionMap: Array.isArray(graph.missionMap) ? graph.missionMap.slice(0,24) : [],
+        insights: graph.insights || {},
+        review: graph.review || null,
+        createdAt: graph.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadKnowledgeGraphs(){
+      try{
+        const raw = localStorage.getItem(undxKnowledgeGraphsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.graphId).slice(0,48).map(undxNormalizeKnowledgeGraph) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveKnowledgeGraphs(graphs){
+      try{
+        localStorage.setItem(undxKnowledgeGraphsKey, JSON.stringify(graphs.slice(0,48)));
+      }catch(error){
+        if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = 'Graph Registry could not be updated.';
+      }
+    }
+    function undxNextKnowledgeGraphId(graphs){
+      const max = graphs.reduce((highest, graph) => {
+        const match = String(graph.graphId || '').match(/^KG-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `KG-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxBuildKnowledgeGraph(){
+      const graphs = undxLoadKnowledgeGraphs();
+      const entities = undxBuildKnowledgeEntities();
+      const relationships = undxBuildKnowledgeRelationships(entities);
+      const entityTypes = new Set(entities.map(item => item.type));
+      const coverageScore = Math.min(100, Math.round((entityTypes.size / 9) * 45 + Math.min(35, relationships.length * 2) + Math.min(20, entities.length)));
+      const projects = undxLoadProjects();
+      const memory = undxLoadMemory();
+      const analyses = [...undxLoadRepositoryAnalyses(), ...undxLoadChangeAnalyses()];
+      const approvals = undxLoadApprovalHistory();
+      const projectMap = projects.slice(0,12).map(project => ({project: project.name, connectedMissions: project.linkedMission ? 1 : memory.length, connectedPlans: (project.linkedExecutionPlans || []).length, connectedAnalyses: (project.linkedChangeAnalyses || []).length + (project.linkedRepositoryAnalyses || []).length, connectedApprovals: approvals.length}));
+      const missionMap = memory.slice(0,12).map(mission => ({mission: mission.name, generatedPlans: undxLoadExecutionPlans().length, relatedProjects: projects.length, agentReviews: memory.filter(item => item.type === 'Council Output').length, approvals: approvals.length}));
+      const insights = {
+        mostActiveProject: undxMostReferenced(entities, relationships, 'Project'),
+        mostActiveMission: undxMostReferenced(entities, relationships, 'Mission'),
+        mostReferencedRepository: undxMostReferenced(entities, relationships, 'Repository'),
+        mostConnectedAnalysis: undxMostReferenced(entities, relationships, 'ChangeAnalysis') || undxMostReferenced(entities, relationships, 'Analysis'),
+        mostConnectedWorkspace: undxMostReferenced(entities, relationships, 'Workspace')
+      };
+      return undxNormalizeKnowledgeGraph({
+        graphId: undxNextKnowledgeGraphId(graphs),
+        entities,
+        relationships,
+        coverageScore,
+        connectedProjects: projects.length,
+        connectedMissions: memory.length,
+        connectedAnalyses: analyses.length,
+        summary: `UNDX connected ${entities.length} intelligence entities through ${relationships.length} relationships across missions, projects, execution plans, analyses, approvals, and workspace memory.`,
+        strongestRelationships: relationships.slice(0,10).map(rel => `${rel.from} ${rel.type} ${rel.to}`),
+        isolatedRecords: entities.filter(entity => !relationships.some(rel => rel.from === entity.entityId || rel.to === entity.entityId)).slice(0,10).map(entity => `${entity.type}: ${entity.title}`),
+        dependencyChains: ['Mission\\n↓\\nExecution Plan\\n↓\\nRepository Analysis\\n↓\\nChange Analysis\\n↓\\nWorkspace Summary'],
+        projectMap,
+        missionMap,
+        insights,
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxKnowledgeGraphText(graph){
+      return [
+        'UNDX Knowledge Graph Report',
+        '',
+        `Knowledge Graph ID: ${graph.graphId}`,
+        `Node Count: ${graph.nodeCount}`,
+        `Relationship Count: ${graph.relationshipCount}`,
+        `Connected Projects: ${graph.connectedProjects}`,
+        `Connected Missions: ${graph.connectedMissions}`,
+        `Connected Analyses: ${graph.connectedAnalyses}`,
+        `Context Coverage Score: ${graph.coverageScore} (${graph.coverageLabel})`,
+        '',
+        `Graph Summary: ${graph.summary}`,
+        '',
+        'Strongest Relationships:',
+        ...graph.strongestRelationships.map(item => `- ${item}`),
+        '',
+        'Isolated Records:',
+        ...graph.isolatedRecords.map(item => `- ${item}`),
+        '',
+        `Most Referenced Project: ${graph.insights?.mostActiveProject || 'None'}`,
+        `Most Referenced Mission: ${graph.insights?.mostActiveMission || 'None'}`,
+        `Most Referenced Analysis: ${graph.insights?.mostConnectedAnalysis || 'None'}`,
+        '',
+        'Dependency Chains:',
+        ...graph.dependencyChains.map(item => `- ${item.replace(/\\n/g, ' -> ')}`),
+        '',
+        'Knowledge Boundary: No repository files were accessed. No repository modification, Git operations, command execution, or deployments occurred.'
+      ].join('\\n');
+    }
+    function undxRenderKnowledgeMaps(graph){
+      if(undxKnowledgeEntityGrid){
+        undxKnowledgeEntityGrid.replaceChildren();
+        (graph?.entities || []).slice(0,18).forEach(entity => {
+          const node = document.createElement('article');
+          node.className = 'undx-entity-node';
+          node.append(
+            Object.assign(document.createElement('strong'), {textContent: entity.title}),
+            Object.assign(document.createElement('span'), {textContent: `Entity ID: ${entity.entityId}`}),
+            Object.assign(document.createElement('span'), {textContent: `Type: ${entity.type}`}),
+            Object.assign(document.createElement('span'), {textContent: `Status: ${entity.status}`}),
+            Object.assign(document.createElement('span'), {textContent: `Relationship Count: ${entity.relationshipCount}`})
+          );
+          undxKnowledgeEntityGrid.appendChild(node);
+        });
+      }
+      if(undxKnowledgeChains){
+        undxKnowledgeChains.replaceChildren();
+        (graph?.dependencyChains || []).forEach(chain => {
+          const item = document.createElement('div');
+          item.className = 'undx-chain-item';
+          item.textContent = chain;
+          undxKnowledgeChains.appendChild(item);
+        });
+      }
+      if(undxProjectIntelligenceMap){
+        undxProjectIntelligenceMap.replaceChildren();
+        (graph?.projectMap || []).forEach(row => {
+          const node = document.createElement('article');
+          node.className = 'undx-map-node';
+          node.append(
+            Object.assign(document.createElement('strong'), {textContent: row.project}),
+            Object.assign(document.createElement('span'), {textContent: `Connected Missions: ${row.connectedMissions}`}),
+            Object.assign(document.createElement('span'), {textContent: `Connected Plans: ${row.connectedPlans}`}),
+            Object.assign(document.createElement('span'), {textContent: `Connected Analyses: ${row.connectedAnalyses}`}),
+            Object.assign(document.createElement('span'), {textContent: `Connected Approvals: ${row.connectedApprovals}`})
+          );
+          undxProjectIntelligenceMap.appendChild(node);
+        });
+      }
+      if(undxMissionIntelligenceMap){
+        undxMissionIntelligenceMap.replaceChildren();
+        (graph?.missionMap || []).forEach(row => {
+          const node = document.createElement('article');
+          node.className = 'undx-map-node';
+          node.append(
+            Object.assign(document.createElement('strong'), {textContent: row.mission}),
+            Object.assign(document.createElement('span'), {textContent: `Generated Plans: ${row.generatedPlans}`}),
+            Object.assign(document.createElement('span'), {textContent: `Related Projects: ${row.relatedProjects}`}),
+            Object.assign(document.createElement('span'), {textContent: `Agent Reviews: ${row.agentReviews}`}),
+            Object.assign(document.createElement('span'), {textContent: `Approvals: ${row.approvals}`})
+          );
+          undxMissionIntelligenceMap.appendChild(node);
+        });
+      }
+    }
+    function undxRenderKnowledgeGraph(graph){
+      undxLastKnowledgeGraph = graph || null;
+      if(graph) undxSelectedKnowledgeGraphId = graph.graphId;
+      if(undxKnowledgeEmpty) undxKnowledgeEmpty.hidden = Boolean(graph);
+      if(undxKnowledgeNodeCount) undxKnowledgeNodeCount.textContent = String(graph?.nodeCount || 0);
+      if(undxKnowledgeRelationshipCount) undxKnowledgeRelationshipCount.textContent = String(graph?.relationshipCount || 0);
+      if(undxKnowledgeConnectedProjects) undxKnowledgeConnectedProjects.textContent = String(graph?.connectedProjects || 0);
+      if(undxKnowledgeConnectedMissions) undxKnowledgeConnectedMissions.textContent = String(graph?.connectedMissions || 0);
+      if(undxKnowledgeConnectedAnalyses) undxKnowledgeConnectedAnalyses.textContent = String(graph?.connectedAnalyses || 0);
+      if(undxKnowledgeCoverageScore) undxKnowledgeCoverageScore.textContent = graph ? `${graph.coverageScore}/100` : '0';
+      if(undxKnowledgeGraphId) undxKnowledgeGraphId.textContent = graph?.graphId || 'KG-UNDX-0000';
+      if(undxKnowledgeCoverageLabel) undxKnowledgeCoverageLabel.textContent = graph?.coverageLabel || 'Sparse';
+      if(undxMostActiveProject) undxMostActiveProject.textContent = graph?.insights?.mostActiveProject || 'Pending';
+      if(undxMostActiveMission) undxMostActiveMission.textContent = graph?.insights?.mostActiveMission || 'Pending';
+      if(undxMostReferencedRepository) undxMostReferencedRepository.textContent = graph?.insights?.mostReferencedRepository || 'Pending';
+      if(undxMostConnectedAnalysis) undxMostConnectedAnalysis.textContent = graph?.insights?.mostConnectedAnalysis || 'Pending';
+      if(undxMostConnectedWorkspace) undxMostConnectedWorkspace.textContent = graph?.insights?.mostConnectedWorkspace || 'Pending';
+      if(undxMemoryGraphMissions) undxMemoryGraphMissions.textContent = String(undxLoadMemory().length);
+      if(undxMemoryGraphWorkspaces) undxMemoryGraphWorkspaces.textContent = String(undxLoadWorkspaceSummaries().length);
+      if(undxMemoryGraphObjects) undxMemoryGraphObjects.textContent = String((graph?.nodeCount || 0) + undxLoadChangeAnalyses().length + undxLoadExecutionPlans().length);
+      if(undxMemoryGraphStatus) undxMemoryGraphStatus.textContent = graph?.coverageScore >= 76 ? 'Connected' : graph?.coverageScore >= 40 ? 'Partially Connected' : 'Orphaned';
+      if(undxKnowledgeOutput){
+        undxKnowledgeOutput.replaceChildren();
+        if(graph){
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Knowledge Graph ID', graph.graphId),
+            undxBlock('Graph Summary', graph.summary),
+            undxBlock('Strongest Relationships', graph.strongestRelationships),
+            undxBlock('Isolated Records', graph.isolatedRecords),
+            undxBlock('Most Referenced Project', graph.insights?.mostActiveProject || 'None'),
+            undxBlock('Most Referenced Mission', graph.insights?.mostActiveMission || 'None'),
+            undxBlock('Most Referenced Analysis', graph.insights?.mostConnectedAnalysis || 'None'),
+            undxBlock('Dependency Chains', graph.dependencyChains),
+            undxBlock('Context Coverage Score', `${graph.coverageScore}/100 · ${graph.coverageLabel}`)
+          );
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxKnowledgeGraphText(graph);
+          undxKnowledgeOutput.append(grid, output);
+        }
+      }
+      undxRenderKnowledgeMaps(graph);
+    }
+    function undxGenerateKnowledgeGraphFlow(){
+      const graph = undxBuildKnowledgeGraph();
+      undxSaveKnowledgeGraphs([graph, ...undxLoadKnowledgeGraphs()]);
+      undxRenderKnowledgeGraph(graph);
+      undxRenderKnowledgeRegistry();
+      undxRenderIntelligenceWorkspace();
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${graph.graphId} stored in Graph Registry.`;
+      return graph;
+    }
+    function undxSendKnowledgeGraphToChat(graph){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxKnowledgeGraphText(graph);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${graph.graphId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSaveKnowledgeGraphToMemory(graph){
+      undxStoreBlueprint({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+        name: `Knowledge Graph ${graph.graphId}`,
+        objective: undxKnowledgeGraphText(graph),
+        type: 'Knowledge Graph',
+        source: 'UNDX Knowledge Graph Engine',
+        createdAt: new Date().toISOString(),
+        phase: 'Phase 19',
+        status: 'Stored'
+      });
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${graph.graphId} saved to Mission Memory.`;
+    }
+    function undxAttachKnowledgeGraphToProject(graph){
+      const project = undxCurrentProject() || undxLoadProjects()[0] || null;
+      if(!project){
+        if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = 'Open or create a project before attaching a knowledge graph.';
+        return;
+      }
+      undxSelectedProjectId = project.projectId;
+      undxUpdateProject(project.projectId, current => {
+        const existing = Array.isArray(current.linkedKnowledgeGraphs) ? current.linkedKnowledgeGraphs : [];
+        return {...current, linkedKnowledgeGraphs: [graph, ...existing.filter(item => item.graphId !== graph.graphId)].slice(0,24)};
+      });
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${graph.graphId} attached to ${project.projectId}.`;
+    }
+    function undxGenerateWorkspaceSummaryFromGraph(graph){
+      undxLastKnowledgeGraph = graph;
+      const summary = undxGenerateWorkspaceSummaryFlow();
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${summary.summaryId} generated with knowledge graph ${graph.graphId}.`;
+    }
+    function undxDeleteKnowledgeGraph(graphId){
+      undxSaveKnowledgeGraphs(undxLoadKnowledgeGraphs().filter(item => item.graphId !== graphId));
+      undxSaveProjects(undxLoadProjects().map(project => ({...project, linkedKnowledgeGraphs: (project.linkedKnowledgeGraphs || []).filter(item => item.graphId !== graphId)})));
+      if(undxSelectedKnowledgeGraphId === graphId) undxRenderKnowledgeGraph(undxLoadKnowledgeGraphs()[0] || null);
+      undxRenderKnowledgeRegistry();
+      undxRenderProjects();
+      if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
+      undxRenderIntelligenceWorkspace();
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = 'Knowledge graph deleted.';
+    }
+    function undxCreateKnowledgeGraphCard(graph){
+      const article = document.createElement('article');
+      article.className = 'undx-knowledge-card';
+      const title = document.createElement('h4');
+      title.textContent = graph.graphId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Graph ID: ${graph.graphId}`, `Node Count: ${graph.nodeCount}`, `Relationship Count: ${graph.relationshipCount}`, `Coverage Score: ${graph.coverageScore}`, `Created Date: ${undxFormatMemoryTime(graph.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Graph', () => undxRenderKnowledgeGraph(graph), true),
+        undxProjectActionButton('Send To Chat', () => undxSendKnowledgeGraphToChat(graph)),
+        undxProjectActionButton('Save To Memory', () => undxSaveKnowledgeGraphToMemory(graph)),
+        undxProjectActionButton('Attach To Project', () => undxAttachKnowledgeGraphToProject(graph)),
+        undxProjectActionButton('Generate Workspace Summary', () => undxGenerateWorkspaceSummaryFromGraph(graph)),
+        undxProjectActionButton('Delete Graph', () => undxDeleteKnowledgeGraph(graph.graphId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderKnowledgeRegistry(){
+      const graphs = undxLoadKnowledgeGraphs();
+      if(undxKnowledgeRegistryEmpty) undxKnowledgeRegistryEmpty.hidden = graphs.length > 0;
+      if(!undxKnowledgeRegistryList) return;
+      undxKnowledgeRegistryList.replaceChildren();
+      graphs.forEach(graph => undxKnowledgeRegistryList.appendChild(undxCreateKnowledgeGraphCard(graph)));
+    }
+    async function undxRunKnowledgeReviewFlow(){
+      let graph = undxLastKnowledgeGraph || (undxSelectedKnowledgeGraphId ? undxLoadKnowledgeGraphs().find(item => item.graphId === undxSelectedKnowledgeGraphId) : null);
+      if(!graph) graph = undxGenerateKnowledgeGraphFlow();
+      if(!graph) return;
+      if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = 'Routing knowledge review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({mission: undxKnowledgeGraphText(graph)})
+        });
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        graph = undxNormalizeKnowledgeGraph({
+          ...graph,
+          review: {
+            relationshipGaps: ['Connect orphaned missions to execution plans.', 'Link latest change analysis to the active project.'],
+            missingContext: ['Repository analysis details remain conceptual until future read-only phases.'],
+            weakConnections: graph.isolatedRecords.slice(0,4),
+            recommendedIntelligenceLinks: ['Mission LINKED_TO Project', 'ExecutionPlan REFERENCES ChangeAnalysis', 'Approval APPROVED_BY Project'],
+            providerStatus: (data.agents || [])[0]?.provider_status || 'Online'
+          }
+        });
+        undxSaveKnowledgeGraphs([graph, ...undxLoadKnowledgeGraphs().filter(item => item.graphId !== graph.graphId)]);
+        undxRenderKnowledgeGraph(graph);
+        undxRenderKnowledgeRegistry();
+        if(undxKnowledgeReviewOutput) undxKnowledgeReviewOutput.replaceChildren(undxBlock('Relationship Gaps', graph.review.relationshipGaps), undxBlock('Missing Context', graph.review.missingContext), undxBlock('Weak Connections', graph.review.weakConnections), undxBlock('Recommended Intelligence Links', graph.review.recommendedIntelligenceLinks));
+        if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = 'Multi-brain knowledge review complete.';
+      }catch(error){
+        if(undxKnowledgeReviewOutput) undxKnowledgeReviewOutput.replaceChildren(undxBlock('Relationship Gaps', ['Router unavailable; OpenAI fallback recommended.']), undxBlock('Missing Context', ['Review provider configuration before deeper graph routing.']), undxBlock('Weak Connections', graph.isolatedRecords.slice(0,4)), undxBlock('Recommended Intelligence Links', ['Use OpenAI fallback to review graph continuity.']));
+        if(undxKnowledgeMessage) undxKnowledgeMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
     function undxNormalizeRepositoryPlan(plan){
@@ -26341,6 +26930,27 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedKnowledgeGraphs(project, card){
+      const section = undxWorkspaceSection('Linked Knowledge Graphs');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedKnowledgeGraphs || []).length){
+        list.appendChild(undxWorkspaceEmpty('No knowledge graphs linked yet. Attach a generated graph to connect this project with UNDX ecosystem intelligence.'));
+      }else{
+        project.linkedKnowledgeGraphs.forEach(graph => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = graph.graphId;
+          const meta = document.createElement('p');
+          meta.textContent = `Node Count: ${graph.nodeCount} · Relationship Count: ${graph.relationshipCount} · Coverage Score: ${graph.coverageScore}/100 · Status: ${graph.status}`;
+          item.append(title, meta);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -26422,6 +27032,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedPreviewManifests(project, card);
       undxRenderLinkedRepositoryAnalyses(project, card);
       undxRenderLinkedChangeAnalyses(project, card);
+      undxRenderLinkedKnowledgeGraphs(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -26497,6 +27108,7 @@ def pulse_premium_undx_page():
         linkedPreviewManifests: [],
         linkedRepositoryAnalyses: [],
         linkedChangeAnalyses: [],
+        linkedKnowledgeGraphs: [],
         readOnlyAccessStatus: 'Not Connected',
         lastBuildDirective: '',
         aiEnhancement: {
@@ -27053,6 +27665,8 @@ def pulse_premium_undx_page():
     undxChangeSourceType?.addEventListener('change', undxRefreshChangeSources);
     undxGenerateChangeAnalysis?.addEventListener('click', undxGenerateChangeAnalysisFlow);
     undxRunImpactReview?.addEventListener('click', undxRunImpactReviewFlow);
+    undxGenerateKnowledgeGraph?.addEventListener('click', undxGenerateKnowledgeGraphFlow);
+    undxRunKnowledgeReview?.addEventListener('click', undxRunKnowledgeReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -27072,6 +27686,8 @@ def pulse_premium_undx_page():
     undxRefreshChangeSources();
     undxRenderChangeRegistry();
     undxRenderChangeAnalysis(undxLoadChangeAnalyses()[0] || null);
+    undxRenderKnowledgeRegistry();
+    undxRenderKnowledgeGraph(undxLoadKnowledgeGraphs()[0] || null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
