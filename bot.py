@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -23640,6 +23640,176 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Memory Graph: Online</span>
+            <h2>UNDX Workspace Memory Graph</h2>
+          </div>
+          <p>Track engineering decisions, project history, strategic evolution, architectural choices, and intelligence continuity across UNDX.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX workspace memory graph status'>
+              <span aria-label='Memory Graph: Online'>Memory Graph: <strong>Online</strong></span>
+              <span aria-label='Decision Engine: Online'>Decision Engine: <strong>Online</strong></span>
+              <span aria-label='History Engine: Online'>History Engine: <strong>Online</strong></span>
+              <span aria-label='Continuity Engine: Online'>Continuity Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 24'>Phase: <strong>24</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Entity Types</span>
+              <h3>Memory Entity Types</h3>
+              <p>Engineering Decisions · Architecture Decisions · Strategic Decisions · Project Decisions · Framework Recommendations · Language Recommendations · Repository Context Events · Approval Decisions · Simulation Outcomes · Agent Council Outcomes</p>
+              <div class='undx-system-impact-grid' id='undxMemoryEntityTypes'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Generator</span>
+              <h3>Generate Memory Graph</h3>
+              <p>Create persistent engineering memory from UNDX records without reading repositories or running commands.</p>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateMemoryGraph'>Generate Memory Graph</button>
+                <button class='button' type='button' id='undxRunMemoryReview'>Run Multi-Brain Memory Review</button>
+              </div>
+              <p class='undx-project-message' id='undxMemoryGraphMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Record Format</span>
+              <h3>Memory Record Format</h3>
+              <p>Memory ID · Title · Type · Description · Created Date · Related Project · Related Mission · Related Strategic Plan · Relationship Count</p>
+              <p>Format: <strong>MEM-UNDX-0001</strong></p>
+              <div class='undx-evolution-empty' id='undxMemoryGraphEmpty'>Generate a memory graph to create persistent engineering memory records.</div>
+              <div class='undx-simulation-output' id='undxMemoryGraphOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Engineering Decision Tracker</span>
+              <h3>Engineering Decision Tracker</h3>
+              <p>CoinPilotX uses Flask · UNDX uses OpenAI Router · Portfolio Manager proposed · Wallet Guardian proposed · Repository Context Engine added · Knowledge Graph Engine added · Strategic Planning Engine added</p>
+              <div class='undx-chain-list' id='undxEngineeringDecisionTimeline'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Architecture Evolution View</span>
+              <h3>Architecture Changes Over Time</h3>
+              <div class='undx-access-flow'>
+                <span>Router Added</span>
+                <span>Knowledge Graph Added</span>
+                <span>Strategic Planner Added</span>
+                <span>Universal Code Intelligence Added</span>
+              </div>
+              <div class='undx-chain-list' id='undxArchitectureEvolutionList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Technology Memory</span>
+              <h3>Most Recommended Technologies</h3>
+              <p>Languages Recommended · Frameworks Recommended · SDKs Recommended · Architectures Recommended</p>
+              <div class='undx-system-impact-grid' id='undxTechnologyMemoryGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Decision Relationship Engine</span>
+              <h3>Decision Relationship Engine</h3>
+              <p>CREATED_FROM · REFERENCES · DEPENDS_ON · RECOMMENDS · REPLACES · EVOLVES_FROM</p>
+              <div class='undx-risk-grid' id='undxDecisionRelationshipGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Memory View</span>
+              <h3>Project History</h3>
+              <p>Plans · Analyses · Simulations · Approvals · Strategic Decisions</p>
+              <div class='undx-chain-list' id='undxProjectMemoryHistory'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Timeline</span>
+              <h3>Chronological UNDX Timeline</h3>
+              <p>Newest · Oldest · Project-Specific · Technology-Specific</p>
+              <div class='undx-chain-list' id='undxMemoryTimeline'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Continuity Engine</span>
+              <h3>Continuity Summary</h3>
+              <p>What did we decide before? What technologies were recommended? What project decisions changed? What strategic plans evolved?</p>
+              <div class='undx-simulation-output' id='undxContinuitySummary'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Registry</span>
+              <h3>Memory Registry</h3>
+              <div class='undx-memory-empty' id='undxMemoryGraphRegistryEmpty'>No workspace memory records stored yet. Generate a memory graph to activate persistent engineering memory.</div>
+              <div class='undx-simulation-registry' id='undxMemoryGraphRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Dashboard</span>
+              <h3>Memory Dashboard</h3>
+              <p>Total Decisions: <strong id='undxMemoryTotalDecisions'>0</strong></p>
+              <p>Total Technologies: <strong id='undxMemoryTotalTechnologies'>0</strong></p>
+              <p>Total Relationships: <strong id='undxMemoryTotalRelationships'>0</strong></p>
+              <p>Memory Coverage Score: <strong id='undxMemoryCoverageScore'>0</strong></p>
+              <p>Most Active Project: <strong id='undxMemoryMostActiveProject'>None</strong></p>
+              <p>Most Active Technology: <strong id='undxMemoryMostActiveTechnology'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Insights</span>
+              <h3>Memory Insights</h3>
+              <p>Most Active Project: <strong id='undxMostActiveMemoryProject'>None</strong></p>
+              <p>Most Referenced Technology: <strong id='undxMostReferencedTechnology'>None</strong></p>
+              <p>Most Referenced Framework: <strong id='undxMostReferencedFramework'>None</strong></p>
+              <p>Most Connected Decision: <strong id='undxMostConnectedDecision'>None</strong></p>
+              <p>Most Influential Strategic Plan: <strong id='undxMostInfluentialStrategicPlan'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Coverage Score</span>
+              <h3>Memory Coverage Score</h3>
+              <p>Range: 0-100</p>
+              <p>Interpretation: <strong id='undxMemoryCoverageLabel'>Sparse</strong></p>
+              <p>Sparse · Partial · Strong · Comprehensive</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Memory Review</span>
+              <h3>Multi-Brain Memory Review</h3>
+              <div id='undxMemoryReviewOutput'><p>Decision Consistency Review, Strategic Consistency Review, Technology Consistency Review, Architecture Consistency Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Knowledge Graph Integration</h3>
+              <p>Memory Relationships: <strong id='undxMemoryRelationships'>0</strong></p>
+              <p>Decision Relationships: <strong id='undxMemoryDecisionRelationships'>0</strong></p>
+              <p>Technology Relationships: <strong id='undxMemoryTechnologyRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Strategic Integration</span>
+              <h3>Historical Strategic Memory</h3>
+              <p>Historical Decisions: <strong id='undxHistoricalDecisions'>0</strong></p>
+              <p>Historical Technologies: <strong id='undxHistoricalTechnologies'>0</strong></p>
+              <p>Historical Recommendations: <strong id='undxHistoricalRecommendations'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Integration</span>
+              <h3>Previously Recommended Technologies</h3>
+              <p>Previously Recommended Languages: <strong id='undxPreviousLanguages'>Python · TypeScript</strong></p>
+              <p>Previously Recommended Frameworks: <strong id='undxPreviousFrameworks'>Flask · React</strong></p>
+              <p>Previously Recommended SDKs: <strong id='undxPreviousSdks'>OpenAI · Groq</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this memory graph using mission memory, workspace intelligence, knowledge graphs, repository context, repository analyses, strategic plans, simulations, approvals, and code intelligence records only.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Persistent engineering memory only.</li></ul>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 24<br><strong>Workspace Memory Graph Expansion</strong></span>
+                <span>Phase 25<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 26<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -24033,6 +24203,43 @@ def pulse_premium_undx_page():
     const undxRecommendedFrameworks = document.getElementById('undxRecommendedFrameworks');
     const undxRecommendedSdks = document.getElementById('undxRecommendedSdks');
     const undxRecommendedTechnologyStack = document.getElementById('undxRecommendedTechnologyStack');
+    const undxMemoryEntityTypes = document.getElementById('undxMemoryEntityTypes');
+    const undxGenerateMemoryGraph = document.getElementById('undxGenerateMemoryGraph');
+    const undxRunMemoryReview = document.getElementById('undxRunMemoryReview');
+    const undxMemoryGraphMessage = document.getElementById('undxMemoryGraphMessage');
+    const undxMemoryGraphEmpty = document.getElementById('undxMemoryGraphEmpty');
+    const undxMemoryGraphOutput = document.getElementById('undxMemoryGraphOutput');
+    const undxEngineeringDecisionTimeline = document.getElementById('undxEngineeringDecisionTimeline');
+    const undxArchitectureEvolutionList = document.getElementById('undxArchitectureEvolutionList');
+    const undxTechnologyMemoryGrid = document.getElementById('undxTechnologyMemoryGrid');
+    const undxDecisionRelationshipGrid = document.getElementById('undxDecisionRelationshipGrid');
+    const undxProjectMemoryHistory = document.getElementById('undxProjectMemoryHistory');
+    const undxMemoryTimeline = document.getElementById('undxMemoryTimeline');
+    const undxContinuitySummary = document.getElementById('undxContinuitySummary');
+    const undxMemoryGraphRegistryEmpty = document.getElementById('undxMemoryGraphRegistryEmpty');
+    const undxMemoryGraphRegistryList = document.getElementById('undxMemoryGraphRegistryList');
+    const undxMemoryTotalDecisions = document.getElementById('undxMemoryTotalDecisions');
+    const undxMemoryTotalTechnologies = document.getElementById('undxMemoryTotalTechnologies');
+    const undxMemoryTotalRelationships = document.getElementById('undxMemoryTotalRelationships');
+    const undxMemoryCoverageScore = document.getElementById('undxMemoryCoverageScore');
+    const undxMemoryMostActiveProject = document.getElementById('undxMemoryMostActiveProject');
+    const undxMemoryMostActiveTechnology = document.getElementById('undxMemoryMostActiveTechnology');
+    const undxMostActiveMemoryProject = document.getElementById('undxMostActiveMemoryProject');
+    const undxMostReferencedTechnology = document.getElementById('undxMostReferencedTechnology');
+    const undxMostReferencedFramework = document.getElementById('undxMostReferencedFramework');
+    const undxMostConnectedDecision = document.getElementById('undxMostConnectedDecision');
+    const undxMostInfluentialStrategicPlan = document.getElementById('undxMostInfluentialStrategicPlan');
+    const undxMemoryCoverageLabel = document.getElementById('undxMemoryCoverageLabel');
+    const undxMemoryReviewOutput = document.getElementById('undxMemoryReviewOutput');
+    const undxMemoryRelationships = document.getElementById('undxMemoryRelationships');
+    const undxMemoryDecisionRelationships = document.getElementById('undxMemoryDecisionRelationships');
+    const undxMemoryTechnologyRelationships = document.getElementById('undxMemoryTechnologyRelationships');
+    const undxHistoricalDecisions = document.getElementById('undxHistoricalDecisions');
+    const undxHistoricalTechnologies = document.getElementById('undxHistoricalTechnologies');
+    const undxHistoricalRecommendations = document.getElementById('undxHistoricalRecommendations');
+    const undxPreviousLanguages = document.getElementById('undxPreviousLanguages');
+    const undxPreviousFrameworks = document.getElementById('undxPreviousFrameworks');
+    const undxPreviousSdks = document.getElementById('undxPreviousSdks');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -24052,6 +24259,7 @@ def pulse_premium_undx_page():
     const undxPortfolioAnalysesKey = 'undxPortfolioAnalyses';
     const undxBuildSimulationsKey = 'undxBuildSimulations';
     const undxLanguageProfilesKey = 'undxLanguageProfiles';
+    const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -24076,6 +24284,8 @@ def pulse_premium_undx_page():
     let undxLastBuildSimulation = null;
     let undxSelectedLanguageProfileId = null;
     let undxLastCodeProfile = null;
+    let undxSelectedMemoryRecordId = null;
+    let undxLastMemoryGraphRecord = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -25865,6 +26075,7 @@ def pulse_premium_undx_page():
         undxBlock('Linked Repository Analyses', undxWorkspacePillList(repositoryAnalyses.map(item => item.analysisId), 'None linked')),
         undxBlock('Linked Change Analyses', undxWorkspacePillList((project.linkedChangeAnalyses || []).map(item => item.analysisId), 'None linked')),
         undxBlock('Linked Knowledge Graphs', undxWorkspacePillList((project.linkedKnowledgeGraphs || []).map(item => item.graphId), 'None linked')),
+        undxBlock('Linked Workspace Memory Records', undxWorkspacePillList((project.linkedMemoryRecords || []).map(item => item.memoryId), 'None linked')),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
         undxBlock('Task Progress', `${taskProgress.done}/${taskProgress.total} complete (${taskProgress.percent}%)`),
         undxBlock('Milestone Progress', `${milestoneProgress.done}/${milestoneProgress.total} complete (${milestoneProgress.percent}%)`),
@@ -28479,6 +28690,349 @@ def pulse_premium_undx_page():
         if(undxCodeIntelligenceMessage) undxCodeIntelligenceMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
+    const undxBaseEngineeringDecisions = [
+      ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
+      ['UNDX uses OpenAI Router','Architecture Decisions','UNDX routes intelligence through the multi-provider router with OpenAI fallback.'],
+      ['Portfolio Manager proposed','Strategic Decisions','Portfolio coordination now tracks project readiness, dependencies, and conflicts.'],
+      ['Wallet Guardian proposed','Project Decisions','Wallet and security intelligence remains a recurring safety expansion target.'],
+      ['Repository Context Engine added','Repository Context Events','Repository context is simulated and read-only until explicit future approval.'],
+      ['Knowledge Graph Engine added','Architecture Decisions','UNDX connects missions, projects, approvals, analyses, and memory objects.'],
+      ['Strategic Planning Engine added','Strategic Decisions','UNDX can create strategic plans from read-only intelligence sources.'],
+      ['Universal Code Intelligence Added','Language Recommendations','UNDX can compare languages, frameworks, SDKs, and unknown syntax systems.']
+    ];
+    function undxNextMemoryRecordId(records){
+      const max = records.reduce((highest, record) => {
+        const match = String(record.memoryId || '').match(/^MEM-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `MEM-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxMemoryCoverageLabelFor(score){
+      if(score >= 85) return 'Comprehensive';
+      if(score >= 65) return 'Strong';
+      if(score >= 35) return 'Partial';
+      return 'Sparse';
+    }
+    function undxNormalizeMemoryRecord(record){
+      return {
+        memoryId: String(record.memoryId || `MEM-UNDX-${Date.now()}`).slice(0,44),
+        title: String(record.title || 'UNDX Memory Record').slice(0,160),
+        type: String(record.type || 'Engineering Decisions').slice(0,120),
+        description: String(record.description || '').slice(0,1200),
+        relatedProject: String(record.relatedProject || 'CoinPilotXAI').slice(0,160),
+        relatedMission: String(record.relatedMission || 'UNDX Command Center').slice(0,160),
+        relatedStrategicPlan: String(record.relatedStrategicPlan || 'Phase Evolution').slice(0,160),
+        relationshipCount: Math.max(0, Math.min(999, Number(record.relationshipCount || 0))),
+        relationships: undxNormalizeExecutionList(record.relationships, ['CREATED_FROM: UNDX intelligence records', 'REFERENCES: command center history'], 8, 180),
+        technologies: undxNormalizeExecutionList(record.technologies, ['Flask', 'OpenAI', 'Python'], 8, 80),
+        createdAt: record.createdAt || new Date().toISOString(),
+        review: record.review || null,
+        status: 'Stored'
+      };
+    }
+    function undxLoadMemoryGraphRecords(){
+      try{
+        const raw = localStorage.getItem(undxMemoryGraphRecordsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.memoryId).slice(0,80).map(undxNormalizeMemoryRecord) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveMemoryGraphRecords(records){
+      try{
+        localStorage.setItem(undxMemoryGraphRecordsKey, JSON.stringify(records.slice(0,80)));
+      }catch(error){
+        if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = 'Memory Registry could not be updated.';
+      }
+    }
+    function undxMemorySourceSummary(){
+      const projects = undxLoadProjects();
+      const plans = undxLoadStrategicPlans();
+      const code = undxLoadLanguageProfiles();
+      const simulations = undxLoadBuildSimulations();
+      const approvals = undxLoadApprovalHistory();
+      const memory = undxLoadMemory();
+      const graph = undxLoadKnowledgeGraphs()[0] || {};
+      return {projects, plans, code, simulations, approvals, memory, graph};
+    }
+    function undxBuildMemoryGraphRecord(){
+      const records = undxLoadMemoryGraphRecords();
+      const sources = undxMemorySourceSummary();
+      const technologies = [...new Set(['Flask','OpenAI','Python','JavaScript', ...sources.code.slice(0,8).map(item => item.languageName).filter(Boolean)])].slice(0,10);
+      const project = undxWorkspaceSelectedProject() || sources.projects[0] || {};
+      const plan = sources.plans[0] || {};
+      const mission = sources.memory[0] || {};
+      const base = undxBaseEngineeringDecisions[(records.length + sources.projects.length + sources.plans.length) % undxBaseEngineeringDecisions.length];
+      const relationshipCount = 4 + sources.projects.length + sources.plans.length + sources.code.length + sources.simulations.length + sources.approvals.length;
+      return undxNormalizeMemoryRecord({
+        memoryId: undxNextMemoryRecordId(records),
+        title: base[0],
+        type: base[1],
+        description: `${base[2]} This memory record was generated from UNDX local intelligence registries only and preserves engineering continuity across phases.`,
+        relatedProject: project.name || project.projectId || 'CoinPilotXAI',
+        relatedMission: mission.name || mission.type || 'UNDX Command Center',
+        relatedStrategicPlan: plan.planId || 'Phase 24 Workspace Memory Graph Expansion',
+        relationshipCount,
+        relationships: ['CREATED_FROM: Mission Memory', 'REFERENCES: Knowledge Graph', 'DEPENDS_ON: Strategic Planning', 'RECOMMENDS: Universal Code Intelligence', 'EVOLVES_FROM: Phase 23'],
+        technologies,
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxMemoryGraphStats(records){
+      const sources = undxMemorySourceSummary();
+      const all = records.length ? records : [];
+      const technologies = all.flatMap(record => record.technologies || []);
+      const technologyCounts = technologies.reduce((counts, tech) => ({...counts, [tech]:(counts[tech] || 0) + 1}), {});
+      const mostTechnology = Object.entries(technologyCounts).sort((a,b) => b[1] - a[1])[0]?.[0] || 'OpenAI';
+      const framework = technologies.find(value => /Flask|React|FastAPI|Django|Next/i.test(value)) || 'Flask';
+      const connected = all.filter(record => record.relationshipCount > 4).length;
+      const coverage = Math.max(8, Math.min(100, Math.round((all.length * 9) + (sources.projects.length * 6) + (sources.plans.length * 7) + (sources.code.length * 5) + (sources.graph.relationshipCount || 0) / 2)));
+      return {
+        totalMemoryRecords: all.length,
+        connectedDecisions: connected,
+        orphanedDecisions: Math.max(0, all.length - connected),
+        mostReferencedDecision: all.slice().sort((a,b) => b.relationshipCount - a.relationshipCount)[0]?.title || 'UNDX uses OpenAI Router',
+        mostReferencedProject: sources.projects[0]?.name || all[0]?.relatedProject || 'CoinPilotXAI',
+        mostReferencedTechnology: mostTechnology,
+        mostReferencedFramework: framework,
+        mostConnectedDecision: all.slice().sort((a,b) => b.relationshipCount - a.relationshipCount)[0]?.title || 'Universal Code Intelligence Added',
+        mostInfluentialStrategicPlan: sources.plans[0]?.planId || 'Phase Evolution',
+        totalRelationships: all.reduce((sum, record) => sum + record.relationshipCount, 0),
+        coverage,
+        coverageLabel: undxMemoryCoverageLabelFor(coverage)
+      };
+    }
+    function undxMemoryRecordText(record){
+      return [
+        'UNDX Workspace Memory Graph',
+        '',
+        `Memory ID: ${record.memoryId}`,
+        `Title: ${record.title}`,
+        `Type: ${record.type}`,
+        `Description: ${record.description}`,
+        `Created Date: ${undxFormatMemoryTime(record.createdAt)}`,
+        `Related Project: ${record.relatedProject}`,
+        `Related Mission: ${record.relatedMission}`,
+        `Related Strategic Plan: ${record.relatedStrategicPlan}`,
+        `Relationship Count: ${record.relationshipCount}`,
+        '',
+        'Relationships:',
+        ...record.relationships.map(item => `- ${item}`),
+        '',
+        'Technology Memory:',
+        ...record.technologies.map(item => `- ${item}`),
+        '',
+        'Safety Boundary: No repository files were accessed. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxRenderMemoryStaticPanels(){
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        items.forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      if(undxMemoryEntityTypes){
+        undxMemoryEntityTypes.replaceChildren();
+        undxMemoryEntityTypeList.forEach(type => {
+          const node = document.createElement('article');
+          node.className = 'undx-system-impact';
+          node.append(Object.assign(document.createElement('strong'), {textContent: type}), Object.assign(document.createElement('span'), {textContent: 'Tracked'}));
+          undxMemoryEntityTypes.appendChild(node);
+        });
+      }
+      fillList(undxEngineeringDecisionTimeline, undxBaseEngineeringDecisions.map(item => item[0]));
+      fillList(undxArchitectureEvolutionList, ['Router Added', 'Knowledge Graph Added', 'Strategic Planner Added', 'Universal Code Intelligence Added', 'Workspace Memory Graph Expansion']);
+      fillList(undxProjectMemoryHistory, ['Plans', 'Analyses', 'Simulations', 'Approvals', 'Strategic Decisions']);
+      fillList(undxMemoryTimeline, ['Newest', 'Oldest', 'Project-Specific', 'Technology-Specific']);
+      if(undxDecisionRelationshipGrid){
+        undxDecisionRelationshipGrid.replaceChildren();
+        ['CREATED_FROM','REFERENCES','DEPENDS_ON','RECOMMENDS','REPLACES','EVOLVES_FROM'].forEach(type => {
+          const node = document.createElement('article');
+          node.className = 'undx-risk-item';
+          node.append(Object.assign(document.createElement('strong'), {textContent: type}), Object.assign(document.createElement('span'), {textContent: 'Relationship engine'}));
+          undxDecisionRelationshipGrid.appendChild(node);
+        });
+      }
+    }
+    function undxRenderWorkspaceMemoryGraph(record){
+      undxLastMemoryGraphRecord = record || null;
+      if(record) undxSelectedMemoryRecordId = record.memoryId;
+      if(undxMemoryGraphEmpty) undxMemoryGraphEmpty.hidden = Boolean(record);
+      if(undxMemoryGraphOutput){
+        undxMemoryGraphOutput.replaceChildren();
+        if(record){
+          const records = undxLoadMemoryGraphRecords();
+          const stats = undxMemoryGraphStats(records);
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Memory ID', record.memoryId),
+            undxBlock('Title', record.title),
+            undxBlock('Type', record.type),
+            undxBlock('Description', record.description),
+            undxBlock('Created Date', undxFormatMemoryTime(record.createdAt)),
+            undxBlock('Related Project', record.relatedProject),
+            undxBlock('Related Mission', record.relatedMission),
+            undxBlock('Related Strategic Plan', record.relatedStrategicPlan),
+            undxBlock('Relationship Count', String(record.relationshipCount)),
+            undxBlock('Total Memory Records', String(stats.totalMemoryRecords)),
+            undxBlock('Connected Decisions', String(stats.connectedDecisions)),
+            undxBlock('Orphaned Decisions', String(stats.orphanedDecisions)),
+            undxBlock('Most Referenced Decision', stats.mostReferencedDecision),
+            undxBlock('Most Referenced Project', stats.mostReferencedProject),
+            undxBlock('Most Referenced Technology', stats.mostReferencedTechnology)
+          );
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxMemoryRecordText(record);
+          undxMemoryGraphOutput.append(grid, output);
+        }
+      }
+      undxRenderMemoryDashboard();
+    }
+    function undxGenerateMemoryGraphFlow(){
+      const record = undxBuildMemoryGraphRecord();
+      undxSaveMemoryGraphRecords([record, ...undxLoadMemoryGraphRecords()]);
+      undxRenderWorkspaceMemoryGraph(record);
+      undxRenderMemoryGraphRegistry();
+      if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = `${record.memoryId} stored in Memory Registry.`;
+      return record;
+    }
+    function undxSendMemoryRecordToChat(record){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxMemoryRecordText(record);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = `${record.memoryId} loaded into UNDX Chat Interface.`;
+    }
+    function undxAttachMemoryToProject(record){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = 'Open or create a project before attaching memory.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, linkedMemoryRecords:[record, ...(project.linkedMemoryRecords || []).filter(item => item.memoryId !== record.memoryId)].slice(0,8)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = `${record.memoryId} attached to ${projectId}.`;
+    }
+    function undxSaveMemoryRecordToMissionMemory(record){
+      undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Workspace Memory ${record.memoryId}`, objective:undxMemoryRecordText(record), type:'Workspace Memory Graph', source:'UNDX Workspace Memory Graph', createdAt:new Date().toISOString(), phase:'Phase 24', status:'Stored'});
+      if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = `${record.memoryId} saved to Mission Memory.`;
+    }
+    function undxDeleteMemoryRecord(memoryId){
+      undxSaveMemoryGraphRecords(undxLoadMemoryGraphRecords().filter(item => item.memoryId !== memoryId));
+      if(undxSelectedMemoryRecordId === memoryId) undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
+      undxRenderMemoryGraphRegistry();
+      if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = 'Workspace memory record deleted.';
+    }
+    function undxCreateMemoryGraphCard(record){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = record.memoryId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Memory ID: ${record.memoryId}`, `Type: ${record.type}`, `Relationship Count: ${record.relationshipCount}`, `Created Date: ${undxFormatMemoryTime(record.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Memory', () => undxRenderWorkspaceMemoryGraph(record), true),
+        undxProjectActionButton('Send To Chat', () => undxSendMemoryRecordToChat(record)),
+        undxProjectActionButton('Attach To Project', () => undxAttachMemoryToProject(record)),
+        undxProjectActionButton('Save To Mission Memory', () => undxSaveMemoryRecordToMissionMemory(record)),
+        undxProjectActionButton('Delete Memory', () => undxDeleteMemoryRecord(record.memoryId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderMemoryGraphRegistry(){
+      const records = undxLoadMemoryGraphRecords();
+      if(undxMemoryGraphRegistryEmpty) undxMemoryGraphRegistryEmpty.hidden = records.length > 0;
+      if(undxMemoryGraphRegistryList){
+        undxMemoryGraphRegistryList.replaceChildren();
+        records.forEach(record => undxMemoryGraphRegistryList.appendChild(undxCreateMemoryGraphCard(record)));
+      }
+      undxRenderMemoryDashboard();
+    }
+    function undxRenderMemoryDashboard(){
+      const records = undxLoadMemoryGraphRecords();
+      const stats = undxMemoryGraphStats(records);
+      const technologies = [...new Set(records.flatMap(record => record.technologies || []))];
+      if(undxMemoryTotalDecisions) undxMemoryTotalDecisions.textContent = String(records.length);
+      if(undxMemoryTotalTechnologies) undxMemoryTotalTechnologies.textContent = String(technologies.length);
+      if(undxMemoryTotalRelationships) undxMemoryTotalRelationships.textContent = String(stats.totalRelationships);
+      if(undxMemoryCoverageScore) undxMemoryCoverageScore.textContent = `${stats.coverage}/100`;
+      if(undxMemoryCoverageLabel) undxMemoryCoverageLabel.textContent = stats.coverageLabel;
+      if(undxMemoryMostActiveProject) undxMemoryMostActiveProject.textContent = stats.mostReferencedProject;
+      if(undxMemoryMostActiveTechnology) undxMemoryMostActiveTechnology.textContent = stats.mostReferencedTechnology;
+      if(undxMostActiveMemoryProject) undxMostActiveMemoryProject.textContent = stats.mostReferencedProject;
+      if(undxMostReferencedTechnology) undxMostReferencedTechnology.textContent = stats.mostReferencedTechnology;
+      if(undxMostReferencedFramework) undxMostReferencedFramework.textContent = stats.mostReferencedFramework;
+      if(undxMostConnectedDecision) undxMostConnectedDecision.textContent = stats.mostConnectedDecision;
+      if(undxMostInfluentialStrategicPlan) undxMostInfluentialStrategicPlan.textContent = stats.mostInfluentialStrategicPlan;
+      if(undxMemoryRelationships) undxMemoryRelationships.textContent = String(stats.totalRelationships);
+      if(undxMemoryDecisionRelationships) undxMemoryDecisionRelationships.textContent = String(stats.connectedDecisions);
+      if(undxMemoryTechnologyRelationships) undxMemoryTechnologyRelationships.textContent = String(technologies.length);
+      if(undxHistoricalDecisions) undxHistoricalDecisions.textContent = String(records.length);
+      if(undxHistoricalTechnologies) undxHistoricalTechnologies.textContent = String(technologies.length);
+      if(undxHistoricalRecommendations) undxHistoricalRecommendations.textContent = String(records.filter(record => record.relationships.join(' ').includes('RECOMMENDS')).length);
+      if(undxPreviousLanguages) undxPreviousLanguages.textContent = technologies.filter(item => /Python|TypeScript|JavaScript|Go|Rust/i.test(item)).slice(0,4).join(' · ') || 'Python · TypeScript';
+      if(undxPreviousFrameworks) undxPreviousFrameworks.textContent = technologies.filter(item => /Flask|React|FastAPI|Django|Next/i.test(item)).slice(0,4).join(' · ') || 'Flask · React';
+      if(undxPreviousSdks) undxPreviousSdks.textContent = technologies.filter(item => /OpenAI|Groq|Gemini|Claude/i.test(item)).slice(0,4).join(' · ') || 'OpenAI · Groq';
+      if(undxTechnologyMemoryGrid){
+        undxTechnologyMemoryGrid.replaceChildren();
+        (technologies.length ? technologies : ['Python','Flask','OpenAI','React']).slice(0,8).forEach(tech => {
+          const node = document.createElement('article');
+          node.className = 'undx-system-impact';
+          node.append(Object.assign(document.createElement('strong'), {textContent: tech}), Object.assign(document.createElement('span'), {textContent: 'Most Recommended Technologies'}));
+          undxTechnologyMemoryGrid.appendChild(node);
+        });
+      }
+      if(undxContinuitySummary){
+        undxContinuitySummary.replaceChildren(undxBlock('Continuity Summary', `UNDX remembers ${records.length} engineering memory records, ${technologies.length} technologies, and ${stats.totalRelationships} relationships. Previous decisions emphasize ${stats.mostConnectedDecision}; recommended technology remains ${stats.mostReferencedTechnology}.`));
+      }
+    }
+    async function undxRunMemoryReviewFlow(){
+      let record = undxLastMemoryGraphRecord || (undxSelectedMemoryRecordId ? undxLoadMemoryGraphRecords().find(item => item.memoryId === undxSelectedMemoryRecordId) : null);
+      if(!record) record = undxGenerateMemoryGraphFlow();
+      if(!record) return;
+      if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = 'Routing memory review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission: undxMemoryRecordText(record)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        record = undxNormalizeMemoryRecord({...record, review:{
+          decisionConsistencyReview: agents.find(agent => agent.key === 'architect')?.recommendation || 'Decision Consistency Review: preserve phase history and dependencies.',
+          strategicConsistencyReview: agents.find(agent => agent.key === 'research')?.recommendation || 'Strategic Consistency Review: compare memory against plans.',
+          technologyConsistencyReview: agents.find(agent => agent.key === 'builder')?.recommendation || 'Technology Consistency Review: keep recommended stack coherent.',
+          architectureConsistencyReview: agents.find(agent => agent.key === 'optimization')?.recommendation || 'Architecture Consistency Review: reduce conflicting decisions.',
+          combinedRecommendation: agents.find(agent => agent.key === 'rapid')?.recommendation || 'Combined Recommendation: use memory before generating future tasks.'
+        }});
+        undxSaveMemoryGraphRecords([record, ...undxLoadMemoryGraphRecords().filter(item => item.memoryId !== record.memoryId)]);
+        undxRenderWorkspaceMemoryGraph(record);
+        undxRenderMemoryGraphRegistry();
+        if(undxMemoryReviewOutput) undxMemoryReviewOutput.replaceChildren(undxBlock('Decision Consistency Review', record.review.decisionConsistencyReview), undxBlock('Strategic Consistency Review', record.review.strategicConsistencyReview), undxBlock('Technology Consistency Review', record.review.technologyConsistencyReview), undxBlock('Architecture Consistency Review', record.review.architectureConsistencyReview), undxBlock('Combined Recommendation', record.review.combinedRecommendation));
+        if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = 'Multi-brain memory review complete.';
+      }catch(error){
+        if(undxMemoryReviewOutput) undxMemoryReviewOutput.replaceChildren(undxBlock('Decision Consistency Review', 'OpenAI fallback recommended: preserve prior decisions.'), undxBlock('Strategic Consistency Review', 'OpenAI fallback recommended: compare plans with memory.'), undxBlock('Technology Consistency Review', 'OpenAI fallback recommended: keep stack recommendations stable.'), undxBlock('Architecture Consistency Review', 'OpenAI fallback recommended: connect memory to architecture evolution.'), undxBlock('Combined Recommendation', 'Fallback → OpenAI. Memory Graph remains read-only with no file access, commands, or deployments.'));
+        if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
@@ -28501,6 +29055,7 @@ def pulse_premium_undx_page():
       ['undx-multi-project-coordination','Portfolio Coordination'],
       ['undx-build-simulation','Build Simulation'],
       ['undx-universal-code-intelligence','Universal Code Intelligence'],
+      ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-core-modules','Core Modules'],
       ['undx-mission-status-view','Mission Status'],
       ['undx-future-preview','Future Preview']
@@ -29532,6 +30087,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedMemoryRecords(project, card){
+      const section = undxWorkspaceSection('Linked Workspace Memory Records');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedMemoryRecords || []).length){
+        list.appendChild(undxWorkspaceEmpty('No workspace memory records linked yet. Attach Phase 24 memory to preserve engineering decisions for this project.'));
+      }else{
+        project.linkedMemoryRecords.forEach(record => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = record.memoryId;
+          const meta = document.createElement('p');
+          meta.textContent = `Type: ${record.type} · Relationship Count: ${record.relationshipCount} · Related Strategic Plan: ${record.relatedStrategicPlan}`;
+          const description = document.createElement('p');
+          description.textContent = record.description || '';
+          item.append(title, meta, description);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -29614,6 +30192,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedRepositoryAnalyses(project, card);
       undxRenderLinkedChangeAnalyses(project, card);
       undxRenderLinkedKnowledgeGraphs(project, card);
+      undxRenderLinkedMemoryRecords(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -30262,6 +30841,8 @@ def pulse_premium_undx_page():
     undxGenerateTranslationPlan?.addEventListener('click', undxGenerateTranslationPlanFlow);
     undxProfileUnknownSyntax?.addEventListener('click', undxProfileUnknownSyntaxFlow);
     undxRunCodeReview?.addEventListener('click', undxRunCodeReviewFlow);
+    undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
+    undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -30293,6 +30874,9 @@ def pulse_premium_undx_page():
     undxRenderCodePatternEngines();
     undxRenderCodeRegistry();
     undxRenderCodeProfile(undxLoadLanguageProfiles()[0] || null);
+    undxRenderMemoryStaticPanels();
+    undxRenderMemoryGraphRegistry();
+    undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
