@@ -12,6 +12,69 @@
   gap: 10px;
 }
 
+.pulse-status-home-entry {
+  grid-template-columns: minmax(0, 1fr) minmax(112px, 240px);
+  align-items: stretch;
+  gap: 12px;
+  border: 1px solid rgba(110, 223, 246, .16);
+  border-radius: 14px;
+  padding: 12px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(54, 229, 143, .16), transparent 15rem),
+    linear-gradient(135deg, rgba(15, 23, 42, .92), rgba(8, 19, 35, .86));
+  box-shadow: 0 14px 44px rgba(2, 6, 23, .18);
+}
+
+.pulse-status-home-copy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+}
+
+.pulse-status-home-kicker {
+  color: #9ff7bf;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pulse-status-home-copy h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: clamp(18px, 3vw, 24px);
+  line-height: 1.12;
+}
+
+.pulse-status-home-copy p {
+  max-width: 58ch;
+  margin: 0;
+  color: #9fb5c0;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.pulse-status-home-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.pulse-status-glow-link {
+  border-color: rgba(54, 229, 143, .42) !important;
+  background: linear-gradient(135deg, rgba(54, 229, 143, .2), rgba(110, 223, 246, .16)) !important;
+  color: #f8fafc !important;
+  box-shadow: 0 0 0 1px rgba(54, 229, 143, .12), 0 0 24px rgba(54, 229, 143, .18);
+}
+
+.pulse-status-mini-rail {
+  display: grid;
+  align-items: stretch;
+  min-width: 0;
+}
+
 .pulse-status2-head {
   display: flex;
   align-items: end;
@@ -416,6 +479,56 @@
   gap: 18px;
 }
 
+.pulse-status-page-hero {
+  margin: 0;
+}
+
+.pulse-status-page-hero h2 {
+  margin: 6px 0 4px;
+  font-size: clamp(32px, 6vw, 58px);
+  line-height: 1;
+}
+
+.pulse-status-page-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(280px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.pulse-status-studio,
+.pulse-status-preview-stack {
+  margin: 0;
+  min-width: 0;
+}
+
+.pulse-status-studio {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pulse-status-preview-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.pulse-status-preview-stack header h3 {
+  margin: 0 0 4px;
+}
+
+.pulse-status-preview-stack header p {
+  margin: 0;
+}
+
+.pulse-status-page-composer {
+  width: 100%;
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .pulse-status-full-tabs {
   display: flex;
   gap: 8px;
@@ -488,6 +601,10 @@
 }
 
 @media (max-width: 900px) {
+  .pulse-status-home-entry {
+    grid-template-columns: 1fr;
+  }
+
   .pulse-status2-strip {
     grid-auto-columns: 104px;
   }
@@ -499,6 +616,10 @@
 
   .pulse-status2-composer {
     width: min(100%, 600px);
+  }
+
+  .pulse-status-page-layout {
+    grid-template-columns: 1fr;
   }
 }
 

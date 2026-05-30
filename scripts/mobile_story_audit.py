@@ -17,10 +17,10 @@ def expect(ok: bool, label: str):
 def main():
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     css = (ROOT / "static" / "css" / "pulse_status_system.css").read_text(encoding="utf-8")
-    expect("data-status2-modal" in source, "fullscreen mobile composer exists")
+    expect("data-status-create-form='dedicated'" in source, "dedicated mobile composer exists")
     expect("data-status2-preview" in source, "composer has shared preview area")
     expect("data-status2-type" in source, "composer has status type selector")
-    expect("data-status2-close" in source and "data-status2-cancel" in source, "composer has close and cancel controls")
+    expect("data-status2-cancel" in source, "composer has reset control")
     expect("data-status2-body" in source, "composer has text input")
     expect("data-status2-media" in source, "composer has media input")
     expect("data-status2-post" in source, "composer has post action")

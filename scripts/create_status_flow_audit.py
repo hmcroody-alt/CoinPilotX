@@ -114,12 +114,13 @@ def main():
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
 
-    html = client.get("/pulse").get_data(as_text=True)
+    home_html = client.get("/pulse").get_data(as_text=True)
+    expect("data-status2-form" not in home_html and "pulseStatus2Media" not in home_html, "homepage does not render Create Status composer")
+    expect("href='/pulse/status'" in home_html or 'href="/pulse/status"' in home_html, "homepage Create Status entry routes to dedicated page")
+    html = client.get("/pulse/status").get_data(as_text=True)
     required_tokens = [
-        "data-pulse-status-version='fresh-1'",
-        "data-status2-open",
-        "data-status2-modal",
         "data-status2-form",
+        "data-status-create-form='dedicated'",
         "Create Pulse Status",
         "data-status2-type='text'",
         "data-status2-type='photo'",
@@ -137,20 +138,17 @@ def main():
         "data-status2-duration",
         "data-status2-cancel",
         "data-status2-post",
-        "initPulseStatusFresh",
-        "renderMediaPreview",
+        "renderStatusMediaPreview",
         "URL.createObjectURL",
         "PulseUploadManager.upload",
         "/api/pulse/status",
         "/api/pulse/media/upload",
     ]
     for token in required_tokens:
-        expect(token in html, f"Create Status UI contains {token}")
-    expect("data-status2-modal aria-hidden='true' hidden" in html, "Create Status modal is hidden until opened")
+        expect(token in html, f"dedicated Create Status page contains {token}")
     expect("Post Status" in html, "Create Status footer has clear post action")
-    expect("No Pulse Status yet.</strong><span>Create the first Pulse Status.</span>" in html, "empty state text is cleanly separated")
     expect("capture" not in html[html.find("pulseStatus2Media") : html.find("pulseStatus2Media") + 260], "Create Status picker does not force camera capture")
-    expect("location.href='/pulse/status'" not in html, "Create Status publish does not redirect away from editor flow")
+    expect("location.href" not in html[html.find("data-status2-form") : html.find("data-status2-form") + 8000], "Create Status publish does not redirect away from editor flow")
 
     image_media = upload_media(client, "status-audit.png", "image/png", PNG_BYTES)
     video_media = upload_media(client, "status-audit.webm", "video/webm", WEBM_BYTES)

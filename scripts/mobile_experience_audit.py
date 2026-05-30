@@ -27,7 +27,7 @@ def main():
     combined = source + "\n" + status_css + "\n" + mobile_css
     require("env(safe-area-inset-top)" in combined and "env(safe-area-inset-bottom)" in combined, "mobile safe-area rules are present")
     require("100dvh" in combined, "dynamic viewport height is used for fullscreen mobile surfaces")
-    require("pulse-status2-modal" in status_css and "pulse-status2-composer" in status_css, "Status mobile editor has immersive controls")
+    require("pulse-status-page-layout" in status_css and "pulse-status2-composer" in status_css, "Status mobile editor has immersive controls")
     require("pulseStatus2Media" in source and "capture" not in source[source.find("pulseStatus2Media") : source.find("pulseStatus2Media") + 320], "Create Status upload does not force camera capture")
     require("pulse_environment_engine.js" in source and "prefers-reduced-motion" in env_js, "ambient environment engine is loaded and respects reduced motion")
     require(
@@ -39,7 +39,7 @@ def main():
         and '"text"' in source
         and "Camera" in source
         and '"camera"' in source
-        and "initPulseStatusFresh" in source,
+        and "renderStatusMediaPreview" in source,
         "Status creator and camera actions are real, separated controls",
     )
     print("mobile experience audit ok")

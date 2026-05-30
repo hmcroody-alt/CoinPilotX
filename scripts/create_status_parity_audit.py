@@ -24,14 +24,17 @@ def main():
 
     require(source.count("data-status2-form") >= 1, "one unified status creation form exists")
     require("data-status-unified-create='desktop-mobile'" in source, "status editor declares unified desktop/mobile contract")
-    require("data-status-create-form='fresh'" in source, "status form is shared across breakpoints")
+    require("data-status-create-form='dedicated'" in source, "status form is shared across breakpoints")
     require(source.count("id='pulseStatus2Media'") == 1, "one shared media picker powers desktop and mobile")
     require(source.count("data-status2-preview") >= 1, "one shared media preview powers desktop and mobile")
-    require("data-status2-modal aria-hidden='true' hidden" in source, "shared creator is not visible on homepage by default")
+    home_start = source.find("def pulse_status_rail_html")
+    home_end = source.find("def pulse_status_type_buttons_html")
+    home_source = source[home_start:home_end]
+    require("data-status2-form" not in home_source and "pulseStatus2Media" not in home_source, "shared creator is not visible on homepage by default")
     require("Post Status" in source, "desktop/mobile creator has a clear post action")
     require("PulseUploadManager.upload" in source and "/api/pulse/media/upload" in source, "desktop/mobile status upload uses same media pipeline")
-    require("renderMediaPreview" in source and "URL.createObjectURL" in source, "status preview state is shared")
-    require("form.addEventListener('submit'" in source, "status publishing uses one submit path")
+    require("renderStatusMediaPreview" in source and "URL.createObjectURL" in source, "status preview state is shared")
+    require("statusForm?.addEventListener('submit'" in source, "status publishing uses one submit path")
 
     for token in [
         ".pulse-status2-modal",
@@ -43,8 +46,8 @@ def main():
         require(token in css, f"responsive status CSS contains {token}")
 
     require(".pulse-status2-composer" in css, "status stage styling is centralized")
-    require("width: min(100%, 640px)" in css, "desktop modal uses constrained polished width")
-    require(".pulse-status2-modal[hidden]" in css, "hidden modal cannot leak inline composer onto homepage")
+    require("grid-template-columns: minmax(0, 640px)" in css, "desktop Status page uses constrained polished composer column")
+    require("pulse-status-home-entry" in css, "homepage uses compact Status entry styling")
     require("white-space: nowrap" in css and "overflow-x: auto" in css, "status type selector avoids overlap with horizontal compact pills")
     require("100dvh" in css and "env(safe-area-inset-bottom)" in css, "mobile status editor is safe-area aware")
     require("object-fit: contain" in css, "media preview preserves image/video content on all screens")

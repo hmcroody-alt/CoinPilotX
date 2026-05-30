@@ -66,34 +66,39 @@ def main():
     html = client.get("/pulse").get_data(as_text=True)
     for token in [
         "pulse-status2",
-        "data-pulse-status-version='fresh-1'",
+        "data-pulse-status-version='entry-1'",
         "data-status2-strip",
-        "data-status2-open",
-        "data-status2-modal",
+        "pulse-status-home-entry",
+        "Share quick stories from your Pulse world.",
+        "href='/pulse/status'",
+        "Create Status",
+    ]:
+        expect(token in html, f"homepage Status entry contains {token}")
+    for token in [
         "data-status2-form",
-        "Create Pulse Status",
-        "No Pulse Status yet.",
-        "Create the first Pulse Status.",
-        "data-status2-type='text'",
-        "data-status2-type='photo'",
-        "data-status2-type='video'",
-        "data-status2-type='music'",
-        "data-status2-type='camera'",
-        "data-status2-type='ai'",
-        "data-status2-type='live'",
+        "data-status2-body",
+        "data-status2-privacy",
+        "data-status2-duration",
         "pulseStatus2Media",
+        "Post Status",
+    ]:
+        expect(token not in html, f"homepage does not contain inline Status composer token {token}")
+    status_html = client.get("/pulse/status").get_data(as_text=True)
+    for token in [
+        "Pulse Status",
+        "Create and view stories from your Pulse world.",
+        "data-status2-form",
+        "data-status-create-form='dedicated'",
+        "data-status2-preview",
+        "data-status2-body",
+        "data-status2-privacy",
+        "data-status2-duration",
+        "pulseStatus2Media",
+        "Post Status",
         "/api/pulse/status",
         "/api/pulse/media/upload",
     ]:
-        expect(token in html, f"status UI contains {token}")
-    expect("data-status2-modal aria-hidden='true' hidden" in html, "Create Status modal is hidden on homepage by default")
-    rail_start = html.find("<section class='pulse-status2'")
-    modal_start = html.find("<section class='pulse-status2-modal'")
-    rail_html = html[rail_start:modal_start]
-    expect(
-        "data-status2-body" not in rail_html and "data-status2-privacy" not in rail_html and "pulseStatus2Media" not in rail_html,
-        "inline Status composer is absent from homepage rail",
-    )
+        expect(token in status_html, f"dedicated Status page contains {token}")
     print("pulse status audit ok")
 
 
