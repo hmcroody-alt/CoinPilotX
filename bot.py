@@ -21786,14 +21786,28 @@ def pulse_premium_undx_page():
     .undx-workspace-node strong{color:#dffcff}
     .undx-workspace-node span{color:rgba(223,246,255,.62);font-size:.82rem;font-weight:850}
     .undx-health-score{font-size:clamp(42px,7vw,64px);line-height:1;color:#36e58f;font-weight:950;text-shadow:0 0 28px rgba(54,229,143,.22)}
+    .undx-change-intelligence{position:relative;overflow:hidden;border-color:rgba(255,209,102,.28);background:radial-gradient(circle at 8% 18%,rgba(255,209,102,.13),transparent 24rem),radial-gradient(circle at 82% 12%,rgba(110,223,246,.12),transparent 27rem),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))}
+    .undx-change-intelligence:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,209,102,.075),transparent 34%,rgba(110,223,246,.055));pointer-events:none}
+    .undx-change-intelligence>*{position:relative;z-index:1}
+    .undx-change-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:14px;align-items:start}
+    .undx-change-main,.undx-change-sidebar,.undx-change-registry,.undx-change-detail{display:grid;gap:12px}
+    .undx-change-card{display:grid;gap:10px;border:1px solid rgba(255,255,255,.11);border-radius:18px;padding:14px;background:linear-gradient(145deg,rgba(20,18,34,.86),rgba(255,255,255,.04));box-shadow:0 18px 56px rgba(0,0,0,.22)}
+    .undx-change-card h3,.undx-change-card h4{margin:0;font-size:clamp(19px,2.1vw,26px)}
+    .undx-change-card p{margin:0;color:rgba(223,246,255,.72)}
+    .undx-change-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:end}
+    .undx-score-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .undx-score-tile{border:1px solid rgba(255,255,255,.1);border-radius:15px;padding:12px;background:rgba(5,11,20,.38)}
+    .undx-score-tile strong{display:block;font-size:clamp(32px,5vw,48px);line-height:1;color:#ffd166}
+    .undx-dependency-map{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+    .undx-dependency-node{border:1px solid rgba(110,223,246,.18);border-radius:14px;padding:10px;background:rgba(110,223,246,.06);color:#dffcff;font-weight:850}
     .undx-preview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
     .undx-preview-item{min-height:150px;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px;display:grid;align-content:space-between;background:linear-gradient(145deg,rgba(110,223,246,.08),rgba(255,255,255,.035));box-shadow:0 18px 50px rgba(0,0,0,.18)}
     .undx-preview-item span{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b;font-weight:950}
     .undx-preview-item strong{display:block;font-size:1.02rem}
     @keyframes undxCoreDrift{0%,100%{transform:translate3d(0,0,0) rotate(-7deg)}50%{transform:translate3d(2%,-1.5%,0) rotate(-4deg)}}
-    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout{grid-template-columns:1fr}}
-    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout{grid-template-columns:1fr}}
+    @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22703,6 +22717,114 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-change-intelligence' id='undx-change-intelligence'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Diff Intelligence: Active</span>
+            <h2>UNDX Change Intelligence Center</h2>
+          </div>
+          <p>Analyze project evolution, dependency impact, implementation risk, and readiness.</p>
+        </div>
+        <div class='undx-change-layout'>
+          <div class='undx-change-main'>
+            <div class='undx-memory-status' aria-label='UNDX change intelligence status'>
+              <span aria-label='Diff Intelligence: Active'>Diff Intelligence: <strong>Active</strong></span>
+              <span aria-label='Change Impact Engine: Online'>Change Impact Engine: <strong>Online</strong></span>
+              <span aria-label='Dependency Mapper: Online'>Dependency Mapper: <strong>Online</strong></span>
+              <span aria-label='Risk Analyzer: Online'>Risk Analyzer: <strong>Online</strong></span>
+              <span aria-label='Execution Access: Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 18'>Phase: <strong>18</strong></span>
+            </div>
+            <section class='undx-change-card' aria-label='Change comparison sources'>
+              <span class='undx-core-label'>Change Sources</span>
+              <h3>Compare Intelligence Objects</h3>
+              <p>Choose Workspace Summary A and Workspace Summary B, Execution Plan A and Execution Plan B, Repository Analysis A and Repository Analysis B, or Project Snapshot A and Project Snapshot B.</p>
+              <div class='undx-change-form'>
+                <label>Comparison Type<select id='undxChangeSourceType'><option value='workspace'>Workspace Summaries</option><option value='execution'>Execution Plans</option><option value='repository'>Repository Analyses</option><option value='project'>Project Snapshots</option></select></label>
+                <label>Source A<select id='undxChangeSourceA'></select></label>
+                <label>Source B<select id='undxChangeSourceB'></select></label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateChangeAnalysis'>Generate Change Impact Analysis</button>
+                <button class='button' type='button' id='undxRunImpactReview'>Run Multi-Brain Impact Review</button>
+              </div>
+              <p class='undx-project-message' id='undxChangeMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-change-card' aria-label='Change Analysis Output'>
+              <span class='undx-core-label'>Change Impact Report</span>
+              <h3>Change Analysis Report</h3>
+              <div class='undx-evolution-empty' id='undxChangeAnalysisEmpty'>Select two comparable intelligence objects before generating change analysis.</div>
+              <div class='undx-change-detail' id='undxChangeAnalysisOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-change-card' aria-label='Dependency Mapper'>
+              <span class='undx-core-label'>Dependency Mapper</span>
+              <h3>Dependency Mapper</h3>
+              <div class='undx-dependency-map' id='undxDependencyMap'>
+                <span class='undx-dependency-node'>Frontend</span>
+                <span class='undx-dependency-node'>Backend</span>
+                <span class='undx-dependency-node'>Database</span>
+                <span class='undx-dependency-node'>AI Providers</span>
+                <span class='undx-dependency-node'>Workers</span>
+                <span class='undx-dependency-node'>Premium Modules</span>
+                <span class='undx-dependency-node'>Infrastructure</span>
+              </div>
+            </section>
+            <section class='undx-change-card' aria-label='Change Analysis Registry'>
+              <span class='undx-core-label'>Change Analysis Registry</span>
+              <h3>Change Analysis Registry</h3>
+              <div class='undx-memory-empty' id='undxChangeRegistryEmpty'>No change analyses stored yet. Generate a change impact analysis to activate Diff Intelligence.</div>
+              <div class='undx-change-registry' id='undxChangeRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-change-sidebar'>
+            <article class='undx-change-card' aria-label='Impact and Risk Scores'>
+              <span class='undx-core-label'>Impact Score</span>
+              <h3>Impact Score</h3>
+              <div class='undx-score-row'>
+                <div class='undx-score-tile'><span>Impact Score</span><strong id='undxImpactScore'>0</strong><p id='undxImpactInterpretation'>Minimal</p></div>
+                <div class='undx-score-tile'><span>Risk Score</span><strong id='undxRiskScore'>0</strong><p id='undxRiskInterpretation'>Security · Architecture · Scalability · Deployment · Maintenance</p></div>
+              </div>
+              <p>Change Complexity: <strong id='undxChangeComplexity'>Low</strong></p>
+              <p>Deployment Readiness: <strong id='undxDeploymentReadiness'>Not Ready</strong></p>
+              <p>Recommended Next Action: <strong id='undxChangeNextAction'>Generate Workspace Summary</strong></p>
+            </article>
+            <article class='undx-change-card' aria-label='Router Metadata'>
+              <span class='undx-core-label'>Router Metadata</span>
+              <h3>Multi-Brain Impact Review</h3>
+              <p>Primary Analysis Provider: <strong id='undxPrimaryAnalysisProvider'>OpenAI</strong></p>
+              <p>Fallback Provider: <strong id='undxFallbackAnalysisProvider'>OpenAI</strong></p>
+              <p>Provider Status: <strong id='undxAnalysisProviderStatus'>Standby</strong></p>
+            </article>
+            <article class='undx-change-card' aria-label='Testing and Rollout Recommendations'>
+              <span class='undx-core-label'>Testing Recommendations</span>
+              <h3>Testing Recommendations</h3>
+              <ul class='undx-safety-list' id='undxTestingRecommendations'><li>Unit Tests</li><li>Integration Tests</li><li>Security Tests</li><li>Load Tests</li><li>User Acceptance Tests</li></ul>
+              <h3>Rollout Recommendations</h3>
+              <ul class='undx-safety-list' id='undxRolloutRecommendations'><li>Safe Immediate Rollout</li><li>Staged Rollout</li><li>Canary Rollout</li><li>Additional Review Required</li></ul>
+            </article>
+            <article class='undx-change-card' aria-label='Change Intelligence Boundary'>
+              <span class='undx-core-label'>Change Intelligence Boundary</span>
+              <h3>Change Intelligence Boundary</h3>
+              <p>UNDX generated this analysis using workspace intelligence, execution plans, repository analyses, repository context, and mission intelligence only. No repository files were accessed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Read-only intelligence only.</li></ul>
+            </article>
+            <article class='undx-change-card' aria-label='Future Evolution Roadmap'>
+              <span class='undx-core-label'>Future Evolution Roadmap</span>
+              <h3>Future Evolution Roadmap</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 18<br><strong>Diff Intelligence</strong></span>
+                <span>Phase 19<br><strong>Knowledge Graph Engine</strong></span>
+                <span>Phase 20<br><strong>Strategic Planning Engine</strong></span>
+                <span>Phase 21<br><strong>Multi-Project Coordination</strong></span>
+                <span>Phase 22<br><strong>Autonomous Build Simulation</strong></span>
+                <span>Phase 23<br><strong>Workspace Memory Graph</strong></span>
+                <span>Phase 24<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 25<br><strong>UNDX Operating System Layer</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -22879,6 +23001,29 @@ def pulse_premium_undx_page():
     const undxSaveWorkspaceSummaryToMemory = document.getElementById('undxSaveWorkspaceSummaryToMemory');
     const undxGenerateWorkspaceExecutionPlan = document.getElementById('undxGenerateWorkspaceExecutionPlan');
     const undxWorkspaceMessage = document.getElementById('undxWorkspaceMessage');
+    const undxChangeSourceType = document.getElementById('undxChangeSourceType');
+    const undxChangeSourceA = document.getElementById('undxChangeSourceA');
+    const undxChangeSourceB = document.getElementById('undxChangeSourceB');
+    const undxGenerateChangeAnalysis = document.getElementById('undxGenerateChangeAnalysis');
+    const undxRunImpactReview = document.getElementById('undxRunImpactReview');
+    const undxChangeMessage = document.getElementById('undxChangeMessage');
+    const undxChangeAnalysisEmpty = document.getElementById('undxChangeAnalysisEmpty');
+    const undxChangeAnalysisOutput = document.getElementById('undxChangeAnalysisOutput');
+    const undxDependencyMap = document.getElementById('undxDependencyMap');
+    const undxChangeRegistryEmpty = document.getElementById('undxChangeRegistryEmpty');
+    const undxChangeRegistryList = document.getElementById('undxChangeRegistryList');
+    const undxImpactScore = document.getElementById('undxImpactScore');
+    const undxImpactInterpretation = document.getElementById('undxImpactInterpretation');
+    const undxRiskScore = document.getElementById('undxRiskScore');
+    const undxRiskInterpretation = document.getElementById('undxRiskInterpretation');
+    const undxChangeComplexity = document.getElementById('undxChangeComplexity');
+    const undxDeploymentReadiness = document.getElementById('undxDeploymentReadiness');
+    const undxChangeNextAction = document.getElementById('undxChangeNextAction');
+    const undxPrimaryAnalysisProvider = document.getElementById('undxPrimaryAnalysisProvider');
+    const undxFallbackAnalysisProvider = document.getElementById('undxFallbackAnalysisProvider');
+    const undxAnalysisProviderStatus = document.getElementById('undxAnalysisProviderStatus');
+    const undxTestingRecommendations = document.getElementById('undxTestingRecommendations');
+    const undxRolloutRecommendations = document.getElementById('undxRolloutRecommendations');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -22892,6 +23037,7 @@ def pulse_premium_undx_page():
     const undxRepositoryContextKey = 'undxRepositoryContext';
     const undxRepositoryAnalysesKey = 'undxRepositoryAnalyses';
     const undxWorkspaceSummariesKey = 'undxWorkspaceSummaries';
+    const undxChangeAnalysesKey = 'undxChangeAnalyses';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
     let undxSelectedEvolutionMission = null;
@@ -22903,6 +23049,8 @@ def pulse_premium_undx_page():
     let undxSelectedRepositoryProfileId = null;
     let undxSelectedPreviewManifestId = null;
     let undxLastWorkspaceSummary = null;
+    let undxSelectedChangeAnalysisId = null;
+    let undxLastChangeAnalysis = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -23115,6 +23263,7 @@ def pulse_premium_undx_page():
         createdAt: item.createdAt || new Date().toISOString(),
         status: String(item.status || 'Analysis Complete').slice(0,120)
       })) : [];
+      const linkedChangeAnalyses = Array.isArray(project.linkedChangeAnalyses) ? project.linkedChangeAnalyses.filter(item => item && item.analysisId).slice(0,24).map(undxNormalizeChangeAnalysis) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -23127,6 +23276,7 @@ def pulse_premium_undx_page():
         linkedRepositoryIntelligenceProfiles,
         linkedPreviewManifests,
         linkedRepositoryAnalyses,
+        linkedChangeAnalyses,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         lastBuildDirective: project.lastBuildDirective || ''
       };
@@ -24553,6 +24703,7 @@ def pulse_premium_undx_page():
       if((project?.linkedRepositoryIntelligenceProfiles || []).length) assets.push('Repository intelligence profiles linked');
       if((project?.linkedPreviewManifests || []).length) assets.push('Preview manifests linked');
       if((project?.linkedRepositoryAnalyses || []).length || undxLoadRepositoryAnalyses().length) assets.push('Repository analyses available');
+      if((project?.linkedChangeAnalyses || []).length || undxLoadChangeAnalyses().length) assets.push('Change analyses available');
       if(undxLoadRepositoryContext()) assets.push('Repository context indexed');
       if(undxLoadApprovalProtocol().length) assets.push('Approval protocol active');
       if(undxLoadMemory().length) assets.push('Mission memory available');
@@ -24567,6 +24718,7 @@ def pulse_premium_undx_page():
       if(!undxLoadRepositoryContext()) missing.push('Repository context');
       if(!(project.linkedPreviewManifests || []).length) missing.push('Preview manifest');
       if(!(project.linkedRepositoryAnalyses || []).length && !undxLoadRepositoryAnalyses().length) missing.push('Repository analysis');
+      if(!(project.linkedChangeAnalyses || []).length && !undxLoadChangeAnalyses().length) missing.push('Change analysis');
       if(!(project.linkedRepositoryIntelligenceProfiles || []).length) missing.push('Repository intelligence profile');
       return missing;
     }
@@ -24588,6 +24740,7 @@ def pulse_premium_undx_page():
       if(undxLoadApprovalProtocol().length) score += 10;
       if((project?.linkedPreviewManifests || []).length) score += 10;
       if((project?.linkedRepositoryAnalyses || []).length || undxLoadRepositoryAnalyses().length) score += 10;
+      if((project?.linkedChangeAnalyses || []).length || undxLoadChangeAnalyses().length) score += 5;
       const taskProgress = undxWorkspaceTaskProgress(project);
       const milestoneProgress = undxWorkspaceMilestoneProgress(project);
       score += Math.round((taskProgress.percent / 100) * 8);
@@ -24680,6 +24833,7 @@ def pulse_premium_undx_page():
         undxBlock('Linked Repository Intelligence Profiles', undxWorkspacePillList((project.linkedRepositoryIntelligenceProfiles || []).map(item => item.profileId), 'None linked')),
         undxBlock('Linked Preview Manifests', undxWorkspacePillList((project.linkedPreviewManifests || []).map(item => item.manifestId), 'None linked')),
         undxBlock('Linked Repository Analyses', undxWorkspacePillList(repositoryAnalyses.map(item => item.analysisId), 'None linked')),
+        undxBlock('Linked Change Analyses', undxWorkspacePillList((project.linkedChangeAnalyses || []).map(item => item.analysisId), 'None linked')),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
         undxBlock('Task Progress', `${taskProgress.done}/${taskProgress.total} complete (${taskProgress.percent}%)`),
         undxBlock('Milestone Progress', `${milestoneProgress.done}/${milestoneProgress.total} complete (${milestoneProgress.percent}%)`),
@@ -24717,6 +24871,7 @@ def pulse_premium_undx_page():
     function undxCreateWorkspaceSummary(){
       const project = undxWorkspaceSelectedProject();
       const summaries = undxLoadWorkspaceSummaries();
+      const latestChange = undxLastChangeAnalysis || (project?.linkedChangeAnalyses || [])[0] || undxLoadChangeAnalyses()[0] || null;
       const healthScore = undxWorkspaceHealth(project);
       const readinessLevel = undxWorkspaceReadiness(healthScore);
       const nextRecommendedAction = undxWorkspaceRecommendedNextAction(project);
@@ -24730,7 +24885,7 @@ def pulse_premium_undx_page():
         missingAssets: undxWorkspaceMissingAssets(project),
         nextRecommendedAction,
         safetyStatus: 'Read-only intelligence only. File Access: Disabled. Execution Access: Disabled.',
-        suggestedNextPhase: undxWorkspaceSuggestedNextPhase(nextRecommendedAction, readinessLevel),
+        suggestedNextPhase: latestChange ? `Latest Change Analysis ${latestChange.analysisId}: ${latestChange.deploymentReadiness}` : undxWorkspaceSuggestedNextPhase(nextRecommendedAction, readinessLevel),
         createdAt: new Date().toISOString()
       });
       summary.summaryText = undxWorkspaceSummaryText(summary);
@@ -24757,6 +24912,9 @@ def pulse_premium_undx_page():
         `Project Name: ${summary.projectName}`,
         `Readiness Level: ${summary.readinessLevel}`,
         `Health Score: ${summary.healthScore}/100`,
+        `Latest Change Analysis: ${(undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || {}).analysisId || 'None'}`,
+        `Impact Score: ${(undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || {}).impactScore ?? 'Pending'}`,
+        `Readiness Status: ${(undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || {}).deploymentReadiness || 'Pending'}`,
         `Created Date: ${undxFormatMemoryTime(summary.createdAt)}`
       ].forEach(value => {
         const pill = document.createElement('span');
@@ -24801,6 +24959,7 @@ def pulse_premium_undx_page():
       undxRenderWorkspaceGraph();
       undxRenderWorkspaceSnapshot(project);
       undxRenderWorkspaceSummaries();
+      undxRefreshChangeSources();
     }
     function undxSendWorkspaceSummaryToChatFlow(){
       const summary = undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || undxGenerateWorkspaceSummaryFlow();
@@ -24859,6 +25018,413 @@ def pulse_premium_undx_page():
       if(undxWorkspaceMessage) undxWorkspaceMessage.textContent = `${plan.id} generated from UNDX Intelligence Workspace.`;
       document.getElementById('undx-task-execution-planner')?.scrollIntoView({behavior:'smooth', block:'start'});
       undxRenderIntelligenceWorkspace();
+    }
+    function undxImpactInterpretationForScore(score){
+      if(score <= 25) return 'Minimal';
+      if(score <= 50) return 'Moderate';
+      if(score <= 75) return 'Significant';
+      return 'Major';
+    }
+    function undxComplexityForScores(impact, risk){
+      const total = Math.max(impact, risk);
+      if(total >= 88) return 'Critical';
+      if(total >= 67) return 'High';
+      if(total >= 36) return 'Medium';
+      return 'Low';
+    }
+    function undxDeploymentReadinessForAnalysis(analysis){
+      if(!analysis) return 'Not Ready';
+      if(analysis.riskScore >= 76 || analysis.complexity === 'Critical') return 'Not Ready';
+      if(analysis.riskScore >= 56 || analysis.impactScore >= 70) return 'Planning Ready';
+      if(analysis.riskScore >= 36 || analysis.impactScore >= 45) return 'Review Ready';
+      return 'Candidate Ready';
+    }
+    function undxNormalizeChangeAnalysis(analysis){
+      const impactScore = Math.max(0, Math.min(100, Number(analysis.impactScore || 0)));
+      const riskScore = Math.max(0, Math.min(100, Number(analysis.riskScore || 0)));
+      const complexity = ['Low', 'Medium', 'High', 'Critical'].includes(analysis.complexity) ? analysis.complexity : undxComplexityForScores(impactScore, riskScore);
+      const deploymentReadiness = ['Not Ready', 'Planning Ready', 'Review Ready', 'Candidate Ready'].includes(analysis.deploymentReadiness) ? analysis.deploymentReadiness : undxDeploymentReadinessForAnalysis({impactScore, riskScore, complexity});
+      return {
+        analysisId: String(analysis.analysisId || `DIFF-UNDX-${Date.now()}`).slice(0,44),
+        sourceType: String(analysis.sourceType || 'workspace').slice(0,80),
+        sourceA: String(analysis.sourceA || 'Source A').slice(0,220),
+        sourceB: String(analysis.sourceB || 'Source B').slice(0,220),
+        summaryOfChanges: String(analysis.summaryOfChanges || '').slice(0,1200),
+        affectedSystems: undxNormalizeExecutionList(analysis.affectedSystems, ['Frontend', 'Backend'], 12, 120),
+        dependencyImpact: undxNormalizeExecutionList(analysis.dependencyImpact, ['Premium Modules'], 12, 180),
+        riskAssessment: String(analysis.riskAssessment || '').slice(0,1200),
+        testingRecommendations: undxNormalizeExecutionList(analysis.testingRecommendations, ['Unit Tests', 'Integration Tests', 'Security Tests'], 8, 140),
+        rolloutConsiderations: undxNormalizeExecutionList(analysis.rolloutConsiderations, ['Staged Rollout'], 8, 160),
+        readinessRecommendation: String(analysis.readinessRecommendation || 'Review Ready').slice(0,220),
+        impactScore,
+        riskScore,
+        riskFactors: {
+          Security: Number(analysis.riskFactors?.Security || 0),
+          Architecture: Number(analysis.riskFactors?.Architecture || 0),
+          Scalability: Number(analysis.riskFactors?.Scalability || 0),
+          Deployment: Number(analysis.riskFactors?.Deployment || 0),
+          Maintenance: Number(analysis.riskFactors?.Maintenance || 0)
+        },
+        complexity,
+        deploymentReadiness,
+        recommendedNextAction: String(analysis.recommendedNextAction || 'Run Agent Council Review').slice(0,220),
+        primaryAnalysisProvider: String(analysis.primaryAnalysisProvider || 'OpenAI').slice(0,80),
+        fallbackProvider: String(analysis.fallbackProvider || 'OpenAI').slice(0,80),
+        providerStatus: String(analysis.providerStatus || 'Standby').slice(0,80),
+        createdAt: analysis.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadChangeAnalyses(){
+      try{
+        const raw = localStorage.getItem(undxChangeAnalysesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.analysisId).slice(0,48).map(undxNormalizeChangeAnalysis) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveChangeAnalyses(items){
+      try{
+        localStorage.setItem(undxChangeAnalysesKey, JSON.stringify(items.slice(0,48)));
+      }catch(error){
+        if(undxChangeMessage) undxChangeMessage.textContent = 'Change Analysis Registry could not be updated.';
+      }
+    }
+    function undxNextChangeAnalysisId(items){
+      const max = items.reduce((highest, item) => {
+        const match = String(item.analysisId || '').match(/^DIFF-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `DIFF-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxChangeObjectText(object){
+      if(!object) return '';
+      return [object.label, object.value?.summaryText, object.value?.objective, object.value?.codexDirective, object.value?.summaryOfChanges, object.value?.name, object.value?.projectName, object.value?.readinessLevel, object.value?.status]
+        .filter(Boolean).join(' ');
+    }
+    function undxProjectSnapshotText(project){
+      if(!project) return '';
+      const tasks = undxWorkspaceTaskProgress(project);
+      const milestones = undxWorkspaceMilestoneProgress(project);
+      return `${project.projectId} ${project.name} ${project.type} ${project.priority} ${project.status} ${project.objective} linked mission ${project.linkedMission || project.source || ''} linked execution plans ${(project.linkedExecutionPlans || []).length} linked repository plans ${(project.linkedRepositories || []).length} linked preview manifests ${(project.linkedPreviewManifests || []).length} linked change analyses ${(project.linkedChangeAnalyses || []).length} task progress ${tasks.percent} milestone progress ${milestones.percent}`;
+    }
+    function undxChangeSourceObjects(type = 'workspace'){
+      if(type === 'execution'){
+        return undxLoadExecutionPlans().map(plan => ({id: plan.id, label: `${plan.id} · ${plan.sourceType}`, value: plan, text: undxExecutionPlanChatDirective(plan)}));
+      }
+      if(type === 'repository'){
+        return undxLoadRepositoryAnalyses().map(item => ({id: item.analysisId, label: `${item.analysisId} · ${item.repositoryName}`, value: item, text: `${item.analysisId} ${item.repositoryName} ${item.confidenceLevel} ${item.status}`}));
+      }
+      if(type === 'project'){
+        return undxLoadProjects().map(project => ({id: project.projectId, label: `${project.projectId} · ${project.name}`, value: project, text: undxProjectSnapshotText(project)}));
+      }
+      return undxLoadWorkspaceSummaries().map(summary => ({id: summary.summaryId, label: `${summary.summaryId} · ${summary.projectName}`, value: summary, text: summary.summaryText || undxWorkspaceSummaryText(summary)}));
+    }
+    function undxRefreshChangeSources(){
+      const type = undxChangeSourceType?.value || 'workspace';
+      const sources = undxChangeSourceObjects(type);
+      [undxChangeSourceA, undxChangeSourceB].forEach((select, index) => {
+        if(!select) return;
+        const previous = select.value;
+        select.replaceChildren();
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = sources.length ? 'Select intelligence object' : 'No objects available yet';
+        select.appendChild(empty);
+        sources.forEach(source => {
+          const option = document.createElement('option');
+          option.value = source.id;
+          option.textContent = source.label;
+          select.appendChild(option);
+        });
+        if(previous && sources.some(source => source.id === previous)) select.value = previous;
+        else if(sources[index]) select.value = sources[index].id;
+      });
+    }
+    function undxResolveChangePair(){
+      const type = undxChangeSourceType?.value || 'workspace';
+      const sources = undxChangeSourceObjects(type);
+      const sourceA = sources.find(item => item.id === undxChangeSourceA?.value);
+      const sourceB = sources.find(item => item.id === undxChangeSourceB?.value);
+      if(!sourceA || !sourceB || sourceA.id === sourceB.id) return null;
+      return {type, sourceA, sourceB};
+    }
+    function undxChangeAffectedSystems(text){
+      const lower = String(text || '').toLowerCase();
+      const systems = [];
+      if(/ui|page|dashboard|frontend|interface|mobile|layout|premium/.test(lower)) systems.push('Frontend', 'Premium Modules');
+      if(/api|route|backend|flask|server|provider|openai|router/.test(lower)) systems.push('Backend', 'AI Providers');
+      if(/database|storage|localstorage|memory|registry|table/.test(lower)) systems.push('Database');
+      if(/worker|railway|job|automation/.test(lower)) systems.push('Workers', 'Infrastructure');
+      if(/deploy|production|git|command|terminal/.test(lower)) systems.push('Infrastructure');
+      return [...new Set(systems.length ? systems : ['Frontend', 'Premium Modules'])];
+    }
+    function undxBuildChangeAnalysis(pair){
+      const current = undxLoadChangeAnalyses();
+      const textA = pair.sourceA.text || undxChangeObjectText(pair.sourceA);
+      const textB = pair.sourceB.text || undxChangeObjectText(pair.sourceB);
+      const combined = `${textA} ${textB}`.toLowerCase();
+      const lengthDelta = Math.abs(textA.length - textB.length);
+      const keywordHits = (combined.match(/security|auth|wallet|risk|deployment|database|worker|api|router|ai|premium|memory|approval|execution|repository|infrastructure|scalability|maintenance/g) || []).length;
+      const impactScore = Math.max(8, Math.min(100, 18 + Math.floor(lengthDelta / 25) + keywordHits * 4));
+      const riskFactors = {
+        Security: /security|auth|wallet|secret|risk|approval/.test(combined) ? 72 : 24,
+        Architecture: /route|backend|framework|repository|execution|project|workspace/.test(combined) ? 66 : 28,
+        Scalability: /worker|automation|load|scale|provider|router/.test(combined) ? 60 : 22,
+        Deployment: /deploy|production|railway|git|command|terminal/.test(combined) ? 76 : 20,
+        Maintenance: /memory|registry|localstorage|database|analysis|summary/.test(combined) ? 58 : 26
+      };
+      const riskScore = Math.max(10, Math.min(100, Math.round(Object.values(riskFactors).reduce((sum, value) => sum + value, 0) / 5) + Math.min(16, keywordHits)));
+      const complexity = undxComplexityForScores(impactScore, riskScore);
+      const affectedSystems = undxChangeAffectedSystems(combined);
+      const testingRecommendations = ['Unit Tests', 'Integration Tests'];
+      if(riskFactors.Security >= 60) testingRecommendations.push('Security Tests');
+      if(riskFactors.Scalability >= 55) testingRecommendations.push('Load Tests');
+      testingRecommendations.push('User Acceptance Tests');
+      const rolloutConsiderations = impactScore > 75 || riskScore > 70 ? ['Additional Review Required', 'Canary Rollout', 'Staged Rollout'] : impactScore > 45 ? ['Staged Rollout', 'Canary Rollout'] : ['Safe Immediate Rollout', 'Staged Rollout'];
+      const deploymentReadiness = undxDeploymentReadinessForAnalysis({impactScore, riskScore, complexity});
+      const nextAction = deploymentReadiness === 'Candidate Ready' ? 'Prepare Build Candidate' : riskScore > 65 ? 'Run Agent Council Review' : impactScore > 50 ? 'Generate New Execution Plan' : 'Generate Workspace Summary';
+      return undxNormalizeChangeAnalysis({
+        analysisId: undxNextChangeAnalysisId(current),
+        sourceType: pair.type,
+        sourceA: pair.sourceA.label,
+        sourceB: pair.sourceB.label,
+        summaryOfChanges: `UNDX compared ${pair.sourceA.label} against ${pair.sourceB.label} and detected a ${undxImpactInterpretationForScore(impactScore).toLowerCase()} change profile across ${affectedSystems.join(', ')}.`,
+        affectedSystems,
+        dependencyImpact: affectedSystems.map(system => `${system}: conceptual impact detected from selected intelligence objects`),
+        riskAssessment: `Risk factors: Security ${riskFactors.Security}, Architecture ${riskFactors.Architecture}, Scalability ${riskFactors.Scalability}, Deployment ${riskFactors.Deployment}, Maintenance ${riskFactors.Maintenance}. No files were accessed.`,
+        testingRecommendations,
+        rolloutConsiderations,
+        readinessRecommendation: deploymentReadiness,
+        impactScore,
+        riskScore,
+        riskFactors,
+        complexity,
+        deploymentReadiness,
+        recommendedNextAction: nextAction,
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxChangeAnalysisText(analysis){
+      return [
+        'UNDX Change Impact Analysis',
+        '',
+        `Change Analysis ID: ${analysis.analysisId}`,
+        `Source A: ${analysis.sourceA}`,
+        `Source B: ${analysis.sourceB}`,
+        `Impact Score: ${analysis.impactScore} (${undxImpactInterpretationForScore(analysis.impactScore)})`,
+        `Risk Score: ${analysis.riskScore}`,
+        `Change Complexity: ${analysis.complexity}`,
+        `Deployment Readiness: ${analysis.deploymentReadiness}`,
+        '',
+        `Summary of Changes: ${analysis.summaryOfChanges}`,
+        '',
+        'Affected Systems:',
+        ...analysis.affectedSystems.map(item => `- ${item}`),
+        '',
+        'Dependency Impact:',
+        ...analysis.dependencyImpact.map(item => `- ${item}`),
+        '',
+        `Risk Assessment: ${analysis.riskAssessment}`,
+        '',
+        'Testing Recommendations:',
+        ...analysis.testingRecommendations.map(item => `- ${item}`),
+        '',
+        'Rollout Considerations:',
+        ...analysis.rolloutConsiderations.map(item => `- ${item}`),
+        '',
+        `Readiness Recommendation: ${analysis.readinessRecommendation}`,
+        `Recommended Next Action: ${analysis.recommendedNextAction}`,
+        '',
+        'Change Intelligence Boundary: No repository files were accessed. No Git operations, command execution, repository modification, or deployments occurred.'
+      ].join('\\n');
+    }
+    function undxSetListItems(container, items){
+      if(!container) return;
+      container.replaceChildren();
+      items.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        container.appendChild(li);
+      });
+    }
+    function undxRenderDependencyMap(items){
+      if(!undxDependencyMap) return;
+      const all = ['Frontend', 'Backend', 'Database', 'AI Providers', 'Workers', 'Premium Modules', 'Infrastructure'];
+      undxDependencyMap.replaceChildren();
+      all.forEach(name => {
+        const node = document.createElement('span');
+        node.className = 'undx-dependency-node';
+        node.textContent = `${name}${items.includes(name) ? ' · Impacted' : ' · Watch'}`;
+        node.dataset.impacted = String(items.includes(name));
+        undxDependencyMap.appendChild(node);
+      });
+    }
+    function undxRenderChangeAnalysis(analysis){
+      undxLastChangeAnalysis = analysis || null;
+      if(analysis) undxSelectedChangeAnalysisId = analysis.analysisId;
+      if(undxChangeAnalysisEmpty) undxChangeAnalysisEmpty.hidden = Boolean(analysis);
+      if(!undxChangeAnalysisOutput) return;
+      undxChangeAnalysisOutput.replaceChildren();
+      if(!analysis){
+        undxRenderDependencyMap([]);
+        return;
+      }
+      const grid = document.createElement('div');
+      grid.className = 'undx-blueprint-grid';
+      grid.append(
+        undxBlock('Change Analysis ID', analysis.analysisId),
+        undxBlock('Source A', analysis.sourceA),
+        undxBlock('Source B', analysis.sourceB),
+        undxBlock('Summary of Changes', analysis.summaryOfChanges),
+        undxBlock('Affected Systems', analysis.affectedSystems),
+        undxBlock('Dependency Impact', analysis.dependencyImpact),
+        undxBlock('Risk Assessment', analysis.riskAssessment),
+        undxBlock('Testing Recommendations', analysis.testingRecommendations),
+        undxBlock('Rollout Considerations', analysis.rolloutConsiderations),
+        undxBlock('Readiness Recommendation', analysis.readinessRecommendation),
+        undxBlock('Recommended Next Action', analysis.recommendedNextAction)
+      );
+      const output = document.createElement('pre');
+      output.className = 'undx-directive-output';
+      output.textContent = undxChangeAnalysisText(analysis);
+      undxChangeAnalysisOutput.append(grid, output);
+      if(undxImpactScore) undxImpactScore.textContent = String(analysis.impactScore);
+      if(undxImpactInterpretation) undxImpactInterpretation.textContent = undxImpactInterpretationForScore(analysis.impactScore);
+      if(undxRiskScore) undxRiskScore.textContent = String(analysis.riskScore);
+      if(undxRiskInterpretation) undxRiskInterpretation.textContent = Object.entries(analysis.riskFactors).map(([key, value]) => `${key}: ${value}`).join(' · ');
+      if(undxChangeComplexity) undxChangeComplexity.textContent = analysis.complexity;
+      if(undxDeploymentReadiness) undxDeploymentReadiness.textContent = analysis.deploymentReadiness;
+      if(undxChangeNextAction) undxChangeNextAction.textContent = analysis.recommendedNextAction;
+      if(undxPrimaryAnalysisProvider) undxPrimaryAnalysisProvider.textContent = analysis.primaryAnalysisProvider || 'OpenAI';
+      if(undxFallbackAnalysisProvider) undxFallbackAnalysisProvider.textContent = analysis.fallbackProvider || 'OpenAI';
+      if(undxAnalysisProviderStatus) undxAnalysisProviderStatus.textContent = analysis.providerStatus || 'Standby';
+      undxSetListItems(undxTestingRecommendations, analysis.testingRecommendations);
+      undxSetListItems(undxRolloutRecommendations, analysis.rolloutConsiderations);
+      undxRenderDependencyMap(analysis.affectedSystems);
+    }
+    function undxGenerateChangeAnalysisFlow(){
+      const pair = undxResolveChangePair();
+      if(!pair){
+        if(undxChangeMessage) undxChangeMessage.textContent = 'Select two comparable intelligence objects before generating change analysis.';
+        return null;
+      }
+      const analysis = undxBuildChangeAnalysis(pair);
+      undxSaveChangeAnalyses([analysis, ...undxLoadChangeAnalyses()]);
+      undxRenderChangeAnalysis(analysis);
+      undxRenderChangeRegistry();
+      undxRefreshChangeSources();
+      undxRenderIntelligenceWorkspace();
+      if(undxChangeMessage) undxChangeMessage.textContent = `${analysis.analysisId} stored in Change Analysis Registry.`;
+      return analysis;
+    }
+    function undxSendChangeAnalysisToChat(analysis){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxChangeAnalysisText(analysis);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxChangeMessage) undxChangeMessage.textContent = `${analysis.analysisId} loaded into UNDX Chat Interface.`;
+    }
+    function undxAttachChangeAnalysisToProject(analysis){
+      const project = undxCurrentProject() || undxLoadProjects()[0] || null;
+      if(!project){
+        if(undxChangeMessage) undxChangeMessage.textContent = 'Open or create a project before attaching a change analysis.';
+        return;
+      }
+      undxSelectedProjectId = project.projectId;
+      undxUpdateProject(project.projectId, current => {
+        const existing = Array.isArray(current.linkedChangeAnalyses) ? current.linkedChangeAnalyses : [];
+        return {...current, linkedChangeAnalyses: [analysis, ...existing.filter(item => item.analysisId !== analysis.analysisId)].slice(0,24)};
+      });
+      if(undxChangeMessage) undxChangeMessage.textContent = `${analysis.analysisId} attached to ${project.projectId}.`;
+      undxRenderIntelligenceWorkspace();
+    }
+    function undxGenerateWorkspaceSummaryFromChange(analysis){
+      undxLastChangeAnalysis = analysis;
+      const summary = undxGenerateWorkspaceSummaryFlow();
+      if(undxChangeMessage) undxChangeMessage.textContent = `${summary.summaryId} generated with latest change analysis ${analysis.analysisId}.`;
+      return summary;
+    }
+    function undxDeleteChangeAnalysis(analysisId){
+      undxSaveChangeAnalyses(undxLoadChangeAnalyses().filter(item => item.analysisId !== analysisId));
+      const projects = undxLoadProjects().map(project => ({...project, linkedChangeAnalyses: (project.linkedChangeAnalyses || []).filter(item => item.analysisId !== analysisId)}));
+      undxSaveProjects(projects);
+      if(undxSelectedChangeAnalysisId === analysisId){
+        undxSelectedChangeAnalysisId = null;
+        undxRenderChangeAnalysis(null);
+      }
+      undxRenderChangeRegistry();
+      undxRenderProjects();
+      if(undxSelectedProjectId) undxOpenProject(undxSelectedProjectId, false);
+      undxRenderIntelligenceWorkspace();
+      if(undxChangeMessage) undxChangeMessage.textContent = 'Change analysis deleted.';
+    }
+    function undxCreateChangeAnalysisCard(analysis){
+      const article = document.createElement('article');
+      article.className = 'undx-change-card';
+      const title = document.createElement('h4');
+      title.textContent = analysis.analysisId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Analysis ID: ${analysis.analysisId}`, `Impact Score: ${analysis.impactScore}`, `Risk Score: ${analysis.riskScore}`, `Complexity: ${analysis.complexity}`, `Created Date: ${undxFormatMemoryTime(analysis.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Analysis', () => undxRenderChangeAnalysis(analysis), true),
+        undxProjectActionButton('Send To UNDX Chat', () => undxSendChangeAnalysisToChat(analysis)),
+        undxProjectActionButton('Attach To Project', () => undxAttachChangeAnalysisToProject(analysis)),
+        undxProjectActionButton('Generate Workspace Summary', () => undxGenerateWorkspaceSummaryFromChange(analysis)),
+        undxProjectActionButton('Delete Analysis', () => undxDeleteChangeAnalysis(analysis.analysisId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderChangeRegistry(){
+      const analyses = undxLoadChangeAnalyses();
+      if(undxChangeRegistryEmpty) undxChangeRegistryEmpty.hidden = analyses.length > 0;
+      if(!undxChangeRegistryList) return;
+      undxChangeRegistryList.replaceChildren();
+      analyses.forEach(analysis => undxChangeRegistryList.appendChild(undxCreateChangeAnalysisCard(analysis)));
+    }
+    async function undxRunImpactReviewFlow(){
+      let analysis = undxLastChangeAnalysis || (undxSelectedChangeAnalysisId ? undxLoadChangeAnalyses().find(item => item.analysisId === undxSelectedChangeAnalysisId) : null);
+      if(!analysis) analysis = undxGenerateChangeAnalysisFlow();
+      if(!analysis) return;
+      if(undxChangeMessage) undxChangeMessage.textContent = 'Routing impact review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          credentials:'same-origin',
+          body:JSON.stringify({mission: undxChangeAnalysisText(analysis)})
+        });
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || data.router?.agents || [];
+        const primary = agents.find(agent => agent.key === 'architect') || agents[0] || {};
+        analysis = undxNormalizeChangeAnalysis({
+          ...analysis,
+          primaryAnalysisProvider: primary.selected_provider_label || 'Claude',
+          fallbackProvider: data.router?.fallback_provider_label || 'OpenAI',
+          providerStatus: primary.provider_status || primary.selected_provider_status || 'Online'
+        });
+        undxSaveChangeAnalyses([analysis, ...undxLoadChangeAnalyses().filter(item => item.analysisId !== analysis.analysisId)]);
+        undxRenderChangeAnalysis(analysis);
+        undxRenderChangeRegistry();
+        if(undxChangeMessage) undxChangeMessage.textContent = 'Multi-brain impact review complete.';
+      }catch(error){
+        analysis = undxNormalizeChangeAnalysis({...analysis, primaryAnalysisProvider:'OpenAI', fallbackProvider:'OpenAI', providerStatus:'Fallback Active'});
+        undxSaveChangeAnalyses([analysis, ...undxLoadChangeAnalyses().filter(item => item.analysisId !== analysis.analysisId)]);
+        undxRenderChangeAnalysis(analysis);
+        undxRenderChangeRegistry();
+        if(undxChangeMessage) undxChangeMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
     }
     function undxNormalizeRepositoryPlan(plan){
       return {
@@ -25752,6 +26318,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedChangeAnalyses(project, card){
+      const section = undxWorkspaceSection('Linked Change Analyses');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedChangeAnalyses || []).length){
+        list.appendChild(undxWorkspaceEmpty('No change analyses linked yet. Attach Diff Intelligence output to track impact and readiness.'));
+      }else{
+        project.linkedChangeAnalyses.forEach(analysis => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = analysis.analysisId;
+          const meta = document.createElement('p');
+          meta.textContent = `Impact Score: ${analysis.impactScore} · Risk Score: ${analysis.riskScore} · Complexity: ${analysis.complexity} · Deployment Readiness: ${analysis.deploymentReadiness}`;
+          const summary = document.createElement('p');
+          summary.textContent = analysis.summaryOfChanges || '';
+          item.append(title, meta, summary);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -25832,6 +26421,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedRepositoryIntelligenceProfiles(project, card);
       undxRenderLinkedPreviewManifests(project, card);
       undxRenderLinkedRepositoryAnalyses(project, card);
+      undxRenderLinkedChangeAnalyses(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -25906,6 +26496,7 @@ def pulse_premium_undx_page():
         linkedRepositoryIntelligenceProfiles: [],
         linkedPreviewManifests: [],
         linkedRepositoryAnalyses: [],
+        linkedChangeAnalyses: [],
         readOnlyAccessStatus: 'Not Connected',
         lastBuildDirective: '',
         aiEnhancement: {
@@ -26459,6 +27050,9 @@ def pulse_premium_undx_page():
     undxSendWorkspaceSummaryToChat?.addEventListener('click', undxSendWorkspaceSummaryToChatFlow);
     undxSaveWorkspaceSummaryToMemory?.addEventListener('click', undxSaveWorkspaceSummaryToMemoryFlow);
     undxGenerateWorkspaceExecutionPlan?.addEventListener('click', undxGenerateExecutionPlanFromWorkspaceFlow);
+    undxChangeSourceType?.addEventListener('change', undxRefreshChangeSources);
+    undxGenerateChangeAnalysis?.addEventListener('click', undxGenerateChangeAnalysisFlow);
+    undxRunImpactReview?.addEventListener('click', undxRunImpactReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -26475,6 +27069,9 @@ def pulse_premium_undx_page():
     undxRenderPreviewManifests();
     undxRenderRepositoryContext();
     undxRenderIntelligenceWorkspace();
+    undxRefreshChangeSources();
+    undxRenderChangeRegistry();
+    undxRenderChangeAnalysis(undxLoadChangeAnalyses()[0] || null);
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
     undxRefreshRepositoryProfileSourcePreview();
