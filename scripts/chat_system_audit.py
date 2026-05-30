@@ -33,7 +33,9 @@ def main():
     expect("messageLoadUrl" in active_pulse_chat and "messageSendUrl" in active_pulse_chat, "Pulse Messenger uses unified message load/send bridge")
     expect("/api/pulse/messages/${Number(conversationId)}/messages" in active_pulse_chat, "direct and group messages use canonical Pulse endpoint")
     expect("/api/pulse/messages/rooms/${room}/messages" in active_pulse_chat, "room messages use canonical Pulse endpoint")
+    expect('/api/messages/${Number(conversationId)}' in active_pulse_chat and 'source_kind:"legacy"' in active_pulse_chat, "legacy Dashboard direct rows keep legacy message bridge")
     expect("/api/pulse/chatrooms" in active_pulse_chat and "/api/pulse/messages/group-conversations" in active_pulse_chat, "rooms and groups remain wired")
+    expect("messageErrorCopy" in active_pulse_chat and "You do not have access to this chat." in active_pulse_chat and "Conversation not found." in active_pulse_chat, "message panel has status-specific error copy")
     expect("pulseMessengerPendingV2" not in active_pulse_chat, "broken Pulse recovery queue is not active in Pulse Messenger shell")
     for primitive in [
         "loadConversations",

@@ -35509,18 +35509,34 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           const room = encodeURIComponent(roomId || "pulse-general");
           return `/api/pulse/messages/rooms/${room}/messages?limit=80${sinceId ? `&since_id=${sinceId}` : ""}`;
         }
+        if (kind === "legacy") return `/api/messages/${Number(conversationId)}?limit=80${sinceId ? `&since_id=${sinceId}` : ""}`;
         return `/api/pulse/messages/${Number(conversationId)}/messages?limit=80${sinceId ? `&since_id=${sinceId}` : ""}`;
       }
       function messageSendUrl(conversationId, kind, roomId) {
         if (kind === "room") return `/api/pulse/messages/rooms/${encodeURIComponent(roomId || "pulse-general")}/messages`;
+        if (kind === "legacy") return `/api/messages/${Number(conversationId)}/send`;
         return `/api/pulse/messages/${Number(conversationId)}/send`;
       }
       async function fetchJson(url, options = {}) {
         const response = await fetch(url, { cache:"no-store", credentials:"same-origin", ...options });
         const data = await response.json().catch(() => ({}));
         chatTrace("http", { endpoint:url, status:response.status, ok:response.ok, body_ok:data.ok !== false, trace_id:data.trace_id || "", message_count:(data.messages || data.items || []).length });
-        if (!response.ok || data.ok === false) throw new Error(data.message || data.error || "Unable to load messages.");
+        if (!response.ok || data.ok === false) {
+          const error = new Error(data.message || data.error || "Unable to load messages.");
+          error.status = response.status;
+          error.traceId = data.trace_id || "";
+          error.endpoint = data.endpoint || url;
+          throw error;
+        }
         return data;
+      }
+      function messageErrorCopy(error, kind) {
+        const status = Number(error?.status || 0);
+        if (status === 401) return "Log in again to view these messages.";
+        if (status === 403) return "You do not have access to this chat.";
+        if (status === 404) return kind === "room" ? "Chat room not found." : "Conversation not found.";
+        if (status >= 500) return kind === "room" ? "Chat room messages could not load. Try again shortly." : "Messages could not load. Try again shortly.";
+        return error?.message || "Unable to load messages.";
       }
       function setThreadChrome(title, subtitle, mode) {
         qs("[data-thread-title]").textContent = title || "Pulse chat";
@@ -35532,7 +35548,8 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
         const title = item.title || item.name || "Pulse chat";
         const latest = item.latest_message || item.last_message || item.description || item.pinned_notice || "No messages yet.";
         const meta = kind === "room" ? `${Number(item.online_count || 0)} online` : kind === "group" ? `${Number(item.member_count || 0)} members` : "Direct";
-        return `<button class="pulse-dashboard-row" type="button" data-open-chat="${escapeHtml(id)}" data-open-kind="${escapeHtml(kind)}" data-room-id="${escapeHtml(item.room_id || item.key || item.id || "")}"><strong>${escapeHtml(title)}${Number(item.unread_count || 0) ? ` <span class="pill">${Number(item.unread_count || 0)}</span>` : ""}</strong><span>${escapeHtml(latest)}</span><span>${escapeHtml(meta)} ${friendlyTime(item.last_message_at || item.updated_at)}</span></button>`;
+        const sourceKind = item.source_kind || kind;
+        return `<button class="pulse-dashboard-row" type="button" data-open-chat="${escapeHtml(id)}" data-open-kind="${escapeHtml(sourceKind)}" data-room-id="${escapeHtml(item.room_id || item.key || item.id || "")}"><strong>${escapeHtml(title)}${Number(item.unread_count || 0) ? ` <span class="pill">${Number(item.unread_count || 0)}</span>` : ""}</strong><span>${escapeHtml(latest)}</span><span>${escapeHtml(meta)} ${friendlyTime(item.last_message_at || item.updated_at)}</span></button>`;
       }
       function chatMessageHtml(message, optimistic = false) {
         const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_id || message.sender_user_id || 0) === Number(state.currentUserId || 0);
@@ -35582,7 +35599,7 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           ]);
           const seen = new Set();
           const rows = [];
-          [...(legacy.conversations || legacy.threads || []), ...(pulse.conversations || [])].forEach(item => {
+          [...(pulse.conversations || []), ...(legacy.conversations || legacy.threads || []).map(item => ({ ...item, source_kind:"legacy" }))].forEach(item => {
             const id = item.conversation_id || item.thread_id || item.id;
             if (!id || seen.has(String(id))) return;
             seen.add(String(id));
@@ -35631,19 +35648,20 @@ def pulse_dashboard_messenger_page(active_thread_id=0):
           state.activeConversationId = Number(data.conversation_id || data.conversation?.conversation_id || conversationId || 0);
           const conversation = data.conversation || {};
           const rawType = String(conversation.conversation_type || kind || "direct").toLowerCase();
-          const resolvedKind = rawType === "room" ? "room" : (rawType.includes("group") || rawType.includes("community") || rawType.includes("creator") || rawType.includes("live")) ? "group" : "direct";
+          const resolvedKind = kind === "legacy" ? "legacy" : rawType === "room" ? "room" : (rawType.includes("group") || rawType.includes("community") || rawType.includes("creator") || rawType.includes("live")) ? "group" : "direct";
           state.activeKind = resolvedKind;
           state.activeRoomId = roomId || conversation.room_key || conversation.room_id || state.activeRoomId || "";
-          const title = conversation.title || (resolvedKind === "room" ? "Pulse room" : resolvedKind === "group" ? "Group chat" : "Private conversation");
+          const title = conversation.title || data.thread?.other?.display_name || (resolvedKind === "room" ? "Pulse room" : resolvedKind === "group" ? "Group chat" : "Private conversation");
           setThreadChrome(title, resolvedKind === "room" ? "Open Pulse room" : resolvedKind === "group" ? "Group conversation" : "Private conversation", resolvedKind === "room" ? "Room" : resolvedKind === "group" ? "Group" : "Direct");
           renderMessages(data.messages || data.items || []);
           chatTrace("hydrated", { kind:state.activeKind, room_id:state.activeRoomId, message_count:(data.messages || data.items || []).length });
           setComposer(true);
-          if (state.activeConversationId) history.replaceState(null, "", "/pulse/messages/" + state.activeConversationId);
+          if (state.activeConversationId && state.activeKind !== "legacy") history.replaceState(null, "", "/pulse/messages/" + state.activeConversationId);
         } catch (error) {
-          qs("[data-chat-thread]").innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(error.message || "Unable to load messages.")}</div>`;
-          setThreadChrome("Message loading failed", "Use another chat or try again.", "Error");
-          chatTrace("hydrate_failed", { error:error.message || String(error), kind, room_id:roomId });
+          const copy = messageErrorCopy(error, kind);
+          qs("[data-chat-thread]").innerHTML = `<div class="pulse-dashboard-empty">${escapeHtml(copy)}</div>`;
+          setThreadChrome("Message loading failed", copy, "Error");
+          chatTrace("hydrate_failed", { error:error.message || String(error), status:error.status || 0, trace_id:error.traceId || "", kind, room_id:roomId });
         }
       }
       async function openRoom(roomId) {
@@ -38037,7 +38055,6 @@ def api_pulse_chatroom_messages(room_id):
             "endpoint": f"/api/pulse/chatrooms/{room_id}/messages",
             "room_id": room_id,
             "error_type": exc.__class__.__name__,
-            "debug": str(exc)[:500],
             "retriable": True,
         }), 500
 
@@ -38124,17 +38141,30 @@ def api_pulse_conversation_detail(conversation_id):
         """
         SELECT c.*
         FROM pulse_conversations c
-        JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
         WHERE c.id=? AND COALESCE(c.status,'active')='active'
+          AND COALESCE(c.deleted_at,'')=''
         LIMIT 1
         """,
-        (user["user_id"], conversation_id),
+        (conversation_id,),
         )
         conversation = dict(cur.fetchone() or {})
         if not conversation:
-            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "not_found", trace_id, {"conversation_id": conversation_id})
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "not_found", trace_id, {"conversation_id": conversation_id, "http_status": 404})
             conn.commit(); conn.close()
-            return api_error("This conversation is no longer available.", 404, trace_id)
+            return api_error("Conversation not found.", 404, trace_id)
+        cur.execute(
+        """
+        SELECT 1
+        FROM pulse_conversation_participants p
+        WHERE p.conversation_id=? AND p.user_id=? AND COALESCE(p.left_at,'')=''
+        LIMIT 1
+        """,
+        (conversation_id, user["user_id"]),
+        )
+        if not cur.fetchone():
+            chat_health_service.record_trace(cur, user["user_id"], f"/api/pulse/messages/{conversation_id}", "forbidden", trace_id, {"conversation_id": conversation_id, "http_status": 403})
+            conn.commit(); conn.close()
+            return api_error("You do not have access to this chat.", 403, trace_id)
         limit = max(1, min(safe_int(request.args.get("limit"), 30), 80))
         before_id = safe_int(request.args.get("before_id"), 0)
         if before_id:
@@ -38391,18 +38421,32 @@ def api_pulse_conversation_messages(conversation_id):
             """
             SELECT c.*
             FROM pulse_conversations c
-            JOIN pulse_conversation_participants p ON p.conversation_id=c.id AND p.user_id=? AND COALESCE(p.left_at,'')=''
             WHERE c.id=? AND COALESCE(c.status,'active')='active'
+              AND COALESCE(c.deleted_at,'')=''
             LIMIT 1
             """,
-            (user["user_id"], conversation_id),
+            (conversation_id,),
         )
         conversation = dict(cur.fetchone() or {})
         if not conversation:
             chat_health_service.record_trace(cur, user["user_id"], endpoint, "not_found", trace_id, {"conversation_id": conversation_id, "http_status": 404})
             conn.commit(); conn.close()
             logging.warning("PULSE_MESSAGE_LOAD_NOT_FOUND trace_id=%s user_id=%s conversation_id=%s endpoint=%s", trace_id, user.get("user_id"), conversation_id, endpoint)
-            return jsonify({"ok": False, "message": "This conversation is no longer available.", "trace_id": trace_id, "endpoint": endpoint}), 404
+            return jsonify({"ok": False, "message": "Conversation not found.", "trace_id": trace_id, "endpoint": endpoint}), 404
+        cur.execute(
+            """
+            SELECT 1
+            FROM pulse_conversation_participants p
+            WHERE p.conversation_id=? AND p.user_id=? AND COALESCE(p.left_at,'')=''
+            LIMIT 1
+            """,
+            (conversation_id, user["user_id"]),
+        )
+        if not cur.fetchone():
+            chat_health_service.record_trace(cur, user["user_id"], endpoint, "forbidden", trace_id, {"conversation_id": conversation_id, "http_status": 403})
+            conn.commit(); conn.close()
+            logging.warning("PULSE_MESSAGE_LOAD_FORBIDDEN trace_id=%s user_id=%s conversation_id=%s endpoint=%s", trace_id, user.get("user_id"), conversation_id, endpoint)
+            return jsonify({"ok": False, "message": "You do not have access to this chat.", "trace_id": trace_id, "endpoint": endpoint}), 403
         limit = max(1, min(safe_int(request.args.get("limit"), 30), 100))
         before_id = safe_int(request.args.get("before_id"), 0)
         if before_id:
@@ -38461,7 +38505,7 @@ def api_pulse_conversation_messages(conversation_id):
         except Exception:
             pass
         logging.exception("PULSE_MESSAGE_LOAD_FAILED trace_id=%s user_id=%s conversation_id=%s endpoint=%s", trace_id, user.get("user_id"), conversation_id, endpoint)
-        return jsonify({"ok": False, "message": "Messages could not load.", "trace_id": trace_id, "endpoint": endpoint, "error_type": exc.__class__.__name__, "debug": str(exc)[:500]}), 500
+        return jsonify({"ok": False, "message": "Messages could not load.", "trace_id": trace_id, "endpoint": endpoint, "error_type": exc.__class__.__name__}), 500
 
 
 @webhook_app.route("/api/pulse/messages/<int:message_id>/react", methods=["POST"])
