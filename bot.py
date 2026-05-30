@@ -25590,6 +25590,180 @@ sqlite</textarea></label>
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-repository-indexing-engine' id='undx-repository-indexing-engine'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Repository Indexing: Online</span>
+            <h2>UNDX Repository Indexing Engine</h2>
+          </div>
+          <p>Build searchable repository intelligence, relationships, impact awareness, and architectural understanding.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX repository indexing engine status'>
+              <span>Repository Indexing: <strong>Online</strong></span>
+              <span>Relationship Engine: <strong>Online</strong></span>
+              <span>Impact Intelligence: <strong>Online</strong></span>
+              <span>Dependency Mapping: <strong>Online</strong></span>
+              <span>Execution Access: <strong>Disabled</strong></span>
+              <span>Phase: <strong>37</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Index Registry</span>
+              <h3>Repository Index Registry</h3>
+              <p>Repository ID · Language Profile · Framework Profile · Module Inventory · Route Inventory · Service Inventory · Dependency Inventory · Relationship Inventory · Risk Profile · Readiness Score</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateRepositoryIndex'>Generate Repository Index</button></div>
+              <p>Storage: <strong>undxRepositoryIndexes</strong> · Format: <strong>INDEX-UNDX-0001</strong></p>
+              <p class='undx-project-message' id='undxRepositoryIndexMessage' aria-live='polite'></p>
+              <div class='undx-memory-empty' id='undxRepositoryIndexEmpty'>No repository indexes stored yet. Generate an index from an approved read-only repository connection.</div>
+              <div class='undx-simulation-registry' id='undxRepositoryIndexList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Relationship Graph Engine</span>
+              <h3>Relationship Graph Engine</h3>
+              <p>Route ↔ Service · Service ↔ Module · Module ↔ Dependency · Module ↔ Component · Worker ↔ Database · API ↔ Service · Template ↔ Route</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateRepositoryRelationshipGraph'>Generate Relationship Graph</button></div>
+              <p>Storage: <strong>undxRepositoryRelationships</strong> · Format: <strong>RGRAPH-UNDX-0001</strong></p>
+              <div class='undx-chain-list' id='undxRepositoryRelationshipGraphOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Search Engine</span>
+              <h3>Repository Search Engine</h3>
+              <p>search results · relationship matches · impact matches</p>
+              <label>Search Indexed Intelligence<input id='undxRepositorySearchInput' value='UNDX services' placeholder='Search modules, routes, services, dependencies, workers, templates, reports'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxRunRepositorySearch'>Run Repository Search</button></div>
+              <p>Storage: <strong>undxRepositorySearches</strong> · Format: <strong>SEARCH-UNDX-0001</strong></p>
+              <div class='undx-system-impact-grid' id='undxRepositorySearchOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Impact Analysis Engine</span>
+              <h3>Impact Analysis Engine</h3>
+              <label>Impact Target<input id='undxRepositoryImpactTarget' value='UNDX' placeholder='Example: module, route, service, dependency'></label>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateRepositoryImpact'>Generate Impact Analysis</button></div>
+              <p>Storage: <strong>undxRepositoryImpacts</strong> · Format: <strong>RIMPACT-UNDX-0001</strong></p>
+              <div class='undx-risk-grid' id='undxRepositoryImpactOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Dependency Mapping Engine</span>
+              <h3>Dependency Mapping Engine</h3>
+              <p>Direct Dependencies · Indirect Dependencies · Dependency Clusters · Critical Dependencies · Dependency Chains · Dependency Risk Score</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateDependencyIndex'>Generate Dependency Index</button></div>
+              <p>Storage: <strong>undxDependencyIndexes</strong> · Format: <strong>DINDEX-UNDX-0001</strong></p>
+              <div class='undx-risk-grid' id='undxDependencyIndexOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Knowledge Layer</span>
+              <h3>Repository Knowledge Layer</h3>
+              <p>Architecture Summary · Repository Summary · Module Summary · Dependency Summary · Risk Summary</p>
+              <div class='undx-project-actions'><button class='button primary' type='button' id='undxGenerateRepositoryKnowledge'>Generate Repository Knowledge</button></div>
+              <p>Storage: <strong>undxRepositoryKnowledge</strong> · Format: <strong>RKNOW-UNDX-0001</strong></p>
+              <div class='undx-simulation-output' id='undxRepositoryKnowledgeOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Readiness Engine</span>
+              <h3>Repository Readiness Engine</h3>
+              <p>Observed · Indexed · Understood · Mapped · Execution Candidate</p>
+              <div class='undx-system-impact-grid' id='undxRepositoryIndexReadinessOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Questions Engine</span>
+              <h3>Repository Questions Engine</h3>
+              <p>Which files own this route? Which service owns this feature? Which dependency creates risk? Which module is most critical? Which tests provide coverage?</p>
+              <div class='undx-chain-list' id='undxRepositoryIndexQuestionsOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Intelligence Reports</span>
+              <h3>Repository Intelligence Reports</h3>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateRepositoryIndexReport'>Generate Repository Index Report</button>
+                <button class='button' type='button' id='undxRunRepositoryIndexReview'>Run Multi-Agent Repository Review</button>
+              </div>
+              <p>Storage: <strong>undxRepositoryIndexReports</strong> · Format: <strong>RIDXREP-UNDX-0001</strong></p>
+              <div class='undx-memory-empty' id='undxRepositoryIndexReportEmpty'>No repository index reports stored yet. Generate a report to preserve searchable repository intelligence.</div>
+              <div class='undx-simulation-registry' id='undxRepositoryIndexReportList' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Open Repository Index Report</span>
+              <h3>Repository Index Report</h3>
+              <div class='undx-evolution-empty' id='undxRepositoryIndexReportDetailEmpty'>Open a repository index report to view repository summary, dependency summary, impact summary, readiness score, risk score, and recommendations.</div>
+              <div class='undx-simulation-output' id='undxRepositoryIndexReportDetail' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Agent Repository Review</span>
+              <h3>Multi-Agent Repository Review</h3>
+              <div id='undxRepositoryIndexReviewOutput'><p>Architecture Findings, Dependency Findings, Security Findings, Testing Findings, Documentation Findings, Optimization Findings, and Combined Repository Recommendation will appear after review.</p></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Intelligence Dashboard</span>
+              <h3>Repository Intelligence Dashboard</h3>
+              <p>Total Indexed Repositories: <strong id='undxTotalIndexedRepositories'>0</strong></p>
+              <p>Total Modules: <strong id='undxIndexTotalModules'>0</strong></p>
+              <p>Total Services: <strong id='undxIndexTotalServices'>0</strong></p>
+              <p>Total Routes: <strong id='undxIndexTotalRoutes'>0</strong></p>
+              <p>Total Dependencies: <strong id='undxIndexTotalDependencies'>0</strong></p>
+              <p>Most Connected Module: <strong id='undxIndexMostConnectedModule'>None</strong></p>
+              <p>Highest Risk Dependency: <strong id='undxIndexHighestRiskDependency'>None</strong></p>
+              <p>Repository Readiness: <strong id='undxIndexRepositoryReadiness'>Observed</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Repository Index Report: <strong id='undxProjectRepositoryIndexReport'>None</strong></p>
+              <p>Repository Readiness: <strong id='undxProjectIndexReadiness'>Observed</strong></p>
+              <p>Repository Risk: <strong id='undxProjectIndexRisk'>0</strong></p>
+              <p>Most Critical Module: <strong id='undxProjectMostCriticalModule'>Pending</strong></p>
+              <p>Highest Risk Dependency: <strong id='undxProjectHighestRiskDependency'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Testing Intelligence Integration</span>
+              <h3>Testing Intelligence Integration</h3>
+              <p>Impacted Tests · Coverage Areas · Testing Readiness · Testing Recommendations</p>
+              <div class='undx-chain-list' id='undxIndexTestingIntegration'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Context-Aware Coding Integration</span>
+              <h3>Context-Aware Coding Integration</h3>
+              <p>Code Placement Recommendations · Module Ownership · Implementation Patterns · Impacted Systems</p>
+              <div class='undx-chain-list' id='undxIndexCodingIntegration'></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Connector Integration</span>
+              <h3>Repository Connector Integration</h3>
+              <p>Indexing only from approved repository connections. Read-only connector reports remain the source of indexing intelligence.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Memory Integration</span>
+              <h3>Repository Memory Integration</h3>
+              <p>Repository indexes · Repository summaries · Repository relationships · Repository risks · Repository reviews</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Repository Knowledge Graph Integration</span>
+              <h3>Repository Knowledge Graph Integration</h3>
+              <p>module relationships · service relationships · dependency relationships · route relationships · repository relationships</p>
+              <p>Module relationships · Service relationships · Dependency relationships · Route relationships · Repository relationships</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Repository Indexing Engine is read-only. Repository information was indexed for intelligence purposes only. No files were modified. No commands were executed. No Git operations were performed. No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 37<br><strong>Repository Indexing Engine</strong></span>
+                <span>Phase 38<br><strong>Task Execution Sandbox</strong></span>
+                <span>Phase 39<br><strong>Controlled Code Generation</strong></span>
+                <span>Phase 40<br><strong>Human Approved Repository Actions</strong></span>
+                <span>Phase 41<br><strong>Controlled File Editing Engine</strong></span>
+                <span>Phase 42<br><strong>Autonomous Engineering Workspace</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -26817,6 +26991,46 @@ sqlite</textarea></label>
     const undxProjectConnectorTrustScore = document.getElementById('undxProjectConnectorTrustScore');
     const undxProjectConnectorReports = document.getElementById('undxProjectConnectorReports');
     const undxProjectConnectorRisks = document.getElementById('undxProjectConnectorRisks');
+    const undxGenerateRepositoryIndex = document.getElementById('undxGenerateRepositoryIndex');
+    const undxRepositoryIndexMessage = document.getElementById('undxRepositoryIndexMessage');
+    const undxRepositoryIndexEmpty = document.getElementById('undxRepositoryIndexEmpty');
+    const undxRepositoryIndexList = document.getElementById('undxRepositoryIndexList');
+    const undxGenerateRepositoryRelationshipGraph = document.getElementById('undxGenerateRepositoryRelationshipGraph');
+    const undxRepositoryRelationshipGraphOutput = document.getElementById('undxRepositoryRelationshipGraphOutput');
+    const undxRepositorySearchInput = document.getElementById('undxRepositorySearchInput');
+    const undxRunRepositorySearch = document.getElementById('undxRunRepositorySearch');
+    const undxRepositorySearchOutput = document.getElementById('undxRepositorySearchOutput');
+    const undxRepositoryImpactTarget = document.getElementById('undxRepositoryImpactTarget');
+    const undxGenerateRepositoryImpact = document.getElementById('undxGenerateRepositoryImpact');
+    const undxRepositoryImpactOutput = document.getElementById('undxRepositoryImpactOutput');
+    const undxGenerateDependencyIndex = document.getElementById('undxGenerateDependencyIndex');
+    const undxDependencyIndexOutput = document.getElementById('undxDependencyIndexOutput');
+    const undxGenerateRepositoryKnowledge = document.getElementById('undxGenerateRepositoryKnowledge');
+    const undxRepositoryKnowledgeOutput = document.getElementById('undxRepositoryKnowledgeOutput');
+    const undxRepositoryIndexReadinessOutput = document.getElementById('undxRepositoryIndexReadinessOutput');
+    const undxRepositoryIndexQuestionsOutput = document.getElementById('undxRepositoryIndexQuestionsOutput');
+    const undxGenerateRepositoryIndexReport = document.getElementById('undxGenerateRepositoryIndexReport');
+    const undxRunRepositoryIndexReview = document.getElementById('undxRunRepositoryIndexReview');
+    const undxRepositoryIndexReportEmpty = document.getElementById('undxRepositoryIndexReportEmpty');
+    const undxRepositoryIndexReportList = document.getElementById('undxRepositoryIndexReportList');
+    const undxRepositoryIndexReportDetailEmpty = document.getElementById('undxRepositoryIndexReportDetailEmpty');
+    const undxRepositoryIndexReportDetail = document.getElementById('undxRepositoryIndexReportDetail');
+    const undxRepositoryIndexReviewOutput = document.getElementById('undxRepositoryIndexReviewOutput');
+    const undxTotalIndexedRepositories = document.getElementById('undxTotalIndexedRepositories');
+    const undxIndexTotalModules = document.getElementById('undxIndexTotalModules');
+    const undxIndexTotalServices = document.getElementById('undxIndexTotalServices');
+    const undxIndexTotalRoutes = document.getElementById('undxIndexTotalRoutes');
+    const undxIndexTotalDependencies = document.getElementById('undxIndexTotalDependencies');
+    const undxIndexMostConnectedModule = document.getElementById('undxIndexMostConnectedModule');
+    const undxIndexHighestRiskDependency = document.getElementById('undxIndexHighestRiskDependency');
+    const undxIndexRepositoryReadiness = document.getElementById('undxIndexRepositoryReadiness');
+    const undxProjectRepositoryIndexReport = document.getElementById('undxProjectRepositoryIndexReport');
+    const undxProjectIndexReadiness = document.getElementById('undxProjectIndexReadiness');
+    const undxProjectIndexRisk = document.getElementById('undxProjectIndexRisk');
+    const undxProjectMostCriticalModule = document.getElementById('undxProjectMostCriticalModule');
+    const undxProjectHighestRiskDependency = document.getElementById('undxProjectHighestRiskDependency');
+    const undxIndexTestingIntegration = document.getElementById('undxIndexTestingIntegration');
+    const undxIndexCodingIntegration = document.getElementById('undxIndexCodingIntegration');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -26857,6 +27071,13 @@ sqlite</textarea></label>
     const undxContextAwareCodingReportsKey = 'undxContextAwareCodingReports';
     const undxRepositoryConnectionsKey = 'undxRepositoryConnections';
     const undxRepositoryConnectorReportsKey = 'undxRepositoryConnectorReports';
+    const undxRepositoryIndexesKey = 'undxRepositoryIndexes';
+    const undxRepositoryRelationshipsKey = 'undxRepositoryRelationships';
+    const undxRepositorySearchesKey = 'undxRepositorySearches';
+    const undxRepositoryImpactsKey = 'undxRepositoryImpacts';
+    const undxDependencyIndexesKey = 'undxDependencyIndexes';
+    const undxRepositoryKnowledgeKey = 'undxRepositoryKnowledge';
+    const undxRepositoryIndexReportsKey = 'undxRepositoryIndexReports';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -27120,6 +27341,7 @@ sqlite</textarea></label>
       const linkedRepositoryIntelligenceReports = Array.isArray(project.linkedRepositoryIntelligenceReports) ? project.linkedRepositoryIntelligenceReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryIntelligenceRecord) : [];
       const linkedContextAwareCodingReports = Array.isArray(project.linkedContextAwareCodingReports) ? project.linkedContextAwareCodingReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeContextAwareCodingReport) : [];
       const linkedRepositoryConnectorReports = Array.isArray(project.linkedRepositoryConnectorReports) ? project.linkedRepositoryConnectorReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryConnectorReport) : [];
+      const linkedRepositoryIndexReports = Array.isArray(project.linkedRepositoryIndexReports) ? project.linkedRepositoryIndexReports.filter(item => item && item.reportId).slice(0,24).map(undxNormalizeRepositoryIndexReport) : [];
       const connectedRepository = project.connectedRepository ? undxNormalizeRepositoryConnection(project.connectedRepository) : null;
       return {
         ...project,
@@ -27145,6 +27367,7 @@ sqlite</textarea></label>
         linkedRepositoryIntelligenceReports,
         linkedContextAwareCodingReports,
         linkedRepositoryConnectorReports,
+        linkedRepositoryIndexReports,
         connectedRepository,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
@@ -33433,6 +33656,124 @@ sqlite</textarea></label>
       undxRenderConnectorReportRegistry();
       undxRenderRepositoryConnector(undxLoadRepositoryConnections()[0] || null);
     }
+    function undxIndexReadinessFor(score){
+      if(score >= 90) return 'Execution Candidate';
+      if(score >= 78) return 'Mapped';
+      if(score >= 66) return 'Understood';
+      if(score >= 50) return 'Indexed';
+      return 'Observed';
+    }
+    function undxRepositoryIndexSource(){
+      const report = undxLoadRepositoryConnectorReports()[0] || null;
+      const connection = report?.connection || undxLoadRepositoryConnections()[0] || null;
+      return {report, connection: connection ? undxNormalizeRepositoryConnection(connection) : undxNormalizeRepositoryConnection({repositoryName:'CoinPilotXAI'})};
+    }
+    function undxIndexRoutes(connection){return ['/pulse','/pulse/premium','/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'].filter(Boolean);}
+    function undxIndexServices(connection){return ['UNDX Intelligence Router','Premium Access Service','Mission Memory Service','Project Registry','Repository Connector','Agent Council Router'];}
+    function undxNormalizeRepositoryIndex(index){
+      const source = undxRepositoryIndexSource();
+      const connection = undxNormalizeRepositoryConnection(index?.connection || source.connection);
+      const languageProfile = index?.languageProfile || undxConnectorLanguageProfile(connection);
+      const frameworkProfile = index?.frameworkProfile || undxConnectorFrameworkProfile(connection);
+      const moduleInventory = undxNormalizeExecutionList(index?.moduleInventory, undxConnectorModules(connection), 20, 120);
+      const routeInventory = undxNormalizeExecutionList(index?.routeInventory, undxIndexRoutes(connection), 24, 160);
+      const serviceInventory = undxNormalizeExecutionList(index?.serviceInventory, undxIndexServices(connection), 24, 180);
+      const dependencyInventory = undxNormalizeExecutionList(index?.dependencyInventory, connection.dependencies, 40, 120);
+      const relationshipInventory = undxNormalizeExecutionList(index?.relationshipInventory, ['Route ↔ Service','Service ↔ Module','Module ↔ Dependency','Worker ↔ Database','Template ↔ Route'], 18, 160);
+      const riskProfile = undxNormalizeExecutionList(index?.riskProfile, ['Dependency risk: Medium','Security review needed','Testing review needed'], 12, 180);
+      const readinessScore = Math.max(0, Math.min(100, Number(index?.readinessScore || Math.round((connection.trustScore + languageProfile.languageConfidence + frameworkProfile.confidence + moduleInventory.length * 4) / 3))));
+      return {indexId:String(index?.indexId || `INDEX-UNDX-${Date.now()}`).slice(0,44), repositoryId:String(index?.repositoryId || connection.connectionId || 'REPOCON-UNDX-0001').slice(0,44), connection, languageProfile, frameworkProfile, moduleInventory, routeInventory, serviceInventory, dependencyInventory, relationshipInventory, riskProfile, readinessScore, readinessLevel:undxIndexReadinessFor(readinessScore), createdAt:index?.createdAt || new Date().toISOString(), status:'Indexed'};
+    }
+    const undxLoadRepositoryIndexes = () => undxRepoIqLoad(undxRepositoryIndexesKey, undxNormalizeRepositoryIndex);
+    function undxBuildRepositoryIndex(){
+      const indexes = undxLoadRepositoryIndexes();
+      const source = undxRepositoryIndexSource();
+      return undxNormalizeRepositoryIndex({indexId:undxRepoIqNextId(indexes, 'INDEX-UNDX', 'indexId'), repositoryId:source.connection.connectionId, connection:source.connection, createdAt:new Date().toISOString()});
+    }
+    function undxNormalizeRepositoryRelationshipGraph(graph){
+      const index = undxNormalizeRepositoryIndex(graph?.index || undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex());
+      return {graphId:String(graph?.graphId || `RGRAPH-UNDX-${Date.now()}`).slice(0,44), index, relationships:undxNormalizeExecutionList(graph?.relationships, ['Route ↔ Service: /pulse/premium/undx ↔ UNDX command renderer','Service ↔ Module: UNDX Router ↔ AI module','Module ↔ Dependency: AI ↔ OpenAI/Groq/Claude fallback','Module ↔ Component: Premium ↔ command views','Worker ↔ Database: undx_worker.py ↔ stored state','API ↔ Service: /api/undx/chat ↔ Intelligence Router','Template ↔ Route: command sections ↔ premium route'], 24, 220), createdAt:graph?.createdAt || new Date().toISOString(), status:'Mapped'};
+    }
+    const undxLoadRepositoryRelationships = () => undxRepoIqLoad(undxRepositoryRelationshipsKey, undxNormalizeRepositoryRelationshipGraph);
+    function undxBuildRepositoryRelationshipGraph(){
+      const graphs = undxLoadRepositoryRelationships();
+      return undxNormalizeRepositoryRelationshipGraph({graphId:undxRepoIqNextId(graphs, 'RGRAPH-UNDX', 'graphId'), index:undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex(), createdAt:new Date().toISOString()});
+    }
+    function undxNormalizeRepositorySearch(search){
+      const index = undxNormalizeRepositoryIndex(search?.index || undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex());
+      const query = String(search?.query || undxRepositorySearchInput?.value || 'UNDX services').slice(0,160);
+      const pool = [...index.moduleInventory, ...index.routeInventory, ...index.serviceInventory, ...index.dependencyInventory, 'workers', 'templates', 'reports'];
+      const lower = query.toLowerCase();
+      const results = pool.filter(item => String(item).toLowerCase().includes(lower.split(/\\s+/)[0] || lower)).slice(0,8);
+      return {searchId:String(search?.searchId || `SEARCH-UNDX-${Date.now()}`).slice(0,44), query, searchResults:results.length ? results : pool.slice(0,6), relationshipMatches:['Service ↔ Module','Template ↔ Route','Module ↔ Dependency'], impactMatches:['UNDX command view','Premium route','Router-backed AI service'], index, createdAt:search?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadRepositorySearches = () => undxRepoIqLoad(undxRepositorySearchesKey, undxNormalizeRepositorySearch);
+    function undxNormalizeRepositoryImpact(impact){
+      const target = String(impact?.target || undxRepositoryImpactTarget?.value || 'UNDX').slice(0,160);
+      return {impactId:String(impact?.impactId || `RIMPACT-UNDX-${Date.now()}`).slice(0,44), target, affectedSystems:undxNormalizeExecutionList(impact?.affectedSystems, ['Premium command center','UNDX chat','Agent Council','Project Workspace'], 12, 180), affectedModules:undxNormalizeExecutionList(impact?.affectedModules, ['UNDX','Premium','AI','Services'], 12, 120), affectedRoutes:undxNormalizeExecutionList(impact?.affectedRoutes, ['/pulse/premium/undx','/api/undx/chat','/api/undx/agent-council'], 12, 160), affectedServices:undxNormalizeExecutionList(impact?.affectedServices, ['UNDX Intelligence Router','Project Registry','Mission Memory'], 12, 180), affectedTests:undxNormalizeExecutionList(impact?.affectedTests, ['UNDX audit','Premium foundation audit','Site functional audit','Pulse feed layout audit','Browser desktop/mobile check'], 12, 180), estimatedRisk:String(impact?.estimatedRisk || 'Medium').slice(0,80), createdAt:impact?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadRepositoryImpacts = () => undxRepoIqLoad(undxRepositoryImpactsKey, undxNormalizeRepositoryImpact);
+    function undxNormalizeDependencyIndex(dep){
+      const index = undxNormalizeRepositoryIndex(dep?.index || undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex());
+      return {dependencyIndexId:String(dep?.dependencyIndexId || `DINDEX-UNDX-${Date.now()}`).slice(0,44), index, directDependencies:undxNormalizeExecutionList(dep?.directDependencies, index.dependencyInventory.slice(0,6), 12, 120), indirectDependencies:undxNormalizeExecutionList(dep?.indirectDependencies, ['provider fallbacks','premium guards','database state','worker runtime'], 12, 140), dependencyClusters:undxNormalizeExecutionList(dep?.dependencyClusters, ['AI providers','Web application','Persistence','Pulse UI'], 10, 140), criticalDependencies:undxNormalizeExecutionList(dep?.criticalDependencies, index.dependencyInventory.slice(0,4), 8, 120), dependencyChains:undxNormalizeExecutionList(dep?.dependencyChains, ['Route → Service → AI Provider','Template → Route → Premium Guard','Worker → Repository Metadata → Report'], 10, 200), dependencyRiskScore:Math.max(0, Math.min(100, Number(dep?.dependencyRiskScore || 38 + index.dependencyInventory.length * 3))), createdAt:dep?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadDependencyIndexes = () => undxRepoIqLoad(undxDependencyIndexesKey, undxNormalizeDependencyIndex);
+    function undxNormalizeRepositoryKnowledge(knowledge){
+      const index = undxNormalizeRepositoryIndex(knowledge?.index || undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex());
+      return {knowledgeId:String(knowledge?.knowledgeId || `RKNOW-UNDX-${Date.now()}`).slice(0,44), index, architectureSummary:String(knowledge?.architectureSummary || `${index.connection.repositoryName} uses a premium command-center architecture with route, service, AI, worker, and storage boundaries.`).slice(0,600), repositorySummary:String(knowledge?.repositorySummary || 'Repository index built from approved read-only connector metadata.').slice(0,600), moduleSummary:String(knowledge?.moduleSummary || `Primary modules: ${index.moduleInventory.join(', ')}`).slice(0,600), dependencySummary:String(knowledge?.dependencySummary || `Critical dependencies: ${index.dependencyInventory.slice(0,5).join(', ')}`).slice(0,600), riskSummary:String(knowledge?.riskSummary || index.riskProfile.join(' · ')).slice(0,600), createdAt:knowledge?.createdAt || new Date().toISOString()};
+    }
+    const undxLoadRepositoryKnowledge = () => undxRepoIqLoad(undxRepositoryKnowledgeKey, undxNormalizeRepositoryKnowledge);
+    function undxNormalizeRepositoryIndexReport(report){
+      const index = undxNormalizeRepositoryIndex(report?.index || undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex());
+      const dep = undxNormalizeDependencyIndex(report?.dependencyIndex || undxLoadDependencyIndexes()[0] || {index});
+      const impact = undxNormalizeRepositoryImpact(report?.impact || undxLoadRepositoryImpacts()[0] || {});
+      const riskScore = Math.max(0, Math.min(100, Number(report?.riskScore || Math.round((dep.dependencyRiskScore + (impact.estimatedRisk === 'High' ? 82 : impact.estimatedRisk === 'Low' ? 30 : 54)) / 2))));
+      return {reportId:String(report?.reportId || `RIDXREP-UNDX-${Date.now()}`).slice(0,44), index, dependencyIndex:dep, impact, repositorySummary:String(report?.repositorySummary || `${index.connection.repositoryName} indexed with ${index.moduleInventory.length} modules, ${index.serviceInventory.length} services, and ${index.routeInventory.length} routes.`).slice(0,700), dependencySummary:String(report?.dependencySummary || `Dependency clusters: ${dep.dependencyClusters.join(', ')}.`).slice(0,700), impactSummary:String(report?.impactSummary || `Impact target ${impact.target} affects ${impact.affectedModules.join(', ')}.`).slice(0,700), readinessScore:index.readinessScore, readinessLevel:index.readinessLevel, riskScore, recommendations:undxNormalizeExecutionList(report?.recommendations, ['Keep indexing read-only','Use relationship graph before task generation','Review high-risk dependencies before future edits','Run audits after command view changes'], 10, 220), createdAt:report?.createdAt || new Date().toISOString(), status:'Index Report'};
+    }
+    const undxLoadRepositoryIndexReports = () => undxRepoIqLoad(undxRepositoryIndexReportsKey, undxNormalizeRepositoryIndexReport);
+    function undxRenderRepositoryIndex(index){
+      if(!index) index = undxLoadRepositoryIndexes()[0] || null;
+      if(undxRepositoryIndexReadinessOutput) undxRepositoryIndexReadinessOutput.replaceChildren(undxBlock('Indexing Readiness', index?.readinessLevel || 'Observed'), undxBlock('Architecture Readiness', index?.readinessScore ? `${Math.min(100,index.readinessScore + 4)}/100` : '0/100'), undxBlock('Maintenance Readiness', index?.readinessScore ? `${Math.max(0,index.readinessScore - 4)}/100` : '0/100'), undxBlock('Testing Readiness', index?.readinessScore ? `${Math.max(0,index.readinessScore - 8)}/100` : '0/100'), undxBlock('Execution Readiness', 'Disabled'));
+      if(undxRepositoryIndexQuestionsOutput) undxRepositoryIndexQuestionsOutput.replaceChildren(...['Which files own this route?','Which service owns this feature?','Which dependency creates risk?','Which module is most critical?','Which tests provide coverage?'].map(q => undxBlock('Unanswered Question', q)));
+      if(undxIndexTestingIntegration) undxIndexTestingIntegration.replaceChildren(...['impacted tests','coverage areas','testing readiness','testing recommendations'].map(item => undxBlock('Testing Intelligence Integration', item)));
+      if(undxIndexCodingIntegration) undxIndexCodingIntegration.replaceChildren(...['code placement recommendations','module ownership','implementation patterns','impacted systems'].map(item => undxBlock('Context-Aware Coding Integration', item)));
+    }
+    function undxRenderRelationshipGraph(graph = undxLoadRepositoryRelationships()[0] || null){if(undxRepositoryRelationshipGraphOutput) undxRepositoryRelationshipGraphOutput.replaceChildren(...(graph?.relationships || ['Route ↔ Service','Service ↔ Module','Module ↔ Dependency']).map(item => undxBlock('Relationship', item)));}
+    function undxRenderRepositorySearch(search = undxLoadRepositorySearches()[0] || null){if(undxRepositorySearchOutput) undxRepositorySearchOutput.replaceChildren(undxBlock('Search Results', search?.searchResults || []), undxBlock('Relationship Matches', search?.relationshipMatches || []), undxBlock('Impact Matches', search?.impactMatches || []));}
+    function undxRenderRepositoryImpact(impact = undxLoadRepositoryImpacts()[0] || null){if(undxRepositoryImpactOutput) undxRepositoryImpactOutput.replaceChildren(undxBlock('Affected Systems', impact?.affectedSystems || []), undxBlock('Affected Modules', impact?.affectedModules || []), undxBlock('Affected Routes', impact?.affectedRoutes || []), undxBlock('Affected Services', impact?.affectedServices || []), undxBlock('Affected Tests', impact?.affectedTests || []), undxBlock('Estimated Risk', impact?.estimatedRisk || 'Medium'));}
+    function undxRenderDependencyIndex(dep = undxLoadDependencyIndexes()[0] || null){if(undxDependencyIndexOutput) undxDependencyIndexOutput.replaceChildren(undxBlock('Direct Dependencies', dep?.directDependencies || []), undxBlock('Indirect Dependencies', dep?.indirectDependencies || []), undxBlock('Dependency Clusters', dep?.dependencyClusters || []), undxBlock('Critical Dependencies', dep?.criticalDependencies || []), undxBlock('Dependency Chains', dep?.dependencyChains || []), undxBlock('Dependency Risk Score', `${dep?.dependencyRiskScore || 0}/100`));}
+    function undxRenderRepositoryKnowledge(knowledge = undxLoadRepositoryKnowledge()[0] || null){if(undxRepositoryKnowledgeOutput) undxRepositoryKnowledgeOutput.replaceChildren(undxBlock('Architecture Summary', knowledge?.architectureSummary || 'Pending'), undxBlock('Repository Summary', knowledge?.repositorySummary || 'Pending'), undxBlock('Module Summary', knowledge?.moduleSummary || 'Pending'), undxBlock('Dependency Summary', knowledge?.dependencySummary || 'Pending'), undxBlock('Risk Summary', knowledge?.riskSummary || 'Pending'));}
+    function undxRenderRepositoryIndexDashboard(report = undxLoadRepositoryIndexReports()[0] || null){
+      const indexes = undxLoadRepositoryIndexes(); const latest = report?.index || indexes[0] || null; const linked = (undxCurrentProject() || {}).linkedRepositoryIndexReports || [];
+      if(undxTotalIndexedRepositories) undxTotalIndexedRepositories.textContent = String(indexes.length);
+      if(undxIndexTotalModules) undxIndexTotalModules.textContent = String(latest?.moduleInventory?.length || 0);
+      if(undxIndexTotalServices) undxIndexTotalServices.textContent = String(latest?.serviceInventory?.length || 0);
+      if(undxIndexTotalRoutes) undxIndexTotalRoutes.textContent = String(latest?.routeInventory?.length || 0);
+      if(undxIndexTotalDependencies) undxIndexTotalDependencies.textContent = String(latest?.dependencyInventory?.length || 0);
+      if(undxIndexMostConnectedModule) undxIndexMostConnectedModule.textContent = latest?.moduleInventory?.[0] || 'None';
+      if(undxIndexHighestRiskDependency) undxIndexHighestRiskDependency.textContent = report?.dependencyIndex?.criticalDependencies?.[0] || latest?.dependencyInventory?.[0] || 'None';
+      if(undxIndexRepositoryReadiness) undxIndexRepositoryReadiness.textContent = latest?.readinessLevel || 'Observed';
+      if(undxProjectRepositoryIndexReport) undxProjectRepositoryIndexReport.textContent = linked[0]?.reportId || 'None';
+      if(undxProjectIndexReadiness) undxProjectIndexReadiness.textContent = linked[0]?.readinessLevel || latest?.readinessLevel || 'Observed';
+      if(undxProjectIndexRisk) undxProjectIndexRisk.textContent = String(linked[0]?.riskScore || report?.riskScore || 0);
+      if(undxProjectMostCriticalModule) undxProjectMostCriticalModule.textContent = linked[0]?.index?.moduleInventory?.[0] || latest?.moduleInventory?.[0] || 'Pending';
+      if(undxProjectHighestRiskDependency) undxProjectHighestRiskDependency.textContent = linked[0]?.dependencyIndex?.criticalDependencies?.[0] || report?.dependencyIndex?.criticalDependencies?.[0] || 'Pending';
+    }
+    function undxGenerateRepositoryIndexFlow(){const index=undxBuildRepositoryIndex(); undxRepoIqSave(undxRepositoryIndexesKey,[index,...undxLoadRepositoryIndexes()]); undxRenderRepositoryIndex(index); undxRenderRepositoryIndexRegistry(); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${index.indexId} stored from read-only connector intelligence.`; return index;}
+    function undxGenerateRepositoryRelationshipGraphFlow(){const graph=undxBuildRepositoryRelationshipGraph(); undxRepoIqSave(undxRepositoryRelationshipsKey,[graph,...undxLoadRepositoryRelationships()]); undxRenderRelationshipGraph(graph); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${graph.graphId} stored.`; return graph;}
+    function undxRunRepositorySearchFlow(){const searches=undxLoadRepositorySearches(); const search=undxNormalizeRepositorySearch({searchId:undxRepoIqNextId(searches,'SEARCH-UNDX','searchId'), query:undxRepositorySearchInput?.value || 'UNDX services', index:undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex()}); undxRepoIqSave(undxRepositorySearchesKey,[search,...searches]); undxRenderRepositorySearch(search); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${search.searchId} stored.`; return search;}
+    function undxGenerateRepositoryImpactFlow(){const impacts=undxLoadRepositoryImpacts(); const impact=undxNormalizeRepositoryImpact({impactId:undxRepoIqNextId(impacts,'RIMPACT-UNDX','impactId'), target:undxRepositoryImpactTarget?.value || 'UNDX'}); undxRepoIqSave(undxRepositoryImpactsKey,[impact,...impacts]); undxRenderRepositoryImpact(impact); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${impact.impactId} stored.`; return impact;}
+    function undxGenerateDependencyIndexFlow(){const deps=undxLoadDependencyIndexes(); const dep=undxNormalizeDependencyIndex({dependencyIndexId:undxRepoIqNextId(deps,'DINDEX-UNDX','dependencyIndexId'), index:undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex()}); undxRepoIqSave(undxDependencyIndexesKey,[dep,...deps]); undxRenderDependencyIndex(dep); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${dep.dependencyIndexId} stored.`; return dep;}
+    function undxGenerateRepositoryKnowledgeFlow(){const records=undxLoadRepositoryKnowledge(); const knowledge=undxNormalizeRepositoryKnowledge({knowledgeId:undxRepoIqNextId(records,'RKNOW-UNDX','knowledgeId'), index:undxLoadRepositoryIndexes()[0] || undxBuildRepositoryIndex()}); undxRepoIqSave(undxRepositoryKnowledgeKey,[knowledge,...records]); undxRenderRepositoryKnowledge(knowledge); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${knowledge.knowledgeId} stored.`; return knowledge;}
+    function undxRepositoryIndexReportText(report){return ['UNDX Repository Indexing Engine','',`Report ID: ${report.reportId}`,`Repository Summary: ${report.repositorySummary}`,`Dependency Summary: ${report.dependencySummary}`,`Impact Summary: ${report.impactSummary}`,`Readiness Score: ${report.readinessScore}/100`,`Repository Readiness: ${report.readinessLevel}`,`Risk Score: ${report.riskScore}/100`,'','Recommendations:',...report.recommendations.map(item=>`- ${item}`),'','Safety: read-only. No files were modified. No commands were executed. No Git operations were performed. No deployments were performed.'].join('\\n');}
+    function undxOpenRepositoryIndexReport(report){if(undxRepositoryIndexReportDetailEmpty) undxRepositoryIndexReportDetailEmpty.hidden=true; if(undxRepositoryIndexReportDetail) undxRepositoryIndexReportDetail.replaceChildren(undxBlock('Report ID', report.reportId),undxBlock('Repository Summary', report.repositorySummary),undxBlock('Dependency Summary', report.dependencySummary),undxBlock('Impact Summary', report.impactSummary),undxBlock('Readiness Score', `${report.readinessScore}/100 · ${report.readinessLevel}`),undxBlock('Risk Score', `${report.riskScore}/100`),undxBlock('Recommendations', report.recommendations)); undxRenderRepositoryIndexDashboard(report);}
+    function undxAttachRepositoryIndexReportToProject(report){const project=undxCurrentProject(); if(!project){if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent='Open a project workspace before attaching a repository index report.'; return;} const projects=undxLoadProjects().map(item=>item.projectId===project.projectId ? {...item, linkedRepositoryIndexReports:[report,...(item.linkedRepositoryIndexReports || []).filter(existing=>existing.reportId!==report.reportId)].slice(0,12)} : item); undxSaveProjects(projects); undxOpenProject(project.projectId,false); undxRenderRepositoryIndexDashboard(report); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${report.reportId} attached to ${project.projectId}.`;}
+    function undxCreateRepositoryIndexReportCard(report){const card=document.createElement('article'); card.className='undx-memory-card'; const title=document.createElement('h3'); title.textContent=`${report.reportId} · ${report.index.connection.repositoryName}`; const meta=document.createElement('p'); meta.textContent=`Repository Readiness: ${report.readinessLevel} · Risk Score: ${report.riskScore}/100 · Created Date: ${undxFormatMemoryTime(report.createdAt)}`; const actions=document.createElement('div'); actions.className='undx-memory-actions'; actions.append(undxProjectActionButton('Open Report',()=>undxOpenRepositoryIndexReport(report),true),undxProjectActionButton('Save To Memory',()=>undxStoreBlueprint({id:`ridxrep-${report.reportId}`,name:`Repository Index ${report.reportId}`,objective:undxRepositoryIndexReportText(report),type:'Repository Index Report',source:'UNDX Repository Indexing Engine',createdAt:new Date().toISOString(),phase:'Phase 37',status:'Stored'})),undxProjectActionButton('Send To Chat',()=>undxSendTextToChat(undxRepositoryIndexReportText(report))),undxProjectActionButton('Attach To Project',()=>undxAttachRepositoryIndexReportToProject(report)),undxProjectActionButton('Generate Task Package',()=>{if(undxMissionInput) undxMissionInput.value=`Create a task package from Repository Index Report ${report.reportId}. Focus on ${report.index.moduleInventory[0] || 'repository module'} and ${report.dependencyIndex.criticalDependencies[0] || 'critical dependency'}.`; undxGenerateTaskPackageFlow();}),undxProjectActionButton('Generate Change Proposal',()=>{if(undxMissionInput) undxMissionInput.value=`Create a change proposal from Repository Index Report ${report.reportId}. Impact: ${report.impactSummary}. Risk score ${report.riskScore}.`; undxGenerateChangeProposalFlow();}),undxProjectActionButton('Delete Report',()=>{undxRepoIqSave(undxRepositoryIndexReportsKey,undxLoadRepositoryIndexReports().filter(item=>item.reportId!==report.reportId)); undxRenderRepositoryIndexReportRegistry();})); card.append(title,meta,actions); return card;}
+    function undxRenderRepositoryIndexRegistry(){const indexes=undxLoadRepositoryIndexes(); if(undxRepositoryIndexEmpty) undxRepositoryIndexEmpty.hidden=indexes.length>0; if(undxRepositoryIndexList){undxRepositoryIndexList.replaceChildren(); indexes.forEach(index=>{const card=document.createElement('article'); card.className='undx-memory-card'; const title=document.createElement('h3'); title.textContent=`${index.indexId} · ${index.connection.repositoryName}`; const meta=document.createElement('p'); meta.textContent=`Repository ID: ${index.repositoryId} · Modules: ${index.moduleInventory.length} · Routes: ${index.routeInventory.length} · Services: ${index.serviceInventory.length} · Readiness Score: ${index.readinessScore}/100`; card.append(title,meta); undxRepositoryIndexList.appendChild(card);});} undxRenderRepositoryIndexDashboard();}
+    function undxRenderRepositoryIndexReportRegistry(){const reports=undxLoadRepositoryIndexReports(); if(undxRepositoryIndexReportEmpty) undxRepositoryIndexReportEmpty.hidden=reports.length>0; if(undxRepositoryIndexReportList){undxRepositoryIndexReportList.replaceChildren(); reports.forEach(report=>undxRepositoryIndexReportList.appendChild(undxCreateRepositoryIndexReportCard(report)));} undxRenderRepositoryIndexDashboard(reports[0] || null);}
+    function undxGenerateRepositoryIndexReportFlow(){const reports=undxLoadRepositoryIndexReports(); const index=undxLoadRepositoryIndexes()[0] || undxGenerateRepositoryIndexFlow(); const dep=undxLoadDependencyIndexes()[0] || undxGenerateDependencyIndexFlow(); const impact=undxLoadRepositoryImpacts()[0] || undxGenerateRepositoryImpactFlow(); const report=undxNormalizeRepositoryIndexReport({reportId:undxRepoIqNextId(reports,'RIDXREP-UNDX','reportId'), index, dependencyIndex:dep, impact, createdAt:new Date().toISOString()}); undxRepoIqSave(undxRepositoryIndexReportsKey,[report,...reports]); undxOpenRepositoryIndexReport(report); undxRenderRepositoryIndexReportRegistry(); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${report.reportId} stored in Repository Intelligence Reports.`; return report;}
+    async function undxRunRepositoryIndexReviewFlow(){const report=undxLoadRepositoryIndexReports()[0] || undxGenerateRepositoryIndexReportFlow(); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent='Routing repository index review through UNDX Intelligence Router...'; try{const response=await fetch(undxCouncilEndpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({mission:undxRepositoryIndexReportText(report)})}); const data=await response.json().catch(()=>({})); if(!response.ok || data.ok===false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.'); const agents=data.agents || []; if(undxRepositoryIndexReviewOutput) undxRepositoryIndexReviewOutput.replaceChildren(undxBlock('Architecture Findings',agents.find(a=>a.key==='architect')?.recommendation || 'Architecture relationships mapped.'),undxBlock('Dependency Findings',agents.find(a=>a.key==='optimization')?.recommendation || 'Dependency chains indexed.'),undxBlock('Security Findings',agents.find(a=>a.key==='security')?.recommendation || 'Read-only boundary preserved.'),undxBlock('Testing Findings',agents.find(a=>a.key==='testing')?.recommendation || 'Impacted tests identified.'),undxBlock('Documentation Findings',agents.find(a=>a.key==='documentation')?.recommendation || 'Repository questions captured.'),undxBlock('Optimization Findings',agents.find(a=>a.key==='optimization')?.recommendation || 'Reduce dependency coupling before future edits.'),undxBlock('Combined Repository Recommendation','Continue read-only indexing. Future execution requires approved phases.')); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent='Multi-agent repository review complete.';}catch(error){if(undxRepositoryIndexReviewOutput) undxRepositoryIndexReviewOutput.replaceChildren(undxBlock('Architecture Findings','OpenAI fallback: index remains read-only.'),undxBlock('Dependency Findings','OpenAI fallback: dependency map stored only.'),undxBlock('Security Findings','OpenAI fallback: no file editing, commands, Git, secrets, or deployments.'),undxBlock('Testing Findings','OpenAI fallback: run audits and browser checks.'),undxBlock('Documentation Findings','OpenAI fallback: preserve repository questions.'),undxBlock('Optimization Findings','OpenAI fallback: reduce coupling.'),undxBlock('Combined Repository Recommendation','Fallback → OpenAI. Repository indexing remains read-only.')); if(undxRepositoryIndexMessage) undxRepositoryIndexMessage.textContent=`${error.message || 'Router unavailable.'} OpenAI fallback active.`;}}
+    function undxRenderRepositoryIndexingInitial(){undxRenderRepositoryIndexRegistry(); undxRenderRelationshipGraph(); undxRenderRepositorySearch(); undxRenderRepositoryImpact(); undxRenderDependencyIndex(); undxRenderRepositoryKnowledge(); undxRenderRepositoryIndex(undxLoadRepositoryIndexes()[0] || null); undxRenderRepositoryIndexReportRegistry();}
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -35673,6 +36014,7 @@ sqlite</textarea></label>
       ['undx-repository-intelligence-engine','Repository Intelligence Engine'],
       ['undx-context-aware-coding-engine','Context-Aware Coding'],
       ['undx-read-only-repository-connector','Repository Connector'],
+      ['undx-repository-indexing-engine','Repository Indexing'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -36983,6 +37325,29 @@ sqlite</textarea></label>
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedRepositoryIndexReports(project, card){
+      const section = undxWorkspaceSection('Linked Repository Index Reports');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedRepositoryIndexReports || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Repository Index Reports linked yet. Attach a Phase 37 report to preserve Repository Readiness, Repository Risk, Most Critical Module, and Highest Risk Dependency.'));
+      }else{
+        project.linkedRepositoryIndexReports.forEach(report => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${report.reportId} · ${report.index.connection.repositoryName}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Repository Readiness: ${report.readinessLevel} · Repository Risk: ${report.riskScore}/100 · Most Critical Module: ${report.index.moduleInventory[0] || 'Pending'} · Highest Risk Dependency: ${report.dependencyIndex.criticalDependencies[0] || 'Pending'}`;
+          const safety = document.createElement('p');
+          safety.textContent = 'Read-only index report. No files were modified, no commands were executed, no Git operations were performed, and no deployments were performed.';
+          item.append(title, meta, safety);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -37090,6 +37455,7 @@ sqlite</textarea></label>
       undxRenderLinkedRepositoryIntelligenceReports(project, card);
       undxRenderLinkedContextAwareCodingReports(project, card);
       undxRenderLinkedRepositoryConnectorReports(project, card);
+      undxRenderLinkedRepositoryIndexReports(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -37786,6 +38152,14 @@ sqlite</textarea></label>
     undxCreateRepositoryConnection?.addEventListener('click', undxCreateRepositoryConnectionFlow);
     undxGenerateConnectorReport?.addEventListener('click', () => undxGenerateConnectorReportFlow());
     undxRunConnectorAnalysis?.addEventListener('click', undxRunConnectorAnalysisFlow);
+    undxGenerateRepositoryIndex?.addEventListener('click', undxGenerateRepositoryIndexFlow);
+    undxGenerateRepositoryRelationshipGraph?.addEventListener('click', undxGenerateRepositoryRelationshipGraphFlow);
+    undxRunRepositorySearch?.addEventListener('click', undxRunRepositorySearchFlow);
+    undxGenerateRepositoryImpact?.addEventListener('click', undxGenerateRepositoryImpactFlow);
+    undxGenerateDependencyIndex?.addEventListener('click', undxGenerateDependencyIndexFlow);
+    undxGenerateRepositoryKnowledge?.addEventListener('click', undxGenerateRepositoryKnowledgeFlow);
+    undxGenerateRepositoryIndexReport?.addEventListener('click', undxGenerateRepositoryIndexReportFlow);
+    undxRunRepositoryIndexReview?.addEventListener('click', undxRunRepositoryIndexReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -37854,6 +38228,7 @@ sqlite</textarea></label>
     undxRenderRepositoryEngineInitial();
     undxRenderCodingEngineInitial();
     undxRenderRepositoryConnectorInitial();
+    undxRenderRepositoryIndexingInitial();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
