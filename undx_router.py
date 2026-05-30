@@ -82,6 +82,24 @@ COUNCIL_AGENT_PROVIDER_MAP = [
         "role": "Fast triage, concise direction, and immediate next moves",
         "preferred_provider": "groq",
     },
+    {
+        "key": "testing",
+        "name": "Testing Agent",
+        "role": "Testing strategy, validation planning, regression planning, and release confidence",
+        "preferred_provider": "openai",
+    },
+    {
+        "key": "security",
+        "name": "Security Agent",
+        "role": "Security review, threat analysis, permission review, and risk analysis",
+        "preferred_provider": "claude",
+    },
+    {
+        "key": "documentation",
+        "name": "Documentation Agent",
+        "role": "Documentation planning, onboarding plans, change summaries, and release documentation",
+        "preferred_provider": "openai",
+    },
 ]
 
 

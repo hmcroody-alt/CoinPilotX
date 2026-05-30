@@ -22886,12 +22886,12 @@ def pulse_premium_undx_page():
             <span class='undx-core-label'>Council Mode: Multi-Agent</span>
             <h2>UNDX Agent Council</h2>
           </div>
-          <p>Five routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPilotXAI enters the next build phase.</p>
+          <p>Eight routed intelligence agents evaluate each mission through the UNDX Intelligence Router before CoinPilotXAI enters the next build phase.</p>
         </div>
         <div class='undx-agent-toolbar'>
           <div class='undx-memory-status' aria-label='UNDX agent council status'>
             <span>Council Mode: <strong>Multi-Agent</strong></span>
-            <span>Active Agents: <strong>5</strong></span>
+            <span>Active Agents: <strong>8</strong></span>
             <span>Council Phase: <strong>Phase 6</strong></span>
           </div>
           <div class='undx-agent-actions'>
@@ -22906,6 +22906,9 @@ def pulse_premium_undx_page():
           <article class='undx-agent-card' data-undx-agent-card='builder'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Builder Agent</h3><p class='undx-agent-role'>Implementation path and build sequencing</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>OpenAI</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing a phased implementation track.</p></article>
           <article class='undx-agent-card' data-undx-agent-card='optimization'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Optimization Agent</h3><p class='undx-agent-role'>Performance, code quality, and system refinement</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>DeepSeek</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before tightening implementation quality and execution efficiency.</p></article>
           <article class='undx-agent-card' data-undx-agent-card='rapid_response'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Rapid Response Agent</h3><p class='undx-agent-role'>Fast triage, concise direction, and immediate next moves</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Groq</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before compressing the fastest safe next action.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='testing'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Testing Agent</h3><p class='undx-agent-role'>Testing strategy, validation planning, regression planning, and release confidence</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>OpenAI</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before preparing validation strategy and release confidence checks.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='security'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Security Agent</h3><p class='undx-agent-role'>Security review, threat analysis, permission review, and risk analysis</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>Claude</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before reviewing threats, permissions, and risk boundaries.</p></article>
+          <article class='undx-agent-card' data-undx-agent-card='documentation'><span class='undx-agent-status' data-undx-agent-status>Status: Standby</span><div><h3>Documentation Agent</h3><p class='undx-agent-role'>Documentation planning, onboarding plans, change summaries, and release documentation</p></div><div class='undx-agent-provider-meta' data-undx-agent-provider-meta><span>Provider selected: <strong data-undx-provider-selected>OpenAI</strong></span><span>Provider status: <strong data-undx-provider-status>Checking</strong></span><span>Fallback status: <strong data-undx-fallback-status>Checking</strong></span></div><p class='undx-agent-output' data-undx-agent-output>Awaiting mission signal before creating documentation packages and knowledge summaries.</p></article>
         </div>
         <div class='undx-council-summary' id='undxCouncilSummary' hidden aria-live='polite'></div>
       </section>
@@ -24866,6 +24869,186 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-multi-agent-engineering' id='undx-multi-agent-engineering-system'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Multi-Agent Engineering: Online</span>
+            <h2>UNDX Multi-Agent Engineering System</h2>
+          </div>
+          <p>Specialized AI agents collaborating on engineering, architecture, testing, security, documentation, and strategic planning.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX multi-agent engineering status'>
+              <span>Agent System: <strong>Online</strong></span>
+              <span>Agent Registry: <strong>Online</strong></span>
+              <span>Consensus Engine: <strong>Online</strong></span>
+              <span>Engineering Review Board: <strong>Online</strong></span>
+              <span>Execution Access: <strong>Disabled</strong></span>
+              <span>Phase: <strong>33</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Roster</span>
+              <h3>Agent Roster</h3>
+              <p>Architect Agent · Research Agent · Builder Agent · Testing Agent · Security Agent · Documentation Agent</p>
+              <div class='undx-system-impact-grid' id='undxEngineeringAgentRoster'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Command Center</span>
+              <h3>Agent Command Center</h3>
+              <p>Active Agents · Agent Status · Agent Readiness · Current Assignments · Agent Recommendations</p>
+              <div class='undx-system-impact-grid' id='undxAgentCommandCenterGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Profiles</span>
+              <h3>Agent Profiles</h3>
+              <p>Each agent profile includes Role, Responsibilities, Strengths, Review Areas, Preferred Intelligence Sources, and Output Types.</p>
+              <div class='undx-simulation-output' id='undxAgentProfileOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Task Assignment</span>
+              <h3>Assign To Agents</h3>
+              <p>Inputs: Project · Task Package · Change Proposal · Simulation · Strategic Plan · Repository Structure Model</p>
+              <div class='undx-simulation-inputs' id='undxAgentAssignmentSourceInputs'>
+                <label><input type='checkbox' value='project' checked>Project</label>
+                <label><input type='checkbox' value='taskPackage' checked>Task Package</label>
+                <label><input type='checkbox' value='changeProposal' checked>Change Proposal</label>
+                <label><input type='checkbox' value='simulation' checked>Simulation</label>
+                <label><input type='checkbox' value='strategicPlan' checked>Strategic Plan</label>
+                <label><input type='checkbox' value='structureModel' checked>Repository Structure Model</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxAssignToAgents'>Assign To Agents</button>
+                <button class='button' type='button' id='undxRunEngineeringReviewBoard'>Run Engineering Review Board</button>
+              </div>
+              <p class='undx-project-message' id='undxAgentEngineeringMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Collaboration Workflow</span>
+              <h3>Problem ↓ Architect Review ↓ Research Review ↓ Builder Plan ↓ Testing Plan ↓ Security Review ↓ Documentation Package</h3>
+              <div class='undx-access-flow'>
+                <span>Problem</span><span>Architect Review</span><span>Research Review</span><span>Builder Plan</span><span>Testing Plan</span><span>Security Review</span><span>Documentation Package</span>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Discussion</span>
+              <h3>Agent Discussion</h3>
+              <p>Agent Opinions · Recommendations · Concerns · Agreement Level · Conflicting Recommendations</p>
+              <div class='undx-simulation-output' id='undxAgentDiscussionOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Consensus Engine</span>
+              <h3>Agent Consensus Engine</h3>
+              <p>Consensus Score: <strong id='undxAgentConsensusScore'>0</strong></p>
+              <p>Strong Consensus · Moderate Consensus · Weak Consensus · Conflict Detected</p>
+              <div class='undx-simulation-output' id='undxAgentConsensusOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Disagreement Detector</span>
+              <h3>Agent Disagreement Detector</h3>
+              <p>Architecture disagreement · Security disagreement · Testing disagreement · Implementation disagreement</p>
+              <div class='undx-risk-grid' id='undxAgentDisagreementGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>UNDX Engineering Review Board</span>
+              <h3>UNDX Engineering Review Board</h3>
+              <p>Members: Architect · Research · Builder · Testing · Security · Documentation</p>
+              <div class='undx-simulation-output' id='undxEngineeringReviewBoardOutput'><p>Final Engineering Recommendation will appear after agent assignment or board review.</p></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Registry</span>
+              <h3>Agent Registry</h3>
+              <p>Storage: <strong>undxEngineeringAgents</strong></p>
+              <p>Agent ID · Role · Assignments · Consensus History · Created Date</p>
+              <div class='undx-simulation-registry' id='undxEngineeringAgentRegistry' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Memory</span>
+              <h3>Agent Memory</h3>
+              <p>Storage: <strong>undxAgentMemories</strong></p>
+              <div class='undx-memory-empty' id='undxAgentMemoryRegistryEmpty'>No agent memories stored yet. Assign a mission to agents to create multi-agent engineering memory.</div>
+              <div class='undx-simulation-registry' id='undxAgentMemoryRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Dashboard</span>
+              <h3>Agent Dashboard</h3>
+              <p>Total Agents: <strong id='undxTotalEngineeringAgents'>0</strong></p>
+              <p>Active Reviews: <strong id='undxActiveAgentReviews'>0</strong></p>
+              <p>Consensus Score: <strong id='undxAgentDashboardConsensusScore'>0</strong></p>
+              <p>Conflicts Detected: <strong id='undxAgentConflictsDetected'>0</strong></p>
+              <p>Most Active Agent: <strong id='undxMostActiveEngineeringAgent'>None</strong></p>
+              <p>Highest Confidence Recommendation: <strong id='undxHighestConfidenceRecommendation'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Agent Memory</span>
+              <h3>Agent Memory</h3>
+              <p>Storage: <strong>undxAgentMemories</strong></p>
+              <p>Agent Decisions: <strong id='undxAgentDecisions'>0</strong></p>
+              <p>Agent Recommendations: <strong id='undxAgentRecommendations'>0</strong></p>
+              <p>Agent Reviews: <strong id='undxAgentReviews'>0</strong></p>
+              <p>Agent Consensus History: <strong id='undxAgentConsensusHistory'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Project Integration</span>
+              <h3>Projects</h3>
+              <p>Assigned Agents: <strong id='undxProjectAssignedAgents'>0</strong></p>
+              <p>Agent Recommendations: <strong id='undxProjectAgentRecommendations'>0</strong></p>
+              <p>Consensus Score: <strong id='undxProjectConsensusScore'>0</strong></p>
+              <p>Engineering Review Board Results: <strong id='undxProjectReviewBoardResults'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Packages</h3>
+              <p>Assigned Agents: <strong id='undxTaskAssignedAgents'>0</strong></p>
+              <p>Agent Reviews: <strong id='undxTaskAgentReviews'>0</strong></p>
+              <p>Testing Recommendations: <strong id='undxTaskTestingRecommendations'>Pending</strong></p>
+              <p>Security Recommendations: <strong id='undxTaskSecurityRecommendations'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Testing Engine Integration</span>
+              <h3>Testing Strategies</h3>
+              <p>Testing Agent Review: <strong id='undxTestingAgentReview'>Pending</strong></p>
+              <p>Release Confidence: <strong id='undxAgentReleaseConfidence'>0</strong></p>
+              <p>Validation Recommendations: <strong id='undxAgentValidationRecommendations'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Language Mastery Integration</span>
+              <h3>Language Decisions</h3>
+              <p>Research Agent Review: <strong id='undxLanguageResearchAgentReview'>Pending</strong></p>
+              <p>Architecture Agent Review: <strong id='undxLanguageArchitectureAgentReview'>Pending</strong></p>
+              <p>Builder Agent Review: <strong id='undxLanguageBuilderAgentReview'>Pending</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Agent Council</span>
+              <h3>Multi-Brain Agent Council</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Testing Agent · Security Agent · Documentation Agent · Fallback → OpenAI</p>
+              <div id='undxMultiBrainAgentCouncilOutput'><p>Expanded agent council routing will appear after assignment.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Multi-Agent Engineering System provides planning, coordination, review, and recommendation capabilities only.</p>
+              <p>No files were accessed.</p>
+              <p>No repositories were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 33<br><strong>Multi-Agent Engineering System</strong></span>
+                <span>Phase 34<br><strong>Repository Intelligence Engine</strong></span>
+                <span>Phase 35<br><strong>Context-Aware Coding Engine</strong></span>
+                <span>Phase 36<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 37<br><strong>Repository Indexing Engine</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel undx-workspace-memory-graph' id='undx-workspace-memory-graph'>
         <div class='undx-section-heading'>
           <div>
@@ -25942,6 +26125,46 @@ def pulse_premium_undx_page():
     const undxExecutionProposalReadiness = document.getElementById('undxExecutionProposalReadiness');
     const undxExecutionProposalRisk = document.getElementById('undxExecutionProposalRisk');
     const undxApprovalReviewOutput = document.getElementById('undxApprovalReviewOutput');
+    const undxEngineeringAgentRoster = document.getElementById('undxEngineeringAgentRoster');
+    const undxAgentCommandCenterGrid = document.getElementById('undxAgentCommandCenterGrid');
+    const undxAgentProfileOutput = document.getElementById('undxAgentProfileOutput');
+    const undxAgentAssignmentSourceInputs = document.getElementById('undxAgentAssignmentSourceInputs');
+    const undxAssignToAgents = document.getElementById('undxAssignToAgents');
+    const undxRunEngineeringReviewBoard = document.getElementById('undxRunEngineeringReviewBoard');
+    const undxAgentEngineeringMessage = document.getElementById('undxAgentEngineeringMessage');
+    const undxAgentDiscussionOutput = document.getElementById('undxAgentDiscussionOutput');
+    const undxAgentConsensusScore = document.getElementById('undxAgentConsensusScore');
+    const undxAgentConsensusOutput = document.getElementById('undxAgentConsensusOutput');
+    const undxAgentDisagreementGrid = document.getElementById('undxAgentDisagreementGrid');
+    const undxEngineeringReviewBoardOutput = document.getElementById('undxEngineeringReviewBoardOutput');
+    const undxEngineeringAgentRegistry = document.getElementById('undxEngineeringAgentRegistry');
+    const undxAgentMemoryRegistryEmpty = document.getElementById('undxAgentMemoryRegistryEmpty');
+    const undxAgentMemoryRegistryList = document.getElementById('undxAgentMemoryRegistryList');
+    const undxTotalEngineeringAgents = document.getElementById('undxTotalEngineeringAgents');
+    const undxActiveAgentReviews = document.getElementById('undxActiveAgentReviews');
+    const undxAgentDashboardConsensusScore = document.getElementById('undxAgentDashboardConsensusScore');
+    const undxAgentConflictsDetected = document.getElementById('undxAgentConflictsDetected');
+    const undxMostActiveEngineeringAgent = document.getElementById('undxMostActiveEngineeringAgent');
+    const undxHighestConfidenceRecommendation = document.getElementById('undxHighestConfidenceRecommendation');
+    const undxAgentDecisions = document.getElementById('undxAgentDecisions');
+    const undxAgentRecommendations = document.getElementById('undxAgentRecommendations');
+    const undxAgentReviews = document.getElementById('undxAgentReviews');
+    const undxAgentConsensusHistory = document.getElementById('undxAgentConsensusHistory');
+    const undxProjectAssignedAgents = document.getElementById('undxProjectAssignedAgents');
+    const undxProjectAgentRecommendations = document.getElementById('undxProjectAgentRecommendations');
+    const undxProjectConsensusScore = document.getElementById('undxProjectConsensusScore');
+    const undxProjectReviewBoardResults = document.getElementById('undxProjectReviewBoardResults');
+    const undxTaskAssignedAgents = document.getElementById('undxTaskAssignedAgents');
+    const undxTaskAgentReviews = document.getElementById('undxTaskAgentReviews');
+    const undxTaskTestingRecommendations = document.getElementById('undxTaskTestingRecommendations');
+    const undxTaskSecurityRecommendations = document.getElementById('undxTaskSecurityRecommendations');
+    const undxTestingAgentReview = document.getElementById('undxTestingAgentReview');
+    const undxAgentReleaseConfidence = document.getElementById('undxAgentReleaseConfidence');
+    const undxAgentValidationRecommendations = document.getElementById('undxAgentValidationRecommendations');
+    const undxLanguageResearchAgentReview = document.getElementById('undxLanguageResearchAgentReview');
+    const undxLanguageArchitectureAgentReview = document.getElementById('undxLanguageArchitectureAgentReview');
+    const undxLanguageBuilderAgentReview = document.getElementById('undxLanguageBuilderAgentReview');
+    const undxMultiBrainAgentCouncilOutput = document.getElementById('undxMultiBrainAgentCouncilOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -25963,6 +26186,8 @@ def pulse_premium_undx_page():
     const undxLanguageProfilesKey = 'undxLanguageProfiles';
     const undxLanguageDecisionRecordsKey = 'undxLanguageDecisionRecords';
     const undxTestStrategiesKey = 'undxTestStrategies';
+    const undxAgentMemoriesKey = 'undxAgentMemories';
+    const undxEngineeringAgentsKey = 'undxEngineeringAgents';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
     const undxTaskPackagesKey = 'undxTaskPackages';
     const undxOperatingSystemSnapshotsKey = 'undxOperatingSystemSnapshots';
@@ -26220,6 +26445,7 @@ def pulse_premium_undx_page():
       const linkedExecutionRequests = Array.isArray(project.linkedExecutionRequests) ? project.linkedExecutionRequests.filter(item => item && item.requestId).slice(0,24).map(undxNormalizeExecutionRequest) : [];
       const linkedLanguageDecisionRecords = Array.isArray(project.linkedLanguageDecisionRecords) ? project.linkedLanguageDecisionRecords.filter(item => item && item.recordId).slice(0,24).map(undxNormalizeLanguageDecisionRecord) : [];
       const linkedTestStrategies = Array.isArray(project.linkedTestStrategies) ? project.linkedTestStrategies.filter(item => item && item.strategyId).slice(0,24).map(undxNormalizeTestStrategy) : [];
+      const linkedAgentMemories = Array.isArray(project.linkedAgentMemories) ? project.linkedAgentMemories.filter(item => item && item.memoryId).slice(0,24).map(undxNormalizeAgentMemory) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -26240,6 +26466,7 @@ def pulse_premium_undx_page():
         linkedExecutionRequests,
         linkedLanguageDecisionRecords,
         linkedTestStrategies,
+        linkedAgentMemories,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -31140,6 +31367,419 @@ def pulse_premium_undx_page():
         if(undxTestStrategyMessage) undxTestStrategyMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    const undxEngineeringAgentProfiles = [
+      {
+        agentId:'AGENT-UNDX-0001',
+        name:'Architect Agent',
+        role:'Architecture and system design',
+        status:'Standby',
+        workload:24,
+        readiness:94,
+        responsibilities:['Architecture Review','System boundaries','Module dependency planning','Technical direction'],
+        strengths:['Flask route architecture','Premium module boundaries','Safe phased expansion'],
+        reviewAreas:['Architecture disagreement','Integration risk','Route isolation'],
+        preferredSources:['Repository Structure Model','Strategic Plan','Project Workspace'],
+        outputTypes:['Architect Review','System Map','Final Engineering Recommendation']
+      },
+      {
+        agentId:'AGENT-UNDX-0002',
+        name:'Research Agent',
+        role:'Research, evidence, and technical discovery',
+        status:'Standby',
+        workload:18,
+        readiness:91,
+        responsibilities:['Research Review','Framework comparison','Provider capability review','Technical evidence'],
+        strengths:['Gemini research routing','Unknown syntax analysis','Strategic discovery'],
+        reviewAreas:['Research uncertainty','Language decision fit','Dependency assumptions'],
+        preferredSources:['Language Decision Records','Knowledge Graph','Repository Context'],
+        outputTypes:['Research Agent Review','Evidence Summary','Recommended Sources']
+      },
+      {
+        agentId:'AGENT-UNDX-0003',
+        name:'Builder Agent',
+        role:'Implementation planning and build sequencing',
+        status:'Standby',
+        workload:31,
+        readiness:96,
+        responsibilities:['Builder Plan','Implementation sequence','Task breakdown','Build readiness'],
+        strengths:['OpenAI fallback planning','CoinPilotX module wiring','Command-center workflows'],
+        reviewAreas:['Implementation disagreement','Scope creep','State management'],
+        preferredSources:['Task Package','Change Proposal','Builder Console'],
+        outputTypes:['Builder Agent Review','Build Steps','Task Assignments']
+      },
+      {
+        agentId:'AGENT-UNDX-0004',
+        name:'Testing Agent',
+        role:'Testing, validation, and release confidence',
+        status:'Standby',
+        workload:20,
+        readiness:93,
+        responsibilities:['Testing Plan','Regression plan','Manual QA checklist','Release confidence'],
+        strengths:['Pulse feed isolation checks','Audit planning','Browser QA planning'],
+        reviewAreas:['Testing disagreement','Regression risk','Validation gaps'],
+        preferredSources:['Test Strategy','Change Proposal','Project Workspace'],
+        outputTypes:['Testing Agent Review','Validation Recommendations','Release Confidence']
+      },
+      {
+        agentId:'AGENT-UNDX-0005',
+        name:'Security Agent',
+        role:'Security review, risk controls, and permission boundaries',
+        status:'Standby',
+        workload:27,
+        readiness:95,
+        responsibilities:['Security Review','Permission review','Secret protection','Risk analysis'],
+        strengths:['Approval protocol alignment','Secret safety','Execution boundary design'],
+        reviewAreas:['Security disagreement','File access risk','Command execution risk'],
+        preferredSources:['Approval Protocol','Repository Plans','Execution Requests'],
+        outputTypes:['Security Recommendations','Risk Notes','Safe Action Gates']
+      },
+      {
+        agentId:'AGENT-UNDX-0006',
+        name:'Documentation Agent',
+        role:'Documentation, onboarding, and release communication',
+        status:'Standby',
+        workload:15,
+        readiness:89,
+        responsibilities:['Documentation Package','Change summary','User-facing notes','Release handoff'],
+        strengths:['Readable build directives','Memory summaries','Project continuity'],
+        reviewAreas:['Documentation gaps','Handoff clarity','Decision traceability'],
+        preferredSources:['Project Memory','Agent Memory','Strategic Plans'],
+        outputTypes:['Documentation Package','Release Notes','Operational Summary']
+      }
+    ];
+    function undxConsensusLabel(score){
+      if(score >= 86) return 'Strong Consensus';
+      if(score >= 70) return 'Moderate Consensus';
+      if(score >= 50) return 'Weak Consensus';
+      return 'Conflict Detected';
+    }
+    function undxSelectedAgentSources(){
+      const checked = Array.from(undxAgentAssignmentSourceInputs?.querySelectorAll('input:checked') || []).map(input => input.value);
+      return checked.length ? checked : ['project','taskPackage','changeProposal','simulation','strategicPlan','structureModel'];
+    }
+    function undxNormalizeEngineeringAgent(agent){
+      const profile = undxEngineeringAgentProfiles.find(item => item.agentId === agent?.agentId || item.name === agent?.name) || {};
+      return {
+        agentId: String(agent?.agentId || profile.agentId || `AGENT-UNDX-${String(Date.now()).slice(-4)}`),
+        name: String(agent?.name || profile.name || 'UNDX Engineering Agent').slice(0,120),
+        role: String(agent?.role || profile.role || 'Engineering review').slice(0,180),
+        assignments: Array.isArray(agent?.assignments) ? agent.assignments.slice(0,48) : [],
+        consensusHistory: Array.isArray(agent?.consensusHistory) ? agent.consensusHistory.slice(0,48) : [],
+        createdAt: agent?.createdAt || new Date().toISOString(),
+        status: agent?.status || profile.status || 'Standby',
+        readiness: Number(agent?.readiness || profile.readiness || 88),
+        workload: Number(agent?.workload || profile.workload || 10)
+      };
+    }
+    function undxLoadEngineeringAgents(){
+      try{
+        const parsed = JSON.parse(localStorage.getItem(undxEngineeringAgentsKey) || '[]');
+        const stored = Array.isArray(parsed) ? parsed.map(undxNormalizeEngineeringAgent) : [];
+        const merged = undxEngineeringAgentProfiles.map(profile => undxNormalizeEngineeringAgent(stored.find(agent => agent.agentId === profile.agentId) || profile));
+        return merged;
+      }catch(error){
+        return undxEngineeringAgentProfiles.map(undxNormalizeEngineeringAgent);
+      }
+    }
+    function undxSaveEngineeringAgents(agents){
+      try{ localStorage.setItem(undxEngineeringAgentsKey, JSON.stringify(agents.slice(0,24))); }catch(error){}
+    }
+    function undxNormalizeAgentMemory(memory){
+      return {
+        memoryId: String(memory?.memoryId || '').slice(0,44),
+        name: String(memory?.name || 'Multi-Agent Engineering Review').slice(0,160),
+        objective: String(memory?.objective || '').slice(0,1600),
+        sources: Array.isArray(memory?.sources) ? memory.sources.slice(0,12) : [],
+        assignedAgents: Array.isArray(memory?.assignedAgents) ? memory.assignedAgents.slice(0,12) : undxEngineeringAgentProfiles.map(agent => agent.name),
+        recommendations: Array.isArray(memory?.recommendations) ? memory.recommendations.slice(0,24) : [],
+        reviews: memory?.reviews && typeof memory.reviews === 'object' ? memory.reviews : {},
+        discussion: Array.isArray(memory?.discussion) ? memory.discussion.slice(0,24) : [],
+        disagreements: Array.isArray(memory?.disagreements) ? memory.disagreements.slice(0,12) : [],
+        consensusScore: Number(memory?.consensusScore || 82),
+        consensusLabel: memory?.consensusLabel || undxConsensusLabel(Number(memory?.consensusScore || 82)),
+        boardRecommendation: String(memory?.boardRecommendation || 'Proceed with planning-only engineering coordination.').slice(0,1200),
+        createdAt: memory?.createdAt || new Date().toISOString(),
+        status: memory?.status || 'Stored'
+      };
+    }
+    function undxLoadAgentMemories(){
+      try{
+        const parsed = JSON.parse(localStorage.getItem(undxAgentMemoriesKey) || '[]');
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.memoryId).slice(0,48).map(undxNormalizeAgentMemory) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveAgentMemories(memories){
+      try{ localStorage.setItem(undxAgentMemoriesKey, JSON.stringify(memories.slice(0,48))); }catch(error){}
+    }
+    function undxNextAgentMemoryId(memories){
+      const max = memories.reduce((highest, memory) => {
+        const match = String(memory.memoryId || '').match(/^AGMEM-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `AGMEM-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxAgentSourceObjective(sources){
+      const project = undxCurrentProject();
+      if(sources.includes('project') && project) return `Project ${project.projectId}: ${project.name}. ${project.objective}`;
+      const task = undxLoadTaskPackages()[0];
+      if(sources.includes('taskPackage') && task) return `Task Package ${task.packageId}: ${task.objective}`;
+      const proposal = undxLoadChangeProposals()[0];
+      if(sources.includes('changeProposal') && proposal) return `Change Proposal ${proposal.proposalId}: ${proposal.objective}`;
+      const simulation = undxLoadBuildSimulations()[0];
+      if(sources.includes('simulation') && simulation) return `Build Simulation ${simulation.simulationId}: ${simulation.objective}`;
+      const plan = undxLoadStrategicPlans()[0];
+      if(sources.includes('strategicPlan') && plan) return `Strategic Plan ${plan.planId}: ${plan.objective}`;
+      const model = undxLoadStructureModels()[0];
+      if(sources.includes('structureModel') && model) return `Repository Structure Model ${model.modelId}: ${model.repositoryName}`;
+      return (undxMissionInput?.value || '').trim() || 'Coordinate the next CoinPilotXAI build phase through multi-agent engineering review.';
+    }
+    function undxBuildAgentMemory(){
+      const sources = undxSelectedAgentSources();
+      const memories = undxLoadAgentMemories();
+      const objective = undxAgentSourceObjective(sources);
+      const lower = objective.toLowerCase();
+      const conflictCount = (lower.match(/security|risk|auth|payment|deploy|database|migration|file|command|git/g) || []).length;
+      const consensusScore = Math.max(42, Math.min(98, 88 - conflictCount * 4 + Math.min(8, Math.floor(objective.length / 160))));
+      const disagreements = [
+        ['Architecture disagreement', /route|module|architecture|database/.test(lower) ? 'Review route boundaries and data ownership before implementation.' : 'No major architecture disagreement detected.'],
+        ['Security disagreement', /security|auth|secret|token|risk/.test(lower) ? 'Security Agent requires explicit permission, secret redaction, and approval gates.' : 'Security review confirms planning-only boundary.'],
+        ['Testing disagreement', /test|release|deploy|regression/.test(lower) ? 'Testing Agent requires regression, browser, and audit validation before release.' : 'Testing scope remains standard validation planning.'],
+        ['Implementation disagreement', /large|complex|multi|migration|rewrite/.test(lower) ? 'Builder Agent recommends dividing implementation into smaller approved packages.' : 'Implementation plan can remain narrow and staged.']
+      ];
+      const memory = undxNormalizeAgentMemory({
+        memoryId: undxNextAgentMemoryId(memories),
+        name: `Engineering Review ${memories.length + 1}`,
+        objective,
+        sources,
+        consensusScore,
+        consensusLabel: undxConsensusLabel(consensusScore),
+        assignedAgents: undxEngineeringAgentProfiles.map(agent => agent.name),
+        recommendations:[
+          'Architect Agent: preserve command-center boundaries and premium route isolation.',
+          'Research Agent: verify architecture assumptions against stored repository context.',
+          'Builder Agent: convert the mission into phased implementation tasks.',
+          'Testing Agent: create validation, regression, and release confidence checks.',
+          'Security Agent: keep file, command, Git, and deployment access disabled.',
+          'Documentation Agent: capture decisions, handoff notes, and user-facing summary.'
+        ],
+        reviews:{
+          architect:'Architect Review: keep UNDX modular and avoid Pulse feed coupling.',
+          research:'Research Review: use stored repository intelligence and language decisions as evidence.',
+          builder:'Builder Plan: sequence UI, state, audit, and browser verification.',
+          testing:'Testing Plan: run compile, JS parse, audits, and desktop/mobile browser checks.',
+          security:'Security Review: no filesystem, repository, command, Git, or deployment actions.',
+          documentation:'Documentation Package: summarize decisions, risks, next action, and validation.'
+        },
+        discussion:[
+          'Agent Opinions: proceed as planning and coordination only.',
+          'Recommendations: assign every high-impact change to architecture, testing, and security review.',
+          'Concerns: future repository access must pass approval gates.',
+          `Agreement Level: ${undxConsensusLabel(consensusScore)}`,
+          `Conflicting Recommendations: ${disagreements.filter(item => !item[1].startsWith('No major') && !item[1].startsWith('Security review') && !item[1].startsWith('Testing scope') && !item[1].startsWith('Implementation plan')).length}`
+        ],
+        disagreements,
+        boardRecommendation:'Final Engineering Recommendation: approve continued planning, coordination, review, and recommendation work only. Execution Access Disabled.'
+      });
+      return memory;
+    }
+    function undxRenderAgentStaticPanels(){
+      if(undxEngineeringAgentRoster){
+        undxEngineeringAgentRoster.replaceChildren();
+        undxEngineeringAgentProfiles.forEach(agent => {
+          undxEngineeringAgentRoster.appendChild(undxBlock(agent.name, [`Agent Name: ${agent.name}`, `Agent Role: ${agent.role}`, `Status: ${agent.status}`, `Current Workload: ${agent.workload}`, `Readiness Score: ${agent.readiness}`]));
+        });
+      }
+      if(undxAgentCommandCenterGrid){
+        undxAgentCommandCenterGrid.replaceChildren(
+          undxBlock('Active Agents', '6 specialized engineering agents ready.'),
+          undxBlock('Agent Status', 'Standby until assignment.'),
+          undxBlock('Agent Readiness', 'Average readiness above 90.'),
+          undxBlock('Current Assignments', 'Awaiting multi-agent assignment.'),
+          undxBlock('Agent Recommendations', 'Generate assignment to activate recommendations.')
+        );
+      }
+      if(undxAgentProfileOutput){
+        undxAgentProfileOutput.replaceChildren(...undxEngineeringAgentProfiles.map(agent => undxBlock(agent.name, [
+          `Role: ${agent.role}`,
+          `Responsibilities: ${agent.responsibilities.join(' · ')}`,
+          `Strengths: ${agent.strengths.join(' · ')}`,
+          `Review Areas: ${agent.reviewAreas.join(' · ')}`,
+          `Preferred Intelligence Sources: ${agent.preferredSources.join(' · ')}`,
+          `Output Types: ${agent.outputTypes.join(' · ')}`
+        ])));
+      }
+      if(undxAgentDisagreementGrid && !undxAgentDisagreementGrid.children.length){
+        undxAgentDisagreementGrid.replaceChildren(
+          undxBlock('Architecture disagreement', 'No active assignment.'),
+          undxBlock('Security disagreement', 'No active assignment.'),
+          undxBlock('Testing disagreement', 'No active assignment.'),
+          undxBlock('Implementation disagreement', 'No active assignment.')
+        );
+      }
+    }
+    function undxRenderAgentMemory(memory){
+      if(!memory){
+        if(undxAgentDiscussionOutput) undxAgentDiscussionOutput.replaceChildren(undxBlock('Agent Discussion', 'Assign work to agents to generate Agent Opinions, Recommendations, Concerns, Agreement Level, and Conflicting Recommendations.'));
+        if(undxAgentConsensusOutput) undxAgentConsensusOutput.replaceChildren(undxBlock('Consensus Engine', 'Consensus Score will range from 0–100 with Strong Consensus, Moderate Consensus, Weak Consensus, or Conflict Detected labels.'));
+        if(undxAgentConsensusScore) undxAgentConsensusScore.textContent = '0';
+        return;
+      }
+      if(undxAgentDiscussionOutput) undxAgentDiscussionOutput.replaceChildren(...memory.discussion.map(line => undxBlock(line.split(':')[0] || 'Agent Discussion', line)));
+      if(undxAgentConsensusScore) undxAgentConsensusScore.textContent = String(memory.consensusScore);
+      if(undxAgentConsensusOutput) undxAgentConsensusOutput.replaceChildren(
+        undxBlock('Consensus Score', `${memory.consensusScore}/100`),
+        undxBlock('Consensus Label', memory.consensusLabel),
+        undxBlock('Resolution Recommendation', 'Resolve disagreements through architecture, security, testing, and implementation review before future execution.')
+      );
+      if(undxAgentDisagreementGrid) undxAgentDisagreementGrid.replaceChildren(...memory.disagreements.map(item => undxBlock(item[0], item[1])));
+      if(undxEngineeringReviewBoardOutput) undxEngineeringReviewBoardOutput.replaceChildren(
+        undxBlock('Architect Review', memory.reviews.architect),
+        undxBlock('Research Review', memory.reviews.research),
+        undxBlock('Builder Plan', memory.reviews.builder),
+        undxBlock('Testing Plan', memory.reviews.testing),
+        undxBlock('Security Review', memory.reviews.security),
+        undxBlock('Documentation Package', memory.reviews.documentation),
+        undxBlock('Final Engineering Recommendation', memory.boardRecommendation)
+      );
+      if(undxMultiBrainAgentCouncilOutput) undxMultiBrainAgentCouncilOutput.replaceChildren(...memory.recommendations.map(item => undxBlock(item.split(':')[0], item)));
+    }
+    function undxCreateAgentMemoryCard(memory){
+      const card = document.createElement('article');
+      card.className = 'undx-memory-card';
+      const title = document.createElement('h3');
+      title.textContent = `${memory.memoryId} · ${memory.name}`;
+      const meta = document.createElement('p');
+      meta.textContent = `Consensus Score: ${memory.consensusScore}/100 · ${memory.consensusLabel} · Created Date: ${undxFormatMemoryTime(memory.createdAt)} · Status: ${memory.status}`;
+      const objective = document.createElement('p');
+      objective.textContent = memory.objective;
+      const actions = document.createElement('div');
+      actions.className = 'undx-memory-actions';
+      actions.append(
+        undxProjectActionButton('Open Memory', () => undxRenderAgentMemory(memory), true),
+        undxProjectActionButton('Send To Chat', () => undxSendTextToChat(undxAgentMemoryText(memory))),
+        undxProjectActionButton('Save To Mission Memory', () => undxStoreBlueprint({id:`agent-${memory.memoryId}`, name:memory.name, objective:undxAgentMemoryText(memory), type:'Multi-Agent Engineering Memory', source:'UNDX Multi-Agent Engineering System', createdAt:new Date().toISOString(), phase:'Phase 33', status:'Stored'})),
+        undxProjectActionButton('Attach To Project', () => undxAttachAgentMemoryToProject(memory)),
+        undxProjectActionButton('Delete Memory', () => {
+          undxSaveAgentMemories(undxLoadAgentMemories().filter(item => item.memoryId !== memory.memoryId));
+          undxRenderAgentMemoryRegistry();
+          undxRenderAgentDashboard();
+        })
+      );
+      card.append(title, meta, objective, actions);
+      return card;
+    }
+    function undxRenderAgentMemoryRegistry(){
+      const memories = undxLoadAgentMemories();
+      if(undxAgentMemoryRegistryEmpty) undxAgentMemoryRegistryEmpty.hidden = memories.length > 0;
+      if(undxAgentMemoryRegistryList){
+        undxAgentMemoryRegistryList.replaceChildren();
+        memories.forEach(memory => undxAgentMemoryRegistryList.appendChild(undxCreateAgentMemoryCard(memory)));
+      }
+      if(undxAgentDecisions) undxAgentDecisions.textContent = String(memories.length);
+      if(undxAgentRecommendations) undxAgentRecommendations.textContent = String(memories.reduce((sum, item) => sum + item.recommendations.length, 0));
+      if(undxAgentReviews) undxAgentReviews.textContent = String(memories.length * 6);
+      if(undxAgentConsensusHistory) undxAgentConsensusHistory.textContent = String(memories.length);
+    }
+    function undxRenderEngineeringAgentRegistry(){
+      const agents = undxLoadEngineeringAgents();
+      if(undxEngineeringAgentRegistry){
+        undxEngineeringAgentRegistry.replaceChildren();
+        agents.forEach(agent => undxEngineeringAgentRegistry.appendChild(undxBlock(agent.name, [
+          `Agent ID: ${agent.agentId}`,
+          `Role: ${agent.role}`,
+          `Assignments: ${agent.assignments.length}`,
+          `Consensus History: ${agent.consensusHistory.length}`,
+          `Created Date: ${undxFormatMemoryTime(agent.createdAt)}`,
+          `Readiness Score: ${agent.readiness}`,
+          `Workload Score: ${agent.workload}`
+        ])));
+      }
+    }
+    function undxRenderAgentDashboard(){
+      const memories = undxLoadAgentMemories();
+      const latest = memories[0] || null;
+      const agents = undxLoadEngineeringAgents();
+      const conflicts = latest ? latest.disagreements.filter(item => !/No major|confirms planning|standard validation|remain narrow/.test(item[1])).length : 0;
+      if(undxTotalEngineeringAgents) undxTotalEngineeringAgents.textContent = String(agents.length);
+      if(undxActiveAgentReviews) undxActiveAgentReviews.textContent = String(memories.length);
+      if(undxAgentDashboardConsensusScore) undxAgentDashboardConsensusScore.textContent = String(latest?.consensusScore || 0);
+      if(undxAgentConflictsDetected) undxAgentConflictsDetected.textContent = String(conflicts);
+      if(undxMostActiveEngineeringAgent) undxMostActiveEngineeringAgent.textContent = agents.slice().sort((a,b) => b.assignments.length - a.assignments.length)[0]?.name || 'None';
+      if(undxHighestConfidenceRecommendation) undxHighestConfidenceRecommendation.textContent = latest?.consensusLabel || 'None';
+      const project = undxCurrentProject() || {};
+      const linked = project.linkedAgentMemories || [];
+      if(undxProjectAssignedAgents) undxProjectAssignedAgents.textContent = String(linked[0]?.assignedAgents?.length || 0);
+      if(undxProjectAgentRecommendations) undxProjectAgentRecommendations.textContent = String(linked[0]?.recommendations?.length || 0);
+      if(undxProjectConsensusScore) undxProjectConsensusScore.textContent = String(linked[0]?.consensusScore || 0);
+      if(undxProjectReviewBoardResults) undxProjectReviewBoardResults.textContent = linked[0]?.consensusLabel || 'Pending';
+      if(undxTaskAssignedAgents) undxTaskAssignedAgents.textContent = String(latest?.assignedAgents?.length || 0);
+      if(undxTaskAgentReviews) undxTaskAgentReviews.textContent = latest ? '6' : '0';
+      if(undxTaskTestingRecommendations) undxTaskTestingRecommendations.textContent = latest?.reviews?.testing || 'Pending';
+      if(undxTaskSecurityRecommendations) undxTaskSecurityRecommendations.textContent = latest?.reviews?.security || 'Pending';
+      if(undxTestingAgentReview) undxTestingAgentReview.textContent = latest?.reviews?.testing || 'Pending';
+      if(undxAgentReleaseConfidence) undxAgentReleaseConfidence.textContent = String(latest ? Math.min(98, latest.consensusScore + 3) : 0);
+      if(undxAgentValidationRecommendations) undxAgentValidationRecommendations.textContent = latest ? 'Compile · JS parse · audits · browser QA' : 'Pending';
+      if(undxLanguageResearchAgentReview) undxLanguageResearchAgentReview.textContent = latest?.reviews?.research || 'Pending';
+      if(undxLanguageArchitectureAgentReview) undxLanguageArchitectureAgentReview.textContent = latest?.reviews?.architect || 'Pending';
+      if(undxLanguageBuilderAgentReview) undxLanguageBuilderAgentReview.textContent = latest?.reviews?.builder || 'Pending';
+    }
+    function undxAssignAgentsFlow(){
+      const memory = undxBuildAgentMemory();
+      const memories = [memory, ...undxLoadAgentMemories()].slice(0,48);
+      undxSaveAgentMemories(memories);
+      const agents = undxLoadEngineeringAgents().map(agent => ({...agent, status:'Active', assignments:[memory.memoryId, ...agent.assignments].slice(0,48), consensusHistory:[`${memory.memoryId}: ${memory.consensusScore}`, ...agent.consensusHistory].slice(0,48), workload:Math.min(100, agent.workload + 4)}));
+      undxSaveEngineeringAgents(agents);
+      undxRenderAgentMemory(memory);
+      undxRenderAgentMemoryRegistry();
+      undxRenderEngineeringAgentRegistry();
+      undxRenderAgentDashboard();
+      if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = 'Agent assignment complete. Multi-agent engineering memory stored.';
+    }
+    function undxAgentMemoryText(memory){
+      return `${memory.memoryId} ${memory.name}\\nObjective: ${memory.objective}\\nConsensus Score: ${memory.consensusScore}/100 ${memory.consensusLabel}\\nFinal Engineering Recommendation: ${memory.boardRecommendation}\\nSafety: Execution Access Disabled. No files, repositories, commands, Git, or deployments.`;
+    }
+    function undxSendTextToChat(text){
+      if(undxChatInput) undxChatInput.value = text || '';
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput?.focus();
+    }
+    function undxAttachAgentMemoryToProject(memory){
+      const project = undxCurrentProject();
+      if(!project){
+        if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = 'Open a project before attaching agent memory.';
+        return;
+      }
+      const projects = undxLoadProjects().map(item => item.projectId === project.projectId ? {...item, linkedAgentMemories:[memory, ...(item.linkedAgentMemories || []).filter(existing => existing.memoryId !== memory.memoryId)].slice(0,12)} : item);
+      undxSaveProjects(projects);
+      undxOpenProject(project.projectId, false);
+      undxRenderAgentDashboard();
+      if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = `${memory.memoryId} attached to ${project.projectId}.`;
+    }
+    async function undxRunEngineeringBoardFlow(){
+      const memory = undxLoadAgentMemories()[0] || undxBuildAgentMemory();
+      if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = 'Routing Engineering Review Board through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:undxAgentMemoryText(memory)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxEngineeringReviewBoardOutput) undxEngineeringReviewBoardOutput.replaceChildren(
+          undxBlock('Architecture Recommendation', agents.find(agent => agent.key === 'architect')?.recommendation || memory.reviews.architect),
+          undxBlock('Research Recommendation', agents.find(agent => agent.key === 'research')?.recommendation || memory.reviews.research),
+          undxBlock('Builder Recommendation', agents.find(agent => agent.key === 'builder')?.recommendation || memory.reviews.builder),
+          undxBlock('Testing Recommendation', agents.find(agent => agent.key === 'testing')?.recommendation || memory.reviews.testing),
+          undxBlock('Security Recommendation', agents.find(agent => agent.key === 'security')?.recommendation || memory.reviews.security),
+          undxBlock('Documentation Recommendation', agents.find(agent => agent.key === 'documentation')?.recommendation || memory.reviews.documentation),
+          undxBlock('Final Engineering Recommendation', memory.boardRecommendation)
+        );
+        if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = 'Engineering Review Board complete.';
+      }catch(error){
+        undxRenderAgentMemory(memory);
+        if(undxAgentEngineeringMessage) undxAgentEngineeringMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxMemoryEntityTypeList = ['Engineering Decisions','Architecture Decisions','Strategic Decisions','Project Decisions','Framework Recommendations','Language Recommendations','Repository Context Events','Approval Decisions','Simulation Outcomes','Agent Council Outcomes'];
     const undxBaseEngineeringDecisions = [
       ['CoinPilotX uses Flask','Engineering Decisions','Core app framework remains Flask for the command center and premium routes.'],
@@ -33376,6 +34016,7 @@ def pulse_premium_undx_page():
       ['undx-universal-code-intelligence','Universal Code Intelligence'],
       ['undx-language-mastery-engine','Language Mastery'],
       ['undx-testing-intelligence-engine','Testing Intelligence'],
+      ['undx-multi-agent-engineering-system','Multi-Agent Engineering'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
       ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
@@ -34594,6 +35235,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedAgentMemories(project, card){
+      const section = undxWorkspaceSection('Linked Agent Memories');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedAgentMemories || []).length){
+        list.appendChild(undxWorkspaceEmpty('No Agent Memory linked yet. Attach a Phase 33 engineering review to preserve Assigned Agents, Agent Recommendations, Consensus Score, and Engineering Review Board Results.'));
+      }else{
+        project.linkedAgentMemories.forEach(memory => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = `${memory.memoryId} · ${memory.name}`;
+          const meta = document.createElement('p');
+          meta.textContent = `Assigned Agents: ${(memory.assignedAgents || []).length} · Agent Recommendations: ${(memory.recommendations || []).length} · Consensus Score: ${memory.consensusScore}/100 · Engineering Review Board Results: ${memory.consensusLabel}`;
+          const recommendation = document.createElement('p');
+          recommendation.textContent = memory.boardRecommendation;
+          item.append(title, meta, recommendation);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -34666,7 +35330,11 @@ def pulse_premium_undx_page():
         undxBlock('Framework Recommendation', project.frameworkRecommendation || 'Pending'),
         undxBlock('Toolchain Recommendation', project.toolchainRecommendation || 'Pending'),
         undxBlock('Test Readiness', project.testReadiness || 'Pending'),
-        undxBlock('Release Confidence', `${project.releaseConfidence || 0}/100`)
+        undxBlock('Release Confidence', `${project.releaseConfidence || 0}/100`),
+        undxBlock('Assigned Agents', String((project.linkedAgentMemories?.[0]?.assignedAgents || []).length)),
+        undxBlock('Agent Recommendations', String((project.linkedAgentMemories?.[0]?.recommendations || []).length)),
+        undxBlock('Consensus Score', `${project.linkedAgentMemories?.[0]?.consensusScore || 0}/100`),
+        undxBlock('Engineering Review Board Results', project.linkedAgentMemories?.[0]?.consensusLabel || 'Pending')
       );
       const actions = document.createElement('div');
       actions.className = 'undx-project-actions';
@@ -34689,6 +35357,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedExecutionRequests(project, card);
       undxRenderLinkedLanguageDecisionRecords(project, card);
       undxRenderLinkedTestStrategies(project, card);
+      undxRenderLinkedAgentMemories(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -34985,28 +35654,40 @@ def pulse_premium_undx_page():
           research: 'Compare trusted risk signals, scam pattern sources, and explainability examples before ranking threats.',
           builder: 'Start with a static analyzer prototype, then add guarded data adapters and focused audit fixtures.',
           optimization: 'Optimize the signal pipeline for explainability, low false positives, and clean audit checkpoints.',
-          rapid_response: 'Prioritize wallet safety language, no-secret collection, and a narrow premium-only prototype.'
+          rapid_response: 'Prioritize wallet safety language, no-secret collection, and a narrow premium-only prototype.',
+          testing: 'Design security regression tests, auth/session checks, and release-confidence validation before future execution.',
+          security: 'Threat-model secrets, permissions, wallet risk language, and abuse cases before any build phase.',
+          documentation: 'Prepare security notes, reviewer guidance, and release documentation for premium-only workflows.'
         },
         'Product Experience': {
           architect: 'Define the route, state model, and reusable premium panels before extending the interface.',
           research: 'Review current dashboard behavior, user intent signals, and comparable command-center patterns.',
           builder: 'Build the tightest useful workflow first, then layer status, saved outputs, and responsive states.',
           optimization: 'Reduce layout friction, keep the interaction path fast, and protect mobile scanning quality.',
-          rapid_response: 'Prototype the premium workflow, verify feed isolation, then run desktop and mobile checks.'
+          rapid_response: 'Prototype the premium workflow, verify feed isolation, then run desktop and mobile checks.',
+          testing: 'Validate desktop/mobile flow, localStorage persistence, empty states, and Pulse feed isolation.',
+          security: 'Confirm premium boundaries, auth redirects, and safe rendering of user-entered planning text.',
+          documentation: 'Summarize UI behavior, QA steps, and release notes for the premium workflow.'
         },
         'Intelligence Expansion': {
           architect: 'Map agent responsibilities, memory boundaries, and human-control points before adding autonomy.',
           research: 'Investigate task decomposition, memory scoring, and evaluation methods for multi-agent workflows.',
           builder: 'Implement supervised orchestration first, then graduate proven flows into durable services later.',
           optimization: 'Tune the council loop around concise outputs, traceable memory, and controlled model routing.',
-          rapid_response: 'Define manual approval points before expanding automation or autonomous build behavior.'
+          rapid_response: 'Define manual approval points before expanding automation or autonomous build behavior.',
+          testing: 'Create validation strategy for routing, persistence, consensus scoring, and fallback behavior.',
+          security: 'Preserve approval gates and avoid autonomous execution paths, file access, or secret exposure.',
+          documentation: 'Document agent roles, routing assumptions, and handoff summaries for future phases.'
         },
         'Core Build Expansion': {
           architect: 'Turn the mission into a small system map with inputs, outputs, route boundaries, and audit points.',
           research: 'Clarify assumptions, dependencies, user examples, and the smallest proof needed to move forward.',
           builder: 'Create a narrow prototype, connect the minimum UI state, and keep follow-up modules optional.',
           optimization: 'Keep the first build reversible, compact, and easy to validate before expanding scope.',
-          rapid_response: 'Ship the smallest useful command-center step, validate it, then promote the next module.'
+          rapid_response: 'Ship the smallest useful command-center step, validate it, then promote the next module.',
+          testing: 'Map unit, integration, regression, and manual QA coverage before implementation.',
+          security: 'Review permissions, input handling, auth boundaries, and no-execution constraints.',
+          documentation: 'Create concise change summaries, onboarding notes, and release-readiness documentation.'
         }
       };
       const set = recommendations[priority] || recommendations['Core Build Expansion'];
@@ -35015,7 +35696,10 @@ def pulse_premium_undx_page():
         {key:'research', name:'Research Agent', role:'Evidence, market, and technical discovery', output:set.research},
         {key:'builder', name:'Builder Agent', role:'Implementation path and build sequencing', output:set.builder},
         {key:'optimization', name:'Optimization Agent', role:'Performance, code quality, and system refinement', output:set.optimization},
-        {key:'rapid_response', name:'Rapid Response Agent', role:'Fast triage, concise direction, and immediate next moves', output:set.rapid_response}
+        {key:'rapid_response', name:'Rapid Response Agent', role:'Fast triage, concise direction, and immediate next moves', output:set.rapid_response},
+        {key:'testing', name:'Testing Agent', role:'Testing strategy, validation planning, regression planning, and release confidence', output:set.testing},
+        {key:'security', name:'Security Agent', role:'Security review, threat analysis, permission review, and risk analysis', output:set.security},
+        {key:'documentation', name:'Documentation Agent', role:'Documentation planning, onboarding plans, change summaries, and release documentation', output:set.documentation}
       ];
     }
     function undxCouncilFallbackRouting(){
@@ -35024,7 +35708,10 @@ def pulse_premium_undx_page():
         {key:'research', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
         {key:'builder', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:false},
         {key:'optimization', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
-        {key:'rapid_response', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true}
+        {key:'rapid_response', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
+        {key:'testing', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:false},
+        {key:'security', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:true},
+        {key:'documentation', selected_provider_label:'OpenAI', provider_status:'Offline', fallback_status:'Offline', fallback_used:false}
       ];
     }
     function undxCouncilAgentRouting(routingAgents, key){
@@ -35345,6 +36032,8 @@ def pulse_premium_undx_page():
     undxRunLanguageReview?.addEventListener('click', undxRunLanguageReviewFlow);
     undxGenerateTestStrategy?.addEventListener('click', undxGenerateTestStrategyFlow);
     undxRunTestingReview?.addEventListener('click', undxRunTestingReviewFlow);
+    undxAssignToAgents?.addEventListener('click', undxAssignAgentsFlow);
+    undxRunEngineeringReviewBoard?.addEventListener('click', undxRunEngineeringBoardFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
     undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
@@ -35405,6 +36094,11 @@ def pulse_premium_undx_page():
     undxRenderTestingStaticPanels();
     undxRenderTestStrategyRegistry();
     undxRenderTestStrategy(undxLoadTestStrategies()[0] || null);
+    undxRenderAgentStaticPanels();
+    undxRenderEngineeringAgentRegistry();
+    undxRenderAgentMemoryRegistry();
+    undxRenderAgentMemory(undxLoadAgentMemories()[0] || null);
+    undxRenderAgentDashboard();
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
