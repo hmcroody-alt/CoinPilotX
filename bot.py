@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -23810,6 +23810,170 @@ def pulse_premium_undx_page():
           </aside>
         </div>
       </section>
+      <section class='undx-section-panel undx-task-generation-center' id='undx-task-generation-center'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Task Engine: Online</span>
+            <h2>UNDX Task Generation Center</h2>
+          </div>
+          <p>Generate implementation-ready engineering task packages using repository intelligence, memory, simulations, strategy, and code intelligence.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX task generation center status'>
+              <span aria-label='Task Engine: Online'>Task Engine: <strong>Online</strong></span>
+              <span aria-label='Directive Engine: Online'>Directive Engine: <strong>Online</strong></span>
+              <span aria-label='Acceptance Engine: Online'>Acceptance Engine: <strong>Online</strong></span>
+              <span aria-label='Validation Engine: Online'>Validation Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 25'>Phase: <strong>25</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Input Sources</span>
+              <h3>Task Input Sources</h3>
+              <p>Multiple sources supported.</p>
+              <div class='undx-simulation-inputs' id='undxTaskSourceInputs'>
+                <label><input type='checkbox' value='project' checked>Project</label>
+                <label><input type='checkbox' value='workspace' checked>Workspace Summary</label>
+                <label><input type='checkbox' value='strategic' checked>Strategic Plan</label>
+                <label><input type='checkbox' value='repository' checked>Repository Analysis</label>
+                <label><input type='checkbox' value='change' checked>Change Analysis</label>
+                <label><input type='checkbox' value='simulation' checked>Build Simulation</label>
+                <label><input type='checkbox' value='knowledge' checked>Knowledge Graph</label>
+                <label><input type='checkbox' value='memory' checked>Memory Graph</label>
+                <label><input type='checkbox' value='code' checked>Universal Code Intelligence</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxGenerateTaskPackage'>Generate Task Package</button>
+                <button class='button' type='button' id='undxRunTaskReview'>Run Multi-Brain Task Review</button>
+              </div>
+              <p class='undx-project-message' id='undxTaskPackageMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Package Output</span>
+              <h3>Task Package Output</h3>
+              <p>Task Package ID format: <strong>TASK-UNDX-0001</strong></p>
+              <div class='undx-evolution-empty' id='undxTaskPackageEmpty'>Generate a task package to convert UNDX intelligence into an implementation-ready work package.</div>
+              <div class='undx-simulation-output' id='undxTaskPackageOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Tree Engine</span>
+              <h3>Epic ↓ Feature ↓ Task ↓ Subtask</h3>
+              <p>Epic: Portfolio Manager · Feature: Risk Engine · Task: Create Risk Scoring Module · Subtasks: Define scoring rules, Create service interface, Create tests, Add monitoring</p>
+              <div class='undx-chain-list' id='undxTaskTreeList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>File Impact Planner</span>
+              <h3>Conceptual File Impact Planner</h3>
+              <p>Potential New Files · Potential Modified Areas · Potential APIs · Potential Database Changes · Potential Frontend Components · Potential Services</p>
+              <p>No actual file operations.</p>
+              <div class='undx-system-impact-grid' id='undxTaskImpactGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Acceptance Criteria Engine</span>
+              <h3>Acceptance Criteria Engine</h3>
+              <p>Functional Criteria · Security Criteria · Performance Criteria · UX Criteria · Completion Criteria</p>
+              <div class='undx-approval-grid' id='undxTaskAcceptanceGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Validation Engine</span>
+              <h3>Validation Engine</h3>
+              <p>Unit Test Recommendations · Integration Test Recommendations · Security Test Recommendations · Performance Test Recommendations · Manual QA Checklist</p>
+              <div class='undx-approval-grid' id='undxTaskValidationGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Rollback Planner</span>
+              <h3>Rollback Planner</h3>
+              <p>Rollback Strategy · Recovery Considerations · Risk Mitigation Steps</p>
+              <div class='undx-chain-list' id='undxTaskRollbackList'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Registry</span>
+              <h3>Task Registry</h3>
+              <div class='undx-memory-empty' id='undxTaskRegistryEmpty'>No task packages stored yet. Generate a package to activate Codex-style task generation.</div>
+              <div class='undx-simulation-registry' id='undxTaskRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Dashboard</span>
+              <h3>Task Dashboard</h3>
+              <p>Total Task Packages: <strong id='undxTotalTaskPackages'>0</strong></p>
+              <p>Average Complexity: <strong id='undxAverageTaskComplexity'>0</strong></p>
+              <p>Build Candidates: <strong id='undxTaskBuildCandidates'>0</strong></p>
+              <p>Execution Candidates: <strong id='undxTaskExecutionCandidates'>0</strong></p>
+              <p>Most Referenced Project: <strong id='undxTaskMostReferencedProject'>None</strong></p>
+              <p>Most Referenced Technology: <strong id='undxTaskMostReferencedTechnology'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Complexity Engine</span>
+              <h3>Task Complexity Engine</h3>
+              <p>Complexity Score: <strong id='undxTaskComplexityScore'>0</strong></p>
+              <p>Levels: Low · Moderate · High · Critical</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Readiness Engine</span>
+              <h3>Readiness Engine</h3>
+              <p>Not Ready · Planning Ready · Review Ready · Build Candidate · Execution Candidate</p>
+              <p>Readiness Level: <strong id='undxTaskReadinessLevel'>Not Ready</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Task Review</span>
+              <h3>Multi-Brain Task Review</h3>
+              <div id='undxTaskReviewOutput'><p>Architecture Review, Research Review, Builder Review, Optimization Review, Rapid Review, and Combined Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Referenced Intelligence</h3>
+              <p>Referenced Decisions: <strong id='undxTaskReferencedDecisions'>0</strong></p>
+              <p>Referenced Technologies: <strong id='undxTaskReferencedTechnologies'>0</strong></p>
+              <p>Referenced Plans: <strong id='undxTaskReferencedPlans'>0</strong></p>
+              <p>Referenced Simulations: <strong id='undxTaskReferencedSimulations'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Task Relationships</h3>
+              <p>Task Relationships: <strong id='undxTaskRelationships'>0</strong></p>
+              <p>Dependency Relationships: <strong id='undxTaskDependencyRelationships'>0</strong></p>
+              <p>Project Relationships: <strong id='undxTaskProjectRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Code Intelligence Integration</span>
+              <h3>Recommended Stack</h3>
+              <p>Recommended Languages: <strong id='undxTaskRecommendedLanguages'>Python · TypeScript</strong></p>
+              <p>Recommended Frameworks: <strong id='undxTaskRecommendedFrameworks'>Flask · React</strong></p>
+              <p>Recommended SDKs: <strong id='undxTaskRecommendedSdks'>OpenAI · Groq</strong></p>
+              <p>Recommended Architecture Patterns: <strong id='undxTaskRecommendedArchitecture'>Modular Architecture</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Package Export</span>
+              <h3>Developer Directive · Codex Directive · Implementation Brief</h3>
+              <pre class='undx-directive-output' id='undxTaskExportOutput'>No task package selected yet.</pre>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX generated this task package using strategic plans, repository intelligence, workspace intelligence, simulations, knowledge graphs, memory graphs, and code intelligence only.</p>
+              <p>No repository files were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <ul class='undx-safety-list'><li>No file access.</li><li>No repository modification.</li><li>No Git operations.</li><li>No command execution.</li><li>No deployments.</li><li>Implementation-grade planning only.</li></ul>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Evolution</span>
+              <h3>Future Evolution</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 25<br><strong>Codex-Style Task Generation</strong></span>
+                <span>Phase 26<br><strong>UNDX Operating System Layer</strong></span>
+                <span>Phase 27<br><strong>Desktop Connector Architecture</strong></span>
+                <span>Phase 28<br><strong>Controlled Repository Awareness</strong></span>
+                <span>Phase 29<br><strong>Controlled Editing Proposals</strong></span>
+                <span>Phase 30<br><strong>Human Approved Execution</strong></span>
+              </div>
+            </article>
+          </aside>
+        </div>
+      </section>
       <section class='undx-section-panel' id='undx-core-modules'>
         <div class='undx-section-heading'>
           <div>
@@ -24240,6 +24404,40 @@ def pulse_premium_undx_page():
     const undxPreviousLanguages = document.getElementById('undxPreviousLanguages');
     const undxPreviousFrameworks = document.getElementById('undxPreviousFrameworks');
     const undxPreviousSdks = document.getElementById('undxPreviousSdks');
+    const undxTaskSourceInputs = document.getElementById('undxTaskSourceInputs');
+    const undxGenerateTaskPackage = document.getElementById('undxGenerateTaskPackage');
+    const undxRunTaskReview = document.getElementById('undxRunTaskReview');
+    const undxTaskPackageMessage = document.getElementById('undxTaskPackageMessage');
+    const undxTaskPackageEmpty = document.getElementById('undxTaskPackageEmpty');
+    const undxTaskPackageOutput = document.getElementById('undxTaskPackageOutput');
+    const undxTaskTreeList = document.getElementById('undxTaskTreeList');
+    const undxTaskImpactGrid = document.getElementById('undxTaskImpactGrid');
+    const undxTaskAcceptanceGrid = document.getElementById('undxTaskAcceptanceGrid');
+    const undxTaskValidationGrid = document.getElementById('undxTaskValidationGrid');
+    const undxTaskRollbackList = document.getElementById('undxTaskRollbackList');
+    const undxTaskRegistryEmpty = document.getElementById('undxTaskRegistryEmpty');
+    const undxTaskRegistryList = document.getElementById('undxTaskRegistryList');
+    const undxTotalTaskPackages = document.getElementById('undxTotalTaskPackages');
+    const undxAverageTaskComplexity = document.getElementById('undxAverageTaskComplexity');
+    const undxTaskBuildCandidates = document.getElementById('undxTaskBuildCandidates');
+    const undxTaskExecutionCandidates = document.getElementById('undxTaskExecutionCandidates');
+    const undxTaskMostReferencedProject = document.getElementById('undxTaskMostReferencedProject');
+    const undxTaskMostReferencedTechnology = document.getElementById('undxTaskMostReferencedTechnology');
+    const undxTaskComplexityScore = document.getElementById('undxTaskComplexityScore');
+    const undxTaskReadinessLevel = document.getElementById('undxTaskReadinessLevel');
+    const undxTaskReviewOutput = document.getElementById('undxTaskReviewOutput');
+    const undxTaskReferencedDecisions = document.getElementById('undxTaskReferencedDecisions');
+    const undxTaskReferencedTechnologies = document.getElementById('undxTaskReferencedTechnologies');
+    const undxTaskReferencedPlans = document.getElementById('undxTaskReferencedPlans');
+    const undxTaskReferencedSimulations = document.getElementById('undxTaskReferencedSimulations');
+    const undxTaskRelationships = document.getElementById('undxTaskRelationships');
+    const undxTaskDependencyRelationships = document.getElementById('undxTaskDependencyRelationships');
+    const undxTaskProjectRelationships = document.getElementById('undxTaskProjectRelationships');
+    const undxTaskRecommendedLanguages = document.getElementById('undxTaskRecommendedLanguages');
+    const undxTaskRecommendedFrameworks = document.getElementById('undxTaskRecommendedFrameworks');
+    const undxTaskRecommendedSdks = document.getElementById('undxTaskRecommendedSdks');
+    const undxTaskRecommendedArchitecture = document.getElementById('undxTaskRecommendedArchitecture');
+    const undxTaskExportOutput = document.getElementById('undxTaskExportOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -24260,6 +24458,7 @@ def pulse_premium_undx_page():
     const undxBuildSimulationsKey = 'undxBuildSimulations';
     const undxLanguageProfilesKey = 'undxLanguageProfiles';
     const undxMemoryGraphRecordsKey = 'undxMemoryGraphRecords';
+    const undxTaskPackagesKey = 'undxTaskPackages';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -24286,6 +24485,8 @@ def pulse_premium_undx_page():
     let undxLastCodeProfile = null;
     let undxSelectedMemoryRecordId = null;
     let undxLastMemoryGraphRecord = null;
+    let undxSelectedTaskPackageId = null;
+    let undxLastTaskPackage = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -26076,6 +26277,9 @@ def pulse_premium_undx_page():
         undxBlock('Linked Change Analyses', undxWorkspacePillList((project.linkedChangeAnalyses || []).map(item => item.analysisId), 'None linked')),
         undxBlock('Linked Knowledge Graphs', undxWorkspacePillList((project.linkedKnowledgeGraphs || []).map(item => item.graphId), 'None linked')),
         undxBlock('Linked Workspace Memory Records', undxWorkspacePillList((project.linkedMemoryRecords || []).map(item => item.memoryId), 'None linked')),
+        undxBlock('Linked Task Packages', undxWorkspacePillList((project.linkedTaskPackages || []).map(item => item.packageId), 'None linked')),
+        undxBlock('Task Package Count', String((project.linkedTaskPackages || []).length)),
+        undxBlock('Latest Task Package', (project.linkedTaskPackages || [])[0]?.packageId || 'None linked'),
         undxBlock('Approval Status', undxProjectApprovalStatus(project)),
         undxBlock('Task Progress', `${taskProgress.done}/${taskProgress.total} complete (${taskProgress.percent}%)`),
         undxBlock('Milestone Progress', `${milestoneProgress.done}/${milestoneProgress.total} complete (${milestoneProgress.percent}%)`),
@@ -29033,6 +29237,359 @@ def pulse_premium_undx_page():
         if(undxMemoryGraphMessage) undxMemoryGraphMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxSelectedTaskSourceTypes(){
+      const boxes = undxTaskSourceInputs ? Array.from(undxTaskSourceInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['project','workspace','strategic','repository','change','simulation','knowledge','memory','code'];
+    }
+    function undxTaskSources(){
+      return {
+        project: undxWorkspaceSelectedProject() || undxLoadProjects()[0] || null,
+        workspace: undxLastWorkspaceSummary || undxLoadWorkspaceSummaries()[0] || null,
+        strategic: undxLastStrategicPlan || undxLoadStrategicPlans()[0] || null,
+        repository: undxLoadRepositoryAnalyses()[0] || null,
+        change: undxLastChangeAnalysis || undxLoadChangeAnalyses()[0] || null,
+        simulation: undxLastBuildSimulation || undxLoadBuildSimulations()[0] || null,
+        knowledge: undxLastKnowledgeGraph || undxLoadKnowledgeGraphs()[0] || null,
+        memory: undxLastMemoryGraphRecord || undxLoadMemoryGraphRecords()[0] || null,
+        code: undxLastCodeProfile || undxLoadLanguageProfiles()[0] || null
+      };
+    }
+    function undxNextTaskPackageId(packages){
+      const max = packages.reduce((highest, pkg) => {
+        const match = String(pkg.packageId || '').match(/^TASK-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `TASK-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxTaskComplexityLevel(score){
+      if(score >= 82) return 'Critical';
+      if(score >= 62) return 'High';
+      if(score >= 38) return 'Moderate';
+      return 'Low';
+    }
+    function undxTaskReadiness(score, sourceStrength){
+      if(score < 35 || sourceStrength < 2) return 'Not Ready';
+      if(score < 50) return 'Planning Ready';
+      if(score < 66) return 'Review Ready';
+      if(score < 82) return 'Build Candidate';
+      return 'Execution Candidate';
+    }
+    function undxNormalizeTaskPackage(pkg){
+      const complexityScore = Math.max(0, Math.min(100, Number(pkg.complexityScore || 50)));
+      return {
+        packageId: String(pkg.packageId || `TASK-UNDX-${Date.now()}`).slice(0,44),
+        selectedInputs: Array.isArray(pkg.selectedInputs) ? pkg.selectedInputs.slice(0,16) : [],
+        executiveSummary: String(pkg.executiveSummary || '').slice(0,1400),
+        projectObjective: String(pkg.projectObjective || '').slice(0,1200),
+        recommendedBuildStrategy: String(pkg.recommendedBuildStrategy || '').slice(0,1200),
+        taskTree: pkg.taskTree || {epic:'Portfolio Manager', feature:'Risk Engine', task:'Create Risk Scoring Module', subtasks:['Define scoring rules','Create service interface','Create tests','Add monitoring']},
+        dependencies: undxNormalizeExecutionList(pkg.dependencies, ['Project context', 'Strategic plan', 'Memory graph'], 12, 200),
+        acceptanceCriteria: pkg.acceptanceCriteria || {},
+        validationChecklist: pkg.validationChecklist || {},
+        rollbackPlan: undxNormalizeExecutionList(pkg.rollbackPlan, ['Rollback Strategy', 'Recovery Considerations', 'Risk Mitigation Steps'], 8, 220),
+        riskNotes: undxNormalizeExecutionList(pkg.riskNotes, ['No repository access in Phase 25', 'Approval required before future execution'], 8, 220),
+        readinessAssessment: String(pkg.readinessAssessment || undxTaskReadiness(complexityScore, (pkg.selectedInputs || []).length)).slice(0,80),
+        complexityScore,
+        complexityLevel: String(pkg.complexityLevel || undxTaskComplexityLevel(complexityScore)).slice(0,80),
+        fileImpactPlan: pkg.fileImpactPlan || {},
+        referenced: pkg.referenced || {},
+        exports: pkg.exports || {},
+        review: pkg.review || null,
+        createdAt: pkg.createdAt || new Date().toISOString(),
+        status: 'Stored'
+      };
+    }
+    function undxLoadTaskPackages(){
+      try{
+        const raw = localStorage.getItem(undxTaskPackagesKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.packageId).slice(0,80).map(undxNormalizeTaskPackage) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveTaskPackages(packages){
+      try{
+        localStorage.setItem(undxTaskPackagesKey, JSON.stringify(packages.slice(0,80)));
+      }catch(error){
+        if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = 'Task Registry could not be updated.';
+      }
+    }
+    function undxBuildTaskPackage(){
+      const packages = undxLoadTaskPackages();
+      const sources = undxTaskSources();
+      const selectedInputs = undxSelectedTaskSourceTypes();
+      const sourceStrength = selectedInputs.filter(key => sources[key]).length;
+      const project = sources.project || {};
+      const memory = sources.memory || {};
+      const code = sources.code || {};
+      const simulation = sources.simulation || {};
+      const objective = project.objective || simulation.simulatedObjective || memory.description || code.syntaxStyle || 'Prepare the next CoinPilotXAI implementation package from UNDX intelligence.';
+      const complexityScore = Math.max(24, Math.min(96, 34 + selectedInputs.length * 4 + sourceStrength * 5 + (simulation.forecast?.complexityProbability || 0) / 5));
+      const readinessAssessment = undxTaskReadiness(complexityScore, sourceStrength);
+      const technologies = [...new Set([...(memory.technologies || []), code.languageName, 'Python', 'Flask', 'OpenAI'].filter(Boolean))].slice(0,8);
+      const packageId = undxNextTaskPackageId(packages);
+      return undxNormalizeTaskPackage({
+        packageId,
+        selectedInputs,
+        executiveSummary: `UNDX generated ${packageId} from ${sourceStrength} available read-only intelligence sources to convert planning, simulation, memory, and knowledge into implementation-grade tasks.`,
+        projectObjective: objective,
+        recommendedBuildStrategy: 'Break work into an epic, feature, task, and subtask tree; validate acceptance criteria; then wait for future human-approved execution phases before touching files.',
+        taskTree: {epic: project.name || 'Portfolio Manager', feature:'Risk Engine', task:'Create Risk Scoring Module', subtasks:['Define scoring rules','Create service interface','Create tests','Add monitoring']},
+        dependencies: ['Project context', 'Workspace Summary', 'Strategic Plan', 'Repository Analysis', 'Change Analysis', 'Build Simulation', 'Knowledge Graph', 'Memory Graph', 'Universal Code Intelligence'].filter((_, index) => index < selectedInputs.length + 2),
+        acceptanceCriteria: {
+          functional:['Feature behavior is defined before implementation.', 'Inputs, outputs, empty states, and persistence are documented.'],
+          security:['No secrets exposed.', 'Approval gates remain required for file access, commands, Git, or deployment.'],
+          performance:['Keep UI responsive and avoid unnecessary polling.', 'Validate payload impact before release.'],
+          ux:['Desktop and mobile layouts remain usable.', 'Controls have clear labels and states.'],
+          completion:['Audits pass.', 'Task package is saved and linked if needed.']
+        },
+        validationChecklist: {
+          unit:['Unit Test Recommendations: core helpers and data transforms.'],
+          integration:['Integration Test Recommendations: route rendering and localStorage workflows.'],
+          security:['Security Test Recommendations: no key exposure and no execution paths.'],
+          performance:['Performance Test Recommendations: page size and polling audit.'],
+          manual:['Manual QA Checklist: generate, open, attach, review, delete, refresh.']
+        },
+        rollbackPlan:['Rollback Strategy: disable the new UI view or revert the task package record.', 'Recovery Considerations: localStorage data can be cleared without repository impact.', 'Risk Mitigation Steps: keep Phase 25 read-only and approval-gated.'],
+        riskNotes:['Task packages are implementation-grade plans only.', 'No actual file operations are allowed in Phase 25.', 'Human approval remains required before future execution.'],
+        readinessAssessment,
+        complexityScore,
+        complexityLevel: undxTaskComplexityLevel(complexityScore),
+        fileImpactPlan: {
+          potentialNewFiles:['Planning only: future module file names may be proposed after repository awareness.'],
+          potentialModifiedAreas:['Premium UNDX view', 'Project Workspace', 'Audit scripts'],
+          potentialApis:['Future approved backend route, if needed'],
+          potentialDatabaseChanges:['None in Phase 25'],
+          potentialFrontendComponents:['Task registry', 'Task output card', 'Project linked packages'],
+          potentialServices:['No services modified']
+        },
+        referenced: {
+          decisions: (undxLoadMemoryGraphRecords() || []).slice(0,3).map(item => item.title),
+          technologies,
+          plans: undxLoadStrategicPlans().slice(0,3).map(item => item.planId),
+          simulations: undxLoadBuildSimulations().slice(0,3).map(item => item.simulationId),
+          project: project.name || project.projectId || 'CoinPilotXAI'
+        },
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxTaskPackageText(pkg){
+      return [
+        'UNDX Codex-Style Task Package',
+        '',
+        `Task Package ID: ${pkg.packageId}`,
+        `Complexity Score: ${pkg.complexityScore}/100`,
+        `Complexity Level: ${pkg.complexityLevel}`,
+        `Readiness Level: ${pkg.readinessAssessment}`,
+        '',
+        `Executive Summary: ${pkg.executiveSummary}`,
+        `Project Objective: ${pkg.projectObjective}`,
+        `Recommended Build Strategy: ${pkg.recommendedBuildStrategy}`,
+        '',
+        `Epic: ${pkg.taskTree.epic}`,
+        `Feature: ${pkg.taskTree.feature}`,
+        `Task: ${pkg.taskTree.task}`,
+        'Subtasks:',
+        ...(pkg.taskTree.subtasks || []).map(item => `- ${item}`),
+        '',
+        'Dependencies:',
+        ...pkg.dependencies.map(item => `- ${item}`),
+        '',
+        'Acceptance Criteria:',
+        ...Object.entries(pkg.acceptanceCriteria).flatMap(([key, items]) => [`${key}:`, ...(items || []).map(item => `- ${item}`)]),
+        '',
+        'Validation Checklist:',
+        ...Object.entries(pkg.validationChecklist).flatMap(([key, items]) => [`${key}:`, ...(items || []).map(item => `- ${item}`)]),
+        '',
+        'Rollback Plan:',
+        ...pkg.rollbackPlan.map(item => `- ${item}`),
+        '',
+        'Risk Notes:',
+        ...pkg.riskNotes.map(item => `- ${item}`),
+        '',
+        'Safety Boundary: No repository files were accessed. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxRenderTaskPackage(pkg){
+      undxLastTaskPackage = pkg || null;
+      if(pkg) undxSelectedTaskPackageId = pkg.packageId;
+      if(undxTaskPackageEmpty) undxTaskPackageEmpty.hidden = Boolean(pkg);
+      if(undxTaskPackageOutput){
+        undxTaskPackageOutput.replaceChildren();
+        if(pkg){
+          const grid = document.createElement('div');
+          grid.className = 'undx-blueprint-grid';
+          grid.append(
+            undxBlock('Task Package ID', pkg.packageId),
+            undxBlock('Executive Summary', pkg.executiveSummary),
+            undxBlock('Project Objective', pkg.projectObjective),
+            undxBlock('Recommended Build Strategy', pkg.recommendedBuildStrategy),
+            undxBlock('Task Tree', [`Epic: ${pkg.taskTree.epic}`, `Feature: ${pkg.taskTree.feature}`, `Task: ${pkg.taskTree.task}`, ...(pkg.taskTree.subtasks || []).map(item => `Subtask: ${item}`)]),
+            undxBlock('Dependencies', pkg.dependencies),
+            undxBlock('Acceptance Criteria', Object.values(pkg.acceptanceCriteria).flat()),
+            undxBlock('Validation Checklist', Object.values(pkg.validationChecklist).flat()),
+            undxBlock('Rollback Plan', pkg.rollbackPlan),
+            undxBlock('Risk Notes', pkg.riskNotes),
+            undxBlock('Readiness Assessment', pkg.readinessAssessment)
+          );
+          const output = document.createElement('pre');
+          output.className = 'undx-directive-output';
+          output.textContent = undxTaskPackageText(pkg);
+          undxTaskPackageOutput.append(grid, output);
+        }
+      }
+      const fillList = (container, items) => {
+        if(!container) return;
+        container.replaceChildren();
+        (items || []).forEach(item => {
+          const node = document.createElement('div');
+          node.className = 'undx-chain-item';
+          node.textContent = item;
+          container.appendChild(node);
+        });
+      };
+      fillList(undxTaskTreeList, pkg ? [`Epic: ${pkg.taskTree.epic}`, `Feature: ${pkg.taskTree.feature}`, `Task: ${pkg.taskTree.task}`, ...(pkg.taskTree.subtasks || []).map(item => `Subtask: ${item}`)] : ['Epic: Portfolio Manager', 'Feature: Risk Engine', 'Task: Create Risk Scoring Module', 'Subtask: Define scoring rules']);
+      fillList(undxTaskRollbackList, pkg?.rollbackPlan || ['Rollback Strategy', 'Recovery Considerations', 'Risk Mitigation Steps']);
+      const fillGrid = (container, entries, className = 'undx-approval-item') => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([name, detail]) => {
+          const node = document.createElement('article');
+          node.className = className;
+          node.append(Object.assign(document.createElement('strong'), {textContent: name}), Object.assign(document.createElement('span'), {textContent: detail}));
+          container.appendChild(node);
+        });
+      };
+      fillGrid(undxTaskImpactGrid, Object.entries(pkg?.fileImpactPlan || { 'Potential New Files':'Planning only', 'Potential Modified Areas':'Premium UNDX view', 'Potential APIs':'Future approved route', 'Potential Database Changes':'None', 'Potential Frontend Components':'Task registry', 'Potential Services':'No services modified' }), 'undx-system-impact');
+      fillGrid(undxTaskAcceptanceGrid, Object.entries(pkg?.acceptanceCriteria || {}).map(([name, items]) => [name, (items || []).join(' · ')]));
+      fillGrid(undxTaskValidationGrid, Object.entries(pkg?.validationChecklist || {}).map(([name, items]) => [name, (items || []).join(' · ')]));
+      if(undxTaskComplexityScore) undxTaskComplexityScore.textContent = pkg ? `${pkg.complexityScore}/100 (${pkg.complexityLevel})` : '0';
+      if(undxTaskReadinessLevel) undxTaskReadinessLevel.textContent = pkg?.readinessAssessment || 'Not Ready';
+      if(undxTaskReferencedDecisions) undxTaskReferencedDecisions.textContent = String((pkg?.referenced?.decisions || []).length);
+      if(undxTaskReferencedTechnologies) undxTaskReferencedTechnologies.textContent = String((pkg?.referenced?.technologies || []).length);
+      if(undxTaskReferencedPlans) undxTaskReferencedPlans.textContent = String((pkg?.referenced?.plans || []).length);
+      if(undxTaskReferencedSimulations) undxTaskReferencedSimulations.textContent = String((pkg?.referenced?.simulations || []).length);
+      if(undxTaskExportOutput) undxTaskExportOutput.textContent = pkg ? undxTaskPackageText(pkg) : 'No task package selected yet.';
+      if(undxTaskRecommendedLanguages) undxTaskRecommendedLanguages.textContent = (pkg?.referenced?.technologies || ['Python','TypeScript']).filter(item => /Python|TypeScript|JavaScript|Go|Rust/i.test(item)).slice(0,4).join(' · ') || 'Python · TypeScript';
+      if(undxTaskRecommendedFrameworks) undxTaskRecommendedFrameworks.textContent = (pkg?.referenced?.technologies || ['Flask','React']).filter(item => /Flask|React|FastAPI|Django|Next/i.test(item)).slice(0,4).join(' · ') || 'Flask · React';
+      if(undxTaskRecommendedSdks) undxTaskRecommendedSdks.textContent = (pkg?.referenced?.technologies || ['OpenAI','Groq']).filter(item => /OpenAI|Groq|Gemini|Claude/i.test(item)).slice(0,4).join(' · ') || 'OpenAI · Groq';
+      if(undxTaskRecommendedArchitecture) undxTaskRecommendedArchitecture.textContent = 'Modular Architecture';
+      undxRenderTaskDashboard();
+    }
+    function undxGenerateTaskPackageFlow(){
+      const pkg = undxBuildTaskPackage();
+      undxSaveTaskPackages([pkg, ...undxLoadTaskPackages()]);
+      undxRenderTaskPackage(pkg);
+      undxRenderTaskRegistry();
+      if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = `${pkg.packageId} stored in Task Registry.`;
+      return pkg;
+    }
+    function undxSendTaskPackageToChat(pkg){
+      if(!undxChatInput) return;
+      undxChatInput.value = undxTaskPackageText(pkg);
+      document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+      undxChatInput.focus();
+      if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = `${pkg.packageId} loaded into UNDX Chat Interface.`;
+    }
+    function undxSaveTaskPackageToMemory(pkg){
+      undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Task Package ${pkg.packageId}`, objective:undxTaskPackageText(pkg), type:'Codex-Style Task Package', source:'UNDX Task Generation Center', createdAt:new Date().toISOString(), phase:'Phase 25', status:'Stored'});
+      if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = `${pkg.packageId} saved to Mission Memory.`;
+    }
+    function undxAttachTaskPackageToProject(pkg){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = 'Open or create a project before attaching a task package.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, linkedTaskPackages:[pkg, ...(project.linkedTaskPackages || []).filter(item => item.packageId !== pkg.packageId)].slice(0,8)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = `${pkg.packageId} attached to ${projectId}.`;
+    }
+    function undxDeleteTaskPackage(packageId){
+      undxSaveTaskPackages(undxLoadTaskPackages().filter(item => item.packageId !== packageId));
+      if(undxSelectedTaskPackageId === packageId) undxRenderTaskPackage(undxLoadTaskPackages()[0] || null);
+      undxRenderTaskRegistry();
+      if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = 'Task package deleted.';
+    }
+    function undxCreateTaskPackageCard(pkg){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = pkg.packageId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Task Package ID: ${pkg.packageId}`, `Complexity Score: ${pkg.complexityScore}/100`, `Readiness Level: ${pkg.readinessAssessment}`, `Created Date: ${undxFormatMemoryTime(pkg.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Package', () => undxRenderTaskPackage(pkg), true),
+        undxProjectActionButton('Send To Chat', () => undxSendTaskPackageToChat(pkg)),
+        undxProjectActionButton('Save To Memory', () => undxSaveTaskPackageToMemory(pkg)),
+        undxProjectActionButton('Attach To Project', () => undxAttachTaskPackageToProject(pkg)),
+        undxProjectActionButton('Delete Package', () => undxDeleteTaskPackage(pkg.packageId))
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderTaskRegistry(){
+      const packages = undxLoadTaskPackages();
+      if(undxTaskRegistryEmpty) undxTaskRegistryEmpty.hidden = packages.length > 0;
+      if(undxTaskRegistryList){
+        undxTaskRegistryList.replaceChildren();
+        packages.forEach(pkg => undxTaskRegistryList.appendChild(undxCreateTaskPackageCard(pkg)));
+      }
+      undxRenderTaskDashboard();
+    }
+    function undxRenderTaskDashboard(){
+      const packages = undxLoadTaskPackages();
+      const avg = packages.length ? Math.round(packages.reduce((sum, pkg) => sum + pkg.complexityScore, 0) / packages.length) : 0;
+      if(undxTotalTaskPackages) undxTotalTaskPackages.textContent = String(packages.length);
+      if(undxAverageTaskComplexity) undxAverageTaskComplexity.textContent = String(avg);
+      if(undxTaskBuildCandidates) undxTaskBuildCandidates.textContent = String(packages.filter(pkg => pkg.readinessAssessment === 'Build Candidate').length);
+      if(undxTaskExecutionCandidates) undxTaskExecutionCandidates.textContent = String(packages.filter(pkg => pkg.readinessAssessment === 'Execution Candidate').length);
+      if(undxTaskMostReferencedProject) undxTaskMostReferencedProject.textContent = packages[0]?.referenced?.project || 'None';
+      if(undxTaskMostReferencedTechnology) undxTaskMostReferencedTechnology.textContent = packages[0]?.referenced?.technologies?.[0] || 'None';
+      if(undxTaskRelationships) undxTaskRelationships.textContent = String(packages.length * 4);
+      if(undxTaskDependencyRelationships) undxTaskDependencyRelationships.textContent = String(packages.reduce((sum, pkg) => sum + pkg.dependencies.length, 0));
+      if(undxTaskProjectRelationships) undxTaskProjectRelationships.textContent = String(packages.filter(pkg => pkg.referenced?.project).length);
+    }
+    async function undxRunTaskReviewFlow(){
+      let pkg = undxLastTaskPackage || (undxSelectedTaskPackageId ? undxLoadTaskPackages().find(item => item.packageId === undxSelectedTaskPackageId) : null);
+      if(!pkg) pkg = undxGenerateTaskPackageFlow();
+      if(!pkg) return;
+      if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = 'Routing task review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission: undxTaskPackageText(pkg)})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        pkg = undxNormalizeTaskPackage({...pkg, review:{
+          architectureReview: agents.find(agent => agent.key === 'architect')?.recommendation || 'Architecture Review: verify task boundaries.',
+          researchReview: agents.find(agent => agent.key === 'research')?.recommendation || 'Research Review: confirm missing context.',
+          builderReview: agents.find(agent => agent.key === 'builder')?.recommendation || 'Builder Review: keep task tree implementation-ready.',
+          optimizationReview: agents.find(agent => agent.key === 'optimization')?.recommendation || 'Optimization Review: reduce complexity before future execution.',
+          rapidReview: agents.find(agent => agent.key === 'rapid')?.recommendation || 'Rapid Review: prepare the next review checkpoint.',
+          combinedRecommendation: 'Use this package as a Codex-style brief only after future approval gates are satisfied.'
+        }});
+        undxSaveTaskPackages([pkg, ...undxLoadTaskPackages().filter(item => item.packageId !== pkg.packageId)]);
+        undxRenderTaskPackage(pkg);
+        undxRenderTaskRegistry();
+        if(undxTaskReviewOutput) undxTaskReviewOutput.replaceChildren(undxBlock('Architecture Review', pkg.review.architectureReview), undxBlock('Research Review', pkg.review.researchReview), undxBlock('Builder Review', pkg.review.builderReview), undxBlock('Optimization Review', pkg.review.optimizationReview), undxBlock('Rapid Review', pkg.review.rapidReview), undxBlock('Combined Recommendation', pkg.review.combinedRecommendation));
+        if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = 'Multi-brain task review complete.';
+      }catch(error){
+        if(undxTaskReviewOutput) undxTaskReviewOutput.replaceChildren(undxBlock('Architecture Review', 'OpenAI fallback recommended: confirm task boundaries.'), undxBlock('Research Review', 'OpenAI fallback recommended: gather missing context.'), undxBlock('Builder Review', 'OpenAI fallback recommended: preserve implementation-grade structure.'), undxBlock('Optimization Review', 'OpenAI fallback recommended: reduce package complexity.'), undxBlock('Rapid Review', 'OpenAI fallback recommended: checkpoint before future execution.'), undxBlock('Combined Recommendation', 'Fallback → OpenAI. Task package remains read-only with no file access, commands, Git, or deployments.'));
+        if(undxTaskPackageMessage) undxTaskPackageMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
@@ -29056,6 +29613,7 @@ def pulse_premium_undx_page():
       ['undx-build-simulation','Build Simulation'],
       ['undx-universal-code-intelligence','Universal Code Intelligence'],
       ['undx-workspace-memory-graph','Workspace Memory Graph'],
+      ['undx-task-generation-center','Task Generation Center'],
       ['undx-core-modules','Core Modules'],
       ['undx-mission-status-view','Mission Status'],
       ['undx-future-preview','Future Preview']
@@ -30110,6 +30668,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedTaskPackages(project, card){
+      const section = undxWorkspaceSection('Linked Task Packages');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedTaskPackages || []).length){
+        list.appendChild(undxWorkspaceEmpty('No task packages linked yet. Attach a Phase 25 package to preserve implementation-grade work planning.'));
+      }else{
+        project.linkedTaskPackages.forEach(pkg => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = pkg.packageId;
+          const meta = document.createElement('p');
+          meta.textContent = `Complexity Score: ${pkg.complexityScore}/100 · Readiness Level: ${pkg.readinessAssessment} · Created Date: ${undxFormatMemoryTime(pkg.createdAt)}`;
+          const summary = document.createElement('p');
+          summary.textContent = pkg.executiveSummary || '';
+          item.append(title, meta, summary);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -30193,6 +30774,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedChangeAnalyses(project, card);
       undxRenderLinkedKnowledgeGraphs(project, card);
       undxRenderLinkedMemoryRecords(project, card);
+      undxRenderLinkedTaskPackages(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -30269,6 +30851,7 @@ def pulse_premium_undx_page():
         linkedRepositoryAnalyses: [],
         linkedChangeAnalyses: [],
         linkedKnowledgeGraphs: [],
+        linkedTaskPackages: [],
         readOnlyAccessStatus: 'Not Connected',
         lastBuildDirective: '',
         aiEnhancement: {
@@ -30843,6 +31426,8 @@ def pulse_premium_undx_page():
     undxRunCodeReview?.addEventListener('click', undxRunCodeReviewFlow);
     undxGenerateMemoryGraph?.addEventListener('click', undxGenerateMemoryGraphFlow);
     undxRunMemoryReview?.addEventListener('click', undxRunMemoryReviewFlow);
+    undxGenerateTaskPackage?.addEventListener('click', undxGenerateTaskPackageFlow);
+    undxRunTaskReview?.addEventListener('click', undxRunTaskReviewFlow);
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -30877,6 +31462,8 @@ def pulse_premium_undx_page():
     undxRenderMemoryStaticPanels();
     undxRenderMemoryGraphRegistry();
     undxRenderWorkspaceMemoryGraph(undxLoadMemoryGraphRecords()[0] || null);
+    undxRenderTaskRegistry();
+    undxRenderTaskPackage(undxLoadTaskPackages()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
