@@ -21873,7 +21873,7 @@ def pulse_premium_undx_page():
     @media(max-width:1180px){.undx-command-shell{grid-template-columns:1fr}.undx-view-sidebar{position:relative;top:auto;max-height:none}.undx-view-nav{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}
     @media(max-width:1020px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-access-flow,.undx-gateway-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.undx-dashboard-row,.undx-console-layout,.undx-chat-layout,.undx-project-layout,.undx-repo-layout,.undx-execution-layout,.undx-approval-layout,.undx-repo-intel-layout,.undx-read-layout,.undx-gateway-layout,.undx-context-layout,.undx-workspace-intel-layout,.undx-change-layout,.undx-knowledge-layout,.undx-strategic-layout,.undx-portfolio-layout,.undx-simulation-layout{grid-template-columns:1fr}}
     @media(max-width:800px){.undx-core-hero{min-height:460px;border-radius:22px}.undx-core-actions .button,.undx-console-form .button,.undx-agent-actions .button,.undx-chat-actions .button,.undx-project-actions .button{width:100%}.undx-command-bar,.undx-agent-toolbar{align-items:stretch}.undx-command-bar .button{width:100%}.undx-blueprint-grid,.undx-chat-input-row,.undx-project-fields,.undx-workspace-form,.undx-workspace-form-memory,.undx-change-form,.undx-score-row,.undx-loader-grid{grid-template-columns:1fr}.undx-chat-message{max-width:100%}}
-    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
+    @media(max-width:620px){.undx-core-grid,.undx-preview-grid,.undx-agent-grid,.undx-gate-grid,.undx-access-flow,.undx-gateway-flow{grid-template-columns:1fr}.undx-core-card{min-height:190px}.undx-status-item{grid-template-columns:1fr}.undx-status-item strong{text-align:left}.undx-builder-input{min-height:180px}.undx-execution-planner .undx-memory-status,.undx-approval-protocol .undx-memory-status,.undx-repo-intelligence .undx-memory-status,.undx-read-blueprint .undx-memory-status,.undx-preview-gateway .undx-memory-status,.undx-repository-context .undx-memory-status,.undx-intelligence-workspace .undx-memory-status,.undx-change-intelligence .undx-memory-status,.undx-knowledge-graph .undx-memory-status,.undx-strategic-planning .undx-memory-status,.undx-portfolio-coordination .undx-memory-status,.undx-build-simulation .undx-memory-status,.undx-code-intelligence .undx-memory-status,.undx-workspace-memory-graph .undx-memory-status,.undx-task-generation-center .undx-memory-status,.undx-operating-system .undx-memory-status,.undx-desktop-connector .undx-memory-status,.undx-repository-awareness .undx-memory-status,.undx-change-proposal-engine .undx-memory-status,.undx-human-execution-framework .undx-memory-status{display:grid;grid-template-columns:1fr}.undx-execution-planner .undx-memory-status span,.undx-approval-protocol .undx-memory-status span,.undx-repo-intelligence .undx-memory-status span,.undx-read-blueprint .undx-memory-status span,.undx-preview-gateway .undx-memory-status span,.undx-repository-context .undx-memory-status span,.undx-intelligence-workspace .undx-memory-status span,.undx-change-intelligence .undx-memory-status span,.undx-knowledge-graph .undx-memory-status span,.undx-strategic-planning .undx-memory-status span,.undx-portfolio-coordination .undx-memory-status span,.undx-build-simulation .undx-memory-status span,.undx-code-intelligence .undx-memory-status span,.undx-workspace-memory-graph .undx-memory-status span,.undx-task-generation-center .undx-memory-status span,.undx-operating-system .undx-memory-status span,.undx-desktop-connector .undx-memory-status span,.undx-repository-awareness .undx-memory-status span,.undx-change-proposal-engine .undx-memory-status span,.undx-human-execution-framework .undx-memory-status span{width:100%;border-radius:14px}.undx-execution-planner .undx-section-heading h2,.undx-approval-protocol .undx-section-heading h2,.undx-repo-intelligence .undx-section-heading h2,.undx-read-blueprint .undx-section-heading h2,.undx-preview-gateway .undx-section-heading h2,.undx-repository-context .undx-section-heading h2,.undx-intelligence-workspace .undx-section-heading h2,.undx-change-intelligence .undx-section-heading h2,.undx-knowledge-graph .undx-section-heading h2,.undx-strategic-planning .undx-section-heading h2,.undx-portfolio-coordination .undx-section-heading h2,.undx-build-simulation .undx-section-heading h2,.undx-code-intelligence .undx-section-heading h2,.undx-workspace-memory-graph .undx-section-heading h2,.undx-task-generation-center .undx-section-heading h2,.undx-operating-system .undx-section-heading h2,.undx-desktop-connector .undx-section-heading h2,.undx-repository-awareness .undx-section-heading h2,.undx-change-proposal-engine .undx-section-heading h2,.undx-human-execution-framework .undx-section-heading h2{font-size:clamp(27px,8vw,34px)}}
     @media(prefers-reduced-motion:reduce){.undx-core-hero:before{animation:none}}
     </style>
     <section class='undx-core-page' data-undx-core-page>
@@ -22605,6 +22605,188 @@ def pulse_premium_undx_page():
                 <span>Phase 32<br><strong>Diff Preview Gateway</strong></span>
                 <span>Phase 33<br><strong>Approved Patch Application</strong></span>
               </div>
+            </article>
+          </aside>
+        </div>
+      </section>
+      <section class='undx-section-panel undx-human-execution-framework' id='undx-human-approved-execution-framework'>
+        <div class='undx-section-heading'>
+          <div>
+            <span class='undx-core-label'>Approval Framework: Online</span>
+            <h2>UNDX Human Approved Execution Framework</h2>
+          </div>
+          <p>Human-controlled approval system for future execution-capable workflows.</p>
+        </div>
+        <div class='undx-simulation-layout'>
+          <div class='undx-simulation-main'>
+            <div class='undx-memory-status' aria-label='UNDX human approved execution framework status'>
+              <span aria-label='Approval Framework: Online'>Approval Framework: <strong>Online</strong></span>
+              <span aria-label='Review Engine: Online'>Review Engine: <strong>Online</strong></span>
+              <span aria-label='Approval Engine: Online'>Approval Engine: <strong>Online</strong></span>
+              <span aria-label='Execution Eligibility: Online'>Execution Eligibility: <strong>Online</strong></span>
+              <span aria-label='Execution Access Disabled'>Execution Access: <strong>Disabled</strong></span>
+              <span aria-label='Phase: 30'>Phase: <strong>30</strong></span>
+            </div>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Pipeline</span>
+              <h3>Proposal → Review → Approval → Eligibility → Future Execution</h3>
+              <div class='undx-access-flow'>
+                <span>Proposal<br><strong>Captured</strong></span>
+                <span>Review<br><strong>Pending Review</strong></span>
+                <span>Approval<br><strong>Human Controlled</strong></span>
+                <span>Eligibility<br><strong>Calculated</strong></span>
+                <span>Future Execution<br><strong>Disabled</strong></span>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Requests</span>
+              <h3>Create Execution Request</h3>
+              <p>Create from Change Proposals, Task Packages, Strategic Plans, Repository Structure Models, and Build Simulations.</p>
+              <div class='undx-simulation-inputs' id='undxExecutionRequestSourceInputs'>
+                <label><input type='checkbox' value='changeProposals' checked>Change Proposals</label>
+                <label><input type='checkbox' value='taskPackages' checked>Task Packages</label>
+                <label><input type='checkbox' value='strategicPlans' checked>Strategic Plans</label>
+                <label><input type='checkbox' value='structureModels' checked>Repository Structure Models</label>
+                <label><input type='checkbox' value='buildSimulations' checked>Build Simulations</label>
+              </div>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxCreateExecutionRequest'>Create Execution Request</button>
+                <button class='button' type='button' id='undxRunApprovalReview'>Run Multi-Brain Approval Review</button>
+              </div>
+              <p>Execution Request ID format: <strong>EXEC-UNDX-0001</strong></p>
+              <p class='undx-project-message' id='undxExecutionRequestMessage' aria-live='polite'></p>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Request Output</span>
+              <h3>Execution Request Output</h3>
+              <div class='undx-evolution-empty' id='undxExecutionRequestEmpty'>Create an execution request to activate the human approved execution framework.</div>
+              <div class='undx-simulation-output' id='undxExecutionRequestOutput' aria-live='polite'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Review Engine</span>
+              <h3>Review Engine</h3>
+              <p>Status: <strong>Pending Review</strong></p>
+              <div class='undx-approval-grid' id='undxExecutionReviewGrid'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Workflow</span>
+              <h3>Approval States</h3>
+              <p>Pending · Approved · Rejected · Expired · Revoked</p>
+              <div class='undx-project-actions'>
+                <button class='button primary' type='button' id='undxApproveExecutionRequest'>Approve</button>
+                <button class='button' type='button' id='undxRejectExecutionRequest'>Reject</button>
+                <button class='button' type='button' id='undxRevokeExecutionRequest'>Revoke</button>
+                <button class='button' type='button' id='undxExpireExecutionRequest'>Expire</button>
+              </div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval History</span>
+              <h3>Approval History</h3>
+              <p>Approval Events · Reviewer · Decision · Timestamp · Reason</p>
+              <div class='undx-chain-list' id='undxExecutionApprovalHistory'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Eligibility Engine</span>
+              <h3>Execution Eligibility Engine</h3>
+              <p>Not Eligible · Review Required · Approval Required · Eligible For Future Execution</p>
+              <div class='undx-simulation-output' id='undxExecutionEligibilityOutput'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Package</span>
+              <h3>Approval Package</h3>
+              <div class='undx-simulation-output' id='undxExecutionApprovalPackage'></div>
+            </section>
+            <section class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Registry</span>
+              <h3>Execution Registry</h3>
+              <p>Storage: <strong>undxExecutionRequests</strong></p>
+              <div class='undx-memory-empty' id='undxExecutionRequestRegistryEmpty'>No execution requests stored yet. Create a request to preserve human approval eligibility.</div>
+              <div class='undx-simulation-registry' id='undxExecutionRequestRegistryList' aria-live='polite'></div>
+            </section>
+          </div>
+          <aside class='undx-simulation-sidebar'>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Dashboard</span>
+              <h3>Approval Dashboard</h3>
+              <p>Total Requests: <strong id='undxTotalExecutionRequests'>0</strong></p>
+              <p>Pending Requests: <strong id='undxPendingExecutionRequests'>0</strong></p>
+              <p>Approved Requests: <strong id='undxApprovedExecutionRequests'>0</strong></p>
+              <p>Rejected Requests: <strong id='undxRejectedExecutionRequests'>0</strong></p>
+              <p>Revoked Requests: <strong id='undxRevokedExecutionRequests'>0</strong></p>
+              <p>Average Approval Score: <strong id='undxAverageApprovalScore'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Approval Scoring</span>
+              <h3>Approval Scoring</h3>
+              <p>Risk Score: <strong id='undxExecutionRiskScore'>0</strong></p>
+              <p>Readiness Score: <strong id='undxExecutionReadinessScore'>0</strong></p>
+              <p>Confidence Score: <strong id='undxExecutionConfidenceScore'>0</strong></p>
+              <p>Approval Score: <strong id='undxExecutionApprovalScore'>0</strong></p>
+              <p>Range: 0-100</p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Execution Readiness Center</span>
+              <h3>Execution Readiness Center</h3>
+              <p>Highest Readiness Request: <strong id='undxHighestReadinessRequest'>None</strong></p>
+              <p>Highest Risk Request: <strong id='undxHighestRiskRequest'>None</strong></p>
+              <p>Most Referenced Project: <strong id='undxMostReferencedExecutionProject'>None</strong></p>
+              <p>Most Approved Initiative: <strong id='undxMostApprovedInitiative'>None</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Memory Graph Integration</span>
+              <h3>Execution Approval Memory</h3>
+              <p>Approval Decisions: <strong id='undxExecutionApprovalDecisions'>0</strong></p>
+              <p>Approval History: <strong id='undxExecutionApprovalHistoryCount'>0</strong></p>
+              <p>Approval Relationships: <strong id='undxExecutionApprovalRelationships'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Knowledge Graph Integration</span>
+              <h3>Execution Relationships</h3>
+              <p>Approval Relationships: <strong id='undxApprovalRelationshipCount'>0</strong></p>
+              <p>Execution Relationships: <strong id='undxExecutionRelationshipCount'>0</strong></p>
+              <p>Decision Relationships: <strong id='undxDecisionRelationshipCount'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Task Engine Integration</span>
+              <h3>Task Approval References</h3>
+              <p>Referenced Task Packages: <strong id='undxExecutionReferencedTaskPackages'>0</strong></p>
+              <p>Referenced Validation Plans: <strong id='undxExecutionReferencedValidationPlans'>0</strong></p>
+              <p>Referenced Rollback Plans: <strong id='undxExecutionReferencedRollbackPlans'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Change Proposal Integration</span>
+              <h3>Change Proposal References</h3>
+              <p>Referenced Proposals: <strong id='undxExecutionReferencedProposals'>0</strong></p>
+              <p>Proposal Readiness: <strong id='undxExecutionProposalReadiness'>None</strong></p>
+              <p>Proposal Risk: <strong id='undxExecutionProposalRisk'>0</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Multi-Brain Approval Review</span>
+              <h3>Multi-Brain Approval Review</h3>
+              <p>Architect → Claude · Research → Gemini · Builder → OpenAI · Optimization → DeepSeek · Rapid → Groq · Fallback → OpenAI</p>
+              <div id='undxApprovalReviewOutput'><p>Architecture Recommendation, Security Recommendation, Implementation Recommendation, Optimization Recommendation, and Final Approval Recommendation will appear after review.</p></div>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Future Execution Center</span>
+              <h3>Future Execution Center</h3>
+              <div class='undx-access-flow'>
+                <span>Phase 30<br><strong>Human Approved Execution</strong></span>
+                <span>Phase 31<br><strong>Read-Only Repository Connector</strong></span>
+                <span>Phase 32<br><strong>Diff Preview Gateway</strong></span>
+                <span>Phase 33<br><strong>Approved Patch Application</strong></span>
+                <span>Phase 34<br><strong>Local Workspace Connector</strong></span>
+              </div>
+              <p>Status: <strong>Not Connected</strong></p>
+            </article>
+            <article class='undx-simulation-card'>
+              <span class='undx-core-label'>Safety Boundary</span>
+              <h3>Safety Boundary</h3>
+              <p>UNDX Human Approved Execution Framework manages approvals and execution eligibility only.</p>
+              <p>No files were modified.</p>
+              <p>No repositories were accessed.</p>
+              <p>No commands were executed.</p>
+              <p>No deployments were performed.</p>
+              <p>Approval does not trigger execution.</p>
             </article>
           </aside>
         </div>
@@ -25309,6 +25491,49 @@ def pulse_premium_undx_page():
     const undxProposalReferencedValidationPlans = document.getElementById('undxProposalReferencedValidationPlans');
     const undxProposalReferencedRollbackPlans = document.getElementById('undxProposalReferencedRollbackPlans');
     const undxChangeProposalReviewOutput = document.getElementById('undxChangeProposalReviewOutput');
+    const undxExecutionRequestSourceInputs = document.getElementById('undxExecutionRequestSourceInputs');
+    const undxCreateExecutionRequest = document.getElementById('undxCreateExecutionRequest');
+    const undxRunApprovalReview = document.getElementById('undxRunApprovalReview');
+    const undxExecutionRequestMessage = document.getElementById('undxExecutionRequestMessage');
+    const undxExecutionRequestEmpty = document.getElementById('undxExecutionRequestEmpty');
+    const undxExecutionRequestOutput = document.getElementById('undxExecutionRequestOutput');
+    const undxExecutionReviewGrid = document.getElementById('undxExecutionReviewGrid');
+    const undxApproveExecutionRequest = document.getElementById('undxApproveExecutionRequest');
+    const undxRejectExecutionRequest = document.getElementById('undxRejectExecutionRequest');
+    const undxRevokeExecutionRequest = document.getElementById('undxRevokeExecutionRequest');
+    const undxExpireExecutionRequest = document.getElementById('undxExpireExecutionRequest');
+    const undxExecutionApprovalHistory = document.getElementById('undxExecutionApprovalHistory');
+    const undxExecutionEligibilityOutput = document.getElementById('undxExecutionEligibilityOutput');
+    const undxExecutionApprovalPackage = document.getElementById('undxExecutionApprovalPackage');
+    const undxExecutionRequestRegistryEmpty = document.getElementById('undxExecutionRequestRegistryEmpty');
+    const undxExecutionRequestRegistryList = document.getElementById('undxExecutionRequestRegistryList');
+    const undxTotalExecutionRequests = document.getElementById('undxTotalExecutionRequests');
+    const undxPendingExecutionRequests = document.getElementById('undxPendingExecutionRequests');
+    const undxApprovedExecutionRequests = document.getElementById('undxApprovedExecutionRequests');
+    const undxRejectedExecutionRequests = document.getElementById('undxRejectedExecutionRequests');
+    const undxRevokedExecutionRequests = document.getElementById('undxRevokedExecutionRequests');
+    const undxAverageApprovalScore = document.getElementById('undxAverageApprovalScore');
+    const undxExecutionRiskScore = document.getElementById('undxExecutionRiskScore');
+    const undxExecutionReadinessScore = document.getElementById('undxExecutionReadinessScore');
+    const undxExecutionConfidenceScore = document.getElementById('undxExecutionConfidenceScore');
+    const undxExecutionApprovalScore = document.getElementById('undxExecutionApprovalScore');
+    const undxHighestReadinessRequest = document.getElementById('undxHighestReadinessRequest');
+    const undxHighestRiskRequest = document.getElementById('undxHighestRiskRequest');
+    const undxMostReferencedExecutionProject = document.getElementById('undxMostReferencedExecutionProject');
+    const undxMostApprovedInitiative = document.getElementById('undxMostApprovedInitiative');
+    const undxExecutionApprovalDecisions = document.getElementById('undxExecutionApprovalDecisions');
+    const undxExecutionApprovalHistoryCount = document.getElementById('undxExecutionApprovalHistoryCount');
+    const undxExecutionApprovalRelationships = document.getElementById('undxExecutionApprovalRelationships');
+    const undxApprovalRelationshipCount = document.getElementById('undxApprovalRelationshipCount');
+    const undxExecutionRelationshipCount = document.getElementById('undxExecutionRelationshipCount');
+    const undxDecisionRelationshipCount = document.getElementById('undxDecisionRelationshipCount');
+    const undxExecutionReferencedTaskPackages = document.getElementById('undxExecutionReferencedTaskPackages');
+    const undxExecutionReferencedValidationPlans = document.getElementById('undxExecutionReferencedValidationPlans');
+    const undxExecutionReferencedRollbackPlans = document.getElementById('undxExecutionReferencedRollbackPlans');
+    const undxExecutionReferencedProposals = document.getElementById('undxExecutionReferencedProposals');
+    const undxExecutionProposalReadiness = document.getElementById('undxExecutionProposalReadiness');
+    const undxExecutionProposalRisk = document.getElementById('undxExecutionProposalRisk');
+    const undxApprovalReviewOutput = document.getElementById('undxApprovalReviewOutput');
     const undxMemoryStorageKey = 'undxMissionMemory';
     const undxChatStorageKey = 'undxChatMemory';
     const undxProjectStorageKey = 'undxProjectRegistry';
@@ -25334,6 +25559,7 @@ def pulse_premium_undx_page():
     const undxWorkspaceManifestsKey = 'undxWorkspaceManifests';
     const undxRepositoryStructureModelsKey = 'undxRepositoryStructureModels';
     const undxChangeProposalsKey = 'undxChangeProposals';
+    const undxExecutionRequestsKey = 'undxExecutionRequests';
     const undxCommandViewStorageKey = 'undxCommandCenterViews';
     const undxChatEndpoint = '/api/undx/chat';
     const undxCouncilEndpoint = '/api/undx/agent-council';
@@ -25362,6 +25588,7 @@ def pulse_premium_undx_page():
     let undxLastMemoryGraphRecord = null;
     let undxSelectedTaskPackageId = null;
     let undxLastTaskPackage = null;
+    let undxSelectedExecutionRequestId = null;
     const undxDefaultProjectMilestones = ['Blueprint Created', 'Agent Council Review', 'Build Plan Ready', 'Implementation Pending'];
     const undxEscape = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function undxMissionName(text){
@@ -25580,6 +25807,7 @@ def pulse_premium_undx_page():
       const linkedWorkspaceManifests = Array.isArray(project.linkedWorkspaceManifests) ? project.linkedWorkspaceManifests.filter(item => item && item.manifestId).slice(0,24).map(undxNormalizeWorkspaceManifest) : [];
       const linkedStructureModels = Array.isArray(project.linkedStructureModels) ? project.linkedStructureModels.filter(item => item && item.modelId).slice(0,24).map(undxNormalizeStructureModel) : [];
       const linkedChangeProposals = Array.isArray(project.linkedChangeProposals) ? project.linkedChangeProposals.filter(item => item && item.proposalId).slice(0,24).map(undxNormalizeChangeProposal) : [];
+      const linkedExecutionRequests = Array.isArray(project.linkedExecutionRequests) ? project.linkedExecutionRequests.filter(item => item && item.requestId).slice(0,24).map(undxNormalizeExecutionRequest) : [];
       return {
         ...project,
         priority: project.priority || 'Medium',
@@ -25597,6 +25825,7 @@ def pulse_premium_undx_page():
         linkedWorkspaceManifests,
         linkedStructureModels,
         linkedChangeProposals,
+        linkedExecutionRequests,
         readOnlyAccessStatus: project.readOnlyAccessStatus || 'Not Connected',
         desktopAwarenessStatus: project.desktopAwarenessStatus || (linkedWorkspaceManifests.length ? 'Manifest Ready' : 'Planned'),
         repositoryAwarenessScore: Number(project.repositoryAwarenessScore || linkedStructureModels[0]?.awarenessScore || 0),
@@ -31644,11 +31873,365 @@ def pulse_premium_undx_page():
         if(undxChangeProposalMessage) undxChangeProposalMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
       }
     }
+    function undxSelectedExecutionRequestSources(){
+      const boxes = undxExecutionRequestSourceInputs ? Array.from(undxExecutionRequestSourceInputs.querySelectorAll('input[type="checkbox"]')) : [];
+      const selected = boxes.filter(box => box.checked).map(box => box.value);
+      return selected.length ? selected : ['changeProposals','taskPackages','strategicPlans','structureModels','buildSimulations'];
+    }
+    function undxNormalizeExecutionRequest(request){
+      const approvalStates = new Set(['Pending','Approved','Rejected','Expired','Revoked']);
+      const history = Array.isArray(request.history) ? request.history.filter(item => item && item.decision).slice(0,40).map(item => ({
+        reviewer: String(item.reviewer || 'Human Reviewer').slice(0,80),
+        decision: approvalStates.has(item.decision) ? item.decision : 'Pending',
+        timestamp: item.timestamp || new Date().toISOString(),
+        reason: String(item.reason || 'Human approval workflow event.').slice(0,500)
+      })) : [];
+      const scores = request.scores || {};
+      return {
+        requestId: String(request.requestId || `EXEC-UNDX-${Date.now()}`).slice(0,48),
+        businessObjective: String(request.businessObjective || 'Preserve CoinPilotXAI value through controlled future execution.').slice(0,1000),
+        engineeringObjective: String(request.engineeringObjective || 'Evaluate execution eligibility without executing code or touching repositories.').slice(0,1000),
+        referencedProject: String(request.referencedProject || 'CoinPilotXAI').slice(0,160),
+        referencedProposal: String(request.referencedProposal || 'None').slice(0,80),
+        riskSummary: String(request.riskSummary || 'Risk requires human review before future execution.').slice(0,1000),
+        validationSummary: String(request.validationSummary || 'Validation requires audits, browser checks, and manual QA.').slice(0,1000),
+        rollbackSummary: String(request.rollbackSummary || 'Rollback remains planning-only until a future approved execution phase.').slice(0,1000),
+        approvalRecommendation: String(request.approvalRecommendation || 'Approval Required').slice(0,160),
+        review: request.review || {},
+        approvalState: approvalStates.has(request.approvalState) ? request.approvalState : 'Pending',
+        eligibility: String(request.eligibility || 'Review Required').slice(0,120),
+        scores: {
+          riskScore: Math.max(0, Math.min(100, Number(scores.riskScore || 0))),
+          readinessScore: Math.max(0, Math.min(100, Number(scores.readinessScore || 0))),
+          confidenceScore: Math.max(0, Math.min(100, Number(scores.confidenceScore || 0))),
+          approvalScore: Math.max(0, Math.min(100, Number(scores.approvalScore || 0)))
+        },
+        approvalPackage: request.approvalPackage || {},
+        referenced: request.referenced || {},
+        history,
+        createdAt: request.createdAt || new Date().toISOString()
+      };
+    }
+    function undxLoadExecutionRequests(){
+      try{
+        const raw = localStorage.getItem(undxExecutionRequestsKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => item && item.requestId).slice(0,48).map(undxNormalizeExecutionRequest) : [];
+      }catch(error){
+        return [];
+      }
+    }
+    function undxSaveExecutionRequests(requests){
+      try{
+        localStorage.setItem(undxExecutionRequestsKey, JSON.stringify(requests.slice(0,48)));
+      }catch(error){
+        if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = 'Execution Registry could not be updated.';
+      }
+    }
+    function undxNextExecutionRequestId(requests){
+      const max = requests.reduce((highest, request) => {
+        const match = String(request.requestId || '').match(/^EXEC-UNDX-(\\d{4,})$/);
+        return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+      }, 0);
+      return `EXEC-UNDX-${String(max + 1).padStart(4,'0')}`;
+    }
+    function undxExecutionEligibility(state, scores){
+      if(state === 'Approved') return 'Eligible For Future Execution';
+      if(state === 'Rejected' || state === 'Revoked' || state === 'Expired') return 'Not Eligible';
+      if((scores?.readinessScore || 0) < 60) return 'Review Required';
+      return 'Approval Required';
+    }
+    function undxBuildExecutionRequest(){
+      const selected = undxSelectedExecutionRequestSources();
+      const proposals = undxLoadChangeProposals();
+      const taskPackages = undxLoadTaskPackages();
+      const strategicPlans = undxLoadStrategicPlans();
+      const structureModels = undxLoadStructureModels();
+      const simulations = undxLoadBuildSimulations();
+      const project = undxCurrentProject() || undxLoadProjects()[0] || {};
+      const proposal = proposals[0] || null;
+      const sourceStrength = [proposals.length, taskPackages.length, strategicPlans.length, structureModels.length, simulations.length].filter(Boolean).length;
+      const riskScore = Math.min(100, Math.round((proposal?.riskScores?.riskScore || 34) + selected.length * 3));
+      const readinessScore = Math.min(100, Math.round((proposal?.riskScores?.readinessScore || 62) + sourceStrength * 5));
+      const confidenceScore = Math.min(100, Math.round(58 + sourceStrength * 7 + (structureModels[0]?.awarenessScore || 0) * .12));
+      const approvalScore = Math.max(0, Math.min(100, Math.round((readinessScore + confidenceScore + Math.max(0, 100 - riskScore)) / 3)));
+      const scores = {riskScore, readinessScore, confidenceScore, approvalScore};
+      return undxNormalizeExecutionRequest({
+        requestId: undxNextExecutionRequestId(undxLoadExecutionRequests()),
+        businessObjective: project.objective || proposal?.businessObjective || strategicPlans[0]?.executiveSummary || 'Move CoinPilotXAI toward future execution readiness with human control.',
+        engineeringObjective: proposal?.engineeringObjective || 'Convert approved planning intelligence into an execution eligibility request without modifying files, repositories, Git, commands, or deployments.',
+        referencedProject: project.name || proposal?.referenced?.project || 'CoinPilotXAI',
+        referencedProposal: proposal?.proposalId || 'None',
+        riskSummary: `Risk Summary: ${riskScore}/100. Human approval is required before any future execution-capable system may act.`,
+        validationSummary: 'Validation Summary: Python compile, UNDX audit, premium foundation audit, site functional audit, performance audit, Pulse feed layout audit, JS parse check, and browser route check required.',
+        rollbackSummary: 'Rollback Summary: no execution occurred; revoke eligibility, delete local request, or regenerate from preserved planning records.',
+        approvalRecommendation: approvalScore >= 75 ? 'Approve only after human review' : 'Keep pending until review is stronger',
+        review: {
+          architecture:'Architecture Review: Pending Review',
+          security:'Security Review: Pending Review',
+          complexity:'Complexity Review: Pending Review',
+          impact:'Impact Review: Pending Review',
+          readiness:'Readiness Review: Pending Review'
+        },
+        approvalState: 'Pending',
+        eligibility: undxExecutionEligibility('Pending', scores),
+        scores,
+        approvalPackage: {
+          executiveSummary:'Executive Summary: request is ready for human approval review only.',
+          riskSummary:`Risk Summary: ${riskScore}/100`,
+          impactSummary:`Impact Summary: sourced from ${sourceStrength} planning groups.`,
+          validationRequirements:'Validation Requirements: complete audits, JS parse, and browser route check.',
+          rollbackRequirements:'Rollback Requirements: revoke approval state; no runtime rollback needed because nothing executed.',
+          decisionRecommendation: approvalScore >= 75 ? 'Decision Recommendation: approval may be considered for a future execution phase.' : 'Decision Recommendation: keep pending.'
+        },
+        referenced: {
+          selectedSources: selected,
+          projectId: project.projectId || '',
+          taskPackages: taskPackages.slice(0,3).map(item => item.packageId),
+          validationPlans: taskPackages.slice(0,3).map(item => item.packageId),
+          rollbackPlans: simulations.slice(0,3).map(item => item.simulationId),
+          proposals: proposals.slice(0,3).map(item => item.proposalId),
+          proposalReadiness: proposal?.readinessAssessment || 'None',
+          proposalRisk: proposal?.riskScores?.riskScore || 0
+        },
+        createdAt: new Date().toISOString()
+      });
+    }
+    function undxExecutionRequestText(request){
+      return [
+        'UNDX Human Approved Execution Request',
+        '',
+        `Execution Request ID: ${request.requestId}`,
+        `Approval State: ${request.approvalState}`,
+        `Execution Eligibility: ${request.eligibility}`,
+        `Approval Score: ${request.scores.approvalScore}/100`,
+        '',
+        `Business Objective: ${request.businessObjective}`,
+        `Engineering Objective: ${request.engineeringObjective}`,
+        `Referenced Project: ${request.referencedProject}`,
+        `Referenced Proposal: ${request.referencedProposal}`,
+        '',
+        request.riskSummary,
+        request.validationSummary,
+        request.rollbackSummary,
+        '',
+        'Safety Boundary: Approval does not trigger execution. No files were modified. No repositories were accessed. No commands were executed. No deployments were performed.'
+      ].join('\\n');
+    }
+    function undxRenderExecutionRequest(request){
+      if(request) undxSelectedExecutionRequestId = request.requestId;
+      if(undxExecutionRequestEmpty) undxExecutionRequestEmpty.hidden = Boolean(request);
+      if(undxExecutionRequestOutput){
+        undxExecutionRequestOutput.replaceChildren();
+        if(request){
+          undxExecutionRequestOutput.append(
+            undxBlock('Execution Request ID', request.requestId),
+            undxBlock('Business Objective', request.businessObjective),
+            undxBlock('Engineering Objective', request.engineeringObjective),
+            undxBlock('Referenced Project', request.referencedProject),
+            undxBlock('Referenced Proposal', request.referencedProposal),
+            undxBlock('Risk Summary', request.riskSummary),
+            undxBlock('Validation Summary', request.validationSummary),
+            undxBlock('Rollback Summary', request.rollbackSummary),
+            undxBlock('Approval Recommendation', request.approvalRecommendation)
+          );
+        }
+      }
+      const fillGrid = (container, entries) => {
+        if(!container) return;
+        container.replaceChildren();
+        entries.forEach(([label, value]) => {
+          const item = document.createElement('article');
+          item.className = 'undx-approval-item';
+          item.append(Object.assign(document.createElement('strong'), {textContent:value}), Object.assign(document.createElement('span'), {textContent:label}));
+          container.appendChild(item);
+        });
+      };
+      fillGrid(undxExecutionReviewGrid, Object.entries(request?.review || {
+        'Architecture Review':'Pending Review',
+        'Security Review':'Pending Review',
+        'Complexity Review':'Pending Review',
+        'Impact Review':'Pending Review',
+        'Readiness Review':'Pending Review'
+      }));
+      if(undxExecutionApprovalHistory){
+        undxExecutionApprovalHistory.replaceChildren();
+        const history = request?.history || [];
+        if(!history.length){
+          const empty = document.createElement('div');
+          empty.className = 'undx-chain-item';
+          empty.textContent = 'No approval events stored yet.';
+          undxExecutionApprovalHistory.appendChild(empty);
+        }else{
+          history.forEach(event => {
+            const item = document.createElement('div');
+            item.className = 'undx-chain-item';
+            item.textContent = `${event.decision} by ${event.reviewer} at ${undxFormatMemoryTime(event.timestamp)} — ${event.reason}`;
+            undxExecutionApprovalHistory.appendChild(item);
+          });
+        }
+      }
+      if(undxExecutionEligibilityOutput) undxExecutionEligibilityOutput.replaceChildren(
+        undxBlock('Execution Eligibility', request?.eligibility || 'Review Required'),
+        undxBlock('Execution Access', 'Disabled'),
+        undxBlock('Eligibility Notice', 'This does NOT execute anything.')
+      );
+      if(undxExecutionApprovalPackage) undxExecutionApprovalPackage.replaceChildren(
+        undxBlock('Executive Summary', request?.approvalPackage?.executiveSummary || 'Executive Summary pending.'),
+        undxBlock('Risk Summary', request?.approvalPackage?.riskSummary || 'Risk Summary pending.'),
+        undxBlock('Impact Summary', request?.approvalPackage?.impactSummary || 'Impact Summary pending.'),
+        undxBlock('Validation Requirements', request?.approvalPackage?.validationRequirements || 'Validation Requirements pending.'),
+        undxBlock('Rollback Requirements', request?.approvalPackage?.rollbackRequirements || 'Rollback Requirements pending.'),
+        undxBlock('Decision Recommendation', request?.approvalPackage?.decisionRecommendation || 'Decision Recommendation pending.')
+      );
+      if(undxExecutionRiskScore) undxExecutionRiskScore.textContent = String(request?.scores?.riskScore || 0);
+      if(undxExecutionReadinessScore) undxExecutionReadinessScore.textContent = String(request?.scores?.readinessScore || 0);
+      if(undxExecutionConfidenceScore) undxExecutionConfidenceScore.textContent = String(request?.scores?.confidenceScore || 0);
+      if(undxExecutionApprovalScore) undxExecutionApprovalScore.textContent = String(request?.scores?.approvalScore || 0);
+    }
+    function undxCreateExecutionRequestFlow(){
+      const request = undxBuildExecutionRequest();
+      undxSaveExecutionRequests([request, ...undxLoadExecutionRequests()]);
+      undxRenderExecutionRequest(request);
+      undxRenderExecutionRequestRegistry();
+      if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = `${request.requestId} stored in Execution Registry.`;
+      return request;
+    }
+    function undxUpdateExecutionRequestState(state, reason){
+      const requests = undxLoadExecutionRequests();
+      const requestId = undxSelectedExecutionRequestId || requests[0]?.requestId;
+      if(!requestId){
+        if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = 'Create or open an execution request before changing approval state.';
+        return;
+      }
+      let selected = null;
+      const updated = requests.map(request => {
+        if(request.requestId !== requestId) return request;
+        const history = [{reviewer:'Human Reviewer', decision:state, timestamp:new Date().toISOString(), reason}, ...(request.history || [])].slice(0,40);
+        selected = undxNormalizeExecutionRequest({...request, approvalState:state, eligibility:undxExecutionEligibility(state, request.scores), history});
+        return selected;
+      });
+      undxSaveExecutionRequests(updated);
+      undxRenderExecutionRequest(selected);
+      undxRenderExecutionRequestRegistry();
+      if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = `${requestId} marked ${state}. No execution occurred.`;
+    }
+    function undxAttachExecutionRequestToProject(request){
+      const projects = undxLoadProjects();
+      const projectId = undxSelectedProjectId || request.referenced?.projectId || projects[0]?.projectId;
+      if(!projectId){
+        if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = 'Open or create a project before attaching an execution request.';
+        return;
+      }
+      const updated = projects.map(project => project.projectId === projectId ? {...project, linkedExecutionRequests:[request, ...(project.linkedExecutionRequests || []).filter(item => item.requestId !== request.requestId)].slice(0,10)} : project);
+      undxSaveProjects(updated);
+      undxRenderProjects();
+      if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = `${request.requestId} attached to ${projectId}.`;
+    }
+    function undxCreateExecutionRequestCard(request){
+      const article = document.createElement('article');
+      article.className = 'undx-portfolio-card';
+      const title = document.createElement('h4');
+      title.textContent = request.requestId;
+      const meta = document.createElement('div');
+      meta.className = 'undx-memory-meta';
+      [`Execution Request ID: ${request.requestId}`, `Approval State: ${request.approvalState}`, `Approval Score: ${request.scores.approvalScore}/100`, `Created Date: ${undxFormatMemoryTime(request.createdAt)}`].forEach(value => {
+        const pill = document.createElement('span');
+        pill.className = 'undx-module-label';
+        pill.textContent = value;
+        meta.appendChild(pill);
+      });
+      const actions = document.createElement('div');
+      actions.className = 'undx-project-actions';
+      actions.append(
+        undxProjectActionButton('Open Request', () => undxRenderExecutionRequest(request), true),
+        undxProjectActionButton('Send To Chat', () => {
+          if(undxChatInput) undxChatInput.value = undxExecutionRequestText(request);
+          document.getElementById('undx-chat-interface')?.scrollIntoView({behavior:'smooth', block:'start'});
+          undxChatInput?.focus();
+        }),
+        undxProjectActionButton('Save To Memory', () => {
+          undxStoreBlueprint({id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`, name:`Execution Request ${request.requestId}`, objective:undxExecutionRequestText(request), type:'Human Approved Execution Request', source:'UNDX Human Approved Execution Framework', createdAt:new Date().toISOString(), phase:'Phase 30', status:'Stored'});
+          if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = `${request.requestId} saved to Mission Memory.`;
+        }),
+        undxProjectActionButton('Attach To Project', () => undxAttachExecutionRequestToProject(request)),
+        undxProjectActionButton('Delete Request', () => {
+          undxSaveExecutionRequests(undxLoadExecutionRequests().filter(item => item.requestId !== request.requestId));
+          undxRenderExecutionRequestRegistry();
+          if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = 'Execution request deleted.';
+        })
+      );
+      article.append(title, meta, actions);
+      return article;
+    }
+    function undxRenderExecutionRequestRegistry(){
+      const requests = undxLoadExecutionRequests();
+      if(undxExecutionRequestRegistryEmpty) undxExecutionRequestRegistryEmpty.hidden = requests.length > 0;
+      if(undxExecutionRequestRegistryList){
+        undxExecutionRequestRegistryList.replaceChildren();
+        requests.forEach(request => undxExecutionRequestRegistryList.appendChild(undxCreateExecutionRequestCard(request)));
+      }
+      const countState = state => requests.filter(item => item.approvalState === state).length;
+      const avg = requests.length ? Math.round(requests.reduce((sum, item) => sum + item.scores.approvalScore, 0) / requests.length) : 0;
+      const highestReadiness = requests.slice().sort((a,b) => b.scores.readinessScore - a.scores.readinessScore)[0];
+      const highestRisk = requests.slice().sort((a,b) => b.scores.riskScore - a.scores.riskScore)[0];
+      if(undxTotalExecutionRequests) undxTotalExecutionRequests.textContent = String(requests.length);
+      if(undxPendingExecutionRequests) undxPendingExecutionRequests.textContent = String(countState('Pending'));
+      if(undxApprovedExecutionRequests) undxApprovedExecutionRequests.textContent = String(countState('Approved'));
+      if(undxRejectedExecutionRequests) undxRejectedExecutionRequests.textContent = String(countState('Rejected'));
+      if(undxRevokedExecutionRequests) undxRevokedExecutionRequests.textContent = String(countState('Revoked'));
+      if(undxAverageApprovalScore) undxAverageApprovalScore.textContent = String(avg);
+      if(undxHighestReadinessRequest) undxHighestReadinessRequest.textContent = highestReadiness?.requestId || 'None';
+      if(undxHighestRiskRequest) undxHighestRiskRequest.textContent = highestRisk?.requestId || 'None';
+      if(undxMostReferencedExecutionProject) undxMostReferencedExecutionProject.textContent = requests[0]?.referencedProject || 'None';
+      if(undxMostApprovedInitiative) undxMostApprovedInitiative.textContent = requests.find(item => item.approvalState === 'Approved')?.referencedProject || 'None';
+      const historyCount = requests.reduce((sum, item) => sum + (item.history || []).length, 0);
+      if(undxExecutionApprovalDecisions) undxExecutionApprovalDecisions.textContent = String(historyCount);
+      if(undxExecutionApprovalHistoryCount) undxExecutionApprovalHistoryCount.textContent = String(historyCount);
+      if(undxExecutionApprovalRelationships) undxExecutionApprovalRelationships.textContent = String(requests.length * 3 + historyCount);
+      if(undxApprovalRelationshipCount) undxApprovalRelationshipCount.textContent = String(requests.length * 2);
+      if(undxExecutionRelationshipCount) undxExecutionRelationshipCount.textContent = String(requests.length * 3);
+      if(undxDecisionRelationshipCount) undxDecisionRelationshipCount.textContent = String(historyCount);
+      if(undxExecutionReferencedTaskPackages) undxExecutionReferencedTaskPackages.textContent = String(requests.reduce((sum, item) => sum + (item.referenced.taskPackages || []).length, 0));
+      if(undxExecutionReferencedValidationPlans) undxExecutionReferencedValidationPlans.textContent = String(requests.reduce((sum, item) => sum + (item.referenced.validationPlans || []).length, 0));
+      if(undxExecutionReferencedRollbackPlans) undxExecutionReferencedRollbackPlans.textContent = String(requests.reduce((sum, item) => sum + (item.referenced.rollbackPlans || []).length, 0));
+      if(undxExecutionReferencedProposals) undxExecutionReferencedProposals.textContent = String(requests.reduce((sum, item) => sum + (item.referenced.proposals || []).length, 0));
+      if(undxExecutionProposalReadiness) undxExecutionProposalReadiness.textContent = requests[0]?.referenced?.proposalReadiness || 'None';
+      if(undxExecutionProposalRisk) undxExecutionProposalRisk.textContent = String(requests[0]?.referenced?.proposalRisk || 0);
+    }
+    async function undxRunApprovalReviewFlow(){
+      const request = undxLoadExecutionRequests().find(item => item.requestId === undxSelectedExecutionRequestId) || undxLoadExecutionRequests()[0] || undxCreateExecutionRequestFlow();
+      if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = 'Routing approval review through UNDX Intelligence Router...';
+      try{
+        const response = await fetch(undxCouncilEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify({mission:`Review human approved execution request ${request.requestId}. Approval state ${request.approvalState}. Eligibility ${request.eligibility}. No execution may occur.`})});
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok || data.ok === false) throw new Error(data.error || 'UNDX Intelligence Router unavailable.');
+        const agents = data.agents || [];
+        if(undxApprovalReviewOutput) undxApprovalReviewOutput.replaceChildren(
+          undxBlock('Architecture Recommendation', agents.find(agent => agent.key === 'architect')?.recommendation || 'Keep execution request scoped.'),
+          undxBlock('Security Recommendation', agents.find(agent => agent.key === 'research')?.recommendation || 'Require explicit human approval for protected actions.'),
+          undxBlock('Implementation Recommendation', agents.find(agent => agent.key === 'builder')?.recommendation || 'No implementation should run in Phase 30.'),
+          undxBlock('Optimization Recommendation', agents.find(agent => agent.key === 'optimization')?.recommendation || 'Improve readiness before future execution.'),
+          undxBlock('Final Approval Recommendation', agents.find(agent => agent.key === 'rapid_response')?.recommendation || 'Approval may mark eligibility only; no execution occurs.')
+        );
+        if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = 'Multi-brain approval review complete.';
+      }catch(error){
+        if(undxApprovalReviewOutput) undxApprovalReviewOutput.replaceChildren(
+          undxBlock('Architecture Recommendation', 'OpenAI fallback: keep request approval-only.'),
+          undxBlock('Security Recommendation', 'OpenAI fallback: no files, repositories, commands, Git, or deployments.'),
+          undxBlock('Implementation Recommendation', 'OpenAI fallback: defer execution to future approved phases.'),
+          undxBlock('Optimization Recommendation', 'OpenAI fallback: raise readiness before eligibility.'),
+          undxBlock('Final Approval Recommendation', 'Fallback → OpenAI. Approval does not trigger execution.')
+        );
+        if(undxExecutionRequestMessage) undxExecutionRequestMessage.textContent = `${error.message || 'Router unavailable.'} OpenAI fallback active.`;
+      }
+    }
     const undxCommandViews = [
       ['undx-operating-system','UNDX Home'],
       ['undx-desktop-connector-architecture','Desktop Connector'],
       ['undx-controlled-repository-awareness','Repository Awareness'],
       ['undx-controlled-editing-proposal-engine','Editing Proposals'],
+      ['undx-human-approved-execution-framework','Human Approval'],
       ['undx-command-overview','Overview'],
       ['undx-builder-console','Builder Console'],
       ['undx-chat-interface','Chat Interface'],
@@ -32819,6 +33402,29 @@ def pulse_premium_undx_page():
       section.appendChild(list);
       card.appendChild(section);
     }
+    function undxRenderLinkedExecutionRequests(project, card){
+      const section = undxWorkspaceSection('Execution Requests');
+      const list = document.createElement('div');
+      list.className = 'undx-workspace-list';
+      if(!(project.linkedExecutionRequests || []).length){
+        list.appendChild(undxWorkspaceEmpty('No human-approved execution requests linked yet. Attach a Phase 30 request to preserve approval eligibility.'));
+      }else{
+        project.linkedExecutionRequests.forEach(request => {
+          const item = document.createElement('article');
+          item.className = 'undx-workspace-item';
+          const title = document.createElement('strong');
+          title.textContent = request.requestId;
+          const meta = document.createElement('p');
+          meta.textContent = `Approval State: ${request.approvalState} · Execution Eligibility: ${request.eligibility} · Approval History Count: ${(request.history || []).length} · Approval Score: ${request.scores.approvalScore}/100`;
+          const summary = document.createElement('p');
+          summary.textContent = request.approvalRecommendation || 'Human approval required.';
+          item.append(title, meta, summary);
+          list.appendChild(item);
+        });
+      }
+      section.appendChild(list);
+      card.appendChild(section);
+    }
     function undxRenderLinkedExecutionPlans(project, card){
       const section = undxWorkspaceSection('Linked Execution Plans');
       const list = document.createElement('div');
@@ -32906,6 +33512,7 @@ def pulse_premium_undx_page():
       undxRenderLinkedWorkspaceManifests(project, card);
       undxRenderLinkedStructureModels(project, card);
       undxRenderLinkedChangeProposals(project, card);
+      undxRenderLinkedExecutionRequests(project, card);
       undxRenderLinkedExecutionPlans(project, card);
       undxRenderProjectTasks(project, card);
       undxRenderProjectMilestones(project, card);
@@ -33572,6 +34179,12 @@ def pulse_premium_undx_page():
     undxRunStructureReview?.addEventListener('click', undxRunStructureReviewFlow);
     undxGenerateChangeProposal?.addEventListener('click', undxGenerateChangeProposalFlow);
     undxRunChangeProposalReview?.addEventListener('click', undxRunChangeProposalReviewFlow);
+    undxCreateExecutionRequest?.addEventListener('click', undxCreateExecutionRequestFlow);
+    undxRunApprovalReview?.addEventListener('click', undxRunApprovalReviewFlow);
+    undxApproveExecutionRequest?.addEventListener('click', () => undxUpdateExecutionRequestState('Approved', 'Approved for future execution eligibility only.'));
+    undxRejectExecutionRequest?.addEventListener('click', () => undxUpdateExecutionRequestState('Rejected', 'Rejected by human reviewer.'));
+    undxRevokeExecutionRequest?.addEventListener('click', () => undxUpdateExecutionRequestState('Revoked', 'Revoked after approval review.'));
+    undxExpireExecutionRequest?.addEventListener('click', () => undxUpdateExecutionRequestState('Expired', 'Expired before future execution.'));
     undxMissionInput?.addEventListener('input', undxRefreshExecutionSourcePreview);
     undxRenderMemory();
     undxRenderEvolutionEmpty();
@@ -33615,6 +34228,8 @@ def pulse_premium_undx_page():
     undxRenderStructureModel(undxLoadStructureModels()[0] || null);
     undxRenderChangeProposalRegistry();
     undxRenderChangeProposal(undxLoadChangeProposals()[0] || null);
+    undxRenderExecutionRequestRegistry();
+    undxRenderExecutionRequest(undxLoadExecutionRequests()[0] || null);
     undxInitCommandCenterViews();
     undxRefreshProjectSourcePreview();
     undxRefreshExecutionSourcePreview();
