@@ -283,6 +283,8 @@ def main():
     require("Scan Real Repository" not in feed_html, "UNDX kernel scan action absent from Pulse feed")
     require("Generate Code Proposal" not in feed_html, "UNDX kernel proposal action absent from Pulse feed")
     require("Apply Approved Changes" not in feed_html, "UNDX kernel apply action absent from Pulse feed")
+    require("UNDX Performance Diagnostics" not in feed_html, "UNDX performance diagnostics absent from Pulse feed")
+    require("Active repository scans" not in feed_html, "UNDX diagnostics scan metric absent from Pulse feed")
     require("UNDX Controlled File Editing Engine" not in feed_html, "UNDX controlled file editing engine absent from Pulse feed")
     require("File Edit Request Center" not in feed_html, "UNDX file edit request center absent from Pulse feed")
     require("undxFileEditPlans" not in feed_html, "UNDX file edit plans storage absent from Pulse feed")
@@ -579,6 +581,17 @@ def main():
         "undxGenerateRepositoryHealthFlow",
         "undxGenerateEngineeringRecommendationsFlow",
         "undxRenderLinkedRepositoryFoundationProfiles",
+        "UNDX Performance Diagnostics",
+        "Page load time",
+        "Render time",
+        "LocalStorage size",
+        "Active polling loops",
+        "Active listeners",
+        "Active repository scans",
+        "Largest UNDX Storage Keys",
+        "Repository scans are not automatic.",
+        "undxRenderPerformanceDiagnostics",
+        "undxTrimOversizedStorage",
         "UNDX Codebase Understanding Layer",
         "Understand files, functions, modules, routes, services, dependencies, tests, and code relationships before future execution.",
         "Codebase Understanding: <strong>Online</strong>",
