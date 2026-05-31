@@ -96,6 +96,7 @@ def main():
     require("Mission Protocol: Active" not in feed_html, "UNDX mission protocol absent from Pulse feed")
     require("UNDX Project Creator" not in feed_html, "UNDX project creator absent from Pulse feed")
     require("Create Project From Mission" not in feed_html, "UNDX project action absent from Pulse feed")
+    require("Create Project From This Mission" not in feed_html, "UNDX mission-to-project action absent from Pulse feed")
     require("Project Registry" not in feed_html, "UNDX project registry absent from Pulse feed")
     require("Project Core: Active" not in feed_html, "UNDX project core status absent from Pulse feed")
     require("Registry Status: Online" not in feed_html, "UNDX registry status absent from Pulse feed")
@@ -294,6 +295,13 @@ def main():
     require('logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")' in source, "UNDX logs safe OpenAI key configuration status")
     require("undx_router.route_undx_request" in source, "UNDX chat route uses Intelligence Router")
     require("undx_router.council_agent_provider_plan" in source, "UNDX Agent Council uses Intelligence Router provider plan")
+    require("undxSelectedProjectMission" in source, "UNDX tracks selected mission for project creation")
+    require("undxProjectNameFromMission" in source, "UNDX derives clean project names from Mission Memory")
+    require("undxCreateProjectFromMissionMemory" in source, "UNDX Mission Memory can create projects directly")
+    require("sourceMissionId" in source, "UNDX projects preserve source mission identity")
+    require("linkedMissionObjective" in source, "UNDX projects preserve source mission objective")
+    require("undxRenderProjectSwitcher" in source, "UNDX renders active project switcher")
+    require("undxOperatingSnapshot" in source and "projectScoped" in source, "UNDX Engineering OS scopes artifacts to active project")
     require("UNDX Intelligence Router" in router_source, "UNDX Intelligence Router module exists")
     for token in [
         "OPENAI_API_KEY",
@@ -384,6 +392,7 @@ def main():
         "Memory Core: Active",
         "Stored Missions",
         "Clear Mission Memory",
+        "Create Project From This Mission",
         "No missions stored yet. Generate a blueprint to initialize UNDX memory.",
         "undxMissionMemory",
         "Replay Mission",
@@ -452,6 +461,8 @@ def main():
         "UNDX Project Creator",
         "Convert missions into structured projects managed by UNDX.",
         "Create Project From Mission",
+        "Active Project:",
+        "undxProjectSwitcher",
         "Project Source",
         "Current Builder Intelligence Console mission",
         "Selected Mission Memory item",
