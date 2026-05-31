@@ -501,6 +501,11 @@
   gap: 18px;
 }
 
+body:has(.pulse-status-full-page) .pulse-fab,
+body:has(.pulse-status-full-page) .mobile-bottom-nav {
+  display: none;
+}
+
 .pulse-status-page-hero {
   margin: 0;
 }
@@ -691,8 +696,7 @@
   }
 
   .pulse-status2-composer footer {
-    position: sticky;
-    bottom: 0;
+    position: static;
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
 }
