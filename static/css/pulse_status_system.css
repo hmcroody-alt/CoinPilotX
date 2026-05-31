@@ -647,7 +647,8 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
   gap: 12px;
 }
 
-.pulse-status-empty-premium {
+.pulse-status-empty-premium,
+.pulse-intelligence-field {
   position: relative;
   min-height: 260px;
   border: 1px solid rgba(110, 223, 246, .2);
@@ -665,6 +666,177 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
   box-shadow: 0 22px 70px rgba(0, 0, 0, .28);
   isolation: isolate;
 }
+
+.pulse-intelligence-field {
+  grid-column: 1 / -1;
+  min-height: 320px;
+  align-content: stretch;
+  grid-template-columns: minmax(160px, .78fr) minmax(0, 1fr);
+  align-items: stretch;
+  padding: 0;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(110, 223, 246, .16), transparent 34%),
+    radial-gradient(circle at 82% 22%, rgba(54, 229, 143, .12), transparent 28%),
+    linear-gradient(145deg, #030712, #081323 56%, #020617);
+}
+
+.pulse-intelligence-space {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 42% 42%, rgba(54, 229, 143, .08), transparent 32%),
+    radial-gradient(circle at 58% 46%, rgba(110, 223, 246, .08), transparent 42%);
+}
+
+.pulse-intelligence-copy {
+  display: grid;
+  align-content: end;
+  gap: 12px;
+  padding: 24px;
+  z-index: 1;
+}
+
+.pulse-intel-kicker {
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(110, 223, 246, .24);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #9ff7ff;
+  background: rgba(110, 223, 246, .08);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pulse-intelligence-copy strong {
+  font-size: clamp(28px, 5vw, 42px);
+  line-height: 1;
+}
+
+.pulse-intelligence-copy small {
+  color: rgba(238, 247, 250, .76);
+  font-weight: 760;
+  line-height: 1.45;
+}
+
+.pulse-intel-feed {
+  position: relative;
+  min-height: 42px;
+  border-left: 2px solid rgba(54, 229, 143, .55);
+  padding-left: 12px;
+  color: #dffcff;
+  font-weight: 860;
+}
+
+.pulse-intel-feed span {
+  position: absolute;
+  inset: 0 auto auto 12px;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: pulseIntelFeed 35s ease-in-out infinite;
+}
+
+.pulse-intel-feed span:nth-child(2) { animation-delay: 7s; }
+.pulse-intel-feed span:nth-child(3) { animation-delay: 14s; }
+.pulse-intel-feed span:nth-child(4) { animation-delay: 21s; }
+.pulse-intel-feed span:nth-child(5) { animation-delay: 28s; }
+
+.pulse-intel-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pulse-intel-status-row em {
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #b6c7d4;
+  background: rgba(255, 255, 255, .045);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.pulse-intel-status-row b {
+  color: #9ff7bf;
+}
+
+.pulse-intelligence-copy button {
+  justify-self: start;
+  min-height: 42px;
+  border: 0;
+  color: #06101b;
+  background: linear-gradient(135deg, #36e58f, #6edff6);
+}
+
+.pulse-intel-planet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, .96), rgba(110, 223, 246, .82) 18%, rgba(54, 229, 143, .5) 38%, rgba(8, 19, 35, .72) 68%),
+    #07111d;
+  box-shadow: 0 0 34px rgba(110, 223, 246, .36), inset -16px -18px 28px rgba(2, 6, 23, .52);
+  animation: pulseIntelPlanet 6s ease-in-out infinite;
+}
+
+.pulse-intel-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 1px solid rgba(110, 223, 246, .28);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) rotate(-18deg);
+}
+
+.pulse-intel-orbit.one {
+  width: 172px;
+  height: 82px;
+  animation: pulseIntelOrbit 12s linear infinite;
+}
+
+.pulse-intel-orbit.two {
+  width: 230px;
+  height: 118px;
+  border-color: rgba(54, 229, 143, .2);
+  animation: pulseIntelOrbit 18s linear infinite reverse;
+}
+
+.pulse-intel-dot,
+.pulse-intel-star {
+  position: absolute;
+  border-radius: 999px;
+  background: #9ff7ff;
+  box-shadow: 0 0 16px rgba(110, 223, 246, .72);
+}
+
+.pulse-intel-dot {
+  width: 9px;
+  height: 9px;
+  animation: pulseIntelFloat 6s ease-in-out infinite;
+}
+
+.pulse-intel-star {
+  width: 3px;
+  height: 3px;
+  opacity: .72;
+  animation: pulseIntelTwinkle 4s ease-in-out infinite;
+}
+
+.pulse-intel-dot.d1 { left: 24%; top: 32%; }
+.pulse-intel-dot.d2 { left: 68%; top: 38%; animation-delay: 1.2s; }
+.pulse-intel-dot.d3 { left: 36%; top: 72%; animation-delay: 2.2s; }
+.pulse-intel-dot.d4 { left: 76%; top: 70%; animation-delay: 3s; }
+.pulse-intel-star.s1 { left: 18%; top: 18%; }
+.pulse-intel-star.s2 { left: 82%; top: 24%; animation-delay: .8s; }
+.pulse-intel-star.s3 { left: 20%; top: 78%; animation-delay: 1.6s; }
+.pulse-intel-star.s4 { left: 88%; top: 84%; animation-delay: 2.4s; }
 
 .pulse-status-empty-premium:before {
   content: "";
@@ -719,6 +891,56 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
   }
   50% {
     transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseIntelFeed {
+  0%, 12% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  16%, 32% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  36%, 100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes pulseIntelPlanet {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(.98);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
+@keyframes pulseIntelOrbit {
+  to {
+    transform: translate(-50%, -50%) rotate(342deg);
+  }
+}
+
+@keyframes pulseIntelFloat {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: .72;
+  }
+  50% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseIntelTwinkle {
+  0%, 100% {
+    opacity: .36;
+  }
+  50% {
     opacity: 1;
   }
 }
@@ -863,5 +1085,17 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
   .pulse-status2-composer footer {
     position: static;
     padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .pulse-intelligence-field {
+    grid-template-columns: 1fr;
+  }
+
+  .pulse-intelligence-space {
+    min-height: 220px;
+  }
+
+  .pulse-intelligence-copy {
+    padding: 0 18px 18px;
   }
 }

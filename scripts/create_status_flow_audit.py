@@ -206,7 +206,7 @@ def main():
     expect(int(video_status["status_id"]) in rail_ids, "video status appears in rail immediately")
 
     css = (ROOT / "static/css/pulse_status_system.css").read_text(encoding="utf-8")
-    for token in ["100dvh", ".pulse-status2-type-grid", ".pulse-status2-preview", ".pulse-status2-media-preview", ".pulse-status2-style-panel", ".pulse-status-empty-premium", ".pulse-status2-state", "object-fit: contain"]:
+    for token in ["100dvh", ".pulse-status2-type-grid", ".pulse-status2-preview", ".pulse-status2-media-preview", ".pulse-status2-style-panel", ".pulse-intelligence-field", "pulseIntelFeed", ".pulse-status2-state", "object-fit: contain"]:
         expect(token in css, f"Status preview CSS contains {token}")
     print("create status flow audit ok")
 
