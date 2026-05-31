@@ -279,6 +279,10 @@ def main():
     require("Action Request Center" not in feed_html, "UNDX action request center absent from Pulse feed")
     require("undxRepositoryActionRequests" not in feed_html, "UNDX repository action requests storage absent from Pulse feed")
     require("Run Multi-Agent Approval Review" not in feed_html, "UNDX approval review absent from Pulse feed")
+    require("UNDX Execution Kernel" not in feed_html, "UNDX execution kernel absent from Pulse feed")
+    require("Scan Real Repository" not in feed_html, "UNDX kernel scan action absent from Pulse feed")
+    require("Generate Code Proposal" not in feed_html, "UNDX kernel proposal action absent from Pulse feed")
+    require("Apply Approved Changes" not in feed_html, "UNDX kernel apply action absent from Pulse feed")
     require("UNDX Controlled File Editing Engine" not in feed_html, "UNDX controlled file editing engine absent from Pulse feed")
     require("File Edit Request Center" not in feed_html, "UNDX file edit request center absent from Pulse feed")
     require("undxFileEditPlans" not in feed_html, "UNDX file edit plans storage absent from Pulse feed")
@@ -3853,6 +3857,22 @@ def main():
         "Test Execution Disabled",
         "Secret Access Disabled",
         "UNDX Human Approved Repository Actions is governance-only. It does not edit files, create files, delete files, execute commands, run tests, perform Git operations, push commits, deploy applications, or access secrets.",
+        "UNDX Execution Kernel",
+        "Desktop / Repository Connector",
+        "Real Repository Scanner",
+        "Scan Real Repository",
+        "Generate Code Proposal",
+        "Apply Approved Changes",
+        "Run Safe Validation",
+        "Git Gateway",
+        "Controlled File Writer",
+        "Safe Command Runner / Git Gateway",
+        "/api/undx/kernel/scan",
+        "/api/undx/kernel/propose",
+        "/api/undx/kernel/apply",
+        "/api/undx/kernel/validate",
+        "/api/undx/kernel/git",
+        "APPROVE UNDX WRITE",
         "UNDX Controlled File Editing Engine",
         "Prepare, review, approve, and simulate file edits before future repository write access.",
         "File Editing Engine: <strong>Online</strong>",

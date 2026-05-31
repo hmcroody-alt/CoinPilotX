@@ -3,6 +3,8 @@
 !.env.example
 
 *.log
+undx_execution_log.jsonl
+.undx_backups/
 coinpilotx.db
 *.sqlite
 *.sqlite3

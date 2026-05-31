@@ -67,6 +67,7 @@ def main():
         "/pulse/my-posts",
         "/pulse/reels",
         "/pulse/friends",
+        "/pulse/labs",
         "/pulse/messages",
         "/pulse/notifications",
         "/pulse/profile",
