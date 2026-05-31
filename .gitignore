@@ -5,6 +5,8 @@
 *.log
 undx_execution_log.jsonl
 .undx_backups/
+.undx/
+.undx_connector_audit_workspace/
 coinpilotx.db
 *.sqlite
 *.sqlite3
