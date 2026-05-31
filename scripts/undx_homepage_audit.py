@@ -3904,6 +3904,7 @@ def main():
         "Desktop Connector Offline. Start the local connector on your Mac before scanning local folders.",
         "Desktop Connector blocked by Content Security Policy.",
         "Real Repository Scanner",
+        "Repository-aware code generation ready.",
         "Scan Real Repository",
         "Generate Code Proposal",
         "Apply Approved Changes",
