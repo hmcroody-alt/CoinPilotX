@@ -67,7 +67,7 @@ def main():
         "Pulse Intelligence Field",
         "UNDX is monitoring the Pulse network.",
         "AI intelligence feed standing by.",
-        "Live space visualization active",
+        "UNDX Feed Online",
         "Pulse Network: Waiting",
         "data-pulse-intelligence-field",
     ]:

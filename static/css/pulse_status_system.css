@@ -669,46 +669,24 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
 
 .pulse-intelligence-field {
   grid-column: 1 / -1;
-  min-height: 420px;
-  align-content: start;
+  min-height: 260px;
+  align-content: center;
   grid-template-columns: 1fr;
-  gap: 14px;
-  padding: 14px;
+  padding: 0;
   background:
     radial-gradient(circle at 18% 10%, rgba(110, 223, 246, .14), transparent 32%),
     radial-gradient(circle at 88% 12%, rgba(54, 229, 143, .12), transparent 28%),
     linear-gradient(145deg, #030712, #081323 56%, #020617);
 }
 
-.pulse-intelligence-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  z-index: 2;
-}
-
-.pulse-intelligence-header span {
-  color: #f8fafc;
-  font-size: clamp(20px, 4vw, 28px);
-  font-weight: 950;
-  line-height: 1.05;
-}
-
-.pulse-intelligence-header button {
-  flex: 0 0 auto;
-  min-height: 42px;
-  border: 0;
-  color: #06101b;
-  background: linear-gradient(135deg, #36e58f, #6edff6);
-}
-
 .pulse-intelligence-screen {
   position: relative;
-  min-height: 330px;
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(110, 223, 246, .28);
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
   background:
     linear-gradient(115deg, rgba(255, 255, 255, .08), transparent 18% 78%, rgba(54, 229, 143, .08)),
@@ -751,33 +729,33 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
 }
 
 .pulse-intelligence-overlay {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 72px;
+  position: relative;
   z-index: 2;
-  display: grid;
-  gap: 6px;
-  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(100% - 32px, 520px);
+  text-align: center;
 }
 
 .pulse-intelligence-overlay span,
 .pulse-intelligence-overlay em {
-  width: max-content;
   max-width: 100%;
   border: 1px solid rgba(110, 223, 246, .24);
   border-radius: 999px;
-  padding: 6px 10px;
+  padding: 7px 11px;
   color: #9ff7ff;
   background: rgba(3, 7, 18, .58);
   font-size: 12px;
   font-style: normal;
   font-weight: 900;
+  line-height: 1;
 }
 
 .pulse-intelligence-overlay strong {
   color: #f8fafc;
-  font-size: clamp(22px, 5vw, 38px);
+  font-size: clamp(22px, 4vw, 34px);
   line-height: 1;
   text-shadow: 0 0 24px rgba(110, 223, 246, .28);
 }
@@ -797,6 +775,7 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
   box-shadow: 0 12px 34px rgba(0, 0, 0, .22);
   font-size: 13px;
   font-weight: 860;
+  text-align: center;
 }
 
 .pulse-intel-feed span {
@@ -1174,27 +1153,20 @@ body:has(.pulse-status-full-page) .mobile-bottom-nav {
 
   .pulse-intelligence-field {
     grid-template-columns: 1fr;
-    min-height: 360px;
-    padding: 12px;
-  }
-
-  .pulse-intelligence-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .pulse-intelligence-header button {
-    width: 100%;
+    min-height: 220px;
   }
 
   .pulse-intelligence-screen {
-    min-height: 280px;
+    min-height: 220px;
   }
 
   .pulse-intelligence-overlay {
-    left: 14px;
-    right: 14px;
-    bottom: 70px;
+    width: min(100% - 24px, 360px);
+    gap: 8px;
+  }
+
+  .pulse-intelligence-overlay strong {
+    font-size: 22px;
   }
 
   .pulse-intel-feed {
