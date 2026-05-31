@@ -302,6 +302,10 @@ def main():
     require("linkedMissionObjective" in source, "UNDX projects preserve source mission objective")
     require("undxRenderProjectSwitcher" in source, "UNDX renders active project switcher")
     require("undxOperatingSnapshot" in source and "projectScoped" in source, "UNDX Engineering OS scopes artifacts to active project")
+    require("undxLoadProjectRepoAwareItems" in source, "UNDX repository-aware code generation scopes records to active project")
+    require("undxRepoAwareProjectTerms" in source, "UNDX repository-aware code generation derives project-specific routes and files")
+    require("Pulse Labs" in source and "/pulse/labs" in source, "UNDX repository-aware code generation supports Pulse Labs route planning")
+    require("Inferred / Planning Only" in source, "UNDX labels inferred repository-aware output as planning only")
     require("UNDX Intelligence Router" in router_source, "UNDX Intelligence Router module exists")
     for token in [
         "OPENAI_API_KEY",
@@ -690,6 +694,11 @@ def main():
         "undxCodeContextModels",
         "CODECTX-UNDX-0001",
         "Repository-Aware Implementation Generator",
+        "Inferred / Planning Only",
+        "Proposed Page",
+        "Proposed Nav Update",
+        "Proposed Route",
+        "Proposed Template/Component",
         "undxRepositoryAwareImplementations",
         "RAIMPL-UNDX-0001",
         "Repository-Aware Patch Preview",
