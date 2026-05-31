@@ -68,6 +68,18 @@ def main():
     feed_html = page_html(client, "/pulse")
     premium_html = page_html(client, "/pulse/premium")
     undx_html = page_html(client, "/pulse/premium/undx")
+    local_csp = client.get("/pulse/premium/undx", base_url="http://127.0.0.1:5050").headers.get("Content-Security-Policy", "")
+    production_csp = client.get("/pulse/premium/undx", base_url="https://coinpilotx.app").headers.get("Content-Security-Policy", "")
+    require("http://127.0.0.1:8765" in local_csp, "Local CSP allows UNDX Desktop Connector HTTP")
+    require("http://localhost:8765" in local_csp, "Local CSP allows localhost UNDX Desktop Connector HTTP")
+    require("http://127.0.0.1:*" in local_csp, "Local CSP allows loopback HTTP connector ports")
+    require("ws://127.0.0.1:8765" in local_csp, "Local CSP allows UNDX Desktop Connector websocket")
+    require("ws://127.0.0.1:*" in local_csp, "Local CSP allows loopback websocket connector ports")
+    require("https://static.cloudflareinsights.com" in local_csp, "CSP allows Cloudflare Insights script source")
+    require("upgrade-insecure-requests" not in local_csp, "Local CSP does not upgrade desktop connector HTTP")
+    if os.getenv("UNDX_DESKTOP_CONNECTOR_ENABLED", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        require("http://127.0.0.1:8765" not in production_csp, "Production CSP keeps desktop connector disabled by default")
+        require("upgrade-insecure-requests" in production_csp, "Production CSP keeps HTTPS upgrade protection")
 
     require("data-undx-premium-entry" not in feed_html, "UNDX entry absent from Pulse feed")
     require("/pulse/premium/undx" not in feed_html, "UNDX premium route absent from Pulse feed")
@@ -298,6 +310,8 @@ def main():
     routes = {str(rule) for rule in bot.webhook_app.url_map.iter_rules()}
     require("/api/undx/chat" in routes, "/api/undx/chat route exists")
     require("/api/undx/agent-council" in routes, "/api/undx/agent-council route exists")
+    require("/api/undx/desktop-connector/<path:connector_path>" in routes, "/api/undx/desktop-connector proxy route exists")
+    require("UNDX_DESKTOP_CONNECTOR_PATHS" in source, "UNDX Desktop Connector proxy uses endpoint allowlist")
     require('logging.info("OpenAI API key configured: %s", "yes" if api_key else "no")' in source, "UNDX logs safe OpenAI key configuration status")
     require("undx_router.route_undx_request" in source, "UNDX chat route uses Intelligence Router")
     require("undx_router.council_agent_provider_plan" in source, "UNDX Agent Council uses Intelligence Router provider plan")
@@ -3875,10 +3889,12 @@ def main():
         "Desktop Connector Status:",
         "Connector URL:",
         "http://127.0.0.1:8765",
+        "/api/undx/desktop-connector",
         "Registered Workspace:",
         "Check Desktop Connector",
         "Register Workspace",
         "Desktop Connector Offline. Start the local connector on your Mac before scanning local folders.",
+        "Desktop Connector blocked by Content Security Policy.",
         "Real Repository Scanner",
         "Scan Real Repository",
         "Generate Code Proposal",
