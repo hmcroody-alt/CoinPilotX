@@ -32,9 +32,20 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
 
 def provider_status():
     config = sender_config()
+    missing = []
+    if not os.getenv("BREVO_API_KEY"):
+        missing.append("BREVO_API_KEY")
+    if not os.getenv("BREVO_SENDER_EMAIL"):
+        missing.append("BREVO_SENDER_EMAIL")
+    if not os.getenv("BREVO_SENDER_NAME"):
+        missing.append("BREVO_SENDER_NAME")
     return {
         "provider": "brevo",
-        "ready": bool(os.getenv("BREVO_API_KEY")),
+        "ready": not missing,
+        "api_key_configured": bool(os.getenv("BREVO_API_KEY")),
+        "sender_email_configured": bool(os.getenv("BREVO_SENDER_EMAIL")),
+        "sender_name_configured": bool(os.getenv("BREVO_SENDER_NAME")),
+        "missing_fields": missing,
         "sender_email": config["email"],
         "sender_name": config["name"],
     }
@@ -45,8 +56,23 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
     config = sender_config(channel=channel, from_email=from_email, from_name=from_name)
     if not to_email:
         return {"ok": False, "status_code": None, "response": {"message": "recipient email missing"}, "error": "recipient email missing", "sender": config}
+    missing = []
     if not api_key:
-        return {"ok": False, "status_code": None, "response": {"message": "BREVO_API_KEY is not loaded."}, "error": "BREVO_API_KEY is not loaded.", "sender": config}
+        missing.append("BREVO_API_KEY")
+    if not os.getenv("BREVO_SENDER_EMAIL"):
+        missing.append("BREVO_SENDER_EMAIL")
+    if not os.getenv("BREVO_SENDER_NAME"):
+        missing.append("BREVO_SENDER_NAME")
+    if missing:
+        return {
+            "ok": False,
+            "status_code": None,
+            "response": {"message": "Brevo is not fully configured.", "missing_fields": missing},
+            "error": f"Brevo is not fully configured. Missing: {', '.join(missing)}",
+            "error_code": "brevo_not_configured",
+            "missing_fields": missing,
+            "sender": config,
+        }
     try:
         response = requests.post(
             BREVO_SMTP_URL,
@@ -73,7 +99,8 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
             "response": body,
             "provider_response": body,
             "message_id": message_id or "",
-            "error": "" if 200 <= response.status_code < 300 else (body.get("message") or body.get("code") or response.text[:500]),
+            "error": "" if 200 <= response.status_code < 300 else ("Brevo rejected the request. Check BREVO_API_KEY in Railway." if response.status_code == 401 else (body.get("message") or body.get("code") or response.text[:500])),
+            "error_code": "brevo_unauthorized" if response.status_code == 401 else (body.get("code") or ""),
             "sender": config,
         }
     except Exception as exc:
