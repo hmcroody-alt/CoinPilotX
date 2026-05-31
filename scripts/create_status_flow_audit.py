@@ -107,6 +107,13 @@ def create_status(client, media_id: int, media_type: str) -> dict:
     return payload
 
 
+def create_status_payload(client, payload: dict, label: str) -> dict:
+    response = client.post("/api/pulse/status", json=payload)
+    data = response.get_json() or {}
+    expect(response.status_code == 200 and data.get("ok") and data.get("status_id"), label, response.get_data(as_text=True)[:400])
+    return data
+
+
 def main():
     bot.init_db()
     user_id = ensure_user()
@@ -152,6 +159,9 @@ def main():
 
     image_media = upload_media(client, "status-audit.png", "image/png", PNG_BYTES)
     video_media = upload_media(client, "status-audit.webm", "video/webm", WEBM_BYTES)
+    text_only_status = create_status_payload(client, {"status_type": "text", "body": "Text-only Status audit", "visibility": "public"}, "text-only status publishes")
+    photo_only_status = create_status_payload(client, {"status_type": "photo", "media_ids": [int(image_media["id"])], "visibility": "public"}, "photo-only status publishes")
+    text_photo_status = create_status_payload(client, {"status_type": "photo", "body": "Caption plus photo", "media_ids": [int(image_media["id"])], "visibility": "public"}, "text plus photo status publishes")
     image_status = create_status(client, int(image_media["id"]), "image")
     video_status = create_status(client, int(video_media["id"]), "video")
 
@@ -159,11 +169,14 @@ def main():
     rail_payload = rail.get_json() or {}
     expect(rail.status_code == 200 and rail_payload.get("ok"), "status rail loads after publish", rail.get_data(as_text=True)[:400])
     rail_ids = {int(item.get("id") or 0) for item in rail_payload.get("items") or []}
+    expect(int(text_only_status["status_id"]) in rail_ids, "text-only status appears in rail immediately")
+    expect(int(photo_only_status["status_id"]) in rail_ids, "photo-only status appears in rail immediately")
+    expect(int(text_photo_status["status_id"]) in rail_ids, "text plus photo status appears in rail immediately")
     expect(int(image_status["status_id"]) in rail_ids, "image status appears in rail immediately")
     expect(int(video_status["status_id"]) in rail_ids, "video status appears in rail immediately")
 
     css = (ROOT / "static/css/pulse_status_system.css").read_text(encoding="utf-8")
-    for token in ["100dvh", ".pulse-status2-type-grid", ".pulse-status2-preview", ".pulse-status2-state", "object-fit: contain"]:
+    for token in ["100dvh", ".pulse-status2-type-grid", ".pulse-status2-preview", ".pulse-status2-media-preview", ".pulse-status2-state", "object-fit: contain"]:
         expect(token in css, f"Status preview CSS contains {token}")
     print("create status flow audit ok")
 
