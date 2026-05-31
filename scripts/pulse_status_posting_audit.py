@@ -52,6 +52,9 @@ def ensure_user() -> int:
 
 def main():
     bot.init_db()
+    source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    expect('for status_table in ("pulse_status", "pulse_statuses")' in source, "Pulse Status has schema drift migration")
+    expect('"ai_context_json", "TEXT"' in source and '"media_ids_json", "TEXT"' in source, "Pulse Status migrations preserve style/media fields")
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = ensure_user()
@@ -64,7 +67,8 @@ def main():
         "Pulse Intelligence Field",
         "UNDX is monitoring the Pulse network.",
         "AI intelligence feed standing by.",
-        "Space Signal: <b>Searching</b>",
+        "Live space visualization active",
+        "Pulse Network: Waiting",
         "data-pulse-intelligence-field",
     ]:
         expect(token in html, f"Status page contains {token}")
