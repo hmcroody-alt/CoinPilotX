@@ -129,6 +129,11 @@ def main():
     require("Patch Apply Simulator" not in feed_html, "UNDX patch apply simulator absent from Pulse feed")
     require("Modification Simulation Registry" not in feed_html, "UNDX modification registry absent from Pulse feed")
     require("Final Human Gate" not in feed_html, "UNDX final human gate absent from Pulse feed")
+    require("UNDX Autonomous Engineering Operating System" not in feed_html, "UNDX autonomous engineering operating system absent from Pulse feed")
+    require("Unified Operating Dashboard" not in feed_html, "UNDX operating dashboard absent from Pulse feed")
+    require("Engineering Pipeline" not in feed_html, "UNDX engineering pipeline absent from Pulse feed")
+    require("Operating Memory Layer" not in feed_html, "UNDX operating memory absent from Pulse feed")
+    require("Global Engineering Search" not in feed_html, "UNDX global engineering search absent from Pulse feed")
     require("Project Tasks" not in feed_html, "UNDX project tasks absent from Pulse feed")
     require("Project Milestones" not in feed_html, "UNDX project milestones absent from Pulse feed")
     require("Project Memory" not in feed_html, "UNDX project memory absent from Pulse feed")
@@ -825,6 +830,47 @@ def main():
         "undxRunModificationReviewFlow",
         "undxRenderLinkedModificationSimulations",
         "Real Repository Writes Disabled",
+        "UNDX Autonomous Engineering Operating System",
+        "Provide one place where users can see and control the entire engineering lifecycle",
+        "Engineering Operating System: Online",
+        "Unified Operating Dashboard",
+        "Operating Dashboard: <strong>Online</strong>",
+        "Engineering Pipeline",
+        "Autonomous Workspace",
+        "Unified Workspace",
+        "Operating Memory Layer",
+        "undxOperatingMemory",
+        "OPSMEM-UNDX-0001",
+        "Operating Knowledge Graph",
+        "Executive Engineering Board",
+        "Operating Timeline",
+        "Unified Agent Command Center",
+        "Autonomous Orchestration Engine",
+        "Run Orchestration Recommendation",
+        "Engineering Health Engine",
+        "Overall Engineering Health",
+        "Operating Reports",
+        "Generate Operating System Report",
+        "undxOperatingReports",
+        "OPSREP-UNDX-0001",
+        "Global Engineering Search",
+        "Operating System Insights",
+        "Dashboard Cards",
+        "Operating Health Score",
+        "Recommended Next Action",
+        "Project Creator, Mission Memory, Unified Agent Runtime, Repository Intelligence, Codebase Understanding, Engineering Task Intelligence, Repository-Aware Code Generation, Human Approved Patch Preview, and Modification Sandbox share the active project state.",
+        "UNDX Evolution",
+        "Phase 30 → Phase 50",
+        "undxRenderAutonomousEngineeringOperatingSystem",
+        "undxGenerateOperatingMemoryFlow",
+        "undxGenerateOperatingReportFlow",
+        "undxRunOperatingOrchestrationFlow",
+        "undxRunOperatingSearchFlow",
+        "Repository Writes Disabled",
+        "Command Execution Disabled",
+        "Git Disabled",
+        "Deployment Disabled",
+        "Secret Access Disabled",
         "Execution Disabled",
         "File Editing Disabled",
         "File Creation Disabled",
