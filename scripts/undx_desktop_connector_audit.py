@@ -43,7 +43,10 @@ def main():
       client = connector.app.test_client()
 
       health = client.get("/health")
-      expect(health.status_code == 200 and health.get_json()["ok"], "Desktop connector health is online")
+      health_json = health.get_json()
+      expect(health.status_code == 200 and health_json["ok"], "Desktop connector health is online")
+      expect(health_json["proposalEngine"] == "Repository-Aware", "Health reports repository-aware proposal engine")
+      expect(health_json["activeProposalHandler"] == "generate_proposal", "Health reports active proposal handler")
 
       register = post(client, "/workspace/register", {"workspacePath": audit_workspace.as_posix(), "workspaceLabel": "Audit Workspace"})
       expect(register.status_code == 200 and register.get_json()["ok"], "Workspace registration accepts approved local folder")
@@ -71,6 +74,7 @@ def main():
       proposal_json = proposal.get_json()
       expect(proposal.status_code == 200 and proposal_json["targetFile"] == "index.html", "Repository-aware proposal targets index.html")
       expect(proposal_json["repositoryAware"] is True, "Proposal is marked repository-aware")
+      expect(proposal_json["proposalEngine"] == "Repository-Aware", "Proposal reports repository-aware engine")
       expect("Built by UNDX Execution Kernel" in proposal_json["changes"][0]["after"], "Landing page proposal includes generated marker")
       expect("--- a/index.html" in proposal_json["changes"][0]["diff"] and "+++ b/index.html" in proposal_json["changes"][0]["diff"], "Unified diff is generated for index.html")
 

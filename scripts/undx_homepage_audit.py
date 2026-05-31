@@ -3887,6 +3887,7 @@ def main():
         "UNDX Execution Kernel",
         "Desktop / Repository Connector",
         "Desktop Connector Status:",
+        "Proposal Engine:",
         "Connector URL:",
         "http://127.0.0.1:8765",
         "/api/undx/desktop-connector",

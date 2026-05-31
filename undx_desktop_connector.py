@@ -23,7 +23,9 @@ from typing import Any
 from flask import Flask, jsonify, make_response, request
 
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+PROPOSAL_ENGINE_VERSION = "repository-aware-v2"
+ACTIVE_PROPOSAL_HANDLER_NAME = "generate_proposal"
 PORT = int(os.getenv("UNDX_DESKTOP_CONNECTOR_PORT", "8765"))
 DEFAULT_WORKSPACE = Path("/Users/hmcherie/Desktop/CoinPilotX").expanduser().resolve()
 CONNECTOR_ROOT = Path(__file__).resolve().parent
@@ -485,6 +487,9 @@ def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
         "ok": True,
         "proposalId": f"DESKPROP-UNDX-{int(datetime.now().timestamp())}",
         "targetFile": target_rel,
+        "proposalEngine": "Repository-Aware",
+        "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+        "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
         "repositoryAware": True,
         "repositoryMap": scan.get("repositoryMap", {}),
         "beforeSnippet": changes[0]["before"][-600:],
@@ -622,7 +627,17 @@ def run_validation(workspace: Path, validation_type: str) -> dict[str, Any]:
 @app.route("/health", methods=["GET", "OPTIONS"])
 def health():
     workspaces = load_workspaces()
-    return response({"ok": True, "status": "online", "connector": "UNDX Desktop Connector", "machineName": socket.gethostname(), "allowedWorkspacesCount": len(workspaces), "version": VERSION})
+    return response({
+        "ok": True,
+        "status": "online",
+        "connector": "UNDX Desktop Connector",
+        "machineName": socket.gethostname(),
+        "allowedWorkspacesCount": len(workspaces),
+        "version": VERSION,
+        "proposalEngine": "Repository-Aware",
+        "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+        "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
+    })
 
 
 @app.route("/workspace/register", methods=["POST", "OPTIONS"])
@@ -663,7 +678,7 @@ def proposal_generate():
     payload = request.get_json(silent=True) or {}
     workspace = resolve_workspace(payload.get("workspacePath"))
     proposal = generate_proposal(workspace, str(payload.get("taskDescription") or payload.get("task") or ""))
-    log_action("proposal_generate", {"workspace": workspace.as_posix(), "proposalId": proposal["proposalId"], "targetFile": proposal["targetFile"]})
+    log_action("proposal_generate", {"workspace": workspace.as_posix(), "proposalId": proposal["proposalId"], "targetFile": proposal["targetFile"], "proposalEngineVersion": PROPOSAL_ENGINE_VERSION, "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME})
     return response(proposal)
 
 
@@ -724,6 +739,9 @@ def unexpected_error(error: Exception):
 
 def main() -> None:
     ensure_config()
+    print(f"UNDX Desktop Connector version: {VERSION}", flush=True)
+    print(f"UNDX proposal engine version: {PROPOSAL_ENGINE_VERSION}", flush=True)
+    print(f"UNDX active proposal handler: {ACTIVE_PROPOSAL_HANDLER_NAME}", flush=True)
     app.run(host="127.0.0.1", port=PORT, debug=False)
 
 
