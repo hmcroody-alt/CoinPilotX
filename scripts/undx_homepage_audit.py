@@ -236,6 +236,11 @@ def main():
     require("Generate Task Package" not in feed_html, "UNDX task package action absent from Pulse feed")
     require("undxTaskPackages" not in feed_html, "UNDX task package storage absent from Pulse feed")
     require("UNDX Operating System" not in feed_html, "UNDX operating system absent from Pulse feed")
+    require("UNDX Intelligence Evolution Core" not in feed_html, "UNDX intelligence evolution core absent from Pulse feed")
+    require("Angry Section" not in feed_html, "UNDX active defense section absent from Pulse feed")
+    require("Real Intelligence State Engine" not in feed_html, "UNDX real intelligence state absent from Pulse feed")
+    require("Production Intelligence Loop" not in feed_html, "UNDX production intelligence loop absent from Pulse feed")
+    require("undxIntelligenceEvolutionReports" not in feed_html, "UNDX intelligence evolution storage absent from Pulse feed")
     require("UNDX Universal Search" not in feed_html, "UNDX universal search absent from Pulse feed")
     require("Global Activity Feed" not in feed_html, "UNDX global activity feed absent from Pulse feed")
     require("undxOperatingSystemSnapshots" not in feed_html, "UNDX operating system storage absent from Pulse feed")
@@ -483,6 +488,48 @@ def main():
         "Save To Mission Memory",
         "UNDX Chat Mission",
         "UNDX Project Creator",
+        "UNDX Intelligence Evolution Core",
+        "Three-Layer Intelligence Architecture",
+        "ANI Layer: <strong>Operational</strong>",
+        "AGI Layer: <strong>Governed Research Mode</strong>",
+        "ASI Layer: <strong>Theoretical / Locked</strong>",
+        "Ethical Intelligence Framework",
+        "Autonomous Digital Operations",
+        "Cyber Intelligence Center",
+        "Angry Section",
+        "Defensive Only",
+        "Adaptive Cybersecurity Model",
+        "Digital Immune System",
+        "Generate Intelligence State Report",
+        "Run Defensive Readiness Review",
+        "Phase E2",
+        "Real Intelligence State Engine",
+        "Generate Real Intelligence State",
+        "Phase E3",
+        "Cyber Defense Readiness Engine",
+        "Generate Cyber Defense Readiness",
+        "Phase E4",
+        "Cross-Domain Reasoning Layer",
+        "Generate Cross-Domain Reasoning Map",
+        "Phase E5",
+        "Multimodal Intelligence Blueprint",
+        "Generate Multimodal Blueprint",
+        "Phase E6",
+        "Adaptive Learning Memory",
+        "Generate Adaptive Learning Memory",
+        "Phase E7",
+        "Defensive Incident Command",
+        "Generate Incident Command Package",
+        "Phase E8",
+        "Intelligence Governance Dashboard",
+        "Generate Governance Snapshot",
+        "Phase E9",
+        "Controlled Action Readiness",
+        "Generate Controlled Action Readiness",
+        "Phase E10",
+        "Production Intelligence Loop",
+        "Generate Production Intelligence Loop",
+        "undxIntelligenceEvolutionReports",
         "Convert missions into structured projects managed by UNDX.",
         "Create Project From Mission",
         "Active Project:",
