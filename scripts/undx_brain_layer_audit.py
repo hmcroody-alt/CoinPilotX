@@ -73,6 +73,7 @@ def main():
         expect(proposal["requiresApproval"] is False, "Planning proposal does not require write approval")
         expect(proposal["diff"] == "" and proposal["changes"] == [], "Planning proposal has empty diff preview")
         expect(PLANNING_MISSION not in proposal["diff"], "Mission text is not injected into generated code")
+        expect(proposal.get("engineSource") in {None, "UNDX_BRAIN_LAYER"} or proposal.get("brainLayer", {}).get("enabled") is True, "Planning proposal exposes brain execution metadata")
 
         unsafe = dict(proposal)
         unsafe["targetFiles"] = ["static/offline.html"]
@@ -82,6 +83,15 @@ def main():
             expect(True, "Safety guard blocks unrelated offline target")
         else:
             raise AssertionError("Safety guard should block unrelated offline target")
+
+        unsafe_html = dict(proposal)
+        unsafe_html["changes"] = [{"path": "index.html", "after": "<strong>Built by UNDX Execution Kernel</strong>"}]
+        try:
+            brain_layer.enforce_safety(unsafe_html, PLANNING_MISSION, classification)
+        except brain_layer.BrainSafetyError:
+            expect(True, "Safety guard blocks legacy landing HTML for planning-only mission")
+        else:
+            raise AssertionError("Safety guard should block legacy landing HTML for planning-only mission")
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 

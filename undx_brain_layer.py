@@ -64,6 +64,13 @@ COMMUNICATION_KEYWORDS = (
 
 OFFLINE_SYSTEM_TERMS = ("offline", "pwa", "cache", "service worker", "fallback")
 RISKY_FALLBACK_FILES = {"static/offline.html", "templates/offline.html", "offline.html"}
+LEGACY_LANDING_MARKERS = (
+    "Built by UNDX Execution Kernel",
+    "Launch UNDX",
+    "Command Visibility",
+    "Repository Intelligence",
+    "Approval Gates",
+)
 PROTECTED_PATH_TERMS = (
     ".env",
     "secret",
@@ -79,6 +86,9 @@ PROTECTED_PATH_TERMS = (
     ".git/",
 )
 MIN_RELEVANCE_SCORE = 8
+ACTIVE_PROPOSAL_ENGINE = "UNDX_BRAIN_LAYER"
+ACTIVE_MISSION_CLASSIFIER = "undx_brain_layer.parse_mission"
+ACTIVE_FILE_SELECTOR = "undx_brain_layer.select_repository_files"
 
 TARGET_SYSTEM_KEYWORDS = {
     "communications": COMMUNICATION_KEYWORDS,
@@ -422,6 +432,11 @@ def generate_planning_proposal(mission_text: str, workspace_name: str, scan: dic
         "diffAllowed": False,
         "requiredApproval": False,
         "requiresApproval": False,
+        "engineSource": ACTIVE_PROPOSAL_ENGINE,
+        "brainLayerActive": True,
+        "activeProposalEngine": ACTIVE_PROPOSAL_ENGINE,
+        "activeMissionClassifier": ACTIVE_MISSION_CLASSIFIER,
+        "activeFileSelector": ACTIVE_FILE_SELECTOR,
         "targetFile": "",
         "targetFiles": selection.get("targetFiles") or [],
         "targetFileReasons": selection.get("targetFileReasons") or [],
@@ -452,6 +467,11 @@ def generate_execution_metadata(mission_text: str, selection: dict[str, Any]) ->
             "generatedAt": now_iso(),
             "reasoningReport": selection.get("reasoningReport") or "",
         },
+        "engineSource": ACTIVE_PROPOSAL_ENGINE,
+        "brainLayerActive": True,
+        "activeProposalEngine": ACTIVE_PROPOSAL_ENGINE,
+        "activeMissionClassifier": ACTIVE_MISSION_CLASSIFIER,
+        "activeFileSelector": ACTIVE_FILE_SELECTOR,
         "requiredApproval": bool(classification.get("diffAllowed")),
         "diffGenerationSafe": bool(classification.get("diffAllowed") and targets),
     }
@@ -462,8 +482,18 @@ def enforce_safety(proposal: dict[str, Any], mission_text: str, classification: 
     diff = str(proposal.get("diff") or "")
     changes = proposal.get("changes") or []
     target_files = [str(path) for path in proposal.get("targetFiles") or []]
+    proposal_type = str(proposal.get("proposalType") or classification.get("proposalType") or "")
     if classification.get("planningOnly") and (diff.strip() or changes):
         raise BrainSafetyError("Safety guard blocked diff generation for a planning-only mission.")
+    if classification.get("planningOnly") or proposal_type == "planning-report":
+        rendered_text = "\n".join(
+            [diff, str(proposal.get("report") or "")]
+            + [str(change.get("after") or "") + "\n" + str(change.get("diff") or "") for change in changes if isinstance(change, dict)]
+        )
+        if diff.strip() or changes:
+            raise BrainSafetyError("Safety guard blocked generated output for a planning-only mission.")
+        if any(marker in rendered_text for marker in LEGACY_LANDING_MARKERS):
+            raise BrainSafetyError("Safety guard blocked legacy landing-page generator for a planning-only mission.")
     if classification.get("targetSystem") != "offline-pwa" and any(path in RISKY_FALLBACK_FILES for path in target_files):
         raise BrainSafetyError("Safety guard blocked static/offline.html for a non-offline mission.")
     if any(is_protected_relative_path(path) for path in target_files):

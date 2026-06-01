@@ -28,6 +28,9 @@ import undx_brain_layer as brain_layer
 VERSION = "1.1.0"
 PROPOSAL_ENGINE_VERSION = "repository-aware-v2"
 ACTIVE_PROPOSAL_HANDLER_NAME = "generate_proposal"
+ACTIVE_PROPOSAL_ENGINE = "UNDX_BRAIN_LAYER"
+ACTIVE_MISSION_CLASSIFIER = "undx_brain_layer.parse_mission"
+ACTIVE_FILE_SELECTOR = "undx_brain_layer.select_repository_files"
 PORT = int(os.getenv("UNDX_DESKTOP_CONNECTOR_PORT", "8765"))
 DEFAULT_WORKSPACE = Path("/Users/hmcherie/Desktop/CoinPilotX").expanduser().resolve()
 CONNECTOR_ROOT = Path(__file__).resolve().parent
@@ -779,6 +782,11 @@ def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
             "safetyLevel": classification.get("safetyLevel"),
             "proposalEngine": "Repository-Aware",
             "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+            "engineSource": ACTIVE_PROPOSAL_ENGINE,
+            "brainLayerActive": True,
+            "activeProposalEngine": ACTIVE_PROPOSAL_ENGINE,
+            "activeMissionClassifier": ACTIVE_MISSION_CLASSIFIER,
+            "activeFileSelector": ACTIVE_FILE_SELECTOR,
             "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
             "repositoryAware": True,
             "repositoryMap": scan.get("repositoryMap", {}),
@@ -812,6 +820,11 @@ def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
             "summary": "No safe relevant target found for implementation diff.",
             "proposalEngine": "Repository-Aware",
             "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+            "engineSource": ACTIVE_PROPOSAL_ENGINE,
+            "brainLayerActive": True,
+            "activeProposalEngine": ACTIVE_PROPOSAL_ENGINE,
+            "activeMissionClassifier": ACTIVE_MISSION_CLASSIFIER,
+            "activeFileSelector": ACTIVE_FILE_SELECTOR,
             "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
             "repositoryAware": True,
             "repositoryMap": scan.get("repositoryMap", {}),
@@ -828,6 +841,8 @@ def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
         before = read_text_file(target) if exists else ""
         suffix = target.suffix.lower()
         normalized = (task or "").lower()
+        if classification.get("planningOnly"):
+            raise ConnectorError("Brain Layer blocked legacy HTML generation for a planning-only mission.")
         if suffix == ".html" and (target.name == "index.html" or any(word in normalized for word in ("landing", "website", "recreate", "complete replacement", "full page"))):
             after = generated_landing_html(task, workspace.name)
         elif not exists:
@@ -874,6 +889,11 @@ def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
         "message": "Implementation proposal generated. Review diff before approval.",
         "proposalEngine": "Repository-Aware",
         "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+        "engineSource": ACTIVE_PROPOSAL_ENGINE,
+        "brainLayerActive": True,
+        "activeProposalEngine": ACTIVE_PROPOSAL_ENGINE,
+        "activeMissionClassifier": ACTIVE_MISSION_CLASSIFIER,
+        "activeFileSelector": ACTIVE_FILE_SELECTOR,
         "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
         "repositoryAware": True,
         "repositoryMap": scan.get("repositoryMap", {}),
@@ -1033,6 +1053,11 @@ def health():
         "version": VERSION,
         "proposalEngine": "Repository-Aware",
         "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+        "engineSource": ACTIVE_PROPOSAL_ENGINE,
+        "brainLayerActive": True,
+        "activeProposalEngine": ACTIVE_PROPOSAL_ENGINE,
+        "activeMissionClassifier": ACTIVE_MISSION_CLASSIFIER,
+        "activeFileSelector": ACTIVE_FILE_SELECTOR,
         "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
     })
 
@@ -1075,7 +1100,7 @@ def proposal_generate():
     payload = request.get_json(silent=True) or {}
     workspace = resolve_workspace(payload.get("workspacePath"))
     proposal = generate_proposal(workspace, str(payload.get("taskDescription") or payload.get("task") or ""))
-    log_action("proposal_generate", {"workspace": workspace.as_posix(), "proposalId": proposal["proposalId"], "targetFile": proposal.get("targetFile", ""), "proposalType": proposal.get("proposalType"), "missionType": proposal.get("missionType"), "proposalEngineVersion": PROPOSAL_ENGINE_VERSION, "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME})
+    log_action("proposal_generate", {"workspace": workspace.as_posix(), "proposalId": proposal["proposalId"], "targetFile": proposal.get("targetFile", ""), "proposalType": proposal.get("proposalType"), "missionType": proposal.get("missionType"), "ACTIVE_PROPOSAL_ENGINE": ACTIVE_PROPOSAL_ENGINE, "ACTIVE_MISSION_CLASSIFIER": ACTIVE_MISSION_CLASSIFIER, "ACTIVE_FILE_SELECTOR": ACTIVE_FILE_SELECTOR, "proposalEngineVersion": PROPOSAL_ENGINE_VERSION, "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME, "brainLayerActive": True})
     return response(proposal)
 
 
