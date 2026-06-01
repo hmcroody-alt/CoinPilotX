@@ -49,11 +49,12 @@ def main():
         "data-reels-fullscreen",
         "data-reels-topbar",
         "reel-search-button",
-        "Adaptive playback",
         "playsinline",
         "preload=\"metadata\"",
     ]:
         expect(token in html, f"Reels HTML contains {token}")
+    for token in ["Adaptive playback", "poster first", "HLS enabled", "CDN ready", "ffmpeg processing", "Mux playback", "Media diagnostics"]:
+        expect(token not in html, f"internal Reel text is hidden: {token}")
     api = client.get("/api/pulse/reels/feed?tab=for_you&limit=3")
     payload = api.get_json() or {}
     expect(api.status_code == 200 and payload.get("ok") is True, "Reels feed API returns ok", api.get_data(as_text=True)[:300])

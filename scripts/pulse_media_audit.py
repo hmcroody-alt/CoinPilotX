@@ -101,8 +101,10 @@ def main():
     expect(resolved["fallback_url"].endswith("media-unavailable.svg"), "fallback asset returned")
     expect(media_storage.storage_status().get("provider") in {"local", "r2", "s3"}, "storage provider status loads")
     media_css = (ROOT / "static/css/pulse_reels_experience.css").read_text(encoding="utf-8")
-    for token in ["poster first", "object-fit: contain", "data-orientation", "Adaptive playback"]:
+    for token in ["object-fit: contain", "data-orientation"]:
         expect(token in source + media_css, f"adaptive media/Reels rule present: {token}")
+    for token in ["Adaptive playback", "poster first"]:
+        expect(token not in source, f"internal Reels implementation text hidden: {token}")
     expect("@webhook_app.route(\"/admin/media-health\"" in source, "admin media health route exists")
     visible, reason = pulse_feed_engine.pulse_visibility_decision({"visibility": "public", "moderation_status": "approved", "status": "published", "deleted_at": None})
     expect(visible and reason == "public_approved", "canonical public visibility allows approved public posts")
