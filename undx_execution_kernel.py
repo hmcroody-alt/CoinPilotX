@@ -75,6 +75,44 @@ LANGUAGE_EXTENSIONS = {
     ".json": "JSON",
 }
 
+PLANNING_ONLY_PHRASES = (
+    "proposal only",
+    "plan only",
+    "planning only",
+    "architecture",
+    "blueprint",
+    "scan",
+    "analyze",
+    "analysis",
+    "report",
+    "do not write",
+    "do not apply",
+    "no files yet",
+    "without writing",
+    "replacement plan",
+    "full replacement plan",
+)
+
+COMMUNICATION_KEYWORDS = (
+    "message",
+    "messages",
+    "messenger",
+    "chat",
+    "room",
+    "rooms",
+    "group",
+    "groups",
+    "conversation",
+    "conversations",
+    "direct",
+    "inbox",
+    "communication",
+    "communications",
+    "pulse communications",
+)
+
+RISKY_FALLBACK_FILES = {"static/offline.html", "templates/offline.html", "offline.html"}
+
 
 class KernelError(ValueError):
     """Raised when the kernel refuses an unsafe request."""
@@ -309,6 +347,120 @@ def generic_landing_html(directive: str, repository_name: str) -> str:
 """
 
 
+def classify_mission(directive: str) -> dict[str, Any]:
+    lowered = re.sub(r"\s+", " ", directive or "").strip().lower()
+    planning_only = any(phrase in lowered for phrase in PLANNING_ONLY_PHRASES)
+    if planning_only:
+        mission_type = "planning-only"
+        proposal_type = "planning-only"
+    elif any(word in lowered for word in ("bug", "fix", "failure", "error", "broken", "regression")):
+        mission_type = "bug-fix"
+        proposal_type = "implementation"
+    elif any(word in lowered for word in ("ui", "ux", "frontend", "layout", "style", "css", "template")):
+        mission_type = "ui-change"
+        proposal_type = "implementation"
+    elif any(word in lowered for word in ("database", "migration", "schema", "table", "column")):
+        mission_type = "database-migration"
+        proposal_type = "implementation"
+    elif any(word in lowered for word in ("audit", "validate", "validation", "test", "checks")):
+        mission_type = "validation-audit"
+        proposal_type = "report"
+    elif any(word in lowered for word in ("docs", "documentation", "report", "blueprint")):
+        mission_type = "documentation-report"
+        proposal_type = "report"
+    else:
+        mission_type = "code-implementation"
+        proposal_type = "implementation"
+    return {
+        "missionType": mission_type,
+        "missionCategory": "architecture-plan" if mission_type == "planning-only" else mission_type,
+        "proposalType": proposal_type,
+        "planningOnly": planning_only,
+    }
+
+
+def mission_keywords(directive: str) -> list[str]:
+    lowered = (directive or "").lower()
+    keywords = set(re.findall(r"[a-z][a-z0-9_-]{2,}", lowered))
+    if "pulse communications" in lowered or any(word in keywords for word in ("messenger", "messages", "conversation", "conversations", "chat", "rooms", "groups", "communications")):
+        keywords.update(COMMUNICATION_KEYWORDS)
+    return sorted(keywords)
+
+
+def score_repository_file(repo: RepositoryPath, rel: str, keywords: list[str]) -> tuple[int, list[str]]:
+    lowered = rel.lower()
+    if lowered in RISKY_FALLBACK_FILES:
+        return 0, []
+    score = 0
+    reasons: list[str] = []
+    for keyword in keywords:
+        if keyword and keyword in lowered:
+            score += 10
+            reasons.append(f"path contains {keyword}")
+    if rel == "bot.py":
+        score += 4
+        reasons.append("main Flask routes and data helpers live in bot.py")
+    if rel.startswith("scripts/") and "audit" in lowered:
+        score += 3
+        reasons.append("audit/validation script")
+    path = repo.root / rel
+    if path.exists() and path.is_file() and is_text_file(path) and not is_protected_path(path):
+        try:
+            text = safe_read_text(path, max_bytes=800_000).lower()
+        except KernelError:
+            text = ""
+        hits = [keyword for keyword in keywords if keyword and keyword in text]
+        if hits:
+            score += min(30, len(hits) * 3)
+            reasons.append("content references " + ", ".join(hits[:5]))
+    return score, reasons[:6]
+
+
+def ranked_target_files(repo: RepositoryPath, directive: str, limit: int = 12) -> list[dict[str, Any]]:
+    scan = scan_repository(repo.root.as_posix())
+    candidates: list[str] = []
+    for collection in ("templates", "staticAssets", "scripts"):
+        for rel in scan.get(collection) or []:
+            if rel not in candidates and rel not in RISKY_FALLBACK_FILES:
+                candidates.append(rel)
+    for item in scan.get("tree", []):
+        rel = str(item.get("path") or "")
+        if item.get("type") == "file" and rel not in candidates and rel not in RISKY_FALLBACK_FILES:
+            candidates.append(rel)
+    ranked: list[dict[str, Any]] = []
+    keywords = mission_keywords(directive)
+    for rel in candidates:
+        score, reasons = score_repository_file(repo, rel, keywords)
+        if score > 0:
+            ranked.append({"path": rel, "score": score, "why": reasons or ["matched mission keywords"]})
+    ranked.sort(key=lambda item: (-int(item["score"]), str(item["path"])))
+    return ranked[:limit]
+
+
+def planning_report(repo: RepositoryPath, directive: str, targets: list[dict[str, Any]], classification: dict[str, Any]) -> str:
+    target_lines = [f"- {item['path']}: {'; '.join(item.get('why') or ['selected by repository relevance'])}" for item in targets] or ["- No implementation target selected. Report-only mode is active."]
+    target_paths = [item["path"] for item in targets] or ["bot.py", "scripts/messenger_core_audit.py", "scripts/chat_system_audit.py"]
+    sections = [
+        ("Mission Classification", [f"Mission Type: {classification.get('missionType')}", f"Proposal Type: {classification.get('proposalType')}", "Diff Generation: disabled for planning-only mission"]),
+        ("Repository Communications Map", [f"Repository: {repo.root.name}", "Relevant targets: " + ", ".join(target_paths)]),
+        ("Problems Found", ["Large planning missions must not be converted into arbitrary HTML rewrites.", "Pulse Communications requires route, model, permission, template, JavaScript, and audit mapping before implementation."]),
+        ("Exact Files Involved", target_lines),
+        ("Target Files", [f"- {path}" for path in target_paths]),
+        ("Files To Preserve", ["- Existing direct message routes and data", "- Existing rooms/groups behavior", "- Pulse feed, UNDX, Wallet Guardian, admin, and auth"]),
+        ("Files To Replace", ["- Legacy communications UI/API only after v2 passes audits"]),
+        ("New V2 Files To Create", ["- pulse_communications_v2/models.py", "- pulse_communications_v2/service.py", "- pulse_communications_v2/routes.py", "- pulse_communications_v2/permissions.py"]),
+        ("Database Migration Strategy", ["Add v2-prefixed tables only.", "Backfill through a bridge after legacy reads are verified."]),
+        ("First Safe Implementation Patch", ["Create disabled v2 scaffold/report only after approval.", "No file writes in this planning-only proposal."]),
+        ("Validation Plan", ["Python compile", "JavaScript parse", "UNDX audits", "messenger/chat audits", "git diff --check"]),
+        ("Rollback Plan", ["Keep legacy routes active.", "Keep v2 behind a false feature flag."]),
+        ("Approval Gate", ["Human approval required before any implementation diff."]),
+    ]
+    lines = [f"# UNDX Planning Report: {directive.strip()[:120]}", ""]
+    for title, values in sections:
+        lines.extend([f"## {title}", *values, ""])
+    return "\n".join(lines).strip() + "\n"
+
+
 def generic_target_path(repo: RepositoryPath, directive: str) -> str:
     explicit = re.search(r"([\w./-]+\.(?:html|css|js|py|md|txt|json))", directive or "", flags=re.I)
     if explicit:
@@ -316,15 +468,34 @@ def generic_target_path(repo: RepositoryPath, directive: str) -> str:
     lowered = (directive or "").lower()
     if any(word in lowered for word in ("index", "landing", "website", "recreate", "home page")):
         return "index.html"
-    scan = scan_repository(repo.root.as_posix())
-    for collection in ("templates", "staticAssets", "scripts"):
-        values = scan.get(collection) or []
-        if values:
-            return values[0]
-    return "index.html"
+    ranked = ranked_target_files(repo, directive, limit=1)
+    if ranked:
+        return str(ranked[0]["path"])
+    raise KernelError("No relevant target file was safe enough for diff generation. Generate a planning report first.")
 
 
 def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> dict[str, Any]:
+    classification = classify_mission(directive)
+    ranked = ranked_target_files(repo, directive)
+    if classification.get("planningOnly"):
+        return {
+            "ok": True,
+            "proposalId": f"PLAN-UNDX-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            "directive": directive,
+            "proposalType": "planning-only",
+            "missionType": classification.get("missionType"),
+            "missionCategory": classification.get("missionCategory"),
+            "planningOnly": True,
+            "targetFiles": [item["path"] for item in ranked],
+            "targetFileReasons": [{"path": item["path"], "why": item.get("why", [])} for item in ranked],
+            "report": planning_report(repo, directive, ranked, classification),
+            "diff": "",
+            "changes": [],
+            "requiresApproval": False,
+            "message": "Planning report generated. No files written.",
+            "summary": "Planning-only architecture report generated from repository-aware scan.",
+            "generatedAt": now_iso(),
+        }
     rel = generic_target_path(repo, directive)
     target = (repo.root / rel).resolve()
     try:
@@ -347,6 +518,15 @@ def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> d
         "ok": True,
         "proposalId": f"PROPOSAL-UNDX-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "directive": directive,
+        "proposalType": "implementation",
+        "missionType": classification.get("missionType"),
+        "missionCategory": classification.get("missionCategory"),
+        "planningOnly": False,
+        "targetFiles": [rel],
+        "targetFileReasons": [{"path": item["path"], "why": item.get("why", [])} for item in ranked if item["path"] == rel],
+        "diff": unified_diff(rel, before, after),
+        "requiresApproval": True,
+        "message": "Implementation proposal generated. Review diff before approval.",
         "summary": "Repository-aware code proposal generated from the active directive.",
         "approvalPhrase": APPROVAL_PHRASE,
         "repositoryAware": True,

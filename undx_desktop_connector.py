@@ -84,6 +84,53 @@ LANGUAGE_EXTENSIONS = {
     ".vue": "Vue",
 }
 
+PLANNING_ONLY_PHRASES = (
+    "proposal only",
+    "plan only",
+    "planning only",
+    "architecture",
+    "blueprint",
+    "scan",
+    "analyze",
+    "analysis",
+    "report",
+    "do not write",
+    "do not apply",
+    "no files yet",
+    "without writing",
+    "replacement plan",
+    "full replacement plan",
+)
+
+MISSION_CLASSIFIERS = {
+    "bug-fix": ("bug", "fix", "failure", "error", "broken", "regression", "traceback", "exception"),
+    "ui-change": ("ui", "ux", "frontend", "layout", "style", "css", "template", "modal", "mobile", "desktop"),
+    "database-migration": ("database", "migration", "schema", "table", "column", "sqlite", "postgres"),
+    "documentation-report": ("documentation", "docs", "report", "audit", "assessment", "blueprint"),
+    "validation-audit": ("validate", "validation", "audit", "test", "checks", "qa"),
+    "code-implementation": ("implement", "build", "create", "add", "update", "replace", "refactor"),
+}
+
+COMMUNICATION_KEYWORDS = (
+    "message",
+    "messages",
+    "messenger",
+    "chat",
+    "room",
+    "rooms",
+    "group",
+    "groups",
+    "conversation",
+    "conversations",
+    "direct",
+    "inbox",
+    "communication",
+    "communications",
+    "pulse communications",
+)
+
+RISKY_FALLBACK_FILES = {"static/offline.html", "templates/offline.html", "offline.html"}
+
 app = Flask(__name__)
 
 
@@ -439,10 +486,93 @@ def extract_requested_paths(task: str) -> list[str]:
     return paths[:8]
 
 
-def choose_target_files(workspace: Path, task: str, scan: dict[str, Any]) -> list[str]:
+def classify_mission(task: str) -> dict[str, Any]:
+    normalized = re.sub(r"\s+", " ", task or "").strip().lower()
+    planning = any(phrase in normalized for phrase in PLANNING_ONLY_PHRASES)
+    matched_types = [
+        mission_type
+        for mission_type, keywords in MISSION_CLASSIFIERS.items()
+        if any(keyword in normalized for keyword in keywords)
+    ]
+    if planning:
+        mission_type = "planning-only"
+        proposal_type = "planning-only"
+    elif matched_types:
+        mission_type = matched_types[0]
+        proposal_type = "implementation" if mission_type in {"bug-fix", "ui-change", "database-migration", "code-implementation"} else "report"
+    else:
+        mission_type = "code-implementation"
+        proposal_type = "implementation"
+    return {
+        "missionType": mission_type,
+        "missionCategory": "architecture-plan" if mission_type == "planning-only" else mission_type,
+        "proposalType": proposal_type,
+        "planningOnly": proposal_type == "planning-only",
+        "matchedTypes": matched_types,
+    }
+
+
+def mission_keywords(task: str) -> list[str]:
+    normalized = (task or "").lower()
+    keywords = set(re.findall(r"[a-z][a-z0-9_-]{2,}", normalized))
+    if "pulse communications" in normalized or any(word in keywords for word in ("messenger", "messages", "conversation", "conversations", "chat", "rooms", "groups", "communications")):
+        keywords.update(COMMUNICATION_KEYWORDS)
+    return sorted(keywords)
+
+
+def candidate_scan_files(scan: dict[str, Any]) -> list[str]:
+    ordered: list[str] = []
+    for collection in ("pythonFiles", "templates", "jsFiles", "cssFiles", "auditScripts", "staticAssets", "htmlFiles", "reactFiles", "vueFiles"):
+        for value in scan.get(collection) or scan.get("repositoryMap", {}).get(collection, []) or []:
+            if value not in ordered and value not in RISKY_FALLBACK_FILES:
+                ordered.append(value)
+    return ordered
+
+
+def score_file_for_mission(workspace: Path, rel: str, keywords: list[str]) -> tuple[int, list[str]]:
+    lowered = rel.lower()
+    score = 0
+    reasons: list[str] = []
+    for keyword in keywords:
+        if keyword and keyword in lowered:
+            score += 10
+            reasons.append(f"path contains {keyword}")
+    if rel == "bot.py":
+        score += 4
+        reasons.append("main Flask routes and data helpers live in bot.py")
+    if rel.startswith("scripts/") and "audit" in lowered:
+        score += 3
+        reasons.append("audit/validation script")
+    path = workspace / rel
+    if path.exists() and path.is_file() and path.suffix.lower() in TEXT_EXTENSIONS and not protected(path):
+        try:
+            text = read_text_file(path, max_bytes=800_000).lower()
+        except ConnectorError:
+            text = ""
+        content_hits = [keyword for keyword in keywords if keyword and keyword in text]
+        if content_hits:
+            score += min(30, len(content_hits) * 3)
+            reasons.append("content references " + ", ".join(content_hits[:5]))
+    return score, reasons[:6]
+
+
+def ranked_target_files(workspace: Path, task: str, scan: dict[str, Any], limit: int = 12) -> list[dict[str, Any]]:
+    keywords = mission_keywords(task)
+    ranked: list[dict[str, Any]] = []
+    for rel in candidate_scan_files(scan):
+        score, reasons = score_file_for_mission(workspace, rel, keywords)
+        if score <= 0:
+            continue
+        ranked.append({"path": rel, "score": score, "why": reasons or ["matched mission keywords"]})
+    ranked.sort(key=lambda item: (-int(item["score"]), str(item["path"])))
+    return ranked[:limit]
+
+
+def choose_target_files(workspace: Path, task: str, scan: dict[str, Any], classification: dict[str, Any] | None = None) -> list[str]:
     requested = extract_requested_paths(task)
     if requested:
         return requested
+    classification = classification or classify_mission(task)
     normalized = (task or "").lower()
     if "create file" in normalized or "new file" in normalized:
         requested = extract_requested_paths(task)
@@ -454,18 +584,139 @@ def choose_target_files(workspace: Path, task: str, scan: dict[str, Any]) -> lis
         return ["index.html"]
     if "pulse labs" in normalized and (workspace / "templates" / "pulse_labs.html").exists():
         return ["templates/pulse_labs.html"]
-    for collection in ("htmlFiles", "templates", "reactFiles", "vueFiles", "jsFiles", "cssFiles", "pythonFiles"):
-        values = scan.get(collection) or []
-        if values:
-            return [values[0]]
-    return ["index.html"]
+    ranked = ranked_target_files(workspace, task, scan, limit=8)
+    if ranked:
+        return [item["path"] for item in ranked[:4]]
+    if classification.get("planningOnly"):
+        return []
+    return []
+
+
+def communication_report_sections(targets: list[dict[str, Any]], scan: dict[str, Any]) -> dict[str, list[str]]:
+    target_paths = [item["path"] for item in targets]
+    preserve = [
+        "Legacy direct message routes and APIs until v2 is proven",
+        "Existing room/group routes, permissions, and database data",
+        "Pulse feed, UNDX, Wallet Guardian, admin, auth, and premium routes",
+    ]
+    replace = [
+        "Only legacy communications UI/API surfaces after v2 passes audits",
+        "Duplicate frontend message loaders once bridge routes are validated",
+    ]
+    create = [
+        "pulse_communications_v2/__init__.py",
+        "pulse_communications_v2/models.py",
+        "pulse_communications_v2/service.py",
+        "pulse_communications_v2/routes.py",
+        "pulse_communications_v2/permissions.py",
+        "reports/pulse_communications_2_full_replacement_plan.md",
+    ]
+    if not target_paths:
+        target_paths = ["bot.py", "scripts/messenger_core_audit.py", "scripts/chat_system_audit.py"]
+    return {
+        "targetFiles": target_paths,
+        "filesToPreserve": preserve,
+        "filesToReplace": replace,
+        "newFilesToCreate": create,
+        "auditCandidates": [path for path in (scan.get("auditScripts") or []) if any(keyword in path.lower() for keyword in COMMUNICATION_KEYWORDS)][:12],
+    }
+
+
+def build_planning_report(task: str, workspace: Path, scan: dict[str, Any], targets: list[dict[str, Any]], classification: dict[str, Any]) -> str:
+    sections = communication_report_sections(targets, scan)
+    repository_map = [
+        f"Repository: {workspace.name}",
+        f"Files scanned: {scan.get('fileCount', 0)}",
+        "Frameworks: " + (", ".join(scan.get("frameworks") or []) or "Unknown"),
+        "Relevant targets: " + (", ".join(sections["targetFiles"]) or "None found"),
+    ]
+    target_lines = [
+        f"- {item['path']}: {'; '.join(item.get('why') or ['selected by repository relevance'])}"
+        for item in targets
+    ] or ["- No safe target files selected for a diff. Report-only mode is active."]
+    report_sections = [
+        ("Mission Classification", [f"Mission Type: {classification.get('missionType')}", f"Proposal Type: {classification.get('proposalType')}", "Diff Generation: disabled for planning-only mission"]),
+        ("Repository Communications Map", repository_map),
+        ("Problems Found", ["Legacy direct messages, rooms, groups, chat APIs, and UI loaders need a single replacement map before edits.", "Large rebuild directives are not safe as single-file diffs.", "Fallback HTML rewrites are blocked for planning missions."]),
+        ("Exact Files Involved", target_lines),
+        ("Target Files", [f"- {path}" for path in sections["targetFiles"]]),
+        ("Files To Preserve", [f"- {path}" for path in sections["filesToPreserve"]]),
+        ("Files To Replace", [f"- {path}" for path in sections["filesToReplace"]]),
+        ("New V2 Files To Create", [f"- {path}" for path in sections["newFilesToCreate"]]),
+        ("Database Migration Strategy", ["Add v2-prefixed tables only.", "Backfill through a bridge job after legacy read paths are verified.", "Keep destructive changes behind a separate approval gate."]),
+        ("First Safe Implementation Patch", ["Create or update a markdown replacement plan and a disabled v2 route scaffold only.", "Do not route production UI to v2 until audits pass.", "Do not write files from this planning-only proposal."]),
+        ("Validation Plan", ["Python compile", "JavaScript parse", "UNDX desktop connector audit", "UNDX homepage audit", "messenger/chat audits", "Pulse route/feed audits", "git diff --check"]),
+        ("Rollback Plan", ["Leave legacy routes active.", "Keep v2 behind a false feature flag.", "Revert only v2 scaffold/report files if validation fails."]),
+        ("Approval Gate", ["Human approval required before any implementation diff.", "Repository write remains disabled for this proposal."]),
+    ]
+    lines = [f"# UNDX Planning Report: {task.strip()[:120]}", ""]
+    for title, values in report_sections:
+        lines.extend([f"## {title}", *values, ""])
+    return "\n".join(lines).strip() + "\n"
 
 
 def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
     if not (task or "").strip():
         raise ConnectorError("Mission directive is required for proposal generation.")
     scan = scan_workspace(workspace)
-    target_files = choose_target_files(workspace, task, scan)
+    classification = classify_mission(task)
+    ranked_targets = ranked_target_files(workspace, task, scan, limit=12)
+    if classification.get("planningOnly"):
+        report = build_planning_report(task, workspace, scan, ranked_targets, classification)
+        target_files = [item["path"] for item in ranked_targets]
+        return {
+            "ok": True,
+            "proposalId": f"DESKPLAN-UNDX-{int(datetime.now().timestamp())}",
+            "proposalType": "planning-only",
+            "missionType": classification.get("missionType"),
+            "missionCategory": classification.get("missionCategory"),
+            "planningOnly": True,
+            "targetFile": "",
+            "targetFiles": target_files,
+            "targetFileReasons": [{"path": item["path"], "why": item.get("why", [])} for item in ranked_targets],
+            "report": report,
+            "diff": "",
+            "changes": [],
+            "requiresApproval": False,
+            "message": "Planning report generated. No files written.",
+            "summary": "Planning-only architecture report generated from repository-aware scan.",
+            "proposalEngine": "Repository-Aware",
+            "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+            "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
+            "repositoryAware": True,
+            "repositoryMap": scan.get("repositoryMap", {}),
+            "diffGenerationSafe": False,
+            "diffWarning": "Diff generation disabled because this mission was classified as planning-only.",
+            "riskNotes": ["No files selected for write.", "No fallback HTML target allowed.", "Implementation requires a separate approved mission."],
+            "validationPlan": ["Review planning report", "Confirm target files", "Request a separate implementation mission for any patch"],
+        }
+    target_files = choose_target_files(workspace, task, scan, classification)
+    if not target_files:
+        report = build_planning_report(task, workspace, scan, ranked_targets, {**classification, "proposalType": "report"})
+        return {
+            "ok": True,
+            "proposalId": f"DESKREPORT-UNDX-{int(datetime.now().timestamp())}",
+            "proposalType": "report",
+            "missionType": classification.get("missionType"),
+            "missionCategory": classification.get("missionCategory"),
+            "planningOnly": False,
+            "targetFile": "",
+            "targetFiles": [],
+            "targetFileReasons": [],
+            "report": report,
+            "diff": "",
+            "changes": [],
+            "requiresApproval": False,
+            "message": "Repository-aware report generated. No relevant implementation target was safe enough for a diff.",
+            "summary": "No safe relevant target found for implementation diff.",
+            "proposalEngine": "Repository-Aware",
+            "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
+            "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
+            "repositoryAware": True,
+            "repositoryMap": scan.get("repositoryMap", {}),
+            "diffGenerationSafe": False,
+            "diffWarning": "No relevant target files matched the mission. Fallback HTML rewrites are blocked.",
+        }
     changes: list[dict[str, Any]] = []
     for target_rel in target_files:
         target = resolve_relative(workspace, target_rel)
@@ -501,16 +752,23 @@ def generate_proposal(workspace: Path, task: str) -> dict[str, Any]:
     return {
         "ok": True,
         "proposalId": f"DESKPROP-UNDX-{int(datetime.now().timestamp())}",
+        "proposalType": "implementation",
+        "missionType": classification.get("missionType"),
+        "missionCategory": classification.get("missionCategory"),
+        "planningOnly": False,
         "targetFile": target_rel,
         "targetFiles": target_files,
+        "targetFileReasons": [{"path": item["path"], "why": item.get("why", [])} for item in ranked_targets if item["path"] in target_files],
         "diff": combined_diff,
         "summary": f"Repository-aware proposal for {', '.join(target_files)}.",
         "requiresApproval": True,
+        "message": "Implementation proposal generated. Review diff before approval.",
         "proposalEngine": "Repository-Aware",
         "proposalEngineVersion": PROPOSAL_ENGINE_VERSION,
         "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME,
         "repositoryAware": True,
         "repositoryMap": scan.get("repositoryMap", {}),
+        "diffGenerationSafe": True,
         "beforeSnippet": changes[0]["before"][-600:],
         "afterSnippet": changes[0]["after"][-700:],
         "changes": changes,
@@ -702,7 +960,7 @@ def proposal_generate():
     payload = request.get_json(silent=True) or {}
     workspace = resolve_workspace(payload.get("workspacePath"))
     proposal = generate_proposal(workspace, str(payload.get("taskDescription") or payload.get("task") or ""))
-    log_action("proposal_generate", {"workspace": workspace.as_posix(), "proposalId": proposal["proposalId"], "targetFile": proposal["targetFile"], "proposalEngineVersion": PROPOSAL_ENGINE_VERSION, "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME})
+    log_action("proposal_generate", {"workspace": workspace.as_posix(), "proposalId": proposal["proposalId"], "targetFile": proposal.get("targetFile", ""), "proposalType": proposal.get("proposalType"), "missionType": proposal.get("missionType"), "proposalEngineVersion": PROPOSAL_ENGINE_VERSION, "activeProposalHandler": ACTIVE_PROPOSAL_HANDLER_NAME})
     return response(proposal)
 
 
