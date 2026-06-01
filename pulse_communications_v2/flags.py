@@ -9,5 +9,4 @@ def _enabled(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
-PULSE_COMMUNICATIONS_V2_ENABLED = _enabled("PULSE_COMMUNICATIONS_V2_ENABLED", "false")
-
+PULSE_COMMUNICATIONS_V2_ENABLED = _enabled("PULSE_COMMUNICATIONS_V2_ENABLED", "true")

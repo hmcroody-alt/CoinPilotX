@@ -58,6 +58,16 @@ class CommV2ReadReceipt:
     table_name: str = "comm_v2_read_receipts"
 
 
+@dataclass(frozen=True)
+class CommV2PinnedMessage:
+    table_name: str = "comm_v2_pinned_messages"
+
+
+@dataclass(frozen=True)
+class CommV2ModerationEvent:
+    table_name: str = "comm_v2_moderation_events"
+
+
 COMM_V2_TABLES: tuple[TableSpec, ...] = (
     TableSpec(
         "comm_v2_conversations",
@@ -230,6 +240,38 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
             created_at TEXT,
             updated_at TEXT,
             UNIQUE(message_id, user_id)
+        )
+        """,
+    ),
+    TableSpec(
+        "comm_v2_pinned_messages",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_pinned_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER,
+            message_id INTEGER,
+            pinned_by_user_id INTEGER,
+            pinned_at TEXT,
+            unpinned_at TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            UNIQUE(conversation_id, message_id)
+        )
+        """,
+    ),
+    TableSpec(
+        "comm_v2_moderation_events",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_moderation_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER,
+            message_id INTEGER,
+            actor_user_id INTEGER,
+            target_user_id INTEGER,
+            event_type TEXT,
+            reason TEXT,
+            safe_details_json TEXT,
+            created_at TEXT
         )
         """,
     ),
