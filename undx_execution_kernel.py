@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import undx_brain_layer as brain_layer
+
 
 DEFAULT_REPOSITORY_PATH = Path("/Users/hmcherie/Desktop/CoinPilotX").resolve()
 APPROVAL_PHRASE = "APPROVE UNDX WRITE"
@@ -386,158 +388,46 @@ def requested_action_for_mission(directive: str) -> str:
 
 
 def classify_mission(directive: str) -> dict[str, Any]:
-    lowered = re.sub(r"\s+", " ", directive or "").strip().lower()
-    planning_only = any(phrase in lowered for phrase in PLANNING_ONLY_PHRASES)
-    target_system = target_system_for_mission(directive)
-    requested_action = requested_action_for_mission(directive)
-    diff_allowed = False
-    if planning_only:
-        mission_type = "planning-only"
-        proposal_type = "planning-report"
-        diff_allowed = False
-    elif any(word in lowered for word in ("bug", "fix", "failure", "error", "broken", "regression")):
-        mission_type = "bug-fix"
-        proposal_type = "implementation"
-    elif any(word in lowered for word in ("ui", "ux", "frontend", "layout", "style", "css", "template")):
-        mission_type = "ui-change"
-        proposal_type = "implementation"
-    elif any(word in lowered for word in ("database", "migration", "schema", "table", "column")):
-        mission_type = "database-migration"
-        proposal_type = "implementation"
-    elif any(word in lowered for word in ("audit", "validate", "validation", "test", "checks")):
-        mission_type = "validation-audit"
-        proposal_type = "report"
-    elif any(word in lowered for word in ("docs", "documentation", "report", "blueprint")):
-        mission_type = "documentation-report"
-        proposal_type = "report"
-        diff_allowed = False
-    else:
-        mission_type = "code-implementation"
-        proposal_type = "implementation"
-        diff_allowed = True
-    if not planning_only and proposal_type == "implementation":
-        diff_allowed = True
-    return {
-        "missionType": mission_type,
-        "missionCategory": "architecture-plan" if mission_type == "planning-only" else mission_type,
-        "proposalType": proposal_type,
-        "planningOnly": planning_only,
-        "diffAllowed": diff_allowed,
-        "targetSystem": target_system,
-        "requestedAction": requested_action,
-        "safetyLevel": "report-only" if planning_only else ("approval-gated" if diff_allowed else "review-only"),
-        "allowedOutputType": "structured planning report" if planning_only else ("unified diff" if diff_allowed else "repository report"),
-    }
+    return brain_layer.parse_mission(directive)
 
 
 def mission_keywords(directive: str, target_system: str | None = None) -> list[str]:
-    lowered = (directive or "").lower()
-    keywords = set(re.findall(r"[a-z][a-z0-9_-]{2,}", lowered))
-    system = target_system or target_system_for_mission(directive)
-    if system == "communications" or "pulse communications" in lowered or any(word in keywords for word in ("messenger", "messages", "conversation", "conversations", "chat", "rooms", "groups", "communications")):
-        keywords.update(COMMUNICATION_KEYWORDS)
-    elif system in TARGET_SYSTEM_KEYWORDS:
-        keywords.update(TARGET_SYSTEM_KEYWORDS[system])
-    return sorted(keywords)
+    return brain_layer.mission_keywords(directive, target_system)
 
 
 def score_repository_file(repo: RepositoryPath, rel: str, keywords: list[str], target_system: str = "unknown") -> tuple[int, list[str]]:
-    lowered = rel.lower()
-    if lowered in RISKY_FALLBACK_FILES and target_system != "offline-pwa":
-        return 0, ["blocked: offline/PWA fallback file is unrelated to this mission"]
-    score = 0
-    reasons: list[str] = []
-    for keyword in keywords:
-        if keyword and keyword in lowered:
-            score += 10
-            reasons.append(f"path contains {keyword}")
-    if rel == "bot.py":
-        score += 4
-        reasons.append("main Flask routes and data helpers live in bot.py")
-    if rel.startswith("scripts/") and "audit" in lowered:
-        score += 3
-        reasons.append("audit/validation script")
-    path = repo.root / rel
-    if path.exists() and path.is_file() and is_text_file(path) and not is_protected_path(path):
-        try:
-            text = safe_read_text(path, max_bytes=800_000).lower()
-        except KernelError:
-            text = ""
-        hits = [keyword for keyword in keywords if keyword and keyword in text]
-        if hits:
-            score += min(30, len(hits) * 3)
-            reasons.append("content references " + ", ".join(hits[:5]))
-    return score, reasons[:6]
+    return brain_layer.score_file(repo.root, rel, keywords, target_system, safe_read=lambda path: safe_read_text(path, max_bytes=800_000))
 
 
 def ranked_target_files(repo: RepositoryPath, directive: str, limit: int = 12, target_system: str | None = None) -> list[dict[str, Any]]:
     scan = scan_repository(repo.root.as_posix())
-    target_system = target_system or target_system_for_mission(directive)
-    candidates: list[str] = []
-    for collection in ("templates", "staticAssets", "scripts"):
-        for rel in scan.get(collection) or []:
-            if rel in RISKY_FALLBACK_FILES and target_system != "offline-pwa":
-                continue
-            if rel not in candidates:
-                candidates.append(rel)
-    for item in scan.get("tree", []):
-        rel = str(item.get("path") or "")
-        if rel in RISKY_FALLBACK_FILES and target_system != "offline-pwa":
-            continue
-        if item.get("type") == "file" and rel not in candidates:
-            candidates.append(rel)
-    ranked: list[dict[str, Any]] = []
-    keywords = mission_keywords(directive, target_system)
-    for rel in candidates:
-        score, reasons = score_repository_file(repo, rel, keywords, target_system)
-        if score > 0:
-            ranked.append({"path": rel, "score": score, "why": reasons or ["matched mission keywords"], "targetSystem": target_system})
-    ranked.sort(key=lambda item: (-int(item["score"]), str(item["path"])))
-    return ranked[:limit]
+    selection = brain_layer.select_repository_files(
+        repo.root,
+        directive,
+        scan,
+        safe_read=lambda path: safe_read_text(path, max_bytes=800_000),
+        config=brain_layer.BrainConfig(max_targets=limit),
+    )
+    return selection.get("relevanceScores") or []
 
 
 def planning_report(repo: RepositoryPath, directive: str, targets: list[dict[str, Any]], classification: dict[str, Any]) -> str:
-    target_lines = [f"- {item['path']} — score {item.get('score', 0)} — {'; '.join(item.get('why') or ['selected by repository relevance'])}" for item in targets] or ["- No safe target files found. Proposal requires repository analysis."]
-    target_paths = [item["path"] for item in targets]
-    sections = [
-        ("Mission Classification", [f"Mission Type: {classification.get('missionType')}", f"Target System: {classification.get('targetSystem')}", f"Requested Action: {classification.get('requestedAction')}", f"Proposal Type: {classification.get('proposalType')}", f"Diff Allowed: {classification.get('diffAllowed')}", "Diff Generation: disabled for planning-only mission"]),
-        ("Repository Communications Map", [f"Repository: {repo.root.name}", "Relevant targets: " + (", ".join(target_paths) or "No safe target files found. Proposal requires repository analysis.")]),
-        ("Problems Found", ["Large planning missions must not be converted into arbitrary HTML rewrites.", "Pulse Communications requires route, model, permission, template, JavaScript, and audit mapping before implementation."]),
-        ("Exact Files Involved", target_lines),
-        ("Target Files", [f"- {path}" for path in target_paths] or ["- No safe target files found. Proposal requires repository analysis."]),
-        ("Files To Preserve", ["- Existing direct message routes and data", "- Existing rooms/groups behavior", "- Pulse feed, UNDX, Wallet Guardian, admin, and auth"]),
-        ("Files To Replace", ["- Legacy communications UI/API only after v2 passes audits"]),
-        ("New V2 Files To Create", ["- pulse_communications_v2/models.py", "- pulse_communications_v2/service.py", "- pulse_communications_v2/routes.py", "- pulse_communications_v2/permissions.py"]),
-        ("Database Migration Strategy", ["Add v2-prefixed tables only.", "Backfill through a bridge after legacy reads are verified."]),
-        ("First Safe Implementation Patch", ["Create disabled v2 scaffold/report only after approval.", "No file writes in this planning-only proposal."]),
-        ("Validation Plan", ["Python compile", "JavaScript parse", "UNDX audits", "messenger/chat audits", "git diff --check"]),
-        ("Rollback Plan", ["Keep legacy routes active.", "Keep v2 behind a false feature flag."]),
-        ("Approval Gate", ["Human approval required before any implementation diff."]),
-    ]
-    lines = [f"# UNDX Planning Report: {directive.strip()[:120]}", ""]
-    for title, values in sections:
-        lines.extend([f"## {title}", *values, ""])
-    return "\n".join(lines).strip() + "\n"
+    scan = scan_repository(repo.root.as_posix())
+    selection = {
+        "classification": classification,
+        "targetFiles": [item["path"] for item in targets],
+        "targetFileReasons": targets,
+        "relevanceScores": targets,
+        "relevantFilesFound": len(targets),
+    }
+    return brain_layer.generate_planning_report(directive, repo.root.name, scan, selection)
 
 
 def hard_validate_proposal(proposal: dict[str, Any], directive: str, classification: dict[str, Any]) -> dict[str, Any]:
-    diff = str(proposal.get("diff") or "")
-    target_files = [str(path) for path in proposal.get("targetFiles") or []]
-    changes = proposal.get("changes") or []
-    if classification.get("planningOnly") and (diff.strip() or changes):
-        raise KernelError("Safety guard blocked diff generation for a planning-only mission.")
-    if classification.get("targetSystem") != "offline-pwa" and any(path in RISKY_FALLBACK_FILES for path in target_files):
-        raise KernelError("Safety guard blocked static/offline.html for a non-offline mission.")
-    if diff and directive.strip() and directive.strip() in diff:
-        raise KernelError("Safety guard blocked raw mission directive text in generated diff.")
-    for item in proposal.get("targetFileReasons") or []:
-        if int(item.get("score") or 0) < MIN_RELEVANCE_SCORE and classification.get("targetSystem") not in {"homepage", "offline-pwa"}:
-            raise KernelError("Safety guard blocked low-relevance target file.")
-    for item in changes:
-        path = str(item.get("path") or "")
-        if classification.get("targetSystem") != "offline-pwa" and path in RISKY_FALLBACK_FILES:
-            raise KernelError("Safety guard blocked unrelated offline fallback rewrite.")
-    return proposal
+    try:
+        return brain_layer.enforce_safety(proposal, directive, classification)
+    except brain_layer.BrainSafetyError as exc:
+        raise KernelError(str(exc)) from exc
 
 
 def generic_target_path(repo: RepositoryPath, directive: str) -> str:
@@ -557,37 +447,28 @@ def generic_target_path(repo: RepositoryPath, directive: str) -> str:
 
 
 def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> dict[str, Any]:
-    classification = classify_mission(directive)
+    scan = scan_repository(repo.root.as_posix())
+    brain_context = brain_layer.analyze_mission(
+        repo.root,
+        directive,
+        scan,
+        safe_read=lambda path: safe_read_text(path, max_bytes=800_000),
+    )
+    classification = brain_context["classification"]
     ranked = [
-        item for item in ranked_target_files(repo, directive, target_system=classification.get("targetSystem"))
+        item for item in (brain_context.get("relevanceScores") or [])
         if int(item.get("score") or 0) >= MIN_RELEVANCE_SCORE
     ]
     if classification.get("planningOnly"):
-        return hard_validate_proposal({
-            "ok": True,
+        proposal = brain_layer.generate_planning_proposal(directive, repo.root.name, scan, brain_context)
+        proposal.update({
             "proposalId": f"PLAN-UNDX-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
             "directive": directive,
-            "proposalType": "planning-report",
-            "missionType": classification.get("missionType"),
-            "missionCategory": classification.get("missionCategory"),
-            "targetSystem": classification.get("targetSystem"),
-            "requestedAction": classification.get("requestedAction"),
-            "planningOnly": True,
-            "diffAllowed": False,
             "allowedOutputType": classification.get("allowedOutputType"),
             "safetyLevel": classification.get("safetyLevel"),
-            "targetFiles": [item["path"] for item in ranked],
-            "targetFileReasons": [{"path": item["path"], "score": item.get("score", 0), "why": item.get("why", [])} for item in ranked],
-            "relevanceScores": [{"path": item["path"], "score": item.get("score", 0), "why": item.get("why", [])} for item in ranked],
-            "relevantFilesFound": len(ranked),
-            "report": planning_report(repo, directive, ranked, classification),
-            "diff": "",
-            "changes": [],
-            "requiresApproval": False,
-            "message": "Planning report generated. No files written.",
-            "summary": "Planning-only architecture report generated from repository-aware scan.",
             "generatedAt": now_iso(),
-        }, directive, classification)
+        })
+        return hard_validate_proposal(proposal, directive, classification)
     rel = generic_target_path(repo, directive)
     target = (repo.root / rel).resolve()
     try:
@@ -630,6 +511,8 @@ def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> d
         "changes": [change(rel, before, after, "modify" if target.exists() else "create")],
         "generatedAt": now_iso(),
     }
+    proposal.update(brain_layer.generate_execution_metadata(directive, brain_context))
+    proposal["reasoningReport"] = brain_context.get("reasoningReport") or ""
     if not proposal["targetFileReasons"] and classification.get("targetSystem") in {"homepage", "offline-pwa"}:
         proposal["targetFileReasons"] = [{"path": rel, "score": MIN_RELEVANCE_SCORE, "why": ["explicit homepage/offline implementation target"]}]
         proposal["relevanceScores"] = proposal["targetFileReasons"]
@@ -720,15 +603,39 @@ def pulse_labs_page():
         change("scripts/site_functional_audit.py", audit_before, audit_after),
         change("scripts/undx_homepage_audit.py", undx_audit_before, undx_audit_after),
     ]
-    return {
+    scan = scan_repository(repo.root.as_posix())
+    brain_context = brain_layer.analyze_mission(
+        repo.root,
+        directive,
+        scan,
+        safe_read=lambda path: safe_read_text(path, max_bytes=800_000),
+    )
+    classification = brain_context["classification"]
+    proposal = {
         "ok": True,
         "proposalId": f"PROPOSAL-UNDX-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "directive": directive,
+        "proposalType": "implementation",
+        "missionType": classification.get("missionType"),
+        "missionCategory": classification.get("missionCategory"),
+        "targetSystem": classification.get("targetSystem"),
+        "requestedAction": classification.get("requestedAction"),
+        "planningOnly": False,
+        "diffAllowed": True,
+        "targetFiles": [item.get("path") for item in changes],
+        "targetFileReasons": brain_context.get("targetFileReasons") or [],
+        "relevanceScores": brain_context.get("relevanceScores") or [],
+        "relevantFilesFound": brain_context.get("relevantFilesFound") or 0,
+        "reasoningReport": brain_context.get("reasoningReport") or "",
         "summary": "Add a real Pulse Labs page, wire it into Pulse navigation, and extend audits.",
         "approvalPhrase": APPROVAL_PHRASE,
+        "requiresApproval": True,
+        "repositoryAware": True,
         "changes": changes,
         "generatedAt": now_iso(),
     }
+    proposal.update(brain_layer.generate_execution_metadata(directive, brain_context))
+    return hard_validate_proposal(proposal, directive, classification)
 
 
 def generate_proposal(path_value: str | None, directive: str) -> dict[str, Any]:
@@ -787,8 +694,9 @@ def apply_approved_changes(path_value: str | None, proposal: dict[str, Any], app
 
 
 SAFE_VALIDATION_COMMANDS = {
-    "python_compile": ["venv/bin/python", "-m", "py_compile", "bot.py", "undx_execution_kernel.py", "scripts/site_functional_audit.py", "scripts/undx_homepage_audit.py"],
-    "undx_audit": ["venv/bin/python", "scripts/undx_homepage_audit.py"],
+    "python_compile": ["venv/bin/python", "-m", "py_compile", "bot.py", "undx_brain_layer.py", "undx_desktop_connector.py", "undx_execution_kernel.py", "scripts/site_functional_audit.py", "scripts/undx_homepage_audit.py", "scripts/undx_brain_layer_audit.py"],
+    "undx_audit": ["venv/bin/python", "scripts/undx_brain_layer_audit.py"],
+    "undx_homepage_audit": ["venv/bin/python", "scripts/undx_homepage_audit.py"],
     "site_functional_audit": ["venv/bin/python", "scripts/site_functional_audit.py"],
     "performance_audit": ["venv/bin/python", "scripts/performance_audit.py"],
     "pulse_feed_layout_audit": ["venv/bin/python", "scripts/pulse_feed_layout_audit.py"],
