@@ -161,8 +161,20 @@ body:has(.reels-immersive) {
     overflow: hidden;
   }
 
+  body:has(.reels-immersive) .wrap,
+  body:has(.reels-immersive) .layout,
+  body:has(.reels-immersive) .layout > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
   .reels-shell[data-reels-adaptive-shell] {
-    width: 100vw !important;
+    width: 100% !important;
+    max-width: 100% !important;
     height: 100dvh !important;
     min-height: 100dvh !important;
     max-height: none !important;

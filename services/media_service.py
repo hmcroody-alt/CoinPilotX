@@ -331,6 +331,21 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
 
 
 def _image_header_ok(ext, header):
+    return _media_header_ok(ext, header)
+
+
+def _looks_like_text(header):
+    if b"\x00" in header:
+        return False
+    try:
+        header.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+def _media_header_ok(ext, header):
+    header = header or b""
     if ext in {"jpg", "jpeg"}:
         return header.startswith(b"\xff\xd8\xff")
     if ext == "png":
@@ -339,6 +354,24 @@ def _image_header_ok(ext, header):
         return header.startswith((b"GIF87a", b"GIF89a"))
     if ext == "webp":
         return header[:4] == b"RIFF" and header[8:12] == b"WEBP"
+    if ext in {"mp4", "mov", "m4a"}:
+        return b"ftyp" in header[:32]
+    if ext == "webm":
+        return header.startswith(b"\x1a\x45\xdf\xa3")
+    if ext == "mp3":
+        return header.startswith(b"ID3") or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0)
+    if ext == "wav":
+        return header.startswith(b"RIFF") and header[8:12] == b"WAVE"
+    if ext == "ogg":
+        return header.startswith(b"OggS")
+    if ext == "pdf":
+        return header.startswith(b"%PDF-")
+    if ext == "docx":
+        return header.startswith(b"PK\x03\x04")
+    if ext == "doc":
+        return header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    if ext == "txt":
+        return _looks_like_text(header)
     return True
 
 
@@ -433,11 +466,10 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     file_storage.stream.seek(0)
     if size > _limit_bytes(ext):
         return {"ok": False, "message": "File too large. Please upload a smaller media file."}, 400
-    if media_type in {"image", "gif"}:
-        header = file_storage.stream.read(512)
-        file_storage.stream.seek(0)
-        if not _image_header_ok(ext, header):
-            return {"ok": False, "message": "This image or GIF could not be verified safely."}, 400
+    header = file_storage.stream.read(512)
+    file_storage.stream.seek(0)
+    if size and not _media_header_ok(ext, header):
+        return {"ok": False, "message": "This media file could not be verified safely."}, 400
     folder = "pulse_media" if str(context_type or "").startswith("pulse") else "chat_media"
     logging.info(
         "PULSE_MEDIA_UPLOAD_START trace_id=%s user_id=%s context_type=%s context_id=%s filename=%s media_type=%s size=%s provider=%s",
