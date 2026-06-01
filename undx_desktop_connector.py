@@ -70,6 +70,10 @@ PROTECTED_PATTERNS = (
 
 SKIP_DIRS = {".git", "venv", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".undx_backups", ".undx"}
 TEXT_EXTENSIONS = {".py", ".html", ".css", ".js", ".jsx", ".ts", ".tsx", ".vue", ".json", ".md", ".txt", ".toml", ".yml", ".yaml", ".ini", ".cfg", ".sql"}
+NORMAL_READ_LIMIT_BYTES = 250_000
+CHUNKED_READ_LIMIT_BYTES = 2_000_000
+MAX_FILE_READ_LINES = 500
+SEARCH_CONTEXT_LINES = 3
 LANGUAGE_EXTENSIONS = {
     ".py": "Python",
     ".js": "JavaScript",
@@ -230,7 +234,7 @@ def resolve_relative(workspace: Path, relative_path: str) -> Path:
     return target
 
 
-def read_text_file(path: Path, max_bytes: int = 2_000_000) -> str:
+def read_text_file(path: Path, max_bytes: int = CHUNKED_READ_LIMIT_BYTES) -> str:
     if protected(path):
         raise ConnectorError("Protected file blocked.")
     if not path.exists() or not path.is_file():
@@ -240,6 +244,120 @@ def read_text_file(path: Path, max_bytes: int = 2_000_000) -> str:
     if path.stat().st_size > max_bytes:
         raise ConnectorError("File exceeds safe read limit.")
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def file_metadata(path: Path, workspace: Path) -> dict[str, Any]:
+    if protected(path):
+        raise ConnectorError("Protected file blocked.")
+    if not path.exists() or not path.is_file():
+        raise ConnectorError("Requested file does not exist.")
+    if path.suffix.lower() not in TEXT_EXTENSIONS:
+        raise ConnectorError("Unsupported file type for safe read.")
+    size = path.stat().st_size
+    return {
+        "relativePath": path.relative_to(workspace).as_posix(),
+        "fileSizeBytes": size,
+        "normalReadLimitBytes": NORMAL_READ_LIMIT_BYTES,
+        "chunkedReadLimitBytes": CHUNKED_READ_LIMIT_BYTES,
+        "maxLinesPerChunk": MAX_FILE_READ_LINES,
+        "isLarge": size > NORMAL_READ_LIMIT_BYTES,
+        "chunkedReadable": size <= CHUNKED_READ_LIMIT_BYTES,
+    }
+
+
+def read_line_window(path: Path, start_line: int = 1, max_lines: int = MAX_FILE_READ_LINES) -> dict[str, Any]:
+    start_line = max(1, int(start_line or 1))
+    max_lines = max(1, min(MAX_FILE_READ_LINES, int(max_lines or MAX_FILE_READ_LINES)))
+    lines: list[str] = []
+    current_line = 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for current_line, line in enumerate(handle, start=1):
+            if current_line < start_line:
+                continue
+            if len(lines) >= max_lines:
+                break
+            lines.append(line)
+    end_line = start_line + len(lines) - 1 if lines else max(0, start_line - 1)
+    has_more = current_line >= start_line + len(lines)
+    return {
+        "content": "".join(lines),
+        "startLine": start_line,
+        "endLine": end_line,
+        "nextStartLine": end_line + 1 if has_more and lines else None,
+        "hasMore": bool(has_more and lines),
+        "lineCount": len(lines),
+    }
+
+
+def read_search_matches(path: Path, query: str, max_matches: int = 12) -> dict[str, Any]:
+    query = (query or "").strip()
+    if not query:
+        raise ConnectorError("Search query is required.")
+    lowered_query = query.lower()
+    raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    matches: list[dict[str, Any]] = []
+    emitted_lines = 0
+    for index, line in enumerate(raw_lines, start=1):
+        if lowered_query not in line.lower():
+            continue
+        start = max(1, index - SEARCH_CONTEXT_LINES)
+        end = min(len(raw_lines), index + SEARCH_CONTEXT_LINES)
+        snippet_lines = raw_lines[start - 1:end]
+        if emitted_lines + len(snippet_lines) > MAX_FILE_READ_LINES:
+            break
+        matches.append({
+            "line": index,
+            "startLine": start,
+            "endLine": end,
+            "content": "\n".join(snippet_lines),
+        })
+        emitted_lines += len(snippet_lines)
+        if len(matches) >= max_matches:
+            break
+    return {"query": query, "matches": matches, "matchCount": len(matches), "lineCount": emitted_lines}
+
+
+def safe_file_read_response(workspace: Path, target: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    meta = file_metadata(target, workspace)
+    mode = str(payload.get("mode") or payload.get("readMode") or "auto").strip().lower()
+    if not meta["chunkedReadable"]:
+        return {
+            "ok": True,
+            **meta,
+            "content": "",
+            "requiresChunkedRead": False,
+            "message": "File is larger than the 2 MB chunked read safety limit. Use repository search or narrow the target file.",
+            "availableActions": [],
+        }
+    if mode in {"metadata", "summary"}:
+        return {"ok": True, **meta, "content": "", "requiresChunkedRead": meta["isLarge"], "availableActions": ["first", "next", "range", "search"]}
+    if mode == "auto" and not meta["isLarge"]:
+        content = read_text_file(target, max_bytes=NORMAL_READ_LIMIT_BYTES)
+        return {"ok": True, **meta, "content": content, "readMode": "full", "requiresChunkedRead": False}
+    if mode == "auto":
+        return {
+            "ok": True,
+            **meta,
+            "content": "",
+            "readMode": "summary",
+            "requiresChunkedRead": True,
+            "message": "Large file detected. Use first section, next chunk, line range, or search so the browser only receives a small slice.",
+            "availableActions": ["first", "next", "range", "search"],
+        }
+    if mode in {"first", "chunk", "next"}:
+        start_line = int(payload.get("startLine") or payload.get("line") or 1)
+        window = read_line_window(target, start_line=start_line)
+        return {"ok": True, **meta, **window, "readMode": "chunk", "requiresChunkedRead": meta["isLarge"]}
+    if mode == "range":
+        start_line = int(payload.get("startLine") or 1)
+        end_line = int(payload.get("endLine") or start_line + MAX_FILE_READ_LINES - 1)
+        max_lines = max(1, min(MAX_FILE_READ_LINES, end_line - start_line + 1))
+        window = read_line_window(target, start_line=start_line, max_lines=max_lines)
+        return {"ok": True, **meta, **window, "readMode": "range", "requiresChunkedRead": meta["isLarge"]}
+    if mode == "search":
+        matches = read_search_matches(target, str(payload.get("query") or payload.get("search") or ""))
+        return {"ok": True, **meta, **matches, "content": "", "readMode": "search", "requiresChunkedRead": meta["isLarge"]}
+    raise ConnectorError("Unsupported file read mode.")
 
 
 def folder_tree(workspace: Path, max_entries: int = 500) -> list[dict[str, Any]]:
@@ -952,7 +1070,7 @@ def file_read():
     payload = request.get_json(silent=True) or {}
     workspace = resolve_workspace(payload.get("workspacePath"))
     target = resolve_relative(workspace, str(payload.get("relativePath") or payload.get("filePath") or ""))
-    return response({"ok": True, "relativePath": target.relative_to(workspace).as_posix(), "content": read_text_file(target)})
+    return response(safe_file_read_response(workspace, target, payload))
 
 
 @app.route("/proposal/generate", methods=["POST", "OPTIONS"])

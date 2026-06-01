@@ -36,6 +36,7 @@ def main():
     (audit_workspace / "scripts" / "chat_system_audit.py").write_text("print('chat messages rooms groups audit ok')\n", encoding="utf-8")
     (audit_workspace / "static" / "js" / "main.js").write_text("console.log('ok');\n", encoding="utf-8")
     (audit_workspace / "static" / "js" / "pulse_messages.js").write_text("const pulseMessages = ['direct','chat rooms','groups','conversation'];\n", encoding="utf-8")
+    (audit_workspace / "static" / "js" / "large_module.js").write_text("".join(f"console.log('large chunk line {i} search-target');\n" for i in range(1, 9000)), encoding="utf-8")
     (audit_workspace / "static" / "css" / "main.css").write_text("body { color: white; }\n", encoding="utf-8")
     (audit_workspace / "src" / "App.jsx").write_text("export default function App(){ return <main>React</main>; }\n", encoding="utf-8")
     (audit_workspace / "src" / "App.vue").write_text("<template><main>Vue</main></template>\n", encoding="utf-8")
@@ -73,6 +74,33 @@ def main():
 
       protected = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": ".env"})
       expect(protected.status_code == 400, "Protected files are blocked")
+
+      small_read = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": "static/js/main.js"})
+      small_json = small_read.get_json()
+      expect(small_read.status_code == 200 and small_json["readMode"] == "full" and "console.log" in small_json["content"], "Small file reads normally")
+      expect(small_json["fileSizeBytes"] > 0 and small_json["normalReadLimitBytes"] == connector.NORMAL_READ_LIMIT_BYTES, "Small file read reports size and limits")
+
+      large_summary = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": "static/js/large_module.js"})
+      large_summary_json = large_summary.get_json()
+      expect(large_summary.status_code == 200 and large_summary_json["requiresChunkedRead"] is True and large_summary_json["content"] == "", "Large file returns summary instead of full browser payload")
+      expect("first" in large_summary_json["availableActions"] and large_summary_json["fileSizeBytes"] > connector.NORMAL_READ_LIMIT_BYTES, "Large file exposes chunk actions and size")
+
+      first_chunk = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": "static/js/large_module.js", "mode": "first"})
+      first_chunk_json = first_chunk.get_json()
+      expect(first_chunk.status_code == 200 and first_chunk_json["lineCount"] == connector.MAX_FILE_READ_LINES, "Large file first chunk is capped at 500 lines")
+      expect(first_chunk_json["nextStartLine"] == 501 and "large chunk line 500" in first_chunk_json["content"], "Large file first chunk provides next cursor")
+
+      next_chunk = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": "static/js/large_module.js", "mode": "next", "startLine": first_chunk_json["nextStartLine"]})
+      next_chunk_json = next_chunk.get_json()
+      expect(next_chunk.status_code == 200 and next_chunk_json["startLine"] == 501 and next_chunk_json["lineCount"] == connector.MAX_FILE_READ_LINES, "Large file next chunk reads bounded section")
+
+      range_read = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": "static/js/large_module.js", "mode": "range", "startLine": 120, "endLine": 140})
+      range_json = range_read.get_json()
+      expect(range_read.status_code == 200 and range_json["startLine"] == 120 and range_json["endLine"] == 140, "Line range read returns requested bounded lines")
+
+      search_read = post(client, "/file/read", {"workspacePath": audit_workspace.as_posix(), "relativePath": "static/js/large_module.js", "mode": "search", "query": "line 777"})
+      search_json = search_read.get_json()
+      expect(search_read.status_code == 200 and search_json["matchCount"] >= 1 and search_json["matches"][0]["line"] == 777, "Large file search returns context around matches")
 
       proposal = post(client, "/proposal/generate", {"workspacePath": audit_workspace.as_posix(), "taskDescription": "Recreate this website as a premium UNDX analytics landing page"})
       proposal_json = proposal.get_json()
