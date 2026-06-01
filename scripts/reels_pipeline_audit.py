@@ -27,6 +27,7 @@ def require(condition, message):
 def main():
     run("reels_mobile_audit.py")
     run("reels_layout_audit.py")
+    run("reels_upload_ui_audit.py")
     run("reels_media_load_audit.py")
     run("reels_experience_audit.py")
     run("pulse_video_upload_audit.py")
