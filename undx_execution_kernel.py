@@ -112,6 +112,19 @@ COMMUNICATION_KEYWORDS = (
 )
 
 RISKY_FALLBACK_FILES = {"static/offline.html", "templates/offline.html", "offline.html"}
+MIN_RELEVANCE_SCORE = 8
+OFFLINE_SYSTEM_TERMS = ("offline", "pwa", "cache", "service worker", "fallback")
+TARGET_SYSTEM_KEYWORDS = {
+    "communications": COMMUNICATION_KEYWORDS,
+    "pulse-status": ("status", "story", "stories", "pulse status", "create status"),
+    "undx": ("undx", "execution kernel", "desktop connector", "proposal", "repository-aware"),
+    "auth-login": ("auth", "login", "logout", "session", "password", "account"),
+    "payments": ("payment", "stripe", "checkout", "billing", "subscription", "premium"),
+    "admin": ("admin", "command center", "global command", "moderation"),
+    "wallet-guardian": ("wallet guardian", "wallet", "scam", "risk", "address", "token approval"),
+    "homepage": ("homepage", "home page", "landing page", "index", "website"),
+    "offline-pwa": OFFLINE_SYSTEM_TERMS,
+}
 
 
 class KernelError(ValueError):
@@ -347,12 +360,41 @@ def generic_landing_html(directive: str, repository_name: str) -> str:
 """
 
 
+def target_system_for_mission(directive: str) -> str:
+    lowered = (directive or "").lower()
+    scores: dict[str, int] = {}
+    for system, keywords in TARGET_SYSTEM_KEYWORDS.items():
+        score = sum(1 for keyword in keywords if keyword in lowered)
+        if score:
+            scores[system] = score
+    if not scores:
+        return "unknown"
+    return sorted(scores.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def requested_action_for_mission(directive: str) -> str:
+    lowered = (directive or "").lower()
+    if any(word in lowered for word in ("analyze", "scan", "audit", "assess")):
+        return "analyze"
+    if any(word in lowered for word in ("plan", "proposal", "architecture", "blueprint")):
+        return "plan"
+    if any(word in lowered for word in ("fix", "repair", "resolve")):
+        return "fix"
+    if any(word in lowered for word in ("build", "implement", "create", "add", "update", "replace")):
+        return "implement"
+    return "unknown"
+
+
 def classify_mission(directive: str) -> dict[str, Any]:
     lowered = re.sub(r"\s+", " ", directive or "").strip().lower()
     planning_only = any(phrase in lowered for phrase in PLANNING_ONLY_PHRASES)
+    target_system = target_system_for_mission(directive)
+    requested_action = requested_action_for_mission(directive)
+    diff_allowed = False
     if planning_only:
         mission_type = "planning-only"
-        proposal_type = "planning-only"
+        proposal_type = "planning-report"
+        diff_allowed = False
     elif any(word in lowered for word in ("bug", "fix", "failure", "error", "broken", "regression")):
         mission_type = "bug-fix"
         proposal_type = "implementation"
@@ -368,29 +410,41 @@ def classify_mission(directive: str) -> dict[str, Any]:
     elif any(word in lowered for word in ("docs", "documentation", "report", "blueprint")):
         mission_type = "documentation-report"
         proposal_type = "report"
+        diff_allowed = False
     else:
         mission_type = "code-implementation"
         proposal_type = "implementation"
+        diff_allowed = True
+    if not planning_only and proposal_type == "implementation":
+        diff_allowed = True
     return {
         "missionType": mission_type,
         "missionCategory": "architecture-plan" if mission_type == "planning-only" else mission_type,
         "proposalType": proposal_type,
         "planningOnly": planning_only,
+        "diffAllowed": diff_allowed,
+        "targetSystem": target_system,
+        "requestedAction": requested_action,
+        "safetyLevel": "report-only" if planning_only else ("approval-gated" if diff_allowed else "review-only"),
+        "allowedOutputType": "structured planning report" if planning_only else ("unified diff" if diff_allowed else "repository report"),
     }
 
 
-def mission_keywords(directive: str) -> list[str]:
+def mission_keywords(directive: str, target_system: str | None = None) -> list[str]:
     lowered = (directive or "").lower()
     keywords = set(re.findall(r"[a-z][a-z0-9_-]{2,}", lowered))
-    if "pulse communications" in lowered or any(word in keywords for word in ("messenger", "messages", "conversation", "conversations", "chat", "rooms", "groups", "communications")):
+    system = target_system or target_system_for_mission(directive)
+    if system == "communications" or "pulse communications" in lowered or any(word in keywords for word in ("messenger", "messages", "conversation", "conversations", "chat", "rooms", "groups", "communications")):
         keywords.update(COMMUNICATION_KEYWORDS)
+    elif system in TARGET_SYSTEM_KEYWORDS:
+        keywords.update(TARGET_SYSTEM_KEYWORDS[system])
     return sorted(keywords)
 
 
-def score_repository_file(repo: RepositoryPath, rel: str, keywords: list[str]) -> tuple[int, list[str]]:
+def score_repository_file(repo: RepositoryPath, rel: str, keywords: list[str], target_system: str = "unknown") -> tuple[int, list[str]]:
     lowered = rel.lower()
-    if lowered in RISKY_FALLBACK_FILES:
-        return 0, []
+    if lowered in RISKY_FALLBACK_FILES and target_system != "offline-pwa":
+        return 0, ["blocked: offline/PWA fallback file is unrelated to this mission"]
     score = 0
     reasons: list[str] = []
     for keyword in keywords:
@@ -416,36 +470,41 @@ def score_repository_file(repo: RepositoryPath, rel: str, keywords: list[str]) -
     return score, reasons[:6]
 
 
-def ranked_target_files(repo: RepositoryPath, directive: str, limit: int = 12) -> list[dict[str, Any]]:
+def ranked_target_files(repo: RepositoryPath, directive: str, limit: int = 12, target_system: str | None = None) -> list[dict[str, Any]]:
     scan = scan_repository(repo.root.as_posix())
+    target_system = target_system or target_system_for_mission(directive)
     candidates: list[str] = []
     for collection in ("templates", "staticAssets", "scripts"):
         for rel in scan.get(collection) or []:
-            if rel not in candidates and rel not in RISKY_FALLBACK_FILES:
+            if rel in RISKY_FALLBACK_FILES and target_system != "offline-pwa":
+                continue
+            if rel not in candidates:
                 candidates.append(rel)
     for item in scan.get("tree", []):
         rel = str(item.get("path") or "")
-        if item.get("type") == "file" and rel not in candidates and rel not in RISKY_FALLBACK_FILES:
+        if rel in RISKY_FALLBACK_FILES and target_system != "offline-pwa":
+            continue
+        if item.get("type") == "file" and rel not in candidates:
             candidates.append(rel)
     ranked: list[dict[str, Any]] = []
-    keywords = mission_keywords(directive)
+    keywords = mission_keywords(directive, target_system)
     for rel in candidates:
-        score, reasons = score_repository_file(repo, rel, keywords)
+        score, reasons = score_repository_file(repo, rel, keywords, target_system)
         if score > 0:
-            ranked.append({"path": rel, "score": score, "why": reasons or ["matched mission keywords"]})
+            ranked.append({"path": rel, "score": score, "why": reasons or ["matched mission keywords"], "targetSystem": target_system})
     ranked.sort(key=lambda item: (-int(item["score"]), str(item["path"])))
     return ranked[:limit]
 
 
 def planning_report(repo: RepositoryPath, directive: str, targets: list[dict[str, Any]], classification: dict[str, Any]) -> str:
-    target_lines = [f"- {item['path']}: {'; '.join(item.get('why') or ['selected by repository relevance'])}" for item in targets] or ["- No implementation target selected. Report-only mode is active."]
-    target_paths = [item["path"] for item in targets] or ["bot.py", "scripts/messenger_core_audit.py", "scripts/chat_system_audit.py"]
+    target_lines = [f"- {item['path']} — score {item.get('score', 0)} — {'; '.join(item.get('why') or ['selected by repository relevance'])}" for item in targets] or ["- No safe target files found. Proposal requires repository analysis."]
+    target_paths = [item["path"] for item in targets]
     sections = [
-        ("Mission Classification", [f"Mission Type: {classification.get('missionType')}", f"Proposal Type: {classification.get('proposalType')}", "Diff Generation: disabled for planning-only mission"]),
-        ("Repository Communications Map", [f"Repository: {repo.root.name}", "Relevant targets: " + ", ".join(target_paths)]),
+        ("Mission Classification", [f"Mission Type: {classification.get('missionType')}", f"Target System: {classification.get('targetSystem')}", f"Requested Action: {classification.get('requestedAction')}", f"Proposal Type: {classification.get('proposalType')}", f"Diff Allowed: {classification.get('diffAllowed')}", "Diff Generation: disabled for planning-only mission"]),
+        ("Repository Communications Map", [f"Repository: {repo.root.name}", "Relevant targets: " + (", ".join(target_paths) or "No safe target files found. Proposal requires repository analysis.")]),
         ("Problems Found", ["Large planning missions must not be converted into arbitrary HTML rewrites.", "Pulse Communications requires route, model, permission, template, JavaScript, and audit mapping before implementation."]),
         ("Exact Files Involved", target_lines),
-        ("Target Files", [f"- {path}" for path in target_paths]),
+        ("Target Files", [f"- {path}" for path in target_paths] or ["- No safe target files found. Proposal requires repository analysis."]),
         ("Files To Preserve", ["- Existing direct message routes and data", "- Existing rooms/groups behavior", "- Pulse feed, UNDX, Wallet Guardian, admin, and auth"]),
         ("Files To Replace", ["- Legacy communications UI/API only after v2 passes audits"]),
         ("New V2 Files To Create", ["- pulse_communications_v2/models.py", "- pulse_communications_v2/service.py", "- pulse_communications_v2/routes.py", "- pulse_communications_v2/permissions.py"]),
@@ -461,14 +520,37 @@ def planning_report(repo: RepositoryPath, directive: str, targets: list[dict[str
     return "\n".join(lines).strip() + "\n"
 
 
+def hard_validate_proposal(proposal: dict[str, Any], directive: str, classification: dict[str, Any]) -> dict[str, Any]:
+    diff = str(proposal.get("diff") or "")
+    target_files = [str(path) for path in proposal.get("targetFiles") or []]
+    changes = proposal.get("changes") or []
+    if classification.get("planningOnly") and (diff.strip() or changes):
+        raise KernelError("Safety guard blocked diff generation for a planning-only mission.")
+    if classification.get("targetSystem") != "offline-pwa" and any(path in RISKY_FALLBACK_FILES for path in target_files):
+        raise KernelError("Safety guard blocked static/offline.html for a non-offline mission.")
+    if diff and directive.strip() and directive.strip() in diff:
+        raise KernelError("Safety guard blocked raw mission directive text in generated diff.")
+    for item in proposal.get("targetFileReasons") or []:
+        if int(item.get("score") or 0) < MIN_RELEVANCE_SCORE and classification.get("targetSystem") not in {"homepage", "offline-pwa"}:
+            raise KernelError("Safety guard blocked low-relevance target file.")
+    for item in changes:
+        path = str(item.get("path") or "")
+        if classification.get("targetSystem") != "offline-pwa" and path in RISKY_FALLBACK_FILES:
+            raise KernelError("Safety guard blocked unrelated offline fallback rewrite.")
+    return proposal
+
+
 def generic_target_path(repo: RepositoryPath, directive: str) -> str:
     explicit = re.search(r"([\w./-]+\.(?:html|css|js|py|md|txt|json))", directive or "", flags=re.I)
     if explicit:
-        return explicit.group(1).strip("./")
+        candidate = explicit.group(1).strip("./")
+        if candidate in RISKY_FALLBACK_FILES and target_system_for_mission(directive) != "offline-pwa":
+            raise KernelError("Refusing unrelated offline fallback target for this mission.")
+        return candidate
     lowered = (directive or "").lower()
     if any(word in lowered for word in ("index", "landing", "website", "recreate", "home page")):
         return "index.html"
-    ranked = ranked_target_files(repo, directive, limit=1)
+    ranked = ranked_target_files(repo, directive, limit=1, target_system=target_system_for_mission(directive))
     if ranked:
         return str(ranked[0]["path"])
     raise KernelError("No relevant target file was safe enough for diff generation. Generate a planning report first.")
@@ -476,18 +558,28 @@ def generic_target_path(repo: RepositoryPath, directive: str) -> str:
 
 def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> dict[str, Any]:
     classification = classify_mission(directive)
-    ranked = ranked_target_files(repo, directive)
+    ranked = [
+        item for item in ranked_target_files(repo, directive, target_system=classification.get("targetSystem"))
+        if int(item.get("score") or 0) >= MIN_RELEVANCE_SCORE
+    ]
     if classification.get("planningOnly"):
-        return {
+        return hard_validate_proposal({
             "ok": True,
             "proposalId": f"PLAN-UNDX-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
             "directive": directive,
-            "proposalType": "planning-only",
+            "proposalType": "planning-report",
             "missionType": classification.get("missionType"),
             "missionCategory": classification.get("missionCategory"),
+            "targetSystem": classification.get("targetSystem"),
+            "requestedAction": classification.get("requestedAction"),
             "planningOnly": True,
+            "diffAllowed": False,
+            "allowedOutputType": classification.get("allowedOutputType"),
+            "safetyLevel": classification.get("safetyLevel"),
             "targetFiles": [item["path"] for item in ranked],
-            "targetFileReasons": [{"path": item["path"], "why": item.get("why", [])} for item in ranked],
+            "targetFileReasons": [{"path": item["path"], "score": item.get("score", 0), "why": item.get("why", [])} for item in ranked],
+            "relevanceScores": [{"path": item["path"], "score": item.get("score", 0), "why": item.get("why", [])} for item in ranked],
+            "relevantFilesFound": len(ranked),
             "report": planning_report(repo, directive, ranked, classification),
             "diff": "",
             "changes": [],
@@ -495,7 +587,7 @@ def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> d
             "message": "Planning report generated. No files written.",
             "summary": "Planning-only architecture report generated from repository-aware scan.",
             "generatedAt": now_iso(),
-        }
+        }, directive, classification)
     rel = generic_target_path(repo, directive)
     target = (repo.root / rel).resolve()
     try:
@@ -514,16 +606,21 @@ def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> d
         after = before.rstrip() + f"\n\n// UNDX proposal: {directive.strip()[:180]}\n"
     else:
         after = before.rstrip() + f"\n\n# UNDX proposal: {directive.strip()[:180]}\n"
-    return {
+    proposal = {
         "ok": True,
         "proposalId": f"PROPOSAL-UNDX-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "directive": directive,
         "proposalType": "implementation",
         "missionType": classification.get("missionType"),
         "missionCategory": classification.get("missionCategory"),
+        "targetSystem": classification.get("targetSystem"),
+        "requestedAction": classification.get("requestedAction"),
         "planningOnly": False,
+        "diffAllowed": True,
         "targetFiles": [rel],
-        "targetFileReasons": [{"path": item["path"], "why": item.get("why", [])} for item in ranked if item["path"] == rel],
+        "targetFileReasons": [{"path": item["path"], "score": item.get("score", 0), "why": item.get("why", [])} for item in ranked if item["path"] == rel],
+        "relevanceScores": [{"path": item["path"], "score": item.get("score", 0), "why": item.get("why", [])} for item in ranked if item["path"] == rel],
+        "relevantFilesFound": 1,
         "diff": unified_diff(rel, before, after),
         "requiresApproval": True,
         "message": "Implementation proposal generated. Review diff before approval.",
@@ -533,6 +630,10 @@ def propose_generic_repository_change(repo: RepositoryPath, directive: str) -> d
         "changes": [change(rel, before, after, "modify" if target.exists() else "create")],
         "generatedAt": now_iso(),
     }
+    if not proposal["targetFileReasons"] and classification.get("targetSystem") in {"homepage", "offline-pwa"}:
+        proposal["targetFileReasons"] = [{"path": rel, "score": MIN_RELEVANCE_SCORE, "why": ["explicit homepage/offline implementation target"]}]
+        proposal["relevanceScores"] = proposal["targetFileReasons"]
+    return hard_validate_proposal(proposal, directive, classification)
 
 
 def propose_pulse_labs(repo: RepositoryPath, directive: str) -> dict[str, Any]:
