@@ -104,6 +104,12 @@ def main() -> None:
     status, data = request_json(client, "GET", f"/api/pulse/communications/conversations/{room_ref}/messages?limit=80")
     assert_ok(status, data, "communications room messages load")
     expect((data.get("conversation") or {}).get("conversation_type") == "room", "communications room type", str(data))
+    room_slug = str(rooms[0].get("room_id") or rooms[0].get("key") or "general-pulse")
+    status, data = request_json(client, "GET", f"/api/pulse/communications/conversations/room-{room_slug}/messages?limit=80")
+    assert_ok(status, data, "communications room slug messages load")
+    expect((data.get("conversation") or {}).get("conversation_type") == "room", "communications room slug type", str(data))
+    status, data = request_json(client, "POST", f"/api/pulse/communications/conversations/room-{room_slug}/messages", {"body": "communications room slug seed"})
+    assert_ok(status, data, "communications room slug send")
 
     status, data = request_json(client, "POST", "/api/pulse/messages/groups/create", {"title": "Communications Audit Group", "member_ids": [other_id, third_id]})
     assert_ok(status, data, "communications group creates through compatibility route")
@@ -134,6 +140,13 @@ def main() -> None:
 
     status, data = request_json(client, "GET", "/pulse/messages")
     expect(status == 200, "communications frontend route loads", f"status={status}")
+    page_text = data if isinstance(data, str) else ""
+    if not page_text:
+        page_response = client.get("/pulse/messages")
+        page_text = page_response.get_data(as_text=True)
+    expect("Pulse Communications API" in page_text, "communications frontend logs endpoint diagnostics")
+    expect("Pulse Communications messages failed" in page_text, "communications frontend logs message failures")
+    expect("data-comm-room-id" in page_text, "communications frontend carries room ids")
 
     print("pulse communications audit ok")
 
