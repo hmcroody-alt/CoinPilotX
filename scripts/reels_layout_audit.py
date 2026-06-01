@@ -25,6 +25,13 @@ def main():
         ("data-reels-media-stage", "media stage marker"),
         ("data-reels-action-rail", "action rail marker"),
         ("data-reels-caption-overlay", "caption overlay marker"),
+        ("data-reels-desktop-sidebar", "desktop sidebar marker"),
+        ("data-reel-details-panel", "desktop details panel marker"),
+        ("reel-details-panel", "desktop details panel class"),
+        ("reel-comments-preview", "desktop comments preview"),
+        ("reel-inline-comment", "desktop inline comment input"),
+        ("reel-center-play", "custom play control"),
+        ("reel-sound-float", "custom sound control"),
         ("100dvh", "dynamic viewport height"),
         ("--safe-top", "safe top variable"),
         ("--reels-topbar-height", "topbar height variable"),
@@ -35,6 +42,7 @@ def main():
         ("object-fit: contain", "adaptive fit contain"),
         ("object-fit: cover", "adaptive fit cover"),
         ("reels-desktop-intel", "desktop separation"),
+        ("grid-template-columns:minmax(320px", "desktop stage/details grid"),
         ("overflow-x: hidden", "horizontal overflow safeguard"),
     ]
     for needle, label in checks:
