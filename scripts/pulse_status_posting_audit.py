@@ -19,6 +19,7 @@ import bot  # noqa: E402
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
+MOV_BYTES = b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00qt  "
 
 
 def expect(ok: bool, label: str, details: str = ""):
@@ -53,8 +54,14 @@ def ensure_user() -> int:
 def main():
     bot.init_db()
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
+    upload_js = (ROOT / "static/js/pulse_upload_manager.js").read_text(encoding="utf-8")
+    report = (ROOT / "reports/pulse_status_upload_failure.md").read_text(encoding="utf-8")
     expect('for status_table in ("pulse_status", "pulse_statuses")' in source, "Pulse Status has schema drift migration")
     expect('"ai_context_json", "TEXT"' in source and '"media_ids_json", "TEXT"' in source, "Pulse Status migrations preserve style/media fields")
+    for token in ["uploadParseError", "getAllResponseHeaders", "rawBody", "contentType", "Upload returned a non-JSON response"]:
+        expect(token in upload_js, f"upload manager exposes parse diagnostic: {token}")
+    for token in ["PULSE_MEDIA_UPLOAD_ROUTE_HIT", "success", "media_url", "application/json", "pulse_status_upload_failure"]:
+        expect(token in source + report, f"Status upload response diagnostics include {token}")
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = ensure_user()
@@ -94,7 +101,22 @@ def main():
     )
     upload_payload = upload.get_json() or {}
     expect(upload.status_code == 200 and upload_payload.get("ok") and (upload_payload.get("media") or {}).get("id"), "media upload works for Status", upload.get_data(as_text=True)[:400])
+    expect(upload.content_type.startswith("application/json"), "Status media upload returns JSON content type", upload.content_type)
+    expect(upload_payload.get("success") is True and upload_payload.get("media_url") and upload_payload.get("message"), "Status media upload returns frontend-friendly schema", str(upload_payload))
     media_id = int((upload_payload.get("media") or {}).get("id"))
+
+    mov_upload = client.post(
+        "/api/pulse/media/upload",
+        data={"file": (BytesIO(MOV_BYTES), "focused-status.mov"), "context_type": "pulse_status", "context_id": "posting-audit"},
+        content_type="multipart/form-data",
+    )
+    mov_payload = mov_upload.get_json() or {}
+    expect(mov_upload.content_type.startswith("application/json"), "MOV upload response is readable JSON", mov_upload.get_data(as_text=True)[:240])
+    expect(
+        (mov_upload.status_code == 200 and mov_payload.get("ok")) or (mov_upload.status_code in {400, 415} and mov_payload.get("message")),
+        "MOV upload succeeds or reports exact JSON reason",
+        str(mov_payload),
+    )
 
     photo = client.post("/api/pulse/status", json={"status_type": "photo", "media_ids": [media_id], "visibility": "public"})
     photo_payload = photo.get_json() or {}

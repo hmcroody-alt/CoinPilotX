@@ -50,6 +50,46 @@
     }
   }
 
+  function responseHeaders(xhr) {
+    const out = {};
+    String(xhr.getAllResponseHeaders() || "").trim().split(/[\r\n]+/).forEach((line) => {
+      const index = line.indexOf(":");
+      if (index > 0) out[line.slice(0, index).toLowerCase()] = line.slice(index + 1).trim();
+    });
+    return out;
+  }
+
+  function safeRawBody(text) {
+    const body = String(text || "");
+    return body.length > 1200 ? `${body.slice(0, 1200)}...` : body;
+  }
+
+  function uploadParseError(xhr) {
+    const headers = responseHeaders(xhr);
+    const contentType = xhr.getResponseHeader("content-type") || headers["content-type"] || "";
+    const rawBody = safeRawBody(xhr.responseText || "");
+    const diagnostic = {
+      status: xhr.status,
+      contentType,
+      headers,
+      rawBody,
+      url: xhr.responseURL || "",
+    };
+    console.warn("Pulse upload response parse failed", diagnostic);
+    const lower = rawBody.toLowerCase();
+    let message = "Upload returned a non-JSON response from the server.";
+    if (xhr.status === 401 || lower.includes("/login") || lower.includes("login")) {
+      message = "Login expired. Please sign in and try the upload again.";
+    } else if (xhr.status === 413) {
+      message = "Upload is too large. Please choose a smaller video or photo.";
+    } else if (contentType.includes("text/html")) {
+      message = "Upload returned an HTML page instead of JSON. Please retry after refreshing.";
+    } else if (!rawBody.trim()) {
+      message = "Upload returned an empty response. Please retry.";
+    }
+    return { ok: false, message, upload_debug: diagnostic };
+  }
+
   function upload(options) {
     const opts = options || {};
     const file = opts.file;
@@ -86,7 +126,15 @@
       };
       xhr.onload = function () {
         let data = {};
-        try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) { data = { ok: false, message: "Upload returned an unreadable response." }; }
+        try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) { data = uploadParseError(xhr); }
+        if (window.PULSE_UPLOAD_DEBUG) {
+          console.debug("Pulse upload response", {
+            status: xhr.status,
+            contentType: xhr.getResponseHeader("content-type") || "",
+            headers: responseHeaders(xhr),
+            body: safeRawBody(xhr.responseText || ""),
+          });
+        }
         if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
           const error = new Error(data.message || "Upload failed. Tap to retry.");
           render(root, { stage: "failed", percent: 0, message: error.message, type });
