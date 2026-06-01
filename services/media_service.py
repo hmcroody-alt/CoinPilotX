@@ -66,6 +66,29 @@ def _is_image_url(value):
     return any(lowered.endswith(f".{ext}") for ext in IMAGE_EXTS | GIF_EXTS | {"avif"})
 
 
+def mux_playback_urls(playback_id):
+    """Return safe public Mux playback URLs for a playback id, without secrets."""
+    playback_id = str(playback_id or "").strip()
+    if not playback_id:
+        return {"hls_url": "", "thumbnail_url": ""}
+    safe_id = "".join(ch for ch in playback_id if ch.isalnum() or ch in {"_", "-"})
+    if not safe_id:
+        return {"hls_url": "", "thumbnail_url": ""}
+    return {
+        "hls_url": f"https://stream.mux.com/{safe_id}.m3u8",
+        "thumbnail_url": f"https://image.mux.com/{safe_id}/thumbnail.jpg",
+    }
+
+
+def mux_diagnostics():
+    """Expose Mux readiness without revealing token values."""
+    return {
+        "configured": bool(os.getenv("MUX_TOKEN_ID") and os.getenv("MUX_TOKEN_SECRET")),
+        "token_id_configured": bool(os.getenv("MUX_TOKEN_ID")),
+        "token_secret_configured": bool(os.getenv("MUX_TOKEN_SECRET")),
+    }
+
+
 def _public_url_for_path(path):
     resolved = Path(path).resolve()
     static_root = Path("static").resolve()
@@ -212,9 +235,11 @@ def _orientation(width, height, ratio):
 def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_type="", check_remote=False):
     item = dict(media or {})
     storage_key = item.get("storage_key") or item.get("object_key") or item.get("stored_filename") or ""
+    mux_playback_id = item.get("mux_playback_id") or item.get("muxPlaybackId") or item.get("playback_id") or ""
+    mux_urls = mux_playback_urls(mux_playback_id)
     canonical_cdn_url = cdn_url_for_key(storage_key)
     source = url or item.get("cdn_url") or item.get("public_url") or item.get("media_url") or item.get("valid_url") or canonical_cdn_url or ""
-    thumb = thumbnail_url or item.get("thumbnail_url") or item.get("medium_url") or item.get("small_url") or source
+    thumb = thumbnail_url or item.get("thumbnail_url") or item.get("medium_url") or item.get("small_url") or mux_urls["thumbnail_url"] or source
     poster = poster_url or item.get("poster_url") or thumb
     private_source = _cdn_url_from_r2_private_url(source)
     if private_source:
@@ -259,8 +284,23 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             poster = ""
         if not poster and _is_image_url(item.get("thumbnail_url") or ""):
             poster = normalize_url(item.get("thumbnail_url") or "")
-        if thumb and not _is_image_url(thumb):
-            thumb = poster or source
+    if thumb and not _is_image_url(thumb):
+        thumb = poster or source
+    if mux_urls["thumbnail_url"] and not poster:
+        poster = mux_urls["thumbnail_url"]
+    try:
+        duration = float(item.get("duration") or item.get("duration_seconds") or 0)
+    except Exception:
+        duration = 0
+    has_audio = item.get("has_audio")
+    if has_audio is None:
+        has_audio = item.get("audio_tracks")
+    if has_audio is None:
+        has_audio = item.get("audio_track_id")
+    try:
+        has_audio = None if has_audio is None or has_audio == "" else bool(int(has_audio))
+    except Exception:
+        has_audio = bool(has_audio)
     provider = item.get("storage_provider") or item.get("provider") or ("r2" if canonical_cdn_url else "remote" if source.startswith(("http://", "https://")) else media_storage.provider())
     available = item.get("is_available")
     if available is None:
@@ -293,14 +333,20 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     return {
         "id": item.get("id"),
         "valid_url": source if available else "",
-        "cdn_url": canonical_cdn_url,
+        "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
+        "playback_url": mux_urls["hls_url"] or source,
         "thumbnail_url": thumb or source,
         "poster_url": poster_value,
+        "mux_playback_id": mux_playback_id,
+        "mux_hls_url": mux_urls["hls_url"],
+        "mux_thumbnail_url": mux_urls["thumbnail_url"],
         "fallback_url": FALLBACK_URL,
         "media_type": kind,
         "mime_type": item.get("mime_type") or mimetypes.guess_type(source)[0] or "",
         "file_size_bytes": item.get("file_size_bytes") or item.get("file_size") or 0,
+        "duration": duration,
+        "has_audio": has_audio,
         "width": width,
         "height": height,
         "aspect_ratio": ratio,
@@ -310,11 +356,11 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "storage_key": storage_key,
         "bucket": item.get("bucket") or "",
         "object_key": item.get("object_key") or storage_key,
-        "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "verification_status": item.get("verification_status") or ("verified" if available else "failed" if source else "missing"),
         "processing_status": item.get("processing_status") or ("ready" if available else "failed"),
         "trace_id": item.get("trace_id") or "",
         "error_message": item.get("error_message") or item.get("availability_error") or "",
+        "created_at": item.get("created_at") or "",
         "hydration_state": "ready" if available else ("restoring" if source else "missing"),
         "content_type_verified": bool(item.get("mime_type") or mimetypes.guess_type(source)[0]),
         "srcset": srcset,
@@ -322,9 +368,10 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "variants": variants,
         "diagnostics": {
             "source": source,
-            "cdn_url": canonical_cdn_url,
+            "cdn_url": item.get("cdn_url") or canonical_cdn_url,
             "thumbnail": thumb,
             "provider": provider,
+            "mux_playback_id": mux_playback_id,
             "local_path": local_path_for_url(source) if source and not source.startswith(("http://", "https://")) else "",
         },
     }
@@ -408,6 +455,13 @@ def _public(row):
         "bucket": resolved["bucket"],
         "object_key": resolved["object_key"],
         "cdn_url": resolved["cdn_url"],
+        "playback_url": resolved["playback_url"],
+        "mux_playback_id": resolved["mux_playback_id"],
+        "mux_hls_url": resolved["mux_hls_url"],
+        "mux_thumbnail_url": resolved["mux_thumbnail_url"],
+        "duration": resolved["duration"],
+        "has_audio": resolved["has_audio"],
+        "created_at": resolved["created_at"],
         "verification_status": resolved["verification_status"],
         "processing_status": resolved["processing_status"],
         "trace_id": resolved["trace_id"],

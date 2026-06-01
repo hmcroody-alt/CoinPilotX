@@ -80,6 +80,16 @@ def dependency_snapshot() -> dict:
     storage_configured = True
     if storage_provider in {"r2", "s3"}:
         storage_configured = r2_bucket and r2_public_base_url and r2_endpoint and r2_credentials
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffmpeg_version = ""
+    if ffmpeg_path:
+        try:
+            import subprocess
+
+            result = subprocess.run([ffmpeg_path, "-version"], capture_output=True, text=True, timeout=3)
+            ffmpeg_version = (result.stdout.splitlines() or [""])[0][:180]
+        except Exception as exc:
+            ffmpeg_version = f"version unavailable: {exc.__class__.__name__}"
     return {
         "database_url_present": bool(os.getenv("DATABASE_URL")),
         "redis_url_present": bool(os.getenv("REDIS_URL")),
@@ -89,7 +99,12 @@ def dependency_snapshot() -> dict:
         "r2_endpoint_present": r2_endpoint,
         "r2_credentials_present": r2_credentials,
         "r2_public_base_url_present": r2_public_base_url,
-        "ffmpeg_present": bool(shutil.which("ffmpeg")),
+        "ffmpeg_present": bool(ffmpeg_path),
+        "ffmpeg_version": ffmpeg_version,
+        "railway_ffmpeg_hint": "Set RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg when Railway image ffmpeg is missing.",
+        "worker_heartbeat": "coinpilotx-media-engine",
+        "last_processed_media": "",
+        "last_error": "",
         "batch_size": BATCH_SIZE,
         "interval_seconds": INTERVAL_SECONDS,
     }
@@ -204,6 +219,14 @@ def _complete_job(cur, job_id: int, status: str = "done", error: str = "") -> No
     )
 
 
+def _table_has_column(cur, table: str, column: str) -> bool:
+    try:
+        cur.execute(f"PRAGMA table_info({table})")
+        return any(str(row[1]) == column for row in cur.fetchall())
+    except Exception:
+        return False
+
+
 def _fail_or_retry_job(cur, job, error: Exception) -> None:
     attempts = int(job.get("attempts") or 0) + 1
     max_attempts = int(job.get("max_attempts") or MAX_ATTEMPTS)
@@ -220,6 +243,27 @@ def _process_media_job(cur, job) -> None:
     target_id = int(job.get("target_id") or 0)
     if job_type not in MEDIA_JOB_TYPES:
         _complete_job(cur, int(job.get("id") or 0), "done")
+        return
+    if job_type == "process_video" and not shutil.which("ffmpeg"):
+        message = "Video processing is blocked because ffmpeg is not installed. Set RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg on Railway."
+        logging.warning("MEDIA_ENGINE_VIDEO_PROCESSING_BLOCKED job_id=%s target_id=%s reason=%s", job.get("id"), target_id, message)
+        if target_id and _table_has_column(cur, "chat_media_uploads", "processing_status"):
+            error_column = "availability_error" if _table_has_column(cur, "chat_media_uploads", "availability_error") else "moderation_reason"
+            cur.execute(
+                f"""
+                UPDATE chat_media_uploads
+                SET processing_status='processing_blocked',
+                    {error_column}=COALESCE(NULLIF({error_column}, ''), ?)
+                WHERE deleted_at IS NULL
+                  AND (
+                    (context_type IN ('pulse', 'pulse_post', 'pulse_reel') AND context_id=?)
+                    OR message_id=?
+                    OR id=?
+                  )
+                """,
+                (message, str(target_id), target_id, target_id),
+            )
+        _complete_job(cur, int(job.get("id") or 0), "pending_unavailable", message)
         return
     if target_id:
         cur.execute(
