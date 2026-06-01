@@ -447,3 +447,42 @@ Required before activation:
 - Do not replace `/pulse/messages`.
 - Do not change Direct Messages, Pulse feed, UNDX, Wallet Guardian, admin, or auth behavior.
 
+## Phase 2 Implementation Notes
+
+Phase 2 added the inactive backend/data foundation only.
+
+Added package modules:
+
+- `pulse_communications_v2/models.py`
+  - Defines v2-prefixed table contracts for `CommV2Conversation`, `CommV2Message`, `CommV2Participant`, `CommV2Community`, `CommV2Channel`, `CommV2Attachment`, `CommV2MessageReaction`, and `CommV2ReadReceipt`.
+  - Table names use the `comm_v2_` prefix to avoid collisions with `conversations`, `private_messages`, `pulse_conversations`, and `pulse_messages`.
+  - Includes `ensure_schema(cur)` for a future explicit migration call; it is not invoked by current app boot.
+- `pulse_communications_v2/schemas.py`
+  - Adds small dataclass contracts for future service payloads and responses.
+- `pulse_communications_v2/service.py`
+  - Adds no-op methods for `create_conversation`, `list_conversations`, `send_message`, `list_messages`, `create_community`, and `create_channel`.
+  - Methods return disabled responses while `PULSE_COMMUNICATIONS_V2_ENABLED=false`.
+- `pulse_communications_v2/permissions.py`
+  - Adds closed-by-default permission stubs for viewing, sending, community management, and channel moderation.
+- `pulse_communications_v2/routes.py`
+  - Adds the disabled health blueprint at `/api/pulse/comm/v2/health`.
+  - The route returns `{"enabled": false, "status": "disabled"}` while the flag is false.
+- `pulse_communications_v2/foundation_audit.py`
+  - Verifies the flag default, disabled health response, prefixed model contracts, closed permission stubs, no-op services, and absence of v2 navigation on production pages.
+
+What remains inactive:
+
+- No v2 UI is routed from `/pulse/messages`.
+- No current Direct, Rooms, or Groups endpoints are replaced.
+- No destructive database operation runs.
+- No v2 schema installer is called during app startup.
+- No v2 service writes to legacy or production data.
+- No websocket, Redis, R2, Mux, TURN/STUN, UNDX, or Wallet Guardian v2 integration is active yet.
+
+Next activation gates:
+
+- Add explicit migration command for `comm_v2_*` tables.
+- Add shadow-read adapters from legacy and Pulse tables.
+- Add dual-write only for controlled staff testing.
+- Add route registration guards for future non-health v2 endpoints.
+- Add browser QA before any production UI opt-in.
