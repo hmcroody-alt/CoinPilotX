@@ -427,12 +427,12 @@ def process_playback_backlog(limit: int = 2) -> dict:
           AND COALESCE(playback_storage_key, '')=''
           AND (
             LOWER(COALESCE(mime_type, '')) IN ('video/quicktime', 'application/quicktime')
-            OR LOWER(COALESCE(storage_key, object_key, media_url, '')) LIKE '%.mov'
+            OR LOWER(COALESCE(storage_key, object_key, media_url, '')) LIKE ?
           )
         ORDER BY id DESC
         LIMIT ?
         """,
-        (max(1, min(int(limit or 2), 5)),),
+        ("%.mov", max(1, min(int(limit or 2), 5))),
     )
     rows = [dict(row) for row in cur.fetchall()]
     processed = 0
