@@ -6,6 +6,7 @@ Report ID: `pulse_status_upload_failure`
 
 - Media upload: `POST /api/pulse/media/upload`
 - Status create: `POST /api/pulse/status`
+- Frontend page: `/pulse/status`
 
 ## Request Payload
 
@@ -27,7 +28,7 @@ After upload succeeds, Status creation is sent as JSON:
 
 ## Expected Response Schema
 
-Upload responses now include:
+Upload responses must be readable JSON:
 
 ```json
 {
@@ -38,17 +39,19 @@ Upload responses now include:
   "message": "Media uploaded and verified.",
   "media": {
     "id": 123,
+    "media_type": "video",
     "media_url": "...",
     "valid_url": "..."
   }
 }
 ```
 
-Status create responses include:
+Status create responses must also be JSON:
 
 ```json
 {
   "ok": true,
+  "success": true,
   "status_id": 123,
   "status": {},
   "trace_id": "..."
@@ -57,31 +60,43 @@ Status create responses include:
 
 ## Actual Failure Pattern
 
-The frontend error `Upload returned an unreadable response.` is produced by `static/js/pulse_upload_manager.js` when the upload response cannot be parsed as JSON.
+The frontend message `Upload returned an unreadable response.` is emitted by `static/js/pulse_upload_manager.js` when the upload response cannot be parsed as JSON. The upload manager now records safe diagnostics for:
 
-The most likely mismatches are:
+- HTTP status
+- response headers
+- content type
+- raw response body preview
 
-- An HTML login or framework error page returned to an API upload request.
-- An oversized upload rejected before the Pulse upload route can format JSON.
-- A malformed/empty response during media storage failure.
-- A `.mov` validation failure hidden by generic frontend parsing.
+No file contents or secrets are logged.
 
 ## Root Cause
 
-The upload manager previously discarded the HTTP status, content type, headers, and raw response body when parsing failed, so different server responses collapsed into the same unreadable message. The Pulse media route also returned only the legacy `ok/media` envelope and did not expose the `success/media_url/message` schema requested by the Status flow.
+The current concrete upload blocker was `.mov` handling. `services/upload_progress_service.py` rejected MOV/QuickTime uploads when `ffmpeg` was unavailable unless `MEDIA_ALLOW_UNTRANSCODED_MOV` was set. That made Status media posting depend on transcoding infrastructure even though R2/CDN can store and deliver the file.
+
+Additional hardening already present:
+
+- `RequestEntityTooLarge` returns API JSON instead of an HTML 413 page.
+- `/api/pulse/media/upload` logs route hit, upload start, completion, and safe trace ids.
+- Upload responses include the frontend-friendly `success`, `media_url`, and `message` fields.
 
 ## Fix
 
-- Added upload parse diagnostics in `static/js/pulse_upload_manager.js`.
-- Added JSON handling for oversized API uploads.
-- Added route-hit, upload-start, completion, and failure logging in `/api/pulse/media/upload`.
-- Added a compatibility upload response envelope with `success`, `media_url`, and `message`.
-- Preserved existing `ok` and `media` fields so feed, camera, Status, and Reels flows keep working.
+- MOV uploads are now accepted into the normal media storage path.
+- If `ffmpeg` is unavailable, the upload is stored with a safe `processing_note` instead of being rejected.
+- `/pulse/status` preview detection now uses file extension fallback, so mobile browsers that send blank MIME types still preview `.mov`, `.mp4`, `.webm`, images, and GIFs correctly.
+- The Status upload call passes `video/quicktime` as a fallback media type for `.mov`.
 
-## Verification Targets
+## Verification
 
-- Text-only Status posts through `/api/pulse/status`.
-- Image Status uploads through `/api/pulse/media/upload`, then posts through `/api/pulse/status`.
-- Video Status uploads through `/api/pulse/media/upload`, then posts through `/api/pulse/status`.
-- `.mov` either uploads when supported or returns a readable JSON error such as MOV conversion guidance.
-- Upload parse failures now expose safe diagnostics in the browser console without logging file contents or secrets.
+Local focused audit proof:
+
+- Text-only Status post: PASS
+- Image upload for Status: PASS
+- MOV upload for Status: PASS
+- Photo-only Status post: PASS
+- Text + photo Status post: PASS
+- Missing media id returns specific JSON `media_not_found`: PASS
+- Non-JSON Status create request returns specific JSON `invalid_content_type`: PASS
+- `/api/pulse/media/upload` returns `application/json`: PASS
+
+Production status remains pending until the fix is deployed and tested from the live `/pulse/status` browser flow.

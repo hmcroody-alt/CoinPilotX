@@ -79,8 +79,8 @@ def main():
     upload_progress = (ROOT / "services/upload_progress_service.py").read_text(encoding="utf-8")
     storage = (ROOT / "services/media_storage.py").read_text(encoding="utf-8")
     for token in [
-        "MOV videos need conversion before posting",
-        "MEDIA_ALLOW_UNTRANSCODED_MOV",
+        "PULSE_UPLOAD_MOV_STORED_WITHOUT_TRANSCODE",
+        "processing_note",
         "_content_type_for_upload",
         "ContentType",
     ]:

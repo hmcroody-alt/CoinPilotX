@@ -112,11 +112,8 @@ def main():
     )
     mov_payload = mov_upload.get_json() or {}
     expect(mov_upload.content_type.startswith("application/json"), "MOV upload response is readable JSON", mov_upload.get_data(as_text=True)[:240])
-    expect(
-        (mov_upload.status_code == 200 and mov_payload.get("ok")) or (mov_upload.status_code in {400, 415} and mov_payload.get("message")),
-        "MOV upload succeeds or reports exact JSON reason",
-        str(mov_payload),
-    )
+    expect(mov_upload.status_code == 200 and mov_payload.get("ok"), "MOV upload succeeds for Status media", str(mov_payload))
+    expect((mov_payload.get("media") or {}).get("media_type") == "video", "MOV upload is stored as video", str(mov_payload))
 
     photo = client.post("/api/pulse/status", json={"status_type": "photo", "media_ids": [media_id], "visibility": "public"})
     photo_payload = photo.get_json() or {}

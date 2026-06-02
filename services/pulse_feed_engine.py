@@ -718,7 +718,8 @@ def intelligence_panel(topic=""):
     for row in cur.fetchall():
         for tag in _json(row["tags_json"], []):
             counts[tag] = counts.get(tag, 0) + 1
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE created_at>=date('now') AND deleted_at IS NULL")
+    today_cutoff = datetime.utcnow().date().isoformat()
+    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE created_at>=? AND deleted_at IS NULL", (today_cutoff,))
     posts_today = int((_row(cur.fetchone()) or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'")
     open_reports = int((_row(cur.fetchone()) or {}).get("total") or 0)

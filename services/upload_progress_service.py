@@ -51,13 +51,15 @@ def validate_media_file(file_storage) -> dict:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     mime_type = (getattr(file_storage, "mimetype", "") or "").lower()
     media_type = "video" if ext in VIDEO_EXTENSIONS or mime_type in VIDEO_MIME_TYPES else "image"
-    if ext == "mov" or mime_type in {"video/quicktime", "application/quicktime"}:
-        if not shutil.which("ffmpeg") and os.getenv("MEDIA_ALLOW_UNTRANSCODED_MOV", "").lower() not in {"1", "true", "yes"}:
-            return {
-                "ok": False,
-                "message": "MOV videos need conversion before posting. Please upload MP4/WebM, or enable the media transcoder.",
-                "status": 415,
-            }
+    mov_without_transcode = (
+        ext == "mov" or mime_type in {"video/quicktime", "application/quicktime"}
+    ) and not shutil.which("ffmpeg")
+    if mov_without_transcode:
+        logging.info(
+            "PULSE_UPLOAD_MOV_STORED_WITHOUT_TRANSCODE filename=%s mime_type=%s",
+            filename[:180],
+            mime_type,
+        )
     if media_type == "video" and mime_type and not (mime_type.startswith("video/") or mime_type == "application/octet-stream"):
         return {"ok": False, "message": "That video type is not supported.", "status": 400}
     if media_type != "video" and mime_type and not (mime_type.startswith(IMAGE_MIME_PREFIX) or mime_type == "application/octet-stream"):
@@ -74,7 +76,13 @@ def validate_media_file(file_storage) -> dict:
         return {"ok": False, "message": "Video is too large. Please upload a shorter or compressed clip.", "status": 400}
     if media_type != "video" and size and size > max_image:
         return {"ok": False, "message": "Image is too large. Please upload a smaller image.", "status": 400}
-    return {"ok": True, "media_type": media_type, "mime_type": mime_type, "size": size}
+    return {
+        "ok": True,
+        "media_type": media_type,
+        "mime_type": mime_type,
+        "size": size,
+        "requires_transcode": bool(mov_without_transcode),
+    }
 
 
 def verify_media(media: dict) -> dict:
@@ -127,6 +135,8 @@ def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_uploa
         }, status
     verified = verify_media(media or {})
     media = {**(media or {}), **verified}
+    if validation.get("requires_transcode"):
+        media["processing_note"] = "MOV uploaded. Browser playback may vary until video transcoding is enabled."
     if media_storage.provider() in {"r2", "s3"} and not media.get("verified"):
         logging.error(
             "PULSE_UPLOAD_R2_VERIFY_FAILED trace_id=%s user_id=%s context_type=%s media_id=%s media_url=%s provider=%s",

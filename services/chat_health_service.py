@@ -170,7 +170,7 @@ def repair_stale_sessions(cur) -> dict:
             SET deleted_at=COALESCE(NULLIF(deleted_at,''), ?), status='hidden', delivery_status='hidden'
             WHERE COALESCE(deleted_at,'')=''
               AND COALESCE(message_type,'') IN ('system','system_join','chat_event')
-              AND lower(COALESCE(body,'')) LIKE '% joined'
+              AND lower(COALESCE(body,'')) LIKE '%% joined'
             """,
             (_now(),),
         )
