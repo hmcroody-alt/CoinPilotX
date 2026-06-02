@@ -187,6 +187,17 @@ def get_object(storage_key, byte_range=""):
     return client.get_object(**params)
 
 
+def head_object(storage_key):
+    """Return durable object metadata without opening the media body."""
+    key = str(storage_key or "").strip().replace("\\", "/").lstrip("/")
+    if not key or ".." in key.split("/"):
+        raise ValueError("Invalid media object key.")
+    client = object_client()
+    if client is None:
+        raise RuntimeError("Durable media storage is not configured.")
+    return client.head_object(Bucket=os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), Key=key)
+
+
 def save_public_file(file_storage, folder="media"):
     if not file_storage or not getattr(file_storage, "filename", ""):
         raise ValueError("No media file provided.")

@@ -119,6 +119,11 @@ def main() -> None:
     )
     expect(converted["playback_url"] == "/api/pulse/media/92/stream", "Converted playback URL is preserved")
     expect("/api/pulse/media/<int:media_id>/stream" in source, "Pulse media stream endpoint exists")
+    stream_route = source[source.index('def api_pulse_media_stream'):source.index('@webhook_app.route("/api/pulse/media/process"')]
+    expect("init_db()" not in stream_route, "Pulse stream route avoids per-request schema initialization")
+    expect("PULSE_MEDIA_STREAM_MAX_CHUNK_BYTES" in stream_route, "Pulse stream route caps origin byte ranges")
+    expect("head_object(storage_key)" in stream_route, "Pulse stream route uses metadata before opening object body")
+    expect("Content-Range" in stream_route and "Range not satisfiable" in stream_route, "Pulse stream route supports HTTP byte ranges")
     expect('"playback_url": resolved.get("playback_url")' in (ROOT / "services/pulse_feed_engine.py").read_text(encoding="utf-8"), "Pulse feed payload preserves resolved playback URL")
 
     client = bot.webhook_app.test_client()
