@@ -142,6 +142,7 @@ def ensure_media_worker_schema() -> None:
         ("playback_storage_key", "TEXT"),
         ("playback_mime_type", "TEXT"),
         ("transcoded_at", "TEXT"),
+        ("mux_status", "TEXT"),
     ], conn=conn)
     conn.commit()
     conn.close()

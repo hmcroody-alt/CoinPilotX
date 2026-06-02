@@ -4,6 +4,8 @@ import mimetypes
 import os
 import secrets
 import logging
+import base64
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -87,6 +89,71 @@ def mux_diagnostics():
         "token_id_configured": bool(os.getenv("MUX_TOKEN_ID")),
         "token_secret_configured": bool(os.getenv("MUX_TOKEN_SECRET")),
     }
+
+
+def _mux_auth_header():
+    token_id = os.getenv("MUX_TOKEN_ID", "").strip()
+    token_secret = os.getenv("MUX_TOKEN_SECRET", "").strip()
+    if not token_id or not token_secret:
+        return ""
+    raw = f"{token_id}:{token_secret}".encode("utf-8")
+    return "Basic " + base64.b64encode(raw).decode("ascii")
+
+
+def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
+    """Create a public Mux playback asset from an already durable media URL."""
+    input_url = normalize_url(input_url)
+    auth_header = _mux_auth_header()
+    if not input_url or not input_url.startswith("https://") or not auth_header:
+        return {"ok": False, "status": "not_configured" if not auth_header else "missing_input"}
+    payload = {
+        "input": input_url,
+        "playback_policy": ["public"],
+        "mp4_support": "standard",
+    }
+    request = Request(
+        "https://api.mux.com/video/v1/assets",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": auth_header,
+            "Content-Type": "application/json",
+            "User-Agent": "CoinPilotX-MuxMedia/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=float(os.getenv("MUX_ASSET_CREATE_TIMEOUT_SECONDS", "8"))) as response:
+            body = response.read().decode("utf-8", "replace")
+            data = json.loads(body or "{}")
+    except Exception as exc:
+        logging.warning(
+            "PULSE_MUX_ASSET_CREATE_FAILED trace_id=%s media_id=%s error=%s",
+            trace_id,
+            media_id,
+            str(exc)[:300],
+        )
+        return {"ok": False, "status": "failed", "error": str(exc)[:500]}
+    asset = data.get("data") or {}
+    playback_ids = asset.get("playback_ids") or []
+    playback_id = ""
+    for item in playback_ids:
+        if item.get("policy") == "public" or not playback_id:
+            playback_id = item.get("id") or ""
+    result = {
+        "ok": bool(asset.get("id") and playback_id),
+        "asset_id": asset.get("id") or "",
+        "playback_id": playback_id,
+        "status": asset.get("status") or "created",
+    }
+    logging.info(
+        "PULSE_MUX_ASSET_CREATED trace_id=%s media_id=%s mux_asset_id=%s mux_playback_id=%s mux_status=%s",
+        trace_id,
+        media_id,
+        result["asset_id"],
+        result["playback_id"],
+        result["status"],
+    )
+    return result
 
 
 def _public_url_for_path(path):
@@ -249,6 +316,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     item = dict(media or {})
     storage_key = item.get("storage_key") or item.get("object_key") or item.get("stored_filename") or ""
     mux_playback_id = item.get("mux_playback_id") or item.get("muxPlaybackId") or item.get("playback_id") or ""
+    mux_status = str(item.get("mux_status") or "").strip().lower()
     mux_urls = mux_playback_urls(mux_playback_id)
     canonical_cdn_url = cdn_url_for_key(storage_key)
     source = url or item.get("cdn_url") or item.get("public_url") or item.get("media_url") or item.get("valid_url") or canonical_cdn_url or ""
@@ -345,20 +413,25 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     poster_value = (poster or thumb or source)
     if kind == "video" and _is_video_url(poster_value):
         poster_value = ""
+    mux_ready = bool(mux_urls["hls_url"] and (not mux_status or mux_status in {"ready", "asset_ready", "available"}))
+    mux_playback_url = mux_urls["hls_url"] if mux_ready else ""
     return {
         "id": item.get("id"),
         "valid_url": source if available else "",
         "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
-        "playback_url": mux_urls["hls_url"] or saved_playback_url or first_party_stream or source,
+        "playback_url": mux_playback_url or saved_playback_url or first_party_stream or source,
         "thumbnail_url": thumb or source,
         "poster_url": poster_value,
         "mux_playback_id": mux_playback_id,
+        "mux_asset_id": item.get("mux_asset_id") or "",
+        "mux_status": mux_status or item.get("mux_status") or "",
         "mux_hls_url": mux_urls["hls_url"],
         "mux_thumbnail_url": mux_urls["thumbnail_url"],
         "fallback_url": FALLBACK_URL,
         "media_type": kind,
         "mime_type": item.get("mime_type") or mimetypes.guess_type(source)[0] or "",
+        "playback_mime_type": item.get("playback_mime_type") or ("application/vnd.apple.mpegurl" if mux_playback_url else ("video/mp4" if first_party_stream and kind == "video" else "")),
         "file_size_bytes": item.get("file_size_bytes") or item.get("file_size") or 0,
         "duration": duration,
         "has_audio": has_audio,
@@ -387,6 +460,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             "thumbnail": thumb,
             "provider": provider,
             "mux_playback_id": mux_playback_id,
+            "mux_status": mux_status or "",
             "local_path": local_path_for_url(source) if source and not source.startswith(("http://", "https://")) else "",
         },
     }
@@ -474,6 +548,8 @@ def _public(row):
         "playback_storage_key": item.get("playback_storage_key") or "",
         "playback_mime_type": item.get("playback_mime_type") or "",
         "mux_playback_id": resolved["mux_playback_id"],
+        "mux_asset_id": resolved["mux_asset_id"],
+        "mux_status": resolved["mux_status"],
         "mux_hls_url": resolved["mux_hls_url"],
         "mux_thumbnail_url": resolved["mux_thumbnail_url"],
         "duration": resolved["duration"],
@@ -648,6 +724,38 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         )
     except Exception:
         pass
+    if media_type == "video" and mux_diagnostics().get("configured"):
+        mux_input_url = cdn_url or url
+        mux = create_mux_asset_from_url(mux_input_url, trace_id=upload_trace, media_id=media_id)
+        if mux.get("ok"):
+            try:
+                cur.execute(
+                    """
+                    UPDATE chat_media_uploads
+                    SET mux_asset_id=?, mux_playback_id=?, mux_status=?,
+                        processing_status=CASE WHEN ? IN ('ready','asset_ready','available') THEN 'ready' ELSE 'mux_processing' END,
+                        updated_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        mux.get("asset_id") or "",
+                        mux.get("playback_id") or "",
+                        mux.get("status") or "created",
+                        mux.get("status") or "created",
+                        _now(),
+                        media_id,
+                    ),
+                )
+            except Exception as exc:
+                logging.warning("PULSE_MUX_ASSET_STORE_FAILED trace_id=%s media_id=%s error=%s", upload_trace, media_id, str(exc)[:300])
+        else:
+            try:
+                cur.execute(
+                    "UPDATE chat_media_uploads SET mux_status=?, updated_at=? WHERE id=?",
+                    (mux.get("status") or "failed", _now(), media_id),
+                )
+            except Exception:
+                pass
     conn.commit()
     cur.execute("SELECT * FROM chat_media_uploads WHERE id=?", (media_id,))
     row = cur.fetchone()

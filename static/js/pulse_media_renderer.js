@@ -9,6 +9,7 @@
   const SOUND_KEY = "pulseMediaSoundEnabled";
   const REELS_SOUND_KEY = "pulseReelsSoundEnabled";
   const metadataCache = new Map();
+  let hlsLoaderPromise = null;
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
@@ -46,6 +47,32 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function isHlsUrl(url) {
+    return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
+  }
+
+  function loadHlsLibrary() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    if (hlsLoaderPromise) return hlsLoaderPromise;
+    hlsLoaderPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector("script[data-pulse-hls-js]");
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.Hls), { once: true });
+        existing.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
+      script.async = true;
+      script.defer = true;
+      script.dataset.pulseHlsJs = "1";
+      script.onload = () => resolve(window.Hls);
+      script.onerror = () => reject(new Error("HLS playback loader failed."));
+      document.head.appendChild(script);
+    });
+    return hlsLoaderPromise;
   }
 
   function mediaDebugEnabled() {
@@ -97,12 +124,12 @@
     const muxHlsUrl = safeUrl(item.mux_hls_url || item.hls_url || (muxPlaybackId ? `https://stream.mux.com/${muxPlaybackId}.m3u8` : ""));
     const muxThumbnailUrl = safeUrl(item.mux_thumbnail_url || (muxPlaybackId ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg` : ""));
     const directUrl = safeUrl(item.valid_url || item.cdn_url || item.media_url || item.url || item.src || "");
-    const playbackUrl = safeUrl(item.playback_url || (muxHlsUrl && nativeHlsSupported() ? muxHlsUrl : "") || directUrl);
+    const playbackUrl = safeUrl(item.playback_url || muxHlsUrl || directUrl);
     const url = playbackUrl || directUrl;
     const thumb = safeUrl(item.thumbnail_url || item.thumbnail || item.thumb || muxThumbnailUrl || "");
     const poster = safeUrl(item.poster_url || item.poster || muxThumbnailUrl || thumb || "");
     const type = inferMediaType(item, url);
-    const mime = String(item.mime_type || item.mime || (type === "video" ? "video/mp4" : type === "image" ? "image/jpeg" : "")).toLowerCase();
+    const mime = String(isHlsUrl(url) ? "application/vnd.apple.mpegurl" : item.playback_mime_type || item.mime_type || item.mime || (type === "video" ? "video/mp4" : type === "image" ? "image/jpeg" : "")).toLowerCase();
     const id = item.id || item.media_id || item.message_id || item.reel_id || "";
     const hasAudio = item.has_audio === undefined || item.has_audio === null || item.has_audio === "" ? "" : String(item.has_audio === true || item.has_audio === 1 || item.has_audio === "1" || item.has_audio === "true");
     return {
@@ -116,6 +143,7 @@
       type,
       mime,
       mux_playback_id: muxPlaybackId,
+      playback_mime_type: String(item.playback_mime_type || "").toLowerCase(),
       mux_hls_url: muxHlsUrl,
       mux_thumbnail_url: muxThumbnailUrl,
       duration: Number(item.duration || item.duration_seconds || 0),
@@ -428,6 +456,45 @@
     media.src = url;
   }
 
+  async function attachHlsPlayback(wrap, video) {
+    const src = mediaUrl(wrap) || videoSource(video);
+    if (!video || !isHlsUrl(src) || video.dataset.pulseHlsBound === "1") return;
+    video.dataset.pulseHlsBound = "1";
+    if (nativeHlsSupported()) {
+      if (!video.src) video.src = src;
+      return;
+    }
+    try {
+      const Hls = await loadHlsLibrary();
+      if (!Hls?.isSupported?.()) {
+        throw new Error("HLS is not supported in this browser.");
+      }
+      const source = video.querySelector("source");
+      if (source) source.remove();
+      const hls = new Hls({
+        capLevelToPlayerSize: true,
+        maxBufferLength: 18,
+        backBufferLength: 12,
+      });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      video._pulseHls = hls;
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data?.fatal) return;
+        reportVideoDiagnostics(wrap, video, "hls_error");
+        hls.destroy();
+        video.dataset.pulseHlsBound = "";
+        failMedia(wrap, video);
+      });
+    } catch (error) {
+      if (mediaDebugEnabled()) console.warn("Pulse HLS attach failed", {
+        media_id: wrap?.dataset.mediaId || "",
+        src,
+        message: error?.message || String(error),
+      });
+    }
+  }
+
   function videoErrorDetails(video) {
     const error = video?.error;
     const codes = {
@@ -587,6 +654,7 @@
       return;
     }
     bindVideoAmbient(wrap, media);
+    attachHlsPlayback(wrap, media);
     bindAutoplayVideo(wrap, media);
     const cached = metadataCache.get(videoSource(media) || canonicalSrc);
     if (cached) {
