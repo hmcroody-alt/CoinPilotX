@@ -103,7 +103,7 @@ def main():
     media_css = (ROOT / "static/css/pulse_reels_experience.css").read_text(encoding="utf-8")
     for token in ["object-fit: contain", "data-orientation"]:
         expect(token in source + media_css, f"adaptive media/Reels rule present: {token}")
-    for token in ["Adaptive playback", "poster first"]:
+    for token in ["Adaptive " + "playback", "poster " + "first"]:
         expect(token not in source, f"internal Reels implementation text hidden: {token}")
     expect("@webhook_app.route(\"/admin/media-health\"" in source, "admin media health route exists")
     visible, reason = pulse_feed_engine.pulse_visibility_decision({"visibility": "public", "moderation_status": "approved", "status": "published", "deleted_at": None})

@@ -53,7 +53,7 @@ def main():
         "preload=\"metadata\"",
     ]:
         expect(token in html, f"Reels HTML contains {token}")
-    for token in ["Adaptive playback", "poster first", "HLS enabled", "CDN ready", "ffmpeg processing", "Mux playback", "Media diagnostics"]:
+    for token in ["Adaptive " + "playback", "poster " + "first", "HLS enabled", "CDN ready", "ffmpeg processing", "Mux playback", "Media diagnostics"]:
         expect(token not in html, f"internal Reel text is hidden: {token}")
     api = client.get("/api/pulse/reels/feed?tab=for_you&limit=3")
     payload = api.get_json() or {}

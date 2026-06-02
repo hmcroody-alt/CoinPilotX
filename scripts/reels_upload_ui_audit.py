@@ -57,24 +57,28 @@ def main() -> None:
     for token in [
         "reelUploadZone",
         "Upload Reel Video",
-        "Drag and drop or choose file",
-        "Supported: MP4, MOV, WEBM",
+        "Choose a video from your device",
+        "MP4, MOV, or WEBM",
+        "reel-upload-select-button",
         "MEDIA_UPLOAD_MAX_VIDEO_MB",
         "reelUploadPreview",
         "reelUploadThumb",
         "reelUploadDuration",
         "reelUploadResolution",
         "reelUploadSize",
+        "reelUploadMime",
         "reelReplaceVideo",
         "reelRemoveVideo",
         "id='reelPublishBtn' type='submit' disabled",
+        "Choose a video before publishing your Reel.",
         "renderReelUploadPreview",
         "DataTransfer",
         "reel-upload-zone",
         "min-height:180px",
     ]:
         expect(token in html or token in source, f"Reels upload UI contains {token}")
-    for token in ["Adaptive playback", "poster first", "HLS enabled", "CDN ready", "ffmpeg processing", "Mux playback", "Media diagnostics"]:
+    expect(html.find("reelUploadZone") < html.find("reelUploadCategory") < html.find("selectedSoundLabel"), "upload control appears before community and sound controls")
+    for token in ["Adaptive " + "playback", "poster " + "first", "HLS enabled", "CDN ready", "ffmpeg processing", "Mux playback", "Media diagnostics"]:
         expect(token not in html, f"internal upload text hidden: {token}")
     print("reels upload ui audit ok")
 
