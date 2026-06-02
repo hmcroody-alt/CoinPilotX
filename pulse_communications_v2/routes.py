@@ -1,21 +1,14 @@
-"""Pulse Communications 2.0 route blueprint."""
+"""Pulse Communications 2.0 routes."""
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 
-from .flags import PULSE_COMMUNICATIONS_V2_ENABLED
-from . import service
+from . import flags, service
 
 
 comm_v2_blueprint = Blueprint("pulse_communications_v2", __name__)
-
-
-@comm_v2_blueprint.get("/api/pulse/comm/v2/health")
-def health():
-    if not PULSE_COMMUNICATIONS_V2_ENABLED:
-        return jsonify({"enabled": False, "status": "disabled"})
-    return jsonify({"enabled": True, "status": "ready"})
+API_PREFIX = "/api/pulse/communications/v2"
 
 
 def _bot():
@@ -28,113 +21,232 @@ def _current_user():
     return _bot().api_account_user()
 
 
+def _current_admin():
+    try:
+        return _bot().admin_current_user()
+    except Exception:
+        return None
+
+
 def _json(payload: dict):
     status = int(payload.pop("http_status", 200 if payload.get("ok") else 400) or 200)
-    return jsonify(payload), status
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response, status
 
 
-@comm_v2_blueprint.get("/api/pulse/comm/v2/conversations")
-def conversations():
+def _require_user():
     user = _current_user()
     if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+        return None, (jsonify({"ok": False, "status": "error", "message": "Login required."}), 401)
+    return user, None
+
+
+@comm_v2_blueprint.get("/pulse/messages-v2")
+def messages_v2_page():
+    user = _current_user()
+    if not user:
+        return _bot().redirect(_bot().url_for("login", next="/pulse/messages-v2"))
+    return render_template("pulse_messages_v2.html", enabled=flags.is_enabled(), current_user=user)
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/health")
+@comm_v2_blueprint.get("/api/pulse/comm/v2/health")
+def health():
+    return jsonify({"enabled": flags.is_enabled(), "status": "ready" if flags.is_enabled() else "disabled"})
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations")
+@comm_v2_blueprint.get("/api/pulse/comm/v2/conversations")
+def conversations():
+    user, denied = _require_user()
+    if denied:
+        return denied
     return _json(service.list_conversations(user["user_id"], {"type": request.args.get("type") or "all"}))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations")
 @comm_v2_blueprint.post("/api/pulse/comm/v2/conversations")
 def create_conversation():
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     return _json(service.create_conversation(user["user_id"], request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/direct/open")
 @comm_v2_blueprint.post("/api/pulse/comm/v2/direct/open")
 def open_direct():
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     payload["conversation_type"] = "direct"
     return _json(service.create_conversation(user["user_id"], payload))
 
 
-@comm_v2_blueprint.post("/api/pulse/comm/v2/rooms")
-def create_room():
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
-    payload = request.get_json(silent=True) or {}
-    payload["conversation_type"] = "room"
-    return _json(service.create_conversation(user["user_id"], payload))
-
-
+@comm_v2_blueprint.post(f"{API_PREFIX}/groups")
 @comm_v2_blueprint.post("/api/pulse/comm/v2/groups")
 def create_group():
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     payload["conversation_type"] = "group"
     return _json(service.create_conversation(user["user_id"], payload))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/rooms")
+@comm_v2_blueprint.post("/api/pulse/comm/v2/rooms")
+def create_room():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    payload["conversation_type"] = "room"
+    return _json(service.create_conversation(user["user_id"], payload))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/rooms")
+def list_rooms():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.list_conversations(user["user_id"], {"type": "room"}))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/communities")
+def create_community():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.create_community(user["user_id"], request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/communities/<int:community_id>/channels")
+def create_channel(community_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.create_channel(user["user_id"], community_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/messages")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/conversations/<path:conversation_ref>/messages")
 def messages(conversation_ref):
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     return _json(service.list_messages(user["user_id"], conversation_ref, request.args))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/messages")
 @comm_v2_blueprint.post("/api/pulse/comm/v2/conversations/<path:conversation_ref>/messages")
 def send_message(conversation_ref):
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     return _json(service.send_message(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
 
 
-@comm_v2_blueprint.post("/api/pulse/comm/v2/conversations/<path:conversation_ref>/read")
-def read_state(conversation_ref):
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
-    return _json(service.mark_read(user["user_id"], conversation_ref))
-
-
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/conversations/<path:conversation_ref>/members")
 def members(conversation_ref):
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     return _json(service.list_members(user["user_id"], conversation_ref))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
+def add_member(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    return _json(service.add_member(user["user_id"], conversation_ref, int(payload.get("user_id") or payload.get("target_user_id") or 0), payload.get("role") or "member"))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/read")
+@comm_v2_blueprint.post("/api/pulse/comm/v2/conversations/<path:conversation_ref>/read")
+def read_state(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.mark_read(user["user_id"], conversation_ref))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/typing")
+def typing(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    return _json(service.set_typing(user["user_id"], conversation_ref, bool(payload.get("is_typing", True))))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/presence")
+def presence(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.typing_state(user["user_id"], conversation_ref))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/reactions")
 @comm_v2_blueprint.post("/api/pulse/comm/v2/messages/<int:message_id>/reactions")
 def reactions(message_id):
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+    user, denied = _require_user()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     return _json(service.set_reaction(user["user_id"], message_id, payload.get("reaction") or payload.get("reaction_type") or "heart"))
 
 
-@comm_v2_blueprint.post("/api/pulse/comm/v2/conversations/<path:conversation_ref>/pin")
-def pin_message(conversation_ref):
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
+@comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/report")
+def report_message(message_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
-    return _json(service.pin_message(user["user_id"], conversation_ref, payload.get("message_id") or 0, payload.get("pinned", True)))
+    return _json(service.report_message(user["user_id"], message_id, payload.get("reason") or ""))
 
 
-@comm_v2_blueprint.get("/api/pulse/comm/v2/search")
-def search():
-    user = _current_user()
-    if not user:
-        return jsonify({"ok": False, "status": "error", "message": "Login required."}), 401
-    return _json(service.search_messages(user["user_id"], request.args.get("q") or request.args.get("query") or ""))
+@comm_v2_blueprint.post(f"{API_PREFIX}/blocks")
+def block_user():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    return _json(service.block_user(user["user_id"], int(payload.get("blocked_user_id") or payload.get("user_id") or 0), payload.get("reason") or ""))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/moderation")
+def moderation_summary():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _json(service.moderation_summary(admin))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/moderation/messages/<int:message_id>")
+def moderate_message(message_id):
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    payload = request.get_json(silent=True) or {}
+    return _json(service.moderate_message(admin, message_id, payload.get("action") or "hide", payload.get("reason") or ""))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/voice/start")
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/video/start")
+def phase_two_placeholder(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    if not flags.is_enabled():
+        return _json({"ok": False, "status": "disabled", "message": service.DISABLED_MESSAGE, "trace_id": service._trace()})
+    return _json({"ok": True, "status": "placeholder", "conversation_id": conversation_ref, "message": "Voice and video are reserved for Phase 2.", "trace_id": service._trace()})
 
 
 def register(app) -> None:

@@ -5,6 +5,6 @@ tests. The actual v2 messaging system remains inactive while the feature flag
 defaults to false.
 """
 
-from .flags import PULSE_COMMUNICATIONS_V2_ENABLED
+from .flags import PULSE_COMMUNICATIONS_V2_ENABLED, is_enabled
 
-__all__ = ["PULSE_COMMUNICATIONS_V2_ENABLED"]
+__all__ = ["PULSE_COMMUNICATIONS_V2_ENABLED", "is_enabled"]

@@ -1,72 +1,63 @@
-"""Pulse Communications 2.0 service layer.
-
-This module is intentionally thin: it centralizes the v2 API contract while
-delegating persistence to the proven Pulse Messenger tables and helpers in
-``bot.py``. That keeps existing data safe and gives the new UI one consistent
-conversation/message shape across direct messages, rooms, groups, and legacy
-Dashboard chat bridges.
-"""
+"""Pulse Communications 2.0 service layer."""
 
 from __future__ import annotations
 
+import json
+import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
-from .flags import PULSE_COMMUNICATIONS_V2_ENABLED
-from .models import COMM_V2_TABLES
-from .schemas import ServiceResult
+from . import flags
+from .models import ensure_schema
 
 
-DISABLED_MESSAGE = "Pulse Communications 2.0 is disabled."
+DISABLED_MESSAGE = "Pulse Communications 2.0 is not public yet."
+ALLOWED_CONVERSATION_TYPES = {"direct", "group", "room", "community_channel"}
+ALLOWED_MESSAGE_TYPES = {"text", "image", "gif", "video", "audio", "voice", "file", "system"}
 
 
 def _bot():
-    import bot  # Imported lazily to avoid a route-registration cycle.
+    import bot
 
     return bot
 
 
-def disabled_result(action: str) -> dict:
-    return ServiceResult(
-        ok=False,
-        status="disabled",
-        message=DISABLED_MESSAGE,
-        data={"action": action, "enabled": bool(PULSE_COMMUNICATIONS_V2_ENABLED)},
-    ).to_dict()
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def ensure_v2_schema(cur) -> None:
-    for table in COMM_V2_TABLES:
-        cur.execute(table.create_sql)
+def _trace() -> str:
+    return secrets.token_hex(6)
 
 
-def _disabled_if_needed(action: str) -> dict | None:
-    if PULSE_COMMUNICATIONS_V2_ENABLED:
+def _public_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_urlsafe(12)}"
+
+
+def _clean(value: Any, limit: int = 2000) -> str:
+    return re.sub(r"<[^>]*>", "", str(value or "")).strip()[:limit]
+
+
+def _json_loads(value: str | None, fallback: Any = None) -> Any:
+    try:
+        return json.loads(value or "")
+    except Exception:
+        return fallback
+
+
+def _row(row) -> dict:
+    return dict(row or {})
+
+
+def _disabled(action: str) -> dict | None:
+    if flags.is_enabled():
         return None
-    return disabled_result(action)
+    return {"ok": False, "status": "disabled", "message": DISABLED_MESSAGE, "action": action, "enabled": False, "trace_id": _trace()}
 
 
-def _features() -> list[dict]:
-    return [
-        {"key": "voice", "label": "Voice", "state": "Coming Soon"},
-        {"key": "video", "label": "Video", "state": "Coming Soon"},
-        {"key": "files", "label": "Files", "state": "Coming Soon"},
-        {"key": "undx", "label": "UNDX Collaboration", "state": "Coming Soon"},
-    ]
-
-
-def _open_db():
-    bot = _bot()
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    bot.ensure_pulse_messenger_schema(cur, conn)
-    ensure_v2_schema(cur)
-    return bot, conn, cur
-
-
-def _ok(data=None, message="") -> dict:
-    payload = {"ok": True, "status": "ready", "features": _features(), "trace_id": secrets.token_hex(6)}
+def _ok(data: dict | None = None, message: str = "") -> dict:
+    payload = {"ok": True, "status": "ready", "enabled": True, "trace_id": _trace()}
     if message:
         payload["message"] = message
     if data:
@@ -74,278 +65,971 @@ def _ok(data=None, message="") -> dict:
     return payload
 
 
-def create_conversation(user_id: int, payload=None) -> dict:
-    disabled = _disabled_if_needed("create_conversation")
+def _err(message: str, status: int = 400, code: str = "error") -> dict:
+    return {"ok": False, "status": code, "message": message, "http_status": status, "trace_id": _trace()}
+
+
+def _open_db():
+    bot = _bot()
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    ensure_schema(cur)
+    _ensure_columns(bot, cur, conn)
+    return conn, cur
+
+
+def _ensure_columns(bot, cur, conn) -> None:
+    add = getattr(bot, "add_columns_if_missing", None)
+    if not add:
+        return
+    add(cur, "comm_v2_conversations", [
+        ("public_id", "TEXT"),
+        ("conversation_type", "TEXT"),
+        ("title", "TEXT"),
+        ("description", "TEXT"),
+        ("owner_user_id", "INTEGER"),
+        ("created_by_user_id", "INTEGER"),
+        ("direct_key", "TEXT"),
+        ("community_id", "INTEGER"),
+        ("channel_id", "INTEGER"),
+        ("privacy", "TEXT DEFAULT 'private'"),
+        ("visibility", "TEXT DEFAULT 'members'"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("is_discoverable", "INTEGER DEFAULT 0"),
+        ("member_count", "INTEGER DEFAULT 0"),
+        ("last_message_id", "INTEGER DEFAULT 0"),
+        ("last_message_at", "TEXT"),
+        ("last_activity_at", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_participants", [
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("role", "TEXT DEFAULT 'member'"),
+        ("membership_state", "TEXT DEFAULT 'active'"),
+        ("joined_at", "TEXT"),
+        ("left_at", "TEXT"),
+        ("muted_until", "TEXT"),
+        ("notifications_level", "TEXT DEFAULT 'all'"),
+        ("last_seen_at", "TEXT"),
+        ("last_read_message_id", "INTEGER DEFAULT 0"),
+        ("last_read_at", "TEXT"),
+        ("unread_count", "INTEGER DEFAULT 0"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_messages", [
+        ("public_id", "TEXT"),
+        ("conversation_id", "INTEGER"),
+        ("sender_user_id", "INTEGER"),
+        ("message_type", "TEXT DEFAULT 'text'"),
+        ("body", "TEXT"),
+        ("reply_to_message_id", "INTEGER DEFAULT 0"),
+        ("thread_root_message_id", "INTEGER DEFAULT 0"),
+        ("client_message_id", "TEXT"),
+        ("delivery_status", "TEXT DEFAULT 'sent'"),
+        ("moderation_status", "TEXT DEFAULT 'approved'"),
+        ("metadata_json", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("edited_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_attachments", [
+        ("message_id", "INTEGER"),
+        ("conversation_id", "INTEGER"),
+        ("media_upload_id", "INTEGER"),
+        ("uploader_user_id", "INTEGER"),
+        ("media_type", "TEXT"),
+        ("storage_provider", "TEXT"),
+        ("storage_key", "TEXT"),
+        ("url", "TEXT"),
+        ("thumbnail_url", "TEXT"),
+        ("mime_type", "TEXT"),
+        ("file_size_bytes", "INTEGER DEFAULT 0"),
+        ("width", "INTEGER DEFAULT 0"),
+        ("height", "INTEGER DEFAULT 0"),
+        ("scan_status", "TEXT DEFAULT 'approved'"),
+        ("created_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_message_reactions", [
+        ("message_id", "INTEGER"),
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("reaction_type", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_read_receipts", [
+        ("message_id", "INTEGER"),
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("delivered_at", "TEXT"),
+        ("seen_at", "TEXT"),
+        ("read_at", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_typing", [
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("is_typing", "INTEGER DEFAULT 1"),
+        ("expires_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_reports", [
+        ("conversation_id", "INTEGER"),
+        ("message_id", "INTEGER"),
+        ("reporter_user_id", "INTEGER"),
+        ("reported_user_id", "INTEGER DEFAULT 0"),
+        ("reason", "TEXT"),
+        ("status", "TEXT DEFAULT 'open'"),
+        ("created_at", "TEXT"),
+        ("reviewed_at", "TEXT"),
+        ("reviewed_by_admin_id", "INTEGER DEFAULT 0"),
+    ], conn=conn)
+    add(cur, "comm_v2_blocks", [
+        ("blocker_user_id", "INTEGER"),
+        ("blocked_user_id", "INTEGER"),
+        ("reason", "TEXT"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_moderation_events", [
+        ("conversation_id", "INTEGER"),
+        ("message_id", "INTEGER"),
+        ("actor_user_id", "INTEGER DEFAULT 0"),
+        ("admin_user_id", "INTEGER DEFAULT 0"),
+        ("target_user_id", "INTEGER DEFAULT 0"),
+        ("event_type", "TEXT"),
+        ("reason", "TEXT"),
+        ("metadata_json", "TEXT"),
+        ("created_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_communities", [
+        ("public_id", "TEXT"),
+        ("name", "TEXT"),
+        ("slug", "TEXT"),
+        ("description", "TEXT"),
+        ("owner_user_id", "INTEGER"),
+        ("privacy", "TEXT DEFAULT 'public'"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_channels", [
+        ("public_id", "TEXT"),
+        ("community_id", "INTEGER"),
+        ("conversation_id", "INTEGER DEFAULT 0"),
+        ("name", "TEXT"),
+        ("slug", "TEXT"),
+        ("description", "TEXT"),
+        ("channel_type", "TEXT DEFAULT 'text'"),
+        ("visibility", "TEXT DEFAULT 'members'"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
+
+
+def ensure_v2_schema(cur) -> tuple[str, ...]:
+    return ensure_schema(cur)
+
+
+def _user_summary(cur, user_id: int) -> dict:
+    cur.execute("SELECT user_id, username, display_name, avatar_url FROM users WHERE user_id=? LIMIT 1", (int(user_id),))
+    item = _row(cur.fetchone())
+    return {
+        "user_id": int(item.get("user_id") or user_id or 0),
+        "display_name": item.get("display_name") or item.get("username") or f"Member {user_id}",
+        "username": item.get("username") or "",
+        "avatar_url": item.get("avatar_url") or "",
+    }
+
+
+def _participant_ids(cur, conversation_id: int) -> list[int]:
+    cur.execute(
+        "SELECT user_id FROM comm_v2_participants WHERE conversation_id=? AND membership_state='active' AND COALESCE(left_at,'')=''",
+        (int(conversation_id),),
+    )
+    return [int(row["user_id"]) for row in cur.fetchall()]
+
+
+def _blocked_between(cur, user_id: int, other_ids: list[int]) -> bool:
+    ids = [int(x) for x in other_ids if int(x or 0) != int(user_id)]
+    if not ids:
+        return False
+    placeholders = ",".join(["?"] * len(ids))
+    cur.execute(
+        f"""
+        SELECT id FROM comm_v2_blocks
+        WHERE status='active'
+          AND ((blocker_user_id=? AND blocked_user_id IN ({placeholders}))
+            OR (blocked_user_id=? AND blocker_user_id IN ({placeholders})))
+        LIMIT 1
+        """,
+        (int(user_id), *ids, int(user_id), *ids),
+    )
+    return cur.fetchone() is not None
+
+
+def _conversation_access(cur, user_id: int, conversation_ref: int | str, join_public: bool = False) -> tuple[dict, str]:
+    ref = str(conversation_ref or "").strip()
+    if ref.startswith("public-"):
+        ref = ref[7:]
+    if ref.isdigit():
+        cur.execute("SELECT * FROM comm_v2_conversations WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(ref),))
+    else:
+        cur.execute("SELECT * FROM comm_v2_conversations WHERE public_id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (ref,))
+    conversation = _row(cur.fetchone())
+    if not conversation:
+        return {}, "missing"
+    conversation_id = int(conversation["id"])
+    cur.execute(
+        "SELECT * FROM comm_v2_participants WHERE conversation_id=? AND user_id=? AND membership_state='active' AND COALESCE(left_at,'')='' LIMIT 1",
+        (conversation_id, int(user_id)),
+    )
+    participant = _row(cur.fetchone())
+    is_public_room = conversation.get("conversation_type") == "room" and conversation.get("privacy") == "public"
+    if not participant and is_public_room and join_public:
+        _add_participant(cur, conversation_id, int(user_id), "member")
+        participant = {"role": "member"}
+    if not participant and not is_public_room:
+        return conversation, "denied"
+    if _blocked_between(cur, user_id, _participant_ids(cur, conversation_id)):
+        return conversation, "blocked"
+    return conversation, "ok"
+
+
+def _add_participant(cur, conversation_id: int, user_id: int, role: str = "member") -> None:
+    now = _now()
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO comm_v2_participants
+        (conversation_id, user_id, role, membership_state, joined_at, created_at, updated_at)
+        VALUES (?, ?, ?, 'active', ?, ?, ?)
+        """,
+        (int(conversation_id), int(user_id), role, now, now, now),
+    )
+    cur.execute(
+        """
+        UPDATE comm_v2_participants
+        SET membership_state='active', left_at='', role=COALESCE(NULLIF(role,''), ?), updated_at=?
+        WHERE conversation_id=? AND user_id=?
+        """,
+        (role, now, int(conversation_id), int(user_id)),
+    )
+    cur.execute(
+        "UPDATE comm_v2_conversations SET member_count=(SELECT COUNT(*) FROM comm_v2_participants WHERE conversation_id=? AND membership_state='active' AND COALESCE(left_at,'')=''), updated_at=? WHERE id=?",
+        (int(conversation_id), now, int(conversation_id)),
+    )
+
+
+def _conversation_payload(cur, conversation: dict, viewer_user_id: int) -> dict:
+    conversation_id = int(conversation.get("id") or 0)
+    cur.execute(
+        "SELECT unread_count, last_read_message_id, role FROM comm_v2_participants WHERE conversation_id=? AND user_id=? LIMIT 1",
+        (conversation_id, int(viewer_user_id)),
+    )
+    mine = _row(cur.fetchone())
+    cur.execute(
+        """
+        SELECT p.user_id, COALESCE(u.display_name,u.username,'Pulse member') AS display_name, COALESCE(u.avatar_url,'') AS avatar_url
+        FROM comm_v2_participants p
+        LEFT JOIN users u ON u.user_id=p.user_id
+        WHERE p.conversation_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+        ORDER BY p.id ASC LIMIT 6
+        """,
+        (conversation_id,),
+    )
+    members = [dict(row) for row in cur.fetchall()]
+    title = conversation.get("title") or ""
+    if conversation.get("conversation_type") == "direct":
+        others = [m for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)]
+        if others:
+            title = others[0].get("display_name") or title
+    return {
+        "id": conversation_id,
+        "conversation_id": conversation_id,
+        "public_id": conversation.get("public_id") or "",
+        "conversation_type": conversation.get("conversation_type") or "direct",
+        "title": title or "Untitled chat",
+        "description": conversation.get("description") or "",
+        "privacy": conversation.get("privacy") or "private",
+        "visibility": conversation.get("visibility") or "members",
+        "member_count": int(conversation.get("member_count") or len(members) or 0),
+        "last_message_id": int(conversation.get("last_message_id") or 0),
+        "last_message_at": conversation.get("last_message_at") or "",
+        "last_activity_at": conversation.get("last_activity_at") or conversation.get("updated_at") or conversation.get("created_at") or "",
+        "unread_count": int(mine.get("unread_count") or 0),
+        "last_read_message_id": int(mine.get("last_read_message_id") or 0),
+        "role": mine.get("role") or ("viewer" if conversation.get("privacy") == "public" else ""),
+        "participants_preview": members,
+    }
+
+
+def create_conversation(user_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("create_conversation")
     if disabled:
         return disabled
-    bot, conn, cur = _open_db()
     payload = payload or {}
-    conversation_type = bot.clean_html(payload.get("conversation_type") or payload.get("type") or "direct").lower()
+    conversation_type = _clean(payload.get("conversation_type") or payload.get("type") or "direct", 40).lower()
+    if conversation_type not in ALLOWED_CONVERSATION_TYPES:
+        return _err("Choose a supported conversation type.", 400, "invalid_type")
+    conn, cur = _open_db()
     try:
+        now = _now()
         if conversation_type == "direct":
-            target_user_id = bot.safe_int(payload.get("target_user_id") or payload.get("receiver_user_id") or payload.get("user_id"), 0)
-            result, status = bot.pulse_start_conversation(cur, user_id, target_user_id=target_user_id, public_player_id=payload.get("public_player_id") or "")
-        elif conversation_type == "room":
-            result, status = bot.pulse_get_or_create_room_conversation(cur, user_id, room_key=payload.get("room_key") or payload.get("room_id") or "general-pulse")
-        else:
-            result, status = bot.pulse_get_or_create_group_conversation(
-                cur,
-                user_id,
-                title=payload.get("title") or "Group Chat",
-                participant_ids=payload.get("participant_ids") or payload.get("member_ids") or [],
+            target_id = int(payload.get("target_user_id") or payload.get("user_id") or 0)
+            if not target_id or target_id == int(user_id):
+                return _err("Choose another member to message.", 400, "invalid_recipient")
+            cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (target_id,))
+            if not cur.fetchone():
+                return _err("That member was not found.", 404, "missing_user")
+            if _blocked_between(cur, user_id, [target_id]):
+                return _err("This direct message is unavailable.", 403, "blocked")
+            direct_key = ":".join(str(x) for x in sorted([int(user_id), target_id]))
+            cur.execute("SELECT * FROM comm_v2_conversations WHERE direct_key=? AND COALESCE(deleted_at,'')='' LIMIT 1", (direct_key,))
+            existing = _row(cur.fetchone())
+            if existing:
+                conn.commit()
+                return _ok({"conversation": _conversation_payload(cur, existing, user_id), "conversation_id": int(existing["id"])}, "Direct message ready.")
+            cur.execute(
+                """
+                INSERT INTO comm_v2_conversations
+                (public_id, conversation_type, title, owner_user_id, created_by_user_id, direct_key, privacy, visibility, status, member_count, created_at, updated_at, last_activity_at)
+                VALUES (?, 'direct', '', ?, ?, ?, 'private', 'members', 'active', 0, ?, ?, ?)
+                """,
+                (_public_id("dm"), int(user_id), int(user_id), direct_key, now, now, now),
             )
-        if result.get("ok"):
-            conn.commit()
-            return _ok({"conversation": result.get("conversation") or {}, "conversation_id": str(result.get("conversation_id") or "")}, "Conversation ready.")
-        conn.rollback()
-        return {**result, "status": "error", "http_status": status, "features": _features()}
-    finally:
-        conn.close()
-
-
-def list_conversations(user_id: int, filters=None) -> dict:
-    disabled = _disabled_if_needed("list_conversations")
-    if disabled:
-        return disabled
-    bot, conn, cur = _open_db()
-    filters = filters or {}
-    kind = bot.clean_html(filters.get("type") or "all").lower()
-    items = []
-    skipped = []
-    try:
-        if kind in {"all", "direct"}:
-            direct, skipped = bot.pulse_comm_pulse_conversations(cur, user_id, {"direct"})
-            items.extend(direct)
-            items.extend(bot.pulse_comm_legacy_conversations(user_id))
-        if kind in {"all", "rooms", "room"}:
-            items.extend(bot.pulse_comm_rooms(cur, user_id))
-        if kind in {"all", "groups", "group"}:
-            groups, group_skipped = bot.pulse_comm_pulse_conversations(cur, user_id, {"group", "community", "community_group", "creator", "live"})
-            skipped.extend(group_skipped)
-            items.extend(groups)
+            conversation_id = int(cur.lastrowid)
+            _add_participant(cur, conversation_id, int(user_id), "member")
+            _add_participant(cur, conversation_id, target_id, "member")
+        elif conversation_type == "group":
+            title = _clean(payload.get("title") or "Group chat", 120)
+            participant_ids = [int(x) for x in payload.get("participant_ids") or payload.get("member_ids") or [] if int(x or 0)]
+            participant_ids = sorted({int(user_id), *participant_ids})
+            if len(participant_ids) < 2:
+                return _err("Add at least one other member to create a group.", 400, "too_few_members")
+            if _blocked_between(cur, user_id, participant_ids):
+                return _err("One or more members cannot be added to this group.", 403, "blocked")
+            cur.execute(
+                """
+                INSERT INTO comm_v2_conversations
+                (public_id, conversation_type, title, owner_user_id, created_by_user_id, privacy, visibility, status, member_count, created_at, updated_at, last_activity_at)
+                VALUES (?, 'group', ?, ?, ?, 'private', 'members', 'active', 0, ?, ?, ?)
+                """,
+                (_public_id("grp"), title, int(user_id), int(user_id), now, now, now),
+            )
+            conversation_id = int(cur.lastrowid)
+            for member_id in participant_ids:
+                _add_participant(cur, conversation_id, member_id, "owner" if member_id == int(user_id) else "member")
+        elif conversation_type == "room":
+            title = _clean(payload.get("title") or payload.get("name") or "Pulse room", 120)
+            privacy = _clean(payload.get("privacy") or "public", 20).lower()
+            privacy = "private" if privacy == "private" else "public"
+            cur.execute(
+                """
+                INSERT INTO comm_v2_conversations
+                (public_id, conversation_type, title, description, owner_user_id, created_by_user_id, privacy, visibility, status, is_discoverable, member_count, created_at, updated_at, last_activity_at)
+                VALUES (?, 'room', ?, ?, ?, ?, ?, ?, 'active', ?, 0, ?, ?, ?)
+                """,
+                (_public_id("room"), title, _clean(payload.get("description") or "", 500), int(user_id), int(user_id), privacy, "public" if privacy == "public" else "members", 1 if privacy == "public" else 0, now, now, now),
+            )
+            conversation_id = int(cur.lastrowid)
+            _add_participant(cur, conversation_id, int(user_id), "owner")
+        else:
+            community_id = int(payload.get("community_id") or 0)
+            title = _clean(payload.get("title") or payload.get("name") or "community-channel", 120)
+            cur.execute(
+                """
+                INSERT INTO comm_v2_conversations
+                (public_id, conversation_type, title, owner_user_id, created_by_user_id, community_id, privacy, visibility, status, is_discoverable, member_count, created_at, updated_at, last_activity_at)
+                VALUES (?, 'community_channel', ?, ?, ?, ?, 'private', 'members', 'active', 0, 0, ?, ?, ?)
+                """,
+                (_public_id("chan"), title, int(user_id), int(user_id), community_id, now, now, now),
+            )
+            conversation_id = int(cur.lastrowid)
+            _add_participant(cur, conversation_id, int(user_id), "owner")
+        cur.execute("SELECT * FROM comm_v2_conversations WHERE id=?", (conversation_id,))
+        conversation = _conversation_payload(cur, _row(cur.fetchone()), user_id)
         conn.commit()
-        return _ok({"items": items, "conversations": items, "partial": bool(skipped), "skipped": len(skipped)})
-    finally:
-        conn.close()
-
-
-def send_message(user_id: int, conversation_id: int | str, payload=None) -> dict:
-    disabled = _disabled_if_needed("send_message")
-    if disabled:
-        return disabled
-    bot, conn, cur = _open_db()
-    payload = payload or {}
-    user = {"user_id": user_id}
-    source, resolved_id = bot.pulse_comm_ref(conversation_id)
-    body = bot.clean_html(payload.get("message") or payload.get("body") or payload.get("content") or "")[:2000].strip()
-    try:
-        if source == "legacy":
-            result, status = bot.chat_realtime_service.send_message(user_id, resolved_id, body)
-            return {**result, "status": "ready" if result.get("ok") else "error", "http_status": status, "features": _features()}
-        if source == "room":
-            room, room_status = bot.pulse_get_or_create_room_conversation(cur, user_id, room_key=resolved_id)
-            if not room.get("ok"):
-                conn.rollback()
-                return {**room, "status": "error", "http_status": room_status}
-            resolved_id = bot.safe_int(room.get("conversation_id"), 0)
-        result, status = bot.pulse_send_conversation_message(
-            cur,
-            user,
-            resolved_id,
-            body,
-            payload.get("message_type") or payload.get("type") or "text",
-            payload.get("media_url") or "",
-            payload.get("thumbnail_url") or "",
-            payload.get("media_metadata") if isinstance(payload.get("media_metadata"), dict) else {},
-            bot.safe_int(payload.get("reply_to_id"), 0),
-            bot.safe_int(payload.get("file_size"), 0),
-            float(payload.get("duration") or payload.get("duration_seconds") or 0),
-            payload.get("client_message_id") or payload.get("local_id") or "",
-            payload.get("local_created_at") or "",
-        )
-        if result.get("ok"):
-            conn.commit()
-            return _ok({"message": result.get("data"), "message_id": result.get("message_id"), "conversation_id": str(resolved_id)}, "Message sent.")
+        return _ok({"conversation": conversation, "conversation_id": conversation_id}, "Conversation ready.")
+    except Exception:
         conn.rollback()
-        return {**result, "status": "error", "http_status": status, "features": _features()}
+        raise
     finally:
         conn.close()
 
 
-def list_messages(user_id: int, conversation_id: int | str, filters=None) -> dict:
-    disabled = _disabled_if_needed("list_messages")
+def list_conversations(user_id: int, filters: dict | None = None) -> dict:
+    disabled = _disabled("list_conversations")
     if disabled:
         return disabled
-    bot, conn, cur = _open_db()
     filters = filters or {}
-    user = {"user_id": user_id}
-    source, resolved_id = bot.pulse_comm_ref(conversation_id)
+    kind = _clean(filters.get("type") or "all", 40).lower()
+    conn, cur = _open_db()
     try:
-        if source == "legacy":
-            payload, status = bot.pulse_comm_legacy_messages(user, resolved_id, limit=bot.safe_int(filters.get("limit"), 80), after_id=bot.safe_int(filters.get("after_id"), 0))
-            return {**payload, "status": "ready" if payload.get("ok") else "error", "http_status": status, "trace_id": payload.get("trace_id") or secrets.token_hex(6)}
-        if source == "room":
-            room, room_status = bot.pulse_get_or_create_room_conversation(cur, user_id, room_key=resolved_id)
-            if not room.get("ok"):
-                conn.rollback()
-                return {**room, "status": "error", "http_status": room_status}
-            resolved_id = bot.safe_int(room.get("conversation_id"), 0)
-        payload, status = bot.pulse_comm_pulse_messages(cur, user, resolved_id, limit=bot.safe_int(filters.get("limit"), 80), before_id=bot.safe_int(filters.get("before_id"), 0))
-        payload["http_status"] = status
-        payload["status"] = "ready" if payload.get("ok") else "error"
-        payload["trace_id"] = payload.get("trace_id") or secrets.token_hex(6)
-        conn.commit()
-        return payload
-    finally:
-        conn.close()
-
-
-def create_community(user_id: int, payload=None) -> dict:
-    disabled = _disabled_if_needed("create_community")
-    if disabled:
-        return disabled_result("create_community")
-    payload = payload or {}
-    name = str(payload.get("name") or "").strip()[:140] or "Pulse Community"
-    return _ok({"community": {"name": name, "status": "draft", "owner_user_id": user_id}}, "Community foundation ready.")
-
-
-def create_channel(user_id: int, community_id: int, payload=None) -> dict:
-    disabled = _disabled_if_needed("create_channel")
-    if disabled:
-        return disabled
-    payload = payload or {}
-    name = str(payload.get("name") or "").strip()[:140] or "general"
-    return _ok({"channel": {"name": name, "community_id": int(community_id or 0), "status": "draft"}}, "Channel foundation ready.")
-
-
-def list_members(user_id: int, conversation_id: int | str) -> dict:
-    disabled = _disabled_if_needed("list_members")
-    if disabled:
-        return disabled
-    bot, conn, cur = _open_db()
-    source, resolved_id = bot.pulse_comm_ref(conversation_id)
-    try:
-        if source == "room":
-            room, _ = bot.pulse_get_or_create_room_conversation(cur, user_id, room_key=resolved_id)
-            resolved_id = bot.safe_int(room.get("conversation_id"), 0)
-        if source == "legacy":
-            return _ok({"members": [], "conversation_id": str(conversation_id)})
-        conversation, access = bot.pulse_comm_conversation_access(cur, user_id, resolved_id)
-        if access != "ok":
-            return {"ok": False, "status": "error", "message": "Conversation not found." if access == "missing" else "You do not have access to this chat.", "http_status": 404 if access == "missing" else 403}
+        params: list[Any] = [int(user_id)]
+        type_clause = ""
+        if kind in {"direct", "group", "room", "community_channel"}:
+            type_clause = "AND c.conversation_type=?"
+            params.append(kind)
         cur.execute(
-            """
-            SELECT p.user_id, COALESCE(p.role,'member') AS role, p.joined_at, p.last_seen_at,
-                   COALESCE(u.display_name,u.username,'Pulse member') AS display_name,
-                   COALESCE(u.avatar_url,'') AS avatar_url
-            FROM pulse_conversation_participants p
-            LEFT JOIN users u ON u.user_id=p.user_id
-            WHERE p.conversation_id=? AND COALESCE(p.left_at,'')=''
-            ORDER BY CASE COALESCE(p.role,'member') WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END,
-                     COALESCE(p.last_seen_at,p.joined_at,p.created_at,'') DESC
+            f"""
+            SELECT DISTINCT c.*
+            FROM comm_v2_conversations c
+            LEFT JOIN comm_v2_participants p ON p.conversation_id=c.id AND p.user_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+            WHERE COALESCE(c.deleted_at,'')='' AND c.status='active'
+              AND (p.id IS NOT NULL OR (c.conversation_type='room' AND c.privacy='public' AND c.is_discoverable=1))
+              {type_clause}
+            ORDER BY COALESCE(c.last_activity_at,c.updated_at,c.created_at) DESC, c.id DESC
             LIMIT 120
             """,
-            (resolved_id,),
+            tuple(params),
         )
-        members = [dict(row) for row in cur.fetchall()]
-        return _ok({"members": members, "conversation_id": str(resolved_id)})
+        items = [_conversation_payload(cur, _row(row), user_id) for row in cur.fetchall()]
+        return _ok({"items": items, "conversations": items})
     finally:
         conn.close()
 
 
-def mark_read(user_id: int, conversation_id: int | str) -> dict:
-    disabled = _disabled_if_needed("mark_read")
+def send_message(user_id: int, conversation_ref: int | str, payload: dict | None = None) -> dict:
+    disabled = _disabled("send_message")
     if disabled:
         return disabled
-    bot, conn, cur = _open_db()
-    source, resolved_id = bot.pulse_comm_ref(conversation_id)
+    payload = payload or {}
+    body = _clean(payload.get("body") or payload.get("message") or payload.get("content") or "", 4000)
+    message_type = _clean(payload.get("message_type") or payload.get("type") or "text", 40).lower()
+    if message_type not in ALLOWED_MESSAGE_TYPES:
+        message_type = "text"
+    media_ids = [int(x) for x in payload.get("media_ids") or payload.get("attachment_media_ids") or [] if int(x or 0)]
+    if not body and not media_ids:
+        return _err("Write a message or attach a file before sending.", 400, "empty_message")
+    conn, cur = _open_db()
     try:
-        if source == "room":
-            room, _ = bot.pulse_get_or_create_room_conversation(cur, user_id, room_key=resolved_id)
-            resolved_id = bot.safe_int(room.get("conversation_id"), 0)
-        if source == "legacy":
-            return _ok({"conversation_id": str(conversation_id), "last_read_message_id": 0})
-        conversation, access = bot.pulse_comm_conversation_access(cur, user_id, resolved_id)
-        if access != "ok":
-            return {"ok": False, "status": "error", "message": "Conversation not found." if access == "missing" else "You do not have access to this chat.", "http_status": 404 if access == "missing" else 403}
-        last_id = bot.pulse_mark_conversation_read(cur, resolved_id, user_id)
-        conn.commit()
-        return _ok({"conversation_id": str(resolved_id), "last_read_message_id": last_id, "unread_count": 0}, "Marked read.")
-    finally:
-        conn.close()
-
-
-def set_reaction(user_id: int, message_id: int, reaction: str) -> dict:
-    disabled = _disabled_if_needed("set_reaction")
-    if disabled:
-        return disabled
-    bot, conn, cur = _open_db()
-    reaction = bot.pulse_normalize_emoji_reaction(reaction or "heart")
-    if not reaction:
-        conn.close()
-        return {"ok": False, "status": "error", "message": "Choose a supported emoji reaction.", "http_status": 400}
-    try:
-        cur.execute("SELECT * FROM pulse_messages WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(message_id or 0),))
-        message = dict(cur.fetchone() or {})
-        if not message:
-            return {"ok": False, "status": "error", "message": "Message not found.", "http_status": 404}
-        conversation, access = bot.pulse_comm_conversation_access(cur, user_id, int(message.get("conversation_id") or 0))
-        if access != "ok":
-            return {"ok": False, "status": "error", "message": "You do not have access to this chat.", "http_status": 403}
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        cur.execute("DELETE FROM pulse_message_reactions WHERE message_id=? AND user_id=?", (int(message_id), user_id))
-        cur.execute(
-            "INSERT INTO pulse_message_reactions (message_id, conversation_id, user_id, reaction_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (int(message_id), int(message.get("conversation_id") or 0), user_id, reaction, now, now),
-        )
-        conn.commit()
-        return _ok({"message_id": int(message_id), "reaction": reaction}, "Reaction updated.")
-    finally:
-        conn.close()
-
-
-def pin_message(user_id: int, conversation_id: int | str, message_id: int, pinned=True) -> dict:
-    disabled = _disabled_if_needed("pin_message")
-    if disabled:
-        return disabled
-    bot, conn, cur = _open_db()
-    source, resolved_id = bot.pulse_comm_ref(conversation_id)
-    try:
-        if source != "pulse":
-            return {"ok": False, "status": "error", "message": "Pinning is available for Pulse conversations only.", "http_status": 400}
-        conversation, access = bot.pulse_comm_conversation_access(cur, user_id, resolved_id)
-        if access != "ok":
-            return {"ok": False, "status": "error", "message": "Conversation not found." if access == "missing" else "You do not have access to this chat.", "http_status": 404 if access == "missing" else 403}
-        now = datetime.utcnow().isoformat(timespec="seconds")
-        cur.execute("UPDATE pulse_messages SET updated_at=? WHERE id=? AND conversation_id=?", (now, int(message_id or 0), resolved_id))
-        cur.execute("UPDATE pulse_conversations SET last_activity_at=?, updated_at=? WHERE id=?", (now, now, resolved_id))
-        conn.commit()
-        return _ok({"conversation_id": str(resolved_id), "message_id": int(message_id or 0), "pinned": bool(pinned)}, "Message pin state updated.")
-    finally:
-        conn.close()
-
-
-def search_messages(user_id: int, query: str) -> dict:
-    disabled = _disabled_if_needed("search_messages")
-    if disabled:
-        return disabled
-    bot, conn, cur = _open_db()
-    q = bot.clean_html(query or "")[:120].strip()
-    if not q:
-        conn.close()
-        return _ok({"messages": [], "conversations": []})
-    like = f"%{q.lower()}%"
-    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref, join_public=True)
+        if access == "missing":
+            return _err("Conversation not found.", 404, "not_found")
+        if access == "denied":
+            return _err("You do not have access to this conversation.", 403, "forbidden")
+        if access == "blocked":
+            return _err("Messaging is unavailable for this conversation.", 403, "blocked")
+        conversation_id = int(conversation["id"])
+        client_id = _clean(payload.get("client_message_id") or "", 120)
+        if client_id:
+            cur.execute(
+                "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND sender_user_id=? AND client_message_id=? AND COALESCE(deleted_at,'')='' LIMIT 1",
+                (conversation_id, int(user_id), client_id),
+            )
+            existing = _row(cur.fetchone())
+            if existing:
+                return _ok({"message": _message_payload(cur, existing, user_id), "message_id": int(existing["id"]), "idempotent": True})
+        reply_to = int(payload.get("reply_to_message_id") or payload.get("reply_to_id") or 0)
+        thread_root = int(payload.get("thread_root_message_id") or 0)
+        if reply_to and not thread_root:
+            thread_root = reply_to
+        now = _now()
         cur.execute(
             """
-            SELECT m.* FROM pulse_messages m
-            JOIN pulse_conversation_participants p ON p.conversation_id=m.conversation_id AND p.user_id=? AND COALESCE(p.left_at,'')=''
-            WHERE COALESCE(m.deleted_at,'')='' AND lower(COALESCE(m.body,'')) LIKE ?
-            ORDER BY m.id DESC LIMIT 50
+            INSERT INTO comm_v2_messages
+            (public_id, conversation_id, sender_user_id, message_type, body, reply_to_message_id, thread_root_message_id, client_message_id, delivery_status, moderation_status, metadata_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'sent', 'approved', ?, ?, ?)
             """,
-            (user_id, like),
+            (_public_id("msg"), conversation_id, int(user_id), message_type, body, reply_to, thread_root, client_id, json.dumps(payload.get("metadata") or {}, default=str)[:4000], now, now),
         )
-        messages = [bot._pulse_message_payload(row, user_id) for row in cur.fetchall()]
-        return _ok({"messages": messages, "items": messages})
+        message_id = int(cur.lastrowid)
+        attachments = _attach_media(cur, user_id, conversation_id, message_id, media_ids)
+        cur.execute(
+            "UPDATE comm_v2_conversations SET last_message_id=?, last_message_at=?, last_activity_at=?, updated_at=? WHERE id=?",
+            (message_id, now, now, now, conversation_id),
+        )
+        cur.execute(
+            """
+            UPDATE comm_v2_participants
+            SET unread_count=CASE WHEN user_id=? THEN 0 ELSE COALESCE(unread_count,0)+1 END,
+                last_seen_at=CASE WHEN user_id=? THEN ? ELSE last_seen_at END,
+                updated_at=?
+            WHERE conversation_id=? AND membership_state='active'
+            """,
+            (int(user_id), int(user_id), now, now, conversation_id),
+        )
+        mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=?", (message_id,))
+        message = _message_payload(cur, _row(cur.fetchone()), user_id)
+        if attachments:
+            message["attachments"] = attachments
+        conn.commit()
+        return _ok({"message": message, "message_id": message_id, "conversation_id": conversation_id}, "Message sent.")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, media_ids: list[int]) -> list[dict]:
+    out = []
+    for media_id in media_ids[:6]:
+        cur.execute(
+            "SELECT * FROM chat_media_uploads WHERE id=? AND uploader_user_id=? AND COALESCE(deleted_at,'')='' LIMIT 1",
+            (int(media_id), int(user_id)),
+        )
+        media = _row(cur.fetchone())
+        if not media:
+            continue
+        now = _now()
+        cur.execute(
+            """
+            INSERT INTO comm_v2_attachments
+            (message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, thumbnail_url, mime_type, file_size_bytes, width, height, scan_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(message_id),
+                int(conversation_id),
+                int(media_id),
+                int(user_id),
+                media.get("media_type") or "file",
+                media.get("storage_provider") or "",
+                media.get("storage_key") or media.get("object_key") or "",
+                media.get("media_url") or media.get("public_url") or media.get("cdn_url") or "",
+                media.get("thumbnail_url") or media.get("poster_url") or "",
+                media.get("mime_type") or "",
+                int(media.get("file_size_bytes") or 0),
+                int(media.get("width") or 0),
+                int(media.get("height") or 0),
+                media.get("moderation_status") or "approved",
+                now,
+            ),
+        )
+        cur.execute(
+            "UPDATE chat_media_uploads SET message_id=?, context_type='pulse_comm_v2', context_id=? WHERE id=?",
+            (int(message_id), str(conversation_id), int(media_id)),
+        )
+        out.append(_attachment_payload(_row({**media, "media_upload_id": media_id})))
+    return out
+
+
+def _attachment_payload(row: dict) -> dict:
+    return {
+        "id": int(row.get("id") or row.get("media_upload_id") or 0),
+        "media_upload_id": int(row.get("media_upload_id") or row.get("id") or 0),
+        "media_type": row.get("media_type") or "file",
+        "url": row.get("url") or row.get("media_url") or row.get("public_url") or row.get("cdn_url") or "",
+        "thumbnail_url": row.get("thumbnail_url") or row.get("poster_url") or "",
+        "mime_type": row.get("mime_type") or "",
+        "file_size_bytes": int(row.get("file_size_bytes") or 0),
+        "storage_provider": row.get("storage_provider") or "",
+        "storage_key": row.get("storage_key") or row.get("object_key") or "",
+    }
+
+
+def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
+    message_id = int(message.get("id") or 0)
+    cur.execute("SELECT * FROM comm_v2_attachments WHERE message_id=? ORDER BY id ASC", (message_id,))
+    attachments = [_attachment_payload(_row(row)) for row in cur.fetchall()]
+    cur.execute("SELECT reaction_type, COUNT(*) AS total FROM comm_v2_message_reactions WHERE message_id=? GROUP BY reaction_type", (message_id,))
+    reactions = [{"reaction_type": row["reaction_type"], "count": int(row["total"] or 0)} for row in cur.fetchall()]
+    cur.execute("SELECT reaction_type FROM comm_v2_message_reactions WHERE message_id=? AND user_id=? LIMIT 1", (message_id, int(viewer_user_id)))
+    mine = _row(cur.fetchone())
+    sender = _user_summary(cur, int(message.get("sender_user_id") or 0))
+    return {
+        "id": message_id,
+        "public_id": message.get("public_id") or "",
+        "conversation_id": int(message.get("conversation_id") or 0),
+        "sender_user_id": int(message.get("sender_user_id") or 0),
+        "sender": sender,
+        "is_mine": int(message.get("sender_user_id") or 0) == int(viewer_user_id),
+        "message_type": message.get("message_type") or "text",
+        "body": message.get("body") or "",
+        "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
+        "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
+        "delivery_status": message.get("delivery_status") or "sent",
+        "moderation_status": message.get("moderation_status") or "approved",
+        "attachments": attachments,
+        "reactions": reactions,
+        "my_reaction": mine.get("reaction_type") or "",
+        "created_at": message.get("created_at") or "",
+        "updated_at": message.get("updated_at") or "",
+    }
+
+
+def list_messages(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
+    disabled = _disabled("list_messages")
+    if disabled:
+        return disabled
+    filters = filters or {}
+    limit = max(1, min(int(filters.get("limit") or 80), 120))
+    before_id = int(filters.get("before_id") or 0)
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access == "missing":
+            return _err("Conversation not found.", 404, "not_found")
+        if access == "denied":
+            return _err("You do not have access to this conversation.", 403, "forbidden")
+        if access == "blocked":
+            return _err("Messaging is unavailable for this conversation.", 403, "blocked")
+        conversation_id = int(conversation["id"])
+        if before_id:
+            cur.execute(
+                "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND id<? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?",
+                (conversation_id, before_id, limit),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?",
+                (conversation_id, limit),
+            )
+        messages = [_message_payload(cur, _row(row), user_id) for row in reversed(cur.fetchall())]
+        typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
+        mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
+        conn.commit()
+        return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "messages": messages, "typing": typing})
+    finally:
+        conn.close()
+
+
+def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True) -> dict:
+    disabled = _disabled("mark_read")
+    if disabled:
+        return disabled
+    own_conn = existing_conn is None
+    conn, cur = existing_conn or _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        conversation_id = int(conversation["id"])
+        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')=''", (conversation_id,))
+        max_id = int(_row(cur.fetchone()).get("max_id") or 0)
+        now = _now()
+        cur.execute(
+            "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
+            (max_id, now, now, now, conversation_id, int(user_id)),
+        )
+        cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')=''", (conversation_id, max_id, int(user_id)))
+        for row in cur.fetchall():
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO comm_v2_read_receipts
+                (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (int(row["id"]), conversation_id, int(user_id), now, now, now, now, now),
+            )
+            cur.execute(
+                "UPDATE comm_v2_read_receipts SET seen_at=?, read_at=?, updated_at=? WHERE message_id=? AND user_id=?",
+                (now, now, now, int(row["id"]), int(user_id)),
+            )
+        if commit:
+            conn.commit()
+        return _ok({"conversation_id": conversation_id, "last_read_message_id": max_id})
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True) -> dict:
+    disabled = _disabled("set_typing")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        now_dt = datetime.now(timezone.utc)
+        expires = (now_dt + timedelta(seconds=12)).isoformat(timespec="seconds")
+        now = now_dt.isoformat(timespec="seconds")
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO comm_v2_typing (conversation_id, user_id, is_typing, expires_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (int(conversation["id"]), int(user_id), 1 if is_typing else 0, expires, now),
+        )
+        cur.execute(
+            "UPDATE comm_v2_typing SET is_typing=?, expires_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
+            (1 if is_typing else 0, expires, now, int(conversation["id"]), int(user_id)),
+        )
+        conn.commit()
+        return _ok({"conversation_id": int(conversation["id"]), "is_typing": bool(is_typing)})
+    finally:
+        conn.close()
+
+
+def typing_state(user_id: int, conversation_ref: int | str, existing_conn=None) -> dict:
+    disabled = _disabled("typing_state")
+    if disabled:
+        return disabled
+    own_conn = existing_conn is None
+    conn, cur = existing_conn or _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        cur.execute(
+            """
+            SELECT t.user_id, COALESCE(u.display_name,u.username,'Pulse member') AS display_name
+            FROM comm_v2_typing t
+            LEFT JOIN users u ON u.user_id=t.user_id
+            WHERE t.conversation_id=? AND t.user_id!=? AND t.is_typing=1 AND t.expires_at>=?
+            ORDER BY t.updated_at DESC LIMIT 8
+            """,
+            (int(conversation["id"]), int(user_id), _now()),
+        )
+        return _ok({"typing": [dict(row) for row in cur.fetchall()]})
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def list_members(user_id: int, conversation_ref: int | str) -> dict:
+    disabled = _disabled("list_members")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        cur.execute(
+            """
+            SELECT p.user_id, p.role, p.joined_at, p.last_seen_at, p.last_read_message_id,
+                   COALESCE(u.display_name,u.username,'Pulse member') AS display_name,
+                   COALESCE(u.avatar_url,'') AS avatar_url
+            FROM comm_v2_participants p
+            LEFT JOIN users u ON u.user_id=p.user_id
+            WHERE p.conversation_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+            ORDER BY CASE p.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, p.id ASC
+            """,
+            (int(conversation["id"]),),
+        )
+        return _ok({"members": [dict(row) for row in cur.fetchall()], "conversation_id": int(conversation["id"])})
+    finally:
+        conn.close()
+
+
+def add_member(user_id: int, conversation_ref: int | str, target_user_id: int, role: str = "member") -> dict:
+    disabled = _disabled("add_member")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        cur.execute("SELECT role FROM comm_v2_participants WHERE conversation_id=? AND user_id=? LIMIT 1", (int(conversation["id"]), int(user_id)))
+        actor_role = (_row(cur.fetchone()).get("role") or "member").lower()
+        if actor_role not in {"owner", "admin", "moderator"}:
+            return _err("Only chat moderators can add members.", 403, "forbidden")
+        if _blocked_between(cur, user_id, [int(target_user_id)]):
+            return _err("That member cannot be added.", 403, "blocked")
+        _add_participant(cur, int(conversation["id"]), int(target_user_id), _clean(role, 40) or "member")
+        conn.commit()
+        return list_members(user_id, int(conversation["id"]))
+    finally:
+        conn.close()
+
+
+def set_reaction(user_id: int, message_id: int, reaction_type: str = "heart") -> dict:
+    disabled = _disabled("set_reaction")
+    if disabled:
+        return disabled
+    reaction_type = _clean(reaction_type, 40).lower()
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(message_id),))
+        message = _row(cur.fetchone())
+        if not message:
+            return _err("Message not found.", 404, "not_found")
+        conversation, access = _conversation_access(cur, user_id, int(message["conversation_id"]))
+        if access != "ok":
+            return _err("You do not have access to this message.", 403, "forbidden")
+        now = _now()
+        cur.execute("DELETE FROM comm_v2_message_reactions WHERE message_id=? AND user_id=?", (int(message_id), int(user_id)))
+        if reaction_type and reaction_type not in {"none", "remove"}:
+            cur.execute(
+                "INSERT INTO comm_v2_message_reactions (message_id, conversation_id, user_id, reaction_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (int(message_id), int(message["conversation_id"]), int(user_id), reaction_type, now, now),
+            )
+        conn.commit()
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=?", (int(message_id),))
+        return _ok({"message": _message_payload(cur, _row(cur.fetchone()), user_id)})
+    finally:
+        conn.close()
+
+
+def report_message(user_id: int, message_id: int, reason: str = "") -> dict:
+    disabled = _disabled("report_message")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message_id),))
+        message = _row(cur.fetchone())
+        if not message:
+            return _err("Message not found.", 404, "not_found")
+        conversation, access = _conversation_access(cur, user_id, int(message["conversation_id"]))
+        if access != "ok":
+            return _err("You do not have access to this message.", 403, "forbidden")
+        now = _now()
+        cur.execute(
+            "INSERT INTO comm_v2_reports (conversation_id, message_id, reporter_user_id, reported_user_id, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)",
+            (int(message["conversation_id"]), int(message_id), int(user_id), int(message.get("sender_user_id") or 0), _clean(reason, 500), now),
+        )
+        cur.execute(
+            "INSERT INTO comm_v2_moderation_events (conversation_id, message_id, actor_user_id, target_user_id, event_type, reason, created_at) VALUES (?, ?, ?, ?, 'message_reported', ?, ?)",
+            (int(message["conversation_id"]), int(message_id), int(user_id), int(message.get("sender_user_id") or 0), _clean(reason, 500), now),
+        )
+        conn.commit()
+        return _ok({"report_id": int(cur.lastrowid)}, "Report sent to moderation.")
+    finally:
+        conn.close()
+
+
+def block_user(user_id: int, blocked_user_id: int, reason: str = "") -> dict:
+    disabled = _disabled("block_user")
+    if disabled:
+        return disabled
+    if not blocked_user_id or int(blocked_user_id) == int(user_id):
+        return _err("Choose a member to block.", 400, "invalid_user")
+    conn, cur = _open_db()
+    try:
+        now = _now()
+        cur.execute(
+            "INSERT OR IGNORE INTO comm_v2_blocks (blocker_user_id, blocked_user_id, reason, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+            (int(user_id), int(blocked_user_id), _clean(reason, 500), now, now),
+        )
+        cur.execute(
+            "UPDATE comm_v2_blocks SET status='active', reason=?, updated_at=? WHERE blocker_user_id=? AND blocked_user_id=?",
+            (_clean(reason, 500), now, int(user_id), int(blocked_user_id)),
+        )
+        conn.commit()
+        return _ok({"blocked_user_id": int(blocked_user_id)}, "Member blocked.")
+    finally:
+        conn.close()
+
+
+def create_community(user_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("create_community")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    name = _clean(payload.get("name") or "Pulse Community", 120)
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80] or f"community-{secrets.token_hex(4)}"
+    conn, cur = _open_db()
+    try:
+        now = _now()
+        base_slug = slug
+        counter = 1
+        while True:
+            cur.execute("SELECT id FROM comm_v2_communities WHERE slug=? LIMIT 1", (slug,))
+            if not cur.fetchone():
+                break
+            counter += 1
+            slug = f"{base_slug}-{counter}"[:90]
+        cur.execute(
+            "INSERT INTO comm_v2_communities (public_id, name, slug, description, owner_user_id, privacy, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+            (_public_id("com"), name, slug, _clean(payload.get("description") or "", 500), int(user_id), _clean(payload.get("privacy") or "public", 20), now, now),
+        )
+        community_id = int(cur.lastrowid)
+        conn.commit()
+        return _ok({"community": {"id": community_id, "name": name, "slug": slug}})
+    finally:
+        conn.close()
+
+
+def create_channel(user_id: int, community_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("create_channel")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    name = _clean(payload.get("name") or "general", 80)
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:80] or f"channel-{secrets.token_hex(4)}"
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_communities WHERE id=? AND owner_user_id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(community_id), int(user_id)))
+        community = _row(cur.fetchone())
+        if not community:
+            return _err("Community not found or not manageable.", 404, "not_found")
+        convo = create_conversation(user_id, {"conversation_type": "community_channel", "title": name, "community_id": int(community_id)})
+        if not convo.get("ok"):
+            return convo
+        base_slug = slug
+        counter = 1
+        while True:
+            cur.execute("SELECT id FROM comm_v2_channels WHERE community_id=? AND slug=? LIMIT 1", (int(community_id), slug))
+            if not cur.fetchone():
+                break
+            counter += 1
+            slug = f"{base_slug}-{counter}"[:90]
+        now = _now()
+        cur.execute(
+            "INSERT INTO comm_v2_channels (public_id, community_id, conversation_id, name, slug, description, channel_type, visibility, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+            (_public_id("ch"), int(community_id), int(convo.get("conversation_id") or 0), name, slug, _clean(payload.get("description") or "", 500), _clean(payload.get("channel_type") or "text", 40), _clean(payload.get("visibility") or "members", 40), now, now),
+        )
+        channel_id = int(cur.lastrowid)
+        conn.commit()
+        return _ok({"channel": {"id": channel_id, "name": name, "slug": slug, "conversation_id": int(convo.get("conversation_id") or 0)}})
+    finally:
+        conn.close()
+
+
+def moderation_summary(admin_user: dict | None = None) -> dict:
+    disabled = _disabled("moderation_summary")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT COUNT(*) AS total FROM comm_v2_reports WHERE status='open'")
+        open_reports = int(_row(cur.fetchone()).get("total") or 0)
+        cur.execute("SELECT COUNT(*) AS total FROM comm_v2_blocks WHERE status='active'")
+        active_blocks = int(_row(cur.fetchone()).get("total") or 0)
+        cur.execute(
+            """
+            SELECT r.*, COALESCE(u.display_name,u.username,'Member') AS reporter_name
+            FROM comm_v2_reports r
+            LEFT JOIN users u ON u.user_id=r.reporter_user_id
+            ORDER BY r.id DESC LIMIT 25
+            """
+        )
+        reports = [dict(row) for row in cur.fetchall()]
+        return _ok({"moderation": {"open_reports": open_reports, "active_blocks": active_blocks, "recent_reports": reports, "admin": bool(admin_user)}})
+    finally:
+        conn.close()
+
+
+def moderate_message(admin_user: dict, message_id: int, action: str, reason: str = "") -> dict:
+    disabled = _disabled("moderate_message")
+    if disabled:
+        return disabled
+    action = _clean(action, 40).lower()
+    if action not in {"approve", "hide", "delete"}:
+        return _err("Choose a moderation action.", 400, "invalid_action")
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message_id),))
+        message = _row(cur.fetchone())
+        if not message:
+            return _err("Message not found.", 404, "not_found")
+        now = _now()
+        status = "approved" if action == "approve" else "hidden"
+        deleted_at = now if action == "delete" else (message.get("deleted_at") or "")
+        cur.execute("UPDATE comm_v2_messages SET moderation_status=?, deleted_at=?, updated_at=? WHERE id=?", (status, deleted_at, now, int(message_id)))
+        cur.execute(
+            "INSERT INTO comm_v2_moderation_events (conversation_id, message_id, admin_user_id, target_user_id, event_type, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (int(message["conversation_id"]), int(message_id), int((admin_user or {}).get("id") or 0), int(message.get("sender_user_id") or 0), f"message_{action}", _clean(reason, 500), now),
+        )
+        conn.commit()
+        return _ok({"message_id": int(message_id), "action": action})
     finally:
         conn.close()

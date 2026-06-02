@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Pulse Messages v2 | CoinPilotXAI</title>
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css">
+</head>
+<body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
+  <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}">
+    <aside class="comm-list" aria-label="Conversations">
+      <header class="comm-toolbar">
+        <a class="icon-btn" href="/pulse/messages" title="Back to current messages" aria-label="Back to current messages">&lt;</a>
+        <h1>Messages</h1>
+        <button class="icon-btn" type="button" data-new-group title="New group" aria-label="New group">+</button>
+      </header>
+      <div class="comm-filter" role="tablist" aria-label="Conversation type">
+        <button class="is-active" type="button" data-filter="all">All</button>
+        <button type="button" data-filter="direct">DM</button>
+        <button type="button" data-filter="group">Groups</button>
+        <button type="button" data-filter="room">Rooms</button>
+      </div>
+      <div class="comm-create">
+        <input data-target-user placeholder="User ID for DM">
+        <button type="button" data-open-dm>Open</button>
+      </div>
+      <div class="comm-create">
+        <input data-room-title placeholder="Room name">
+        <select data-room-privacy aria-label="Room privacy">
+          <option value="public">Public</option>
+          <option value="private">Private</option>
+        </select>
+        <button type="button" data-create-room>Room</button>
+      </div>
+      <section class="comm-items" data-conversations>
+        <div class="empty-state">Pulse Communications 2.0 is staged behind a feature flag.</div>
+      </section>
+    </aside>
+
+    <section class="comm-thread" aria-label="Message thread">
+      <header class="thread-head">
+        <button class="icon-btn mobile-only" type="button" data-mobile-list title="Conversations" aria-label="Conversations">=</button>
+        <div>
+          <h2 data-thread-title>Select a conversation</h2>
+          <p data-thread-subtitle>DMs, groups, rooms, and channels are isolated in v2.</p>
+        </div>
+      </header>
+      <div class="messages" data-messages>
+        <div class="empty-state">Choose a chat or create one to start testing v2 safely.</div>
+      </div>
+      <form class="composer" data-composer>
+        <input type="file" data-file hidden>
+        <button class="icon-btn" type="button" data-pick-file title="Attach media" aria-label="Attach media">+</button>
+        <input data-message-input autocomplete="off" placeholder="Write a message">
+        <button type="submit">Send</button>
+      </form>
+      <div class="composer-status" data-status role="status" aria-live="polite"></div>
+    </section>
+
+    <aside class="comm-intel" aria-label="Details">
+      <header>
+        <h2>Details</h2>
+        <p data-intel-status>Waiting for a conversation.</p>
+      </header>
+      <section>
+        <h3>Members</h3>
+        <div data-members class="member-list"></div>
+      </section>
+      <section>
+        <h3>Safety</h3>
+        <button type="button" data-report-last>Report last message</button>
+        <button type="button" data-block-peer>Block peer</button>
+      </section>
+      <section>
+        <h3>Phase 2</h3>
+        <button type="button" data-voice>Voice</button>
+        <button type="button" data-video>Video</button>
+      </section>
+    </aside>
+  </main>
+  <script src="/static/js/pulse_messages_v2.js" defer></script>
+</body>
+</html>
