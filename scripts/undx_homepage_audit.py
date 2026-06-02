@@ -29,11 +29,11 @@ def ensure_audit_user():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     cur.execute(
         """
-        INSERT INTO users (user_id, username, display_name, email, account_status, created_at, updated_at)
-        VALUES (?, 'undx-audit', 'UNDX Audit', 'undx-audit@example.com', 'active', ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET account_status='active', updated_at=excluded.updated_at
+        INSERT INTO users (user_id, username, display_name, email, account_status, is_super_user, created_at, updated_at)
+        VALUES (?, 'undx-audit', 'UNDX Audit', ?, 'active', 1, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, account_status='active', is_super_user=1, updated_at=excluded.updated_at
         """,
-        (AUDIT_USER_ID, now, now),
+        (AUDIT_USER_ID, bot.owner_email_value(), now, now),
     )
     conn.commit()
     conn.close()
