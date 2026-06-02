@@ -48,12 +48,12 @@ def set_query_observer(callback):
     QUERY_OBSERVER = callback
 
 
-def notify_query(sql, params=None):
+def notify_query(sql, params=None, duration_ms=None):
     callback = QUERY_OBSERVER
     if not callback:
         return
     try:
-        callback(str(sql or ""), tuple(params or ()))
+        callback(str(sql or ""), tuple(params or ()), duration_ms)
     except Exception:
         pass
 
@@ -466,7 +466,6 @@ class CompatCursor:
     def execute(self, sql, params=None):
         translated = _translate_sql(sql)
         params = tuple(params or ())
-        notify_query(sql, params)
         table = _insert_table(translated)
         append_do_nothing = re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", str(sql), flags=re.I) and not _has_conflict_clause(translated)
         returning_pk = None
@@ -476,7 +475,9 @@ class CompatCursor:
         if append_do_nothing:
             translated = f"{translated.rstrip().rstrip(';')} ON CONFLICT DO NOTHING"
         try:
+            start = time.perf_counter()
             self._cursor.execute(translated, params)
+            notify_query(sql, params, (time.perf_counter() - start) * 1000)
         except Exception as exc:
             tb = traceback.format_exc()
             message = (
