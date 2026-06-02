@@ -1,6 +1,21 @@
 (() => {
   const API = "/api/pulse/communications/v2";
-  const state = { conversations: [], active: null, messages: [], filter: "all", members: [] };
+  const INITIAL_MESSAGE_LIMIT = 40;
+  const state = {
+    conversations: [],
+    conversationCache: new Map(),
+    active: null,
+    messages: [],
+    members: [],
+    filter: "all",
+    hasOlder: false,
+    oldestMessageId: 0,
+    loadingThread: false,
+    initialThreadLoaded: false,
+    detailsCollapsed: false,
+    typingTimer: 0,
+    typingSentAt: 0,
+  };
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
   const currentUserId = Number(root?.dataset.currentUserId || 0);
@@ -14,7 +29,8 @@
     status.dataset.kind = kind;
   }
 
-  async function api(path, options = {}) {
+  async function api(path, options = {}, metric = "request") {
+    const started = performance.now();
     const res = await fetch(API + path, {
       credentials: "same-origin",
       headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
@@ -23,11 +39,22 @@
     const text = await res.text();
     let data = {};
     try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: "The server returned an unexpected response." }; }
+    const durationMs = Math.round(performance.now() - started);
+    console.info("Pulse Communications V2 timing", { metric, path, status: res.status, durationMs, serverTimingMs: data.timing_ms });
     if (!res.ok || data.ok === false) {
       const message = data.message || (data.status === "disabled" ? "Pulse Communications 2.0 is not public yet." : "This request could not be completed.");
-      throw Object.assign(new Error(message), { data, status: res.status });
+      throw Object.assign(new Error(message), { data, status: res.status, durationMs });
     }
     return data;
+  }
+
+  function rememberConversation(item) {
+    if (!item) return null;
+    const id = Number(item.conversation_id || item.id || 0);
+    if (!id) return item;
+    const merged = { ...(state.conversationCache.get(id) || {}), ...item, conversation_id: id };
+    state.conversationCache.set(id, merged);
+    return merged;
   }
 
   function initials(title) {
@@ -66,8 +93,10 @@
       messages.innerHTML = `<div class="empty-state">No messages here yet. Send the first one when v2 is enabled.</div>`;
       return;
     }
-    messages.innerHTML = state.messages.map((item) => messageHtml(item)).join("");
-    messages.scrollTop = messages.scrollHeight;
+    const older = state.hasOlder ? `<button class="load-older" type="button" data-load-older>Load older messages</button>` : "";
+    messages.innerHTML = `${older}${state.messages.map((item) => messageHtml(item)).join("")}`;
+    if (!state.preserveScroll) messages.scrollTop = messages.scrollHeight;
+    state.preserveScroll = false;
   }
 
   function messageHtml(item) {
@@ -108,33 +137,64 @@
     `).join("");
   }
 
-  async function loadConversations() {
+  async function loadConversations({ selectFirst = true } = {}) {
     try {
       const query = state.filter === "all" ? "" : `?type=${encodeURIComponent(state.filter)}`;
-      const data = await api(`/conversations${query}`);
-      state.conversations = data.items || data.conversations || [];
-      if (!state.active && state.conversations.length) state.active = state.conversations[0];
+      const data = await api(`/conversations${query}`, {}, "conversations_list");
+      state.conversations = (data.items || data.conversations || []).map(rememberConversation);
+      if (selectFirst && !state.active && state.conversations.length) {
+        state.active = state.conversations[0];
+      } else if (state.active) {
+        state.active = rememberConversation(state.conversations.find((c) => Number(c.conversation_id) === Number(state.active.conversation_id)) || state.active);
+      }
       renderConversations();
-      if (state.active) await loadMessages(state.active.conversation_id);
       setStatus(state.conversations.length ? "" : "No v2 conversations yet.");
+      if (state.active && !state.initialThreadLoaded) {
+        state.initialThreadLoaded = true;
+        window.requestAnimationFrame(() => loadMessages(state.active.conversation_id).catch((err) => setStatus(err.message, "error")));
+      }
     } catch (err) {
       renderConversations();
       setStatus(err.message, err.data?.status === "disabled" ? "disabled" : "error");
     }
   }
 
-  async function loadMessages(conversationId) {
-    const data = await api(`/conversations/${conversationId}/messages?limit=80`);
-    state.active = data.conversation || state.conversations.find((c) => Number(c.conversation_id) === Number(conversationId)) || state.active;
-    state.messages = data.messages || [];
-    renderConversations();
-    renderMessages();
-    await loadMembers(conversationId);
+  async function loadMessages(conversationId, { beforeId = 0, appendOlder = false } = {}) {
+    if (state.loadingThread) return;
+    state.loadingThread = true;
+    try {
+      const query = `limit=${INITIAL_MESSAGE_LIMIT}${beforeId ? `&before_id=${beforeId}` : ""}`;
+      const data = await api(`/conversations/${conversationId}/messages?${query}`, {}, "selected_thread_messages");
+      state.active = rememberConversation(data.conversation || state.conversationCache.get(Number(conversationId)) || state.active);
+      const nextMessages = data.messages || [];
+      if (appendOlder) {
+        state.preserveScroll = true;
+        const seen = new Set(nextMessages.map((m) => Number(m.id)));
+        state.messages = [...nextMessages, ...state.messages.filter((m) => !seen.has(Number(m.id)))];
+      } else {
+        state.messages = nextMessages;
+      }
+      state.hasOlder = Boolean(data.has_older);
+      state.oldestMessageId = Number(data.oldest_message_id || state.messages[0]?.id || 0);
+      state.members = data.members || state.members;
+      renderConversations();
+      renderMessages();
+      if (!state.members.length) loadMembers(conversationId).catch(() => {});
+    } finally {
+      state.loadingThread = false;
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!state.active || !state.oldestMessageId || !state.hasOlder) return;
+    const previousHeight = messages?.scrollHeight || 0;
+    await loadMessages(state.active.conversation_id, { beforeId: state.oldestMessageId, appendOlder: true });
+    if (messages) messages.scrollTop = Math.max(0, messages.scrollHeight - previousHeight);
   }
 
   async function loadMembers(conversationId) {
     try {
-      const data = await api(`/conversations/${conversationId}/members`);
+      const data = await api(`/conversations/${conversationId}/members`, {}, "members");
       state.members = data.members || [];
       renderMembers();
     } catch (_) {
@@ -149,8 +209,10 @@
     fd.append("file", file);
     fd.append("context_type", "pulse_comm_v2");
     fd.append("context_id", state.active?.conversation_id || "draft");
+    const started = performance.now();
     const res = await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd });
     const data = await res.json();
+    console.info("Pulse Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
     if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
     return Number(data.media?.id || 0);
   }
@@ -159,18 +221,31 @@
     document.addEventListener("click", async (event) => {
       const conversation = event.target.closest("[data-conversation-id]");
       if (conversation) {
-        const id = conversation.dataset.conversationId;
+        const id = Number(conversation.dataset.conversationId || 0);
+        if (state.active && Number(state.active.conversation_id) === id) return;
+        state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
+        state.messages = [];
+        state.members = [];
+        state.hasOlder = false;
+        renderMessages();
+        renderMembers();
         try { await loadMessages(id); } catch (err) { setStatus(err.message, "error"); }
       }
       const filter = event.target.closest("[data-filter]");
       if (filter) {
         state.filter = filter.dataset.filter;
+        state.active = null;
+        state.messages = [];
+        state.members = [];
+        state.initialThreadLoaded = false;
         document.querySelectorAll("[data-filter]").forEach((btn) => btn.classList.toggle("is-active", btn === filter));
         await loadConversations();
       }
       if (event.target.closest("[data-open-dm]")) await openDm();
       if (event.target.closest("[data-create-room]")) await createRoom();
       if (event.target.closest("[data-pick-file]")) el("[data-file]")?.click();
+      if (event.target.closest("[data-load-older]")) await loadOlderMessages();
+      if (event.target.closest("[data-toggle-intel]")) toggleDetails();
       const react = event.target.closest("[data-react]");
       if (react) await reactToMessage(react.dataset.messageId, react.dataset.react);
       if (event.target.closest("[data-report-last]")) await reportLast();
@@ -178,24 +253,51 @@
       if (event.target.closest("[data-voice]") || event.target.closest("[data-video]")) setStatus("Voice and video are Phase 2 placeholders.");
     });
     el("[data-composer]")?.addEventListener("submit", sendMessage);
+    el("[data-message-input]")?.addEventListener("input", debounceTyping);
+  }
+
+  function toggleDetails() {
+    state.detailsCollapsed = !state.detailsCollapsed;
+    root?.classList.toggle("details-collapsed", state.detailsCollapsed);
+  }
+
+  function debounceTyping() {
+    if (!state.active) return;
+    window.clearTimeout(state.typingTimer);
+    state.typingTimer = window.setTimeout(sendTypingIndicator, 450);
+  }
+
+  async function sendTypingIndicator() {
+    if (!state.active) return;
+    const now = Date.now();
+    if (now - state.typingSentAt < 2500) return;
+    state.typingSentAt = now;
+    try {
+      await api(`/conversations/${state.active.conversation_id}/typing`, {
+        method: "POST",
+        body: JSON.stringify({ is_typing: true }),
+      }, "typing_indicator");
+    } catch (_) {}
   }
 
   async function openDm() {
     const input = el("[data-target-user]");
     const target = Number(input?.value || 0);
     if (!target) return setStatus("Enter a user ID to open a DM.", "error");
-    const data = await api("/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: target }) });
-    state.active = data.conversation;
-    await loadConversations();
+    const data = await api("/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: target }) }, "create_direct");
+    state.active = rememberConversation(data.conversation);
+    state.initialThreadLoaded = false;
+    await loadConversations({ selectFirst: false });
   }
 
   async function createRoom() {
     const title = el("[data-room-title]")?.value || "";
     const privacy = el("[data-room-privacy]")?.value || "public";
     if (!title.trim()) return setStatus("Name the room before creating it.", "error");
-    const data = await api("/rooms", { method: "POST", body: JSON.stringify({ title, privacy }) });
-    state.active = data.conversation;
-    await loadConversations();
+    const data = await api("/rooms", { method: "POST", body: JSON.stringify({ title, privacy }) }, "create_room");
+    state.active = rememberConversation(data.conversation);
+    state.initialThreadLoaded = false;
+    await loadConversations({ selectFirst: false });
   }
 
   async function sendMessage(event) {
@@ -208,13 +310,18 @@
     try {
       setStatus(file ? "Uploading attachment..." : "Sending...");
       const mediaId = await uploadSelectedFile(file);
-      await api(`/conversations/${state.active.conversation_id}/messages`, {
+      const data = await api(`/conversations/${state.active.conversation_id}/messages`, {
         method: "POST",
         body: JSON.stringify({ body, media_ids: mediaId ? [mediaId] : [] }),
-      });
+      }, "send_message");
       if (input) input.value = "";
       if (fileInput) fileInput.value = "";
-      await loadMessages(state.active.conversation_id);
+      if (data.message) {
+        state.messages = [...state.messages, data.message];
+        renderMessages();
+      } else {
+        await loadMessages(state.active.conversation_id);
+      }
       setStatus("");
     } catch (err) {
       setStatus(err.message, "error");
@@ -222,21 +329,24 @@
   }
 
   async function reactToMessage(messageId, reaction) {
-    await api(`/messages/${messageId}/reactions`, { method: "POST", body: JSON.stringify({ reaction }) });
-    if (state.active) await loadMessages(state.active.conversation_id);
+    const data = await api(`/messages/${messageId}/reactions`, { method: "POST", body: JSON.stringify({ reaction }) }, "reaction");
+    if (data.message) {
+      state.messages = state.messages.map((item) => Number(item.id) === Number(messageId) ? data.message : item);
+      renderMessages();
+    }
   }
 
   async function reportLast() {
     const last = state.messages[state.messages.length - 1];
     if (!last) return setStatus("No message is available to report.", "error");
-    await api(`/messages/${last.id}/report`, { method: "POST", body: JSON.stringify({ reason: "Reported from v2 test UI" }) });
+    await api(`/messages/${last.id}/report`, { method: "POST", body: JSON.stringify({ reason: "Reported from v2 test UI" }) }, "report");
     setStatus("Report sent to moderation.");
   }
 
   async function blockPeer() {
     const peer = state.members.find((m) => Number(m.user_id) !== currentUserId);
     if (!peer) return setStatus("No peer is available to block.", "error");
-    await api("/blocks", { method: "POST", body: JSON.stringify({ blocked_user_id: peer.user_id, reason: "Blocked from v2 test UI" }) });
+    await api("/blocks", { method: "POST", body: JSON.stringify({ blocked_user_id: peer.user_id, reason: "Blocked from v2 test UI" }) }, "block");
     setStatus("Member blocked.");
   }
 
@@ -256,5 +366,6 @@
   }
 
   bind();
+  renderMessages();
   loadConversations();
 })();

@@ -249,12 +249,135 @@ input, select {
   margin-top: 8px;
 }
 .mobile-only { display: none; }
+.desktop-only { display: inline-grid; }
 body[data-comm-v2-enabled="false"] .composer,
 body[data-comm-v2-enabled="false"] .comm-create,
 body[data-comm-v2-enabled="false"] .comm-filter {
   opacity: .55;
 }
+@media (min-width: 941px) {
+  body {
+    overflow: hidden;
+  }
+  .comm-shell {
+    height: 100dvh;
+    min-height: 720px;
+    grid-template-columns: clamp(280px, 19vw, 340px) minmax(620px, 1fr) clamp(280px, 17vw, 320px);
+  }
+  .comm-shell.details-collapsed {
+    grid-template-columns: clamp(280px, 19vw, 340px) minmax(760px, 1fr) 56px;
+  }
+  .comm-list, .comm-thread, .comm-intel {
+    min-height: 0;
+    height: 100dvh;
+  }
+  .comm-list {
+    display: grid;
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .comm-items {
+    overflow: auto;
+    padding: 8px 10px 14px;
+  }
+  .comm-create {
+    padding: 8px 10px;
+  }
+  .comm-toolbar, .thread-head {
+    min-height: 58px;
+    padding: 9px 12px;
+  }
+  .thread-head {
+    justify-content: space-between;
+  }
+  .thread-head > div {
+    min-width: 0;
+  }
+  .comm-thread {
+    background: #f9fbfd;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+  }
+  .messages {
+    padding: 14px clamp(22px, 3.4vw, 56px);
+    gap: 8px;
+  }
+  .message {
+    max-width: min(820px, 72%);
+    padding: 9px 12px;
+  }
+  .message p {
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+  .reaction-row {
+    margin-top: 6px;
+  }
+  .composer {
+    grid-template-columns: 44px minmax(0, 1fr) minmax(82px, auto);
+    align-items: center;
+    gap: 10px;
+    padding: 12px clamp(22px, 3.4vw, 56px);
+    background: var(--panel);
+  }
+  .composer input[data-message-input] {
+    min-height: 46px;
+    border-radius: 8px;
+  }
+  .composer-status {
+    min-height: 22px;
+    padding: 0 clamp(22px, 3.4vw, 56px) 8px;
+    background: var(--panel);
+  }
+  .comm-intel {
+    overflow: auto;
+    padding: 12px;
+    transition: padding .18s ease;
+  }
+  .comm-shell.details-collapsed .comm-intel {
+    padding: 8px;
+  }
+  .comm-shell.details-collapsed .comm-intel section,
+  .comm-shell.details-collapsed .comm-intel p,
+  .comm-shell.details-collapsed .comm-intel h2 {
+    display: none;
+  }
+  .comm-shell.details-collapsed .comm-intel::before {
+    content: "Details";
+    writing-mode: vertical-rl;
+    display: block;
+    margin: 12px auto;
+    color: var(--muted);
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+  .load-older {
+    align-self: center;
+    min-height: 34px;
+    padding: 6px 12px;
+    color: var(--accent);
+  }
+}
+@media (min-width: 1440px) {
+  .message {
+    max-width: min(900px, 70%);
+  }
+}
+@media (min-width: 1920px) {
+  .comm-shell {
+    grid-template-columns: 340px minmax(0, 1fr) 320px;
+  }
+  .messages, .composer, .composer-status {
+    padding-left: 64px;
+    padding-right: 64px;
+  }
+  .message {
+    max-width: min(980px, 68%);
+  }
+}
 @media (max-width: 940px) {
+  .desktop-only {
+    display: none;
+  }
   .comm-shell {
     grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
   }

@@ -374,6 +374,76 @@ def _conversation_payload(cur, conversation: dict, viewer_user_id: int) -> dict:
     }
 
 
+def _conversation_payloads(cur, conversations: list[dict], viewer_user_id: int) -> list[dict]:
+    if not conversations:
+        return []
+    conversation_ids = [int(item.get("id") or 0) for item in conversations if int(item.get("id") or 0)]
+    placeholders = ",".join(["?"] * len(conversation_ids))
+    mine_by_conversation: dict[int, dict] = {}
+    preview_by_conversation: dict[int, list[dict]] = {conversation_id: [] for conversation_id in conversation_ids}
+    if conversation_ids:
+        cur.execute(
+            f"""
+            SELECT conversation_id, unread_count, last_read_message_id, role
+            FROM comm_v2_participants
+            WHERE user_id=? AND conversation_id IN ({placeholders})
+            """,
+            (int(viewer_user_id), *conversation_ids),
+        )
+        mine_by_conversation = {int(row["conversation_id"]): dict(row) for row in cur.fetchall()}
+        cur.execute(
+            f"""
+            SELECT p.conversation_id, p.user_id,
+                   COALESCE(u.display_name,u.username,'Pulse member') AS display_name,
+                   COALESCE(u.avatar_url,'') AS avatar_url
+            FROM comm_v2_participants p
+            LEFT JOIN users u ON u.user_id=p.user_id
+            WHERE p.conversation_id IN ({placeholders})
+              AND p.membership_state='active'
+              AND COALESCE(p.left_at,'')=''
+            ORDER BY p.conversation_id, p.id ASC
+            """,
+            tuple(conversation_ids),
+        )
+        for row in cur.fetchall():
+            conversation_id = int(row["conversation_id"])
+            if len(preview_by_conversation.setdefault(conversation_id, [])) < 6:
+                preview_by_conversation[conversation_id].append({
+                    "user_id": int(row["user_id"] or 0),
+                    "display_name": row["display_name"] or "Pulse member",
+                    "avatar_url": row["avatar_url"] or "",
+                })
+    out = []
+    for conversation in conversations:
+        conversation_id = int(conversation.get("id") or 0)
+        mine = mine_by_conversation.get(conversation_id, {})
+        members = preview_by_conversation.get(conversation_id, [])
+        title = conversation.get("title") or ""
+        if conversation.get("conversation_type") == "direct":
+            others = [m for m in members if int(m.get("user_id") or 0) != int(viewer_user_id)]
+            if others:
+                title = others[0].get("display_name") or title
+        out.append({
+            "id": conversation_id,
+            "conversation_id": conversation_id,
+            "public_id": conversation.get("public_id") or "",
+            "conversation_type": conversation.get("conversation_type") or "direct",
+            "title": title or "Untitled chat",
+            "description": conversation.get("description") or "",
+            "privacy": conversation.get("privacy") or "private",
+            "visibility": conversation.get("visibility") or "members",
+            "member_count": int(conversation.get("member_count") or len(members) or 0),
+            "last_message_id": int(conversation.get("last_message_id") or 0),
+            "last_message_at": conversation.get("last_message_at") or "",
+            "last_activity_at": conversation.get("last_activity_at") or conversation.get("updated_at") or conversation.get("created_at") or "",
+            "unread_count": int(mine.get("unread_count") or 0),
+            "last_read_message_id": int(mine.get("last_read_message_id") or 0),
+            "role": mine.get("role") or ("viewer" if conversation.get("privacy") == "public" else ""),
+            "participants_preview": members,
+        })
+    return out
+
+
 def create_conversation(user_id: int, payload: dict | None = None) -> dict:
     disabled = _disabled("create_conversation")
     if disabled:
@@ -494,7 +564,7 @@ def list_conversations(user_id: int, filters: dict | None = None) -> dict:
             """,
             tuple(params),
         )
-        items = [_conversation_payload(cur, _row(row), user_id) for row in cur.fetchall()]
+        items = _conversation_payloads(cur, [_row(row) for row in cur.fetchall()], user_id)
         return _ok({"items": items, "conversations": items})
     finally:
         conn.close()
@@ -661,12 +731,90 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
     }
 
 
+def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> list[dict]:
+    if not message_rows:
+        return []
+    message_ids = [int(item.get("id") or 0) for item in message_rows if int(item.get("id") or 0)]
+    sender_ids = sorted({int(item.get("sender_user_id") or 0) for item in message_rows if int(item.get("sender_user_id") or 0)})
+    attachment_map: dict[int, list[dict]] = {message_id: [] for message_id in message_ids}
+    reaction_map: dict[int, list[dict]] = {message_id: [] for message_id in message_ids}
+    mine_map: dict[int, str] = {}
+    sender_map: dict[int, dict] = {}
+    if message_ids:
+        placeholders = ",".join(["?"] * len(message_ids))
+        cur.execute(f"SELECT * FROM comm_v2_attachments WHERE message_id IN ({placeholders}) ORDER BY message_id, id ASC", tuple(message_ids))
+        for row in cur.fetchall():
+            item = _row(row)
+            attachment_map.setdefault(int(item.get("message_id") or 0), []).append(_attachment_payload(item))
+        cur.execute(
+            f"""
+            SELECT message_id, reaction_type, COUNT(*) AS total
+            FROM comm_v2_message_reactions
+            WHERE message_id IN ({placeholders})
+            GROUP BY message_id, reaction_type
+            """,
+            tuple(message_ids),
+        )
+        for row in cur.fetchall():
+            reaction_map.setdefault(int(row["message_id"]), []).append({"reaction_type": row["reaction_type"], "count": int(row["total"] or 0)})
+        cur.execute(
+            f"SELECT message_id, reaction_type FROM comm_v2_message_reactions WHERE user_id=? AND message_id IN ({placeholders})",
+            (int(viewer_user_id), *message_ids),
+        )
+        mine_map = {int(row["message_id"]): row["reaction_type"] or "" for row in cur.fetchall()}
+    if sender_ids:
+        placeholders = ",".join(["?"] * len(sender_ids))
+        cur.execute(
+            f"SELECT user_id, username, display_name, avatar_url FROM users WHERE user_id IN ({placeholders})",
+            tuple(sender_ids),
+        )
+        sender_map = {
+            int(row["user_id"]): {
+                "user_id": int(row["user_id"] or 0),
+                "display_name": row["display_name"] or row["username"] or f"Member {row['user_id']}",
+                "username": row["username"] or "",
+                "avatar_url": row["avatar_url"] or "",
+            }
+            for row in cur.fetchall()
+        }
+    out = []
+    for message in message_rows:
+        message_id = int(message.get("id") or 0)
+        sender_user_id = int(message.get("sender_user_id") or 0)
+        out.append({
+            "id": message_id,
+            "public_id": message.get("public_id") or "",
+            "conversation_id": int(message.get("conversation_id") or 0),
+            "sender_user_id": sender_user_id,
+            "sender": sender_map.get(sender_user_id) or {
+                "user_id": sender_user_id,
+                "display_name": f"Member {sender_user_id}",
+                "username": "",
+                "avatar_url": "",
+            },
+            "is_mine": sender_user_id == int(viewer_user_id),
+            "message_type": message.get("message_type") or "text",
+            "body": message.get("body") or "",
+            "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
+            "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
+            "delivery_status": message.get("delivery_status") or "sent",
+            "moderation_status": message.get("moderation_status") or "approved",
+            "attachments": attachment_map.get(message_id, []),
+            "reactions": reaction_map.get(message_id, []),
+            "my_reaction": mine_map.get(message_id, ""),
+            "created_at": message.get("created_at") or "",
+            "updated_at": message.get("updated_at") or "",
+        })
+    return out
+
+
 def list_messages(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
     disabled = _disabled("list_messages")
     if disabled:
         return disabled
     filters = filters or {}
-    limit = max(1, min(int(filters.get("limit") or 80), 120))
+    limit = max(1, min(int(filters.get("limit") or 40), 80))
+    fetch_limit = limit + 1
     before_id = int(filters.get("before_id") or 0)
     conn, cur = _open_db()
     try:
@@ -681,18 +829,30 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
         if before_id:
             cur.execute(
                 "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND id<? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?",
-                (conversation_id, before_id, limit),
+                (conversation_id, before_id, fetch_limit),
             )
         else:
             cur.execute(
                 "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?",
-                (conversation_id, limit),
+                (conversation_id, fetch_limit),
             )
-        messages = [_message_payload(cur, _row(row), user_id) for row in reversed(cur.fetchall())]
+        fetched = [_row(row) for row in cur.fetchall()]
+        has_older = len(fetched) > limit
+        fetched = fetched[:limit]
+        raw_messages = list(reversed(fetched))
+        messages = _message_payloads(cur, raw_messages, user_id)
+        oldest_message_id = int(raw_messages[0].get("id") or 0) if raw_messages else 0
         typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
         mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
         conn.commit()
-        return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "messages": messages, "typing": typing})
+        return _ok({
+            "conversation": _conversation_payload(cur, conversation, user_id),
+            "messages": messages,
+            "typing": typing,
+            "has_older": has_older,
+            "oldest_message_id": oldest_message_id,
+            "limit": limit,
+        })
     finally:
         conn.close()
 

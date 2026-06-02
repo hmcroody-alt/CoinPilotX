@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 from flask import Blueprint, jsonify, render_template, request
 
 from . import flags, service
@@ -35,6 +38,24 @@ def _json(payload: dict):
     return response, status
 
 
+def _timed_json(metric: str, action):
+    started = time.perf_counter()
+    payload = action()
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    logging.info(
+        "PULSE_COMM_V2_TIMING metric=%s duration_ms=%s method=%s path=%s ok=%s status=%s",
+        metric,
+        elapsed_ms,
+        request.method,
+        request.path,
+        bool(payload.get("ok")) if isinstance(payload, dict) else False,
+        payload.get("status") if isinstance(payload, dict) else "",
+    )
+    if isinstance(payload, dict):
+        payload.setdefault("timing_ms", elapsed_ms)
+    return _json(payload)
+
+
 def _require_user():
     user = _current_user()
     if not user:
@@ -62,7 +83,7 @@ def conversations():
     user, denied = _require_user()
     if denied:
         return denied
-    return _json(service.list_conversations(user["user_id"], {"type": request.args.get("type") or "all"}))
+    return _timed_json("conversations_list", lambda: service.list_conversations(user["user_id"], {"type": request.args.get("type") or "all"}))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations")
@@ -137,7 +158,7 @@ def messages(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
-    return _json(service.list_messages(user["user_id"], conversation_ref, request.args))
+    return _timed_json("selected_thread_messages", lambda: service.list_messages(user["user_id"], conversation_ref, request.args))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/messages")
@@ -146,7 +167,7 @@ def send_message(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
-    return _json(service.send_message(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
+    return _timed_json("send_message", lambda: service.send_message(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
@@ -173,7 +194,7 @@ def read_state(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
-    return _json(service.mark_read(user["user_id"], conversation_ref))
+    return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/typing")
@@ -182,7 +203,7 @@ def typing(conversation_ref):
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    return _json(service.set_typing(user["user_id"], conversation_ref, bool(payload.get("is_typing", True))))
+    return _timed_json("typing_indicator", lambda: service.set_typing(user["user_id"], conversation_ref, bool(payload.get("is_typing", True))))
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/presence")
@@ -200,7 +221,7 @@ def reactions(message_id):
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    return _json(service.set_reaction(user["user_id"], message_id, payload.get("reaction") or payload.get("reaction_type") or "heart"))
+    return _timed_json("reaction", lambda: service.set_reaction(user["user_id"], message_id, payload.get("reaction") or payload.get("reaction_type") or "heart"))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/report")
