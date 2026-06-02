@@ -749,7 +749,7 @@ def intelligence_panel(topic=""):
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
         WHERE p.deleted_at IS NULL AND p.moderation_status='approved'
-        GROUP BY p.user_id
+        GROUP BY p.user_id, u.display_name, u.username
         ORDER BY total DESC
         LIMIT 5
         """
