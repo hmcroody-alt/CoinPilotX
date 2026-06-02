@@ -131,6 +131,19 @@ Complete an authenticated browser pass after deployment:
 5. Confirm Railway logs show `PULSE_MEDIA_UPLOAD_ROUTE_HIT`
 6. Confirm R2/CDN URL is returned and rendered
 
+The frontend helper deployment is currently blocked by a Railway infrastructure
+failure outside this patch:
+
+```text
+install mise packages: python
+Build Failed: build daemon returned an error < failed to solve: secret Access not found >
+```
+
+The active Cloudflare custom rule is independent of the Railway deploy and is
+already live. The authenticated browser pass can verify upload transit while
+Railway serves the previous application deployment. The versioned frontend
+error-message improvement will become visible after Railway restores builds.
+
 ## Remaining Risks
 
 - The exact shared upload route now bypasses Cloudflare managed-rule and Super
