@@ -163,6 +163,27 @@ article.card > .pulse-media-wrap {
     drop-shadow(0 0 18px rgba(var(--pulse-media-rgb, 110, 223, 246), .12)) !important;
 }
 
+.pulse-media-sound-unlock {
+  position: absolute !important;
+  right: 12px !important;
+  bottom: 12px !important;
+  z-index: 8 !important;
+  min-height: 36px !important;
+  border: 1px solid rgba(110, 223, 246, .28) !important;
+  border-radius: 999px !important;
+  padding: 8px 12px !important;
+  background: rgba(3, 7, 18, .72) !important;
+  color: #dffcff !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .32), 0 0 24px rgba(110, 223, 246, .12) !important;
+  backdrop-filter: blur(10px);
+}
+
+.pulse-media-sound-unlock[hidden] {
+  display: none !important;
+}
+
 .pulse-media-surface-reels {
   position: absolute !important;
   inset: 0 !important;

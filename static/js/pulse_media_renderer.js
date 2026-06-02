@@ -6,13 +6,15 @@
   const LOADING = "is-loading";
   const BROKEN = "is-broken";
   const PORTAL_CSS_ID = "pulse-cinematic-media-css";
+  const SOUND_KEY = "pulseMediaSoundEnabled";
+  const REELS_SOUND_KEY = "pulseReelsSoundEnabled";
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=foundation-20260528";
+    link.href = "/static/css/pulse_cinematic_media.css?v=media-autoplay-20260602";
     document.head.appendChild(link);
   }
 
@@ -51,6 +53,25 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function soundEnabled() {
+    try {
+      return window.localStorage?.getItem(SOUND_KEY) === "true" || window.localStorage?.getItem(REELS_SOUND_KEY) === "true";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setSoundEnabled(enabled) {
+    try {
+      window.localStorage?.setItem(SOUND_KEY, String(!!enabled));
+      window.localStorage?.setItem(REELS_SOUND_KEY, String(!!enabled));
+    } catch (_) {}
+    document.querySelectorAll("[data-pulse-media-sound]").forEach(button => {
+      button.hidden = !!enabled;
+      button.textContent = enabled ? "Sound on" : "Tap for sound";
+    });
   }
 
   function inferMediaType(item, url) {
@@ -169,7 +190,7 @@
     if (media.type === "video") {
       const poster = media.poster ? ` poster="${esc(media.poster)}"` : "";
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
-      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video muted controls playsinline preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video>${fallback}</div>`;
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video muted controls playsinline preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound ${soundEnabled() ? "hidden" : ""}>Tap for sound</button>${fallback}</div>`;
     }
     if (media.type === "audio") {
       return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
@@ -249,6 +270,95 @@
     };
     video.addEventListener("loadeddata", sample, { once: true });
     video.addEventListener("playing", sample);
+  }
+
+  function ensureSoundButton(wrap) {
+    if (!wrap || wrap.querySelector("[data-pulse-media-sound]")) return;
+    const video = wrap.querySelector("video");
+    if (!video) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "pulse-media-sound-unlock";
+    button.dataset.pulseMediaSound = "1";
+    button.textContent = soundEnabled() ? "Sound on" : "Tap for sound";
+    button.hidden = soundEnabled();
+    wrap.appendChild(button);
+  }
+
+  let activeVideo = null;
+  let playbackObserver = null;
+
+  function mediaVideoWrap(video) {
+    return video?.closest?.(".pulse-media-wrap") || video?.closest?.(".reel-card") || video?.parentElement || null;
+  }
+
+  function pauseOtherVideos(except) {
+    document.querySelectorAll("video").forEach(video => {
+      if (video !== except && !video.paused) video.pause();
+    });
+  }
+
+  async function playVisibleVideo(video, preferSound = soundEnabled()) {
+    if (!video) return;
+    const wrap = mediaVideoWrap(video);
+    pauseOtherVideos(video);
+    activeVideo = video;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.muted = !preferSound;
+    try {
+      await video.play();
+      wrap?.classList.add("is-playing");
+      if (preferSound) setSoundEnabled(true);
+    } catch (error) {
+      if (preferSound) {
+        video.muted = true;
+        setSoundEnabled(false);
+        try {
+          await video.play();
+          return;
+        } catch (_) {}
+      }
+      if (mediaDebugEnabled()) console.warn("Pulse media autoplay blocked", {
+        src: videoSource(video),
+        message: error?.message || String(error),
+      });
+    }
+  }
+
+  function bindAutoplayVideo(wrap, video) {
+    if (!wrap || !video || video.dataset.pulseAutoplayBound === "1") return;
+    video.dataset.pulseAutoplayBound = "1";
+    ensureSoundButton(wrap);
+    video.addEventListener("play", () => {
+      pauseOtherVideos(video);
+      activeVideo = video;
+      wrap.classList.add("is-playing");
+    });
+    video.addEventListener("pause", () => wrap.classList.remove("is-playing"));
+    if (!("IntersectionObserver" in window)) return;
+    if (!playbackObserver) {
+      playbackObserver = new IntersectionObserver(entries => {
+        let best = null;
+        entries.forEach(entry => {
+          const vid = entry.target;
+          const targetWrap = mediaVideoWrap(vid);
+          if (!entry.isIntersecting || entry.intersectionRatio < .58) {
+            if (!vid.paused) vid.pause();
+            vid.preload = "metadata";
+            targetWrap?.classList.remove("is-active-media");
+            return;
+          }
+          if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
+        });
+        if (!best) return;
+        const vid = best.target;
+        const targetWrap = mediaVideoWrap(vid);
+        targetWrap?.classList.add("is-active-media");
+        playVisibleVideo(vid, soundEnabled());
+      }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
+    }
+    playbackObserver.observe(video);
   }
 
   function retryUrl(url, count) {
@@ -435,6 +545,7 @@
       return;
     }
     bindVideoAmbient(wrap, media);
+    bindAutoplayVideo(wrap, media);
     media.addEventListener("loadedmetadata", () => {
       if (mediaDebugEnabled()) console.info("Pulse video metadata loaded", {
         media_id: wrap.dataset.mediaId || "",
@@ -491,14 +602,27 @@
     } else {
       wraps.forEach(hydrateWrap);
     }
+    wraps.forEach(wrap => {
+      const video = wrap.querySelector("video");
+      if (video) bindAutoplayVideo(wrap, video);
+    });
   }
 
   document.addEventListener("click", event => {
+    const soundButton = event.target.closest("[data-pulse-media-sound]");
+    if (soundButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSoundEnabled(true);
+      const video = soundButton.closest(".pulse-media-wrap")?.querySelector("video") || activeVideo;
+      if (video) playVisibleVideo(video, true);
+      return;
+    }
     const button = event.target.closest("[data-retry-media]");
     if (!button) return;
     retry(button.closest(".pulse-media-wrap"));
   });
 
   document.addEventListener("DOMContentLoaded", () => hydrate(document));
-  window.PulseMediaRenderer = { hydrate, retry, normalizeMedia, renderMedia, renderInto };
+  window.PulseMediaRenderer = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, soundEnabled };
 })();
