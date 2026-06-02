@@ -133,6 +133,21 @@ def log_boot_diagnostics() -> None:
         logging.warning("MEDIA_ENGINE_FFMPEG_MISSING thumbnails/transcoding will use safe fallbacks until ffmpeg is installed")
 
 
+def ensure_media_worker_schema() -> None:
+    """Keep worker startup focused on media columns; web process owns full app migrations."""
+    conn = bot.db()
+    cur = conn.cursor()
+    bot.add_columns_if_missing(cur, "chat_media_uploads", [
+        ("playback_url", "TEXT"),
+        ("playback_storage_key", "TEXT"),
+        ("playback_mime_type", "TEXT"),
+        ("transcoded_at", "TEXT"),
+    ], conn=conn)
+    conn.commit()
+    conn.close()
+    logging.info("MEDIA_WORKER_SCHEMA_READY table=chat_media_uploads playback_columns=true")
+
+
 def _media_path(media_url: str) -> Path | None:
     url = str(media_url or "").strip()
     if not url.startswith("/static/uploads/"):
@@ -581,7 +596,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_stop)
     signal.signal(signal.SIGINT, _handle_stop)
     log_boot_diagnostics()
-    bot.init_db()
+    ensure_media_worker_schema()
     try:
         bot.record_worker_heartbeat(WORKER_NAME, "booting", metadata=dependency_snapshot())
     except Exception:
