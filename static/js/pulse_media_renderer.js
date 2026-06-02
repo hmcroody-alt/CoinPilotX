@@ -8,13 +8,14 @@
   const PORTAL_CSS_ID = "pulse-cinematic-media-css";
   const SOUND_KEY = "pulseMediaSoundEnabled";
   const REELS_SOUND_KEY = "pulseReelsSoundEnabled";
+  const metadataCache = new Map();
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=media-autoplay-20260602";
+    link.href = "/static/css/pulse_cinematic_media.css?v=video-seamless-20260602";
     document.head.appendChild(link);
   }
 
@@ -72,6 +73,10 @@
       button.hidden = !!enabled;
       button.textContent = enabled ? "Sound on" : "Tap for sound";
     });
+  }
+
+  function isPulseStreamUrl(url) {
+    return /\/api\/pulse\/media\/\d+\/stream(?:[?#]|$)/.test(String(url || ""));
   }
 
   function inferMediaType(item, url) {
@@ -145,6 +150,7 @@
       "pulse-cinematic-media-shell",
       "pulse-media-galaxy-shell",
       "pulse-media-ambient-shell",
+      media.type === "video" ? "pulse-unified-video-player" : "",
       `is-${orientation}`,
       `media-kind-${media.type}`,
       `pulse-media-surface-${surface}`,
@@ -190,7 +196,9 @@
     if (media.type === "video") {
       const poster = media.poster ? ` poster="${esc(media.poster)}"` : "";
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
-      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video muted controls playsinline preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound ${soundEnabled() ? "hidden" : ""}>Tap for sound</button>${fallback}</div>`;
+      const controls = options.controls === false ? "" : " controls";
+      const loop = options.loop ? " loop" : "";
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player muted${controls}${loop} playsinline preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
     }
     if (media.type === "audio") {
       return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
@@ -280,9 +288,21 @@
     button.type = "button";
     button.className = "pulse-media-sound-unlock";
     button.dataset.pulseMediaSound = "1";
-    button.textContent = soundEnabled() ? "Sound on" : "Tap for sound";
-    button.hidden = soundEnabled();
+    button.textContent = "Tap for sound";
+    button.hidden = true;
     wrap.appendChild(button);
+  }
+
+  function showSoundPrompt(wrap, visible = true) {
+    const button = wrap?.querySelector?.("[data-pulse-media-sound]");
+    if (!button) return;
+    button.hidden = !visible || soundEnabled();
+    if (!button.hidden) {
+      clearTimeout(button._pulseSoundTimer);
+      button._pulseSoundTimer = setTimeout(() => {
+        if (!soundEnabled()) button.hidden = true;
+      }, 3200);
+    }
   }
 
   let activeVideo = null;
@@ -310,12 +330,14 @@
       await video.play();
       wrap?.classList.add("is-playing");
       if (preferSound) setSoundEnabled(true);
+      else showSoundPrompt(wrap, true);
     } catch (error) {
       if (preferSound) {
         video.muted = true;
         setSoundEnabled(false);
         try {
           await video.play();
+          showSoundPrompt(wrap, true);
           return;
         } catch (_) {}
       }
@@ -324,6 +346,20 @@
         message: error?.message || String(error),
       });
     }
+  }
+
+  function preloadNextVideo(video) {
+    const wrap = mediaVideoWrap(video);
+    const scope = wrap?.closest?.(".feed,.reels-immersive,[data-status-viewer],main,body") || document;
+    const videos = Array.from(scope.querySelectorAll(".pulse-media-wrap video, [data-status-viewer] video, .reel-card video"));
+    const index = videos.indexOf(video);
+    const next = index >= 0 ? videos[index + 1] : null;
+    if (!next || next.dataset.pulseLightPreloaded === "1") return;
+    next.dataset.pulseLightPreloaded = "1";
+    next.preload = "metadata";
+    try {
+      if (next.readyState === 0) next.load();
+    } catch (_) {}
   }
 
   function bindAutoplayVideo(wrap, video) {
@@ -356,6 +392,7 @@
         const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
         playVisibleVideo(vid, soundEnabled());
+        preloadNextVideo(vid);
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
     playbackObserver.observe(video);
@@ -472,6 +509,11 @@
       wrap.dataset.mediaRetries = String(retries + 1);
       const src = mediaSource(media) || mediaUrl(wrap);
       if (src) {
+        if (media?.tagName === "VIDEO" && isPulseStreamUrl(src)) {
+          media.style.visibility = "hidden";
+          mark(wrap, BROKEN);
+          return;
+        }
         media.style.visibility = "hidden";
         if (media.tagName === "VIDEO") {
           media.addEventListener("loadedmetadata", () => {
@@ -546,7 +588,17 @@
     }
     bindVideoAmbient(wrap, media);
     bindAutoplayVideo(wrap, media);
+    const cached = metadataCache.get(videoSource(media) || canonicalSrc);
+    if (cached) {
+      wrap.dataset.mediaDurationCached = String(cached.duration || 0);
+      wrap.dataset.mediaDimensionsCached = `${cached.width || 0}x${cached.height || 0}`;
+    }
     media.addEventListener("loadedmetadata", () => {
+      metadataCache.set(videoSource(media) || canonicalSrc, {
+        duration: media.duration || 0,
+        width: media.videoWidth || 0,
+        height: media.videoHeight || 0,
+      });
       if (mediaDebugEnabled()) console.info("Pulse video metadata loaded", {
         media_id: wrap.dataset.mediaId || "",
         src: videoSource(media) || mediaUrl(wrap),
