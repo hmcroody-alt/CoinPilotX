@@ -760,10 +760,11 @@ def intelligence_panel(topic=""):
         SELECT id, title, body, risk_score
         FROM pulse_posts
         WHERE deleted_at IS NULL AND moderation_status='approved'
-          AND (post_type='scam_report' OR risk_score>=50 OR tags_json LIKE '%scam%')
+          AND (post_type='scam_report' OR risk_score>=50 OR tags_json LIKE ?)
         ORDER BY created_at DESC
         LIMIT 4
-        """
+        """,
+        ("%scam%",),
     )
     scam_warnings = [
         {"id": row["id"], "title": row["title"] or (row["body"] or "Scam warning")[:80], "risk_score": int(row["risk_score"] or 0), "permalink": f"/pulse/post/{row['id']}"}
