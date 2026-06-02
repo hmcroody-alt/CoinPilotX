@@ -102,6 +102,24 @@ This proves the multipart request now reaches the application and that backend
 authentication remains intact. The Cloudflare HTML `403` is no longer returned
 for the shared upload route.
 
+An authenticated production browser retest was then completed from
+`https://coinpilotx.app/pulse/status` with an image selected through the real
+Status composer:
+
+- Browser photo preview: rendered successfully
+- `POST /api/pulse/media/upload`: `200`
+- Request referrer: `https://coinpilotx.app/pulse/status`
+- Cloudflare HTML block: not returned
+- Application route: reached successfully
+
+The follow-up JSON create request exposed a separate application blocker:
+
+- `POST /api/pulse/status`: `500`
+- User-facing message: `Server could not save Pulse Status. Try again or contact support with this trace ID.`
+
+This Status-record persistence failure is downstream of the fixed Cloudflare
+upload block and should be handled as a separate application repair.
+
 ## Local Validation
 
 Passed:
@@ -122,14 +140,13 @@ The focused Status audit verifies text-only, image-only, text-plus-image, and
 
 ## Remaining Production Confirmation
 
-Complete an authenticated browser pass after deployment:
+Complete the remaining authenticated browser pass after the downstream Status
+save failure and Railway build failure are repaired:
 
-1. Status image upload
-2. Status `.mov` upload
-3. Feed media post
-4. Reel upload
-5. Confirm Railway logs show `PULSE_MEDIA_UPLOAD_ROUTE_HIT`
-6. Confirm R2/CDN URL is returned and rendered
+1. Status `.mov` upload and publish
+2. Feed media post
+3. Reel upload
+4. Confirm R2/CDN URL renders in each published surface
 
 The frontend helper deployment is currently blocked by a Railway infrastructure
 failure outside this patch:
@@ -152,3 +169,6 @@ error-message improvement will become visible after Railway restores builds.
   required enforcement layers.
 - Keep Cloudflare match logging enabled and review upload-path event volume after
   deployment.
+- `POST /api/pulse/status` currently returns an application-side `500` after a
+  successful upload. That downstream persistence issue prevents a full rendered
+  Status confirmation.
