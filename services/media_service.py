@@ -155,6 +155,19 @@ def cdn_url_for_key(storage_key):
     return f"{base}/{key}"
 
 
+def stream_url_for_media(media_id, media_type="", storage_provider="", storage_key=""):
+    """Use first-party streaming for durable video/audio when edge security blocks raw CDN files."""
+    try:
+        media_id = int(media_id or 0)
+    except Exception:
+        media_id = 0
+    kind = str(media_type or "").lower()
+    provider = str(storage_provider or "").lower()
+    if media_id and kind in {"video", "audio"} and provider in {"r2", "s3"} and storage_key:
+        return f"/api/pulse/media/{media_id}/stream"
+    return ""
+
+
 def _cdn_url_from_r2_private_url(value):
     """Map a private R2/S3 endpoint URL to the public CDN URL when possible."""
     try:
@@ -302,6 +315,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     except Exception:
         has_audio = bool(has_audio)
     provider = item.get("storage_provider") or item.get("provider") or ("r2" if canonical_cdn_url else "remote" if source.startswith(("http://", "https://")) else media_storage.provider())
+    first_party_stream = stream_url_for_media(item.get("id"), kind, provider, storage_key)
     available = item.get("is_available")
     if available is None:
         if check_remote and source.startswith(("http://", "https://")):
@@ -335,7 +349,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "valid_url": source if available else "",
         "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
-        "playback_url": mux_urls["hls_url"] or source,
+        "playback_url": mux_urls["hls_url"] or first_party_stream or source,
         "thumbnail_url": thumb or source,
         "poster_url": poster_value,
         "mux_playback_id": mux_playback_id,

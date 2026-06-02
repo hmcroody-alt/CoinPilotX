@@ -154,6 +154,39 @@ def _upload_to_object_storage(path, storage_key, mime_type):
         return False, str(exc)
 
 
+def object_client():
+    """Return an S3-compatible client for R2/S3 without exposing credentials."""
+    status = storage_status()
+    if status.get("provider") not in {"r2", "s3"} or not status.get("configured"):
+        return None
+    try:
+        import boto3
+    except Exception as exc:
+        logging.exception("MEDIA_R2_CLIENT_UNAVAILABLE error=%s", exc)
+        return None
+    return boto3.client(
+        "s3",
+        endpoint_url=_s3_endpoint(),
+        aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"),
+        region_name=os.getenv("AWS_REGION", "auto"),
+    )
+
+
+def get_object(storage_key, byte_range=""):
+    """Fetch an object from durable storage. Caller controls response streaming."""
+    key = str(storage_key or "").strip().replace("\\", "/").lstrip("/")
+    if not key or ".." in key.split("/"):
+        raise ValueError("Invalid media object key.")
+    client = object_client()
+    if client is None:
+        raise RuntimeError("Durable media storage is not configured.")
+    params = {"Bucket": os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), "Key": key}
+    if byte_range:
+        params["Range"] = byte_range
+    return client.get_object(**params)
+
+
 def save_public_file(file_storage, folder="media"):
     if not file_storage or not getattr(file_storage, "filename", ""):
         raise ValueError("No media file provided.")

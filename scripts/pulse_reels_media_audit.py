@@ -87,6 +87,21 @@ def main() -> None:
     expect(mux["mux_hls_url"] == "https://stream.mux.com/abc123.m3u8", "Mux HLS URL generated")
     expect(mux["mux_thumbnail_url"] == "https://image.mux.com/abc123/thumbnail.jpg", "Mux thumbnail URL generated")
     expect(mux["has_audio"] is True, "has_audio survives normalization")
+    r2_video = media_service.resolve_media(
+        {
+            "id": 92,
+            "media_url": "https://cdn.coinpilotx.app/pulse_media/example.mov",
+            "cdn_url": "https://cdn.coinpilotx.app/pulse_media/example.mov",
+            "media_type": "video",
+            "mime_type": "video/quicktime",
+            "storage_provider": "r2",
+            "storage_key": "pulse_media/example.mov",
+        }
+    )
+    expect(r2_video["playback_url"] == "/api/pulse/media/92/stream", "R2 video resolves to first-party stream URL")
+    expect(r2_video["cdn_url"].startswith("https://cdn.coinpilotx.app/"), "R2 video keeps CDN URL for diagnostics")
+    expect("/api/pulse/media/<int:media_id>/stream" in source, "Pulse media stream endpoint exists")
+    expect('"playback_url": resolved.get("playback_url")' in (ROOT / "services/pulse_feed_engine.py").read_text(encoding="utf-8"), "Pulse feed payload preserves resolved playback URL")
 
     client = bot.webhook_app.test_client()
     response = client.get("/pulse/reels")
