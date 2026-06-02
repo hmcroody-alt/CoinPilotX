@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import flags
+from . import flags, infrastructure, twilio_service
 from .models import ensure_schema
 
 
@@ -139,6 +140,7 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("deleted_at", "TEXT"),
     ], conn=conn)
     add(cur, "comm_v2_attachments", [
+        ("attachment_public_id", "TEXT"),
         ("message_id", "INTEGER"),
         ("conversation_id", "INTEGER"),
         ("media_upload_id", "INTEGER"),
@@ -147,13 +149,38 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("storage_provider", "TEXT"),
         ("storage_key", "TEXT"),
         ("url", "TEXT"),
+        ("cdn_url", "TEXT"),
+        ("playback_url", "TEXT"),
         ("thumbnail_url", "TEXT"),
         ("mime_type", "TEXT"),
+        ("file_size", "INTEGER DEFAULT 0"),
         ("file_size_bytes", "INTEGER DEFAULT 0"),
         ("width", "INTEGER DEFAULT 0"),
         ("height", "INTEGER DEFAULT 0"),
+        ("mux_asset_id", "TEXT"),
+        ("mux_playback_id", "TEXT"),
+        ("mux_status", "TEXT"),
         ("scan_status", "TEXT DEFAULT 'approved'"),
         ("created_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_live_streams", [
+        ("public_id", "TEXT"),
+        ("conversation_id", "INTEGER"),
+        ("creator_user_id", "INTEGER"),
+        ("mux_live_stream_id", "TEXT"),
+        ("mux_stream_key", "TEXT"),
+        ("mux_playback_id", "TEXT"),
+        ("mux_live_status", "TEXT"),
+        ("mux_recording_asset_id", "TEXT"),
+        ("mux_recording_playback_id", "TEXT"),
+        ("ingest_url", "TEXT"),
+        ("rtmp_url", "TEXT"),
+        ("playback_url", "TEXT"),
+        ("status", "TEXT DEFAULT 'created'"),
+        ("metadata_json", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("ended_at", "TEXT"),
     ], conn=conn)
     add(cur, "comm_v2_message_reactions", [
         ("message_id", "INTEGER"),

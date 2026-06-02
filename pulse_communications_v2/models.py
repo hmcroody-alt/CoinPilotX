@@ -111,6 +111,7 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
         """
         CREATE TABLE IF NOT EXISTS comm_v2_attachments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            attachment_public_id TEXT UNIQUE,
             message_id INTEGER NOT NULL,
             conversation_id INTEGER NOT NULL,
             media_upload_id INTEGER,
@@ -119,17 +120,53 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
             storage_provider TEXT,
             storage_key TEXT,
             url TEXT,
+            cdn_url TEXT,
+            playback_url TEXT,
             thumbnail_url TEXT,
             mime_type TEXT,
+            file_size INTEGER DEFAULT 0,
             file_size_bytes INTEGER DEFAULT 0,
             width INTEGER DEFAULT 0,
             height INTEGER DEFAULT 0,
+            mux_asset_id TEXT,
+            mux_playback_id TEXT,
+            mux_status TEXT,
             scan_status TEXT DEFAULT 'approved',
             created_at TEXT
         )
         """,
         (
             "CREATE INDEX IF NOT EXISTS idx_comm_v2_attachments_message ON comm_v2_attachments(message_id)",
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_attachments_convo ON comm_v2_attachments(conversation_id)",
+        ),
+    ),
+    TableSpec(
+        "comm_v2_live_streams",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_live_streams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_id TEXT UNIQUE,
+            conversation_id INTEGER,
+            creator_user_id INTEGER NOT NULL,
+            mux_live_stream_id TEXT,
+            mux_stream_key TEXT,
+            mux_playback_id TEXT,
+            mux_live_status TEXT,
+            mux_recording_asset_id TEXT,
+            mux_recording_playback_id TEXT,
+            ingest_url TEXT,
+            rtmp_url TEXT,
+            playback_url TEXT,
+            status TEXT DEFAULT 'created',
+            metadata_json TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            ended_at TEXT
+        )
+        """,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_live_convo ON comm_v2_live_streams(conversation_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_live_creator ON comm_v2_live_streams(creator_user_id, created_at)",
         ),
     ),
     TableSpec(
