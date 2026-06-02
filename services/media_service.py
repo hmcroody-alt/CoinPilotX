@@ -316,6 +316,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         has_audio = bool(has_audio)
     provider = item.get("storage_provider") or item.get("provider") or ("r2" if canonical_cdn_url else "remote" if source.startswith(("http://", "https://")) else media_storage.provider())
     first_party_stream = stream_url_for_media(item.get("id"), kind, provider, storage_key)
+    saved_playback_url = normalize_url(item.get("playback_url") or "")
     available = item.get("is_available")
     if available is None:
         if check_remote and source.startswith(("http://", "https://")):
@@ -349,7 +350,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "valid_url": source if available else "",
         "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
-        "playback_url": mux_urls["hls_url"] or first_party_stream or source,
+        "playback_url": mux_urls["hls_url"] or saved_playback_url or first_party_stream or source,
         "thumbnail_url": thumb or source,
         "poster_url": poster_value,
         "mux_playback_id": mux_playback_id,
@@ -470,6 +471,8 @@ def _public(row):
         "object_key": resolved["object_key"],
         "cdn_url": resolved["cdn_url"],
         "playback_url": resolved["playback_url"],
+        "playback_storage_key": item.get("playback_storage_key") or "",
+        "playback_mime_type": item.get("playback_mime_type") or "",
         "mux_playback_id": resolved["mux_playback_id"],
         "mux_hls_url": resolved["mux_hls_url"],
         "mux_thumbnail_url": resolved["mux_thumbnail_url"],

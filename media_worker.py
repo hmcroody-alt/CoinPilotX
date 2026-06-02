@@ -14,7 +14,9 @@ import logging
 import os
 import signal
 import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -48,6 +50,7 @@ if running_on_railway() and not os.getenv("DATABASE_URL"):
 
 try:
     import bot
+    from services import media_service, media_storage
 except Exception as exc:
     print("CoinPilotX media engine import failed", repr(exc), flush=True)
     traceback.print_exc()
@@ -221,10 +224,230 @@ def _complete_job(cur, job_id: int, status: str = "done", error: str = "") -> No
 
 def _table_has_column(cur, table: str, column: str) -> bool:
     try:
+        if getattr(bot.db_service, "IS_POSTGRES", False):
+            cur.execute(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name=? AND column_name=?
+                """,
+                (table, column),
+            )
+            return bool(cur.fetchone())
         cur.execute(f"PRAGMA table_info({table})")
-        return any(str(row[1]) == column for row in cur.fetchall())
+        return any(str(row[1] if not hasattr(row, "get") else row.get("name")) == column for row in cur.fetchall())
     except Exception:
         return False
+
+
+def _media_row_matches_target(row: dict, target_id: int) -> bool:
+    if not target_id:
+        return False
+    context_type = str(row.get("context_type") or "")
+    context_id = str(row.get("context_id") or "")
+    return (
+        int(row.get("id") or 0) == int(target_id)
+        or int(row.get("message_id") or 0) == int(target_id)
+        or (context_type in {"pulse", "pulse_post", "pulse_reel"} and context_id == str(target_id))
+    )
+
+
+def _needs_playback_transcode(row: dict) -> bool:
+    if str(row.get("media_type") or "").lower() != "video":
+        return False
+    if str(row.get("playback_storage_key") or "").strip():
+        return False
+    mime_type = str(row.get("mime_type") or "").lower()
+    storage_key = str(row.get("storage_key") or row.get("object_key") or row.get("media_url") or "").lower()
+    return mime_type in {"video/quicktime", "application/quicktime"} or storage_key.split("?", 1)[0].endswith((".mov", ".qt"))
+
+
+def _object_to_file(storage_key: str, target: Path) -> None:
+    obj = media_storage.get_object(storage_key)
+    body = obj.get("Body")
+    try:
+        with target.open("wb") as fh:
+            for chunk in body.iter_chunks(chunk_size=1024 * 1024):
+                if chunk:
+                    fh.write(chunk)
+    finally:
+        close = getattr(body, "close", None)
+        if callable(close):
+            close()
+
+
+def _local_source_path(row: dict) -> Path | None:
+    local_url = row.get("media_url") or row.get("public_url") or ""
+    try:
+        path = media_service.local_path_for_url(local_url)
+    except Exception:
+        path = None
+    return Path(path) if path and Path(path).exists() else None
+
+
+def _playback_key_for(row: dict) -> str:
+    source_key = str(row.get("storage_key") or row.get("object_key") or row.get("stored_filename") or "").strip().replace("\\", "/").lstrip("/")
+    if not source_key:
+        source_key = f"pulse_media/playback/media-{int(row.get('id') or 0)}.mov"
+    path = Path(source_key)
+    stem = str(path.with_suffix(""))
+    return f"{stem}-playback.mp4"
+
+
+def _transcode_video_to_mp4(source: Path, target: Path) -> None:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        raise RuntimeError("ffmpeg is not installed")
+    command = [
+        ffmpeg_path,
+        "-y",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        os.getenv("MEDIA_WORKER_FFMPEG_PRESET", "veryfast"),
+        "-crf",
+        os.getenv("MEDIA_WORKER_FFMPEG_CRF", "23"),
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        str(target),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=int(os.getenv("MEDIA_WORKER_TRANSCODE_TIMEOUT_SECONDS", "180")))
+    if result.returncode != 0 or not target.exists() or target.stat().st_size <= 0:
+        error = (result.stderr or result.stdout or "ffmpeg failed").strip().splitlines()[-1:]
+        raise RuntimeError((error[0] if error else "ffmpeg failed")[:500])
+
+
+def _save_local_playback_file(source: Path, playback_key: str) -> str:
+    root = Path(bot.webhook_app.root_path, "static", "uploads").resolve()
+    target = root / playback_key
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    return f"/static/uploads/{playback_key}"
+
+
+def _mark_video_processing_failed(cur, media_id: int, message: str) -> None:
+    error_column = "availability_error" if _table_has_column(cur, "chat_media_uploads", "availability_error") else "moderation_reason"
+    cur.execute(
+        f"""
+        UPDATE chat_media_uploads
+        SET processing_status='processing_blocked',
+            {error_column}=?,
+            error_message=?,
+            updated_at=?
+        WHERE id=?
+        """,
+        (str(message or "Video processing failed.")[:1000], str(message or "Video processing failed.")[:1000], _now(), int(media_id)),
+    )
+
+
+def _ensure_video_playback_asset(cur, row: dict) -> bool:
+    media_id = int(row.get("id") or 0)
+    if not media_id or not _needs_playback_transcode(row):
+        return False
+    storage_key = str(row.get("storage_key") or row.get("object_key") or "").strip().replace("\\", "/").lstrip("/")
+    provider = str(row.get("storage_provider") or "").lower()
+    playback_key = _playback_key_for(row)
+    logging.info("MEDIA_WORKER_VIDEO_TRANSCODE_START media_id=%s provider=%s source_key=%s playback_key=%s", media_id, provider, storage_key, playback_key)
+    with tempfile.TemporaryDirectory(prefix="coinpilotx-media-") as tmp:
+        tmp_dir = Path(tmp)
+        source_path = tmp_dir / "source.mov"
+        output_path = tmp_dir / "playback.mp4"
+        if provider in {"r2", "s3"} and storage_key:
+            _object_to_file(storage_key, source_path)
+        else:
+            local = _local_source_path(row)
+            if not local:
+                raise RuntimeError("Original video file is missing.")
+            source_path = local
+        _transcode_video_to_mp4(source_path, output_path)
+        if provider in {"r2", "s3"}:
+            uploaded, upload_error = media_storage._upload_to_object_storage(output_path, playback_key, "video/mp4")
+            if not uploaded:
+                raise RuntimeError(upload_error or "Playable MP4 upload failed.")
+            playback_url = f"/api/pulse/media/{media_id}/stream"
+        else:
+            playback_url = _save_local_playback_file(output_path, playback_key)
+        cur.execute(
+            """
+            UPDATE chat_media_uploads
+            SET playback_url=?, playback_storage_key=?, playback_mime_type='video/mp4',
+                processing_status='ready', verification_status='verified',
+                is_available=1, availability_error='', error_message='',
+                transcoded_at=?, updated_at=?
+            WHERE id=?
+            """,
+            (playback_url, playback_key, _now(), _now(), media_id),
+        )
+    logging.info("MEDIA_WORKER_VIDEO_TRANSCODE_COMPLETE media_id=%s playback_key=%s", media_id, playback_key)
+    return True
+
+
+def _video_rows_for_target(cur, target_id: int) -> list[dict]:
+    cur.execute(
+        """
+        SELECT *
+        FROM chat_media_uploads
+        WHERE deleted_at IS NULL AND media_type='video'
+          AND (
+            (context_type IN ('pulse', 'pulse_post', 'pulse_reel') AND context_id=?)
+            OR message_id=?
+            OR id=?
+          )
+        ORDER BY id ASC
+        """,
+        (str(target_id), int(target_id), int(target_id)),
+    )
+    return [dict(row) for row in cur.fetchall()]
+
+
+def process_playback_backlog(limit: int = 2) -> dict:
+    if not shutil.which("ffmpeg"):
+        return {"checked": 0, "processed": 0, "failed": 0, "status": "ffmpeg_missing"}
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM chat_media_uploads
+        WHERE deleted_at IS NULL
+          AND media_type='video'
+          AND COALESCE(playback_storage_key, '')=''
+          AND (
+            LOWER(COALESCE(mime_type, '')) IN ('video/quicktime', 'application/quicktime')
+            OR LOWER(COALESCE(storage_key, object_key, media_url, '')) LIKE '%.mov'
+          )
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (max(1, min(int(limit or 2), 5)),),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    processed = 0
+    failed = 0
+    for row in rows:
+        try:
+            if _ensure_video_playback_asset(cur, row):
+                processed += 1
+        except Exception as exc:
+            failed += 1
+            logging.exception("MEDIA_WORKER_VIDEO_BACKLOG_FAILED media_id=%s error=%s", row.get("id"), exc)
+            _mark_video_processing_failed(cur, int(row.get("id") or 0), str(exc))
+    conn.commit()
+    conn.close()
+    return {"checked": len(rows), "processed": processed, "failed": failed}
 
 
 def _fail_or_retry_job(cur, job, error: Exception) -> None:
@@ -265,6 +488,18 @@ def _process_media_job(cur, job) -> None:
             )
         _complete_job(cur, int(job.get("id") or 0), "pending_unavailable", message)
         return
+    if job_type == "process_video" and target_id:
+        processed_any = False
+        for row in _video_rows_for_target(cur, target_id):
+            try:
+                processed_any = _ensure_video_playback_asset(cur, row) or processed_any
+            except Exception as exc:
+                logging.exception("MEDIA_WORKER_VIDEO_PROCESS_FAILED job_id=%s media_id=%s error=%s", job.get("id"), row.get("id"), exc)
+                _mark_video_processing_failed(cur, int(row.get("id") or 0), str(exc))
+                raise
+        if processed_any:
+            _complete_job(cur, int(job.get("id") or 0), "done")
+            return
     if target_id:
         cur.execute(
             """
@@ -337,7 +572,8 @@ def process_media_jobs(limit: int = BATCH_SIZE) -> dict:
 def run_cycle() -> dict:
     uploads = process_pending_uploads(BATCH_SIZE)
     jobs = process_media_jobs(BATCH_SIZE)
-    return {"uploads": uploads, "jobs": jobs}
+    playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
+    return {"uploads": uploads, "jobs": jobs, "playback": playback}
 
 
 def main() -> None:

@@ -73,6 +73,10 @@ def main() -> None:
         "processing_blocked",
         "pending_unavailable",
         "MEDIA_ENGINE_VIDEO_PROCESSING_BLOCKED",
+        "MEDIA_WORKER_VIDEO_TRANSCODE_START",
+        "MEDIA_WORKER_VIDEO_TRANSCODE_COMPLETE",
+        "process_playback_backlog",
+        "playback_storage_key",
     ]:
         expect(token in worker + source, f"media engine diagnostic present: {token}")
 
@@ -100,6 +104,20 @@ def main() -> None:
     )
     expect(r2_video["playback_url"] == "/api/pulse/media/92/stream", "R2 video resolves to first-party stream URL")
     expect(r2_video["cdn_url"].startswith("https://cdn.coinpilotx.app/"), "R2 video keeps CDN URL for diagnostics")
+    converted = media_service.resolve_media(
+        {
+            "id": 92,
+            "media_url": "https://cdn.coinpilotx.app/pulse_media/example.mov",
+            "media_type": "video",
+            "mime_type": "video/quicktime",
+            "storage_provider": "r2",
+            "storage_key": "pulse_media/example.mov",
+            "playback_url": "/api/pulse/media/92/stream",
+            "playback_storage_key": "pulse_media/example-playback.mp4",
+            "playback_mime_type": "video/mp4",
+        }
+    )
+    expect(converted["playback_url"] == "/api/pulse/media/92/stream", "Converted playback URL is preserved")
     expect("/api/pulse/media/<int:media_id>/stream" in source, "Pulse media stream endpoint exists")
     expect('"playback_url": resolved.get("playback_url")' in (ROOT / "services/pulse_feed_engine.py").read_text(encoding="utf-8"), "Pulse feed payload preserves resolved playback URL")
 

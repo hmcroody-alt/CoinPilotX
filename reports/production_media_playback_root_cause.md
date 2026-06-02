@@ -143,14 +143,25 @@ that is generated from the DB-backed feed/reels services.
 
 ## Root Cause
 
-Classification: **Private/blocked media delivery path**
+Classification: **Media delivery plus browser-incompatible playback asset**
 
-Exact failure:
+Exact delivery failure:
 
 - Raw `.mov` playback URLs under `https://cdn.coinpilotx.app/pulse_media/...`
   are being challenged by Cloudflare.
 - Browser video elements receive HTML challenge content instead of a video file.
 - The player cannot load the media and shows `Media could not load. Tap to retry.`
+
+Post-stream verification:
+
+- After the first-party stream route deployed, Railway logs showed browser-origin
+  `GET /api/pulse/media/92/stream` and `GET /api/pulse/media/93/stream`
+  returning `200` with byte payloads.
+- The feed/Reels API then returned `playback_url` values pointing at the stream
+  endpoint.
+- The remaining failed state was caused by the stream endpoint still delivering
+  the original `.mov` / `video/quicktime` object. That container is not reliably
+  browser-playable in the Reels/feed video elements.
 
 Why posting still works:
 
@@ -165,6 +176,8 @@ Contributing issue:
 - `mux_playback_id` is empty, so there is no Mux HLS fallback.
 - The current backend marked R2 videos `ready` after storage verification even
   when the public CDN playback URL was not browser-deliverable.
+- The media worker reported ffmpeg availability, but `process_video` jobs did not
+  actually transcode `.mov` uploads into browser-compatible MP4 playback assets.
 
 ## Exact Code Needing Correction
 
@@ -179,6 +192,9 @@ Contributing issue:
   - The public feed/Reels media payload dropped `playback_url`, `cdn_url`, and
     Mux fields from the resolved media object, so renderers fell back to raw
     CDN `.mov` URLs.
+- `media_worker.py`
+  - `process_video` did not generate a playable MP4/HLS asset even when ffmpeg
+    was present.
 
 ## Minimal Fix Applied
 
@@ -211,6 +227,23 @@ as `playback_url`, while keeping the canonical CDN URL available for diagnostics
 5. Updated `services.pulse_feed_engine._canonical_media_payload()` to preserve
    resolved `playback_url`, `cdn_url`, `mux_playback_id`, `mux_hls_url`, and
    `mux_thumbnail_url` in feed/Reels payloads.
+6. Added media-level playback fields:
+
+```text
+playback_url
+playback_storage_key
+playback_mime_type
+transcoded_at
+```
+
+7. Updated the media worker so `.mov` / `video/quicktime` uploads with no
+   playable variant are transcoded to MP4 using ffmpeg, uploaded back to R2,
+   and attached to the original media row without deleting the original object.
+8. Updated the first-party stream route to prefer `playback_storage_key` and
+   `playback_mime_type` when a converted asset exists.
+9. Added a small worker backlog sweep so existing failed `.mov` rows, including
+   the newest production Reel/feed video examples, can be repaired after
+   deployment.
 
 ## Expected Post-Fix Behavior
 
@@ -218,6 +251,8 @@ as `playback_url`, while keeping the canonical CDN URL available for diagnostics
 - Existing R2 video records now resolve to a first-party playback URL.
 - Cloudflare no longer serves challenge HTML to the video element for these
   assets because playback is delivered through the app route.
+- `.mov` uploads are converted into an MP4 playback object and the stream route
+  serves that object as `video/mp4`.
 - Mux remains preferred when `mux_playback_id` exists.
 
 ## Validation
@@ -227,6 +262,8 @@ Local validation passed:
 - Python compile
 - `scripts/pulse_reels_media_audit.py`
 - `scripts/pulse_media_upload_contract_audit.py`
+- `scripts/site_functional_audit.py`
+- `scripts/performance_audit.py`
 - `git diff --check`
 
 New audit coverage:
@@ -234,3 +271,5 @@ New audit coverage:
 - R2 video media resolves to `/api/pulse/media/<id>/stream`.
 - CDN URL remains available for diagnostics.
 - Pulse media stream endpoint exists.
+- Worker includes ffmpeg-backed MOV-to-MP4 playback generation.
+- Converted playback URLs are preserved in normalized media payloads.
