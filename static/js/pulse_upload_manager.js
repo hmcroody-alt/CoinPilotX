@@ -67,18 +67,22 @@
   function uploadParseError(xhr) {
     const headers = responseHeaders(xhr);
     const contentType = xhr.getResponseHeader("content-type") || headers["content-type"] || "";
+    const edgeRay = xhr.getResponseHeader("cf-ray") || headers["cf-ray"] || "";
     const rawBody = safeRawBody(xhr.responseText || "");
     const diagnostic = {
       status: xhr.status,
       contentType,
+      endpoint: xhr.responseURL || "",
+      edgeRay,
       headers,
       rawBody,
-      url: xhr.responseURL || "",
     };
     console.warn("Pulse upload response parse failed", diagnostic);
     const lower = rawBody.toLowerCase();
     let message = "Upload returned a non-JSON response from the server.";
-    if (xhr.status === 401 || lower.includes("/login") || lower.includes("login")) {
+    if (xhr.status === 403 && contentType.includes("text/html")) {
+      message = "Upload was blocked by site security. Please try again or contact support.";
+    } else if (xhr.status === 401 || lower.includes("/login") || lower.includes("login")) {
       message = "Login expired. Please sign in and try the upload again.";
     } else if (xhr.status === 413) {
       message = "Upload is too large. Please choose a smaller video or photo.";
