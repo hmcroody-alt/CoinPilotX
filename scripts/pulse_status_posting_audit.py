@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import bot  # noqa: E402
+from services import db as db_service  # noqa: E402
 
 
 PNG_BYTES = base64.b64decode(
@@ -58,6 +59,8 @@ def main():
     report = (ROOT / "reports/pulse_status_upload_failure.md").read_text(encoding="utf-8")
     expect('for status_table in ("pulse_status", "pulse_statuses")' in source, "Pulse Status has schema drift migration")
     expect('"ai_context_json", "TEXT"' in source and '"media_ids_json", "TEXT"' in source, "Pulse Status migrations preserve style/media fields")
+    for table in ["pulse_status", "pulse_status_media", "pulse_status_music", "pulse_status_replies"]:
+        expect(db_service.AUTO_PK_TABLES.get(table) == "id", f"Postgres returns inserted IDs for {table}")
     for token in ["uploadParseError", "getAllResponseHeaders", "rawBody", "contentType", "Upload returned a non-JSON response"]:
         expect(token in upload_js, f"upload manager exposes parse diagnostic: {token}")
     for token in ["PULSE_MEDIA_UPLOAD_ROUTE_HIT", "success", "media_url", "application/json", "pulse_status_upload_failure"]:
