@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from . import mux_live_service
+
 
 def replay_manifest(session=None, chat_messages=None):
     session = session or {}
     chat_messages = chat_messages or []
     live_id = int(session.get("id") or session.get("live_id") or 0)
     recording_status = (session.get("recording_status") or "").strip().lower()
-    replay_url = session.get("replay_url") or ""
+    replay_url = session.get("replay_url") or mux_live_service.playback_url(session.get("mux_recording_playback_id") or "")
     status = (session.get("status") or "").strip().lower()
     if status == "live":
         replay_state = "recording"
@@ -29,6 +31,8 @@ def replay_manifest(session=None, chat_messages=None):
         "live_id": live_id,
         "status": replay_state,
         "replay_url": replay_url,
+        "mux_recording_asset_id": session.get("mux_recording_asset_id") or "",
+        "mux_recording_playback_id": session.get("mux_recording_playback_id") or "",
         "thumbnail_url": session.get("thumbnail_url") or "",
         "chat_replay_events": len(chat_messages),
         "recording_status": recording_status or replay_state,
