@@ -120,8 +120,20 @@
   function attachmentHtml(item) {
     const url = item.playback_url || item.url || item.cdn_url || item.thumbnail_url || "";
     if (!url) return "";
+    if (window.PulseMediaRenderer && (item.media_type || "").match(/image|gif|video|audio/)) {
+      return window.PulseMediaRenderer.renderMedia({
+        ...item,
+        media_url: item.url || item.cdn_url || url,
+        valid_url: item.cdn_url || item.url || url,
+        playback_url: item.playback_url || url,
+        poster_url: item.poster_url || item.thumbnail_url || "",
+        media_type: item.media_type || "file",
+        mime_type: item.mime_type || (String(url).includes(".m3u8") ? "application/vnd.apple.mpegurl" : ""),
+        title: item.filename || "Pulse attachment",
+      }, { surface: "messages-v2", className: "comm-v2-media-attachment" });
+    }
     if ((item.media_type || "").match(/image|gif/)) return `<img src="${escapeAttr(url)}" alt="Attached media">`;
-    if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls playsinline preload="metadata" poster="${escapeAttr(item.thumbnail_url || "")}"></video>`;
+    if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls playsinline webkit-playsinline preload="metadata" poster="${escapeAttr(item.thumbnail_url || "")}"></video>`;
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Open attachment</a>`;
   }
 
@@ -167,6 +179,7 @@
       state.members = data.members || state.members;
       renderConversations();
       renderMessages();
+      if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
     } finally {
       state.loadingThread = false;
     }

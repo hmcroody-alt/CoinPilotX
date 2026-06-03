@@ -28,7 +28,11 @@ def main() -> int:
         expect(field in model_text and field in service_text, f"Attachment field missing: {field}", failures)
     expect("stage_attachment_upload" in service_text, "Attachment upload service missing", failures)
     expect("/attachments/upload" in routes.read_text(), "Attachment upload route missing", failures)
-    expect("/attachments/upload" in js.read_text(), "V2 frontend should use V2 attachment upload endpoint", failures)
+    js_text = js.read_text()
+    template_text = (ROOT / "templates" / "pulse_messages_v2.html").read_text()
+    expect("/attachments/upload" in js_text, "V2 frontend should use V2 attachment upload endpoint", failures)
+    expect("PulseMediaRenderer.renderMedia" in js_text, "V2 attachments should use shared Pulse media renderer", failures)
+    expect("pulse_media_renderer.js" in template_text, "V2 page should load shared Pulse media renderer", failures)
     if failures:
         print("FAIL")
         for failure in failures:

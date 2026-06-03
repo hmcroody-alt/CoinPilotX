@@ -193,6 +193,16 @@ input, select {
   border-radius: 8px;
   border: 1px solid var(--line);
 }
+.attachments .comm-v2-media-attachment {
+  max-width: min(100%, 420px) !important;
+  min-height: 120px;
+  border-radius: 8px !important;
+}
+.attachments .comm-v2-media-attachment img,
+.attachments .comm-v2-media-attachment video {
+  max-height: 360px !important;
+  object-fit: contain !important;
+}
 .reaction-row {
   display: flex;
   gap: 6px;
@@ -434,5 +444,199 @@ body[data-comm-v2-enabled="false"] .comm-filter {
   .modal-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Premium Pulse V2 skin. Keep the layout two-column: navigator + active thread. */
+:root {
+  color-scheme: dark;
+  --bg: #050b14;
+  --panel: rgba(9, 18, 32, .94);
+  --panel-2: rgba(14, 29, 48, .92);
+  --text: #f2fbff;
+  --muted: #9fb5c0;
+  --line: rgba(110, 223, 246, .18);
+  --accent: #36e58f;
+  --accent-2: #6edff6;
+  --danger: #ff7b72;
+  --ok: #36e58f;
+  --shadow: 0 30px 90px rgba(0, 0, 0, .34);
+}
+
+body {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(54, 229, 143, .16), transparent 30%),
+    radial-gradient(circle at 92% 8%, rgba(110, 223, 246, .14), transparent 34%),
+    linear-gradient(180deg, #050b14 0%, #07111f 58%, #050b14 100%);
+}
+
+button {
+  background: rgba(255, 255, 255, .045);
+  color: var(--text);
+  border-color: var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
+button:hover {
+  border-color: rgba(110, 223, 246, .44);
+  background: rgba(110, 223, 246, .08);
+}
+
+button.primary,
+.comm-filter .is-active,
+.composer button[type="submit"] {
+  color: #04111a;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-weight: 900;
+  box-shadow: 0 0 22px rgba(54, 229, 143, .18);
+}
+
+input,
+select {
+  background: rgba(255, 255, 255, .055);
+  color: var(--text);
+  border-color: var(--line);
+  outline: none;
+}
+
+input::placeholder {
+  color: rgba(159, 181, 192, .76);
+}
+
+input:focus,
+select:focus {
+  border-color: rgba(110, 223, 246, .58);
+  box-shadow: 0 0 0 3px rgba(110, 223, 246, .12);
+}
+
+.comm-shell {
+  background: transparent;
+}
+
+.comm-list,
+.comm-thread {
+  background: var(--panel);
+}
+
+.comm-list {
+  border-right-color: var(--line);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, .18);
+}
+
+.comm-toolbar,
+.thread-head,
+.comm-filter,
+.comm-actions,
+.composer {
+  border-color: var(--line);
+  background: rgba(5, 11, 20, .62);
+  backdrop-filter: blur(14px);
+}
+
+.comm-toolbar h1,
+.thread-head h2 {
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.conversation {
+  border-color: rgba(255, 255, 255, .055);
+  background: rgba(255, 255, 255, .035);
+}
+
+.conversation:hover {
+  background: rgba(110, 223, 246, .075);
+}
+
+.conversation.is-active {
+  border-color: rgba(54, 229, 143, .62);
+  background: linear-gradient(135deg, rgba(54, 229, 143, .14), rgba(110, 223, 246, .08));
+  box-shadow: 0 0 0 1px rgba(54, 229, 143, .12), 0 18px 44px rgba(0, 0, 0, .18);
+}
+
+.avatar {
+  background: linear-gradient(135deg, rgba(54, 229, 143, .18), rgba(110, 223, 246, .18));
+  color: var(--accent-2);
+  border: 1px solid rgba(110, 223, 246, .18);
+}
+
+.badge {
+  color: #04111a;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-weight: 900;
+}
+
+.messages {
+  background:
+    linear-gradient(rgba(110, 223, 246, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(110, 223, 246, .025) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+.message {
+  border-color: rgba(255, 255, 255, .075);
+  background: rgba(255, 255, 255, .055);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .18);
+}
+
+.message.is-mine {
+  background: linear-gradient(135deg, rgba(54, 229, 143, .2), rgba(110, 223, 246, .12));
+  border-color: rgba(54, 229, 143, .34);
+}
+
+.attachments img,
+.attachments video,
+.attachments .comm-v2-media-attachment {
+  background: rgba(0, 0, 0, .28) !important;
+  border-color: rgba(110, 223, 246, .18) !important;
+}
+
+.reaction-row button {
+  background: rgba(255, 255, 255, .04);
+}
+
+.composer input[data-message-input] {
+  background: rgba(255, 255, 255, .06);
+}
+
+.composer-status {
+  background: rgba(5, 11, 20, .62);
+}
+
+.empty-state,
+.group-photo-placeholder {
+  color: var(--muted);
+  border-color: rgba(110, 223, 246, .2);
+  background: linear-gradient(135deg, rgba(54, 229, 143, .08), rgba(110, 223, 246, .055));
+}
+
+.comm-modal {
+  background: rgba(1, 6, 13, .72);
+  backdrop-filter: blur(16px);
+}
+
+.comm-modal-panel {
+  background:
+    radial-gradient(circle at top left, rgba(54, 229, 143, .12), transparent 34%),
+    linear-gradient(180deg, rgba(12, 25, 42, .98), rgba(6, 14, 25, .98));
+  border-color: rgba(110, 223, 246, .22);
+  box-shadow: var(--shadow);
+}
+
+.person-result,
+.selected-person {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(110, 223, 246, .14);
+}
+
+@media (min-width: 941px) {
+  .comm-thread {
+    background: rgba(5, 11, 20, .5);
+  }
+
+  .composer,
+  .composer-status {
+    background: rgba(5, 11, 20, .82);
   }
 }
