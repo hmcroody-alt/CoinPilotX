@@ -70,12 +70,17 @@ def validate_media(filename: str, mime_type: str = "", size_bytes: int = 0) -> d
     allowed_videos = {"mp4", "webm", "mov"}
     allowed_audio = {"mp3", "m4a", "wav", "ogg"}
     allowed = allowed_images | allowed_videos | allowed_audio
-    max_bytes = int(float(os.getenv("PULSE_CAMERA_MAX_UPLOAD_MB", "40")) * 1024 * 1024)
     if ext not in allowed:
         return {"ok": False, "message": "Upload an image, short video, or audio file."}
+    media_type = "video" if ext in allowed_videos else "audio" if ext in allowed_audio else "image"
+    max_mb = {
+        "video": os.getenv("PULSE_CAMERA_MAX_VIDEO_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")),
+        "audio": os.getenv("PULSE_CAMERA_MAX_AUDIO_MB", os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")),
+        "image": os.getenv("PULSE_CAMERA_MAX_IMAGE_MB", os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", "12")),
+    }.get(media_type, "12")
+    max_bytes = int(float(max_mb) * 1024 * 1024)
     if size_bytes and size_bytes > max_bytes:
-        return {"ok": False, "message": "Media is too large. Use a shorter video/audio clip or compressed image."}
+        return {"ok": False, "message": f"{media_type.title()} is too large. Please choose a file under {int(float(max_mb))} MB."}
     if mime_type and not (mime_type.startswith("image/") or mime_type.startswith("video/") or mime_type.startswith("audio/") or mime_type in {"application/ogg", "application/octet-stream"}):
         return {"ok": False, "message": "Only image, video, and audio media can be used here."}
-    media_type = "video" if ext in allowed_videos else "audio" if ext in allowed_audio else "image"
     return {"ok": True, "media_type": media_type, "max_bytes": max_bytes}

@@ -47,7 +47,7 @@ def _limit_bytes(ext):
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")) * 1024 * 1024)
     if ext in FILE_EXTS:
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12")) * 1024 * 1024)
-    return int(float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "25")) * 1024 * 1024)
+    return int(float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")) * 1024 * 1024)
 
 
 def _media_type(ext):

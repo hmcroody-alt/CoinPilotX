@@ -92,12 +92,13 @@ def validate_media_file(file_storage) -> dict:
         file_storage.stream.seek(0)
     except Exception:
         size = 0
-    max_video = int(float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "25")) * 1024 * 1024)
+    max_video_mb = float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150"))
+    max_video = int(max_video_mb * 1024 * 1024)
     max_audio = int(float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")) * 1024 * 1024)
     max_file = int(float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12")) * 1024 * 1024)
     max_image = int(float(os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", os.getenv("MAX_UPLOAD_MB", "12"))) * 1024 * 1024)
     if media_type == "video" and size and size > max_video:
-        return {"ok": False, "message": "Video is too large. Please upload a shorter or compressed clip.", "status": 400}
+        return {"ok": False, "message": f"Video is too large. Please choose a video under {int(max_video_mb)} MB.", "status": 400}
     if media_type == "audio" and size and size > max_audio:
         return {"ok": False, "message": "Audio is too large. Please upload a shorter or compressed clip.", "status": 400}
     if media_type == "file" and size and size > max_file:
