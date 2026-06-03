@@ -96,6 +96,8 @@ def _canonical_media_payload(item, resolved, *, index=0, embed=None):
         "mux_playback_id": resolved.get("mux_playback_id") or payload.get("mux_playback_id") or "",
         "mux_asset_id": resolved.get("mux_asset_id") or payload.get("mux_asset_id") or "",
         "mux_status": resolved.get("mux_status") or payload.get("mux_status") or "",
+        "mux_processing": bool(resolved.get("mux_processing") or payload.get("mux_processing")),
+        "processing_status": resolved.get("processing_status") or payload.get("processing_status") or "",
         "mux_hls_url": resolved.get("mux_hls_url") or payload.get("mux_hls_url") or "",
         "mux_thumbnail_url": resolved.get("mux_thumbnail_url") or payload.get("mux_thumbnail_url") or "",
         "thumbnail_url": thumb,

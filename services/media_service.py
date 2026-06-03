@@ -447,6 +447,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "mux_playback_id": mux_playback_id,
         "mux_asset_id": item.get("mux_asset_id") or "",
         "mux_status": mux_status or item.get("mux_status") or "",
+        "processing_status": item.get("processing_status") or ("mux_processing" if mux_processing else "ready"),
         "mux_hls_url": mux_urls["hls_url"],
         "mux_thumbnail_url": mux_urls["thumbnail_url"],
         "mux_processing": mux_processing,
