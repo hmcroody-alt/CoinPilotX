@@ -61,7 +61,7 @@ def main():
     require("pulse_media_picker.js" in html and "window.PulseMediaPicker" in picker_js, "PulseMediaPicker loads on homepage")
     require("input[type=file],.pulse-native-file-input" in source and "opacity:0!important" in source, "native file inputs are globally hidden behind custom controls")
     require('data-pulse-media-picker="composer"' in html and "data-pulse-media-trigger" in html and 'data-expand-composer="pulseComposer"' in html, "composer uses unified media picker trigger")
-    for label in ["Media", "Reel", "Live", "Music", "AI", "Audience", "Publish"]:
+    for label in ["Text", "Question", "Scam", "Roast", "Photo", "Video", "Choose Media", "Publish"]:
         require(label in html, f"composer action exists: {label}")
     require("smart-compose-icon" not in html[html.find("pulseComposer") : html.find("pulseComposer") + 1200], "composer no longer has duplicate tiny upload icon")
 
@@ -71,7 +71,7 @@ def main():
     require("minmax(0, var(--pulse-feed-column))" in desktop_css, "desktop grid lets the feed dominate without horizontal scroll")
     require(".pulse-desktop-center > .layout" in desktop_css and ".pulse-desktop-center > .layout > aside.side" in desktop_css, "desktop center feed is not squeezed by legacy inner side rail")
     require(".composer.card" in desktop_css and "min-height: 72px" in desktop_css, "composer is compact while staying readable")
-    require("pulse-composer-kicker" in source and "Share a market thought" in source, "composer has friendly Pulse prompt and context")
+    require("pulse-composer-kicker" in source and "Optional description" in source, "composer has friendly Pulse prompt and context")
     require("formatComposerSize" in source and "Video preview loading" in source, "composer media preview shows useful file details")
     require("hasVideo?'video'" in source and "inferredType" in source, "video media publishes with video post type")
     require(".pulse-selected-media.is-video" in desktop_css, "video preview has premium sizing")
@@ -79,8 +79,8 @@ def main():
     require("contain-intrinsic-size: 430px" in desktop_css, "post cards reserve compact scroll height")
     require("-webkit-line-clamp: 7" in desktop_css, "long post text is clamped for scan-friendly density")
     require("max-height: min(62vh, 620px)" in desktop_css, "feed media is wide without becoming overly tall")
-    require(".composer-primary-actions" in desktop_css and "repeat(6, minmax(92px" in desktop_css, "desktop composer action row stays single-line")
-    require("@media (max-width: 1023px)" in desktop_css and ".composer-primary-actions" in desktop_css and "overflow-x: auto" in desktop_css, "mobile composer action row stays responsive")
+    require(".composer-type-row" in desktop_css and ".composer-publish-button" in desktop_css, "desktop composer has ordered type row and publish control")
+    require("@media (max-width: 1023px)" in desktop_css and ".composer-primary-actions" in desktop_css and "overflow-x: auto" in desktop_css, "mobile composer media row stays responsive")
 
     require("data-live-now-hub" in html and "Realtime Pulse Discovery" in html, "Live Now card renders on homepage")
     live = client.get("/api/pulse/live-now")

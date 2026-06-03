@@ -551,10 +551,26 @@ font-size: 19px;
 }
 .pulse-publisher-card .smart-composer-bar textarea {
 min-height: 72px;
+max-height: 140px;
 border-radius: 18px;
 padding: 14px 16px;
 font-size: 17px;
 line-height: 1.28;
+}
+.composer-type-row {
+order: 1;
+}
+.pulse-publisher-card .composer-advanced {
+order: 2;
+}
+.composer-media-actions[hidden],
+.composer-scam-actions[hidden] {
+display: none !important;
+}
+.composer-publish-button {
+width: 100%;
+min-height: 48px;
+border-radius: 14px;
 }
 .composer-primary-actions {
 display: grid;

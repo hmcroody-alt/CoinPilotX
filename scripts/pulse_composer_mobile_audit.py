@@ -22,7 +22,10 @@ def main() -> None:
 
     for token in [
         "pulseComposer",
+        "composer-type-row",
         "composer-primary-actions",
+        "Optional description",
+        "composer-publish-button",
         "data-open-media",
         "data-composer-reel",
         "data-composer-music",
@@ -37,7 +40,8 @@ def main() -> None:
         ".composer-primary-actions",
         "overflow-x: auto",
         ".composer.is-expanded .composer-advanced",
-        "bottom:calc(76px + env(safe-area-inset-bottom))",
+        "position:static",
+        "top:calc(62px + env(safe-area-inset-top))",
         ".pulse-media-preview",
         "data-composer-media-state",
     ]:
