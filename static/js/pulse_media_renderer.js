@@ -144,7 +144,7 @@
     const muxThumbnailUrl = safeUrl(item.mux_thumbnail_url || (muxPlaybackId ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg` : ""));
     const directUrl = safeUrl(item.valid_url || item.cdn_url || item.media_url || item.url || item.src || "");
     const itemType = inferMediaType(item, item.playback_url || muxHlsUrlValue || directUrl);
-    const playbackUrl = safeUrl(itemType === "video" ? (muxHlsUrlValue || item.playback_url || directUrl) : (item.playback_url || directUrl));
+    const playbackUrl = safeUrl(itemType === "video" ? (canonicalMuxHlsUrl || muxHlsUrlValue || item.playback_url || directUrl) : (item.playback_url || directUrl));
     const url = playbackUrl || directUrl;
     const thumb = safeUrl(item.thumbnail_url || item.thumbnail || item.thumb || muxThumbnailUrl || "");
     const poster = safeUrl(item.poster_url || item.poster || muxThumbnailUrl || thumb || "");
@@ -166,6 +166,9 @@
       playback_mime_type: String(item.playback_mime_type || "").toLowerCase(),
       mux_hls_url: muxHlsUrlValue,
       mux_thumbnail_url: muxThumbnailUrl,
+      mux_status: String(item.mux_status || "").toLowerCase(),
+      mux_processing: !!(type === "video" && !muxPlaybackId && String(item.mux_status || item.processing_status || "").toLowerCase() && !["ready", "asset_ready", "available"].includes(String(item.mux_status || item.processing_status || "").toLowerCase())),
+      processing_status: String(item.processing_status || "").toLowerCase(),
       source_type: sourceKind(url, item),
       duration: Number(item.duration || item.duration_seconds || 0),
       has_audio: hasAudio,
@@ -189,6 +192,7 @@
 
   function renderMedia(input = {}, options = {}) {
     const media = normalizeMedia(input);
+    const processing = (media.mux_processing || media.processing_status === "mux_processing") && !media.mux_playback_id;
     const ratio = media.width > 0 && media.height > 0 ? media.width / media.height : media.aspect_ratio;
     const orientation = media.orientation || (ratio ? Math.abs(ratio - 1) < .08 ? "square" : ratio > 1 ? "landscape" : "portrait" : "unknown");
     const backdrop = media.type === "video" ? (media.poster || media.thumb) : (media.thumb || media.valid_url || media.url);
@@ -203,7 +207,7 @@
       `is-${orientation}`,
       `media-kind-${media.type}`,
       `pulse-media-surface-${surface}`,
-      media.is_available ? "" : BROKEN,
+      media.is_available && !processing ? "" : BROKEN,
       className,
     ].filter(Boolean).join(" ");
     const style = `${ratio ? `--media-ratio:${ratio};` : ""}${backdrop ? `--media-backdrop:url('${esc(backdrop)}');` : ""}`;
@@ -241,8 +245,8 @@
       `data-media-surface="${esc(surface)}"`,
       `data-media-diag="${diag}"`,
     ].join(" ") + (extraAttrs ? ` ${extraAttrs}` : "");
-    const fallback = `<div class="pulse-media-fallback" data-media-fallback="${esc(media.id)}"><div><strong>${media.is_available ? "Media could not load." : "Media is being restored."}</strong><span class="muted">Tap to retry. Trace media-${esc(media.id || "unknown")}</span><br><button type="button" data-retry-media>Retry</button></div></div>`;
-    if (!media.is_available) {
+    const fallback = `<div class="pulse-media-fallback" data-media-fallback="${esc(media.id)}"><div><strong>${processing ? "Video is processing." : media.is_available ? "Media could not load." : "Media is being restored."}</strong><span class="muted">${processing ? "Mux playback will appear when ready." : `Tap to retry. Trace media-${esc(media.id || "unknown")}`}</span><br>${processing ? "" : "<button type=\"button\" data-retry-media>Retry</button>"}</div></div>`;
+    if (!media.is_available || processing) {
       return `<div class="${shellClass}" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}${fallback}</div>`;
     }
     if (media.type === "video") {

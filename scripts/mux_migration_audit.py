@@ -37,10 +37,10 @@ def main():
 
     require("loadHlsLibrary" in renderer, "shared renderer can load HLS.js")
     require("application/vnd.apple.mpegurl" in renderer, "shared renderer marks HLS playback MIME")
-    require("item.playback_url || muxHlsUrl || directUrl" in renderer, "shared renderer prefers Mux HLS playback")
+    require("muxHlsUrlValue || item.playback_url || directUrl" in renderer, "shared renderer prefers Mux HLS playback")
     require("attachHlsPlayback(wrap, media)" in renderer, "shared renderer attaches HLS playback during hydration")
 
-    require("m.playback_url||m.mux_hls_url||m.valid_url" in bot, "Feed video source prefers playback URL before raw media")
+    require("muxHls||m.playback_url||m.valid_url" in bot, "Feed video source prefers Mux/playback URL before raw media")
     require("media.playback_mime_type||(media.mux_hls_url?'application/vnd.apple.mpegurl'" in bot, "Reels/Status pass HLS MIME metadata")
     require('("mux_status", "TEXT")' in bot, "database schema adds mux_status")
     require("pulse_media_assets" in bot and "mux_playback_id" in bot, "media asset index stores Mux metadata")
@@ -51,4 +51,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

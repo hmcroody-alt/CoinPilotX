@@ -22,6 +22,8 @@ def diagnostics() -> dict:
         "token_id_configured": bool(os.getenv("MUX_TOKEN_ID")),
         "token_secret_configured": bool(os.getenv("MUX_TOKEN_SECRET")),
         "webhook_secret_configured": bool(os.getenv("MUX_WEBHOOK_SECRET")),
+        "data_env_key_configured": bool(os.getenv("MUX_DATA_ENV_KEY")),
+        "data_env_key_used": bool((os.getenv("MUX_DATA_ANALYTICS_ENABLED") or "").strip().lower() == "true" and os.getenv("MUX_DATA_ENV_KEY")),
     }
 
 
@@ -193,4 +195,3 @@ def verify_mux_webhook_signature(payload: bytes, signature_header: str | None, *
     if not hmac.compare_digest(digest, expected):
         return {"ok": False, "message": "Mux webhook signature did not match.", "reason": "signature_mismatch"}
     return {"ok": True, "reason": "verified"}
-
