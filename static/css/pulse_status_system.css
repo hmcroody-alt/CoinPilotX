@@ -485,6 +485,12 @@ border: 0;
 background: linear-gradient(135deg, #36e58f, #6edff6);
 font-weight: 900;
 }
+.pulse-home-status-rail .pulse-status2-empty strong {
+color: #f2fbff;
+}
+.pulse-home-status-rail .pulse-status2-empty span {
+color: #9fb5c0;
+}
 .pulse-status-full-page {
 display: grid;
 gap: 18px;
