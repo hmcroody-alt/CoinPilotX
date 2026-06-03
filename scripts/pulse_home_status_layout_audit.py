@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOT = ROOT / "bot.py"
 CSS = ROOT / "static/css/pulse_desktop_feed.css"
+STATUS_CSS = ROOT / "static/css/pulse_status_system.css"
 
 
 def expect(ok: bool, label: str) -> None:
@@ -19,6 +20,7 @@ def expect(ok: bool, label: str) -> None:
 def main() -> None:
     source = BOT.read_text(encoding="utf-8")
     css = CSS.read_text(encoding="utf-8")
+    status_css = STATUS_CSS.read_text(encoding="utf-8")
     compact = "".join(css.split())
 
     for token in [
@@ -28,6 +30,10 @@ def main() -> None:
         "href='/pulse/status?lane=trending'",
         "pulse-status-mini-rail",
         "data-status-strip",
+        "id=\"pulseStatusStoryViewer\"",
+        "data-status-story-media",
+        "openStatusViewerFeed('global'",
+        "data-open-status-id",
     ]:
         expect(token in source, f"Home Status rail includes {token}")
 
@@ -37,8 +43,12 @@ def main() -> None:
         "grid-auto-columns",
         ".pulse-home-status-rail .pulse-status-home-actions .button",
         "white-space: nowrap",
+        ".pulse-status-home-preview",
+        "-webkit-line-clamp: 3",
+        ".pulse-status-card-media",
     ]:
         expect(token in css, f"Home Status rail layout includes {token}")
+    expect(".pulse-status-story-viewer" in status_css and ".pulse-status-story-actions" in status_css, "Homepage status viewer uses full-screen story CSS")
 
     for token in ["pulseHomeDotOne", "pulseHomeDotTwo", "pulseHomeDotThree"]:
         expect(token in css, f"Pulse hero orbit dot animation exists: {token}")

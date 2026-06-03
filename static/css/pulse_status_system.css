@@ -1159,6 +1159,33 @@ overflow: hidden;
 text-overflow: ellipsis;
 white-space: nowrap;
 }
+.pulse-status-story-actions {
+position: absolute;
+left: 16px;
+right: 16px;
+bottom: max(84px, calc(74px + env(safe-area-inset-bottom)));
+z-index: 6;
+display: grid;
+grid-template-columns: auto auto minmax(0, 1fr) auto;
+gap: 8px;
+align-items: center;
+}
+.pulse-status-story-actions button,
+.pulse-status-story-actions input {
+min-height: 38px;
+border-radius: 999px;
+border: 1px solid rgba(255, 255, 255, .16);
+background: rgba(3, 7, 18, .58);
+color: #f8fafc;
+padding: 8px 12px;
+font: inherit;
+font-weight: 850;
+backdrop-filter: blur(10px);
+}
+.pulse-status-story-actions input {
+min-width: 0;
+width: 100%;
+}
 .pulse-status-story-footer small {
 color: rgba(238, 247, 250, .68);
 }
@@ -1288,6 +1315,18 @@ height: 100dvh;
 min-height: 100dvh;
 border-radius: 0;
 border: 0;
+}
+.pulse-status-story-actions {
+left: 10px;
+right: 10px;
+grid-template-columns: auto auto minmax(0, 1fr) auto;
+gap: 6px;
+}
+.pulse-status-story-actions button,
+.pulse-status-story-actions input {
+min-height: 36px;
+padding: 7px 9px;
+font-size: 12px;
 }
 .pulse-status2-composer footer {
 position: static;
