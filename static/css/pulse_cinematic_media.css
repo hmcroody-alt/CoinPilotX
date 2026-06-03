@@ -208,18 +208,139 @@ article.card > .pulse-media-wrap {
 .pulse-media-surface-status video {
   width: 100% !important;
   height: 100% !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
 }
 
 .pulse-media-surface-reels img,
 .pulse-media-surface-reels video {
   width: 100% !important;
   height: 100% !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
+}
+
+.pulse-media-surface-reels,
+.reel-card .pulse-media-surface-reels,
+.reel-card.smart .pulse-media-surface-reels,
+.reel-card.fit .pulse-media-surface-reels,
+.reel-card.fill .pulse-media-surface-reels {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: 9 / 16 !important;
+  border-radius: 0 !important;
+  background: #02050b !important;
+}
+
+.pulse-media-surface-reels .pulse-media-backdrop,
+.pulse-media-surface-reels .pulse-media-soft-glow,
+.pulse-media-surface-reels .pulse-media-color-orb,
+.pulse-media-surface-reels .pulse-media-depth-layer,
+.pulse-media-surface-reels .pulse-media-aura,
+.pulse-media-surface-reels .pulse-media-vignette,
+.pulse-media-surface-status .pulse-media-backdrop,
+.pulse-media-surface-status .pulse-media-soft-glow,
+.pulse-media-surface-status .pulse-media-color-orb,
+.pulse-media-surface-status .pulse-media-depth-layer,
+.pulse-media-surface-status .pulse-media-aura,
+.pulse-media-surface-status .pulse-media-vignette {
+  display: none !important;
 }
 
 .reel-card.fill .pulse-media-surface-reels img,
-.reel-card.fill .pulse-media-surface-reels video {
+.reel-card.fill .pulse-media-surface-reels video,
+.reel-card.fit .pulse-media-surface-reels img,
+.reel-card.fit .pulse-media-surface-reels video,
+.reel-card.smart .pulse-media-surface-reels img,
+.reel-card.smart .pulse-media-surface-reels video {
+  object-fit: cover !important;
+}
+
+.post > .media-grid:has(.pulse-media-wrap.media-kind-video.is-portrait),
+.post.is-video > .media-grid:has(.pulse-media-wrap.media-kind-video.is-portrait),
+.post.has-media > .media-grid:has(.pulse-media-wrap.media-kind-video.is-portrait) {
+  display: grid !important;
+  justify-items: center !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.post:has(.pulse-media-wrap.media-kind-video.is-portrait),
+.post.is-video:has(.pulse-media-wrap.media-kind-video.is-portrait),
+.post.has-media:has(.pulse-media-wrap.media-kind-video.is-portrait) {
+  width: min(100%, 620px) !important;
+  max-width: 620px !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait.pulse-media-surface-pulse,
+.post .pulse-media-wrap.media-kind-video.is-portrait:not(.pulse-media-surface-reels):not(.pulse-media-surface-status) {
+  width: min(100%, 480px) !important;
+  max-width: 480px !important;
+  aspect-ratio: var(--media-ratio, 9 / 16) !important;
+  min-height: 0 !important;
+  max-height: min(78vh, 760px) !important;
+  margin-inline: auto !important;
+  background: #02050b !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait.pulse-media-surface-pulse video,
+.post .pulse-media-wrap.media-kind-video.is-portrait:not(.pulse-media-surface-reels):not(.pulse-media-surface-status) video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-backdrop,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-soft-glow,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-color-orb,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-depth-layer,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-aura,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-vignette {
+  display: none !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait[data-media-aspect-ratio="0.5625"],
+.post .pulse-media-wrap.media-kind-video.is-portrait[data-media-aspect-ratio=".5625"] {
+  aspect-ratio: 9 / 16 !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait[data-media-aspect-ratio="0.8"],
+.post .pulse-media-wrap.media-kind-video.is-portrait[data-media-aspect-ratio=".8"] {
+  aspect-ratio: 4 / 5 !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-square.pulse-media-surface-pulse,
+.post .pulse-media-wrap.media-kind-video.is-square:not(.pulse-media-surface-reels):not(.pulse-media-surface-status) {
+  aspect-ratio: 1 / 1 !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-landscape.pulse-media-surface-pulse,
+.post .pulse-media-wrap.media-kind-video.is-landscape:not(.pulse-media-surface-reels):not(.pulse-media-surface-status) {
+  aspect-ratio: var(--media-ratio, 16 / 9) !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-landscape[data-media-aspect-ratio="1.7777777777777777"],
+.post .pulse-media-wrap.media-kind-video.is-landscape[data-media-aspect-ratio="1.7778"] {
+  aspect-ratio: 16 / 9 !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-ultrawide.pulse-media-surface-pulse,
+.post .pulse-media-wrap.media-kind-video.is-ultrawide:not(.pulse-media-surface-reels):not(.pulse-media-surface-status) {
+  aspect-ratio: var(--media-ratio, 21 / 9) !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-ultrawide[data-media-aspect-ratio="2.3333333333333335"],
+.post .pulse-media-wrap.media-kind-video.is-ultrawide[data-media-aspect-ratio="2.3333"] {
+  aspect-ratio: 21 / 9 !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-landscape video,
+.post .pulse-media-wrap.media-kind-video.is-square video,
+.post .pulse-media-wrap.media-kind-video.is-ultrawide video {
+  width: 100% !important;
+  height: 100% !important;
   object-fit: cover !important;
 }
 
@@ -426,6 +547,76 @@ article.card > .pulse-media-wrap {
   .post.is-video [data-comments]:not(.open) {
     display: none !important;
   }
+}
+
+/* Pulse video frame repair: keep user-facing video frames full and intentional. */
+.post:has(.pulse-media-wrap.media-kind-video.is-portrait),
+.post.is-video:has(.pulse-media-wrap.media-kind-video.is-portrait),
+.post.has-media:has(.pulse-media-wrap.media-kind-video.is-portrait) {
+  width: min(100%, 620px) !important;
+  max-width: 620px !important;
+}
+
+.post > .media-grid:has(.pulse-media-wrap.media-kind-video.is-portrait) {
+  display: grid !important;
+  justify-items: center !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait:not(.pulse-media-surface-reels):not(.pulse-media-surface-status) {
+  width: min(100%, 480px) !important;
+  max-width: 480px !important;
+  aspect-ratio: var(--media-ratio, 9 / 16) !important;
+  max-height: min(78vh, 760px) !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait video,
+.post .pulse-media-wrap.media-kind-video.is-landscape video,
+.post .pulse-media-wrap.media-kind-video.is-square video,
+.post .pulse-media-wrap.media-kind-video.is-ultrawide video,
+.pulse-media-surface-reels video,
+.pulse-media-surface-reels img,
+.pulse-media-surface-status video,
+.pulse-media-surface-status img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-square {
+  aspect-ratio: 1 / 1 !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-landscape {
+  aspect-ratio: var(--media-ratio, 16 / 9) !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-ultrawide {
+  aspect-ratio: var(--media-ratio, 21 / 9) !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-backdrop,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-soft-glow,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-color-orb,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-depth-layer,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-aura,
+.post .pulse-media-wrap.media-kind-video.is-portrait .pulse-media-vignette,
+.pulse-media-surface-reels .pulse-media-backdrop,
+.pulse-media-surface-reels .pulse-media-soft-glow,
+.pulse-media-surface-reels .pulse-media-color-orb,
+.pulse-media-surface-reels .pulse-media-depth-layer,
+.pulse-media-surface-reels .pulse-media-aura,
+.pulse-media-surface-reels .pulse-media-vignette,
+.pulse-media-surface-status .pulse-media-backdrop,
+.pulse-media-surface-status .pulse-media-soft-glow,
+.pulse-media-surface-status .pulse-media-color-orb,
+.pulse-media-surface-status .pulse-media-depth-layer,
+.pulse-media-surface-status .pulse-media-aura,
+.pulse-media-surface-status .pulse-media-vignette {
+  display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -54,7 +54,7 @@ def main() -> None:
     expect("setTimeout(() =>" in renderer and "3200" in renderer, "tap-for-sound prompt auto-hides")
     expect("isPulseStreamUrl(src)" in renderer, "first-party stream URLs are not cache-busted on retry")
     expect("retry=" in renderer and "isPulseStreamUrl(src)" in renderer, "non-stream media retry remains available")
-    expect("mobile-mux-20260603" in renderer + bot, "updated asset cache keys are wired")
+    expect("video-frame-repair-20260603" in renderer + bot, "updated asset cache keys are wired")
     expect(".pulse-unified-video-player" in css, "unified video CSS class is styled")
 
     stream_start = bot.index('def api_pulse_media_stream')

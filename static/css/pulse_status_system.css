@@ -1093,7 +1093,7 @@ background: #020617;
 .pulse-status-story-media video {
 width: 100%;
 height: 100%;
-object-fit: contain;
+object-fit: cover;
 background: #020617;
 }
 .pulse-status-story-media > p {

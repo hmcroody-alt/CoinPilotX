@@ -16,7 +16,7 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=mobile-mux-20260603";
+    link.href = "/static/css/pulse_cinematic_media.css?v=video-frame-repair-20260603";
     document.head.appendChild(link);
   }
 
@@ -194,7 +194,7 @@
     const media = normalizeMedia(input);
     const processing = (media.mux_processing || media.processing_status === "mux_processing") && !media.mux_playback_id;
     const ratio = media.width > 0 && media.height > 0 ? media.width / media.height : media.aspect_ratio;
-    const orientation = media.orientation || (ratio ? Math.abs(ratio - 1) < .08 ? "square" : ratio > 1 ? "landscape" : "portrait" : "unknown");
+    const orientation = media.orientation || (ratio ? Math.abs(ratio - 1) < .08 ? "square" : ratio >= 2 ? "ultrawide" : ratio > 1 ? "landscape" : "portrait" : "unknown");
     const backdrop = media.type === "video" ? (media.poster || media.thumb) : (media.thumb || media.valid_url || media.url);
     const surface = options.surface || "pulse";
     const className = options.className || "";
@@ -230,6 +230,10 @@
       `data-media-cdn="${esc(media.cdn_url)}"`,
       `data-media-type="${esc(media.type)}"`,
       `data-media-mime="${esc(media.mime)}"`,
+      `data-media-orientation="${esc(orientation)}"`,
+      `data-media-aspect-ratio="${esc(ratio || "")}"`,
+      `data-media-width="${esc(media.width || "")}"`,
+      `data-media-height="${esc(media.height || "")}"`,
       `data-media-thumb="${esc(media.thumb)}"`,
       `data-media-poster="${esc(media.poster)}"`,
       `data-media-mux-playback-id="${esc(media.mux_playback_id)}"`,
