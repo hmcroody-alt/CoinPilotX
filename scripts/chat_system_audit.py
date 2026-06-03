@@ -34,7 +34,8 @@ def main():
     expect("/api/pulse/communications/conversations/${encodeURIComponent(id)}/messages" in active_pulse_chat, "message loads use unified communications API")
     expect("/api/pulse/communications/conversations/${encodeURIComponent(state.activeId)}/messages" in active_pulse_chat, "message sends use unified communications API")
     expect("legacy-" in bot_source and "legacy_dashboard" in bot_source, "legacy Dashboard direct bridge remains available")
-    expect("Voice: Coming Soon" in active_pulse_chat and "UNDX Collaboration: Coming Soon" in active_pulse_chat, "future communication placeholders render")
+    expect("Voice: Coming Soon" not in active_pulse_chat and "UNDX Collaboration: Coming Soon" not in active_pulse_chat, "future communication placeholders are not rendered")
+    expect("pulse-comm-intel" not in active_pulse_chat and "Future Channels" not in active_pulse_chat, "right-side placeholder panels are removed")
     expect("You do not have access to this chat." in active_pulse_chat and "Conversation not found." in active_pulse_chat, "message panel has status-specific error copy")
     expect("pulseMessengerPendingV2" not in active_pulse_chat, "broken Pulse recovery queue is not active in Pulse Messenger shell")
     for primitive in [

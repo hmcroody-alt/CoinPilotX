@@ -46,15 +46,18 @@ def main() -> None:
     mobile_block = css[mobile_block_start:]
     for token in [
         ".comm-shell {\n    grid-template-columns: 1fr;",
-        "max-height: 42dvh;",
-        ".comm-thread {\n    min-height: 58dvh;",
+        "max-height: 40dvh;",
+        ".comm-thread {\n    min-height: 60dvh;",
         ".mobile-only { display: inline-grid; }",
         ".message { max-width: 94%; }",
         ".comm-toolbar, .thread-head { min-height: 56px; }",
+        ".comm-modal-panel",
     ]:
         expect(token in mobile_block, f"mobile CSS keeps {token}")
     expect("@media (min-width: 941px)" in css, "desktop changes are isolated behind min-width media query")
-    expect("desktop-only" in html and "@media (max-width: 940px)" in css, "desktop control is hidden below desktop breakpoint")
+    expect("comm-intel" not in html and "Coming Soon" not in html and "Coming soon" not in html, "mobile page has no placeholder side panels")
+    expect("data-open-new-chat" in html and "data-open-new-group" in html, "mobile page exposes chat creation")
+    expect("@media (max-width: 940px)" in css, "tablet breakpoint remains present")
     expect("setInterval(" not in js, "mobile client has no repeated polling interval")
 
     user_id = ensure_user()

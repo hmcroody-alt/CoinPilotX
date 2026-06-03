@@ -82,11 +82,15 @@ def main() -> None:
     js = (ROOT / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
     html = (ROOT / "templates/pulse_messages_v2.html").read_text(encoding="utf-8")
 
-    for token in ["@media (min-width: 941px)", "clamp(280px, 19vw, 340px)", "clamp(280px, 17vw, 320px)", ".comm-shell.details-collapsed", "minmax(760px, 1fr)"]:
+    for token in ["@media (min-width: 941px)", "clamp(320px, 24vw, 360px)", "minmax(0, 1fr)", ".comm-actions"]:
         expect(token in css, f"desktop CSS includes {token}")
     expect("@media (max-width: 720px)" in css and ".mobile-only { display: inline-grid; }" in css, "mobile rules remain present")
-    expect("data-toggle-intel" in html, "desktop details toggle is present")
+    expect("comm-intel" not in html and "data-toggle-intel" not in html, "desktop details rail is removed")
+    expect("Pulse Intelligence" not in html and "Coming soon" not in html and "Coming Soon" not in html, "placeholder panels are not rendered")
+    expect("data-open-new-chat" in html and "data-open-new-group" in html, "chat creation actions are present")
     expect("INITIAL_MESSAGE_LIMIT = 40" in js, "initial message limit is 40")
+    expect("/people/search" in js, "people search is wired")
+    expect('api("/direct/open"' in js and 'api("/groups"' in js, "direct and group create calls are wired")
     expect("data-load-older" in js and "before_id=" in js, "load older pagination exists")
     expect("conversationCache" in js, "conversation metadata cache exists")
     expect("setTimeout(sendTypingIndicator, 450)" in js, "typing indicator is debounced")

@@ -185,7 +185,8 @@ def main() -> None:
     expect("Pulse Communications API" in page_text, "communications frontend logs endpoint diagnostics")
     expect("Pulse Communications messages failed" in page_text, "communications frontend logs message failures")
     expect("data-comm-room-id" in page_text, "communications frontend carries room ids")
-    expect("pulse-comm-intel" in page_text, "communications frontend includes intelligence panel")
+    expect("pulse-comm-intel" not in page_text, "communications frontend omits placeholder intelligence panel")
+    expect("Future Channels" not in page_text and "Coming Soon" not in page_text, "communications frontend omits coming-soon messaging UI")
     expect("/api/pulse/comm/v2/conversations/" in page_text, "communications frontend uses v2 member intelligence endpoint")
 
     print("pulse communications audit ok")

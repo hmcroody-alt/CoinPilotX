@@ -7,12 +7,14 @@
     active: null,
     messages: [],
     members: [],
+    groupMembers: [],
+    searchTimer: 0,
+    groupSearchTimer: 0,
     filter: "all",
     hasOlder: false,
     oldestMessageId: 0,
     loadingThread: false,
     initialThreadLoaded: false,
-    detailsCollapsed: false,
     typingTimer: 0,
     typingSentAt: 0,
   };
@@ -84,13 +86,13 @@
     const title = el("[data-thread-title]");
     const sub = el("[data-thread-subtitle]");
     if (title) title.textContent = state.active ? state.active.title : "Select a conversation";
-    if (sub) sub.textContent = state.active ? `${state.active.conversation_type} / ${state.active.privacy}` : "DMs, groups, rooms, and channels are isolated in v2.";
+    if (sub) sub.textContent = state.active ? `${state.active.conversation_type} / ${state.active.privacy}` : "Search for someone or create a group to start chatting.";
     if (!state.active) {
-      messages.innerHTML = `<div class="empty-state">Choose a chat or create one to start testing v2 safely.</div>`;
+      messages.innerHTML = `<div class="empty-state">Search for someone or create a group to start chatting.</div>`;
       return;
     }
     if (!state.messages.length) {
-      messages.innerHTML = `<div class="empty-state">No messages here yet. Send the first one when v2 is enabled.</div>`;
+      messages.innerHTML = `<div class="empty-state">No messages here yet. Send the first one.</div>`;
       return;
     }
     const older = state.hasOlder ? `<button class="load-older" type="button" data-load-older>Load older messages</button>` : "";
@@ -121,20 +123,6 @@
     if ((item.media_type || "").match(/image|gif/)) return `<img src="${escapeAttr(url)}" alt="Attached media">`;
     if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls playsinline preload="metadata" poster="${escapeAttr(item.thumbnail_url || "")}"></video>`;
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Open attachment</a>`;
-  }
-
-  function renderMembers() {
-    const target = el("[data-members]");
-    const intel = el("[data-intel-status]");
-    if (intel) intel.textContent = state.active ? `${state.active.title} is ready for v2 validation.` : "Waiting for a conversation.";
-    if (!target) return;
-    if (!state.members.length) {
-      target.innerHTML = `<div class="empty-state">No member details loaded.</div>`;
-      return;
-    }
-    target.innerHTML = state.members.map((m) => `
-      <div class="member"><span class="avatar">${initials(m.display_name)}</span><span><strong>${escapeHtml(m.display_name)}</strong><small>${escapeHtml(m.role || "member")}</small></span></div>
-    `).join("");
   }
 
   async function loadConversations({ selectFirst = true } = {}) {
@@ -179,7 +167,6 @@
       state.members = data.members || state.members;
       renderConversations();
       renderMessages();
-      if (!state.members.length) loadMembers(conversationId).catch(() => {});
     } finally {
       state.loadingThread = false;
     }
@@ -190,17 +177,6 @@
     const previousHeight = messages?.scrollHeight || 0;
     await loadMessages(state.active.conversation_id, { beforeId: state.oldestMessageId, appendOlder: true });
     if (messages) messages.scrollTop = Math.max(0, messages.scrollHeight - previousHeight);
-  }
-
-  async function loadMembers(conversationId) {
-    try {
-      const data = await api(`/conversations/${conversationId}/members`, {}, "members");
-      state.members = data.members || [];
-      renderMembers();
-    } catch (_) {
-      state.members = [];
-      renderMembers();
-    }
   }
 
   async function uploadSelectedFile(file) {
@@ -243,24 +219,24 @@
         document.querySelectorAll("[data-filter]").forEach((btn) => btn.classList.toggle("is-active", btn === filter));
         await loadConversations();
       }
-      if (event.target.closest("[data-open-dm]")) await openDm();
-      if (event.target.closest("[data-create-room]")) await createRoom();
+      if (event.target.closest("[data-open-new-chat]")) openModal("new-chat");
+      if (event.target.closest("[data-open-new-group]")) openModal("new-group");
+      if (event.target.closest("[data-close-modal]")) closeModals();
+      const person = event.target.closest("[data-person-id]");
+      if (person && person.closest("[data-person-results]")) await openDm(Number(person.dataset.personId || 0));
+      if (person && person.closest("[data-group-person-results]")) addGroupMember(person.dataset.person);
+      const removeMember = event.target.closest("[data-remove-group-member]");
+      if (removeMember) removeGroupMember(Number(removeMember.dataset.removeGroupMember || 0));
+      if (event.target.closest("[data-create-group]")) await createGroup();
       if (event.target.closest("[data-pick-file]")) el("[data-file]")?.click();
       if (event.target.closest("[data-load-older]")) await loadOlderMessages();
-      if (event.target.closest("[data-toggle-intel]")) toggleDetails();
       const react = event.target.closest("[data-react]");
       if (react) await reactToMessage(react.dataset.messageId, react.dataset.react);
-      if (event.target.closest("[data-report-last]")) await reportLast();
-      if (event.target.closest("[data-block-peer]")) await blockPeer();
-      if (event.target.closest("[data-voice]") || event.target.closest("[data-video]")) setStatus("Voice and video are Phase 2 placeholders.");
     });
     el("[data-composer]")?.addEventListener("submit", sendMessage);
     el("[data-message-input]")?.addEventListener("input", debounceTyping);
-  }
-
-  function toggleDetails() {
-    state.detailsCollapsed = !state.detailsCollapsed;
-    root?.classList.toggle("details-collapsed", state.detailsCollapsed);
+    el("[data-person-search]")?.addEventListener("input", () => debouncePeopleSearch("direct"));
+    el("[data-group-person-search]")?.addEventListener("input", () => debouncePeopleSearch("group"));
   }
 
   function debounceTyping() {
@@ -282,24 +258,108 @@
     } catch (_) {}
   }
 
-  async function openDm() {
-    const input = el("[data-target-user]");
-    const target = Number(input?.value || 0);
-    if (!target) return setStatus("Enter a user ID to open a DM.", "error");
+  function openModal(name) {
+    closeModals();
+    const modal = el(`[data-modal="${name}"]`);
+    if (!modal) return;
+    modal.hidden = false;
+    window.setTimeout(() => modal.querySelector("input")?.focus(), 30);
+  }
+
+  function closeModals() {
+    document.querySelectorAll("[data-modal]").forEach((modal) => { modal.hidden = true; });
+  }
+
+  function debouncePeopleSearch(kind) {
+    const key = kind === "group" ? "groupSearchTimer" : "searchTimer";
+    window.clearTimeout(state[key]);
+    state[key] = window.setTimeout(() => searchPeople(kind), 260);
+  }
+
+  async function searchPeople(kind) {
+    const input = kind === "group" ? el("[data-group-person-search]") : el("[data-person-search]");
+    const target = kind === "group" ? el("[data-group-person-results]") : el("[data-person-results]");
+    const query = String(input?.value || "").trim();
+    if (!target) return;
+    if (query.length < 2) {
+      target.innerHTML = `<div class="empty-state">Type at least two characters.</div>`;
+      return;
+    }
+    try {
+      target.innerHTML = `<div class="empty-state">Searching...</div>`;
+      const data = await api(`/people/search?q=${encodeURIComponent(query)}`, {}, "people_search");
+      const people = data.people || data.items || [];
+      target.innerHTML = people.length ? people.map((person) => personResultHtml(person)).join("") : `<div class="empty-state">No people found.</div>`;
+    } catch (err) {
+      target.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function personResultHtml(person) {
+    const encoded = escapeAttr(JSON.stringify({
+      user_id: Number(person.user_id || 0),
+      display_name: person.display_name || "Pulse member",
+      username: person.username || "",
+      avatar_url: person.avatar_url || "",
+    }));
+    return `
+      <button class="person-result" type="button" data-person-id="${Number(person.user_id || 0)}" data-person="${encoded}">
+        <span class="avatar">${initials(person.display_name || person.username)}</span>
+        <span><strong>${escapeHtml(person.display_name || "Pulse member")}</strong><small>${escapeHtml(person.username ? `@${person.username}` : person.matched_email ? "Email match" : "Pulse member")}</small></span>
+        <span aria-hidden="true">+</span>
+      </button>
+    `;
+  }
+
+  async function openDm(target) {
+    if (!target) return setStatus("Choose someone to message.", "error");
     const data = await api("/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: target }) }, "create_direct");
     state.active = rememberConversation(data.conversation);
     state.initialThreadLoaded = false;
+    closeModals();
     await loadConversations({ selectFirst: false });
+    await loadMessages(state.active.conversation_id);
   }
 
-  async function createRoom() {
-    const title = el("[data-room-title]")?.value || "";
-    const privacy = el("[data-room-privacy]")?.value || "public";
-    if (!title.trim()) return setStatus("Name the room before creating it.", "error");
-    const data = await api("/rooms", { method: "POST", body: JSON.stringify({ title, privacy }) }, "create_room");
+  function addGroupMember(raw) {
+    let person = {};
+    try { person = JSON.parse(raw || "{}"); } catch (_) {}
+    const userId = Number(person.user_id || 0);
+    if (!userId || state.groupMembers.some((item) => Number(item.user_id) === userId)) return;
+    state.groupMembers = [...state.groupMembers, person];
+    renderSelectedPeople();
+  }
+
+  function removeGroupMember(userId) {
+    state.groupMembers = state.groupMembers.filter((item) => Number(item.user_id) !== Number(userId));
+    renderSelectedPeople();
+  }
+
+  function renderSelectedPeople() {
+    const target = el("[data-selected-people]");
+    if (!target) return;
+    target.innerHTML = state.groupMembers.length ? state.groupMembers.map((person) => `
+      <div class="selected-person">
+        <span class="avatar">${initials(person.display_name || person.username)}</span>
+        <span><strong>${escapeHtml(person.display_name || "Pulse member")}</strong><small>${escapeHtml(person.username ? `@${person.username}` : "Selected")}</small></span>
+        <button type="button" data-remove-group-member="${Number(person.user_id || 0)}">Remove</button>
+      </div>
+    `).join("") : `<div class="empty-state">Select at least one person.</div>`;
+  }
+
+  async function createGroup() {
+    const title = String(el("[data-group-title]")?.value || "").trim();
+    const memberIds = state.groupMembers.map((item) => Number(item.user_id || 0)).filter(Boolean);
+    if (!title) return setStatus("Name the group before creating it.", "error");
+    if (!memberIds.length) return setStatus("Add at least one person to create a group.", "error");
+    const data = await api("/groups", { method: "POST", body: JSON.stringify({ title, member_ids: memberIds }) }, "create_group");
     state.active = rememberConversation(data.conversation);
     state.initialThreadLoaded = false;
+    state.groupMembers = [];
+    renderSelectedPeople();
+    closeModals();
     await loadConversations({ selectFirst: false });
+    await loadMessages(state.active.conversation_id);
   }
 
   async function sendMessage(event) {

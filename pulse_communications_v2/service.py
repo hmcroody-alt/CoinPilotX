@@ -980,6 +980,55 @@ def search_messages(user_id: int, query: str = "", filters: dict | None = None) 
         conn.close()
 
 
+def search_people(user_id: int, query: str = "", filters: dict | None = None) -> dict:
+    disabled = _disabled("search_people")
+    if disabled:
+        return disabled
+    query = _clean(query, 160)
+    if len(query) < 2:
+        return _ok({"people": [], "items": [], "query": query})
+    filters = filters or {}
+    limit = max(1, min(int(filters.get("limit") or 12), 25))
+    like = f"%{query.lower()}%"
+    conn, cur = _open_db()
+    try:
+        cur.execute(
+            """
+            SELECT user_id, username, display_name, avatar_url,
+                   CASE WHEN LOWER(COALESCE(email,'')) LIKE ? THEN 1 ELSE 0 END AS matched_email
+            FROM users
+            WHERE user_id!=?
+              AND COALESCE(account_status,'active')!='deleted'
+              AND (
+                LOWER(COALESCE(display_name,'')) LIKE ?
+                OR LOWER(COALESCE(username,'')) LIKE ?
+                OR LOWER(COALESCE(email,'')) LIKE ?
+              )
+            ORDER BY
+              CASE WHEN LOWER(COALESCE(username,''))=? THEN 0
+                   WHEN LOWER(COALESCE(display_name,''))=? THEN 1
+                   WHEN LOWER(COALESCE(username,'')) LIKE ? THEN 2
+                   ELSE 3 END,
+              COALESCE(display_name, username, 'Pulse member') ASC
+            LIMIT ?
+            """,
+            (like, int(user_id), like, like, like, query.lower(), query.lower(), f"{query.lower()}%", limit),
+        )
+        items = []
+        for row in cur.fetchall():
+            item = dict(row)
+            items.append({
+                "user_id": int(item.get("user_id") or 0),
+                "display_name": item.get("display_name") or item.get("username") or "Pulse member",
+                "username": item.get("username") or "",
+                "avatar_url": item.get("avatar_url") or "",
+                "matched_email": bool(item.get("matched_email")),
+            })
+        return _ok({"people": items, "items": items, "query": query})
+    finally:
+        conn.close()
+
+
 def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True) -> dict:
     disabled = _disabled("mark_read")
     if disabled:

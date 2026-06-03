@@ -206,6 +206,15 @@ def search_messages():
     return _timed_json("search_messages", lambda: service.search_messages(user["user_id"], request.args.get("q") or request.args.get("query") or "", request.args))
 
 
+@comm_v2_blueprint.get(f"{API_PREFIX}/people/search")
+@comm_v2_blueprint.get("/api/pulse/comm/v2/people/search")
+def search_people():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("search_people", lambda: service.search_people(user["user_id"], request.args.get("q") or request.args.get("query") or "", request.args))
+
+
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
 def add_member(conversation_ref):
     user, denied = _require_user()
