@@ -75,23 +75,30 @@
       endpoint: xhr.responseURL || "",
       edgeRay,
       headers,
+      first500: rawBody.slice(0, 500),
       rawBody,
     };
     console.warn("Pulse upload response parse failed", diagnostic);
     const lower = rawBody.toLowerCase();
     let message = "Upload returned a non-JSON response from the server.";
-    if (xhr.status === 403 && contentType.includes("text/html")) {
+    if (xhr.status === 403 && (contentType.includes("text/html") || lower.includes("cloudflare") || lower.includes("attention required"))) {
       message = "Upload was blocked by site security. Please try again or contact support.";
+    } else if (xhr.status === 524 || lower.includes("cloudflare error 524") || lower.includes("a timeout occurred")) {
+      message = "Upload timed out before Pulse received it. Try a smaller video and retry.";
+    } else if (xhr.status >= 500 && contentType.includes("text/html")) {
+      message = "Upload failed on the server. Please retry or contact support if it continues.";
     } else if (xhr.status === 401 || lower.includes("/login") || lower.includes("login")) {
-      message = "Login expired. Please sign in and try the upload again.";
+      message = "Session expired. Please sign in and retry the upload.";
     } else if (xhr.status === 413) {
-      message = "Upload is too large. Please choose a smaller video or photo.";
+      message = "File too large. Choose a smaller video or photo.";
+    } else if (lower.includes("request entity too large") || lower.includes("payload too large")) {
+      message = "File too large. Choose a smaller video or photo.";
     } else if (contentType.includes("text/html")) {
       message = "Upload returned an HTML page instead of JSON. Please retry after refreshing.";
     } else if (!rawBody.trim()) {
       message = "Upload returned an empty response. Please retry.";
     }
-    return { ok: false, message, upload_debug: diagnostic };
+    return { ok: false, success: false, message, error: "non_json_upload_response", upload_debug: diagnostic };
   }
 
   function upload(options) {
