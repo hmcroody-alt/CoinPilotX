@@ -22,6 +22,11 @@ def main():
     for token in [
         "create_mux_asset_from_url",
         "https://api.mux.com/video/v1/assets",
+        "PULSE_MUX_ASSET_CREATE_ATTEMPT",
+        "PULSE_MUX_ASSET_REQUIRED_FAILED",
+        "mux_asset_create_error_type",
+        "mux_token_id_present",
+        "mux_token_secret_present",
         "mux_asset_id",
         "mux_playback_id",
         "mux_status",
@@ -31,6 +36,8 @@ def main():
 
     require('"playback_url": mux_playback_url or saved_playback_url or first_party_stream or source' in media_service, "Mux playback is preferred before R2 fallback")
     require("mux.get(\"asset_id\")" in media_service and "mux.get(\"playback_id\")" in media_service, "Mux asset and playback ids are stored")
+    require("Video upload reached storage but Mux could not create the playback asset" in media_service, "video upload fails clearly when required Mux asset creation fails")
+    require("_clean_env_secret" in media_service and "strip(\"\\\"'\")" in media_service, "Mux credentials are normalized without logging secrets")
 
     for token in ["mux_asset_id", "mux_playback_id", "mux_status", "mux_hls_url", "playback_mime_type"]:
         require(token in feed_engine, f"feed payload preserves {token}")

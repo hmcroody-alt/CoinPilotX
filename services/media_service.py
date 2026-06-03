@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from werkzeug.utils import secure_filename
@@ -27,6 +28,10 @@ UPLOAD_ROOT = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads/chat_media"))
 STATIC_ROOT = Path(os.getenv("STATIC_ROOT", "static")).resolve()
 FALLBACK_URL = "/static/img/media-unavailable.svg"
 _MUX_DIAGNOSTICS_LOGGED = False
+
+
+def _clean_env_secret(value):
+    return str(value or "").strip().strip("\"'")
 
 
 def _now():
@@ -85,13 +90,17 @@ def mux_playback_urls(playback_id):
 
 def mux_diagnostics():
     """Expose Mux readiness without revealing token values."""
+    token_id = _clean_env_secret(os.getenv("MUX_TOKEN_ID"))
+    token_secret = _clean_env_secret(os.getenv("MUX_TOKEN_SECRET"))
+    webhook_secret = _clean_env_secret(os.getenv("MUX_WEBHOOK_SECRET"))
+    data_env_key = _clean_env_secret(os.getenv("MUX_DATA_ENV_KEY"))
     return {
-        "configured": bool(os.getenv("MUX_TOKEN_ID") and os.getenv("MUX_TOKEN_SECRET")),
-        "token_id_configured": bool(os.getenv("MUX_TOKEN_ID")),
-        "token_secret_configured": bool(os.getenv("MUX_TOKEN_SECRET")),
-        "webhook_secret_configured": bool(os.getenv("MUX_WEBHOOK_SECRET")),
-        "data_env_key_configured": bool(os.getenv("MUX_DATA_ENV_KEY")),
-        "data_env_key_used": bool((os.getenv("MUX_DATA_ANALYTICS_ENABLED") or "").strip().lower() == "true" and os.getenv("MUX_DATA_ENV_KEY")),
+        "configured": bool(token_id and token_secret),
+        "token_id_configured": bool(token_id),
+        "token_secret_configured": bool(token_secret),
+        "webhook_secret_configured": bool(webhook_secret),
+        "data_env_key_configured": bool(data_env_key),
+        "data_env_key_used": bool((os.getenv("MUX_DATA_ANALYTICS_ENABLED") or "").strip().lower() == "true" and data_env_key),
     }
 
 
@@ -112,8 +121,8 @@ def log_mux_diagnostics_once():
 
 
 def _mux_auth_header():
-    token_id = os.getenv("MUX_TOKEN_ID", "").strip()
-    token_secret = os.getenv("MUX_TOKEN_SECRET", "").strip()
+    token_id = _clean_env_secret(os.getenv("MUX_TOKEN_ID"))
+    token_secret = _clean_env_secret(os.getenv("MUX_TOKEN_SECRET"))
     if not token_id or not token_secret:
         return ""
     raw = f"{token_id}:{token_secret}".encode("utf-8")
@@ -125,8 +134,32 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
     log_mux_diagnostics_once()
     input_url = normalize_url(input_url)
     auth_header = _mux_auth_header()
+    configured = bool(auth_header)
+    logging.info(
+        "PULSE_MUX_ASSET_CREATE_ATTEMPT trace_id=%s media_id=%s mux_token_id_present=%s mux_token_secret_present=%s mux_asset_create_attempt=%s input_url_present=%s input_url_https=%s",
+        trace_id,
+        media_id,
+        bool(_clean_env_secret(os.getenv("MUX_TOKEN_ID"))),
+        bool(_clean_env_secret(os.getenv("MUX_TOKEN_SECRET"))),
+        bool(configured and input_url and input_url.startswith("https://")),
+        bool(input_url),
+        bool(input_url.startswith("https://")),
+    )
     if not input_url or not input_url.startswith("https://") or not auth_header:
-        return {"ok": False, "status": "not_configured" if not auth_header else "missing_input"}
+        error_type = "not_configured" if not auth_header else "missing_public_https_input"
+        logging.warning(
+            "PULSE_MUX_ASSET_CREATE_SKIPPED trace_id=%s media_id=%s mux_asset_create_status=skipped mux_asset_create_error_type=%s",
+            trace_id,
+            media_id,
+            error_type,
+        )
+        return {
+            "ok": False,
+            "status": "not_configured" if not auth_header else "missing_input",
+            "error_type": error_type,
+            "status_code": 0,
+            "message": "Mux credentials are missing." if not auth_header else "Mux needs a public HTTPS media URL.",
+        }
     payload = {
         "input": input_url,
         "playback_policy": ["public"],
@@ -146,14 +179,38 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
         with urlopen(request, timeout=float(os.getenv("MUX_ASSET_CREATE_TIMEOUT_SECONDS", "8"))) as response:
             body = response.read().decode("utf-8", "replace")
             data = json.loads(body or "{}")
-    except Exception as exc:
+            response_status = int(getattr(response, "status", 0) or 0)
+    except HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        error_type = "unauthorized" if exc.code in {401, 403} else "mux_api_http_error"
         logging.warning(
-            "PULSE_MUX_ASSET_CREATE_FAILED trace_id=%s media_id=%s error=%s",
+            "PULSE_MUX_ASSET_CREATE_FAILED trace_id=%s media_id=%s mux_asset_create_status=failed mux_asset_create_status_code=%s mux_asset_create_error_type=%s response_body=%s",
+            trace_id,
+            media_id,
+            exc.code,
+            error_type,
+            body[:500],
+        )
+        return {"ok": False, "status": "failed", "status_code": exc.code, "error_type": error_type, "error": body[:500], "message": "Mux rejected the upload credentials." if exc.code in {401, 403} else "Mux asset creation failed."}
+    except URLError as exc:
+        logging.warning(
+            "PULSE_MUX_ASSET_CREATE_FAILED trace_id=%s media_id=%s mux_asset_create_status=failed mux_asset_create_error_type=network_error error=%s",
             trace_id,
             media_id,
             str(exc)[:300],
         )
-        return {"ok": False, "status": "failed", "error": str(exc)[:500]}
+        return {"ok": False, "status": "failed", "status_code": 0, "error_type": "network_error", "error": str(exc)[:500], "message": "Mux could not be reached from the server."}
+    except Exception as exc:
+        logging.warning(
+            "PULSE_MUX_ASSET_CREATE_FAILED trace_id=%s media_id=%s mux_asset_create_status=failed mux_asset_create_error_type=unexpected_error error=%s",
+            trace_id,
+            media_id,
+            str(exc)[:300],
+        )
+        return {"ok": False, "status": "failed", "status_code": 0, "error_type": "unexpected_error", "error": str(exc)[:500], "message": "Mux asset creation failed."}
     asset = data.get("data") or {}
     playback_ids = asset.get("playback_ids") or []
     playback_id = ""
@@ -165,15 +222,29 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
         "asset_id": asset.get("id") or "",
         "playback_id": playback_id,
         "status": asset.get("status") or "created",
+        "status_code": response_status,
+        "error_type": "" if asset.get("id") and playback_id else "missing_playback_id",
     }
-    logging.info(
-        "PULSE_MUX_ASSET_CREATED trace_id=%s media_id=%s mux_asset_id=%s mux_playback_id=%s mux_status=%s",
-        trace_id,
-        media_id,
-        result["asset_id"],
-        result["playback_id"],
-        result["status"],
-    )
+    if result["ok"]:
+        logging.info(
+            "PULSE_MUX_ASSET_CREATED trace_id=%s media_id=%s mux_asset_id=%s mux_playback_id=%s mux_status=%s mux_asset_create_status_code=%s",
+            trace_id,
+            media_id,
+            result["asset_id"],
+            result["playback_id"],
+            result["status"],
+            response_status,
+        )
+    else:
+        logging.warning(
+            "PULSE_MUX_ASSET_CREATE_INCOMPLETE trace_id=%s media_id=%s mux_asset_create_status=incomplete mux_asset_create_status_code=%s mux_asset_create_error_type=%s mux_asset_id_present=%s mux_playback_id_present=%s",
+            trace_id,
+            media_id,
+            response_status,
+            result["error_type"],
+            bool(result["asset_id"]),
+            bool(result["playback_id"]),
+        )
     return result
 
 
@@ -748,9 +819,12 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         )
     except Exception:
         pass
-    if media_type == "video" and mux_diagnostics().get("configured"):
+    mux_result = {}
+    mux_configured = bool(mux_diagnostics().get("configured"))
+    if media_type == "video" and mux_configured:
         mux_input_url = cdn_url or url
         mux = create_mux_asset_from_url(mux_input_url, trace_id=upload_trace, media_id=media_id)
+        mux_result = mux
         if mux.get("ok"):
             mux_urls = mux_playback_urls(mux.get("playback_id") or "")
             try:
@@ -779,18 +853,60 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         else:
             try:
                 cur.execute(
-                    "UPDATE chat_media_uploads SET mux_status=?, updated_at=? WHERE id=?",
-                    (mux.get("status") or "failed", _now(), media_id),
+                    """
+                    UPDATE chat_media_uploads
+                    SET mux_status=?, processing_status='mux_failed', error_message=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        mux.get("status") or "failed",
+                        (mux.get("message") or mux.get("error_type") or "Mux asset creation failed.")[:1000],
+                        _now(),
+                        media_id,
+                    ),
                 )
             except Exception:
                 pass
+            conn.commit()
+            cur.execute("SELECT * FROM chat_media_uploads WHERE id=?", (media_id,))
+            failed_row = cur.fetchone()
+            conn.close()
+            failed_media = _public(failed_row)
+            logging.error(
+                "PULSE_MUX_ASSET_REQUIRED_FAILED trace_id=%s media_id=%s mux_asset_create_attempt=%s mux_asset_create_status=%s mux_asset_create_error_type=%s mux_asset_create_status_code=%s",
+                upload_trace,
+                media_id,
+                True,
+                mux.get("status") or "failed",
+                mux.get("error_type") or "unknown",
+                mux.get("status_code") or 0,
+            )
+            return {
+                "ok": False,
+                "message": mux.get("message") or "Video upload reached storage but Mux could not create the playback asset. Please retry.",
+                "error": "mux_asset_create_failed",
+                "trace_id": upload_trace,
+                "media": failed_media,
+                "mux": {
+                    "token_id_present": bool(mux_diagnostics().get("token_id_configured")),
+                    "token_secret_present": bool(mux_diagnostics().get("token_secret_configured")),
+                    "asset_create_attempt": True,
+                    "asset_create_status": mux.get("status") or "failed",
+                    "asset_create_status_code": mux.get("status_code") or 0,
+                    "asset_create_error_type": mux.get("error_type") or "unknown",
+                },
+            }, 502
     conn.commit()
     cur.execute("SELECT * FROM chat_media_uploads WHERE id=?", (media_id,))
     row = cur.fetchone()
     conn.close()
     public_media = _public(row)
+    if media_type == "video":
+        public_media["mux_asset_create_attempt"] = bool(mux_configured)
+        public_media["mux_asset_create_status"] = mux_result.get("status") or ("not_configured" if not mux_configured else "")
+        public_media["mux_asset_create_error_type"] = mux_result.get("error_type") or ""
     logging.info(
-        "PULSE_MEDIA_UPLOAD_COMPLETE trace_id=%s user_id=%s media_id=%s storage_provider=%s media_url=%s processing_status=%s verification_status=%s object_key=%s cdn_url=%s",
+        "PULSE_MEDIA_UPLOAD_COMPLETE trace_id=%s user_id=%s media_id=%s storage_provider=%s media_url=%s processing_status=%s verification_status=%s object_key=%s cdn_url=%s mux_asset_create_attempt=%s mux_asset_create_status=%s mux_asset_create_error_type=%s",
         upload_trace,
         int(user_id),
         media_id,
@@ -800,6 +916,9 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
         public_media.get("verification_status") or "",
         public_media.get("object_key") or public_media.get("storage_key") or "",
         public_media.get("cdn_url") or "",
+        bool(mux_configured) if media_type == "video" else False,
+        mux_result.get("status") or "",
+        mux_result.get("error_type") or "",
     )
     return {"ok": True, "media": public_media}, 200
 
