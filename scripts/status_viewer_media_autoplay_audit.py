@@ -27,6 +27,8 @@ def main():
     require("data-status-viewer-progress" in bot and "data-status-viewer-prev" in bot and "data-status-viewer-next" in bot, "Viewer includes progress and navigation controls")
     require("statusViewerMediaHtml" in bot and "<video" in bot and "<img" in bot, "Viewer supports text, photo, and video statuses")
     require("pulse-status-card-media" in bot, "Recent Status cards render readable media previews")
+    require("hydrateStatusCardVideos" in bot and 'data-status-preview-seconds="10"' in bot, "Video Status cards loop the first 10 seconds as a teaser")
+    require("pulse-status-open-cue" in css and "Tap to open" in bot, "Status cards are visibly easy to open")
     require("pulseMediaSoundEnabled" in media, "Shared Pulse media sound preference is implemented")
     require("IntersectionObserver" in media and "playVisibleVideo" in media, "Feed media uses IntersectionObserver autoplay")
     require("pauseOtherVideos" in media, "Only one shared media video plays at a time")

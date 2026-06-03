@@ -1,6 +1,6 @@
 # Pulse Media Upload Audit
 
-Generated: 2026-06-02T18:21:22
+Generated: 2026-06-03T12:17:45
 
 ## Infrastructure
 
@@ -14,17 +14,17 @@ Generated: 2026-06-02T18:21:22
 
 | Upload type | Result | Media type | URL | CDN | Mux playback | Processing | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| image-only | PASS | image / image/png | `/static/uploads/pulse_media/2026/06/02/pulse-image-e1e7cc314f4efb40.png` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
-| video-only webm | PASS | video / video/webm | `/static/uploads/pulse_media/2026/06/02/pulse-video-9318a38f2b64dfd4.webm` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
-| video-only mov | PASS | video / video/quicktime | `/static/uploads/pulse_media/2026/06/02/pulse-video-c798c49798cf1320.mov` | `n/a` | `n/a` | ready/verified | MOV stored; playback may vary until transcoding is enabled. |
-| audio-only | PASS | audio / audio/ogg | `/static/uploads/pulse_media/2026/06/02/pulse-audio-a5e3d812c10251e5.ogg` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
+| image-only | PASS | image / image/png | `/static/uploads/pulse_media/2026/06/03/pulse-image-92196cfa47cfb836.png` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
+| video-only webm | PASS | video / video/webm | `/static/uploads/pulse_media/2026/06/03/pulse-video-d6e6fd55d50fcf8f.webm` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
+| video-only mov | PASS | video / video/quicktime | `/static/uploads/pulse_media/2026/06/03/pulse-video-16526360db17ad8e.mov` | `n/a` | `n/a` | ready/verified | MOV stored; playback may vary until transcoding is enabled. |
+| audio-only | PASS | audio / audio/ogg | `/static/uploads/pulse_media/2026/06/03/pulse-audio-881120ec3f050dca.ogg` | `n/a` | `n/a` | ready/verified | Uploaded and normalized. |
 
 ## Created Objects
 
-- Mixed media Pulse post: `848`
-- Photo/video/audio Status ids: `597, 598, 599`
-- Reel id: `65`
-- Original sound track id: `26246`
+- Mixed media Pulse post: `856`
+- Photo/video/audio Status ids: `627, 628, 629`
+- Reel id: `70`
+- Original sound track id: `26773`
 
 ## Resolution
 

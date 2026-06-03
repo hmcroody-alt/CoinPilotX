@@ -28,6 +28,9 @@ def main() -> None:
         "openStatusViewer(",
         "renderStatusViewer(",
         "statusViewerMediaHtml",
+        "statusPreviewMediaHtml",
+        "hydrateStatusCardVideos",
+        "data-status-preview-seconds=\"10\"",
         "data-status-viewer-progress",
         "data-status-viewer-prev",
         "data-status-viewer-next",
@@ -40,6 +43,8 @@ def main() -> None:
     expect("media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "status viewer forces Mux HLS before raw media")
     expect("Status opened." not in bot, "status cards do not show toast-only open behavior")
     expect("pulse-status-card-media" in bot, "status cards show readable previews before opening")
+    expect("pulse-status-open-cue" in status_css and "Tap to open" in bot, "status cards show an easy open cue")
+    expect("pulse-status-card-video-preview" in bot, "video status cards use teaser preview playback")
     expect("pulse-media-surface-status" in media_css, "status viewer uses shared media surface styling")
     compact_status_css = "".join(status_css.split())
     expect(".pulse-status-story-viewer" in status_css and "position:fixed" in compact_status_css, "status viewer is a full-screen overlay")

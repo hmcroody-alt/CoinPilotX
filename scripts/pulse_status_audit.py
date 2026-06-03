@@ -69,7 +69,7 @@ def main():
         "data-pulse-status-version='entry-1'",
         "data-status2-strip",
         "pulse-status-home-entry",
-        "Share quick stories from your Pulse world.",
+        "Stories from your Pulse world.",
         "href='/pulse/status'",
         "Create Status",
     ]:
