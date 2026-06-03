@@ -16,7 +16,7 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=video-seamless-20260602";
+    link.href = "/static/css/pulse_cinematic_media.css?v=mobile-video-20260602";
     document.head.appendChild(link);
   }
 
@@ -41,9 +41,12 @@
     return "/" + raw.replace(/^\/+/, "");
   }
 
-  function nativeHlsSupported() {
+  function nativeHlsSupported(video = document.createElement("video")) {
     try {
-      return !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
+      return !!(
+        video?.canPlayType?.("application/vnd.apple.mpegurl") ||
+        video?.canPlayType?.("application/x-mpegURL")
+      );
     } catch (_) {
       return false;
     }
@@ -51,6 +54,21 @@
 
   function isHlsUrl(url) {
     return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
+  }
+
+  function muxHlsUrl(playbackId) {
+    const id = String(playbackId || "").trim();
+    return id ? `https://stream.mux.com/${id}.m3u8` : "";
+  }
+
+  function sourceKind(url, item = {}) {
+    const source = String(url || "").toLowerCase();
+    if (source.includes("stream.mux.com/") || item.mux_playback_id || item.muxPlaybackId || item.playback_id) return "mux_hls";
+    if (isPulseStreamUrl(source)) return "first_party_stream";
+    if (source.includes("cdn.coinpilotx.app")) return "cdn";
+    if (source.startsWith("blob:")) return "blob";
+    if (source.startsWith("data:")) return "data";
+    return source ? "direct" : "unknown";
   }
 
   function loadHlsLibrary() {
@@ -121,10 +139,12 @@
   function normalizeMedia(input = {}) {
     const item = input || {};
     const muxPlaybackId = String(item.mux_playback_id || item.muxPlaybackId || item.playback_id || "").trim();
-    const muxHlsUrl = safeUrl(item.mux_hls_url || item.hls_url || (muxPlaybackId ? `https://stream.mux.com/${muxPlaybackId}.m3u8` : ""));
+    const canonicalMuxHlsUrl = safeUrl(muxHlsUrl(muxPlaybackId));
+    const muxHlsUrlValue = safeUrl(item.mux_hls_url || item.hls_url || canonicalMuxHlsUrl);
     const muxThumbnailUrl = safeUrl(item.mux_thumbnail_url || (muxPlaybackId ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg` : ""));
     const directUrl = safeUrl(item.valid_url || item.cdn_url || item.media_url || item.url || item.src || "");
-    const playbackUrl = safeUrl(item.playback_url || muxHlsUrl || directUrl);
+    const itemType = inferMediaType(item, item.playback_url || muxHlsUrlValue || directUrl);
+    const playbackUrl = safeUrl(itemType === "video" ? (muxHlsUrlValue || item.playback_url || directUrl) : (item.playback_url || directUrl));
     const url = playbackUrl || directUrl;
     const thumb = safeUrl(item.thumbnail_url || item.thumbnail || item.thumb || muxThumbnailUrl || "");
     const poster = safeUrl(item.poster_url || item.poster || muxThumbnailUrl || thumb || "");
@@ -144,8 +164,9 @@
       mime,
       mux_playback_id: muxPlaybackId,
       playback_mime_type: String(item.playback_mime_type || "").toLowerCase(),
-      mux_hls_url: muxHlsUrl,
+      mux_hls_url: muxHlsUrlValue,
       mux_thumbnail_url: muxThumbnailUrl,
+      source_type: sourceKind(url, item),
       duration: Number(item.duration || item.duration_seconds || 0),
       has_audio: hasAudio,
       created_at: item.created_at || "",
@@ -193,6 +214,7 @@
       src: media.playback_url || media.valid_url || media.url,
       cdn_url: media.cdn_url,
       mux_playback_id: media.mux_playback_id,
+      source_type: media.source_type,
       surface,
       available: media.is_available,
     }).slice(0, 600));
@@ -208,6 +230,8 @@
       `data-media-poster="${esc(media.poster)}"`,
       `data-media-mux-playback-id="${esc(media.mux_playback_id)}"`,
       `data-media-hls="${esc(media.mux_hls_url)}"`,
+      `data-media-source-type="${esc(media.source_type)}"`,
+      `data-media-native-hls="${esc(nativeHlsSupported() && isHlsUrl(media.playback_url || media.valid_url || media.url) ? "1" : "0")}"`,
       `data-media-duration="${esc(media.duration)}"`,
       `data-media-has-audio="${esc(media.has_audio)}"`,
       `data-media-created-at="${esc(media.created_at)}"`,
@@ -226,7 +250,7 @@
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
       const controls = options.controls === false ? "" : " controls";
       const loop = options.loop ? " loop" : "";
-      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player muted${controls}${loop} playsinline preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player muted${controls}${loop} playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
     }
     if (media.type === "audio") {
       return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
@@ -340,6 +364,15 @@
     return video?.closest?.(".pulse-media-wrap") || video?.closest?.(".reel-card") || video?.parentElement || null;
   }
 
+  function prepareMobileVideo(video) {
+    if (!video) return;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.setAttribute("x-webkit-airplay", "allow");
+    if (!video.preload || video.preload === "none") video.preload = "metadata";
+  }
+
   function pauseOtherVideos(except) {
     document.querySelectorAll("video").forEach(video => {
       if (video !== except && !video.paused) video.pause();
@@ -351,16 +384,17 @@
     const wrap = mediaVideoWrap(video);
     pauseOtherVideos(video);
     activeVideo = video;
-    video.playsInline = true;
+    prepareMobileVideo(video);
     video.preload = "auto";
-    video.muted = !preferSound;
+    const shouldTrySound = !!preferSound && soundEnabled();
+    video.muted = !shouldTrySound;
     try {
       await video.play();
       wrap?.classList.add("is-playing");
-      if (preferSound) setSoundEnabled(true);
+      if (shouldTrySound) setSoundEnabled(true);
       else showSoundPrompt(wrap, true);
     } catch (error) {
-      if (preferSound) {
+      if (shouldTrySound) {
         video.muted = true;
         setSoundEnabled(false);
         try {
@@ -456,12 +490,37 @@
     media.src = url;
   }
 
+  function setVideoSource(video, src, mime = "") {
+    if (!video || !src) return;
+    const current = videoSource(video);
+    const source = video.querySelector("source");
+    if (source) {
+      source.src = src;
+      if (mime) source.type = mime;
+    } else {
+      video.src = src;
+    }
+    if (current !== src) {
+      try {
+        video.load();
+      } catch (_) {}
+    }
+  }
+
   async function attachHlsPlayback(wrap, video) {
-    const src = mediaUrl(wrap) || videoSource(video);
+    const src = wrap?.dataset.mediaHls || mediaUrl(wrap) || videoSource(video);
     if (!video || !isHlsUrl(src) || video.dataset.pulseHlsBound === "1") return;
     video.dataset.pulseHlsBound = "1";
-    if (nativeHlsSupported()) {
-      if (!video.src) video.src = src;
+    prepareMobileVideo(video);
+    if (nativeHlsSupported(video)) {
+      if (video._pulseHls) {
+        try {
+          video._pulseHls.destroy();
+        } catch (_) {}
+        video._pulseHls = null;
+      }
+      video.dataset.pulseNativeHls = "1";
+      setVideoSource(video, src, "application/vnd.apple.mpegurl");
       return;
     }
     try {
@@ -510,7 +569,28 @@
       network_state: video?.networkState,
       ready_state: video?.readyState,
       current_src: videoSource(video),
+      source_type: video?.querySelector?.("source")?.type || "",
     };
+  }
+
+  function probeVideoRequest(wrap, src, eventName) {
+    if (!mediaDebugEnabled() || !src || src.startsWith("blob:") || src.startsWith("data:")) return;
+    fetch(src, { method: "HEAD", mode: "cors", cache: "no-store" })
+      .then(response => console.info("Pulse video request HEAD", {
+        event: eventName,
+        media_id: wrap.dataset.mediaId || "",
+        src,
+        status: response.status,
+        content_type: response.headers.get("content-type") || "",
+        accept_ranges: response.headers.get("accept-ranges") || "",
+        content_length: response.headers.get("content-length") || "",
+      }))
+      .catch(error => console.warn("Pulse video request HEAD failed", {
+        event: eventName,
+        media_id: wrap.dataset.mediaId || "",
+        src,
+        message: error?.message || String(error),
+      }));
   }
 
   function reportVideoDiagnostics(wrap, video, eventName) {
@@ -522,6 +602,12 @@
       event: eventName,
       media_id: wrap.dataset.mediaId || "",
       src,
+      current_src: video.currentSrc || "",
+      source_src: video.querySelector?.("source")?.src || "",
+      source_type: wrap.dataset.mediaSourceType || "",
+      source_mime: video.querySelector?.("source")?.type || wrap.dataset.mediaMime || "",
+      native_hls: nativeHlsSupported(video),
+      pulse_native_hls: video.dataset.pulseNativeHls || "0",
       mime_type: wrap.dataset.mediaMime || "",
       media_type: wrap.dataset.mediaType || "",
       poster: wrap.dataset.mediaPoster || "",
@@ -530,21 +616,7 @@
       error: videoErrorDetails(video),
       diag: wrap.dataset.mediaDiag || "",
     });
-    if (mediaDebugEnabled() && src && src.startsWith("https://cdn.coinpilotx.app/")) {
-      fetch(src, { method: "HEAD", mode: "cors", cache: "no-store" })
-        .then(response => console.info("Pulse video CDN HEAD", {
-          media_id: wrap.dataset.mediaId || "",
-          status: response.status,
-          content_type: response.headers.get("content-type") || "",
-          accept_ranges: response.headers.get("accept-ranges") || "",
-          content_length: response.headers.get("content-length") || "",
-        }))
-        .catch(error => console.warn("Pulse video CDN HEAD failed", {
-          media_id: wrap.dataset.mediaId || "",
-          src,
-          message: error?.message || String(error),
-        }));
-    }
+    probeVideoRequest(wrap, src, eventName);
   }
 
   function revealImage(wrap, img) {
@@ -654,6 +726,7 @@
       return;
     }
     bindVideoAmbient(wrap, media);
+    prepareMobileVideo(media);
     attachHlsPlayback(wrap, media);
     bindAutoplayVideo(wrap, media);
     const cached = metadataCache.get(videoSource(media) || canonicalSrc);

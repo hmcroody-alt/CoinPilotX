@@ -29,7 +29,7 @@ def main():
     desktop_css = (ROOT / "static" / "css" / "pulse_desktop_feed.css").read_text(encoding="utf-8")
 
     for token in [
-        "<video muted controls playsinline",
+        "data-pulse-video-player muted controls playsinline webkit-playsinline",
         "<source src=",
         "data-media-mime",
         "preload=\"metadata\"",
@@ -43,7 +43,7 @@ def main():
         "media.querySelector(\"source\")",
         "loadedmetadata",
         "Pulse video diagnostic",
-        "Pulse video CDN HEAD",
+        "Pulse video request HEAD",
         "private R2 URL",
         "content-type",
         "accept-ranges",
@@ -57,7 +57,7 @@ def main():
         "mime_type=%s",
         "storage_key=%s",
         "valid_url=%s",
-        "MEDIA_ALLOW_UNTRANSCODED_MOV",
+        "PULSE_UPLOAD_MOV_STORED_WITHOUT_TRANSCODE",
     ]:
         expect(token in upload_service, f"upload diagnostics include {token}")
 
