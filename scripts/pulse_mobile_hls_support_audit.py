@@ -25,10 +25,11 @@ def main() -> None:
     expect("application/vnd.apple.mpegurl" in renderer, "Apple HLS MIME type is used")
     expect("application/x-mpegURL" in renderer, "alternate HLS MIME type is accepted")
     expect("https://stream.mux.com/${id}.m3u8" in renderer, "Mux playback IDs become canonical HLS URLs")
-    expect("muxHlsUrlValue || item.playback_url || directUrl" in renderer, "Mux HLS wins before first-party stream fallback")
+    expect("canonicalMuxHlsUrl || muxHlsUrlValue || item.playback_url || directUrl" in renderer, "canonical Mux HLS wins before first-party stream fallback")
     expect("nativeHlsSupported(video)" in renderer and "return;" in renderer[renderer.index("nativeHlsSupported(video)") : renderer.index("loadHlsLibrary()", renderer.index("nativeHlsSupported(video)"))], "native HLS exits before HLS.js loading")
     expect("loadHlsLibrary()" in renderer and "Hls?.isSupported?.()" in renderer, "HLS.js remains desktop/non-native fallback")
-    expect("const muxHls=m.mux_hls_url||(m.mux_playback_id?`https://stream.mux.com/${m.mux_playback_id}.m3u8`:'')" in bot, "legacy feed renderer also prefers Mux HLS")
+    expect("const muxHls=m.mux_playback_id?`https://stream.mux.com/${m.mux_playback_id}.m3u8`:(m.mux_hls_url||'')" in bot, "legacy feed renderer forces canonical Mux HLS")
+    expect("src.includes('.m3u8')?'application/vnd.apple.mpegurl'" in bot, "legacy feed renderer marks Mux HLS MIME")
 
 
 if __name__ == "__main__":

@@ -286,10 +286,15 @@ article.card > .pulse-media-wrap {
 
 .pulse-media-fallback {
   z-index: 8 !important;
+  display: none !important;
   background:
     radial-gradient(circle at 50% 30%, rgba(110, 223, 246, .12), transparent 28%),
     linear-gradient(145deg, rgba(8, 19, 35, .94), rgba(3, 9, 18, .98)) !important;
   backdrop-filter: blur(8px);
+}
+
+.pulse-media-wrap.is-broken .pulse-media-fallback {
+  display: grid !important;
 }
 
 @keyframes pulseAmbientBackdropDrift {
@@ -385,6 +390,41 @@ article.card > .pulse-media-wrap {
     width: calc(100% + (var(--pulse-card-media-bleed, 9px) * 2)) !important;
     margin-left: calc(var(--pulse-card-media-bleed, 9px) * -1) !important;
     margin-right: calc(var(--pulse-card-media-bleed, 9px) * -1) !important;
+  }
+
+  .post.is-video > .media-grid {
+    gap: 7px !important;
+    margin-top: 6px !important;
+    margin-bottom: 7px !important;
+  }
+
+  .post.is-video .pulse-media-wrap,
+  .post.is-video .pulse-unified-video-player {
+    max-height: min(62vh, 520px) !important;
+    border-radius: 11px !important;
+  }
+
+  .post.is-video .pulse-media-wrap video {
+    max-height: min(62vh, 520px) !important;
+    object-fit: contain !important;
+  }
+
+  .post.is-video .reactions {
+    gap: 5px !important;
+    padding-block: 2px !important;
+    margin-block: 5px !important;
+  }
+
+  .post.is-video .reaction-pill {
+    min-height: 30px !important;
+    padding: 5px 9px !important;
+    font-size: 12px !important;
+  }
+
+  .post.is-video .comment-box:not(.open),
+  .post.is-video .comments-panel:not(.open),
+  .post.is-video [data-comments]:not(.open) {
+    display: none !important;
   }
 }
 

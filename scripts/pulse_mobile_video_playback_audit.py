@@ -32,13 +32,14 @@ def main() -> None:
         "video.muted = !shouldTrySound",
         "setSoundEnabled(true)",
         "PulseMediaRenderer.renderMedia",
+        "window.PulseVideo = PulseVideo",
         "PulseMediaRenderer?.playVisibleVideo",
         "Video is processing.",
         "Mux playback will appear when ready.",
     ]:
         expect(token in source, f"mobile video playback includes {token}")
 
-    expect("muxHlsUrlValue || item.playback_url || directUrl" in renderer, "Mux HLS is preferred before fallback stream")
+    expect("canonicalMuxHlsUrl || muxHlsUrlValue || item.playback_url || directUrl" in renderer, "canonical Mux HLS is preferred before fallback stream")
     expect("nativeHlsSupported(video)" in renderer and "loadHlsLibrary()" in renderer, "HLS.js is only the non-native fallback")
     expect("url.includes('/api/pulse/feed')?'Pulse is warming up. Create the first post.'" in bot, "warming-up copy is scoped to feed loads")
     expect("url.includes('/api/pulse/posts')?'Publishing failed. Please try again.'" in bot, "post publish failures use publish-specific copy")

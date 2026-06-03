@@ -43,17 +43,18 @@ def main() -> None:
         "Pulse video request HEAD",
         "pulseNativeHls",
         "shouldTrySound",
+        "window.PulseVideo = PulseVideo",
     ]:
         expect(token in renderer, f"shared renderer includes {token}")
 
     expect("https://stream.mux.com/${id}.m3u8" in renderer, "Mux playback IDs resolve to mobile-safe HLS URLs")
-    expect("muxHlsUrlValue || item.playback_url || directUrl" in renderer, "video playback prefers Mux HLS before first-party fallback")
+    expect("canonicalMuxHlsUrl || muxHlsUrlValue || item.playback_url || directUrl" in renderer, "video playback prefers canonical Mux HLS before first-party fallback")
     expect("nativeHlsSupported(video)" in renderer and "loadHlsLibrary()" in renderer, "native HLS is preferred before HLS.js")
     expect("data-pulse-media-sound hidden" in renderer, "tap-for-sound starts as a small hidden prompt")
     expect("setTimeout(() =>" in renderer and "3200" in renderer, "tap-for-sound prompt auto-hides")
     expect("isPulseStreamUrl(src)" in renderer, "first-party stream URLs are not cache-busted on retry")
     expect("retry=" in renderer and "isPulseStreamUrl(src)" in renderer, "non-stream media retry remains available")
-    expect("mobile-video-20260602" in renderer + bot, "updated asset cache key is wired")
+    expect("mobile-mux-20260603" in renderer + bot, "updated asset cache keys are wired")
     expect(".pulse-unified-video-player" in css, "unified video CSS class is styled")
 
     stream_start = bot.index('def api_pulse_media_stream')

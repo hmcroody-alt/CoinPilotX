@@ -37,11 +37,13 @@ def main():
 
     require("loadHlsLibrary" in renderer, "shared renderer can load HLS.js")
     require("application/vnd.apple.mpegurl" in renderer, "shared renderer marks HLS playback MIME")
-    require("muxHlsUrlValue || item.playback_url || directUrl" in renderer, "shared renderer prefers Mux HLS playback")
+    require("canonicalMuxHlsUrl || muxHlsUrlValue || item.playback_url || directUrl" in renderer, "shared renderer prefers canonical Mux HLS playback")
     require("attachHlsPlayback(wrap, media)" in renderer, "shared renderer attaches HLS playback during hydration")
 
-    require("muxHls||m.playback_url||m.valid_url" in bot, "Feed video source prefers Mux/playback URL before raw media")
-    require("media.playback_mime_type||(media.mux_hls_url?'application/vnd.apple.mpegurl'" in bot, "Reels/Status pass HLS MIME metadata")
+    require("const muxHls=m.mux_playback_id?`https://stream.mux.com/${m.mux_playback_id}.m3u8`" in bot, "Feed video source forces Mux playback URL before raw media")
+    require("muxHls=media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "Reels video source forces Mux playback URL before raw media")
+    require("statusMediaUrl(media={})" in bot and "media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "Status viewer source forces Mux playback URL before raw media")
+    require("src.includes('.m3u8')?'application/vnd.apple.mpegurl'" in bot, "Feed/Reels/Status pass HLS MIME metadata")
     require('("mux_status", "TEXT")' in bot, "database schema adds mux_status")
     require("pulse_media_assets" in bot and "mux_playback_id" in bot, "media asset index stores Mux metadata")
 

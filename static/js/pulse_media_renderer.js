@@ -16,7 +16,7 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=mobile-video-20260602";
+    link.href = "/static/css/pulse_cinematic_media.css?v=mobile-mux-20260603";
     document.head.appendChild(link);
   }
 
@@ -821,5 +821,7 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => hydrate(document));
-  window.PulseMediaRenderer = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, soundEnabled };
+  const PulseVideo = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, soundEnabled, nativeHlsSupported };
+  window.PulseVideo = PulseVideo;
+  window.PulseMediaRenderer = PulseVideo;
 })();

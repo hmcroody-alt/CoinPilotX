@@ -136,6 +136,14 @@ grid-template-columns: 42px minmax(0, 1fr) 42px;
 body:has(.reels-immersive) {
 overflow: hidden;
 }
+body:has(.reels-immersive) .layout > aside,
+.reels-desktop-sidebar,
+.reel-details-panel,
+.reels-desktop-intel,
+.reel-comments-preview,
+.reel-inline-comment {
+display: none !important;
+}
 body:has(.reels-immersive) .wrap,
 body:has(.reels-immersive) .layout,
 body:has(.reels-immersive) .layout > div {
@@ -195,7 +203,17 @@ writing-mode: horizontal-tb !important;
 .reel-card {
 height: 100dvh !important;
 min-height: 100dvh !important;
+width: 100% !important;
+max-width: 100% !important;
 scroll-snap-stop: always;
+}
+.reel-card {
+display: block !important;
+grid-template-columns: 1fr !important;
+gap: 0 !important;
+padding: 0 !important;
+overflow: hidden !important;
+background: #02050b !important;
 }
 .reel-top {
 top: calc(var(--safe-top) + var(--reels-tabs-height) + 14px) !important;
@@ -246,6 +264,9 @@ bottom: calc(50px + env(safe-area-inset-bottom));
 }
 .reels-toolbar {
 bottom: calc(10px + var(--reels-bottom-safe)) !important;
+}
+.reel-comments:not(.open) {
+display: none !important;
 }
 }
 @media (prefers-reduced-motion: reduce) {

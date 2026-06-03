@@ -37,6 +37,7 @@ def main() -> None:
     ]:
         expect(token in bot, f"status viewer includes {token}")
 
+    expect("media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`" in bot, "status viewer forces Mux HLS before raw media")
     expect("Status opened." not in bot, "status cards do not show toast-only open behavior")
     expect("pulse-status-card-media" in bot, "status cards show readable previews before opening")
     expect("pulse-media-surface-status" in media_css, "status viewer uses shared media surface styling")
