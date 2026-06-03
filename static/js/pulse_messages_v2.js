@@ -116,10 +116,10 @@
   }
 
   function attachmentHtml(item) {
-    const url = item.url || item.thumbnail_url || "";
+    const url = item.playback_url || item.url || item.cdn_url || item.thumbnail_url || "";
     if (!url) return "";
     if ((item.media_type || "").match(/image|gif/)) return `<img src="${escapeAttr(url)}" alt="Attached media">`;
-    if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls preload="metadata"></video>`;
+    if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls playsinline preload="metadata" poster="${escapeAttr(item.thumbnail_url || "")}"></video>`;
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Open attachment</a>`;
   }
 
@@ -208,10 +208,12 @@
     const fd = new FormData();
     fd.append("file", file);
     fd.append("context_type", "pulse_comm_v2");
-    fd.append("context_id", state.active?.conversation_id || "draft");
+    fd.append("conversation_id", state.active?.conversation_id || "");
     const started = performance.now();
-    const res = await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd });
-    const data = await res.json();
+    const res = await fetch(`${API}/attachments/upload`, { method: "POST", credentials: "same-origin", body: fd });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: res.status === 403 ? "Attachment upload was blocked by site security." : "Attachment upload returned an unexpected response." }; }
     console.info("Pulse Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
     if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
     return Number(data.media?.id || 0);

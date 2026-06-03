@@ -77,6 +77,14 @@ def health():
     return jsonify({"enabled": flags.is_enabled(), "status": "ready" if flags.is_enabled() else "disabled"})
 
 
+@comm_v2_blueprint.get(f"{API_PREFIX}/diagnostics")
+def diagnostics():
+    admin = _current_admin()
+    if not admin:
+        return jsonify({"ok": False, "status": "error", "message": "Admin access required."}), 403
+    return _json(service.infrastructure_diagnostics())
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/conversations")
 def conversations():
@@ -170,6 +178,16 @@ def send_message(conversation_ref):
     return _timed_json("send_message", lambda: service.send_message(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/attachments/upload")
+def upload_attachment():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    file_storage = request.files.get("file") or request.files.get("attachment")
+    conversation_ref = request.form.get("conversation_id") or request.form.get("conversation_ref") or ""
+    return _timed_json("attachment_upload", lambda: service.stage_attachment_upload(user["user_id"], file_storage, conversation_ref))
+
+
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
 @comm_v2_blueprint.get("/api/pulse/comm/v2/conversations/<path:conversation_ref>/members")
 def members(conversation_ref):
@@ -177,6 +195,15 @@ def members(conversation_ref):
     if denied:
         return denied
     return _json(service.list_members(user["user_id"], conversation_ref))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/search")
+@comm_v2_blueprint.get("/api/pulse/comm/v2/search")
+def search_messages():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("search_messages", lambda: service.search_messages(user["user_id"], request.args.get("q") or request.args.get("query") or "", request.args))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
@@ -268,6 +295,47 @@ def phase_two_placeholder(conversation_ref):
     if not flags.is_enabled():
         return _json({"ok": False, "status": "disabled", "message": service.DISABLED_MESSAGE, "trace_id": service._trace()})
     return _json({"ok": True, "status": "placeholder", "conversation_id": conversation_ref, "message": "Voice and video are reserved for Phase 2.", "trace_id": service._trace()})
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/live/mux/create")
+def create_mux_live(conversation_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.create_comm_v2_mux_live_stream(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/live/mux/<path:live_ref>")
+def get_mux_live(live_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.get_comm_v2_mux_live_stream(user["user_id"], live_ref))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/live/mux/<path:live_ref>/disable")
+def disable_mux_live(live_ref):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.disable_comm_v2_mux_live_stream(user["user_id"], live_ref))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/live/mux/webhook")
+def mux_live_webhook():
+    raw = request.get_data(cache=False) or b""
+    verification = service.verify_mux_webhook_signature(raw, request.headers.get("Mux-Signature"))
+    if not verification.get("ok"):
+        return jsonify({"ok": False, "status": "forbidden", "message": "Mux webhook signature could not be verified."}), 403
+    return _json(service.process_mux_webhook(request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/notifications/preview")
+def notification_preview():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.twilio_notification_preview(user["user_id"], request.get_json(silent=True) or {}))
 
 
 def register(app) -> None:

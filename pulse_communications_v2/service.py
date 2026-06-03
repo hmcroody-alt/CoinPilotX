@@ -681,14 +681,16 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
         media = _row(cur.fetchone())
         if not media:
             continue
+        media = _prepare_attachment_media(cur, media, media_id)
         now = _now()
         cur.execute(
             """
             INSERT INTO comm_v2_attachments
-            (message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, thumbnail_url, mime_type, file_size_bytes, width, height, scan_status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (attachment_public_id, message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, cdn_url, playback_url, thumbnail_url, mime_type, file_size, file_size_bytes, width, height, mux_asset_id, mux_playback_id, mux_status, scan_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                _public_id("att"),
                 int(message_id),
                 int(conversation_id),
                 int(media_id),
@@ -696,12 +698,18 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
                 media.get("media_type") or "file",
                 media.get("storage_provider") or "",
                 media.get("storage_key") or media.get("object_key") or "",
-                media.get("media_url") or media.get("public_url") or media.get("cdn_url") or "",
+                media.get("url") or media.get("media_url") or media.get("public_url") or media.get("cdn_url") or "",
+                media.get("cdn_url") or media.get("valid_url") or media.get("media_url") or "",
+                media.get("playback_url") or "",
                 media.get("thumbnail_url") or media.get("poster_url") or "",
                 media.get("mime_type") or "",
+                int(media.get("file_size") or media.get("file_size_bytes") or 0),
                 int(media.get("file_size_bytes") or 0),
                 int(media.get("width") or 0),
                 int(media.get("height") or 0),
+                media.get("mux_asset_id") or "",
+                media.get("mux_playback_id") or "",
+                media.get("mux_status") or "",
                 media.get("moderation_status") or "approved",
                 now,
             ),
@@ -710,21 +718,78 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
             "UPDATE chat_media_uploads SET message_id=?, context_type='pulse_comm_v2', context_id=? WHERE id=?",
             (int(message_id), str(conversation_id), int(media_id)),
         )
-        out.append(_attachment_payload(_row({**media, "media_upload_id": media_id})))
+        attachment_id = int(cur.lastrowid)
+        out.append(_attachment_payload(_row({**media, "id": attachment_id, "media_upload_id": media_id})))
+    return out
+
+
+def _prepare_attachment_media(cur, media: dict, media_id: int) -> dict:
+    try:
+        from services import media_service
+    except Exception:
+        media_service = None
+    resolved = media_service.resolve_media(media, check_remote=False) if media_service else {}
+    out = {
+        **media,
+        "url": resolved.get("media_url") or media.get("media_url") or media.get("public_url") or media.get("cdn_url") or "",
+        "cdn_url": resolved.get("valid_url") or media.get("cdn_url") or media.get("public_url") or media.get("media_url") or "",
+        "playback_url": resolved.get("playback_url") or media.get("playback_url") or "",
+        "thumbnail_url": resolved.get("thumbnail_url") or media.get("thumbnail_url") or media.get("poster_url") or "",
+        "mux_asset_id": resolved.get("mux_asset_id") or media.get("mux_asset_id") or "",
+        "mux_playback_id": resolved.get("mux_playback_id") or media.get("mux_playback_id") or "",
+        "mux_status": resolved.get("mux_status") or media.get("mux_status") or "",
+    }
+    if (out.get("media_type") or "").lower() == "video" and media_service and not out.get("mux_playback_id"):
+        source = out.get("cdn_url") or out.get("url")
+        mux = media_service.create_mux_asset_from_url(source, trace_id=_trace(), media_id=int(media_id))
+        if mux.get("ok"):
+            playback = media_service.mux_playback_urls(mux.get("playback_id") or "")
+            out.update({
+                "mux_asset_id": mux.get("asset_id") or "",
+                "mux_playback_id": mux.get("playback_id") or "",
+                "mux_status": mux.get("status") or "created",
+                "playback_url": playback.get("hls_url") or out.get("playback_url") or "",
+                "thumbnail_url": playback.get("thumbnail_url") or out.get("thumbnail_url") or "",
+            })
+            cur.execute(
+                "UPDATE chat_media_uploads SET mux_asset_id=?, mux_playback_id=?, mux_status=?, playback_url=?, thumbnail_url=COALESCE(NULLIF(thumbnail_url,''), ?) WHERE id=?",
+                (out["mux_asset_id"], out["mux_playback_id"], out["mux_status"], out["playback_url"], out["thumbnail_url"], int(media_id)),
+            )
+        else:
+            logging.info("COMM_V2_MUX_ASSET_SKIPPED media_id=%s status=%s", int(media_id), mux.get("status") or "unknown")
     return out
 
 
 def _attachment_payload(row: dict) -> dict:
+    mux_playback_id = row.get("mux_playback_id") or ""
+    playback_url = row.get("playback_url") or ""
+    if mux_playback_id and not playback_url:
+        try:
+            from services import media_service
+
+            playback_url = media_service.mux_playback_urls(mux_playback_id).get("hls_url") or ""
+        except Exception:
+            playback_url = ""
+    cdn_url = row.get("cdn_url") or row.get("valid_url") or row.get("media_url") or row.get("public_url") or row.get("url") or ""
+    url = playback_url if (row.get("media_type") or "").lower() == "video" and playback_url else (row.get("url") or cdn_url)
     return {
         "id": int(row.get("id") or row.get("media_upload_id") or 0),
+        "attachment_id": int(row.get("id") or 0),
+        "attachment_public_id": row.get("attachment_public_id") or "",
         "media_upload_id": int(row.get("media_upload_id") or row.get("id") or 0),
         "media_type": row.get("media_type") or "file",
-        "url": row.get("url") or row.get("media_url") or row.get("public_url") or row.get("cdn_url") or "",
+        "url": url,
+        "cdn_url": cdn_url,
+        "playback_url": playback_url,
         "thumbnail_url": row.get("thumbnail_url") or row.get("poster_url") or "",
         "mime_type": row.get("mime_type") or "",
+        "file_size": int(row.get("file_size") or row.get("file_size_bytes") or 0),
         "file_size_bytes": int(row.get("file_size_bytes") or 0),
         "storage_provider": row.get("storage_provider") or "",
         "storage_key": row.get("storage_key") or row.get("object_key") or "",
+        "mux_asset_id": row.get("mux_asset_id") or "",
+        "mux_playback_id": mux_playback_id,
+        "mux_status": row.get("mux_status") or "",
     }
 
 
@@ -880,6 +945,37 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
             "oldest_message_id": oldest_message_id,
             "limit": limit,
         })
+    finally:
+        conn.close()
+
+
+def search_messages(user_id: int, query: str = "", filters: dict | None = None) -> dict:
+    disabled = _disabled("search_messages")
+    if disabled:
+        return disabled
+    query = _clean(query, 200)
+    if not query:
+        return _ok({"messages": [], "items": []})
+    filters = filters or {}
+    limit = max(1, min(int(filters.get("limit") or 25), 50))
+    conn, cur = _open_db()
+    try:
+        cur.execute(
+            """
+            SELECT DISTINCT m.*
+            FROM comm_v2_messages m
+            JOIN comm_v2_conversations c ON c.id=m.conversation_id
+            LEFT JOIN comm_v2_participants p ON p.conversation_id=c.id AND p.user_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+            WHERE COALESCE(m.deleted_at,'')='' AND COALESCE(c.deleted_at,'')='' AND c.status='active'
+              AND m.body LIKE ?
+              AND (p.id IS NOT NULL OR (c.conversation_type='room' AND c.privacy='public' AND c.is_discoverable=1))
+            ORDER BY m.id DESC
+            LIMIT ?
+            """,
+            (int(user_id), f"%{query}%", limit),
+        )
+        items = _message_payloads(cur, [_row(row) for row in cur.fetchall()], user_id)
+        return _ok({"messages": items, "items": items, "query": query})
     finally:
         conn.close()
 
@@ -1104,6 +1200,267 @@ def block_user(user_id: int, blocked_user_id: int, reason: str = "") -> dict:
         return _ok({"blocked_user_id": int(blocked_user_id)}, "Member blocked.")
     finally:
         conn.close()
+
+
+def infrastructure_diagnostics() -> dict:
+    return {
+        "ok": True,
+        "status": "diagnostic",
+        "enabled": flags.is_enabled(),
+        "trace_id": _trace(),
+        "diagnostics": infrastructure.diagnostics(),
+    }
+
+
+def stage_attachment_upload(user_id: int, file_storage, conversation_ref: int | str = "") -> dict:
+    disabled = _disabled("stage_attachment_upload")
+    if disabled:
+        return disabled
+    if not file_storage:
+        return _err("Choose an attachment to upload.", 400, "missing_file")
+    context_id = "draft"
+    if conversation_ref:
+        conn, cur = _open_db()
+        try:
+            conversation, access = _conversation_access(cur, user_id, conversation_ref, join_public=True)
+            if access == "missing":
+                return _err("Conversation not found.", 404, "not_found")
+            if access != "ok":
+                return _err("You do not have access to this conversation.", 403, "forbidden")
+            context_id = str(int(conversation["id"]))
+        finally:
+            conn.close()
+    try:
+        from services import upload_progress_service
+
+        payload, status = upload_progress_service.stage_upload(
+            int(user_id),
+            file_storage,
+            context_type="pulse_comm_v2",
+            context_id=context_id,
+        )
+    except Exception:
+        logging.exception("COMM_V2_ATTACHMENT_UPLOAD_FAILED user_id=%s", int(user_id or 0))
+        return _err("Attachment upload could not be completed.", 500, "upload_failed")
+    payload = payload or {}
+    payload.setdefault("http_status", status)
+    if payload.get("ok") and payload.get("media"):
+        payload["attachment_support"] = {
+            "images": True,
+            "files": True,
+            "audio_voice_notes": "placeholder",
+            "video_messages": "mux_preferred",
+        }
+    return payload
+
+
+def create_comm_v2_mux_live_stream(user_id: int, conversation_ref: int | str, payload: dict | None = None) -> dict:
+    disabled = _disabled("create_comm_v2_mux_live_stream")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    conn, cur = _open_db()
+    try:
+        conversation, access = _conversation_access(cur, user_id, conversation_ref, join_public=True)
+        if access == "missing":
+            return _err("Conversation not found.", 404, "not_found")
+        if access != "ok":
+            return _err("You do not have access to this conversation.", 403, "forbidden")
+        try:
+            from services import mux_live_service
+
+            mux = mux_live_service.create_mux_live_stream(
+                title=_clean(payload.get("title") or conversation.get("title") or "Pulse Live Room", 180),
+                record=bool(payload.get("record", True)),
+                low_latency=bool(payload.get("low_latency", True)),
+                metadata={"source": "pulse_comm_v2", "conversation_id": str(conversation["id"])},
+            )
+        except Exception:
+            logging.exception("COMM_V2_MUX_LIVE_CREATE_FAILED user_id=%s conversation_id=%s", int(user_id), int(conversation["id"]))
+            return _err("Mux live stream could not be created.", 500, "mux_live_failed")
+        if not mux.get("ok"):
+            return _err(mux.get("message") or "Mux Live is not configured yet.", 503, mux.get("status") or "mux_not_ready")
+        now = _now()
+        cur.execute(
+            """
+            INSERT INTO comm_v2_live_streams
+            (public_id, conversation_id, creator_user_id, mux_live_stream_id, mux_stream_key, mux_playback_id, mux_live_status, mux_recording_asset_id, ingest_url, rtmp_url, playback_url, status, metadata_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?)
+            """,
+            (
+                _public_id("live"),
+                int(conversation["id"]),
+                int(user_id),
+                mux.get("mux_live_stream_id") or "",
+                mux.get("mux_stream_key") or "",
+                mux.get("mux_playback_id") or "",
+                mux.get("mux_live_status") or "",
+                mux.get("mux_recording_asset_id") or "",
+                mux.get("ingest_url") or "",
+                mux.get("rtmp_url") or "",
+                mux.get("playback_url") or "",
+                json.dumps({"provider": "mux", "raw_status": mux.get("mux_live_status") or ""})[:2000],
+                now,
+                now,
+            ),
+        )
+        live_id = int(cur.lastrowid)
+        conn.commit()
+        return _ok({"live_stream": _live_stream_payload({**mux, "id": live_id, "creator_user_id": user_id}, include_stream_key=True)}, "Live room foundation created.")
+    finally:
+        conn.close()
+
+
+def _find_live_stream(cur, live_ref: int | str) -> dict:
+    live_ref = str(live_ref or "").strip()
+    if live_ref.isdigit():
+        cur.execute("SELECT * FROM comm_v2_live_streams WHERE id=? LIMIT 1", (int(live_ref),))
+    else:
+        cur.execute("SELECT * FROM comm_v2_live_streams WHERE public_id=? OR mux_live_stream_id=? LIMIT 1", (live_ref, live_ref))
+    return _row(cur.fetchone())
+
+
+def get_comm_v2_mux_live_stream(user_id: int, live_ref: int | str) -> dict:
+    disabled = _disabled("get_comm_v2_mux_live_stream")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        live = _find_live_stream(cur, live_ref)
+        if not live:
+            return _err("Live stream not found.", 404, "not_found")
+        conversation, access = _conversation_access(cur, user_id, int(live.get("conversation_id") or 0), join_public=True)
+        if access != "ok":
+            return _err("You do not have access to this live room.", 403, "forbidden")
+        include_key = int(live.get("creator_user_id") or 0) == int(user_id)
+        return _ok({"live_stream": _live_stream_payload(live, include_stream_key=include_key), "conversation_id": int(conversation.get("id") or 0)})
+    finally:
+        conn.close()
+
+
+def disable_comm_v2_mux_live_stream(user_id: int, live_ref: int | str) -> dict:
+    disabled = _disabled("disable_comm_v2_mux_live_stream")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        live = _find_live_stream(cur, live_ref)
+        if not live:
+            return _err("Live stream not found.", 404, "not_found")
+        if int(live.get("creator_user_id") or 0) != int(user_id):
+            return _err("Only the live room host can disable this stream.", 403, "forbidden")
+        try:
+            from services import mux_live_service
+
+            mux = mux_live_service.disable_mux_live_stream(live.get("mux_live_stream_id") or "")
+        except Exception:
+            logging.exception("COMM_V2_MUX_LIVE_DISABLE_FAILED user_id=%s live_id=%s", int(user_id), int(live.get("id") or 0))
+            mux = {"ok": False}
+        now = _now()
+        cur.execute(
+            "UPDATE comm_v2_live_streams SET status='disabled', mux_live_status=?, updated_at=?, ended_at=COALESCE(ended_at, ?) WHERE id=?",
+            (mux.get("mux_live_status") or "disabled", now, now, int(live["id"])),
+        )
+        conn.commit()
+        return _ok({"live_stream_id": int(live["id"]), "mux": {"ok": bool(mux.get("ok")), "status": mux.get("mux_live_status") or "disabled"}}, "Live room disabled.")
+    finally:
+        conn.close()
+
+
+def verify_mux_webhook_signature(payload: bytes, signature_header: str | None) -> dict:
+    try:
+        from services import mux_live_service
+
+        return mux_live_service.verify_mux_webhook_signature(payload, signature_header)
+    except Exception:
+        logging.exception("COMM_V2_MUX_WEBHOOK_VERIFY_FAILED")
+        return {"ok": False, "message": "Mux webhook verification failed."}
+
+
+def process_mux_webhook(payload: dict) -> dict:
+    event_type = _clean(payload.get("type") or "", 120)
+    data = payload.get("data") or {}
+    mux_live_stream_id = data.get("id") or data.get("live_stream_id") or ""
+    if not mux_live_stream_id:
+        return {"ok": True, "status": "ignored", "event_type": event_type, "message": "No live stream id in event."}
+    conn, cur = _open_db()
+    try:
+        live = _find_live_stream(cur, mux_live_stream_id)
+        if not live:
+            return {"ok": True, "status": "unmatched", "event_type": event_type}
+        now = _now()
+        updates = {
+            "video.live_stream.connected": "connected",
+            "video.live_stream.disconnected": "disconnected",
+            "video.live_stream.created": data.get("status") or "created",
+            "video.asset.ready": "recording_ready",
+            "video.asset.errored": "recording_error",
+        }
+        cur.execute(
+            """
+            UPDATE comm_v2_live_streams
+            SET mux_live_status=?, mux_recording_asset_id=COALESCE(NULLIF(?, ''), mux_recording_asset_id), updated_at=?
+            WHERE id=?
+            """,
+            (updates.get(event_type) or data.get("status") or event_type, data.get("asset_id") or data.get("id") or "", now, int(live["id"])),
+        )
+        conn.commit()
+        return {"ok": True, "status": "processed", "event_type": event_type, "live_stream_id": int(live["id"])}
+    finally:
+        conn.close()
+
+
+def _live_stream_payload(row: dict, *, include_stream_key: bool = False) -> dict:
+    playback_id = row.get("mux_playback_id") or ""
+    playback_url = row.get("playback_url") or ""
+    if playback_id and not playback_url:
+        try:
+            from services import mux_live_service
+
+            playback_url = mux_live_service.playback_url(playback_id)
+        except Exception:
+            playback_url = ""
+    payload = {
+        "id": int(row.get("id") or 0),
+        "public_id": row.get("public_id") or "",
+        "conversation_id": int(row.get("conversation_id") or 0),
+        "creator_user_id": int(row.get("creator_user_id") or 0),
+        "provider": "mux",
+        "mux_live_stream_id": row.get("mux_live_stream_id") or "",
+        "mux_playback_id": playback_id,
+        "mux_live_status": row.get("mux_live_status") or row.get("status") or "",
+        "mux_recording_asset_id": row.get("mux_recording_asset_id") or "",
+        "mux_recording_playback_id": row.get("mux_recording_playback_id") or "",
+        "playback_url": playback_url,
+        "ingest_url": row.get("ingest_url") or row.get("rtmp_url") or "",
+        "status": row.get("status") or "created",
+        "created_at": row.get("created_at") or "",
+        "updated_at": row.get("updated_at") or "",
+    }
+    if include_stream_key:
+        payload["mux_stream_key"] = row.get("mux_stream_key") or ""
+    return payload
+
+
+def twilio_notification_preview(user_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("twilio_notification_preview")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    kind = _clean(payload.get("type") or "message_alert", 80)
+    to_number = _clean(payload.get("to") or payload.get("to_number") or "", 80)
+    if kind == "sms_verification":
+        result = twilio_service.send_sms_verification(to_number, payload.get("code") or "000000", user_id=user_id)
+    elif kind == "room_invite":
+        result = twilio_service.send_room_invite_alert(to_number, payload.get("room_title") or "Pulse Room", payload.get("inviter") or "", user_id=user_id)
+    elif kind == "security_alert":
+        result = twilio_service.send_security_alert(to_number, payload.get("alert") or "Pulse security event", user_id=user_id)
+    else:
+        result = twilio_service.send_message_alert(to_number, payload.get("preview") or "Pulse message", user_id=user_id)
+    result.setdefault("diagnostics", twilio_service.diagnostics())
+    result.setdefault("trace_id", _trace())
+    result.setdefault("enabled", flags.is_enabled())
+    return result
 
 
 def create_community(user_id: int, payload: dict | None = None) -> dict:

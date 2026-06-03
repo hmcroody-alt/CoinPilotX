@@ -248,6 +248,27 @@ input, select {
   justify-content: center;
   margin-top: 8px;
 }
+.capability-panel {
+  display: grid;
+  gap: 8px;
+}
+.capability-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #f8fbfd;
+  color: var(--muted);
+  font-size: 13px;
+}
+.capability-row strong {
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .mobile-only { display: none; }
 .desktop-only { display: inline-grid; }
 body[data-comm-v2-enabled="false"] .composer,

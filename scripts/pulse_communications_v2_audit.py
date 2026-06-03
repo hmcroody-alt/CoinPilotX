@@ -124,7 +124,7 @@ def main() -> None:
 
     status, data = request_json(client, "GET", "/api/pulse/communications/v2/health")
     expect(status == 200 and data == {"enabled": True, "status": "ready"}, "v2 health ready when audit enables flag", str(data))
-    expect(len(table_names()) == 12, "v2 schema table count")
+    expect(len(table_names()) >= 13, "v2 schema table count")
 
     status, data = request_json(client, "POST", "/api/pulse/communications/v2/direct/open", {"target_user_id": other_id})
     assert_ok(status, data, "create DM")

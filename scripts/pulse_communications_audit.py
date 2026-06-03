@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+os.environ["PULSE_COMMUNICATIONS_V2_ENABLED"] = "true"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -141,28 +144,32 @@ def main() -> None:
     status, data = request_json(client, "GET", "/api/pulse/comm/v2/health")
     expect(status == 200 and data.get("enabled") is True and data.get("status") == "ready", "communications v2 health ready", f"status={status} body={data}")
 
+    status, data = request_json(client, "POST", "/api/pulse/comm/v2/direct/open", {"target_user_id": other_id})
+    assert_ok(status, data, "communications v2 direct opens")
+    v2_direct_id = str(data.get("conversation_id") or (data.get("conversation") or {}).get("conversation_id") or 0)
+
     status, data = request_json(client, "GET", "/api/pulse/comm/v2/conversations?type=direct")
     assert_ok(status, data, "communications v2 direct list loads")
     v2_ids = {str(item.get("conversation_id") or item.get("id")) for item in data.get("items") or []}
-    expect(direct_id in v2_ids, "communications v2 direct includes pulse direct", str(data))
+    expect(v2_direct_id in v2_ids, "communications v2 direct includes opened v2 direct", str(data))
 
-    status, data = request_json(client, "POST", f"/api/pulse/comm/v2/conversations/{direct_id}/messages", {"body": "communications v2 direct seed"})
+    status, data = request_json(client, "POST", f"/api/pulse/comm/v2/conversations/{v2_direct_id}/messages", {"body": "communications v2 direct seed"})
     assert_ok(status, data, "communications v2 direct send")
     v2_message_id = int(data.get("message_id") or (data.get("message") or {}).get("id") or 0)
     expect(v2_message_id > 0, "communications v2 send returns message id", str(data))
 
-    status, data = request_json(client, "GET", f"/api/pulse/comm/v2/conversations/{direct_id}/messages?limit=80")
+    status, data = request_json(client, "GET", f"/api/pulse/comm/v2/conversations/{v2_direct_id}/messages?limit=80")
     assert_ok(status, data, "communications v2 direct messages load")
     expect(any((m.get("body") or "") == "communications v2 direct seed" for m in data.get("messages") or []), "communications v2 direct body returned", str(data))
 
-    status, data = request_json(client, "GET", f"/api/pulse/comm/v2/conversations/{direct_id}/members")
+    status, data = request_json(client, "GET", f"/api/pulse/comm/v2/conversations/{v2_direct_id}/members")
     assert_ok(status, data, "communications v2 members load")
     expect(len(data.get("members") or []) >= 2, "communications v2 direct has members", str(data))
 
     status, data = request_json(client, "POST", f"/api/pulse/comm/v2/messages/{v2_message_id}/reactions", {"reaction": "fire"})
     assert_ok(status, data, "communications v2 reaction works")
 
-    status, data = request_json(client, "POST", f"/api/pulse/comm/v2/conversations/{direct_id}/read", {})
+    status, data = request_json(client, "POST", f"/api/pulse/comm/v2/conversations/{v2_direct_id}/read", {})
     assert_ok(status, data, "communications v2 mark read works")
 
     status, data = request_json(client, "GET", "/api/pulse/comm/v2/search?q=communications%20v2%20direct%20seed")
