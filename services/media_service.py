@@ -160,6 +160,43 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             "status_code": 0,
             "message": "Mux credentials are missing." if not auth_header else "Mux needs a public HTTPS media URL.",
         }
+    source_check = inspect_mux_source_url(input_url)
+    logging.info(
+        "MUX_SOURCE_URL trace_id=%s media_id=%s url=%s",
+        trace_id,
+        media_id,
+        input_url,
+    )
+    logging.info(
+        "MUX_SOURCE_FETCH_STATUS trace_id=%s media_id=%s status=%s content_type=%s content_length=%s redirects=%s final_url=%s error_type=%s",
+        trace_id,
+        media_id,
+        source_check.get("status") or 0,
+        source_check.get("content_type") or "",
+        source_check.get("content_length") or "",
+        source_check.get("redirects") or 0,
+        source_check.get("final_url") or input_url,
+        source_check.get("error_type") or "",
+    )
+    source_content_type = str(source_check.get("content_type") or "").lower()
+    if not source_check.get("ok") or "text/html" in source_content_type:
+        error_type = source_check.get("error_type") or ("html_response" if "text/html" in source_content_type else "source_unreachable")
+        logging.warning(
+            "PULSE_MUX_SOURCE_UNREACHABLE trace_id=%s media_id=%s mux_asset_create_status=blocked mux_asset_create_error_type=%s source_status=%s source_content_type=%s",
+            trace_id,
+            media_id,
+            error_type,
+            source_check.get("status") or 0,
+            source_check.get("content_type") or "",
+        )
+        return {
+            "ok": False,
+            "status": "source_unreachable",
+            "status_code": source_check.get("status") or 0,
+            "error_type": error_type,
+            "source": source_check,
+            "message": "Mux cannot download the video source URL. Configure MUX_SOURCE_BASE_URL or R2_MUX_SOURCE_BASE_URL to a public R2 source.",
+        }
     payload = {
         "input": input_url,
         "playback_policy": ["public"],
@@ -194,6 +231,7 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             error_type,
             body[:500],
         )
+        logging.warning("MUX_ASSET_CREATE_RESPONSE trace_id=%s media_id=%s status=failed status_code=%s error_type=%s", trace_id, media_id, exc.code, error_type)
         return {"ok": False, "status": "failed", "status_code": exc.code, "error_type": error_type, "error": body[:500], "message": "Mux rejected the upload credentials." if exc.code in {401, 403} else "Mux asset creation failed."}
     except URLError as exc:
         logging.warning(
@@ -202,6 +240,7 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             media_id,
             str(exc)[:300],
         )
+        logging.warning("MUX_ASSET_CREATE_RESPONSE trace_id=%s media_id=%s status=failed status_code=0 error_type=network_error", trace_id, media_id)
         return {"ok": False, "status": "failed", "status_code": 0, "error_type": "network_error", "error": str(exc)[:500], "message": "Mux could not be reached from the server."}
     except Exception as exc:
         logging.warning(
@@ -210,6 +249,7 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             media_id,
             str(exc)[:300],
         )
+        logging.warning("MUX_ASSET_CREATE_RESPONSE trace_id=%s media_id=%s status=failed status_code=0 error_type=unexpected_error", trace_id, media_id)
         return {"ok": False, "status": "failed", "status_code": 0, "error_type": "unexpected_error", "error": str(exc)[:500], "message": "Mux asset creation failed."}
     asset = data.get("data") or {}
     playback_ids = asset.get("playback_ids") or []
@@ -235,6 +275,15 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             result["status"],
             response_status,
         )
+        logging.info(
+            "MUX_ASSET_CREATE_RESPONSE trace_id=%s media_id=%s status=%s status_code=%s mux_asset_id=%s mux_playback_id=%s",
+            trace_id,
+            media_id,
+            result["status"],
+            response_status,
+            result["asset_id"],
+            result["playback_id"],
+        )
     else:
         logging.warning(
             "PULSE_MUX_ASSET_CREATE_INCOMPLETE trace_id=%s media_id=%s mux_asset_create_status=incomplete mux_asset_create_status_code=%s mux_asset_create_error_type=%s mux_asset_id_present=%s mux_playback_id_present=%s",
@@ -245,6 +294,7 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             bool(result["asset_id"]),
             bool(result["playback_id"]),
         )
+        logging.warning("MUX_ASSET_CREATE_RESPONSE trace_id=%s media_id=%s status=incomplete status_code=%s error_type=%s", trace_id, media_id, response_status, result["error_type"])
     return result
 
 
@@ -312,6 +362,95 @@ def cdn_url_for_key(storage_key):
     if not base:
         return ""
     return f"{base}/{key}"
+
+
+def mux_source_url_for_key(storage_key, fallback_url=""):
+    """Return a public media source URL that Mux can download without app auth/cookies."""
+    key = str(storage_key or "").strip().replace("\\", "/").lstrip("/")
+    for env_key in (
+        "MUX_SOURCE_BASE_URL",
+        "R2_MUX_SOURCE_BASE_URL",
+        "R2_DIRECT_PUBLIC_BASE_URL",
+        "R2_PUBLIC_DEV_URL",
+        "R2_R2DEV_BASE_URL",
+    ):
+        base = str(os.getenv(env_key) or "").strip().rstrip("/")
+        if base and key:
+            return f"{base}/{key}"
+    return normalize_url(fallback_url)
+
+
+def inspect_mux_source_url(source_url, *, timeout=4.0):
+    """Fetch public source headers before handing a URL to Mux."""
+    value = normalize_url(source_url)
+    result = {
+        "ok": False,
+        "status": 0,
+        "content_type": "",
+        "content_length": "",
+        "final_url": value,
+        "redirects": 0,
+        "error_type": "",
+    }
+    if not value.startswith("https://"):
+        result["error_type"] = "not_https"
+        return result
+    opener = None
+    try:
+        import urllib.request
+
+        class _RedirectTracker(urllib.request.HTTPRedirectHandler):
+            redirects = 0
+
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                self.redirects += 1
+                return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+        tracker = _RedirectTracker()
+        opener = urllib.request.build_opener(tracker)
+        request = Request(value, method="HEAD", headers={"User-Agent": "Mux Video Ingest/1.0"})
+        with opener.open(request, timeout=float(timeout or 4.0)) as response:
+            result.update({
+                "ok": 200 <= int(getattr(response, "status", 0) or 0) < 400,
+                "status": int(getattr(response, "status", 0) or 0),
+                "content_type": response.headers.get("content-type", ""),
+                "content_length": response.headers.get("content-length", ""),
+                "final_url": response.geturl() or value,
+                "redirects": tracker.redirects,
+            })
+            return result
+    except HTTPError as exc:
+        if exc.code in {405, 501}:
+            try:
+                request = Request(value, headers={"User-Agent": "Mux Video Ingest/1.0", "Range": "bytes=0-0"})
+                opener = opener or urlopen
+                if hasattr(opener, "open"):
+                    response_ctx = opener.open(request, timeout=float(timeout or 4.0))
+                else:
+                    response_ctx = opener(request, timeout=float(timeout or 4.0))
+                with response_ctx as response:
+                    status = int(getattr(response, "status", 0) or 0)
+                    result.update({
+                        "ok": status in {200, 206},
+                        "status": status,
+                        "content_type": response.headers.get("content-type", ""),
+                        "content_length": response.headers.get("content-length", ""),
+                        "final_url": response.geturl() or value,
+                    })
+                    return result
+            except Exception as fallback_exc:
+                result["error_type"] = fallback_exc.__class__.__name__
+                return result
+        result.update({
+            "status": int(exc.code or 0),
+            "content_type": exc.headers.get("content-type", "") if exc.headers else "",
+            "content_length": exc.headers.get("content-length", "") if exc.headers else "",
+            "error_type": "cloudflare_challenge" if (exc.headers and exc.headers.get("cf-mitigated") == "challenge") else "http_error",
+        })
+        return result
+    except Exception as exc:
+        result["error_type"] = exc.__class__.__name__
+        return result
 
 
 def stream_url_for_media(media_id, media_type="", storage_provider="", storage_key=""):
@@ -822,7 +961,7 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     mux_result = {}
     mux_configured = bool(mux_diagnostics().get("configured"))
     if media_type == "video" and mux_configured:
-        mux_input_url = cdn_url or url
+        mux_input_url = mux_source_url_for_key(storage.get("storage_key") or stored, cdn_url or url)
         mux = create_mux_asset_from_url(mux_input_url, trace_id=upload_trace, media_id=media_id)
         mux_result = mux
         if mux.get("ok"):

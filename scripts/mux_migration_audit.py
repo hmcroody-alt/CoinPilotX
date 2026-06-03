@@ -23,6 +23,11 @@ def main():
         "create_mux_asset_from_url",
         "https://api.mux.com/video/v1/assets",
         "PULSE_MUX_ASSET_CREATE_ATTEMPT",
+        "MUX_SOURCE_URL",
+        "MUX_SOURCE_FETCH_STATUS",
+        "MUX_ASSET_CREATE_RESPONSE",
+        "mux_source_url_for_key",
+        "inspect_mux_source_url",
         "PULSE_MUX_ASSET_REQUIRED_FAILED",
         "mux_asset_create_error_type",
         "mux_token_id_present",
@@ -38,6 +43,8 @@ def main():
     require("mux.get(\"asset_id\")" in media_service and "mux.get(\"playback_id\")" in media_service, "Mux asset and playback ids are stored")
     require("Video upload reached storage but Mux could not create the playback asset" in media_service, "video upload fails clearly when required Mux asset creation fails")
     require("_clean_env_secret" in media_service and "strip(\"\\\"'\")" in media_service, "Mux credentials are normalized without logging secrets")
+    require("MUX_SOURCE_BASE_URL" in media_service and "R2_MUX_SOURCE_BASE_URL" in media_service, "Mux source can use direct public R2 base instead of challenged CDN")
+    require("cloudflare_challenge" in media_service and "text/html" in media_service, "Mux source validation detects Cloudflare challenge HTML")
 
     for token in ["mux_asset_id", "mux_playback_id", "mux_status", "mux_hls_url", "playback_mime_type"]:
         require(token in feed_engine, f"feed payload preserves {token}")
