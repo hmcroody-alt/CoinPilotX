@@ -129,6 +129,121 @@ def _mux_auth_header():
     return "Basic " + base64.b64encode(raw).decode("ascii")
 
 
+def _mux_json_request(path, *, method="GET", payload=None, timeout=None):
+    auth_header = _mux_auth_header()
+    if not auth_header:
+        return {"ok": False, "status": "not_configured", "status_code": 0, "message": "Mux credentials are missing."}
+    request = Request(
+        f"https://api.mux.com/video/v1{path}",
+        data=json.dumps(payload or {}).encode("utf-8") if payload is not None else None,
+        headers={
+            "Authorization": auth_header,
+            "Content-Type": "application/json",
+            "User-Agent": "CoinPilotX-MuxMedia/1.0",
+        },
+        method=method,
+    )
+    try:
+        with urlopen(request, timeout=float(timeout or os.getenv("MUX_API_TIMEOUT_SECONDS", "12"))) as response:
+            body = response.read().decode("utf-8", "replace")
+            data = json.loads(body or "{}")
+            status_code = int(getattr(response, "status", 0) or 0)
+            return {"ok": 200 <= status_code < 300, "status_code": status_code, "data": data.get("data") if isinstance(data, dict) else data, "raw": data}
+    except HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        return {"ok": False, "status": "http_error", "status_code": exc.code, "error": body[:800], "message": "Mux rejected the request."}
+    except URLError as exc:
+        return {"ok": False, "status": "network_error", "status_code": 0, "error": str(exc)[:800], "message": "Mux could not be reached from the server."}
+    except Exception as exc:
+        return {"ok": False, "status": "unexpected_error", "status_code": 0, "error": str(exc)[:800], "message": "Mux request failed."}
+
+
+def create_mux_direct_upload(*, media_id=0, filename="", mime_type="", file_size=0, origin="", context_type="", trace_id=""):
+    """Create a browser-to-Mux direct upload URL for large Pulse videos."""
+    log_mux_diagnostics_once()
+    configured = bool(_mux_auth_header())
+    logging.info(
+        "PULSE_MUX_DIRECT_UPLOAD_CREATE_ATTEMPT trace_id=%s media_id=%s mux_token_id_present=%s mux_token_secret_present=%s file_size=%s mime_type=%s origin_present=%s",
+        trace_id,
+        media_id,
+        bool(_clean_env_secret(os.getenv("MUX_TOKEN_ID"))),
+        bool(_clean_env_secret(os.getenv("MUX_TOKEN_SECRET"))),
+        int(file_size or 0),
+        str(mime_type or "")[:120],
+        bool(origin),
+    )
+    if not configured:
+        return {"ok": False, "status": "not_configured", "message": "Large video uploads need Mux credentials configured."}
+    cors_origin = str(origin or os.getenv("APP_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    payload = {
+        "cors_origin": cors_origin or "*",
+        "new_asset_settings": {
+            "playback_policy": ["public"],
+            "mp4_support": "standard",
+            "passthrough": f"pulse_media:{int(media_id or 0)}",
+            "metadata": {
+                "media_id": str(int(media_id or 0)),
+                "filename": str(filename or "")[:180],
+                "context_type": str(context_type or "")[:80],
+            },
+        },
+    }
+    result = _mux_json_request("/uploads", method="POST", payload=payload, timeout=os.getenv("MUX_DIRECT_UPLOAD_TIMEOUT_SECONDS", "12"))
+    upload = result.get("data") or {}
+    upload_id = upload.get("id") or ""
+    upload_url = upload.get("url") or ""
+    logging.info(
+        "PULSE_MUX_DIRECT_UPLOAD_CREATED trace_id=%s media_id=%s ok=%s status_code=%s upload_id=%s upload_url_present=%s mux_status=%s",
+        trace_id,
+        media_id,
+        bool(result.get("ok") and upload_id and upload_url),
+        result.get("status_code") or 0,
+        upload_id,
+        bool(upload_url),
+        upload.get("status") or "",
+    )
+    if not result.get("ok") or not upload_id or not upload_url:
+        return {
+            "ok": False,
+            "status": result.get("status") or "failed",
+            "status_code": result.get("status_code") or 0,
+            "message": "Mux direct upload could not be created.",
+            "error": result.get("error") or "",
+        }
+    return {
+        "ok": True,
+        "upload_id": upload_id,
+        "upload_url": upload_url,
+        "status": upload.get("status") or "waiting",
+        "timeout": upload.get("timeout") or 0,
+    }
+
+
+def get_mux_direct_upload(upload_id):
+    upload_id = str(upload_id or "").strip()
+    if not upload_id:
+        return {"ok": False, "status": "missing_upload_id", "message": "Mux upload ID is missing."}
+    result = _mux_json_request(f"/uploads/{upload_id}", method="GET", timeout=os.getenv("MUX_DIRECT_UPLOAD_TIMEOUT_SECONDS", "12"))
+    upload = result.get("data") or {}
+    return {**result, "upload": upload, "asset_id": upload.get("asset_id") or "", "upload_status": upload.get("status") or ""}
+
+
+def get_mux_asset(asset_id):
+    asset_id = str(asset_id or "").strip()
+    if not asset_id:
+        return {"ok": False, "status": "missing_asset_id", "message": "Mux asset ID is missing."}
+    result = _mux_json_request(f"/assets/{asset_id}", method="GET", timeout=os.getenv("MUX_ASSET_FETCH_TIMEOUT_SECONDS", "12"))
+    asset = result.get("data") or {}
+    playback_id = ""
+    for item in asset.get("playback_ids") or []:
+        if item.get("policy") == "public" or not playback_id:
+            playback_id = item.get("id") or ""
+    return {**result, "asset": asset, "asset_id": asset.get("id") or asset_id, "playback_id": playback_id, "mux_status": asset.get("status") or ""}
+
+
 def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
     """Create a public Mux playback asset from an already durable media URL."""
     log_mux_diagnostics_once()

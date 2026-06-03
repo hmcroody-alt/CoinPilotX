@@ -2,6 +2,7 @@
   "use strict";
 
   const locks = new Map();
+  const DIRECT_VIDEO_THRESHOLD_BYTES = 20 * 1024 * 1024;
 
   function textFor(stage, percent, type) {
     const media = type && type.startsWith("video") ? "video" : type && type.startsWith("image") ? "image" : "media";
@@ -90,15 +91,124 @@
     } else if (xhr.status === 401 || lower.includes("/login") || lower.includes("login")) {
       message = "Session expired. Please sign in and retry the upload.";
     } else if (xhr.status === 413) {
-      message = "File too large. Choose a smaller video or photo.";
+      message = "This upload is too large for the standard upload lane. Large videos should use direct Mux upload.";
     } else if (lower.includes("request entity too large") || lower.includes("payload too large")) {
-      message = "File too large. Choose a smaller video or photo.";
+      message = "This upload is too large for the standard upload lane. Large videos should use direct Mux upload.";
     } else if (contentType.includes("text/html")) {
       message = "Upload returned an HTML page instead of JSON. Please retry after refreshing.";
     } else if (!rawBody.trim()) {
       message = "Upload returned an empty response. Please retry.";
     }
     return { ok: false, success: false, message, error: "non_json_upload_response", upload_debug: diagnostic };
+  }
+
+  function isVideoFile(file, type) {
+    return !!file && (String(type || file.type || "").toLowerCase().startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name || ""));
+  }
+
+  function fieldFromForm(form, name, fallback) {
+    try {
+      const value = form && form.get ? form.get(name) : "";
+      return value == null || value === "" ? fallback : value;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function shouldUseDirectMux(file, type, opts) {
+    if (!isVideoFile(file, type)) return false;
+    if (opts.directMux === false || opts.disableDirectMux) return false;
+    const threshold = Number(opts.directMuxThresholdBytes || DIRECT_VIDEO_THRESHOLD_BYTES);
+    return Number(file.size || 0) >= threshold;
+  }
+
+  function uploadMuxDirect(opts, file, root, type, key, form) {
+    return new Promise(async (resolve, reject) => {
+      let mediaId = 0;
+      let uploadId = "";
+      try {
+        const startState = { stage: "starting", percent: 2, message: "Preparing large video upload...", type };
+        render(root, startState);
+        opts.onProgress && opts.onProgress(startState);
+        const startResponse = await fetch("/api/pulse/media/mux/direct-upload", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: file.name || "pulse-video.mp4",
+            mime_type: file.type || opts.mediaType || "video/mp4",
+            size: Number(file.size || 0),
+            context_type: fieldFromForm(form, "context_type", opts.contextType || "pulse_video"),
+            context_id: fieldFromForm(form, "context_id", opts.contextId || "direct_mux"),
+            origin: window.location.origin,
+          }),
+        });
+        const startText = await startResponse.text();
+        let startData = {};
+        try { startData = JSON.parse(startText || "{}"); } catch (_) { startData = { ok: false, message: "Large video upload setup returned an unreadable response." }; }
+        if (!startResponse.ok || startData.ok === false || !startData.upload_url) {
+          throw new Error(startData.message || "Large video upload could not start.");
+        }
+        mediaId = startData.media_id || startData.media?.id || 0;
+        uploadId = startData.upload_id || "";
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", startData.upload_url, true);
+        xhr.withCredentials = false;
+        if (file.type) xhr.setRequestHeader("Content-Type", file.type);
+        xhr.upload.onprogress = function (event) {
+          if (!event.lengthComputable) return;
+          const percent = Math.min(88, Math.max(4, Math.round((event.loaded / event.total) * 88)));
+          const state = { stage: "uploading", percent, message: `Uploading video directly to Mux... ${percent}%`, type };
+          render(root, state);
+          opts.onProgress && opts.onProgress(state);
+        };
+        xhr.onerror = function () {
+          const error = new Error("Large video upload was interrupted. Your video is still selected; retry when ready.");
+          render(root, { stage: "failed", percent: 0, message: error.message, type });
+          setButtonDisabled(opts.button, false);
+          locks.delete(key);
+          reject(error);
+        };
+        xhr.onload = async function () {
+          try {
+            if (xhr.status < 200 || xhr.status >= 300) {
+              throw new Error(`Mux upload failed with status ${xhr.status}. Please retry.`);
+            }
+            const processingState = { stage: "processing", percent: 92, message: "Video uploaded. Preparing playback...", type };
+            render(root, processingState);
+            opts.onProgress && opts.onProgress(processingState);
+            const completeResponse = await fetch("/api/pulse/media/mux/direct-upload/complete", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ media_id: mediaId, upload_id: uploadId }),
+            });
+            const completeText = await completeResponse.text();
+            let completeData = {};
+            try { completeData = JSON.parse(completeText || "{}"); } catch (_) { completeData = { ok: false, message: "Video upload completion returned an unreadable response." }; }
+            if (!completeResponse.ok || completeData.ok === false) {
+              throw new Error(completeData.message || "Video uploaded, but Pulse could not finish the media record.");
+            }
+            const done = { stage: "complete", percent: 100, message: "Video uploaded. Playback is processing.", type };
+            render(root, done);
+            setButtonDisabled(opts.button, false);
+            locks.delete(key);
+            resolve({ ...completeData, media: completeData.media || startData.media, media_id: mediaId, direct_upload: true });
+          } catch (error) {
+            render(root, { stage: "failed", percent: 0, message: error.message, type });
+            setButtonDisabled(opts.button, false);
+            locks.delete(key);
+            reject(error);
+          }
+        };
+        xhr.send(file);
+      } catch (error) {
+        render(root, { stage: "failed", percent: 0, message: error.message, type });
+        setButtonDisabled(opts.button, false);
+        locks.delete(key);
+        reject(error);
+      }
+    });
   }
 
   function upload(options) {
@@ -117,6 +227,9 @@
     }
     setButtonDisabled(opts.button, true, "Uploading...");
     render(root, { stage: "starting", percent: 1, message: textFor("starting", 1, type), type });
+    if (shouldUseDirectMux(file, type, opts)) {
+      return uploadMuxDirect(opts, file, root, type, key, form);
+    }
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(opts.method || "POST", opts.url || "/api/pulse/media/upload", true);
