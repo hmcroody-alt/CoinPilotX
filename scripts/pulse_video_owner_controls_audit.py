@@ -7,12 +7,15 @@ BOT = (Path(__file__).resolve().parents[1] / "bot.py").read_text(encoding="utf-8
 
 for token in [
     "video-owner-trigger",
-    "data-edit-video",
-    "data-delete-video",
-    "data-copy-video",
+    "video-owner-sheet",
+    "data-sheet-edit",
+    "data-sheet-delete",
+    "data-sheet-copy",
     "Delete this video? This cannot be undone.",
     "v.is_owner",
     'video["is_owner"]',
+    "pulse_video_index_upsert(",
+    "indexed.get(key) == \"archived\"",
 ]:
     assert token in BOT, f"missing owner control: {token}"
     print(f"PASS: {token}")

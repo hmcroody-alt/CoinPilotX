@@ -9,7 +9,8 @@ for token in [
     "@media(max-width:680px)",
     ".video-manage-modal{{padding:0;align-items:end}}",
     "padding-bottom:calc(20px + env(safe-area-inset-bottom))",
-    ".video-owner-menu",
+    ".video-owner-sheet",
+    ".video-owner-sheet{{padding:0}}",
     "max-height:94dvh",
 ]:
     assert token in BOT, f"missing mobile owner control rule: {token}"

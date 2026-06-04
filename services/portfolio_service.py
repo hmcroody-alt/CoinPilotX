@@ -187,10 +187,31 @@ def calculate_user_portfolio(user_id):
     cur = conn.cursor()
     cur.execute("SELECT * FROM portfolio_items WHERE user_id=? ORDER BY created_at DESC", (user_id,))
     holdings = _rows(cur)
+    known_symbols = {str(item.get("symbol") or "").upper() for item in holdings}
+    try:
+        cur.execute("SELECT asset, amount FROM manual_portfolio WHERE user_id=? AND amount > 0 ORDER BY asset", (user_id,))
+        for row in _rows(cur):
+            symbol = str(row.get("asset") or "").upper()
+            if symbol and symbol not in known_symbols:
+                holdings.append(
+                    {
+                        "id": 0,
+                        "legacy": True,
+                        "symbol": symbol,
+                        "coin_name": symbol,
+                        "amount": float(row.get("amount") or 0),
+                        "average_buy_price": 0,
+                        "notes": "Imported from your original CoinPilotX portfolio.",
+                    }
+                )
+                known_symbols.add(symbol)
+    except Exception:
+        pass
     conn.close()
     enriched = []
     total_value = 0.0
     total_cost = 0.0
+    total_pnl = 0.0
     warning = ""
     for item in holdings:
         live = get_live_price(item.get("symbol"))
@@ -204,12 +225,12 @@ def calculate_user_portfolio(user_id):
             value = float(item.get("amount") or 0) * price
             change = live.get("change_24h")
         cost = float(item.get("amount") or 0) * float(item.get("average_buy_price") or 0)
-        pnl = value - cost
-        pnl_percent = (pnl / cost * 100) if cost else 0
+        pnl = 0.0 if item.get("legacy") else value - cost
+        pnl_percent = (pnl / cost * 100) if cost and not item.get("legacy") else 0
         total_value += value
         total_cost += cost
+        total_pnl += pnl
         enriched.append({**item, "price": price, "value": value, "cost": cost, "pnl_value": pnl, "pnl_percent": pnl_percent, "change_24h": change})
-    total_pnl = total_value - total_cost
     total_pnl_percent = (total_pnl / total_cost * 100) if total_cost else 0
     top_gainer = max(enriched, key=lambda x: x.get("pnl_percent", -999999), default=None)
     top_loser = min(enriched, key=lambda x: x.get("pnl_percent", 999999), default=None)
@@ -230,6 +251,16 @@ def get_watchlist(user_id):
     cur = conn.cursor()
     cur.execute("SELECT * FROM watchlist_items WHERE user_id=? ORDER BY created_at DESC", (user_id,))
     rows = _rows(cur)
+    known_symbols = {str(item.get("symbol") or "").upper() for item in rows}
+    try:
+        cur.execute("SELECT asset FROM watchlists WHERE user_id=? ORDER BY asset", (user_id,))
+        for row in _rows(cur):
+            symbol = str(row.get("asset") or "").upper()
+            if symbol and symbol not in known_symbols:
+                rows.append({"id": 0, "legacy": True, "symbol": symbol, "coin_name": symbol})
+                known_symbols.add(symbol)
+    except Exception:
+        pass
     conn.close()
     enriched = []
     for item in rows:
