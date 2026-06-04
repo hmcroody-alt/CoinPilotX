@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BOT = ROOT / "bot.py"
 STATUS_CSS = ROOT / "static/css/pulse_status_system.css"
 MEDIA_CSS = ROOT / "static/css/pulse_cinematic_media.css"
+SHARED_VIEWER = ROOT / "static/js/pulse_status_viewer.js"
 
 
 def expect(condition: bool, label: str) -> None:
@@ -22,6 +23,7 @@ def main() -> None:
     bot = BOT.read_text(encoding="utf-8")
     status_css = STATUS_CSS.read_text(encoding="utf-8")
     media_css = MEDIA_CSS.read_text(encoding="utf-8")
+    shared_viewer = SHARED_VIEWER.read_text(encoding="utf-8")
 
     for token in [
         "data-status-viewer",
@@ -46,6 +48,13 @@ def main() -> None:
     expect("pulse-status-open-cue" in status_css and "Tap to open" in bot, "status cards show an easy open cue")
     expect("pulse-status-card-video-preview" in bot, "video status cards use teaser preview playback")
     expect("pulse-media-surface-status" in media_css, "status viewer uses shared media surface styling")
+    expect("window.PulseStatusViewer" in shared_viewer, "shared StatusViewer component is available")
+    expect("window.PulseStatusViewer?.render(item)" in bot, "home and dedicated viewers delegate to shared StatusViewer")
+    expect(bot.count("window.PulseStatusViewer?.render(item)") >= 2, "both Status entry points use the shared renderer")
+    expect("height: min(90dvh, 900px)" in status_css and "aspect-ratio: 9 / 16" in status_css, "desktop viewer uses a large story frame")
+    expect("width: 100%" in status_css and "min-height: 100%" in status_css, "text status fills the story frame")
+    for action in ["Like", "Comment", "Share", "Save", "More"]:
+        expect(f">{action}<" in bot, f"status viewer exposes {action} action")
     compact_status_css = "".join(status_css.split())
     expect(".pulse-status-story-viewer" in status_css and "position:fixed" in compact_status_css, "status viewer is a full-screen overlay")
     expect("flex: 0 0 auto" in status_css and ".pulse-status-full-tabs" in status_css, "mobile status tabs avoid squeezed/cut-off buttons")
