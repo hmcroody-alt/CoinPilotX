@@ -16,7 +16,7 @@
     const link = document.createElement("link");
     link.id = PORTAL_CSS_ID;
     link.rel = "stylesheet";
-    link.href = "/static/css/pulse_cinematic_media.css?v=video-frame-repair-20260603";
+    link.href = "/static/css/pulse_cinematic_media.css?v=video-stage-size-20260604b";
     document.head.appendChild(link);
   }
 

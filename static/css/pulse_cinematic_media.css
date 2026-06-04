@@ -480,24 +480,37 @@ article.card > .pulse-media-wrap {
 
 @media (min-width: 901px) {
   .post.has-media .media-grid {
-    width: min(100%, 760px) !important;
-    max-width: 760px !important;
+    width: min(100%, 1220px) !important;
+    max-width: 1220px !important;
     margin-left: auto !important;
     margin-right: auto !important;
   }
 
   .post.is-video .media-grid {
-    width: min(100%, 680px) !important;
-    max-width: 680px !important;
+    width: min(100%, 1180px) !important;
+    max-width: 1180px !important;
   }
 
   .post.is-video .pulse-media-wrap,
   .post.is-video .pulse-unified-video-player {
-    max-height: min(72vh, 620px) !important;
+    max-height: min(78vh, 760px) !important;
   }
 
   .post.is-video .pulse-media-wrap video {
-    max-height: min(72vh, 620px) !important;
+    max-height: min(78vh, 760px) !important;
+  }
+
+  .post.is-video .pulse-media-wrap.media-kind-video.is-landscape,
+  .post.is-video .pulse-media-wrap.media-kind-video.is-ultrawide,
+  .post.is-video .pulse-media-wrap.media-kind-video.is-unknown {
+    width: min(100%, 1180px) !important;
+    max-width: 1180px !important;
+    margin-inline: auto !important;
+    border-radius: clamp(18px, 1vw, 24px) !important;
+  }
+
+  .post.is-video .pulse-media-wrap.media-kind-video.is-unknown {
+    aspect-ratio: 16 / 9 !important;
   }
 }
 
