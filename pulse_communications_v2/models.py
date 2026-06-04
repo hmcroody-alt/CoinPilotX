@@ -205,6 +205,48 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
         ),
     ),
     TableSpec(
+        "comm_v2_user_settings",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_user_settings (
+            user_id INTEGER PRIMARY KEY,
+            presence_privacy TEXT DEFAULT 'everyone',
+            read_receipts_enabled INTEGER DEFAULT 1,
+            updated_at TEXT
+        )
+        """,
+    ),
+    TableSpec(
+        "comm_v2_presence",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_presence (
+            user_id INTEGER PRIMARY KEY,
+            status TEXT DEFAULT 'offline',
+            last_seen_at TEXT,
+            active_until TEXT,
+            updated_at TEXT
+        )
+        """,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_presence_active ON comm_v2_presence(active_until)",
+        ),
+    ),
+    TableSpec(
+        "comm_v2_message_deletions",
+        """
+        CREATE TABLE IF NOT EXISTS comm_v2_message_deletions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            conversation_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            deleted_at TEXT,
+            UNIQUE(message_id, user_id)
+        )
+        """,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_comm_v2_deletions_user ON comm_v2_message_deletions(user_id, conversation_id)",
+        ),
+    ),
+    TableSpec(
         "comm_v2_typing",
         """
         CREATE TABLE IF NOT EXISTS comm_v2_typing (

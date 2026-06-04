@@ -248,6 +248,19 @@ input, select {
   margin: 5px 0 0;
   overflow-wrap: anywhere;
 }
+.message.is-highlighted {
+  outline: 2px solid rgba(54, 229, 143, .7);
+  box-shadow: 0 0 0 6px rgba(54, 229, 143, .12);
+}
+.reply-preview {
+  display: block;
+  width: 100%;
+  margin: 7px 0 4px;
+  padding: 8px 10px;
+  text-align: left;
+  border-left: 3px solid #36e58f;
+  background: rgba(54, 229, 143, .08);
+}
 .attachments {
   display: grid;
   gap: 8px;

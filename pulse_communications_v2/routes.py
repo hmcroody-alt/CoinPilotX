@@ -233,6 +233,31 @@ def read_state(conversation_ref):
     return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/presence/heartbeat")
+def presence_heartbeat():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    return _timed_json("presence_heartbeat", lambda: service.heartbeat(user["user_id"], payload.get("status") or "online"))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/settings")
+def communication_settings():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.update_settings(user["user_id"], request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/settings")
+def communication_settings_read():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _json(service.get_settings(user["user_id"]))
+
+
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/typing")
 def typing(conversation_ref):
     user, denied = _require_user()
@@ -247,7 +272,7 @@ def presence(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
-    return _json(service.typing_state(user["user_id"], conversation_ref))
+    return _json(service.conversation_presence(user["user_id"], conversation_ref))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/reactions")
@@ -258,6 +283,31 @@ def reactions(message_id):
         return denied
     payload = request.get_json(silent=True) or {}
     return _timed_json("reaction", lambda: service.set_reaction(user["user_id"], message_id, payload.get("reaction") or payload.get("reaction_type") or "heart"))
+
+
+@comm_v2_blueprint.patch(f"{API_PREFIX}/messages/<int:message_id>")
+def edit_message(message_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("edit_message", lambda: service.edit_message(user["user_id"], message_id, request.get_json(silent=True) or {}))
+
+
+@comm_v2_blueprint.delete(f"{API_PREFIX}/messages/<int:message_id>")
+def delete_message(message_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    return _timed_json("delete_message", lambda: service.delete_message(user["user_id"], message_id, payload.get("delete_for") or request.args.get("delete_for") or "self"))
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/forward")
+def forward_message(message_id):
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("forward_message", lambda: service.forward_message(user["user_id"], message_id, request.get_json(silent=True) or {}))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/messages/<int:message_id>/report")

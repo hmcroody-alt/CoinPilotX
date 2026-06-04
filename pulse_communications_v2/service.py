@@ -226,6 +226,25 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
     ], conn=conn)
+    add(cur, "comm_v2_user_settings", [
+        ("user_id", "INTEGER"),
+        ("presence_privacy", "TEXT DEFAULT 'everyone'"),
+        ("read_receipts_enabled", "INTEGER DEFAULT 1"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_presence", [
+        ("user_id", "INTEGER"),
+        ("status", "TEXT DEFAULT 'offline'"),
+        ("last_seen_at", "TEXT"),
+        ("active_until", "TEXT"),
+        ("updated_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "comm_v2_message_deletions", [
+        ("message_id", "INTEGER"),
+        ("conversation_id", "INTEGER"),
+        ("user_id", "INTEGER"),
+        ("deleted_at", "TEXT"),
+    ], conn=conn)
     add(cur, "comm_v2_typing", [
         ("conversation_id", "INTEGER"),
         ("user_id", "INTEGER"),
@@ -312,6 +331,63 @@ def _participant_ids(cur, conversation_id: int) -> list[int]:
         (int(conversation_id),),
     )
     return [int(row["user_id"]) for row in cur.fetchall()]
+
+
+def _settings(cur, user_id: int) -> dict:
+    cur.execute("SELECT * FROM comm_v2_user_settings WHERE user_id=? LIMIT 1", (int(user_id),))
+    row = _row(cur.fetchone())
+    if not row:
+        return {"presence_privacy": "everyone", "read_receipts_enabled": 1}
+    return {
+        "presence_privacy": row.get("presence_privacy") or "everyone",
+        "read_receipts_enabled": 1 if int(row.get("read_receipts_enabled") or 0) else 0,
+    }
+
+
+def _touch_presence(cur, user_id: int, status: str = "online") -> dict:
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat(timespec="seconds")
+    active_until = (now_dt + timedelta(seconds=90)).isoformat(timespec="seconds")
+    normalized = "online" if status in {"online", "active", "active_now"} else "offline"
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO comm_v2_presence (user_id, status, last_seen_at, active_until, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (int(user_id), normalized, now, active_until, now),
+    )
+    cur.execute(
+        "UPDATE comm_v2_presence SET status=?, last_seen_at=?, active_until=?, updated_at=? WHERE user_id=?",
+        (normalized, now, active_until, now, int(user_id)),
+    )
+    return {"user_id": int(user_id), "status": normalized, "last_seen_at": now, "active_until": active_until}
+
+
+def _presence_visible(cur, viewer_user_id: int, target_user_id: int) -> bool:
+    if int(viewer_user_id) == int(target_user_id):
+        return True
+    privacy = (_settings(cur, int(target_user_id)).get("presence_privacy") or "everyone").lower()
+    if privacy == "nobody":
+        return False
+    if privacy == "contacts":
+        cur.execute(
+            """
+            SELECT 1
+            FROM comm_v2_participants a
+            JOIN comm_v2_participants b ON b.conversation_id=a.conversation_id
+            WHERE a.user_id=? AND b.user_id=?
+              AND a.membership_state='active' AND b.membership_state='active'
+              AND COALESCE(a.left_at,'')='' AND COALESCE(b.left_at,'')=''
+            LIMIT 1
+            """,
+            (int(viewer_user_id), int(target_user_id)),
+        )
+        return cur.fetchone() is not None
+    return True
+
+
+def _read_receipts_allowed(cur, user_id: int) -> bool:
+    return bool(int(_settings(cur, user_id).get("read_receipts_enabled") or 0))
 
 
 def _blocked_between(cur, user_id: int, other_ids: list[int]) -> bool:
@@ -827,7 +903,22 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
     reactions = [{"reaction_type": row["reaction_type"], "count": int(row["total"] or 0)} for row in cur.fetchall()]
     cur.execute("SELECT reaction_type FROM comm_v2_message_reactions WHERE message_id=? AND user_id=? LIMIT 1", (message_id, int(viewer_user_id)))
     mine = _row(cur.fetchone())
+    receipt_state = message.get("delivery_status") or "sent"
+    if int(message.get("sender_user_id") or 0) == int(viewer_user_id):
+        cur.execute("SELECT COUNT(*) AS total FROM comm_v2_read_receipts WHERE message_id=? AND COALESCE(seen_at,'')!=''", (message_id,))
+        if int(_row(cur.fetchone()).get("total") or 0):
+            receipt_state = "seen"
+        else:
+            cur.execute("SELECT COUNT(*) AS total FROM comm_v2_read_receipts WHERE message_id=? AND COALESCE(delivered_at,'')!=''", (message_id,))
+            if int(_row(cur.fetchone()).get("total") or 0):
+                receipt_state = "delivered"
     sender = _user_summary(cur, int(message.get("sender_user_id") or 0))
+    reply_preview = None
+    if int(message.get("reply_to_message_id") or 0):
+        cur.execute("SELECT id, sender_user_id, body, message_type FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message.get("reply_to_message_id") or 0),))
+        reply = _row(cur.fetchone())
+        if reply:
+            reply_preview = {"id": int(reply.get("id") or 0), "sender": _user_summary(cur, int(reply.get("sender_user_id") or 0)), "body": reply.get("body") or "", "message_type": reply.get("message_type") or "text"}
     return {
         "id": message_id,
         "public_id": message.get("public_id") or "",
@@ -839,13 +930,16 @@ def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
         "body": message.get("body") or "",
         "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
         "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
-        "delivery_status": message.get("delivery_status") or "sent",
+        "delivery_status": receipt_state,
         "moderation_status": message.get("moderation_status") or "approved",
+        "reply_preview": reply_preview,
         "attachments": attachments,
         "reactions": reactions,
         "my_reaction": mine.get("reaction_type") or "",
         "created_at": message.get("created_at") or "",
         "updated_at": message.get("updated_at") or "",
+        "edited_at": message.get("edited_at") or "",
+        "is_edited": bool(message.get("edited_at")),
     }
 
 
@@ -857,6 +951,8 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
     attachment_map: dict[int, list[dict]] = {message_id: [] for message_id in message_ids}
     reaction_map: dict[int, list[dict]] = {message_id: [] for message_id in message_ids}
     mine_map: dict[int, str] = {}
+    receipt_map: dict[int, str] = {}
+    reply_map: dict[int, dict] = {}
     sender_map: dict[int, dict] = {}
     if message_ids:
         placeholders = ",".join(["?"] * len(message_ids))
@@ -880,6 +976,26 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
             (int(viewer_user_id), *message_ids),
         )
         mine_map = {int(row["message_id"]): row["reaction_type"] or "" for row in cur.fetchall()}
+        cur.execute(
+            f"""
+            SELECT message_id,
+                   MAX(CASE WHEN COALESCE(seen_at,'')!='' THEN 1 ELSE 0 END) AS seen,
+                   MAX(CASE WHEN COALESCE(delivered_at,'')!='' THEN 1 ELSE 0 END) AS delivered
+            FROM comm_v2_read_receipts
+            WHERE message_id IN ({placeholders})
+            GROUP BY message_id
+            """,
+            tuple(message_ids),
+        )
+        for row in cur.fetchall():
+            receipt_map[int(row["message_id"])] = "seen" if int(row["seen"] or 0) else "delivered" if int(row["delivered"] or 0) else "sent"
+        reply_ids = sorted({int(item.get("reply_to_message_id") or 0) for item in message_rows if int(item.get("reply_to_message_id") or 0)})
+        if reply_ids:
+            reply_placeholders = ",".join(["?"] * len(reply_ids))
+            cur.execute(f"SELECT id, sender_user_id, body, message_type FROM comm_v2_messages WHERE id IN ({reply_placeholders})", tuple(reply_ids))
+            for row in cur.fetchall():
+                reply = _row(row)
+                reply_map[int(reply.get("id") or 0)] = {"id": int(reply.get("id") or 0), "sender_user_id": int(reply.get("sender_user_id") or 0), "body": reply.get("body") or "", "message_type": reply.get("message_type") or "text"}
     if sender_ids:
         placeholders = ",".join(["?"] * len(sender_ids))
         cur.execute(
@@ -899,6 +1015,9 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
     for message in message_rows:
         message_id = int(message.get("id") or 0)
         sender_user_id = int(message.get("sender_user_id") or 0)
+        reply_preview = reply_map.get(int(message.get("reply_to_message_id") or 0))
+        if reply_preview:
+            reply_preview = {**reply_preview, "sender": sender_map.get(int(reply_preview.get("sender_user_id") or 0), {"display_name": f"Member {reply_preview.get('sender_user_id')}"})}
         out.append({
             "id": message_id,
             "public_id": message.get("public_id") or "",
@@ -915,13 +1034,16 @@ def _message_payloads(cur, message_rows: list[dict], viewer_user_id: int) -> lis
             "body": message.get("body") or "",
             "reply_to_message_id": int(message.get("reply_to_message_id") or 0),
             "thread_root_message_id": int(message.get("thread_root_message_id") or 0),
-            "delivery_status": message.get("delivery_status") or "sent",
+            "delivery_status": receipt_map.get(message_id, message.get("delivery_status") or "sent") if sender_user_id == int(viewer_user_id) else message.get("delivery_status") or "sent",
             "moderation_status": message.get("moderation_status") or "approved",
+            "reply_preview": reply_preview,
             "attachments": attachment_map.get(message_id, []),
             "reactions": reaction_map.get(message_id, []),
             "my_reaction": mine_map.get(message_id, ""),
             "created_at": message.get("created_at") or "",
             "updated_at": message.get("updated_at") or "",
+            "edited_at": message.get("edited_at") or "",
+            "is_edited": bool(message.get("edited_at")),
         })
     return out
 
@@ -946,19 +1068,44 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
         conversation_id = int(conversation["id"])
         if before_id:
             cur.execute(
-                "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND id<? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?",
-                (conversation_id, before_id, fetch_limit),
+                """
+                SELECT m.* FROM comm_v2_messages m
+                LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+                WHERE m.conversation_id=? AND m.id<? AND COALESCE(m.deleted_at,'')='' AND d.id IS NULL
+                ORDER BY m.id DESC LIMIT ?
+                """,
+                (int(user_id), conversation_id, before_id, fetch_limit),
             )
         else:
             cur.execute(
-                "SELECT * FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' ORDER BY id DESC LIMIT ?",
-                (conversation_id, fetch_limit),
+                """
+                SELECT m.* FROM comm_v2_messages m
+                LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+                WHERE m.conversation_id=? AND COALESCE(m.deleted_at,'')='' AND d.id IS NULL
+                ORDER BY m.id DESC LIMIT ?
+                """,
+                (int(user_id), conversation_id, fetch_limit),
             )
         fetched = [_row(row) for row in cur.fetchall()]
         has_older = len(fetched) > limit
         fetched = fetched[:limit]
         raw_messages = list(reversed(fetched))
         messages = _message_payloads(cur, raw_messages, user_id)
+        now = _now()
+        for message in raw_messages:
+            if int(message.get("sender_user_id") or 0) != int(user_id):
+                cur.execute(
+                    """
+                    INSERT OR IGNORE INTO comm_v2_read_receipts
+                    (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (int(message.get("id") or 0), conversation_id, int(user_id), now, now, now),
+                )
+                cur.execute(
+                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
+                    (now, now, int(message.get("id") or 0), int(user_id)),
+                )
         oldest_message_id = int(raw_messages[0].get("id") or 0) if raw_messages else 0
         typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
         mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
@@ -1073,26 +1220,86 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
             "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
             (max_id, now, now, now, conversation_id, int(user_id)),
         )
-        cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')=''", (conversation_id, max_id, int(user_id)))
-        for row in cur.fetchall():
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO comm_v2_read_receipts
-                (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (int(row["id"]), conversation_id, int(user_id), now, now, now, now, now),
-            )
-            cur.execute(
-                "UPDATE comm_v2_read_receipts SET seen_at=?, read_at=?, updated_at=? WHERE message_id=? AND user_id=?",
-                (now, now, now, int(row["id"]), int(user_id)),
-            )
+        if _read_receipts_allowed(cur, user_id):
+            cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')=''", (conversation_id, max_id, int(user_id)))
+            for row in cur.fetchall():
+                cur.execute(
+                    """
+                    INSERT OR IGNORE INTO comm_v2_read_receipts
+                    (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (int(row["id"]), conversation_id, int(user_id), now, now, now, now, now),
+                )
+                cur.execute(
+                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), seen_at=?, read_at=?, updated_at=? WHERE message_id=? AND user_id=?",
+                    (now, now, now, now, int(row["id"]), int(user_id)),
+                )
         if commit:
             conn.commit()
         return _ok({"conversation_id": conversation_id, "last_read_message_id": max_id})
     finally:
         if own_conn:
             conn.close()
+
+
+def heartbeat(user_id: int, status: str = "online") -> dict:
+    disabled = _disabled("heartbeat")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        presence = _touch_presence(cur, user_id, status)
+        conn.commit()
+        return _ok({"presence": presence}, "Presence updated.")
+    finally:
+        conn.close()
+
+
+def update_settings(user_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("update_settings")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    privacy = _clean(payload.get("presence_privacy") or payload.get("presence") or "everyone", 20).lower()
+    if privacy not in {"everyone", "contacts", "nobody"}:
+        return _err("Choose a valid presence privacy setting.", 400, "invalid_presence_privacy")
+    read_receipts_enabled = 1 if payload.get("read_receipts_enabled", payload.get("read_receipts", True)) not in {False, 0, "0", "false", "off", "no"} else 0
+    conn, cur = _open_db()
+    try:
+        now = _now()
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO comm_v2_user_settings (user_id, presence_privacy, read_receipts_enabled, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (int(user_id), privacy, read_receipts_enabled, now),
+        )
+        cur.execute(
+            "UPDATE comm_v2_user_settings SET presence_privacy=?, read_receipts_enabled=?, updated_at=? WHERE user_id=?",
+            (privacy, read_receipts_enabled, now, int(user_id)),
+        )
+        conn.commit()
+        return _ok({"settings": {"presence_privacy": privacy, "read_receipts_enabled": bool(read_receipts_enabled)}}, "Communication settings saved.")
+    finally:
+        conn.close()
+
+
+def get_settings(user_id: int) -> dict:
+    disabled = _disabled("get_settings")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        settings = _settings(cur, user_id)
+        return _ok({
+            "settings": {
+                "presence_privacy": settings.get("presence_privacy") or "everyone",
+                "read_receipts_enabled": bool(settings.get("read_receipts_enabled", 1)),
+            }
+        })
+    finally:
+        conn.close()
 
 
 def set_typing(user_id: int, conversation_ref: int | str, is_typing: bool = True) -> dict:
@@ -1148,6 +1355,54 @@ def typing_state(user_id: int, conversation_ref: int | str, existing_conn=None) 
     finally:
         if own_conn:
             conn.close()
+
+
+def conversation_presence(user_id: int, conversation_ref: int | str) -> dict:
+    disabled = _disabled("conversation_presence")
+    if disabled:
+        return disabled
+    conn, cur = _open_db()
+    try:
+        _touch_presence(cur, user_id, "online")
+        conversation, access = _conversation_access(cur, user_id, conversation_ref)
+        if access != "ok":
+            return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
+        cur.execute(
+            """
+            SELECT p.user_id, COALESCE(u.display_name,u.username,'Pulse member') AS display_name,
+                   pr.status, pr.last_seen_at, pr.active_until
+            FROM comm_v2_participants p
+            LEFT JOIN users u ON u.user_id=p.user_id
+            LEFT JOIN comm_v2_presence pr ON pr.user_id=p.user_id
+            WHERE p.conversation_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
+            ORDER BY p.id ASC
+            """,
+            (int(conversation["id"]),),
+        )
+        now_dt = datetime.now(timezone.utc)
+        presence = []
+        for row in cur.fetchall():
+            item = dict(row)
+            target_id = int(item.get("user_id") or 0)
+            visible = _presence_visible(cur, int(user_id), target_id)
+            active_now = False
+            try:
+                active_now = datetime.fromisoformat(item.get("active_until") or "") >= now_dt
+            except Exception:
+                active_now = False
+            presence.append({
+                "user_id": target_id,
+                "display_name": item.get("display_name") or "Pulse member",
+                "presence_visible": visible,
+                "status": "online" if visible and active_now else "offline" if visible else "hidden",
+                "active_now": bool(visible and active_now),
+                "last_seen_at": item.get("last_seen_at") if visible else "",
+            })
+        typing = typing_state(user_id, int(conversation["id"]), existing_conn=(conn, cur)).get("typing") or []
+        conn.commit()
+        return _ok({"conversation_id": int(conversation["id"]), "presence": presence, "typing": typing})
+    finally:
+        conn.close()
 
 
 def list_members(user_id: int, conversation_ref: int | str) -> dict:
@@ -1222,6 +1477,133 @@ def set_reaction(user_id: int, message_id: int, reaction_type: str = "heart") ->
         conn.commit()
         cur.execute("SELECT * FROM comm_v2_messages WHERE id=?", (int(message_id),))
         return _ok({"message": _message_payload(cur, _row(cur.fetchone()), user_id)})
+    finally:
+        conn.close()
+
+
+def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("edit_message")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    body = _clean(payload.get("body") or payload.get("message") or payload.get("content") or "", 4000)
+    if not body:
+        return _err("Edited message cannot be empty.", 400, "empty_message")
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(message_id),))
+        message = _row(cur.fetchone())
+        if not message:
+            return _err("Message not found.", 404, "not_found")
+        if int(message.get("sender_user_id") or 0) != int(user_id):
+            return _err("You can only edit your own messages.", 403, "forbidden")
+        created = datetime.fromisoformat(str(message.get("created_at") or _now()))
+        if datetime.now(timezone.utc) - created > timedelta(minutes=int(payload.get("edit_window_minutes") or 15)):
+            return _err("This message can no longer be edited.", 403, "edit_window_expired")
+        now = _now()
+        metadata = _json_loads(message.get("metadata_json"), {}) or {}
+        history = metadata.get("edit_history") or []
+        history.append({"body": message.get("body") or "", "edited_at": now})
+        metadata["edit_history"] = history[-5:]
+        cur.execute(
+            "UPDATE comm_v2_messages SET body=?, metadata_json=?, edited_at=?, updated_at=? WHERE id=?",
+            (body, json.dumps(metadata, default=str)[:4000], now, now, int(message_id)),
+        )
+        conn.commit()
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? LIMIT 1", (int(message_id),))
+        return _ok({"message": _message_payload(cur, _row(cur.fetchone()), user_id)}, "Message edited.")
+    finally:
+        conn.close()
+
+
+def delete_message(user_id: int, message_id: int, delete_for: str = "self") -> dict:
+    disabled = _disabled("delete_message")
+    if disabled:
+        return disabled
+    delete_for = _clean(delete_for, 40).lower()
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(message_id),))
+        message = _row(cur.fetchone())
+        if not message:
+            return _err("Message not found.", 404, "not_found")
+        conversation, access = _conversation_access(cur, user_id, int(message["conversation_id"]))
+        if access != "ok":
+            return _err("You do not have access to this message.", 403, "forbidden")
+        now = _now()
+        if delete_for in {"everyone", "all"}:
+            if int(message.get("sender_user_id") or 0) != int(user_id):
+                return _err("You can only delete your own message for everyone.", 403, "forbidden")
+            created = datetime.fromisoformat(str(message.get("created_at") or _now()))
+            if datetime.now(timezone.utc) - created > timedelta(minutes=30):
+                return _err("This message can no longer be deleted for everyone.", 403, "delete_window_expired")
+            cur.execute("UPDATE comm_v2_messages SET deleted_at=?, updated_at=? WHERE id=?", (now, now, int(message_id)))
+            scope = "everyone"
+        else:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO comm_v2_message_deletions (message_id, conversation_id, user_id, deleted_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (int(message_id), int(message["conversation_id"]), int(user_id), now),
+            )
+            scope = "self"
+        conn.commit()
+        return _ok({"message_id": int(message_id), "delete_for": scope}, "Message deleted.")
+    finally:
+        conn.close()
+
+
+def forward_message(user_id: int, message_id: int, payload: dict | None = None) -> dict:
+    disabled = _disabled("forward_message")
+    if disabled:
+        return disabled
+    payload = payload or {}
+    targets = [int(x) for x in payload.get("conversation_ids") or payload.get("target_conversation_ids") or [] if int(x or 0)]
+    targets = sorted(set(targets))[:10]
+    if not targets:
+        return _err("Choose at least one conversation to forward to.", 400, "missing_targets")
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? AND COALESCE(deleted_at,'')='' LIMIT 1", (int(message_id),))
+        source = _row(cur.fetchone())
+        if not source:
+            return _err("Message not found.", 404, "not_found")
+        _, source_access = _conversation_access(cur, user_id, int(source["conversation_id"]))
+        if source_access != "ok":
+            return _err("You do not have access to this message.", 403, "forbidden")
+        created = []
+        for target in targets:
+            conversation, access = _conversation_access(cur, user_id, target, join_public=True)
+            if access != "ok":
+                continue
+            now = _now()
+            metadata = _json_loads(source.get("metadata_json"), {}) or {}
+            metadata.update({"forwarded_from_message_id": int(message_id), "forwarded_at": now})
+            cur.execute(
+                """
+                INSERT INTO comm_v2_messages
+                (public_id, conversation_id, sender_user_id, message_type, body, delivery_status, moderation_status, metadata_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'sent', 'approved', ?, ?, ?)
+                """,
+                (_public_id("msg"), int(conversation["id"]), int(user_id), source.get("message_type") or "text", source.get("body") or "", json.dumps(metadata, default=str)[:4000], now, now),
+            )
+            new_id = int(cur.lastrowid)
+            cur.execute("SELECT * FROM comm_v2_attachments WHERE message_id=? ORDER BY id ASC", (int(message_id),))
+            for attachment in cur.fetchall():
+                item = _row(attachment)
+                cur.execute(
+                    """
+                    INSERT INTO comm_v2_attachments
+                    (attachment_public_id, message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, cdn_url, playback_url, thumbnail_url, mime_type, file_size, file_size_bytes, width, height, mux_asset_id, mux_playback_id, mux_status, scan_status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (_public_id("att"), new_id, int(conversation["id"]), int(item.get("media_upload_id") or 0), int(user_id), item.get("media_type") or "file", item.get("storage_provider") or "", item.get("storage_key") or "", item.get("url") or "", item.get("cdn_url") or "", item.get("playback_url") or "", item.get("thumbnail_url") or "", item.get("mime_type") or "", int(item.get("file_size") or 0), int(item.get("file_size_bytes") or 0), int(item.get("width") or 0), int(item.get("height") or 0), item.get("mux_asset_id") or "", item.get("mux_playback_id") or "", item.get("mux_status") or "", item.get("scan_status") or "approved", now),
+                )
+            cur.execute("UPDATE comm_v2_conversations SET last_message_id=?, last_message_at=?, last_activity_at=?, updated_at=? WHERE id=?", (new_id, now, now, now, int(conversation["id"])))
+            created.append(new_id)
+        conn.commit()
+        return _ok({"forwarded_message_ids": created, "count": len(created)}, "Message forwarded.")
     finally:
         conn.close()
 

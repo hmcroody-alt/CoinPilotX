@@ -10,7 +10,9 @@
     members: [],
     rooms: [],
     typing: [],
+    presence: [],
     groupMembers: [],
+    replyTo: null,
     searchTimer: 0,
     groupSearchTimer: 0,
     filter: "all",
@@ -144,7 +146,7 @@
     }
     if (typing) {
       const names = (state.typing || []).map((item) => item.display_name || "Someone").filter(Boolean);
-      typing.textContent = names.length ? `${names.join(", ")} ${names.length === 1 ? "is" : "are"} typing...` : "No one is typing right now.";
+      typing.textContent = typingSummary(names);
     }
     if (!target) return;
     if (!state.active) {
@@ -155,12 +157,16 @@
       target.innerHTML = `<div class="empty-state">Members load with the selected thread.</div>`;
       return;
     }
-    target.innerHTML = state.members.map((member) => `
+    const presenceByUser = new Map((state.presence || []).map((item) => [Number(item.user_id || 0), item]));
+    target.innerHTML = state.members.map((member) => {
+      const presence = presenceByUser.get(Number(member.user_id || 0)) || {};
+      const presenceLabel = presence.active_now ? "Active now" : presence.last_seen_at ? `Last seen ${shortTime(presence.last_seen_at)}` : "Offline";
+      return `
       <article class="member-row">
         <span class="avatar">${initials(member.display_name || member.username)}</span>
-        <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")}</small></span>
+        <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} / ${escapeHtml(presenceLabel)}</small></span>
       </article>
-    `).join("");
+    `; }).join("");
   }
 
   function renderRooms() {
@@ -184,16 +190,18 @@
     const attachments = (item.attachments || []).map(attachmentHtml).join("");
     const reactions = ["heart", "fire", "check"].map((reaction) => `<button type="button" data-react="${reaction}" data-message-id="${item.id}">${reaction}</button>`).join("");
     const reactionSummary = (item.reactions || []).map((reaction) => `<span>${escapeHtml(reaction.reaction_type)} ${Number(reaction.count || 0)}</span>`).join("");
+    const reply = item.reply_preview ? `<button class="reply-preview" type="button" data-jump-message="${Number(item.reply_preview.id || 0)}">Replying to ${escapeHtml(item.reply_preview.sender?.display_name || "message")}: ${escapeHtml(item.reply_preview.body || item.reply_preview.message_type || "")}</button>` : "";
     return `
       <article class="message ${mine ? "is-mine" : ""}" data-message-id="${item.id}">
         <strong>${escapeHtml(item.sender?.display_name || "Pulse member")}</strong>
         <time>${escapeHtml(shortTime(item.created_at))}</time>
-        ${item.reply_to_message_id ? `<small>Reply to #${Number(item.reply_to_message_id)}</small>` : ""}
+        ${reply}
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
+        <small>${item.is_edited ? "Edited / " : ""}${mine ? escapeHtml(item.delivery_status || "sent") : ""}</small>
         <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
-        <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}</div>
+        <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
       </article>
     `;
   }
@@ -259,6 +267,7 @@
       state.oldestMessageId = Number(data.oldest_message_id || state.messages[0]?.id || 0);
       state.members = data.members || state.members;
       state.typing = data.typing || [];
+      await loadPresence(state.active?.conversation_id || conversationId);
       renderConversations();
       renderMessages();
       renderMembers();
@@ -366,6 +375,16 @@
         if (room) return await runAction(room, "Opening room...", () => openRoom(Number(room.dataset.roomId || 0)));
         const react = target.closest("[data-react]");
         if (react) return await reactToMessage(react.dataset.messageId, react.dataset.react);
+        const reply = target.closest("[data-reply-message]");
+        if (reply) return startReply(Number(reply.dataset.replyMessage || 0));
+        const jump = target.closest("[data-jump-message]");
+        if (jump) return jumpToMessage(Number(jump.dataset.jumpMessage || 0));
+        const edit = target.closest("[data-edit-message]");
+        if (edit) return await editMessage(Number(edit.dataset.editMessage || 0));
+        const del = target.closest("[data-delete-message]");
+        if (del) return await deleteMessage(Number(del.dataset.deleteMessage || 0), del.dataset.deleteFor || "self");
+        const forward = target.closest("[data-forward-message]");
+        if (forward) return await forwardMessage(Number(forward.dataset.forwardMessage || 0));
         if (target.closest("[data-report-last]")) return await reportLast();
         if (target.closest("[data-block-peer]")) return await blockPeer();
       } catch (err) {
@@ -417,6 +436,27 @@
         method: "POST",
         body: JSON.stringify({ is_typing: true }),
       }, "typing_indicator");
+    } catch (_) {}
+  }
+
+  async function sendPresenceHeartbeat() {
+    try {
+      await api("/presence/heartbeat", { method: "POST", body: JSON.stringify({ status: "online" }) }, "presence_heartbeat");
+    } catch (_) {}
+  }
+
+  function schedulePresenceHeartbeat() {
+    window.setTimeout(async () => {
+      await sendPresenceHeartbeat();
+      schedulePresenceHeartbeat();
+    }, 30000);
+  }
+
+  async function loadPresence(conversationId) {
+    if (!conversationId) return;
+    try {
+      const data = await api(`/conversations/${conversationId}/presence`, {}, "conversation_presence");
+      state.presence = data.presence || [];
     } catch (_) {}
   }
 
@@ -645,10 +685,11 @@
       const mediaId = await uploadSelectedFile(file);
       const data = await api(`/conversations/${state.active.conversation_id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ body, media_ids: mediaId ? [mediaId] : [] }),
+        body: JSON.stringify({ body, media_ids: mediaId ? [mediaId] : [], reply_to_message_id: state.replyTo?.id || 0 }),
       }, "send_message");
       if (input) input.value = "";
       if (fileInput) fileInput.value = "";
+      state.replyTo = null;
       if (data.message) {
         state.messages = [...state.messages, data.message];
         renderMessages();
@@ -667,6 +708,62 @@
       state.messages = state.messages.map((item) => Number(item.id) === Number(messageId) ? data.message : item);
       renderMessages();
     }
+  }
+
+  function startReply(messageId) {
+    const item = state.messages.find((message) => Number(message.id) === Number(messageId));
+    if (!item) return setStatus("That message is no longer available.", "error");
+    state.replyTo = { id: Number(item.id), body: item.body || item.message_type || "attachment" };
+    setStatus(`Replying to: ${state.replyTo.body}`);
+    el("[data-message-input]")?.focus();
+  }
+
+  function jumpToMessage(messageId) {
+    const target = document.querySelector(`[data-message-id="${Number(messageId)}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("is-highlighted");
+      window.setTimeout(() => target.classList.remove("is-highlighted"), 1400);
+    }
+  }
+
+  async function editMessage(messageId) {
+    const item = state.messages.find((message) => Number(message.id) === Number(messageId));
+    if (!item) return;
+    const nextBody = window.prompt("Edit message", item.body || "");
+    if (nextBody === null) return;
+    const data = await api(`/messages/${messageId}`, { method: "PATCH", body: JSON.stringify({ body: nextBody }) }, "edit_message");
+    if (data.message) {
+      state.messages = state.messages.map((message) => Number(message.id) === Number(messageId) ? data.message : message);
+      renderMessages();
+    }
+  }
+
+  async function deleteMessage(messageId, deleteFor) {
+    if (!window.confirm(deleteFor === "everyone" ? "Delete this message for everyone?" : "Remove this message from your view?")) return;
+    await api(`/messages/${messageId}`, { method: "DELETE", body: JSON.stringify({ delete_for: deleteFor }) }, "delete_message");
+    state.messages = state.messages.filter((message) => Number(message.id) !== Number(messageId));
+    renderMessages();
+    setStatus("Message deleted.");
+  }
+
+  async function forwardMessage(messageId) {
+    if (!state.conversations.length) await loadConversations({ selectFirst: false });
+    const choices = state.conversations.filter((item) => Number(item.conversation_id) !== Number(state.active?.conversation_id || 0));
+    if (!choices.length) return setStatus("Create another conversation before forwarding.", "error");
+    const names = choices.map((item, index) => `${index + 1}. ${item.title}`).join("\\n");
+    const selected = Number(window.prompt(`Forward to which conversation?\\n${names}`, "1") || 0);
+    const target = choices[selected - 1];
+    if (!target) return;
+    const data = await api(`/messages/${messageId}/forward`, { method: "POST", body: JSON.stringify({ conversation_ids: [target.conversation_id] }) }, "forward_message");
+    setStatus(data.message || "Message forwarded.");
+  }
+
+  function typingSummary(names) {
+    if (!names.length) return "No one is typing right now.";
+    if (names.length === 1) return `${names[0]} is typing...`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+    return `${names[0]} and ${names.length - 1} others are typing...`;
   }
 
   async function reportLast() {
@@ -705,6 +802,8 @@
 
   bind();
   setMobileMode(isMobile() ? "list" : "desktop");
+  sendPresenceHeartbeat();
+  schedulePresenceHeartbeat();
   mobileQuery.addEventListener?.("change", () => setMobileMode(isMobile() ? (state.active ? "thread" : "list") : "desktop"));
   renderMessages();
   renderMembers();
