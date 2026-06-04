@@ -1,11 +1,11 @@
-(function () {
+(async function () {
   const root = document.querySelector("[data-pulse-camera-engine]");
   if (!root) return;
 
   document.body.classList.add("pulse-camera-active");
 
   const configEl = document.getElementById("pulseCameraConfig");
-  const config = configEl ? JSON.parse(configEl.textContent || "{}") : {};
+  let config = configEl ? JSON.parse(configEl.textContent || "{}") : {};
   const video = document.getElementById("pulseCameraPreview");
   const canvas = document.getElementById("pulseCameraCanvas");
   const fileInput = document.getElementById("pulseCameraFile");
@@ -59,6 +59,41 @@
     if (statusEl) statusEl.textContent = message || "";
   }
 
+  function mergeCameraConfig(nextConfig) {
+    if (!nextConfig || typeof nextConfig !== "object") return;
+    config = {
+      ...config,
+      ...nextConfig,
+      banuba: { ...(config.banuba || {}), ...(nextConfig.banuba || {}) },
+      fallback: { ...(config.fallback || {}), ...(nextConfig.fallback || {}) },
+    };
+    root.dataset.cameraProvider = config.provider || "native_fallback";
+    root.dataset.banubaEnabled = config.banuba?.enabled ? "true" : "false";
+    root.dataset.deviceFilePickerFallback = config.fallback?.enabled === false ? "false" : "true";
+  }
+
+  async function hydrateCameraConfig() {
+    const endpoint = config.configEndpoint || "/api/pulse/camera/config";
+    const params = new URLSearchParams({ target: config.target || "feed", mode: config.mode || activeMode || "photo" });
+    try {
+      const response = await fetch(`${endpoint}?${params.toString()}`, { credentials: "same-origin", cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.camera) mergeCameraConfig(payload.camera);
+    } catch (_) {
+      mergeCameraConfig({ provider: "native_fallback", fallback: { enabled: true, type: "device_file_picker" } });
+    }
+  }
+
+  function activateFallbackPicker(message) {
+    mergeCameraConfig({ provider: "native_fallback", fallback: { enabled: true, type: "device_file_picker" } });
+    permissionTip?.classList.remove("is-hidden");
+    if (message) setStatus(message);
+  }
+
+  function banubaSdkReady() {
+    return Boolean(window.Banuba || window.BanubaSDK || window.BanubaPlayer);
+  }
+
   function setPreviewStatus(message) {
     if (previewStatus) previewStatus.textContent = message || "";
   }
@@ -108,8 +143,11 @@
   }
 
   async function startCamera() {
+    if (config.banuba?.enabled && !banubaSdkReady()) {
+      activateFallbackPicker("Camera effects are unavailable here. Native camera and gallery are ready.");
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setStatus("Camera is unavailable in this browser. Upload from gallery instead.");
+      activateFallbackPicker("Camera is unavailable in this browser. Upload from gallery instead.");
       return;
     }
     try {
@@ -123,8 +161,7 @@
       setStatus("Ready");
       setTimeout(() => setStatus(""), 800);
     } catch (error) {
-      setStatus("Camera permission blocked. Upload from gallery is ready.");
-      permissionTip?.classList.remove("is-hidden");
+      activateFallbackPicker("Camera permission blocked. Upload from gallery is ready.");
     }
   }
 
@@ -338,7 +375,7 @@
       setBusy(true, isVideo ? "Uploading video... 0%" : "Uploading image... 0%");
       const data = window.PulseUploadManager
         ? await window.PulseUploadManager.upload({
-            url: "/api/pulse/media/upload",
+            url: config.uploadEndpoint || "/api/pulse/media/upload",
             formData: fd,
             file,
             lockKey: "pulse-camera-upload",
@@ -349,7 +386,7 @@
               setPreviewStatus(state.message);
             },
           })
-        : await fetch("/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd }).then(async (response) => {
+        : await fetch(config.uploadEndpoint || "/api/pulse/media/upload", { method: "POST", credentials: "same-origin", body: fd }).then(async (response) => {
             const payload = await response.json().catch(() => ({ ok: false, message: "Upload returned an unreadable response." }));
             if (!response.ok || payload.ok === false) throw new Error(payload.message || "Upload failed.");
             return payload;
@@ -565,7 +602,10 @@
 
   document.getElementById("pulseCameraFlip")?.addEventListener("click", flipCamera);
   document.getElementById("pulseCameraClose")?.addEventListener("click", closeCamera);
-  document.getElementById("pulseCameraGallery")?.addEventListener("click", () => fileInput.click());
+  document.getElementById("pulseCameraGallery")?.addEventListener("click", () => {
+    activateFallbackPicker("Choose a photo or video from your device.");
+    fileInput.click();
+  });
   document.getElementById("pulseCameraUse")?.addEventListener("click", () => sheet?.classList.add("is-on"));
   document.getElementById("pulseCameraMic")?.addEventListener("click", () => {
     stream?.getAudioTracks().forEach((track) => { track.enabled = !track.enabled; });
@@ -617,6 +657,7 @@
 
   selectBeauty(activeBeauty?.key || "natural");
   selectLens(activeLens?.key || "pulse_glow");
+  await hydrateCameraConfig();
   selectMode(activeMode);
   wakeHud();
   startCamera();

@@ -69,11 +69,13 @@ def main():
         "data-pulse-status-version='entry-1'",
         "data-status2-strip",
         "pulse-status-home-entry",
-        "Stories from your Pulse world.",
+        "pulse-status-tray-only",
         "href='/pulse/status'",
-        "Create Status",
+        "<strong>Create</strong><small>Status</small>",
     ]:
         expect(token in html, f"homepage Status entry contains {token}")
+    for token in ["Stories from your Pulse world.", "Trending Status", "Quick updates, creator moments"]:
+        expect(token not in html, f"homepage Status tray omits marketing token {token}")
     for token in [
         "data-status2-form",
         "data-status2-body",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse home Status rail layout and hero animation."""
+"""Audit Pulse home Status tray layout."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BOT = ROOT / "bot.py"
-CSS = ROOT / "static/css/pulse_desktop_feed.css"
 STATUS_CSS = ROOT / "static/css/pulse_status_system.css"
 
 
@@ -19,15 +18,13 @@ def expect(ok: bool, label: str) -> None:
 
 def main() -> None:
     source = BOT.read_text(encoding="utf-8")
-    css = CSS.read_text(encoding="utf-8")
     status_css = STATUS_CSS.read_text(encoding="utf-8")
-    compact = "".join(css.split())
+    compact = "".join(status_css.split())
 
     for token in [
         "pulse_status_rail_html",
-        "data-status-home-create",
+        "pulse-status-tray-only",
         "href='/pulse/status'",
-        "href='/pulse/status?lane=trending'",
         "pulse-status-mini-rail",
         "data-status-strip",
         "id=\"pulseStatusStoryViewer\"",
@@ -37,21 +34,11 @@ def main() -> None:
     ]:
         expect(token in source, f"Home Status rail includes {token}")
 
-    for token in [
-        ".pulse-home-status-rail .pulse-status-mini-rail",
-        "overflow-x: auto",
-        "grid-auto-columns",
-        ".pulse-home-status-rail .pulse-status-home-actions .button",
-        "white-space: nowrap",
-        ".pulse-status-home-preview",
-        "-webkit-line-clamp: 3",
-        ".pulse-status-card-media",
-    ]:
-        expect(token in css, f"Home Status rail layout includes {token}")
+    for forbidden in ["Stories from your Pulse world.", "Trending Status", "View Status</a>", "Quick updates, creator moments"]:
+        expect(forbidden not in source, f"Home Status tray removed marketing text: {forbidden}")
+    for token in ["pulse-status-tray-only", "overflow-x: auto", "grid-auto-columns: 92px", ".pulse-status-card-media", "-webkit-line-clamp: 3"]:
+        expect(token in status_css, f"Home Status tray layout includes {token}")
     expect(".pulse-status-story-viewer" in status_css and ".pulse-status-story-actions" in status_css, "Homepage status viewer uses full-screen story CSS")
-
-    for token in ["pulseHomeDotOne", "pulseHomeDotTwo", "pulseHomeDotThree"]:
-        expect(token in css, f"Pulse hero orbit dot animation exists: {token}")
     expect("@media(prefers-reduced-motion:reduce)" in compact or "@media(prefers-reduced-motion:reduce)" in compact, "Reduced motion guard exists")
 
 

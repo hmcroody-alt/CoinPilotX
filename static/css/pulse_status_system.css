@@ -1374,3 +1374,146 @@ opacity: 1;
 transform: none;
 }
 }
+
+.pulse-status-tray-only {
+display: block;
+padding: 10px;
+border-radius: 18px;
+background: linear-gradient(180deg, rgba(8, 19, 35, .9), rgba(5, 11, 20, .86));
+border-color: rgba(110, 223, 246, .18);
+box-shadow: 0 14px 42px rgba(0, 0, 0, .22);
+}
+.pulse-status-tray-only .pulse-status-home-copy,
+.pulse-status-tray-only .pulse-status-home-actions {
+display: none !important;
+}
+.pulse-status-tray-only .pulse-status-mini-rail,
+.pulse-status-tray-only .pulse-status2-strip {
+display: grid;
+grid-auto-flow: column;
+grid-auto-columns: 92px;
+gap: 10px;
+overflow-x: auto;
+overflow-y: hidden;
+padding: 2px 2px 8px;
+scroll-snap-type: x proximity;
+scrollbar-width: none;
+-webkit-overflow-scrolling: touch;
+}
+.pulse-status-tray-only .pulse-status-mini-rail::-webkit-scrollbar,
+.pulse-status-tray-only .pulse-status2-strip::-webkit-scrollbar {
+display: none;
+}
+.pulse-status-tray-only .pulse-status2-create,
+.pulse-status-tray-only .pulse-status-card {
+position: relative;
+width: 92px;
+height: 122px;
+min-width: 92px;
+border-radius: 16px;
+padding: 9px;
+display: grid;
+align-content: end;
+justify-items: start;
+overflow: hidden;
+text-decoration: none;
+scroll-snap-align: start;
+background:
+linear-gradient(180deg, rgba(5, 11, 20, .04), rgba(5, 11, 20, .86)),
+linear-gradient(145deg, #12314a, #071321);
+border: 1px solid rgba(110, 223, 246, .24);
+box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+}
+.pulse-status-tray-only .pulse-status2-create {
+background:
+linear-gradient(180deg, rgba(54, 229, 143, .12), rgba(5, 11, 20, .86)),
+linear-gradient(145deg, #11845c, #0b2634);
+border-color: rgba(54, 229, 143, .38);
+}
+.pulse-status-tray-only .pulse-status2-create span,
+.pulse-status-tray-only .pulse-status-avatar-ring {
+position: absolute;
+top: 8px;
+left: 8px;
+width: 34px;
+height: 34px;
+border-radius: 999px;
+display: grid;
+place-items: center;
+background: #fff;
+color: #071321;
+font-weight: 950;
+box-shadow: 0 0 0 3px rgba(2, 6, 23, .34);
+z-index: 3;
+}
+.pulse-status-tray-only .pulse-status-card-media {
+position: absolute;
+inset: 0;
+width: 100%;
+height: 100%;
+object-fit: cover;
+z-index: 0;
+opacity: .82;
+}
+.pulse-status-tray-only .pulse-status-home-preview strong,
+.pulse-status-tray-only .pulse-status2-create strong {
+position: relative;
+z-index: 2;
+display: -webkit-box;
+-webkit-line-clamp: 3;
+-webkit-box-orient: vertical;
+overflow: hidden;
+font-size: 13px;
+line-height: 1.08;
+color: #f8fafc;
+text-shadow: 0 1px 10px rgba(0, 0, 0, .5);
+}
+.pulse-status-tray-only .pulse-status-home-preview small,
+.pulse-status-tray-only .pulse-status2-create small {
+position: relative;
+z-index: 2;
+display: block;
+max-width: 100%;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+font-size: 10px;
+line-height: 1.1;
+color: rgba(223, 246, 255, .76);
+}
+.pulse-status-tray-only .pulse-status2-empty {
+width: 150px;
+height: 122px;
+min-width: 150px;
+display: grid;
+align-content: center;
+gap: 4px;
+border-radius: 16px;
+padding: 12px;
+background: rgba(255, 255, 255, .045);
+border: 1px dashed rgba(110, 223, 246, .22);
+}
+.pulse-status-tray-only .pulse-status2-empty strong,
+.pulse-status-tray-only .pulse-status2-empty span {
+color: #dffcff;
+font-size: 12px;
+line-height: 1.15;
+}
+@media (max-width: 640px) {
+.pulse-status-tray-only {
+margin: 8px 0 12px;
+padding: 8px;
+border-radius: 16px;
+}
+.pulse-status-tray-only .pulse-status-mini-rail,
+.pulse-status-tray-only .pulse-status2-strip {
+grid-auto-columns: 86px;
+gap: 8px;
+}
+.pulse-status-tray-only .pulse-status2-create,
+.pulse-status-tray-only .pulse-status-card {
+width: 86px;
+min-width: 86px;
+height: 116px;
+}
+}
