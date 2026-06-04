@@ -580,7 +580,7 @@ def list_conversations(user_id: int, filters: dict | None = None) -> dict:
             params.append(kind)
         cur.execute(
             f"""
-            SELECT DISTINCT c.*
+            SELECT c.*
             FROM comm_v2_conversations c
             LEFT JOIN comm_v2_participants p ON p.conversation_id=c.id AND p.user_id=? AND p.membership_state='active' AND COALESCE(p.left_at,'')=''
             WHERE COALESCE(c.deleted_at,'')='' AND c.status='active'

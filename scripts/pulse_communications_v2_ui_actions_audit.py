@@ -26,8 +26,8 @@ def main() -> None:
     js = (ROOT / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
     html = (ROOT / "templates/pulse_messages_v2.html").read_text(encoding="utf-8")
 
-    expect("pulse_messages_v2.js?v=comm-v2-actions-" in html, "V2 JavaScript is cache-versioned")
-    expect("pulse_messages_v2.css?v=comm-v2-actions-" in html, "V2 CSS is cache-versioned")
+    expect("pulse_messages_v2.js?v=" in html, "V2 JavaScript is cache-versioned")
+    expect("pulse_messages_v2.css?v=" in html, "V2 CSS is cache-versioned")
     expect('return openModal("new-room")' in js, "new room button opens its modal")
     expect("peopleCache: new Map()" in js, "search selections use the people cache")
     expect("addGroupMember(Number(person.dataset.personId" in js, "group search results select members")

@@ -55,7 +55,11 @@
     const durationMs = Math.round(performance.now() - started);
     console.info("Pulse Communications V2 timing", { metric, path, status: res.status, durationMs, serverTimingMs: data.timing_ms });
     if (!res.ok || data.ok === false) {
-      const message = data.message || (data.status === "disabled" ? "Pulse Communications 2.0 is not public yet." : "This request could not be completed.");
+      const trace = data.trace_id ? ` Trace: ${data.trace_id}` : "";
+      const mislabeledServerError = res.status >= 500 && /upload failed/i.test(String(data.message || ""));
+      const message = mislabeledServerError
+        ? `Messenger is temporarily unavailable. Refresh and try again.${trace}`
+        : data.message || (data.status === "disabled" ? "Pulse Communications 2.0 is not public yet." : `This request could not be completed.${trace}`);
       throw Object.assign(new Error(message), { data, status: res.status, durationMs });
     }
     return data;
@@ -77,7 +81,7 @@
   function renderConversations() {
     if (!list) return;
     if (!state.conversations.length) {
-      list.innerHTML = `<div class="empty-state">No v2 conversations yet. Create a DM, group, or room to test the staged system.</div>`;
+      list.innerHTML = `<div class="empty-state">No conversations yet. Start a DM, create a group, or open a room.</div>`;
       return;
     }
     list.innerHTML = state.conversations.map((item) => `
