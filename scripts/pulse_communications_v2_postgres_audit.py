@@ -73,6 +73,9 @@ def main() -> None:
     expect("SELECT c.*" in query, "conversation list keeps the complete conversation payload")
     expect("Messenger is temporarily unavailable." in js_source, "V2 UI does not mislabel server errors as upload failures")
     expect("test the staged system" not in js_source, "published V2 UI does not use staged-system copy")
+    expect("_SCHEMA_READY = False" in service_source and "_SCHEMA_LOCK = threading.Lock()" in service_source, "schema initialization is process-cached and thread-safe")
+    expect("PULSE_COMM_V2_SCHEMA_READY" in service_source, "schema initialization timing is logged")
+    expect("migration_table_columns" in service_source and "if missing:" in service_source, "schema migration scans each table before checking individual columns")
 
     print("pulse communications v2 PostgreSQL audit ok")
 

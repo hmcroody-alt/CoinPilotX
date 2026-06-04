@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -16,6 +17,8 @@ from .models import ensure_schema
 DISABLED_MESSAGE = "Pulse Communications 2.0 is not public yet."
 ALLOWED_CONVERSATION_TYPES = {"direct", "group", "room", "community_channel"}
 ALLOWED_MESSAGE_TYPES = {"text", "image", "gif", "video", "audio", "voice", "file", "system"}
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
 
 
 def _bot():
@@ -75,15 +78,38 @@ def _open_db():
     conn = bot.db()
     conn.row_factory = bot.sqlite3.Row
     cur = conn.cursor()
-    ensure_schema(cur)
-    _ensure_columns(bot, cur, conn)
+    _ensure_schema_ready(bot, cur, conn)
     return conn, cur
 
 
-def _ensure_columns(bot, cur, conn) -> None:
-    add = getattr(bot, "add_columns_if_missing", None)
-    if not add:
+def _ensure_schema_ready(bot, cur, conn) -> None:
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
         return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        started = datetime.now(timezone.utc)
+        ensure_schema(cur)
+        _ensure_columns(bot, cur, conn)
+        conn.commit()
+        _SCHEMA_READY = True
+        elapsed_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        logging.info("PULSE_COMM_V2_SCHEMA_READY duration_ms=%s", elapsed_ms)
+
+
+def _ensure_columns(bot, cur, conn) -> None:
+    add_missing = getattr(bot, "add_columns_if_missing", None)
+    table_columns = getattr(bot, "migration_table_columns", None)
+    if not add_missing:
+        return
+
+    def add(cur, table, columns, conn=None):
+        existing = table_columns(cur, table) if table_columns else set()
+        missing = [(name, definition) for name, definition in columns if name not in existing]
+        if missing:
+            add_missing(cur, table, missing, conn=conn)
+
     add(cur, "comm_v2_conversations", [
         ("public_id", "TEXT"),
         ("conversation_type", "TEXT"),
