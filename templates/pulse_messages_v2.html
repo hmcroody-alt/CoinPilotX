@@ -11,12 +11,13 @@
   <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}">
     <aside class="comm-list" aria-label="Conversations">
       <header class="comm-toolbar">
-        <a class="icon-btn" href="/pulse/messages" title="Back to current messages" aria-label="Back to current messages">&lt;</a>
+        <a class="icon-btn" href="/pulse" title="Back to Pulse" aria-label="Back to Pulse">&lt;</a>
         <h1>Messages</h1>
       </header>
       <div class="comm-actions" aria-label="Create chats">
         <button class="primary" type="button" data-open-new-chat>New Chat</button>
         <button type="button" data-open-new-group>Create Group</button>
+        <button type="button" data-open-new-room>New Room</button>
       </div>
       <div class="comm-filter" role="tablist" aria-label="Conversation type">
         <button class="is-active" type="button" data-filter="all">All</button>
@@ -25,7 +26,7 @@
         <button type="button" data-filter="room">Rooms</button>
       </div>
       <section class="comm-items" data-conversations>
-        <div class="empty-state">Pulse Communications 2.0 is staged behind a feature flag.</div>
+        <div class="empty-state">Pulse Communications 2.0 is loading your conversations.</div>
       </section>
     </aside>
 
@@ -36,6 +37,7 @@
           <h2 data-thread-title>Select a conversation</h2>
           <p data-thread-subtitle>Search for someone or create a group to start chatting.</p>
         </div>
+        <button class="icon-btn desktop-only" type="button" data-toggle-details title="Details" aria-label="Details">i</button>
       </header>
       <div class="messages" data-messages>
         <div class="empty-state">Search for someone or create a group to start chatting.</div>
@@ -48,6 +50,44 @@
       </form>
       <div class="composer-status" data-status role="status" aria-live="polite"></div>
     </section>
+
+    <aside class="comm-details" data-details-panel aria-label="Conversation details">
+      <header class="details-head">
+        <div>
+          <h2>Details</h2>
+          <p data-details-summary>Choose a chat to see members, safety, and rooms.</p>
+        </div>
+        <button class="icon-btn" type="button" data-toggle-details aria-label="Collapse details">×</button>
+      </header>
+      <section class="details-card">
+        <h3>Members</h3>
+        <div class="member-list" data-members>
+          <div class="empty-state">No active conversation selected.</div>
+        </div>
+      </section>
+      <section class="details-card">
+        <h3>Live Signal</h3>
+        <div class="typing-state" data-typing-state>Typing indicators and read receipts appear as people participate.</div>
+      </section>
+      <section class="details-card">
+        <h3>Safety</h3>
+        <div class="detail-actions">
+          <button type="button" data-report-last>Report Last</button>
+          <button type="button" data-block-peer>Block Peer</button>
+          <a class="button" href="/admin/messages-health">Health</a>
+        </div>
+      </section>
+      <section class="details-card">
+        <h3>Public Rooms</h3>
+        <div class="room-list" data-room-list>
+          <div class="empty-state">Public rooms load after Messages starts.</div>
+        </div>
+      </section>
+      <section class="details-card">
+        <h3>Fallback</h3>
+        <a class="button" href="/pulse/messages?legacy=1">Open Legacy Messenger</a>
+      </section>
+    </aside>
 
     <div class="comm-modal" data-modal="new-chat" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
@@ -86,6 +126,34 @@
         <div class="modal-actions">
           <button type="button" data-close-modal>Cancel</button>
           <button class="primary" type="button" data-create-group>Start Group</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="comm-modal" data-modal="new-room" hidden>
+      <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newRoomTitle">
+        <header>
+          <h2 id="newRoomTitle">Create Room</h2>
+          <button class="icon-btn" type="button" data-close-modal aria-label="Close">x</button>
+        </header>
+        <label>
+          Room name
+          <input data-room-title autocomplete="off" placeholder="Room name">
+        </label>
+        <label>
+          Room type
+          <select data-room-privacy>
+            <option value="public">Public room</option>
+            <option value="private">Private room</option>
+          </select>
+        </label>
+        <label>
+          Description
+          <input data-room-description autocomplete="off" placeholder="What is this room for?">
+        </label>
+        <div class="modal-actions">
+          <button type="button" data-close-modal>Cancel</button>
+          <button class="primary" type="button" data-create-room>Start Room</button>
         </div>
       </div>
     </div>

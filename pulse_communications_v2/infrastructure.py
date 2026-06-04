@@ -46,7 +46,7 @@ def diagnostics() -> dict:
         "feature_flag": {
             "name": "PULSE_COMMUNICATIONS_V2_ENABLED",
             "enabled": flags.is_enabled(),
-            "default_enabled": False,
+            "default_enabled": True,
         },
         "twilio": twilio,
         "cloudflare_r2": r2,

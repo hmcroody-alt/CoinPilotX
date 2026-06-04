@@ -1,8 +1,8 @@
-"""Pulse Communications 2.0 staging package.
+"""Pulse Communications 2.0 package.
 
-This package is safe to import for disabled health checks and static contract
-tests. The actual v2 messaging system remains inactive while the feature flag
-defaults to false.
+This package is safe to import for health checks and static contract tests.
+The v2 messaging system is published by default and can be rolled back by
+setting PULSE_COMMUNICATIONS_V2_ENABLED=false.
 """
 
 from .flags import PULSE_COMMUNICATIONS_V2_ENABLED, is_enabled

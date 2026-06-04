@@ -2,17 +2,17 @@
 
 ## Goal
 
-Build Pulse Communications 2.0 beside the existing Pulse messages, rooms, and groups system without deleting or patching the legacy implementation. The new system stays hidden behind:
+Build Pulse Communications 2.0 beside the existing Pulse messages, rooms, and groups system without deleting or patching the legacy implementation. The new system was originally staged behind:
 
 ```text
 PULSE_COMMUNICATIONS_V2_ENABLED=false
 ```
 
-The production `/pulse/messages` route remains untouched. The staged v2 UI lives at `/pulse/messages-v2`, and all v2 APIs live under `/api/pulse/communications/v2/*`.
+Published update, 2026-06-04: Communications V2 is now live by default. `/pulse/messages` serves V2 when `PULSE_COMMUNICATIONS_V2_ENABLED` is true, `/pulse/messages-v2` remains available directly, and `/pulse/messages?legacy=1` or `/pulse/messages-legacy` remains the rollback path.
 
 ## Delivered Foundation
 
-- Dynamic feature flag helper in `pulse_communications_v2/flags.py`, defaulting to false.
+- Dynamic feature flag helper in `pulse_communications_v2/flags.py`, now defaulting to true with env rollback support.
 - New v2 database schema using only `comm_v2_*` tables.
 - New service layer in `pulse_communications_v2/service.py`.
 - New API routes in `pulse_communications_v2/routes.py`.
@@ -89,22 +89,18 @@ The `/pulse/messages-v2` page includes:
 
 ## Migration Plan
 
-1. Keep `PULSE_COMMUNICATIONS_V2_ENABLED=false` in production.
-2. Deploy v2 schema/routes/UI with no public navigation to `/pulse/messages-v2`.
-3. Run local and staging audits with the flag enabled only for test processes.
-4. Backfill optional read-only previews from legacy conversations only after v2 write paths pass production QA.
-5. Invite limited internal testers by enabling the flag in a non-public environment.
-6. Monitor reports, blocks, moderation events, media attachment success, and route latency.
-7. Only after v2 passes live QA, add controlled navigation from Pulse.
+1. Serve V2 from `/pulse/messages` while keeping `/pulse/messages?legacy=1` and `/pulse/messages-legacy` available.
+2. Monitor reports, blocks, moderation events, media attachment success, and route latency.
+3. Keep `PULSE_COMMUNICATIONS_V2_ENABLED=false` as the emergency rollback switch.
+4. Continue incremental improvements for notification templates and Phase 2 voice/video/live.
 
 ## Rollback Plan
 
 1. Set `PULSE_COMMUNICATIONS_V2_ENABLED=false`.
-2. Remove any test-only navigation to `/pulse/messages-v2` if it was added later.
-3. Leave `comm_v2_*` tables in place for forensic review and export.
-4. Stop writes to v2 API routes by leaving the flag disabled.
+2. Leave `comm_v2_*` tables in place for forensic review and export.
+3. Stop writes to v2 API routes by leaving the flag disabled.
+4. Use `/pulse/messages?legacy=1` or `/pulse/messages-legacy` for immediate legacy access.
 5. If schema cleanup is required after a proven rollback window, drop only `comm_v2_*` tables.
-6. Legacy `/pulse/messages` remains the active communication surface throughout rollback.
 
 ## Audit Commands
 

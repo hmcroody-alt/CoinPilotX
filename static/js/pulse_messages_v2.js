@@ -7,6 +7,8 @@
     active: null,
     messages: [],
     members: [],
+    rooms: [],
+    typing: [],
     groupMembers: [],
     searchTimer: 0,
     groupSearchTimer: 0,
@@ -17,6 +19,7 @@
     initialThreadLoaded: false,
     typingTimer: 0,
     typingSentAt: 0,
+    detailsCollapsed: false,
   };
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -101,6 +104,52 @@
     state.preserveScroll = false;
   }
 
+  function renderMembers() {
+    const target = el("[data-members]");
+    const summary = el("[data-details-summary]");
+    const typing = el("[data-typing-state]");
+    if (summary) {
+      summary.textContent = state.active
+        ? `${state.active.title || "Active chat"} / ${state.active.conversation_type || "conversation"} / ${Number(state.active.member_count || state.members.length || 0)} members`
+        : "Choose a chat to see members, safety, and rooms.";
+    }
+    if (typing) {
+      const names = (state.typing || []).map((item) => item.display_name || "Someone").filter(Boolean);
+      typing.textContent = names.length ? `${names.join(", ")} ${names.length === 1 ? "is" : "are"} typing...` : "No one is typing right now.";
+    }
+    if (!target) return;
+    if (!state.active) {
+      target.innerHTML = `<div class="empty-state">No active conversation selected.</div>`;
+      return;
+    }
+    if (!state.members.length) {
+      target.innerHTML = `<div class="empty-state">Members load with the selected thread.</div>`;
+      return;
+    }
+    target.innerHTML = state.members.map((member) => `
+      <article class="member-row">
+        <span class="avatar">${initials(member.display_name || member.username)}</span>
+        <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")}</small></span>
+      </article>
+    `).join("");
+  }
+
+  function renderRooms() {
+    const target = el("[data-room-list]");
+    if (!target) return;
+    const rooms = (state.rooms || []).filter((item) => item.conversation_type === "room");
+    if (!rooms.length) {
+      target.innerHTML = `<div class="empty-state">No public rooms yet. Create one to start the space.</div>`;
+      return;
+    }
+    target.innerHTML = rooms.map((room) => `
+      <button class="room-row" type="button" data-room-id="${Number(room.conversation_id || 0)}">
+        <strong>${escapeHtml(room.title || "Pulse room")}</strong>
+        <small>${escapeHtml(room.privacy || "public")} / ${Number(room.member_count || 0)} members</small>
+      </button>
+    `).join("");
+  }
+
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const attachments = (item.attachments || []).map(attachmentHtml).join("");
@@ -177,8 +226,10 @@
       state.hasOlder = Boolean(data.has_older);
       state.oldestMessageId = Number(data.oldest_message_id || state.messages[0]?.id || 0);
       state.members = data.members || state.members;
+      state.typing = data.typing || [];
       renderConversations();
       renderMessages();
+      renderMembers();
       if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
     } finally {
       state.loadingThread = false;
@@ -190,6 +241,17 @@
     const previousHeight = messages?.scrollHeight || 0;
     await loadMessages(state.active.conversation_id, { beforeId: state.oldestMessageId, appendOlder: true });
     if (messages) messages.scrollTop = Math.max(0, messages.scrollHeight - previousHeight);
+  }
+
+  async function loadRooms() {
+    try {
+      const data = await api("/rooms", {}, "rooms_list");
+      state.rooms = (data.items || data.conversations || []).map(rememberConversation);
+      renderRooms();
+    } catch (err) {
+      const target = el("[data-room-list]");
+      if (target) target.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    }
   }
 
   async function uploadSelectedFile(file) {
@@ -234,17 +296,25 @@
       }
       if (event.target.closest("[data-open-new-chat]")) openModal("new-chat");
       if (event.target.closest("[data-open-new-group]")) openModal("new-group");
+      if (event.target.closest("[data-open-new-room]")) openModal("new-room");
       if (event.target.closest("[data-close-modal]")) closeModals();
+      if (event.target.closest("[data-toggle-details]")) toggleDetails();
+      if (event.target.closest("[data-mobile-list]")) list?.scrollIntoView({ behavior: "smooth", block: "start" });
       const person = event.target.closest("[data-person-id]");
       if (person && person.closest("[data-person-results]")) await openDm(Number(person.dataset.personId || 0));
       if (person && person.closest("[data-group-person-results]")) addGroupMember(person.dataset.person);
       const removeMember = event.target.closest("[data-remove-group-member]");
       if (removeMember) removeGroupMember(Number(removeMember.dataset.removeGroupMember || 0));
       if (event.target.closest("[data-create-group]")) await createGroup();
+      if (event.target.closest("[data-create-room]")) await createRoom();
       if (event.target.closest("[data-pick-file]")) el("[data-file]")?.click();
       if (event.target.closest("[data-load-older]")) await loadOlderMessages();
+      const room = event.target.closest("[data-room-id]");
+      if (room) await openRoom(Number(room.dataset.roomId || 0));
       const react = event.target.closest("[data-react]");
       if (react) await reactToMessage(react.dataset.messageId, react.dataset.react);
+      if (event.target.closest("[data-report-last]")) await reportLast();
+      if (event.target.closest("[data-block-peer]")) await blockPeer();
     });
     el("[data-composer]")?.addEventListener("submit", sendMessage);
     el("[data-message-input]")?.addEventListener("input", debounceTyping);
@@ -375,6 +445,32 @@
     await loadMessages(state.active.conversation_id);
   }
 
+  async function createRoom() {
+    const title = String(el("[data-room-title]")?.value || "").trim();
+    const privacy = String(el("[data-room-privacy]")?.value || "public");
+    const description = String(el("[data-room-description]")?.value || "").trim();
+    if (!title) return setStatus("Name the room before creating it.", "error");
+    const data = await api("/rooms", { method: "POST", body: JSON.stringify({ title, privacy, description }) }, "create_room");
+    state.active = rememberConversation(data.conversation);
+    state.initialThreadLoaded = false;
+    closeModals();
+    await loadConversations({ selectFirst: false });
+    await loadRooms();
+    await loadMessages(state.active.conversation_id);
+  }
+
+  async function openRoom(roomId) {
+    if (!roomId) return;
+    state.active = rememberConversation(state.conversationCache.get(roomId) || state.rooms.find((item) => Number(item.conversation_id) === roomId));
+    state.messages = [];
+    state.members = [];
+    state.typing = [];
+    renderConversations();
+    renderMessages();
+    renderMembers();
+    await loadMessages(roomId);
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     if (!state.active) return setStatus("Choose a conversation first.", "error");
@@ -425,6 +521,11 @@
     setStatus("Member blocked.");
   }
 
+  function toggleDetails() {
+    state.detailsCollapsed = !state.detailsCollapsed;
+    root?.classList.toggle("details-collapsed", state.detailsCollapsed);
+  }
+
   function shortTime(value) {
     if (!value) return "";
     const date = new Date(value);
@@ -442,5 +543,8 @@
 
   bind();
   renderMessages();
+  renderMembers();
+  renderRooms();
   loadConversations();
+  loadRooms();
 })();

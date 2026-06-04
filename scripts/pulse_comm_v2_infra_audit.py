@@ -35,7 +35,7 @@ def main() -> int:
     expect("/admin/pulse-infrastructure" in bot_source, "Admin Pulse Infrastructure route missing", failures)
     expect("admin_pulse_infrastructure_page" in bot_source, "Admin Pulse Infrastructure handler missing", failures)
     expect("require_admin_page(\"system.view\")" in bot_source, "Admin Pulse Infrastructure should require system.view", failures)
-    expect('"false"' in flags.read_text().lower(), "V2 feature flag should default false", failures)
+    expect('"true"' in flags.read_text().lower(), "V2 feature flag should default published with env rollback", failures)
     if failures:
         print("FAIL")
         for failure in failures:

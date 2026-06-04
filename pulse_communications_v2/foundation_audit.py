@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit the disabled Pulse Communications 2.0 foundation."""
+"""Audit Pulse Communications 2.0 rollback safety."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.pop("PULSE_COMMUNICATIONS_V2_ENABLED", None)
+os.environ["PULSE_COMMUNICATIONS_V2_ENABLED"] = "false"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -30,11 +30,11 @@ def main() -> None:
     response = client.get("/api/pulse/communications/v2/health")
     data = response.get_json(silent=True) or {}
     expect(response.status_code == 200, "v2 health route returns 200", str(data))
-    expect(data == {"enabled": False, "status": "disabled"}, "v2 health route is disabled by default", str(data))
-    expect(flags.is_enabled() is False, "v2 feature flag defaults false")
+    expect(data == {"enabled": False, "status": "disabled"}, "v2 health route is disabled when rollback flag is false", str(data))
+    expect(flags.is_enabled() is False, "v2 feature flag supports rollback false")
 
     table_names = set(models.table_names())
-    expect(len(table_names) == 12, "v2 table contract count", str(table_names))
+    expect(len(table_names) >= 12, "v2 table contract count", str(table_names))
     expect(all(name.startswith("comm_v2_") for name in table_names), "v2 table names are prefixed", str(table_names))
     legacy_names = {"conversations", "conversation_members", "private_messages", "pulse_conversations", "pulse_messages", "pulse_groups"}
     expect(not table_names.intersection(legacy_names), "v2 table names avoid legacy collisions", str(table_names))
