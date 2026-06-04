@@ -471,7 +471,7 @@
               if (data && data.ok) {
                 upgradeStatus.textContent = "Pulse Premium Active";
                 upgradeDetail.textContent = "Premium identity and creator enhancements are active. Opening your dashboard...";
-                setTimeout(function () { window.location.href = data.next_url || "/dashboard?pro=active"; }, 900);
+                setTimeout(function () { window.location.href = data.next_url || "/pulse/premium/intelligence?pro=active"; }, 900);
                 return true;
               }
               confirmStarted = false;
