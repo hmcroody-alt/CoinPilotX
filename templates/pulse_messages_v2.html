@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Pulse Messages v2 | CoinPilotXAI</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=comm-v2-premium-20260603">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=comm-v2-actions-20260604b">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}">
@@ -89,7 +89,7 @@
       </section>
     </aside>
 
-    <div class="comm-modal" data-modal="new-chat" hidden>
+    <div class="comm-modal" data-modal="new-chat" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
         <header>
           <h2 id="newChatTitle">New Chat</h2>
@@ -100,13 +100,14 @@
           <input data-person-search autocomplete="off" placeholder="Name, username, or email">
         </label>
         <div class="people-results" data-person-results></div>
+        <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
         <div class="modal-actions">
           <button type="button" data-close-modal>Cancel</button>
         </div>
       </div>
     </div>
 
-    <div class="comm-modal" data-modal="new-group" hidden>
+    <div class="comm-modal" data-modal="new-group" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newGroupTitle">
         <header>
           <h2 id="newGroupTitle">Create Group</h2>
@@ -123,6 +124,7 @@
         </label>
         <div class="people-results" data-group-person-results></div>
         <div class="selected-people" data-selected-people></div>
+        <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
         <div class="modal-actions">
           <button type="button" data-close-modal>Cancel</button>
           <button class="primary" type="button" data-create-group>Start Group</button>
@@ -130,7 +132,7 @@
       </div>
     </div>
 
-    <div class="comm-modal" data-modal="new-room" hidden>
+    <div class="comm-modal" data-modal="new-room" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newRoomTitle">
         <header>
           <h2 id="newRoomTitle">Create Room</h2>
@@ -151,6 +153,7 @@
           Description
           <input data-room-description autocomplete="off" placeholder="What is this room for?">
         </label>
+        <div class="modal-status" data-modal-status role="status" aria-live="polite"></div>
         <div class="modal-actions">
           <button type="button" data-close-modal>Cancel</button>
           <button class="primary" type="button" data-create-room>Start Room</button>
@@ -159,6 +162,6 @@
     </div>
   </main>
   <script src="/static/js/pulse_media_renderer.js?v=comm-v2-mux-20260603"></script>
-  <script src="/static/js/pulse_messages_v2.js" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=comm-v2-actions-20260604b" defer></script>
 </body>
 </html>

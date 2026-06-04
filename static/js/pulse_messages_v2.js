@@ -4,6 +4,7 @@
   const state = {
     conversations: [],
     conversationCache: new Map(),
+    peopleCache: new Map(),
     active: null,
     messages: [],
     members: [],
@@ -20,6 +21,7 @@
     typingTimer: 0,
     typingSentAt: 0,
     detailsCollapsed: false,
+    actionPending: false,
   };
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -29,9 +31,15 @@
   const status = el("[data-status]");
 
   function setStatus(text, kind = "info") {
-    if (!status) return;
-    status.textContent = text || "";
-    status.dataset.kind = kind;
+    if (status) {
+      status.textContent = text || "";
+      status.dataset.kind = kind;
+    }
+    const modalStatus = document.querySelector("[data-modal]:not([hidden]) [data-modal-status]");
+    if (modalStatus) {
+      modalStatus.textContent = text || "";
+      modalStatus.dataset.kind = kind;
+    }
   }
 
   async function api(path, options = {}, metric = "request") {
@@ -272,54 +280,83 @@
 
   function bind() {
     document.addEventListener("click", async (event) => {
-      const conversation = event.target.closest("[data-conversation-id]");
-      if (conversation) {
-        const id = Number(conversation.dataset.conversationId || 0);
-        if (state.active && Number(state.active.conversation_id) === id) return;
-        state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
-        state.messages = [];
-        state.members = [];
-        state.hasOlder = false;
-        renderMessages();
-        renderMembers();
-        try { await loadMessages(id); } catch (err) { setStatus(err.message, "error"); }
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (!target) return;
+      try {
+        const conversation = target.closest("[data-conversation-id]");
+        if (conversation) {
+          const id = Number(conversation.dataset.conversationId || 0);
+          if (state.active && Number(state.active.conversation_id) === id) return;
+          state.active = rememberConversation(state.conversationCache.get(id) || state.conversations.find((item) => Number(item.conversation_id) === id));
+          state.messages = [];
+          state.members = [];
+          state.hasOlder = false;
+          renderMessages();
+          renderMembers();
+          await loadMessages(id);
+          return;
+        }
+        const filter = target.closest("[data-filter]");
+        if (filter) {
+          state.filter = filter.dataset.filter;
+          state.active = null;
+          state.messages = [];
+          state.members = [];
+          state.initialThreadLoaded = false;
+          document.querySelectorAll("[data-filter]").forEach((btn) => btn.classList.toggle("is-active", btn === filter));
+          await loadConversations();
+          return;
+        }
+        if (target.closest("[data-open-new-chat]")) return openModal("new-chat");
+        if (target.closest("[data-open-new-group]")) return openModal("new-group");
+        if (target.closest("[data-open-new-room]")) return openModal("new-room");
+        if (target.closest("[data-close-modal]")) return closeModals();
+        if (target.closest("[data-toggle-details]")) return toggleDetails();
+        if (target.closest("[data-mobile-list]")) return list?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const person = target.closest("[data-person-id]");
+        if (person?.closest("[data-person-results]")) return await runAction(person, "Opening chat...", () => openDm(Number(person.dataset.personId || 0)));
+        if (person?.closest("[data-group-person-results]")) return addGroupMember(Number(person.dataset.personId || 0));
+        const removeMember = target.closest("[data-remove-group-member]");
+        if (removeMember) return removeGroupMember(Number(removeMember.dataset.removeGroupMember || 0));
+        const createGroupButton = target.closest("[data-create-group]");
+        if (createGroupButton) return await runAction(createGroupButton, "Creating group...", createGroup);
+        const createRoomButton = target.closest("[data-create-room]");
+        if (createRoomButton) return await runAction(createRoomButton, "Creating room...", createRoom);
+        if (target.closest("[data-pick-file]")) return el("[data-file]")?.click();
+        if (target.closest("[data-load-older]")) return await loadOlderMessages();
+        const room = target.closest("[data-room-id]");
+        if (room) return await runAction(room, "Opening room...", () => openRoom(Number(room.dataset.roomId || 0)));
+        const react = target.closest("[data-react]");
+        if (react) return await reactToMessage(react.dataset.messageId, react.dataset.react);
+        if (target.closest("[data-report-last]")) return await reportLast();
+        if (target.closest("[data-block-peer]")) return await blockPeer();
+      } catch (err) {
+        console.error("Pulse Communications V2 action failed", err);
+        setStatus(err?.message || "That action could not be completed. Please try again.", "error");
       }
-      const filter = event.target.closest("[data-filter]");
-      if (filter) {
-        state.filter = filter.dataset.filter;
-        state.active = null;
-        state.messages = [];
-        state.members = [];
-        state.initialThreadLoaded = false;
-        document.querySelectorAll("[data-filter]").forEach((btn) => btn.classList.toggle("is-active", btn === filter));
-        await loadConversations();
-      }
-      if (event.target.closest("[data-open-new-chat]")) openModal("new-chat");
-      if (event.target.closest("[data-open-new-group]")) openModal("new-group");
-      if (event.target.closest("[data-open-new-room]")) openModal("new-room");
-      if (event.target.closest("[data-close-modal]")) closeModals();
-      if (event.target.closest("[data-toggle-details]")) toggleDetails();
-      if (event.target.closest("[data-mobile-list]")) list?.scrollIntoView({ behavior: "smooth", block: "start" });
-      const person = event.target.closest("[data-person-id]");
-      if (person && person.closest("[data-person-results]")) await openDm(Number(person.dataset.personId || 0));
-      if (person && person.closest("[data-group-person-results]")) addGroupMember(person.dataset.person);
-      const removeMember = event.target.closest("[data-remove-group-member]");
-      if (removeMember) removeGroupMember(Number(removeMember.dataset.removeGroupMember || 0));
-      if (event.target.closest("[data-create-group]")) await createGroup();
-      if (event.target.closest("[data-create-room]")) await createRoom();
-      if (event.target.closest("[data-pick-file]")) el("[data-file]")?.click();
-      if (event.target.closest("[data-load-older]")) await loadOlderMessages();
-      const room = event.target.closest("[data-room-id]");
-      if (room) await openRoom(Number(room.dataset.roomId || 0));
-      const react = event.target.closest("[data-react]");
-      if (react) await reactToMessage(react.dataset.messageId, react.dataset.react);
-      if (event.target.closest("[data-report-last]")) await reportLast();
-      if (event.target.closest("[data-block-peer]")) await blockPeer();
     });
     el("[data-composer]")?.addEventListener("submit", sendMessage);
     el("[data-message-input]")?.addEventListener("input", debounceTyping);
     el("[data-person-search]")?.addEventListener("input", () => debouncePeopleSearch("direct"));
     el("[data-group-person-search]")?.addEventListener("input", () => debouncePeopleSearch("group"));
+    document.addEventListener("keydown", async (event) => {
+      if (event.key === "Escape") return closeModals();
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      const roomModal = event.target.closest?.('[data-modal="new-room"]');
+      const groupModal = event.target.closest?.('[data-modal="new-group"]');
+      if (roomModal) {
+        event.preventDefault();
+        await runAction(el("[data-create-room]"), "Creating room...", createRoom);
+      } else if (groupModal && !event.target.closest?.("[data-group-person-search]")) {
+        event.preventDefault();
+        await runAction(el("[data-create-group]"), "Creating group...", createGroup);
+      }
+    });
+    document.querySelectorAll("[data-modal]").forEach((modal) => {
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModals();
+      });
+    });
   }
 
   function debounceTyping() {
@@ -344,13 +381,58 @@
   function openModal(name) {
     closeModals();
     const modal = el(`[data-modal="${name}"]`);
-    if (!modal) return;
+    if (!modal) {
+      setStatus("That creation panel is unavailable. Refresh and try again.", "error");
+      return;
+    }
     modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
     window.setTimeout(() => modal.querySelector("input")?.focus(), 30);
   }
 
   function closeModals() {
-    document.querySelectorAll("[data-modal]").forEach((modal) => { modal.hidden = true; });
+    document.querySelectorAll("[data-modal]").forEach((modal) => {
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+    });
+  }
+
+  function resetCreationModal(name) {
+    const modal = el(`[data-modal="${name}"]`);
+    if (!modal) return;
+    modal.querySelectorAll("input:not([type=file])").forEach((input) => { input.value = ""; });
+    modal.querySelectorAll("[data-person-results], [data-group-person-results]").forEach((target) => { target.innerHTML = ""; });
+    modal.querySelectorAll("[data-modal-status]").forEach((target) => {
+      target.textContent = "";
+      target.dataset.kind = "info";
+    });
+  }
+
+  async function runAction(button, pendingText, action) {
+    if (state.actionPending) return;
+    state.actionPending = true;
+    const previousText = button?.textContent || "";
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    setStatus(pendingText);
+    try {
+      const result = await action();
+      if (result !== false) setStatus("");
+      return result;
+    } catch (err) {
+      console.error("Pulse Communications V2 action failed", err);
+      setStatus(err?.message || "That action could not be completed. Please try again.", "error");
+      return false;
+    } finally {
+      state.actionPending = false;
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        if (previousText && !button.textContent.trim()) button.textContent = previousText;
+      }
+    }
   }
 
   function debouncePeopleSearch(kind) {
@@ -372,6 +454,7 @@
       target.innerHTML = `<div class="empty-state">Searching...</div>`;
       const data = await api(`/people/search?q=${encodeURIComponent(query)}`, {}, "people_search");
       const people = data.people || data.items || [];
+      people.forEach(rememberPerson);
       target.innerHTML = people.length ? people.map((person) => personResultHtml(person)).join("") : `<div class="empty-state">No people found.</div>`;
     } catch (err) {
       target.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
@@ -379,38 +462,53 @@
   }
 
   function personResultHtml(person) {
-    const encoded = escapeAttr(JSON.stringify({
+    const remembered = rememberPerson({
       user_id: Number(person.user_id || 0),
       display_name: person.display_name || "Pulse member",
       username: person.username || "",
       avatar_url: person.avatar_url || "",
-    }));
+    });
     return `
-      <button class="person-result" type="button" data-person-id="${Number(person.user_id || 0)}" data-person="${encoded}">
-        <span class="avatar">${initials(person.display_name || person.username)}</span>
-        <span><strong>${escapeHtml(person.display_name || "Pulse member")}</strong><small>${escapeHtml(person.username ? `@${person.username}` : person.matched_email ? "Email match" : "Pulse member")}</small></span>
+      <button class="person-result" type="button" data-person-id="${Number(remembered.user_id || 0)}">
+        <span class="avatar">${initials(remembered.display_name || remembered.username)}</span>
+        <span><strong>${escapeHtml(remembered.display_name || "Pulse member")}</strong><small>${escapeHtml(remembered.username ? `@${remembered.username}` : person.matched_email ? "Email match" : "Pulse member")}</small></span>
         <span aria-hidden="true">+</span>
       </button>
     `;
   }
 
-  async function openDm(target) {
-    if (!target) return setStatus("Choose someone to message.", "error");
-    const data = await api("/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: target }) }, "create_direct");
-    state.active = rememberConversation(data.conversation);
-    state.initialThreadLoaded = false;
-    closeModals();
-    await loadConversations({ selectFirst: false });
-    await loadMessages(state.active.conversation_id);
+  function rememberPerson(person) {
+    const userId = Number(person?.user_id || 0);
+    if (!userId) return person || {};
+    const remembered = { ...(state.peopleCache.get(userId) || {}), ...person, user_id: userId };
+    state.peopleCache.set(userId, remembered);
+    return remembered;
   }
 
-  function addGroupMember(raw) {
-    let person = {};
-    try { person = JSON.parse(raw || "{}"); } catch (_) {}
+  async function openDm(target) {
+    if (!target) {
+      setStatus("Choose someone to message.", "error");
+      return false;
+    }
+    const data = await api("/direct/open", { method: "POST", body: JSON.stringify({ target_user_id: target }) }, "create_direct");
+    state.active = rememberConversation(data.conversation);
+    if (!state.active?.conversation_id) throw new Error("The chat opened without a conversation ID. Please retry.");
+    state.initialThreadLoaded = false;
+    closeModals();
+    resetCreationModal("new-chat");
+    await loadConversations({ selectFirst: false });
+    await loadMessages(state.active.conversation_id);
+    el("[data-message-input]")?.focus();
+  }
+
+  function addGroupMember(selectedUserId) {
+    const person = state.peopleCache.get(Number(selectedUserId)) || {};
     const userId = Number(person.user_id || 0);
-    if (!userId || state.groupMembers.some((item) => Number(item.user_id) === userId)) return;
+    if (!userId) return setStatus("That member could not be selected. Search again and retry.", "error");
+    if (state.groupMembers.some((item) => Number(item.user_id) === userId)) return setStatus("That person is already selected.");
     state.groupMembers = [...state.groupMembers, person];
     renderSelectedPeople();
+    setStatus(`${person.display_name || "Member"} added to the group.`);
   }
 
   function removeGroupMember(userId) {
@@ -433,30 +531,48 @@
   async function createGroup() {
     const title = String(el("[data-group-title]")?.value || "").trim();
     const memberIds = state.groupMembers.map((item) => Number(item.user_id || 0)).filter(Boolean);
-    if (!title) return setStatus("Name the group before creating it.", "error");
-    if (!memberIds.length) return setStatus("Add at least one person to create a group.", "error");
+    if (!title) {
+      setStatus("Name the group before creating it.", "error");
+      el("[data-group-title]")?.focus();
+      return false;
+    }
+    if (!memberIds.length) {
+      setStatus("Add at least one person to create a group.", "error");
+      el("[data-group-person-search]")?.focus();
+      return false;
+    }
     const data = await api("/groups", { method: "POST", body: JSON.stringify({ title, member_ids: memberIds }) }, "create_group");
     state.active = rememberConversation(data.conversation);
+    if (!state.active?.conversation_id) throw new Error("The group was created without a conversation ID. Please retry.");
     state.initialThreadLoaded = false;
     state.groupMembers = [];
     renderSelectedPeople();
     closeModals();
+    resetCreationModal("new-group");
     await loadConversations({ selectFirst: false });
     await loadMessages(state.active.conversation_id);
+    el("[data-message-input]")?.focus();
   }
 
   async function createRoom() {
     const title = String(el("[data-room-title]")?.value || "").trim();
     const privacy = String(el("[data-room-privacy]")?.value || "public");
     const description = String(el("[data-room-description]")?.value || "").trim();
-    if (!title) return setStatus("Name the room before creating it.", "error");
+    if (!title) {
+      setStatus("Name the room before creating it.", "error");
+      el("[data-room-title]")?.focus();
+      return false;
+    }
     const data = await api("/rooms", { method: "POST", body: JSON.stringify({ title, privacy, description }) }, "create_room");
     state.active = rememberConversation(data.conversation);
+    if (!state.active?.conversation_id) throw new Error("The room was created without a conversation ID. Please retry.");
     state.initialThreadLoaded = false;
     closeModals();
+    resetCreationModal("new-room");
     await loadConversations({ selectFirst: false });
     await loadRooms();
     await loadMessages(state.active.conversation_id);
+    el("[data-message-input]")?.focus();
   }
 
   async function openRoom(roomId) {

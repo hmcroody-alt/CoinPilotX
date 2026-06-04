@@ -276,6 +276,15 @@ input, select {
   font-size: 13px;
   padding: 0 14px 10px;
 }
+.modal-status {
+  min-height: 22px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.composer-status[data-kind="error"],
+.modal-status[data-kind="error"] {
+  color: #b42318;
+}
 .empty-state {
   border: 1px dashed var(--line);
   border-radius: 8px;
@@ -334,6 +343,13 @@ input, select {
   gap: 10px;
   width: 100%;
   text-align: left;
+}
+.person-result:disabled,
+.room-row:disabled,
+[data-create-group]:disabled,
+[data-create-room]:disabled {
+  cursor: wait;
+  opacity: .62;
 }
 .person-result span, .selected-person span {
   min-width: 0;
