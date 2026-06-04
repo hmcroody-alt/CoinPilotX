@@ -82,10 +82,10 @@ def main() -> None:
     js = (ROOT / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
     html = (ROOT / "templates/pulse_messages_v2.html").read_text(encoding="utf-8")
 
-    for token in ["@media (min-width: 941px)", "clamp(280px, 19vw, 340px)", "clamp(280px, 17vw, 320px)", "minmax(0, 1fr)", ".comm-actions"]:
+    for token in ["@media (min-width: 941px)", "clamp(320px, 24vw, 360px)", "minmax(0, 1fr)", ".comm-actions"]:
         expect(token in css, f"desktop CSS includes {token}")
     expect("@media (max-width: 720px)" in css and ".mobile-only { display: inline-grid; }" in css, "mobile rules remain present")
-    expect("comm-details" in html and "data-toggle-details" in html and "details-collapsed" in css, "desktop details rail is present and collapsible")
+    expect("comm-details" not in html and "data-toggle-details" not in html, "desktop uses the requested two-column layout")
     expect("Pulse Intelligence" not in html and "Coming soon" not in html and "Coming Soon" not in html, "placeholder panels are not rendered")
     expect("data-open-new-chat" in html and "data-open-new-group" in html and "data-open-new-room" in html, "chat and room creation actions are present")
     expect("INITIAL_MESSAGE_LIMIT = 40" in js, "initial message limit is 40")

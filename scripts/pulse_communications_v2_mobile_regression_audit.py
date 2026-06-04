@@ -42,15 +42,14 @@ def main() -> None:
     js = (ROOT / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
     html = (ROOT / "templates/pulse_messages_v2.html").read_text(encoding="utf-8")
 
-    mobile_block_start = css.index("@media (max-width: 720px)")
+    mobile_block_start = css.index("@media (max-width: 768px)")
     mobile_block = css[mobile_block_start:]
     for token in [
-        ".comm-shell {\n    grid-template-columns: 1fr;",
-        "max-height: 40dvh;",
-        ".comm-thread {\n    min-height: 60dvh;",
-        ".mobile-only { display: inline-grid; }",
-        ".message { max-width: 94%; }",
-        ".comm-toolbar, .thread-head { min-height: 56px; }",
+        'data-mobile-mode="list"',
+        'data-mobile-mode="thread"',
+        "height: 100dvh;",
+        "position: sticky;",
+        ".message-menu-trigger",
         ".comm-modal-panel",
     ]:
         expect(token in mobile_block, f"mobile CSS keeps {token}")

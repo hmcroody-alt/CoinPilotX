@@ -22,6 +22,8 @@
     typingSentAt: 0,
     detailsCollapsed: false,
     actionPending: false,
+    mobileMode: "list",
+    conversationSearch: "",
   };
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -29,6 +31,17 @@
   const list = el("[data-conversations]");
   const messages = el("[data-messages]");
   const status = el("[data-status]");
+  const mobileQuery = window.matchMedia("(max-width: 768px)");
+
+  function isMobile() {
+    return mobileQuery.matches;
+  }
+
+  function setMobileMode(mode) {
+    state.mobileMode = mode;
+    root?.setAttribute("data-mobile-mode", mode);
+    document.body.dataset.mobileChatMode = mode;
+  }
 
   function setStatus(text, kind = "info") {
     if (status) {
@@ -80,11 +93,15 @@
 
   function renderConversations() {
     if (!list) return;
-    if (!state.conversations.length) {
+    const filtered = state.conversations.filter((item) => {
+      const query = state.conversationSearch.toLowerCase();
+      return !query || `${item.title || ""} ${item.conversation_type || ""}`.toLowerCase().includes(query);
+    });
+    if (!filtered.length) {
       list.innerHTML = `<div class="empty-state">No conversations yet. Start a DM, create a group, or open a room.</div>`;
       return;
     }
-    list.innerHTML = state.conversations.map((item) => `
+    list.innerHTML = filtered.map((item) => `
       <button class="conversation ${state.active && Number(state.active.conversation_id) === Number(item.conversation_id) ? "is-active" : ""}" type="button" data-conversation-id="${item.conversation_id}">
         <span class="avatar">${initials(item.title)}</span>
         <span>
@@ -166,6 +183,7 @@
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const attachments = (item.attachments || []).map(attachmentHtml).join("");
     const reactions = ["heart", "fire", "check"].map((reaction) => `<button type="button" data-react="${reaction}" data-message-id="${item.id}">${reaction}</button>`).join("");
+    const reactionSummary = (item.reactions || []).map((reaction) => `<span>${escapeHtml(reaction.reaction_type)} ${Number(reaction.count || 0)}</span>`).join("");
     return `
       <article class="message ${mine ? "is-mine" : ""}" data-message-id="${item.id}">
         <strong>${escapeHtml(item.sender?.display_name || "Pulse member")}</strong>
@@ -173,7 +191,9 @@
         ${item.reply_to_message_id ? `<small>Reply to #${Number(item.reply_to_message_id)}</small>` : ""}
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
-        <div class="reaction-row">${reactions}</div>
+        ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
+        <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
+        <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}</div>
       </article>
     `;
   }
@@ -198,7 +218,7 @@
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Open attachment</a>`;
   }
 
-  async function loadConversations({ selectFirst = true } = {}) {
+  async function loadConversations({ selectFirst = !isMobile() } = {}) {
     try {
       const query = state.filter === "all" ? "" : `?type=${encodeURIComponent(state.filter)}`;
       const data = await api(`/conversations${query}`, {}, "conversations_list");
@@ -210,7 +230,7 @@
       }
       renderConversations();
       setStatus(state.conversations.length ? "" : "No v2 conversations yet.");
-      if (state.active && !state.initialThreadLoaded) {
+      if (state.active && !state.initialThreadLoaded && !isMobile()) {
         state.initialThreadLoaded = true;
         window.requestAnimationFrame(() => loadMessages(state.active.conversation_id).catch((err) => setStatus(err.message, "error")));
       }
@@ -298,6 +318,8 @@
           renderMessages();
           renderMembers();
           await loadMessages(id);
+          setMobileMode("thread");
+          el("[data-message-input]")?.focus();
           return;
         }
         const filter = target.closest("[data-filter]");
@@ -316,7 +338,19 @@
         if (target.closest("[data-open-new-room]")) return openModal("new-room");
         if (target.closest("[data-close-modal]")) return closeModals();
         if (target.closest("[data-toggle-details]")) return toggleDetails();
-        if (target.closest("[data-mobile-list]")) return list?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (target.closest("[data-mobile-list]")) {
+          setMobileMode("list");
+          return;
+        }
+        const messageActions = target.closest("[data-message-actions]");
+        if (messageActions) {
+          const menu = el(`[data-reaction-menu="${messageActions.dataset.messageActions}"]`);
+          document.querySelectorAll("[data-reaction-menu]").forEach((item) => {
+            if (item !== menu) item.hidden = true;
+          });
+          if (menu) menu.hidden = !menu.hidden;
+          return;
+        }
         const person = target.closest("[data-person-id]");
         if (person?.closest("[data-person-results]")) return await runAction(person, "Opening chat...", () => openDm(Number(person.dataset.personId || 0)));
         if (person?.closest("[data-group-person-results]")) return addGroupMember(Number(person.dataset.personId || 0));
@@ -343,6 +377,10 @@
     el("[data-message-input]")?.addEventListener("input", debounceTyping);
     el("[data-person-search]")?.addEventListener("input", () => debouncePeopleSearch("direct"));
     el("[data-group-person-search]")?.addEventListener("input", () => debouncePeopleSearch("group"));
+    el("[data-conversation-search]")?.addEventListener("input", (event) => {
+      state.conversationSearch = event.target.value || "";
+      renderConversations();
+    });
     document.addEventListener("keydown", async (event) => {
       if (event.key === "Escape") return closeModals();
       if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
@@ -391,6 +429,7 @@
     }
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
+    if (isMobile()) setMobileMode("create");
     window.setTimeout(() => modal.querySelector("input")?.focus(), 30);
   }
 
@@ -399,6 +438,7 @@
       modal.hidden = true;
       modal.setAttribute("aria-hidden", "true");
     });
+    if (isMobile()) setMobileMode(state.active ? "thread" : "list");
   }
 
   function resetCreationModal(name) {
@@ -502,6 +542,7 @@
     resetCreationModal("new-chat");
     await loadConversations({ selectFirst: false });
     await loadMessages(state.active.conversation_id);
+    setMobileMode("thread");
     el("[data-message-input]")?.focus();
   }
 
@@ -555,6 +596,7 @@
     resetCreationModal("new-group");
     await loadConversations({ selectFirst: false });
     await loadMessages(state.active.conversation_id);
+    setMobileMode("thread");
     el("[data-message-input]")?.focus();
   }
 
@@ -662,6 +704,8 @@
   }
 
   bind();
+  setMobileMode(isMobile() ? "list" : "desktop");
+  mobileQuery.addEventListener?.("change", () => setMobileMode(isMobile() ? (state.active ? "thread" : "list") : "desktop"));
   renderMessages();
   renderMembers();
   renderRooms();

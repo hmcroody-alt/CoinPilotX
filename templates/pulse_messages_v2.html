@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Pulse Messages v2 | CoinPilotXAI</title>
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=comm-v2-postgres-20260604">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=comm-v2-mobile-focus-20260604">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
   <main class="comm-shell" data-current-user-id="{{ current_user.user_id }}">
@@ -14,10 +14,14 @@
         <a class="icon-btn" href="/pulse" title="Back to Pulse" aria-label="Back to Pulse">&lt;</a>
         <h1>Messages</h1>
       </header>
+      <label class="comm-search">
+        <span class="sr-only">Search conversations</span>
+        <input data-conversation-search autocomplete="off" placeholder="Search messages">
+      </label>
       <div class="comm-actions" aria-label="Create chats">
         <button class="primary" type="button" data-open-new-chat>New Chat</button>
         <button type="button" data-open-new-group>Create Group</button>
-        <button type="button" data-open-new-room>New Room</button>
+        <button class="desktop-only" type="button" data-open-new-room>New Room</button>
       </div>
       <div class="comm-filter" role="tablist" aria-label="Conversation type">
         <button class="is-active" type="button" data-filter="all">All</button>
@@ -32,12 +36,11 @@
 
     <section class="comm-thread" aria-label="Message thread">
       <header class="thread-head">
-        <button class="icon-btn mobile-only" type="button" data-mobile-list title="Conversations" aria-label="Conversations">=</button>
+        <button class="icon-btn mobile-only" type="button" data-mobile-list title="Back to conversations" aria-label="Back to conversations">&lt;</button>
         <div>
           <h2 data-thread-title>Select a conversation</h2>
           <p data-thread-subtitle>Search for someone or create a group to start chatting.</p>
         </div>
-        <button class="icon-btn desktop-only" type="button" data-toggle-details title="Details" aria-label="Details">i</button>
       </header>
       <div class="messages" data-messages>
         <div class="empty-state">Search for someone or create a group to start chatting.</div>
@@ -50,44 +53,6 @@
       </form>
       <div class="composer-status" data-status role="status" aria-live="polite"></div>
     </section>
-
-    <aside class="comm-details" data-details-panel aria-label="Conversation details">
-      <header class="details-head">
-        <div>
-          <h2>Details</h2>
-          <p data-details-summary>Choose a chat to see members, safety, and rooms.</p>
-        </div>
-        <button class="icon-btn" type="button" data-toggle-details aria-label="Collapse details">×</button>
-      </header>
-      <section class="details-card">
-        <h3>Members</h3>
-        <div class="member-list" data-members>
-          <div class="empty-state">No active conversation selected.</div>
-        </div>
-      </section>
-      <section class="details-card">
-        <h3>Live Signal</h3>
-        <div class="typing-state" data-typing-state>Typing indicators and read receipts appear as people participate.</div>
-      </section>
-      <section class="details-card">
-        <h3>Safety</h3>
-        <div class="detail-actions">
-          <button type="button" data-report-last>Report Last</button>
-          <button type="button" data-block-peer>Block Peer</button>
-          <a class="button" href="/admin/messages-health">Health</a>
-        </div>
-      </section>
-      <section class="details-card">
-        <h3>Public Rooms</h3>
-        <div class="room-list" data-room-list>
-          <div class="empty-state">Public rooms load after Messages starts.</div>
-        </div>
-      </section>
-      <section class="details-card">
-        <h3>Fallback</h3>
-        <a class="button" href="/pulse/messages?legacy=1">Open Legacy Messenger</a>
-      </section>
-    </aside>
 
     <div class="comm-modal" data-modal="new-chat" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
@@ -162,6 +127,6 @@
     </div>
   </main>
   <script src="/static/js/pulse_media_renderer.js?v=comm-v2-mux-20260603"></script>
-  <script src="/static/js/pulse_messages_v2.js?v=comm-v2-postgres-20260604" defer></script>
+  <script src="/static/js/pulse_messages_v2.js?v=comm-v2-mobile-focus-20260604" defer></script>
 </body>
 </html>
