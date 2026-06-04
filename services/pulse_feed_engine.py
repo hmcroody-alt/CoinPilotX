@@ -141,7 +141,7 @@ def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
         if include_private and viewer_id and author_id == viewer_id:
             return True, "owner_private_review"
         return False, f"moderation:{moderation_status}"
-    if visibility == "public":
+    if visibility in {"public", "reel_only"}:
         return True, "public_approved"
     if include_private and viewer_id and author_id == viewer_id:
         return True, "owner_private"
@@ -405,7 +405,9 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
         return {"ok": False, "message": "Post type not supported.", "status": "rejected", "post_type": post_type}
     body = _clean_text(body, 5000)
     title = _clean_text(title, 160)
-    visibility = visibility if visibility in {"public", "followers", "private"} else "public"
+    # Reels keep a compatibility post for the existing social/reaction model, but
+    # reel-only posts must never leak into the regular Pulse feed.
+    visibility = visibility if visibility in {"public", "followers", "private", "reel_only"} else "public"
     tags = [str(t).strip("# ").lower()[:32] for t in (tags or []) if str(t).strip("# ")]
     media_ids = _normalize_media_ids(media_ids)
     if not body and not title and not tags and not media_ids:
@@ -561,6 +563,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
     elif feed == "questions":
         where.append("(p.post_type IN ('poll','question') OR p.tags_json LIKE '%question%' OR p.body LIKE '%?%')")
     elif feed == "reels":
+        where = [clause.replace("COALESCE(p.visibility,'public')='public'", "COALESCE(p.visibility,'public') IN ('public','reel_only')") for clause in where]
         where.append("(p.post_type IN ('video','replay','roast_clip') OR COALESCE(p.media_ids_json,'[]') NOT IN ('[]',''))")
     if topic:
         where.append("(p.tags_json LIKE ? OR p.body LIKE ?)")
