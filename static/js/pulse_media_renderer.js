@@ -11,6 +11,7 @@
   const metadataCache = new Map();
   const processingPolls = new Map();
   let hlsLoaderPromise = null;
+  let activeHlsVideo = null;
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
@@ -105,6 +106,23 @@
   function soundEnabled() {
     try {
       return window.localStorage?.getItem(SOUND_KEY) === "true" || window.localStorage?.getItem(REELS_SOUND_KEY) === "true";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function autoplayAllowed() {
+    try {
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return false;
+      const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (connection?.saveData) return false;
+    } catch (_) {}
+    return true;
+  }
+
+  function desktopPointer() {
+    try {
+      return window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches;
     } catch (_) {
       return false;
     }
@@ -399,6 +417,7 @@
   }
 
   let activeVideo = null;
+  let hoverVideo = null;
   let playbackObserver = null;
 
   function mediaVideoWrap(video) {
@@ -420,8 +439,18 @@
     });
   }
 
+  function destroyHls(video) {
+    if (!video?._pulseHls) return;
+    try {
+      video._pulseHls.destroy();
+    } catch (_) {}
+    video._pulseHls = null;
+    video.dataset.pulseHlsBound = "";
+    if (activeHlsVideo === video) activeHlsVideo = null;
+  }
+
   async function playVisibleVideo(video, preferSound = soundEnabled()) {
-    if (!video) return;
+    if (!video || !autoplayAllowed()) return;
     const wrap = mediaVideoWrap(video);
     pauseOtherVideos(video);
     activeVideo = video;
@@ -469,6 +498,19 @@
     if (!wrap || !video || video.dataset.pulseAutoplayBound === "1") return;
     video.dataset.pulseAutoplayBound = "1";
     ensureSoundButton(wrap);
+    const canHoverPreview = desktopPointer();
+    if (canHoverPreview) {
+      wrap.addEventListener("pointerenter", () => {
+        hoverVideo = video;
+        video.muted = true;
+        playVisibleVideo(video, false);
+      });
+      wrap.addEventListener("pointerleave", () => {
+        if (hoverVideo === video) hoverVideo = null;
+        if (!video.paused) video.pause();
+        video.preload = "metadata";
+      });
+    }
     video.addEventListener("play", () => {
       pauseOtherVideos(video);
       activeVideo = video;
@@ -492,9 +534,10 @@
         });
         if (!best) return;
         const vid = best.target;
+        if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
         const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
-        playVisibleVideo(vid, soundEnabled());
+        playVisibleVideo(vid, false);
         preloadNextVideo(vid);
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
@@ -554,12 +597,7 @@
     video.dataset.pulseHlsBound = "1";
     prepareMobileVideo(video);
     if (nativeHlsSupported(video)) {
-      if (video._pulseHls) {
-        try {
-          video._pulseHls.destroy();
-        } catch (_) {}
-        video._pulseHls = null;
-      }
+      destroyHls(video);
       video.dataset.pulseNativeHls = "1";
       setVideoSource(video, src, "application/vnd.apple.mpegurl");
       return;
@@ -569,6 +607,7 @@
       if (!Hls?.isSupported?.()) {
         throw new Error("HLS is not supported in this browser.");
       }
+      if (activeHlsVideo && activeHlsVideo !== video) destroyHls(activeHlsVideo);
       const source = video.querySelector("source");
       if (source) source.remove();
       const hls = new Hls({
@@ -579,11 +618,11 @@
       hls.loadSource(src);
       hls.attachMedia(video);
       video._pulseHls = hls;
+      activeHlsVideo = video;
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data?.fatal) return;
         reportVideoDiagnostics(wrap, video, "hls_error");
-        hls.destroy();
-        video.dataset.pulseHlsBound = "";
+        destroyHls(video);
         failMedia(wrap, video);
       });
     } catch (error) {
@@ -886,6 +925,19 @@
         }, 2200);
       });
   });
+
+  window.addEventListener("pagehide", () => {
+    document.querySelectorAll("video").forEach(video => destroyHls(video));
+  });
+
+  if ("MutationObserver" in window) {
+    const cleanupObserver = new MutationObserver(() => {
+      if (activeHlsVideo && !document.documentElement.contains(activeHlsVideo)) {
+        destroyHls(activeHlsVideo);
+      }
+    });
+    cleanupObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
 
   document.addEventListener("DOMContentLoaded", () => hydrate(document));
   const PulseVideo = { hydrate, retry, normalizeMedia, renderMedia, renderInto, playVisibleVideo, setSoundEnabled, soundEnabled, nativeHlsSupported };
