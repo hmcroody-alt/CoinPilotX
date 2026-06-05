@@ -885,6 +885,10 @@ def _attachment_payload(row: dict) -> dict:
             playback_url = ""
     cdn_url = row.get("cdn_url") or row.get("valid_url") or row.get("media_url") or row.get("public_url") or row.get("url") or ""
     url = playback_url if (row.get("media_type") or "").lower() == "video" and playback_url else (row.get("url") or cdn_url)
+    try:
+        waveform = json.loads(row.get("waveform_json") or "[]")
+    except Exception:
+        waveform = []
     return {
         "id": int(row.get("id") or row.get("media_upload_id") or 0),
         "attachment_id": int(row.get("id") or 0),
@@ -898,6 +902,9 @@ def _attachment_payload(row: dict) -> dict:
         "mime_type": row.get("mime_type") or "",
         "file_size": int(row.get("file_size") or row.get("file_size_bytes") or 0),
         "file_size_bytes": int(row.get("file_size_bytes") or 0),
+        "duration_seconds": float(row.get("duration_seconds") or row.get("duration") or 0),
+        "waveform": waveform if isinstance(waveform, list) else [],
+        "voice_note": bool(int(row.get("voice_note") or 0)),
         "storage_provider": row.get("storage_provider") or "",
         "storage_key": row.get("storage_key") or row.get("object_key") or "",
         "mux_asset_id": row.get("mux_asset_id") or "",
