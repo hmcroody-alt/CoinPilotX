@@ -24,9 +24,11 @@ def main() -> None:
         "function pulseSoundPreference()",
         "if(saved==='false')return false",
         "let reelsSoundEnabled=pulseSoundPreference()",
+        "function refreshReelsSoundPreference()",
         "localStorage.setItem(PULSE_MEDIA_SOUND_KEY,String(reelsSoundEnabled))",
         "window.PulseMediaRenderer?.setSoundEnabled?.(reelsSoundEnabled)",
-        "playReelVideo(v,reelsSoundEnabled)",
+        "playReelVideo(v,refreshReelsSoundPreference())",
+        "video.addEventListener('volumechange'",
         "showReelSoundPrompt(card,true)",
         "window.PulseMediaRenderer.setVideoMuted(video,muted,'reels-autoplay')",
         "window.PulseMediaRenderer.setVideoMuted(video,true,'reels-autoplay-fallback')",
@@ -36,6 +38,7 @@ def main() -> None:
     expect("setReelsSound(false)" not in play_block, "blocked unmuted Reels autoplay does not persist muted preference")
     expect("video.defaultMuted=false" in play_block and "video.removeAttribute('muted')" in play_block, "Reels playback clears default muted before play")
     expect("video.muted=true" in play_block, "blocked unmuted Reels autoplay has non-shared fallback")
+    expect("playReelVideo(v,reelsSoundEnabled)" not in reels_block, "Reels scroll playback does not reuse stale sound state")
     print("pulse reels sound persistence audit ok")
 
 
