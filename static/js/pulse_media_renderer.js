@@ -105,7 +105,10 @@
 
   function soundEnabled() {
     try {
-      return window.localStorage?.getItem(SOUND_KEY) === "true" || window.localStorage?.getItem(REELS_SOUND_KEY) === "true";
+      const saved = window.localStorage?.getItem(SOUND_KEY);
+      if (saved === "true") return true;
+      if (saved === "false") return false;
+      return window.localStorage?.getItem(REELS_SOUND_KEY) === "true";
     } catch (_) {
       return false;
     }
@@ -134,9 +137,18 @@
       window.localStorage?.setItem(REELS_SOUND_KEY, String(!!enabled));
     } catch (_) {}
     document.querySelectorAll("[data-pulse-media-sound]").forEach(button => {
-      button.hidden = !!enabled;
+      button.hidden = !!enabled && button.dataset.pulseSoundBlocked !== "1";
       button.textContent = enabled ? "Sound on" : "Tap for sound";
     });
+  }
+
+  function setVideoMuted(video, muted, reason = "system") {
+    if (!video) return;
+    video.dataset.pulseSoundChangeReason = reason;
+    video.muted = !!muted;
+    window.setTimeout(() => {
+      if (video.dataset.pulseSoundChangeReason === reason) delete video.dataset.pulseSoundChangeReason;
+    }, 700);
   }
 
   function isPulseStreamUrl(url) {
@@ -404,14 +416,16 @@
     wrap.appendChild(button);
   }
 
-  function showSoundPrompt(wrap, visible = true) {
+  function showSoundPrompt(wrap, visible = true, force = false) {
     const button = wrap?.querySelector?.("[data-pulse-media-sound]");
     if (!button) return;
-    button.hidden = !visible || soundEnabled();
+    button.dataset.pulseSoundBlocked = force ? "1" : "";
+    button.hidden = !visible || (!force && soundEnabled());
+    button.textContent = "Tap for sound";
     if (!button.hidden) {
       clearTimeout(button._pulseSoundTimer);
       button._pulseSoundTimer = setTimeout(() => {
-        if (!soundEnabled()) button.hidden = true;
+        if (!force && !soundEnabled()) button.hidden = true;
       }, 3200);
     }
   }
@@ -457,19 +471,22 @@
     prepareMobileVideo(video);
     video.preload = "auto";
     const shouldTrySound = !!preferSound && soundEnabled();
-    video.muted = !shouldTrySound;
+    video.volume = Number(video.dataset.pulsePreferredVolume || 1);
+    setVideoMuted(video, !shouldTrySound, "autoplay");
     try {
       await video.play();
       wrap?.classList.add("is-playing");
-      if (shouldTrySound) setSoundEnabled(true);
+      if (shouldTrySound) {
+        setSoundEnabled(true);
+        showSoundPrompt(wrap, false);
+      }
       else showSoundPrompt(wrap, true);
     } catch (error) {
       if (shouldTrySound) {
-        video.muted = true;
-        setSoundEnabled(false);
+        setVideoMuted(video, true, "autoplay-fallback");
         try {
           await video.play();
-          showSoundPrompt(wrap, true);
+          showSoundPrompt(wrap, true, true);
           return;
         } catch (_) {}
       }
@@ -502,8 +519,7 @@
     if (canHoverPreview) {
       wrap.addEventListener("pointerenter", () => {
         hoverVideo = video;
-        video.muted = true;
-        playVisibleVideo(video, false);
+        playVisibleVideo(video, soundEnabled());
       });
       wrap.addEventListener("pointerleave", () => {
         if (hoverVideo === video) hoverVideo = null;
@@ -517,6 +533,18 @@
       wrap.classList.add("is-playing");
     });
     video.addEventListener("pause", () => wrap.classList.remove("is-playing"));
+    video.addEventListener("volumechange", () => {
+      const reason = video.dataset.pulseSoundChangeReason || "";
+      if (reason === "autoplay" || reason === "autoplay-fallback" || reason === "hydrate") return;
+      if (video.muted || Number(video.volume || 0) === 0) {
+        setSoundEnabled(false);
+        showSoundPrompt(wrap, true);
+      } else {
+        video.dataset.pulsePreferredVolume = String(video.volume || 1);
+        setSoundEnabled(true);
+        showSoundPrompt(wrap, false);
+      }
+    });
     if (!("IntersectionObserver" in window)) return;
     if (!playbackObserver) {
       playbackObserver = new IntersectionObserver(entries => {
@@ -537,7 +565,7 @@
         if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
         const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
-        playVisibleVideo(vid, false);
+        playVisibleVideo(vid, soundEnabled());
         preloadNextVideo(vid);
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }

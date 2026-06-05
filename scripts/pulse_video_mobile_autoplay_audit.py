@@ -10,7 +10,7 @@ renderer = (root / "static/js/pulse_media_renderer.js").read_text(encoding="utf-
 for token in [
     "playsinline webkit-playsinline",
     "video.preload = \"auto\"",
-    "video.muted = !shouldTrySound",
+    "setVideoMuted(video, !shouldTrySound, \"autoplay\")",
     "autoplayAllowed()",
     "connection?.saveData",
     "prefers-reduced-motion: reduce",

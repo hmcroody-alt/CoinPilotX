@@ -29,7 +29,7 @@ def main() -> None:
         "https://stream.mux.com/${id}.m3u8",
         "data-media-source-type",
         "Pulse video request HEAD",
-        "video.muted = !shouldTrySound",
+        "setVideoMuted(video, !shouldTrySound, \"autoplay\")",
         "setSoundEnabled(true)",
         "PulseMediaRenderer.renderMedia",
         "window.PulseVideo = PulseVideo",

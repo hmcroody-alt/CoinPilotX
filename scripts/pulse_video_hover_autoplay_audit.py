@@ -11,8 +11,8 @@ for token in [
     "pointerenter",
     "pointerleave",
     "hoverVideo = video",
-    "playVisibleVideo(video, false)",
-    "video.muted = true",
+    "playVisibleVideo(video, soundEnabled())",
+    "setVideoMuted(video, !shouldTrySound, \"autoplay\")",
     "pauseOtherVideos(video)",
 ]:
     assert token in renderer, f"missing hover autoplay token: {token}"
