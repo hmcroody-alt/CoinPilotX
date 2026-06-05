@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CoinPilotXAI Pulse Homepage Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020713;
+      --panel: rgba(9, 22, 39, .78);
+      --line: rgba(114, 235, 255, .22);
+      --line-strong: rgba(114, 235, 255, .45);
+      --text: #f5fbff;
+      --muted: #a7b9c7;
+      --green: #33ec96;
+      --cyan: #72ebff;
+      --gold: #ffd86b;
+      --rose: #ff4d9f;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 14% 18%, rgba(51, 236, 150, .22), transparent 26rem),
+        radial-gradient(circle at 88% 8%, rgba(114, 235, 255, .18), transparent 25rem),
+        radial-gradient(circle at 64% 100%, rgba(255, 77, 159, .12), transparent 28rem),
+        linear-gradient(145deg, #020713, #071325 58%, #020713);
+      color: var(--text);
+      overflow: hidden;
+    }
+    body:before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(114, 235, 255, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(114, 235, 255, .035) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: radial-gradient(circle at 50% 38%, black, transparent 76%);
+      pointer-events: none;
+    }
+    .canvas {
+      width: min(1480px, 100vw);
+      height: min(960px, 100vh);
+      padding: 34px 52px 42px;
+      position: relative;
+      isolation: isolate;
+    }
+    .orb {
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(34px);
+      opacity: .55;
+      z-index: -1;
+    }
+    .orb.one { width: 260px; height: 260px; left: 84px; top: 140px; background: rgba(51, 236, 150, .24); }
+    .orb.two { width: 320px; height: 320px; right: 120px; bottom: 90px; background: rgba(114, 235, 255, .18); }
+    header {
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 4px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+    .logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 0 30px rgba(51, 236, 150, .28);
+      font-weight: 1000;
+    }
+    .brand small {
+      display: block;
+      color: var(--muted);
+      font-weight: 800;
+      margin-top: 2px;
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: #dcefff;
+      font-weight: 850;
+    }
+    .nav-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .btn {
+      min-height: 46px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .055);
+      color: var(--text);
+      font-weight: 950;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      box-shadow: 0 14px 38px rgba(0, 0, 0, .2);
+    }
+    .btn.primary {
+      border: 0;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 0 36px rgba(51, 236, 150, .28);
+    }
+    .btn.gold {
+      border: 0;
+      color: #1d1405;
+      background: linear-gradient(135deg, var(--gold), #b9ff66);
+    }
+    .hero {
+      height: calc(100% - 72px);
+      display: grid;
+      grid-template-columns: minmax(0, .93fr) minmax(0, 1.07fr);
+      gap: 44px;
+      align-items: center;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 12px;
+      border: 1px solid rgba(51, 236, 150, .32);
+      border-radius: 999px;
+      background: rgba(51, 236, 150, .09);
+      color: #c4ffdf;
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .eyebrow:before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 18px rgba(51, 236, 150, .85);
+    }
+    h1 {
+      margin: 20px 0 18px;
+      font-size: 82px;
+      line-height: .9;
+      letter-spacing: 0;
+      max-width: 780px;
+    }
+    .lead {
+      max-width: 650px;
+      margin: 0 0 28px;
+      color: #c9d8e5;
+      font-size: 22px;
+      line-height: 1.48;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 26px;
+    }
+    .proof {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+    .chip {
+      padding: 8px 11px;
+      border: 1px solid rgba(114, 235, 255, .18);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .055);
+      color: #defaff;
+      font-size: 13px;
+      font-weight: 850;
+    }
+    .hero-preview {
+      position: relative;
+      min-height: 650px;
+    }
+    .app-frame {
+      position: absolute;
+      inset: 0 38px 0 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 34px;
+      background:
+        radial-gradient(circle at 48% 24%, rgba(51, 236, 150, .18), transparent 18rem),
+        linear-gradient(145deg, rgba(14, 31, 54, .82), rgba(4, 12, 24, .92));
+      box-shadow: 0 34px 110px rgba(0, 0, 0, .42), inset 0 0 0 1px rgba(255,255,255,.025);
+      padding: 22px;
+      overflow: hidden;
+    }
+    .app-top {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border: 1px solid rgba(114, 235, 255, .16);
+      border-radius: 20px;
+      background: rgba(2, 8, 19, .48);
+      margin-bottom: 14px;
+    }
+    .app-title { font-weight: 950; }
+    .app-grid {
+      display: grid;
+      grid-template-columns: 1.18fr .82fr;
+      grid-template-rows: 190px 150px 150px;
+      gap: 14px;
+      height: 520px;
+    }
+    .tile {
+      border: 1px solid rgba(114, 235, 255, .17);
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.032)),
+        rgba(2, 8, 19, .48);
+      padding: 18px;
+      box-shadow: 0 18px 58px rgba(0, 0, 0, .22);
+      overflow: hidden;
+    }
+    .tile h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.42;
+      font-weight: 650;
+    }
+    .feed { grid-row: span 2; }
+    .feed-card {
+      margin-top: 16px;
+      height: 186px;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 28% 20%, rgba(255, 216, 107, .18), transparent 10rem),
+        linear-gradient(135deg, rgba(51, 236, 150, .18), rgba(114, 235, 255, .08));
+      border: 1px solid rgba(255,255,255,.1);
+      padding: 16px;
+      display: grid;
+      align-content: end;
+    }
+    .status-row {
+      display: flex;
+      gap: 9px;
+      margin-top: 14px;
+    }
+    .story {
+      width: 62px;
+      height: 86px;
+      border-radius: 18px;
+      border: 1px solid rgba(114,235,255,.18);
+      background: linear-gradient(160deg, rgba(51,236,150,.28), rgba(4,12,24,.9));
+    }
+    .video {
+      background:
+        radial-gradient(circle at center, rgba(255, 77, 159, .26), transparent 9rem),
+        linear-gradient(145deg, rgba(5, 11, 20, .92), rgba(18, 32, 56, .9));
+      display: grid;
+      place-items: center;
+    }
+    .play {
+      width: 70px;
+      height: 70px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      font-weight: 1000;
+      font-size: 28px;
+      box-shadow: 0 0 40px rgba(51, 236, 150, .32);
+    }
+    .messages {
+      display: grid;
+      gap: 10px;
+    }
+    .bubble {
+      border-radius: 999px;
+      padding: 11px 13px;
+      background: rgba(255,255,255,.07);
+      color: #dffcff;
+      font-weight: 800;
+    }
+    .bubble.mine {
+      justify-self: end;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+    }
+    .premium {
+      grid-column: span 2;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background:
+        radial-gradient(circle at 88% 22%, rgba(255, 216, 107, .24), transparent 12rem),
+        linear-gradient(145deg, rgba(255, 216, 107, .09), rgba(2, 8, 19, .52));
+    }
+    .phone {
+      position: absolute;
+      right: 0;
+      bottom: -18px;
+      width: 246px;
+      height: 500px;
+      border-radius: 42px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: #020713;
+      box-shadow: 0 32px 90px rgba(0,0,0,.55);
+      padding: 16px;
+    }
+    .phone-screen {
+      height: 100%;
+      border-radius: 32px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 8%, rgba(51,236,150,.22), transparent 12rem),
+        linear-gradient(180deg, #071325, #020713);
+      padding: 18px 14px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 12px;
+    }
+    .phone h4 {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1;
+    }
+    .phone-card {
+      border: 1px solid rgba(114,235,255,.16);
+      border-radius: 20px;
+      background: rgba(255,255,255,.06);
+      padding: 12px;
+      display: grid;
+      align-content: end;
+      color: #dffcff;
+      font-weight: 900;
+    }
+    .phone-nav {
+      display: flex;
+      justify-content: space-around;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 850;
+    }
+    .phone .btn {
+      min-height: 42px;
+      width: 100%;
+      border-radius: 18px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <main class="canvas" aria-label="CoinPilotXAI Pulse homepage mockup">
+    <span class="orb one"></span>
+    <span class="orb two"></span>
+    <header>
+      <div class="brand">
+        <div class="logo">CP</div>
+        <div>CoinPilotXAI<small>Pulse platform</small></div>
+      </div>
+      <nav>
+        <span>Home</span>
+        <span>Pulse</span>
+        <span>Premium</span>
+        <span>Roast Battle</span>
+        <span>Safety</span>
+      </nav>
+      <div class="nav-actions">
+        <div class="btn">Sign In</div>
+        <div class="btn primary">Join Pulse</div>
+      </div>
+    </header>
+    <section class="hero">
+      <article>
+        <div class="eyebrow">Pulse is the main destination</div>
+        <h1>Your creator, video, live, messaging, and AI intelligence home.</h1>
+        <p class="lead">Build, watch, chat, go live, protect your community, and grow with Premium Intelligence in one Pulse platform.</p>
+        <div class="hero-actions">
+          <div class="btn primary">Sign In to Pulse</div>
+          <div class="btn gold">Join Pulse</div>
+          <div class="btn">Explore Premium</div>
+        </div>
+        <div class="proof">
+          <span class="chip">Video and Reels</span>
+          <span class="chip">Live and replays</span>
+          <span class="chip">Messages</span>
+          <span class="chip">Scam Shield</span>
+          <span class="chip">Creator Studio</span>
+        </div>
+      </article>
+      <aside class="hero-preview">
+        <div class="app-frame">
+          <div class="app-top"><span class="app-title">Pulse Command Home</span><span class="chip">Live signals</span></div>
+          <div class="app-grid">
+            <div class="tile feed">
+              <h3>Creator Feed</h3>
+              <p>Posts, statuses, lessons, and creator updates.</p>
+              <div class="status-row">
+                <span class="story"></span><span class="story"></span><span class="story"></span><span class="story"></span>
+              </div>
+              <div class="feed-card"><strong>Realtime Pulse Discovery</strong><p>Creators, videos, live signals, and safe community moments.</p></div>
+            </div>
+            <div class="tile video"><div class="play">▶</div></div>
+            <div class="tile messages">
+              <h3>Messages</h3>
+              <span class="bubble">Voice note ready</span>
+              <span class="bubble mine">Send</span>
+            </div>
+            <div class="tile premium">
+              <div><h3>Premium Intelligence</h3><p>Portfolio, alerts, Scam Shield Pro, growth tools.</p></div>
+              <span class="chip">Unlocked</span>
+            </div>
+          </div>
+        </div>
+        <div class="phone">
+          <div class="phone-screen">
+            <div><span class="chip">Live</span><h4>Pulse Home</h4></div>
+            <div class="phone-card">Watch • Chat • Create • Go Live</div>
+            <div>
+              <div class="btn primary">Sign In to Pulse</div>
+              <div class="phone-nav"><span>Home</span><span>Video</span><span>Create</span><span>Chats</span></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

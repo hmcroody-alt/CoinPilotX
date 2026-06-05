@@ -191,8 +191,8 @@
 
     .hero-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.04fr) minmax(330px, 0.96fr);
-      gap: 28px;
+      grid-template-columns: minmax(0, 0.95fr) minmax(390px, 1.05fr);
+      gap: 34px;
       align-items: center;
     }
 
@@ -277,13 +277,43 @@
       z-index: -1;
     }
 
-    .app-preview {
-      min-height: 100%;
-      display: grid;
-      gap: 14px;
+    .hero-preview {
+      position: relative;
+      min-height: 610px;
+      overflow: hidden;
+      border-radius: 34px;
+      min-width: 0;
     }
 
-    .preview-header, .preview-card, .preview-row {
+    .app-preview {
+      position: relative;
+      min-height: 560px;
+      width: 100%;
+      min-width: 0;
+      display: grid;
+      gap: 14px;
+      padding: clamp(16px, 3vw, 24px);
+      border: 1px solid var(--line-strong);
+      border-radius: 30px;
+      background:
+        radial-gradient(circle at 26% 12%, rgba(54, 229, 143, 0.18), transparent 18rem),
+        radial-gradient(circle at 94% 16%, rgba(110, 223, 246, 0.14), transparent 18rem),
+        linear-gradient(145deg, rgba(14, 30, 52, 0.94), rgba(5, 12, 24, 0.96));
+      box-shadow: var(--shadow), 0 0 80px rgba(110, 223, 246, 0.12);
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .app-preview:before {
+      content: "";
+      position: absolute;
+      inset: -20%;
+      z-index: -1;
+      background: conic-gradient(from 130deg, transparent, rgba(110, 223, 246, 0.18), transparent 34%, rgba(54, 229, 143, 0.16), transparent 70%);
+      animation: stageSweep 18s linear infinite;
+    }
+
+    .preview-header, .preview-card, .preview-row, .phone-card {
       border: 1px solid rgba(110, 223, 246, 0.18);
       background: rgba(2, 8, 23, 0.56);
       border-radius: 18px;
@@ -306,10 +336,134 @@
       box-shadow: 0 0 18px rgba(54, 229, 143, 0.74);
     }
 
-    .preview-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .preview-stack { display: grid; grid-template-columns: 1.04fr 0.96fr; gap: 12px; }
     .preview-card strong { display: block; color: #ffffff; margin-bottom: 6px; }
     .preview-card span { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
-    .preview-card.featured { grid-column: 1 / -1; min-height: 160px; display: grid; align-content: end; background: radial-gradient(circle at 18% 10%, rgba(255, 76, 157, 0.22), transparent 16rem), rgba(2, 8, 23, 0.56); }
+    .preview-card.featured {
+      grid-row: span 2;
+      min-height: 310px;
+      display: grid;
+      align-content: space-between;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(255, 76, 157, 0.2), transparent 14rem),
+        radial-gradient(circle at 80% 70%, rgba(54, 229, 143, 0.14), transparent 12rem),
+        rgba(2, 8, 23, 0.56);
+    }
+
+    .status-strip {
+      display: flex;
+      gap: 8px;
+      margin: 10px 0 16px;
+    }
+
+    .status-dot {
+      width: 46px;
+      aspect-ratio: 1;
+      border-radius: 999px;
+      border: 2px solid rgba(54, 229, 143, 0.5);
+      background: linear-gradient(135deg, rgba(54, 229, 143, 0.9), rgba(110, 223, 246, 0.9));
+      box-shadow: 0 0 22px rgba(54, 229, 143, 0.18);
+    }
+
+    .feed-preview-card {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 18px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.055);
+    }
+
+    .video-tile {
+      min-height: 170px;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 50% 44%, rgba(54, 229, 143, 0.24), transparent 8rem),
+        linear-gradient(145deg, rgba(5, 10, 20, 0.92), rgba(14, 30, 52, 0.9));
+    }
+
+    .play-mark {
+      width: 66px;
+      height: 66px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      padding-left: 4px;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 0 42px rgba(54, 229, 143, 0.34);
+      font-size: 1.4rem;
+      font-weight: 950;
+    }
+
+    .message-bubble {
+      display: block;
+      width: fit-content;
+      max-width: 100%;
+      margin-top: 8px;
+      border: 1px solid rgba(110, 223, 246, 0.16);
+      border-radius: 999px;
+      padding: 8px 11px;
+      color: #dffcff;
+      background: rgba(255, 255, 255, 0.055);
+      font-size: 0.88rem;
+      font-weight: 850;
+    }
+
+    .message-bubble.mine {
+      margin-left: auto;
+      color: #06101b;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+    }
+
+    .phone-preview {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      width: min(230px, 42vw);
+      max-width: calc(100% - 24px);
+      border: 1px solid rgba(110, 223, 246, 0.28);
+      border-radius: 34px;
+      padding: 10px;
+      background: rgba(4, 9, 18, 0.92);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.44), 0 0 44px rgba(54, 229, 143, 0.16);
+    }
+
+    .phone-screen {
+      min-height: 420px;
+      border-radius: 26px;
+      padding: 14px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 12px;
+      background:
+        radial-gradient(circle at 50% 8%, rgba(54, 229, 143, 0.18), transparent 10rem),
+        linear-gradient(180deg, #071424, #020817);
+      overflow: hidden;
+    }
+
+    .phone-screen h3 {
+      margin: 7px 0 0;
+      font-size: 1.45rem;
+      line-height: 1;
+    }
+
+    .phone-card {
+      display: grid;
+      align-content: end;
+      color: #dffcff;
+      font-weight: 950;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .phone-nav {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 850;
+      margin-top: 10px;
+    }
 
     .section {
       padding: 58px 0;
@@ -436,6 +590,8 @@
       .hero { min-height: auto; padding-top: 42px; }
       .hero-grid, .split { grid-template-columns: 1fr; }
       .pulse-stage { min-height: 420px; }
+      .hero-preview { min-height: auto; }
+      .phone-preview { position: relative; right: auto; bottom: auto; width: min(100%, 420px); max-width: 100%; margin: 14px auto 0; }
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
@@ -445,6 +601,9 @@
       .nav-links a { white-space: nowrap; }
       .nav-actions .button, .hero-actions .button, .section-actions .button { width: 100%; }
       .grid, .preview-stack { grid-template-columns: 1fr; }
+      .app-preview { min-height: auto; }
+      .preview-card.featured { grid-row: auto; min-height: 260px; }
+      .phone-screen { min-height: 360px; }
       .section-head { display: block; }
       .card { min-height: 184px; }
       .scroll-top { bottom: calc(20px + env(safe-area-inset-bottom)); }
@@ -492,13 +651,13 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
         <div>
-          <span class="eyebrow">Pulse is the main app</span>
-          <h1 id="hero-title">CoinPilotXAI Pulse</h1>
+          <span class="eyebrow">Pulse is the main destination</span>
+          <h1 id="hero-title">Your creator, video, live, messaging, and AI intelligence home.</h1>
           <p class="hero-copy">
-            Creator, video, live, messaging, roast battle, premium intelligence, and safety tools in one platform.
+            Build, watch, chat, go live, protect your community, and grow with Premium Intelligence in one CoinPilotXAI Pulse platform.
           </p>
           <p class="hero-copy">
-            Open Pulse to post, watch, chat, learn, protect your community, build as a creator, and upgrade into deeper intelligence when you are ready.
+            Creator, video, live, messaging, roast battle, premium intelligence, and safety tools in one platform.
           </p>
           <div class="hero-actions">
             {% if is_authenticated %}
@@ -512,41 +671,75 @@
             {% endif %}
           </div>
           <div class="trust-tags" aria-label="Pulse highlights">
-            <span class="tag">Creator-first</span>
             <span class="tag">Video and Reels</span>
             <span class="tag">Live and replays</span>
             <span class="tag">Messaging</span>
-            <span class="tag">Safety built in</span>
+            <span class="tag">Scam Shield</span>
+            <span class="tag">Creator Studio</span>
           </div>
         </div>
 
-        <aside class="pulse-stage" aria-label="Pulse product preview">
+        <aside class="hero-preview" aria-label="Pulse product preview">
           <div class="app-preview">
             <div class="preview-header">
-              <strong><span class="live-dot" aria-hidden="true"></span> Pulse Live</strong>
-              <span class="tag">Community signals</span>
+              <strong><span class="live-dot" aria-hidden="true"></span> Pulse Command Home</strong>
+              <span class="tag">Live signals</span>
             </div>
             <div class="preview-stack">
               <article class="preview-card featured">
-                <strong>Creator feed</strong>
-                <span>Posts, videos, statuses, lessons, and safe community moments in one social home.</span>
+                <div>
+                  <strong>Creator Feed</strong>
+                  <span>Posts, statuses, lessons, and creator updates.</span>
+                </div>
+                <div class="status-strip" aria-hidden="true">
+                  <span class="status-dot"></span>
+                  <span class="status-dot"></span>
+                  <span class="status-dot"></span>
+                  <span class="status-dot"></span>
+                </div>
+                <div class="feed-preview-card">
+                  <strong>Realtime Pulse Discovery</strong>
+                  <span>Creators, videos, live signals, and safe community moments.</span>
+                </div>
+              </article>
+              <article class="preview-card video-tile" aria-label="Pulse video preview">
+                <span class="play-mark">▶</span>
               </article>
               <article class="preview-card">
                 <strong>Messages</strong>
-                <span>Direct chats, groups, voice notes, and media sharing under one Pulse communications system.</span>
-              </article>
-              <article class="preview-card">
-                <strong>Roast Battle</strong>
-                <span>Moderated live entertainment with battles, voting, rankings, clips, and replays.</span>
+                <span class="message-bubble">Voice note ready</span>
+                <span class="message-bubble mine">Send</span>
               </article>
               <article class="preview-card">
                 <strong>Premium Intelligence</strong>
-                <span>Portfolio, watchlist, alerts, Scam Shield Pro, education, and creator analytics.</span>
+                <span>Portfolio, alerts, Scam Shield Pro, growth tools.</span>
               </article>
               <article class="preview-card">
-                <strong>Creator Studio</strong>
-                <span>Tools for posts, Reels, videos, live, marketplace, growth, and learning resources.</span>
+                <strong>Roast Battle</strong>
+                <span>Battles, votes, rankings, clips, and replays.</span>
               </article>
+            </div>
+          </div>
+          <div class="phone-preview" aria-label="Mobile Pulse preview">
+            <div class="phone-screen">
+              <div>
+                <span class="tag">Live</span>
+                <h3>Pulse Home</h3>
+              </div>
+              <div class="phone-card">Watch • Chat • Create • Go Live</div>
+              <div>
+                {% if is_authenticated %}
+                  <a class="button primary" href="/pulse">Open Pulse</a>
+                {% else %}
+                  <a class="button primary" href="/login?next=/pulse">Sign In to Pulse</a>
+                {% endif %}
+                <div class="phone-nav" aria-hidden="true">
+                  <span>Home</span>
+                  <span>Video</span>
+                  <span>Create</span>
+                  <span>Chats</span>
+                </div>
+              </div>
             </div>
           </div>
         </aside>
