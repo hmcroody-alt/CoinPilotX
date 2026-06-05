@@ -181,6 +181,9 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("mime_type", "TEXT"),
         ("file_size", "INTEGER DEFAULT 0"),
         ("file_size_bytes", "INTEGER DEFAULT 0"),
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("waveform_json", "TEXT"),
+        ("voice_note", "INTEGER DEFAULT 0"),
         ("width", "INTEGER DEFAULT 0"),
         ("height", "INTEGER DEFAULT 0"),
         ("mux_asset_id", "TEXT"),
@@ -188,6 +191,11 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("mux_status", "TEXT"),
         ("scan_status", "TEXT DEFAULT 'approved'"),
         ("created_at", "TEXT"),
+    ], conn=conn)
+    add(cur, "chat_media_uploads", [
+        ("duration_seconds", "REAL DEFAULT 0"),
+        ("waveform_json", "TEXT"),
+        ("voice_note", "INTEGER DEFAULT 0"),
     ], conn=conn)
     add(cur, "comm_v2_live_streams", [
         ("public_id", "TEXT"),
@@ -788,8 +796,8 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
         cur.execute(
             """
             INSERT INTO comm_v2_attachments
-            (attachment_public_id, message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, cdn_url, playback_url, thumbnail_url, mime_type, file_size, file_size_bytes, width, height, mux_asset_id, mux_playback_id, mux_status, scan_status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (attachment_public_id, message_id, conversation_id, media_upload_id, uploader_user_id, media_type, storage_provider, storage_key, url, cdn_url, playback_url, thumbnail_url, mime_type, file_size, file_size_bytes, duration_seconds, waveform_json, voice_note, width, height, mux_asset_id, mux_playback_id, mux_status, scan_status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 _public_id("att"),
@@ -807,6 +815,9 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
                 media.get("mime_type") or "",
                 int(media.get("file_size") or media.get("file_size_bytes") or 0),
                 int(media.get("file_size_bytes") or 0),
+                float(media.get("duration_seconds") or media.get("duration") or 0),
+                media.get("waveform_json") or "",
+                1 if int(media.get("voice_note") or 0) else 0,
                 int(media.get("width") or 0),
                 int(media.get("height") or 0),
                 media.get("mux_asset_id") or "",
