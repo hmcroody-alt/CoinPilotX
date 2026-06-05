@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import secrets
 import threading
@@ -913,6 +914,54 @@ def _attachment_payload(row: dict) -> dict:
     }
 
 
+def _voice_upload_metadata(payload: dict | None) -> dict:
+    payload = payload or {}
+    kind = _clean(payload.get("attachment_kind") or payload.get("kind") or "", 40).lower()
+    is_voice = kind in {"voice", "voice_note", "audio_note"}
+    try:
+        duration = max(0.0, float(payload.get("duration_seconds") or payload.get("duration") or 0))
+    except Exception:
+        duration = 0.0
+    waveform_raw = payload.get("waveform_json") or payload.get("waveform") or "[]"
+    waveform = []
+    try:
+        candidate = json.loads(waveform_raw) if isinstance(waveform_raw, str) else waveform_raw
+        if isinstance(candidate, list):
+            waveform = [max(0, min(100, int(float(value)))) for value in candidate[:80]]
+    except Exception:
+        waveform = []
+    return {"is_voice": is_voice, "duration_seconds": duration, "waveform": waveform}
+
+
+def _validate_voice_upload(file_storage, metadata: dict) -> dict:
+    if not metadata.get("is_voice"):
+        return {"ok": True}
+    mime = (getattr(file_storage, "mimetype", "") or "").lower()
+    name = (getattr(file_storage, "filename", "") or "").lower()
+    allowed_mimes = {"audio/webm", "audio/ogg", "application/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "application/octet-stream", "video/webm"}
+    allowed_ext = (".webm", ".ogg", ".oga", ".m4a", ".mp3", ".wav")
+    if mime and mime not in allowed_mimes and not mime.startswith("audio/"):
+        return _err("That recording format is not supported. Try recording again.", 400, "unsupported_voice_mime")
+    if name and not name.endswith(allowed_ext):
+        return _err("Voice notes must be audio recordings.", 400, "unsupported_voice_extension")
+    duration = float(metadata.get("duration_seconds") or 0)
+    max_duration = int(os.getenv("COMM_V2_VOICE_MAX_SECONDS", "300") or 300)
+    if duration <= 0:
+        return _err("Record a voice note before sending.", 400, "missing_voice_duration")
+    if duration > max_duration:
+        return _err(f"Voice notes can be up to {max_duration // 60} minutes.", 400, "voice_duration_exceeded")
+    try:
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = int(file_storage.stream.tell() or 0)
+        file_storage.stream.seek(0)
+    except Exception:
+        size = 0
+    max_bytes = int(float(os.getenv("COMM_V2_VOICE_MAX_MB", os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15"))) * 1024 * 1024)
+    if size and size > max_bytes:
+        return _err("Voice note is too large. Record a shorter note and try again.", 400, "voice_size_exceeded")
+    return {"ok": True}
+
+
 def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
     message_id = int(message.get("id") or 0)
     cur.execute("SELECT * FROM comm_v2_attachments WHERE message_id=? ORDER BY id ASC", (message_id,))
@@ -1687,12 +1736,16 @@ def infrastructure_diagnostics() -> dict:
     }
 
 
-def stage_attachment_upload(user_id: int, file_storage, conversation_ref: int | str = "") -> dict:
+def stage_attachment_upload(user_id: int, file_storage, conversation_ref: int | str = "", metadata: dict | None = None) -> dict:
     disabled = _disabled("stage_attachment_upload")
     if disabled:
         return disabled
     if not file_storage:
         return _err("Choose an attachment to upload.", 400, "missing_file")
+    voice_meta = _voice_upload_metadata(metadata)
+    validation = _validate_voice_upload(file_storage, voice_meta)
+    if validation.get("ok") is False:
+        return validation
     context_id = "draft"
     if conversation_ref:
         conn, cur = _open_db()
@@ -1718,6 +1771,28 @@ def stage_attachment_upload(user_id: int, file_storage, conversation_ref: int | 
         logging.exception("COMM_V2_ATTACHMENT_UPLOAD_FAILED user_id=%s", int(user_id or 0))
         return _err("Attachment upload could not be completed.", 500, "upload_failed")
     payload = payload or {}
+    media = payload.get("media") or {}
+    media_id = int(media.get("id") or media.get("media_id") or payload.get("media_id") or 0)
+    if payload.get("ok") and media_id:
+        duration_seconds = float(voice_meta.get("duration_seconds") or 0)
+        waveform_json = json.dumps(voice_meta.get("waveform") or [])
+        voice_note = 1 if voice_meta.get("is_voice") else 0
+        conn, cur = _open_db()
+        try:
+            cur.execute(
+                """
+                UPDATE chat_media_uploads
+                SET duration_seconds=?, waveform_json=?, voice_note=?
+                WHERE id=? AND uploader_user_id=?
+                """,
+                (duration_seconds, waveform_json, voice_note, media_id, int(user_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        media["duration_seconds"] = duration_seconds
+        media["waveform_json"] = waveform_json
+        media["voice_note"] = voice_note
     payload.setdefault("http_status", status)
     if payload.get("ok") and payload.get("media"):
         payload["attachment_support"] = {

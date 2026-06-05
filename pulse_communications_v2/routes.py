@@ -185,7 +185,12 @@ def upload_attachment():
         return denied
     file_storage = request.files.get("file") or request.files.get("attachment")
     conversation_ref = request.form.get("conversation_id") or request.form.get("conversation_ref") or ""
-    return _timed_json("attachment_upload", lambda: service.stage_attachment_upload(user["user_id"], file_storage, conversation_ref))
+    metadata = {
+        "attachment_kind": request.form.get("attachment_kind") or request.form.get("kind") or "",
+        "duration_seconds": request.form.get("duration_seconds") or "",
+        "waveform_json": request.form.get("waveform_json") or request.form.get("waveform") or "",
+    }
+    return _timed_json("attachment_upload", lambda: service.stage_attachment_upload(user["user_id"], file_storage, conversation_ref, metadata))
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/members")
