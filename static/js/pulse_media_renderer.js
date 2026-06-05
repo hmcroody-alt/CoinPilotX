@@ -145,10 +145,11 @@
   function setVideoMuted(video, muted, reason = "system") {
     if (!video) return;
     video.dataset.pulseSoundChangeReason = reason;
+    video._pulseSoundProgrammaticUntil = Date.now() + 3000;
     video.muted = !!muted;
     window.setTimeout(() => {
       if (video.dataset.pulseSoundChangeReason === reason) delete video.dataset.pulseSoundChangeReason;
-    }, 700);
+    }, 3000);
   }
 
   function isPulseStreamUrl(url) {
@@ -535,7 +536,7 @@
     video.addEventListener("pause", () => wrap.classList.remove("is-playing"));
     video.addEventListener("volumechange", () => {
       const reason = video.dataset.pulseSoundChangeReason || "";
-      if (reason === "autoplay" || reason === "autoplay-fallback" || reason === "hydrate") return;
+      if (reason === "autoplay" || reason === "autoplay-fallback" || reason === "hydrate" || Date.now() < Number(video._pulseSoundProgrammaticUntil || 0)) return;
       if (video.muted || Number(video.volume || 0) === 0) {
         setSoundEnabled(false);
         showSoundPrompt(wrap, true);

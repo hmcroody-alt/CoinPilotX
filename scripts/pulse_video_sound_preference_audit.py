@@ -36,6 +36,9 @@ def main() -> None:
     expect("setSoundEnabled(false);" not in renderer[renderer.find("async function playVisibleVideo"):renderer.find("function preloadNextVideo")], "browser autoplay fallback does not persist muted preference")
     expect("playVisibleVideo(vid, soundEnabled())" in renderer, "in-view autoplay honors persisted sound preference")
     expect("playVisibleVideo(video, soundEnabled())" in renderer, "desktop hover playback honors persisted sound preference")
+    expect("data-pulse-media-sound hidden>Tap for sound</button>${mediaFallbackHtml(m)}" in bot, "feed video posts include inline tap-for-sound prompt")
+    expect("button,a,video,audio,[data-pulse-media-sound]" in bot, "feed video control taps do not open the lightbox")
+    expect("_pulseSoundProgrammaticUntil" in renderer, "late programmatic mute events cannot overwrite the user preference")
     print("pulse video sound preference audit ok")
 
 
