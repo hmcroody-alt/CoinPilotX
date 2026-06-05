@@ -22,7 +22,7 @@ def main() -> None:
     bot = BOT.read_text(encoding="utf-8")
 
     for token in [
-        "muted${controls}${loop} playsinline webkit-playsinline",
+        "data-pulse-video-player${controls}${loop} playsinline webkit-playsinline",
         "video.setAttribute(\"playsinline\", \"\")",
         "video.setAttribute(\"webkit-playsinline\", \"\")",
         "x-webkit-airplay",
@@ -42,8 +42,8 @@ def main() -> None:
     ]:
         expect(token in renderer, f"diagnostics include {token}")
 
-    expect("controls autoplay muted playsinline webkit-playsinline preload=\"metadata\"" in bot, "Status viewer inline videos are mobile-safe")
-    expect("muted controls playsinline webkit-playsinline preload" in bot, "Feed inline videos are mobile-safe")
+    expect("controls autoplay playsinline webkit-playsinline preload=\"metadata\"" in bot + (ROOT / "static/js/pulse_status_viewer.js").read_text(encoding="utf-8"), "Status viewer inline videos are mobile-safe")
+    expect("controls playsinline webkit-playsinline preload" in bot, "Feed inline videos are mobile-safe")
     expect("autoplay muted playsinline webkit-playsinline" in bot, "Reels/live inline videos are mobile-safe")
 
 

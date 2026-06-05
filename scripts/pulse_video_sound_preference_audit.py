@@ -38,7 +38,9 @@ def main() -> None:
     expect("playVisibleVideo(video, soundEnabled())" in renderer, "desktop hover playback honors persisted sound preference")
     expect("data-pulse-media-sound hidden>Tap for sound</button>${mediaFallbackHtml(m)}" in bot, "feed video posts include inline tap-for-sound prompt")
     expect("button,a,video,audio,[data-pulse-media-sound]" in bot, "feed video control taps do not open the lightbox")
-    expect("_pulseSoundProgrammaticUntil" in renderer, "late programmatic mute events cannot overwrite the user preference")
+    expect("video.defaultMuted = false" in renderer, "shared renderer clears default muted before playback")
+    expect("_pulseExpectedMuted" in renderer, "programmatic mute events are marked without timers")
+    expect("_pulseSoundProgrammaticUntil" not in renderer, "sound preference guard does not depend on delayed timeout clearing")
     print("pulse video sound preference audit ok")
 
 

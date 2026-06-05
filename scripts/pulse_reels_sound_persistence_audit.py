@@ -28,11 +28,14 @@ def main() -> None:
         "window.PulseMediaRenderer?.setSoundEnabled?.(reelsSoundEnabled)",
         "playReelVideo(v,reelsSoundEnabled)",
         "showReelSoundPrompt(card,true)",
+        "window.PulseMediaRenderer.setVideoMuted(video,muted,'reels-autoplay')",
+        "window.PulseMediaRenderer.setVideoMuted(video,true,'reels-autoplay-fallback')",
     ]:
         expect(token in reels_block, f"Reels sound persistence includes {token}")
 
     expect("setReelsSound(false)" not in play_block, "blocked unmuted Reels autoplay does not persist muted preference")
-    expect("video.muted=true" in play_block, "blocked unmuted Reels autoplay falls back to muted playback")
+    expect("video.defaultMuted=false" in play_block and "video.removeAttribute('muted')" in play_block, "Reels playback clears default muted before play")
+    expect("video.muted=true" in play_block, "blocked unmuted Reels autoplay has non-shared fallback")
     print("pulse reels sound persistence audit ok")
 
 

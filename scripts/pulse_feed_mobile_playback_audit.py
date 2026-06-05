@@ -27,7 +27,7 @@ def main() -> None:
         "function mediaHtml(items)",
         "pulse-unified-video-player",
         "data-pulse-video-player",
-        "muted controls playsinline webkit-playsinline preload",
+        "controls playsinline webkit-playsinline preload",
         "window.PulseMediaRenderer?.hydrate(document)",
         "window.PulseVideo = PulseVideo",
         "data-media-source-type",

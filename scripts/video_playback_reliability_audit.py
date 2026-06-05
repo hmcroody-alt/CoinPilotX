@@ -29,7 +29,7 @@ def main():
     desktop_css = (ROOT / "static" / "css" / "pulse_desktop_feed.css").read_text(encoding="utf-8")
 
     for token in [
-        "data-pulse-video-player muted controls playsinline webkit-playsinline",
+        "data-pulse-video-player controls playsinline webkit-playsinline",
         "<source src=",
         "data-media-mime",
         "preload=\"metadata\"",

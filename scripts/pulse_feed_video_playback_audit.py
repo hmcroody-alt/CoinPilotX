@@ -25,7 +25,7 @@ def main() -> None:
         "function mediaHtml(items)",
         "pulse-unified-video-player",
         "data-pulse-video-player",
-        "muted controls playsinline webkit-playsinline preload",
+        "data-pulse-video-player controls playsinline webkit-playsinline preload",
         "window.PulseMediaRenderer?.hydrate(document)",
         "pulse_media_renderer.js?v=video-stage-size-20260605",
     ]:
