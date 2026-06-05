@@ -26,6 +26,16 @@
     actionPending: false,
     mobileMode: "list",
     conversationSearch: "",
+    attachmentQueue: [],
+    attachmentSeq: 0,
+    attachmentSheetOpen: false,
+    maxAttachments: 8,
+    uploadLimits: {
+      image: 25 * 1024 * 1024,
+      video: 250 * 1024 * 1024,
+      audio: 25 * 1024 * 1024,
+      file: 50 * 1024 * 1024,
+    },
     voice: {
       stream: null,
       recorder: null,
@@ -106,6 +116,36 @@
     return String(title || "P").trim().slice(0, 2).toUpperCase();
   }
 
+  function presenceForUser(userId) {
+    return (state.presence || []).find((item) => Number(item.user_id || 0) === Number(userId || 0)) || {};
+  }
+
+  function presenceForConversation(item) {
+    const peerId = Number(item?.peer_user_id || item?.other_user_id || item?.target_user_id || 0);
+    const directPeer = peerId ? presenceForUser(peerId) : null;
+    if (directPeer?.user_id) return directPeer;
+    const activePeer = (state.presence || []).find((presence) => Number(presence.user_id || 0) !== currentUserId && presence.active_now);
+    return activePeer || {};
+  }
+
+  function presenceLabel(presence) {
+    if (!presence || presence.presence_visible === false || presence.status === "hidden") return "Presence hidden";
+    if (presence.active_now || presence.status === "online") return "Online";
+    if (presence.status === "away") return "Away";
+    if (presence.last_seen_at) return `Last active ${relativeTime(presence.last_seen_at)}`;
+    return "Offline";
+  }
+
+  function presenceClass(presence) {
+    if (presence?.active_now || presence?.status === "online") return "online";
+    if (presence?.status === "away") return "away";
+    return "offline";
+  }
+
+  function conversationPreview(item) {
+    return item.last_message_preview || item.last_message_body || item.last_message_text || item.description || `${item.conversation_type || "Conversation"} / ${Number(item.member_count || 0)} members`;
+  }
+
   function renderConversations() {
     if (!list) return;
     const filtered = state.conversations.filter((item) => {
@@ -116,24 +156,37 @@
       list.innerHTML = `<div class="empty-state">No conversations yet. Start a DM, create a group, or open a room.</div>`;
       return;
     }
-    list.innerHTML = filtered.map((item) => `
+    list.innerHTML = filtered.map((item) => {
+      const presence = presenceForConversation(item);
+      const typingNames = state.active && Number(state.active.conversation_id) === Number(item.conversation_id)
+        ? (state.typing || []).map((user) => user.display_name || "Someone")
+        : [];
+      const preview = typingNames.length ? typingSummary(typingNames) : conversationPreview(item);
+      return `
       <button class="conversation ${state.active && Number(state.active.conversation_id) === Number(item.conversation_id) ? "is-active" : ""}" type="button" data-conversation-id="${item.conversation_id}">
-        <span class="avatar">${initials(item.title)}</span>
-        <span>
+        <span class="avatar presence-${presenceClass(presence)}">${initials(item.title)}</span>
+        <span class="conversation-main">
           <strong>${escapeHtml(item.title || "Untitled chat")}</strong>
-          <small>${escapeHtml(item.conversation_type || "")} / ${Number(item.member_count || 0)} members</small>
+          <small class="${typingNames.length ? "is-typing" : ""}">${escapeHtml(preview)}</small>
         </span>
-        ${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : ""}
+        <span class="conversation-meta"><time>${escapeHtml(shortTime(item.last_message_at || item.last_activity_at || item.updated_at || item.created_at))}</time>${Number(item.unread_count || 0) ? `<span class="badge">${Number(item.unread_count)}</span>` : ""}</span>
       </button>
-    `).join("");
+    `; }).join("");
   }
 
   function renderMessages() {
     if (!messages) return;
     const title = el("[data-thread-title]");
     const sub = el("[data-thread-subtitle]");
+    const avatar = el("[data-thread-avatar]");
     if (title) title.textContent = state.active ? state.active.title : "Select a conversation";
-    if (sub) sub.textContent = state.active ? `${state.active.conversation_type} / ${state.active.privacy}` : "Search for someone or create a group to start chatting.";
+    const threadPresence = presenceForConversation(state.active || {});
+    if (sub) sub.textContent = state.active ? `${presenceLabel(threadPresence)} / ${state.active.conversation_type || "conversation"}` : "Search for someone or create a group to start chatting.";
+    if (avatar) {
+      avatar.textContent = state.active ? initials(state.active.title) : "P";
+      avatar.className = `thread-avatar presence-${presenceClass(threadPresence)}`;
+    }
+    renderTypingPill();
     if (!state.active) {
       messages.innerHTML = `<div class="empty-state">Search for someone or create a group to start chatting.</div>`;
       return;
@@ -143,9 +196,23 @@
       return;
     }
     const older = state.hasOlder ? `<button class="load-older" type="button" data-load-older>Load older messages</button>` : "";
-    messages.innerHTML = `${older}${state.messages.map((item) => messageHtml(item)).join("")}`;
-    if (!state.preserveScroll) messages.scrollTop = messages.scrollHeight;
+    messages.innerHTML = `${older}<div class="message-stack">${state.messages.map((item) => messageHtml(item)).join("")}</div>`;
+    if (!state.preserveScroll) smoothScrollToBottom();
     state.preserveScroll = false;
+  }
+
+  function smoothScrollToBottom() {
+    if (!messages) return;
+    messages.scrollTo({ top: messages.scrollHeight, behavior: state.messages.length > 5 ? "smooth" : "auto" });
+  }
+
+  function renderTypingPill() {
+    const pill = el("[data-typing-pill]");
+    if (!pill) return;
+    const names = (state.typing || []).map((item) => item.display_name || "Someone").filter(Boolean);
+    pill.textContent = typingSummary(names);
+    pill.hidden = !names.length;
+    pill.classList.toggle("is-visible", names.length > 0);
   }
 
   function renderMembers() {
@@ -160,6 +227,7 @@
     if (typing) {
       const names = (state.typing || []).map((item) => item.display_name || "Someone").filter(Boolean);
       typing.textContent = typingSummary(names);
+      typing.classList.toggle("is-visible", names.length > 0);
     }
     if (!target) return;
     if (!state.active) {
@@ -173,11 +241,11 @@
     const presenceByUser = new Map((state.presence || []).map((item) => [Number(item.user_id || 0), item]));
     target.innerHTML = state.members.map((member) => {
       const presence = presenceByUser.get(Number(member.user_id || 0)) || {};
-      const presenceLabel = presence.active_now ? "Active now" : presence.last_seen_at ? `Last seen ${shortTime(presence.last_seen_at)}` : "Offline";
+      const label = presenceLabel(presence);
       return `
       <article class="member-row">
-        <span class="avatar">${initials(member.display_name || member.username)}</span>
-        <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} / ${escapeHtml(presenceLabel)}</small></span>
+        <span class="avatar presence-${presenceClass(presence)}">${initials(member.display_name || member.username)}</span>
+        <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} / ${escapeHtml(label)}</small></span>
       </article>
     `; }).join("");
   }
@@ -206,13 +274,12 @@
     const reply = item.reply_preview ? `<button class="reply-preview" type="button" data-jump-message="${Number(item.reply_preview.id || 0)}">Replying to ${escapeHtml(item.reply_preview.sender?.display_name || "message")}: ${escapeHtml(item.reply_preview.body || item.reply_preview.message_type || "")}</button>` : "";
     return `
       <article class="message ${mine ? "is-mine" : ""}" data-message-id="${item.id}">
-        <strong>${escapeHtml(item.sender?.display_name || "Pulse member")}</strong>
-        <time>${escapeHtml(shortTime(item.created_at))}</time>
+        ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "Pulse member")}</strong>` : ""}
         ${reply}
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
-        <small>${item.is_edited ? "Edited / " : ""}${mine ? escapeHtml(item.delivery_status || "sent") : ""}</small>
+        <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` / ${escapeHtml(item.delivery_status || "sent")}` : ""}</small>
         <button class="message-menu-trigger" type="button" data-message-actions="${item.id}" aria-label="Message actions">...</button>
         <div class="reaction-row" data-reaction-menu="${item.id}" hidden>${reactions}<button type="button" data-reply-message="${item.id}">Reply</button>${mine ? `<button type="button" data-edit-message="${item.id}">Edit</button><button type="button" data-delete-message="${item.id}" data-delete-for="everyone">Delete</button>` : `<button type="button" data-delete-message="${item.id}" data-delete-for="self">Remove</button>`}<button type="button" data-forward-message="${item.id}">Forward</button></div>
       </article>
@@ -349,6 +416,165 @@
     console.info("Pulse Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
     if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
     return Number(data.media?.id || 0);
+  }
+
+  function attachmentKind(file) {
+    const type = (file?.type || "").toLowerCase();
+    const name = (file?.name || "").toLowerCase();
+    if (type.startsWith("image/")) return "image";
+    if (type.startsWith("video/")) return "video";
+    if (type.startsWith("audio/")) return "audio";
+    if (/\.(jpg|jpeg|png|gif|webp|avif)$/i.test(name)) return "image";
+    if (/\.(mp4|mov|m4v|webm)$/i.test(name)) return "video";
+    if (/\.(mp3|m4a|wav|ogg|webm)$/i.test(name)) return "audio";
+    return "file";
+  }
+
+  function validateAttachment(file) {
+    if (!file) return "Choose a file first.";
+    const name = file.name || "attachment";
+    const kind = attachmentKind(file);
+    const blocked = /\.(exe|dll|bat|cmd|com|scr|js|jar|msi|ps1|sh)$/i;
+    if (blocked.test(name)) return "That file type is blocked for safety.";
+    const limit = state.uploadLimits[kind] || state.uploadLimits.file;
+    if (file.size > limit) return `${name} is too large. Limit: ${formatBytes(limit)}.`;
+    if (state.attachmentQueue.length >= state.maxAttachments) return `You can send up to ${state.maxAttachments} attachments at once.`;
+    return "";
+  }
+
+  function addAttachmentFiles(files) {
+    const incoming = Array.from(files || []);
+    if (!incoming.length) return;
+    const next = [];
+    for (const file of incoming) {
+      const error = validateAttachment(file);
+      if (error) {
+        setStatus(error, "error");
+        continue;
+      }
+      next.push({
+        id: `att-${Date.now()}-${++state.attachmentSeq}`,
+        file,
+        kind: attachmentKind(file),
+        status: "queued",
+        progress: 0,
+        mediaId: 0,
+        error: "",
+        previewUrl: file.type?.startsWith("image/") || file.type?.startsWith("video/") ? URL.createObjectURL(file) : "",
+      });
+    }
+    state.attachmentQueue = [...state.attachmentQueue, ...next].slice(0, state.maxAttachments);
+    renderAttachmentPreview();
+    if (next.length) setStatus(`${next.length} attachment${next.length === 1 ? "" : "s"} ready.`);
+  }
+
+  function removeAttachment(id) {
+    const item = state.attachmentQueue.find((entry) => entry.id === id);
+    if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    state.attachmentQueue = state.attachmentQueue.filter((entry) => entry.id !== id);
+    renderAttachmentPreview();
+  }
+
+  function moveAttachment(id, direction) {
+    const index = state.attachmentQueue.findIndex((entry) => entry.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= state.attachmentQueue.length) return;
+    const copy = [...state.attachmentQueue];
+    [copy[index], copy[nextIndex]] = [copy[nextIndex], copy[index]];
+    state.attachmentQueue = copy;
+    renderAttachmentPreview();
+  }
+
+  function renderAttachmentPreview() {
+    const rail = el("[data-attachment-preview]");
+    if (!rail) return;
+    rail.hidden = !state.attachmentQueue.length;
+    rail.innerHTML = state.attachmentQueue.map((item, index) => {
+      const media = item.kind === "image"
+        ? `<img src="${escapeAttr(item.previewUrl)}" alt="">`
+        : item.kind === "video"
+          ? `<video src="${escapeAttr(item.previewUrl)}" muted playsinline preload="metadata"></video>`
+          : item.kind === "audio"
+            ? `<div class="attachment-file-icon">♪</div>`
+            : `<div class="attachment-file-icon">FILE</div>`;
+      const progress = item.status === "uploading" ? `<progress max="100" value="${Number(item.progress || 0)}"></progress>` : "";
+      return `
+        <article class="attachment-preview-card" data-attachment-id="${escapeAttr(item.id)}" data-state="${escapeAttr(item.status)}">
+          ${media}
+          <div>
+            <strong>${escapeHtml(item.file.name || "Attachment")}</strong>
+            <small>${escapeHtml(item.error || `${item.kind} / ${formatBytes(item.file.size || 0)} / ${item.status}`)}</small>
+            ${progress}
+          </div>
+          <div class="attachment-preview-actions">
+            <button type="button" data-attachment-move="${escapeAttr(item.id)}" data-direction="-1" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" data-attachment-move="${escapeAttr(item.id)}" data-direction="1" ${index === state.attachmentQueue.length - 1 ? "disabled" : ""}>↓</button>
+            ${item.status === "failed" ? `<button type="button" data-attachment-retry="${escapeAttr(item.id)}">Retry</button>` : ""}
+            <button type="button" data-attachment-remove="${escapeAttr(item.id)}">${item.status === "uploading" ? "Cancel" : "Remove"}</button>
+          </div>
+        </article>
+      `;
+    }).join("");
+  }
+
+  async function uploadAttachmentItem(item) {
+    if (!item || item.status === "uploaded") return item?.mediaId || 0;
+    item.status = "uploading";
+    item.progress = 10;
+    item.error = "";
+    renderAttachmentPreview();
+    try {
+      const mediaId = await uploadSelectedFile(item.file, { attachment_kind: item.kind });
+      item.status = "uploaded";
+      item.progress = 100;
+      item.mediaId = mediaId;
+      renderAttachmentPreview();
+      return mediaId;
+    } catch (error) {
+      item.status = "failed";
+      item.error = error.message || "Upload failed.";
+      renderAttachmentPreview();
+      throw error;
+    }
+  }
+
+  async function uploadAttachmentQueue() {
+    const ids = [];
+    for (const item of state.attachmentQueue) {
+      if (item.status === "cancelled") continue;
+      ids.push(await uploadAttachmentItem(item));
+    }
+    return ids.filter(Boolean);
+  }
+
+  function clearAttachmentQueue() {
+    state.attachmentQueue.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    state.attachmentQueue = [];
+    renderAttachmentPreview();
+    ["[data-file]", "[data-camera-file]", "[data-photo-file]", "[data-video-file]", "[data-generic-file]"].forEach((selector) => {
+      const input = el(selector);
+      if (input) input.value = "";
+    });
+  }
+
+  function toggleAttachmentSheet(force) {
+    const sheet = el("[data-attachment-sheet]");
+    state.attachmentSheetOpen = typeof force === "boolean" ? force : !state.attachmentSheetOpen;
+    if (sheet) {
+      sheet.hidden = !state.attachmentSheetOpen;
+      sheet.classList.toggle("is-open", state.attachmentSheetOpen);
+    }
+  }
+
+  function openAttachmentOption(option) {
+    toggleAttachmentSheet(false);
+    if (option === "voice") return startVoiceRecording();
+    if (option === "camera") return el("[data-camera-file]")?.click();
+    if (option === "photo") return el("[data-photo-file]")?.click();
+    if (option === "video") return el("[data-video-file]")?.click();
+    return el("[data-generic-file]")?.click();
   }
 
   function recorderMimeType() {
@@ -636,7 +862,19 @@
         if (createGroupButton) return await runAction(createGroupButton, "Creating group...", createGroup);
         const createRoomButton = target.closest("[data-create-room]");
         if (createRoomButton) return await runAction(createRoomButton, "Creating room...", createRoom);
-        if (target.closest("[data-pick-file]")) return el("[data-file]")?.click();
+        if (target.closest("[data-toggle-attachments]")) return toggleAttachmentSheet();
+        const attachmentOption = target.closest("[data-attachment-option]");
+        if (attachmentOption) return openAttachmentOption(attachmentOption.dataset.attachmentOption || "file");
+        const removeAttachmentButton = target.closest("[data-attachment-remove]");
+        if (removeAttachmentButton) return removeAttachment(removeAttachmentButton.dataset.attachmentRemove);
+        const retryAttachmentButton = target.closest("[data-attachment-retry]");
+        if (retryAttachmentButton) {
+          const item = state.attachmentQueue.find((entry) => entry.id === retryAttachmentButton.dataset.attachmentRetry);
+          if (item) await uploadAttachmentItem(item);
+          return;
+        }
+        const moveAttachmentButton = target.closest("[data-attachment-move]");
+        if (moveAttachmentButton) return moveAttachment(moveAttachmentButton.dataset.attachmentMove, Number(moveAttachmentButton.dataset.direction || 0));
         if (target.closest("[data-voice-start]")) return await startVoiceRecording();
         if (target.closest("[data-voice-pause]")) return pauseVoiceRecording();
         if (target.closest("[data-voice-resume]")) return resumeVoiceRecording();
@@ -680,6 +918,9 @@
       const target = event.target instanceof Element ? event.target : null;
       const speed = target?.closest("[data-voice-speed]");
       if (speed) setVoicePlaybackSpeed(speed.closest("[data-voice-message]"), speed.value);
+      if (target?.matches("[data-file], [data-camera-file], [data-photo-file], [data-video-file], [data-generic-file]")) {
+        addAttachmentFiles(target.files);
+      }
     });
     document.addEventListener("keydown", async (event) => {
       if (event.key === "Escape") return closeModals();
@@ -958,19 +1199,25 @@
     event.preventDefault();
     if (!state.active) return setStatus("Choose a conversation first.", "error");
     const input = el("[data-message-input]");
-    const fileInput = el("[data-file]");
     const body = input?.value || "";
-    const file = fileInput?.files?.[0];
     const hasVoice = state.voice.state === "ready" && !!state.voice.blob;
+    const clientMessageId = `comm-v2-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     try {
-      setStatus(hasVoice ? "Uploading voice note..." : file ? "Uploading attachment..." : "Sending...");
-      const mediaId = hasVoice ? await uploadVoiceDraft() : await uploadSelectedFile(file);
+      setStatus(hasVoice ? "Uploading voice note..." : state.attachmentQueue.length ? "Uploading attachments..." : "Sending...");
+      const mediaIds = state.attachmentQueue.length ? await uploadAttachmentQueue() : [];
+      const voiceId = hasVoice ? await uploadVoiceDraft() : 0;
       const data = await api(`/conversations/${state.active.conversation_id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ body, message_type: hasVoice ? "voice" : "text", media_ids: mediaId ? [mediaId] : [], reply_to_message_id: state.replyTo?.id || 0 }),
+        body: JSON.stringify({
+          body,
+          message_type: hasVoice ? "voice" : mediaIds.length ? "media" : "text",
+          media_ids: [...mediaIds, ...(voiceId ? [voiceId] : [])],
+          reply_to_message_id: state.replyTo?.id || 0,
+          client_message_id: clientMessageId,
+        }),
       }, "send_message");
       if (input) input.value = "";
-      if (fileInput) fileInput.value = "";
+      clearAttachmentQueue();
       if (hasVoice) discardVoiceRecording({ silent: true });
       state.replyTo = null;
       if (data.message) {
@@ -1074,6 +1321,27 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function relativeTime(value) {
+    if (!value) return "unknown";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) return "just now";
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+  }
+
+  function formatBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(value > 20 * 1024 * 1024 ? 0 : 1)} MB`;
+    if (value >= 1024) return `${Math.round(value / 1024)} KB`;
+    return `${value || 0} B`;
   }
 
   function escapeHtml(value) {

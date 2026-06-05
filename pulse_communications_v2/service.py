@@ -718,6 +718,9 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
     if message_type not in ALLOWED_MESSAGE_TYPES:
         message_type = "text"
     media_ids = [int(x) for x in payload.get("media_ids") or payload.get("attachment_media_ids") or [] if int(x or 0)]
+    max_attachments = int(os.getenv("COMM_V2_MAX_ATTACHMENTS", "8") or 8)
+    if len(media_ids) > max_attachments:
+        return _err(f"Send up to {max_attachments} attachments at once.", 400, "too_many_attachments")
     if not body and not media_ids:
         return _err("Write a message or attach a file before sending.", 400, "empty_message")
     conn, cur = _open_db()
@@ -960,6 +963,35 @@ def _validate_voice_upload(file_storage, metadata: dict) -> dict:
     if size and size > max_bytes:
         return _err("Voice note is too large. Record a shorter note and try again.", 400, "voice_size_exceeded")
     return {"ok": True}
+
+
+def _validate_attachment_upload(file_storage, metadata: dict | None = None) -> dict:
+    metadata = metadata or {}
+    name = (getattr(file_storage, "filename", "") or "").lower()
+    mime = (getattr(file_storage, "mimetype", "") or "").lower()
+    blocked_ext = (".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".js", ".jar", ".msi", ".ps1", ".sh")
+    if name.endswith(blocked_ext):
+        return _err("That file type is blocked for safety.", 400, "blocked_attachment_type")
+    kind = _clean(metadata.get("attachment_kind") or metadata.get("kind") or "", 40).lower()
+    if not kind:
+        kind = "image" if mime.startswith("image/") else "video" if mime.startswith("video/") else "audio" if mime.startswith("audio/") else "file"
+    limits = {
+        "image": int(float(os.getenv("COMM_V2_IMAGE_MAX_MB", "25")) * 1024 * 1024),
+        "video": int(float(os.getenv("COMM_V2_VIDEO_MAX_MB", "250")) * 1024 * 1024),
+        "audio": int(float(os.getenv("COMM_V2_AUDIO_MAX_MB", "25")) * 1024 * 1024),
+        "voice_note": int(float(os.getenv("COMM_V2_VOICE_MAX_MB", "15")) * 1024 * 1024),
+        "file": int(float(os.getenv("COMM_V2_FILE_MAX_MB", "50")) * 1024 * 1024),
+    }
+    try:
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = int(file_storage.stream.tell() or 0)
+        file_storage.stream.seek(0)
+    except Exception:
+        size = 0
+    limit = limits.get(kind, limits["file"])
+    if size and size > limit:
+        return _err(f"Attachment is too large. Limit: {max(1, round(limit / 1024 / 1024))} MB.", 400, "attachment_size_exceeded")
+    return {"ok": True, "attachment_kind": kind, "mime_type": mime, "virus_scan": "pending_hook", "moderation_scan": "pending_hook"}
 
 
 def _message_payload(cur, message: dict, viewer_user_id: int) -> dict:
@@ -1743,6 +1775,9 @@ def stage_attachment_upload(user_id: int, file_storage, conversation_ref: int | 
     if not file_storage:
         return _err("Choose an attachment to upload.", 400, "missing_file")
     voice_meta = _voice_upload_metadata(metadata)
+    attachment_validation = _validate_attachment_upload(file_storage, metadata)
+    if attachment_validation.get("ok") is False:
+        return attachment_validation
     validation = _validate_voice_upload(file_storage, voice_meta)
     if validation.get("ok") is False:
         return validation

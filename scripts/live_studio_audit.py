@@ -71,7 +71,7 @@ def main():
     require("pulse_live_studio.js" in html, "studio uses dedicated live script")
     require("live-command-shell" in html, "creator command shell renders")
     require("live-preview-stage" in html, "cinematic preview stage renders")
-    require("Ready to go live" in html, "offline camera state is not a dead black void")
+    require("Camera preview ready" in html, "offline camera state is truthful and not a dead black void")
     require("Stream Health Center" in html, "stream health center replaces dominant OBS block")
     require("Professional Streaming" in html and "<details" in html, "OBS/RTMP setup is collapsible")
     require("live-chat-feed" in html, "animated live chat feed renders")

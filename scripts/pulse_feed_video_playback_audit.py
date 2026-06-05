@@ -33,15 +33,15 @@ def main() -> None:
 
     for token in [
         ".post.has-media .media-grid",
-        "max-width: 1220px",
         ".post.is-video .media-grid",
-        "max-width: 1180px",
-        "height: clamp(650px, 72vh, 800px)",
-        "min-height: 650px",
-        "height: clamp(60vh, 68vh, 75vh)",
+        ".video-post-media",
+        ".pulse-feed-video",
+        ".feed-video-container",
+        "mux-player",
+        "width: 100% !important",
+        "max-width: 100% !important",
         "object-fit: contain",
-        "margin-left: auto",
-        "margin-right: auto",
+        "display: block !important",
     ]:
         expect(token in css, f"desktop feed video CSS includes {token}")
 

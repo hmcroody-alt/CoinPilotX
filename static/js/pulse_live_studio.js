@@ -82,6 +82,48 @@
     }
   }
 
+  async function checkMuxStatus(root) {
+    const muxId = qs(root, "[data-check-mux-status]")?.dataset?.muxLiveId || "";
+    if (!muxId) {
+      if (window.toast) window.toast("Mux Live stream id is not available for this session.");
+      return null;
+    }
+    try {
+      const response = await fetch(`/api/pulse/live/mux/${encodeURIComponent(muxId)}`, { credentials: "same-origin", cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.message || "Mux status could not be checked.");
+      setText(root, "[data-mux-live-status]", `Status ${data.mux_live_status || "idle"}`);
+      if (data.mux_live_status === "active" || data.mux_live_status === "live") {
+        setText(root, "[data-live-health]", "live");
+        setText(root, "[data-live-pulse]", "broadcasting");
+      }
+      if (window.toast) window.toast(`Mux status: ${data.mux_live_status || "idle"}`);
+      return data;
+    } catch (error) {
+      if (window.toast) window.toast(error.message);
+      return null;
+    }
+  }
+
+  function scheduleMuxPolling(root) {
+    const muxId = qs(root, "[data-check-mux-status]")?.dataset?.muxLiveId || "";
+    if (!muxId) return;
+    const interval = Math.max(10000, Number(root?.dataset?.muxPollMs || 12000));
+    const tick = async () => {
+      if (!root?.isConnected) return;
+      await checkMuxStatus(root);
+      setTimeout(tick, interval);
+    };
+    setTimeout(tick, interval);
+  }
+
+  async function copyLiveValue(button) {
+    const value = button?.parentElement?.querySelector("[data-copy-value]")?.textContent || "";
+    if (!value) return;
+    await navigator.clipboard?.writeText(value).catch(() => {});
+    if (window.toast) window.toast("Copied.");
+  }
+
   async function sendChat(root) {
     const id = root?.dataset?.liveId;
     const input = qs(root, "[data-live-chat-input]");
@@ -417,7 +459,7 @@
           return data;
         });
         console.info("Pulse Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
-        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Camera and microphone publishing" : "No tracks detected");
+        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Camera preview ready. Connect OBS/RTMP to broadcast into Mux." : "No tracks detected");
         await initPublisherTransport(root, stream);
         await fetchState(root);
       } catch (error) {
@@ -438,7 +480,7 @@
         });
         video.srcObject = stream;
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Camera live-ready. Publishing tracks...");
+        setText(root, "[data-live-camera-state]", "Camera preview ready. Connect OBS/RTMP to broadcast into Mux.");
         console.info("Pulse Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
@@ -459,7 +501,7 @@
         video.srcObject = stream;
         video.style.transform = "none";
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Screen share live-ready. Publishing tracks...");
+        setText(root, "[data-live-camera-state]", "Screen preview ready. Connect OBS/RTMP to broadcast into Mux.");
         console.info("Pulse Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("screen_share");
       } catch {
@@ -482,6 +524,13 @@
     qsa(root, "[data-live-reaction]").forEach((button) => {
       button.addEventListener("click", () => sendReaction(root, button.dataset.liveReaction || "🔥"));
     });
+    qsa(root, "[data-copy-live-value]").forEach((button) => {
+      button.addEventListener("click", () => copyLiveValue(button));
+    });
+    qsa(root, "[data-check-mux-status]").forEach((button) => {
+      button.addEventListener("click", () => checkMuxStatus(root));
+    });
+    scheduleMuxPolling(root);
     qs(root, "[data-live-unmute]")?.addEventListener("click", async (event) => {
       const player = qs(root, "[data-live-player]");
       if (!player) return;
@@ -504,5 +553,5 @@
     qsa(document, "[data-pulse-live-shell]").forEach(init);
   });
 
-  window.PulseLiveStudio = { init, fetchState, sendReaction };
+  window.PulseLiveStudio = { init, fetchState, sendReaction, checkMuxStatus };
 })();

@@ -478,6 +478,102 @@ article.card > .pulse-media-wrap {
   }
 }
 
+/* Final feed video width guardrail: no legacy post/video width caps. */
+.video-post-media,
+.pulse-feed-video,
+.feed-video-container,
+.post.is-video > .media-grid,
+.post.has-media > .media-grid,
+.post > .media-grid:has(.pulse-media-wrap.media-kind-video),
+.post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+mux-player {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.post:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)),
+.post.is-video:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)),
+.post.has-media:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.video-post-media video,
+.pulse-feed-video video,
+.feed-video-container video,
+.post .pulse-media-wrap.media-kind-video video,
+.post.is-video .pulse-media-wrap.media-kind-video video,
+.post.has-media .pulse-media-wrap.media-kind-video video,
+mux-player video {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block !important;
+  margin-inline: auto !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait video,
+.post.is-video .pulse-media-wrap.media-kind-video.is-portrait video,
+.post.has-media .pulse-media-wrap.media-kind-video.is-portrait video {
+  width: auto !important;
+  max-width: 100% !important;
+  height: min(78vh, 760px) !important;
+  object-fit: contain !important;
+}
+
+/* Pulse feed video width fix: media section owns the full post width. */
+.video-post-media,
+.pulse-feed-video,
+.feed-video-container,
+.post.is-video > .media-grid,
+.post.has-media > .media-grid,
+.post > .media-grid:has(.pulse-media-wrap.media-kind-video),
+.post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.video-thumb .pulse-media-wrap.media-kind-video,
+.video-detail-player.pulse-media-wrap.media-kind-video,
+mux-player {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.post:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)),
+.post.is-video:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)),
+.post.has-media:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.video-post-media video,
+.pulse-feed-video video,
+.feed-video-container video,
+.post .pulse-media-wrap.media-kind-video video,
+.post.is-video .pulse-media-wrap.media-kind-video video,
+.post.has-media .pulse-media-wrap.media-kind-video video,
+mux-player video {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block !important;
+  margin-inline: auto !important;
+}
+
+.post .pulse-media-wrap.media-kind-video.is-portrait video,
+.post.is-video .pulse-media-wrap.media-kind-video.is-portrait video,
+.post.has-media .pulse-media-wrap.media-kind-video.is-portrait video {
+  width: auto !important;
+  max-width: 100% !important;
+  height: min(78vh, 760px) !important;
+  object-fit: contain !important;
+}
+
 @media (min-width: 901px) {
   .post.has-media .media-grid {
     width: min(100%, 1220px) !important;

@@ -37,20 +37,40 @@
     <section class="comm-thread" aria-label="Message thread">
       <header class="thread-head">
         <button class="icon-btn mobile-only" type="button" data-mobile-list title="Back to conversations" aria-label="Back to conversations">&lt;</button>
-        <div>
+        <span class="thread-avatar" data-thread-avatar aria-hidden="true">P</span>
+        <div class="thread-identity">
           <h2 data-thread-title>Select a conversation</h2>
           <p data-thread-subtitle>Search for someone or create a group to start chatting.</p>
         </div>
+        <nav class="thread-actions" aria-label="Conversation actions">
+          <button class="icon-btn" type="button" data-thread-search title="Search messages" aria-label="Search messages">⌕</button>
+          <button class="icon-btn" type="button" data-toggle-details title="Conversation info" aria-label="Conversation info">i</button>
+          <button class="icon-btn" type="button" data-thread-mute title="Mute conversation" aria-label="Mute conversation">◐</button>
+          <button class="icon-btn" type="button" data-thread-more title="More actions" aria-label="More actions">⋯</button>
+        </nav>
       </header>
       <div class="messages" data-messages>
         <div class="empty-state">Search for someone or create a group to start chatting.</div>
       </div>
+      <div class="typing-pill" data-typing-pill hidden></div>
+      <section class="attachment-preview-rail" data-attachment-preview hidden aria-label="Selected attachments"></section>
+      <section class="attachment-sheet" data-attachment-sheet hidden aria-label="Add attachment">
+        <button type="button" data-attachment-option="camera">Camera</button>
+        <button type="button" data-attachment-option="photo">Photo</button>
+        <button type="button" data-attachment-option="video">Video</button>
+        <button type="button" data-attachment-option="file">File</button>
+        <button type="button" data-attachment-option="voice">Voice</button>
+      </section>
       <form class="composer" data-composer>
-        <input type="file" data-file hidden>
-        <button class="icon-btn" type="button" data-pick-file title="Attach media" aria-label="Attach media">+</button>
-        <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">♪</button>
-        <input data-message-input autocomplete="off" placeholder="Write a message">
-        <button type="submit">Send</button>
+        <input type="file" data-file hidden multiple>
+        <input type="file" data-camera-file hidden accept="image/*,video/*" capture="environment">
+        <input type="file" data-photo-file hidden multiple accept="image/*">
+        <input type="file" data-video-file hidden multiple accept="video/*">
+        <input type="file" data-generic-file hidden multiple>
+        <button class="icon-btn attachment-trigger" type="button" data-toggle-attachments title="Attach media" aria-label="Attach media">+</button>
+        <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">🎤</button>
+        <input data-message-input autocomplete="off" placeholder="Type a message">
+        <button class="send-btn" type="submit" aria-label="Send message">➤</button>
       </form>
       <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
         <div class="voice-recorder-main">
@@ -69,6 +89,35 @@
       </section>
       <div class="composer-status" data-status role="status" aria-live="polite"></div>
     </section>
+
+    <aside class="comm-details" aria-label="Conversation details">
+      <header class="details-head">
+        <div>
+          <h2>Details</h2>
+          <p data-details-summary>Choose a chat to see members, safety, and rooms.</p>
+        </div>
+        <button class="icon-btn" type="button" data-toggle-details aria-label="Close details">x</button>
+      </header>
+      <section class="details-card">
+        <h3>Members</h3>
+        <div class="member-list" data-members></div>
+      </section>
+      <section class="details-card">
+        <h3>Live Signal</h3>
+        <p class="typing-state" data-typing-state>No one is typing right now.</p>
+      </section>
+      <section class="details-card">
+        <h3>Safety</h3>
+        <div class="detail-actions">
+          <button type="button" data-report-last>Report Last</button>
+          <button type="button" data-block-peer>Block Peer</button>
+        </div>
+      </section>
+      <section class="details-card">
+        <h3>Public Rooms</h3>
+        <div class="room-list" data-room-list></div>
+      </section>
+    </aside>
 
     <div class="comm-modal" data-modal="new-chat" aria-hidden="true" hidden>
       <div class="comm-modal-panel" role="dialog" aria-modal="true" aria-labelledby="newChatTitle">
