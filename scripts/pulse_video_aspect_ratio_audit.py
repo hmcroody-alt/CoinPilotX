@@ -49,13 +49,15 @@ def main():
     expect(".pulse-status-story-media img" in status and "object-fit: cover" in status, "Status story fallback uses full-screen cover")
 
     expect(".media-kind-video.is-portrait" in cinematic, "Feed detects portrait video wrappers")
-    expect("max-width: 480px" in cinematic, "Feed portrait video has centered portrait max width")
-    expect(":has(.pulse-media-wrap.media-kind-video.is-portrait)" in cinematic, "Feed portrait cards are centered by wrapper detection")
-    expect(".media-kind-video.is-landscape" in cinematic and "16 / 9" in cinematic, "Feed landscape video keeps responsive landscape frame")
-    expect(".media-kind-video.is-ultrawide" in cinematic and "21 / 9" in cinematic, "Feed ultrawide video keeps responsive ultrawide frame")
+    expect("height: clamp(650px, 72vh, 800px)" in cinematic, "Desktop feed video reserves immersive height")
+    expect("height: clamp(60vh, 68vh, 75vh)" in cinematic, "Mobile feed video reserves viewport height")
+    expect("aspect-ratio: auto !important" in cinematic, "Feed video stage does not collapse to intrinsic ratio")
+    expect("object-fit: contain !important" in cinematic, "Feed video content remains fully visible")
+    expect(".media-kind-video.is-landscape" in cinematic and "16 / 9" in cinematic, "Feed still labels landscape video wrappers")
+    expect(".media-kind-video.is-ultrawide" in cinematic and "21 / 9" in cinematic, "Feed still labels ultrawide video wrappers")
 
-    expect("video-frame-repair-20260603" in renderer, "renderer cache tag uses video frame repair version")
-    expect("video-frame-repair-20260603" in bot, "Pulse pages load video frame repair assets")
+    expect("video-stage-size-20260605" in renderer, "renderer cache tag uses video stage sizing version")
+    expect("video-stage-size-20260605" in bot, "Pulse pages load video stage sizing assets")
     expect("object-fit:contain" not in reels.replace(" ", ""), "Reels CSS has no visible contain fallback")
 
     print("pulse video aspect ratio audit ok")

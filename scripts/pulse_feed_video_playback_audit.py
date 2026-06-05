@@ -27,7 +27,7 @@ def main() -> None:
         "data-pulse-video-player",
         "muted controls playsinline webkit-playsinline preload",
         "window.PulseMediaRenderer?.hydrate(document)",
-        "pulse_media_renderer.js?v=video-frame-repair-20260603",
+        "pulse_media_renderer.js?v=video-stage-size-20260605",
     ]:
         expect(token in bot, f"feed page includes {token}")
 
@@ -36,7 +36,10 @@ def main() -> None:
         "max-width: 1220px",
         ".post.is-video .media-grid",
         "max-width: 1180px",
-        "max-height: min(78vh, 760px)",
+        "height: clamp(650px, 72vh, 800px)",
+        "min-height: 650px",
+        "height: clamp(60vh, 68vh, 75vh)",
+        "object-fit: contain",
         "margin-left: auto",
         "margin-right: auto",
     ]:

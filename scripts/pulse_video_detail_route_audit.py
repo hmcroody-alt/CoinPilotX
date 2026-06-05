@@ -15,6 +15,9 @@ for token in [
     "Preparing video...",
     "Video processing failed",
     "Related videos",
+    "height:clamp(650px,72vh,800px)",
+    "height:clamp(60vh,68vh,75vh)",
+    "object-fit:contain",
 ]:
     assert token in bot, f"missing video detail route token: {token}"
     print(f"PASS: {token}")

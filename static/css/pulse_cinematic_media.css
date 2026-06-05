@@ -645,3 +645,66 @@ article.card > .pulse-media-wrap {
     animation: none !important;
   }
 }
+
+/* Pulse immersive video stage: reserve height first, then contain media inside it. */
+.post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+.video-thumb .pulse-media-wrap.media-kind-video,
+.video-detail-player.pulse-media-wrap.media-kind-video {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: clamp(650px, 72vh, 800px) !important;
+  min-height: 650px !important;
+  max-height: 800px !important;
+  aspect-ratio: auto !important;
+  margin-inline: auto !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(var(--pulse-media-rgb, 110, 223, 246), .12), transparent 34%),
+    linear-gradient(145deg, rgba(3, 10, 20, .98), rgba(4, 14, 27, .96) 54%, rgba(1, 5, 12, .98)) !important;
+}
+
+.post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) img,
+.post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) video,
+.post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) img,
+.post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) video,
+.post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) img,
+.post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) video,
+article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) img,
+article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview) video,
+.video-thumb .pulse-media-wrap.media-kind-video img,
+.video-thumb .pulse-media-wrap.media-kind-video video,
+.video-detail-player.pulse-media-wrap.media-kind-video img,
+.video-detail-player.pulse-media-wrap.media-kind-video video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  background: transparent !important;
+}
+
+.post:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)),
+.post.is-video:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)),
+.post.has-media:has(.pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status)) {
+  width: min(100%, 1220px) !important;
+  max-width: 1220px !important;
+}
+
+@media (max-width: 900px) {
+  .post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+  .post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+  .post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+  article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
+  .video-thumb .pulse-media-wrap.media-kind-video,
+  .video-detail-player.pulse-media-wrap.media-kind-video {
+    height: clamp(60vh, 68vh, 75vh) !important;
+    min-height: 60vh !important;
+    max-height: 75vh !important;
+    aspect-ratio: auto !important;
+  }
+}

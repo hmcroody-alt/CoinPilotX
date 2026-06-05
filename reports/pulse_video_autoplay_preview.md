@@ -19,4 +19,10 @@
 
 ## Detail sizing
 
-The video detail player now uses a single-column Pulse layout and a large `16:9` frame up to `1172px` wide, preserving black letterbox space around contained video so the total player frame matches the intended larger visual footprint.
+The shared Pulse video stage now reserves a fixed immersive frame before media loads:
+
+- Desktop feed/detail/video-library frame: `clamp(650px, 72vh, 800px)`.
+- Mobile feed/detail/video-library frame: `clamp(60vh, 68vh, 75vh)`.
+- Video content uses `object-fit: contain`, so landscape, portrait, square, and long-form videos remain fully visible and centered.
+- Letterboxing/background space is intentional and no longer collapses to the intrinsic video ratio.
+- Reels and Status keep their full-screen cover behavior because those surfaces are designed as immersive vertical/story canvases.
