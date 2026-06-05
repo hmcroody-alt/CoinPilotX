@@ -160,11 +160,14 @@
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
-            <input name="full_name" autocomplete="name" placeholder="Full name" />
-            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <input name="full_name" autocomplete="name" placeholder="Display name" required />
+            <input name="username" autocomplete="username" placeholder="Username / handle" required />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address or add phone below" />
             <input name="password" type="password" autocomplete="new-password" placeholder="Password, 8+ characters" required />
-            <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional for SMS)" />
-            <input name="country" autocomplete="country-name" placeholder="Country (optional)" />
+            <input name="phone" type="tel" autocomplete="tel" placeholder="Phone number if not using email" />
+            <input name="country" autocomplete="country-name" placeholder="Country" required />
+            <label class="consent-row"><input type="checkbox" name="age_confirmed" required /><span>I confirm I meet the age requirements for my country.</span></label>
+            <label class="consent-row"><input type="checkbox" required /><span>I agree to the Terms and Privacy Policy.</span></label>
             <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span></label>
             <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
             <button class="button primary" type="submit">Create Account</button>

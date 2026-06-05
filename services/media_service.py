@@ -1088,6 +1088,10 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
                     SET mux_asset_id=?, mux_playback_id=?, mux_status=?,
                         playback_url=?, playback_mime_type=?,
                         processing_status=CASE WHEN ? IN ('ready','asset_ready','available') THEN 'ready' ELSE 'mux_processing' END,
+                        upload_complete_at=COALESCE(upload_complete_at, ?),
+                        mux_asset_created_at=COALESCE(mux_asset_created_at, ?),
+                        mux_ready_at=CASE WHEN ? IN ('ready','asset_ready','available') THEN COALESCE(mux_ready_at, ?) ELSE mux_ready_at END,
+                        db_ready_update_at=CASE WHEN ? IN ('ready','asset_ready','available') THEN COALESCE(db_ready_update_at, ?) ELSE db_ready_update_at END,
                         updated_at=?
                     WHERE id=?
                     """,
@@ -1098,6 +1102,12 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
                         mux_urls.get("hls_url") or "",
                         "application/vnd.apple.mpegurl",
                         mux.get("status") or "created",
+                        _now(),
+                        _now(),
+                        mux.get("status") or "created",
+                        _now(),
+                        mux.get("status") or "created",
+                        _now(),
                         _now(),
                         media_id,
                     ),

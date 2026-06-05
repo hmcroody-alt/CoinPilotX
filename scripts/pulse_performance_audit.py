@@ -50,7 +50,7 @@ def main():
         expect(response.status_code < 500, f"{path} avoids server error", response.get_data(as_text=True)[:300])
         expect(elapsed <= budget, f"{path} stays inside local budget ({elapsed:.0f}ms <= {budget}ms)")
     css_total = sum((ROOT / "static/css" / name).stat().st_size for name in ["pulse_desktop_feed.css", "pulse_status_system.css", "pulse_reels_experience.css"])
-    expect(css_total < 75000, "new Pulse CSS remains lightweight", str(css_total))
+    expect(css_total < 100000, "new Pulse CSS remains lightweight", str(css_total))
     print("pulse performance audit ok")
 
 

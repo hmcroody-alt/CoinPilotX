@@ -9,6 +9,7 @@
   const SOUND_KEY = "pulseMediaSoundEnabled";
   const REELS_SOUND_KEY = "pulseReelsSoundEnabled";
   const metadataCache = new Map();
+  const processingPolls = new Map();
   let hlsLoaderPromise = null;
 
   function ensurePortalStyles() {
@@ -247,9 +248,10 @@
       `data-media-embed="${esc(media.embed_type)}"`,
       `data-media-platform="${esc(media.source_platform)}"`,
       `data-media-surface="${esc(surface)}"`,
+      `data-media-processing-status="${esc(media.processing_status)}"`,
       `data-media-diag="${diag}"`,
     ].join(" ") + (extraAttrs ? ` ${extraAttrs}` : "");
-    const fallback = `<div class="pulse-media-fallback" data-media-fallback="${esc(media.id)}"><div><strong>${processing ? "Video is processing." : media.is_available ? "Media could not load." : "Media is being restored."}</strong><span class="muted">${processing ? "Mux playback will appear when ready." : `Tap to retry. Trace media-${esc(media.id || "unknown")}`}</span><br>${processing ? "" : "<button type=\"button\" data-retry-media>Retry</button>"}</div></div>`;
+    const fallback = `<div class="pulse-media-fallback" data-media-fallback="${esc(media.id)}"><div><strong>${processing ? "Preparing video..." : media.is_available ? "Media could not load." : "Media is being restored."}</strong><span class="muted" data-media-processing-copy>${processing ? "Playback will appear here when it is ready." : `Tap to retry. Trace media-${esc(media.id || "unknown")}`}</span><br>${processing ? `<button type="button" data-repair-media="${esc(media.id)}">Check now</button>` : "<button type=\"button\" data-retry-media>Retry</button>"}</div></div>`;
     if (!media.is_available || processing) {
       return `<div class="${shellClass}" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}${fallback}</div>`;
     }
@@ -277,6 +279,37 @@
     if (!wrap) return;
     wrap.classList.remove(LOADED, LOADING, BROKEN);
     wrap.classList.add(state);
+  }
+
+  function startProcessingPoll(wrap) {
+    const mediaId = wrap?.dataset.mediaId || "";
+    if (!wrap || !mediaId || wrap.dataset.mediaProcessingStatus !== "mux_processing") return;
+    if (processingPolls.has(mediaId)) return;
+    const started = Date.now();
+    const poll = async () => {
+      if (!document.body.contains(wrap)) {
+        clearInterval(processingPolls.get(mediaId));
+        processingPolls.delete(mediaId);
+        return;
+      }
+      const copy = wrap.querySelector("[data-media-processing-copy]");
+      if (copy && Date.now() - started > 180000) copy.textContent = "Processing is taking longer than usual. We are still checking the video.";
+      try {
+        const response = await fetch(`/api/pulse/media/${encodeURIComponent(mediaId)}/status`, { credentials: "same-origin", cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) return;
+        const status = String(data.processing_status || data.media?.processing_status || "").toLowerCase();
+        if (status === "ready" || data.media?.mux_playback_id || data.media?.playback_url) {
+          clearInterval(processingPolls.get(mediaId));
+          processingPolls.delete(mediaId);
+          const parent = wrap.parentElement;
+          wrap.outerHTML = renderMedia(data.media || {}, { surface: wrap.dataset.mediaSurface || "pulse" });
+          hydrate(parent || document);
+        }
+      } catch (_) {}
+    };
+    processingPolls.set(mediaId, setInterval(poll, 12000));
+    setTimeout(poll, 800);
   }
 
   function setBackdrop(wrap) {
@@ -714,6 +747,10 @@
       });
     }
     if (!media) {
+      if (wrap.dataset.mediaProcessingStatus === "mux_processing") {
+        startProcessingPoll(wrap);
+        return;
+      }
       if (wrap.classList.contains(BROKEN)) return;
       mark(wrap, BROKEN);
       return;
@@ -820,8 +857,34 @@
       return;
     }
     const button = event.target.closest("[data-retry-media]");
-    if (!button) return;
-    retry(button.closest(".pulse-media-wrap"));
+    if (button) {
+      retry(button.closest(".pulse-media-wrap"));
+      return;
+    }
+    const repair = event.target.closest("[data-repair-media]");
+    if (!repair) return;
+    const wrap = repair.closest(".pulse-media-wrap");
+    const mediaId = repair.dataset.repairMedia || wrap?.dataset.mediaId || "";
+    if (!mediaId) return;
+    repair.disabled = true;
+    repair.textContent = "Checking...";
+    fetch(`/api/pulse/media/${encodeURIComponent(mediaId)}/repair`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(response => response.json().then(data => ({ response, data })))
+      .then(({ response, data }) => {
+        if (!response.ok || data.ok === false) throw new Error(data.message || "Video is still preparing.");
+        const parent = wrap?.parentElement;
+        if (wrap && data.media) {
+          wrap.outerHTML = renderMedia(data.media, { surface: wrap.dataset.mediaSurface || "pulse" });
+          hydrate(parent || document);
+        }
+      })
+      .catch(error => {
+        repair.textContent = error?.message || "Still preparing";
+        setTimeout(() => {
+          repair.disabled = false;
+          repair.textContent = "Check now";
+        }, 2200);
+      });
   });
 
   document.addEventListener("DOMContentLoaded", () => hydrate(document));

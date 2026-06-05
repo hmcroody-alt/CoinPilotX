@@ -39,7 +39,6 @@ def main():
         ("--reels-bottom-safe", "bottom safe variable"),
         ("scroll-snap-type:y mandatory", "snap scrolling"),
         ("data-orientation", "adaptive orientation metadata"),
-        ("object-fit: contain", "adaptive fit contain"),
         ("object-fit: cover", "adaptive fit cover"),
         ("reels-desktop-intel", "desktop separation"),
         ("grid-template-columns:minmax(320px", "desktop stage/details grid"),

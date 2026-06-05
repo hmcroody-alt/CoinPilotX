@@ -33,10 +33,10 @@ def main() -> None:
 
     for token in [
         ".post.has-media .media-grid",
-        "max-width: 760px",
+        "max-width: 1220px",
         ".post.is-video .media-grid",
-        "max-width: 680px",
-        "max-height: min(72vh, 620px)",
+        "max-width: 1180px",
+        "max-height: min(78vh, 760px)",
         "margin-left: auto",
         "margin-right: auto",
     ]:

@@ -118,6 +118,8 @@
   function shouldUseDirectMux(file, type, opts) {
     if (!isVideoFile(file, type)) return false;
     if (opts.directMux === false || opts.disableDirectMux) return false;
+    if (opts.directMux === true || opts.preferDirectMux) return true;
+    if (!/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") && Number(file.size || 0) >= 8 * 1024 * 1024) return true;
     const threshold = Number(opts.directMuxThresholdBytes || DIRECT_VIDEO_THRESHOLD_BYTES);
     return Number(file.size || 0) >= threshold;
   }

@@ -59,7 +59,7 @@ def main():
     payload = api.get_json() or {}
     expect(api.status_code == 200 and payload.get("ok") is True, "Reels feed API returns ok", api.get_data(as_text=True)[:300])
     css = (ROOT / "static/css/pulse_reels_experience.css").read_text(encoding="utf-8")
-    for token in ["100dvh", "object-fit: contain", "data-orientation", "prefers-reduced-motion", "--reels-tabs-height"]:
+    for token in ["100dvh", "object-fit:cover", "data-orientation", "prefers-reduced-motion", "--reels-tabs-height"]:
         expect(token in css or token in html, f"Reels adaptive CSS contains {token}")
     print("reels mobile audit ok")
 
