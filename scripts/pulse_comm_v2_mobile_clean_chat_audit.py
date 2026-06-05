@@ -10,6 +10,8 @@ js = (root / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
 
 for token in ['data-mobile-mode="list"', 'data-mobile-mode="thread"', "height: 100dvh", ".composer", "position: sticky", "data-conversation-search"]:
     assert token in css or token in html or token in js, token
-assert "comm-details" not in html
+assert "comm-details" in html
+assert ".comm-shell.details-open .comm-details" in css
+assert "position: fixed" in css and "transform: translateX(104%)" in css
 assert 'class="desktop-only" type="button" data-open-new-room' in html
 print("pulse comm v2 mobile clean chat audit ok")

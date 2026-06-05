@@ -22,7 +22,7 @@
     initialThreadLoaded: false,
     typingTimer: 0,
     typingSentAt: 0,
-    detailsCollapsed: false,
+    detailsOpen: false,
     actionPending: false,
     mobileMode: "list",
     conversationSearch: "",
@@ -762,14 +762,23 @@
     const button = container?.querySelector("[data-voice-play]");
     if (!audio || !button) return;
     document.querySelectorAll("[data-voice-audio]").forEach((item) => {
-      if (item !== audio) item.pause();
+      if (item !== audio) {
+        item.pause();
+        const otherButton = item.closest("[data-voice-message]")?.querySelector("[data-voice-play]");
+        if (otherButton) {
+          otherButton.textContent = "Play";
+          otherButton.dataset.playing = "false";
+        }
+      }
     });
     if (audio.paused) {
       audio.play().catch(() => setStatus("Tap again to play this voice note.", "error"));
       button.textContent = "Pause";
+      button.dataset.playing = "true";
     } else {
       audio.pause();
       button.textContent = "Play";
+      button.dataset.playing = "false";
     }
     bindVoiceAudio(container);
   }
@@ -795,7 +804,10 @@
     });
     audio.addEventListener("ended", () => {
       const button = container.querySelector("[data-voice-play]");
-      if (button) button.textContent = "Play";
+      if (button) {
+        button.textContent = "Play";
+        button.dataset.playing = "false";
+      }
     });
     progress?.addEventListener("click", (event) => {
       if (!audio.duration) return;
@@ -1312,8 +1324,8 @@
   }
 
   function toggleDetails() {
-    state.detailsCollapsed = !state.detailsCollapsed;
-    root?.classList.toggle("details-collapsed", state.detailsCollapsed);
+    state.detailsOpen = !state.detailsOpen;
+    root?.classList.toggle("details-open", state.detailsOpen);
   }
 
   function shortTime(value) {
