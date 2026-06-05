@@ -1792,13 +1792,16 @@ def stage_attachment_upload(user_id: int, file_storage, conversation_ref: int | 
             conn.close()
         media["duration_seconds"] = duration_seconds
         media["waveform_json"] = waveform_json
-        media["voice_note"] = voice_note
+        media["waveform"] = voice_meta.get("waveform") or []
+        media["voice_note"] = bool(voice_note)
+        media["media_type"] = "audio" if voice_note else media.get("media_type") or "file"
+        payload["media"] = media
     payload.setdefault("http_status", status)
     if payload.get("ok") and payload.get("media"):
         payload["attachment_support"] = {
             "images": True,
             "files": True,
-            "audio_voice_notes": "placeholder",
+            "audio_voice_notes": True,
             "video_messages": "mux_preferred",
         }
     return payload

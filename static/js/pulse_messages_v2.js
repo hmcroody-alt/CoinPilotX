@@ -26,6 +26,19 @@
     actionPending: false,
     mobileMode: "list",
     conversationSearch: "",
+    voice: {
+      stream: null,
+      recorder: null,
+      chunks: [],
+      blob: null,
+      url: "",
+      startedAt: 0,
+      elapsedMs: 0,
+      timer: 0,
+      analyserTimer: 0,
+      waveform: [],
+      state: "idle",
+    },
   };
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -209,6 +222,7 @@
   function attachmentHtml(item) {
     const url = item.playback_url || item.url || item.cdn_url || item.thumbnail_url || "";
     if (!url) return "";
+    if (item.voice_note || (item.media_type || "").match(/audio|voice/)) return voiceAttachmentHtml(item, url);
     if (window.PulseMediaRenderer && (item.media_type || "").match(/image|gif|video|audio/)) {
       return window.PulseMediaRenderer.renderMedia({
         ...item,
@@ -224,6 +238,28 @@
     if ((item.media_type || "").match(/image|gif/)) return `<img src="${escapeAttr(url)}" alt="Attached media">`;
     if ((item.media_type || "").match(/video/)) return `<video src="${escapeAttr(url)}" controls playsinline webkit-playsinline preload="metadata" poster="${escapeAttr(item.thumbnail_url || "")}"></video>`;
     return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener">Open attachment</a>`;
+  }
+
+  function voiceAttachmentHtml(item, url) {
+    const waveform = Array.isArray(item.waveform) && item.waveform.length ? item.waveform : Array.from({ length: 36 }, (_, index) => 22 + ((index * 17) % 54));
+    const bars = waveform.slice(0, 56).map((level) => `<i style="--level:${Math.max(8, Math.min(100, Number(level) || 18))}"></i>`).join("");
+    const duration = Number(item.duration_seconds || item.duration || 0);
+    return `
+      <div class="voice-message" data-voice-message>
+        <div class="voice-message-controls">
+          <button type="button" data-voice-play aria-label="Play voice note">Play</button>
+          <progress data-voice-progress max="100" value="0"></progress>
+          <select data-voice-speed aria-label="Playback speed">
+            <option value="1">1x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+        </div>
+        <div class="voice-waveform" data-voice-playback-waveform>${bars}</div>
+        <small><span data-voice-current>0:00</span> / <span data-voice-duration>${formatDuration(duration)}</span></small>
+        <audio data-voice-audio preload="metadata" src="${escapeAttr(url)}"></audio>
+      </div>
+    `;
   }
 
   async function loadConversations({ selectFirst = !isMobile() } = {}) {
@@ -272,6 +308,7 @@
       renderMessages();
       renderMembers();
       if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
+      document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
     } finally {
       state.loadingThread = false;
     }
@@ -295,12 +332,15 @@
     }
   }
 
-  async function uploadSelectedFile(file) {
+  async function uploadSelectedFile(file, metadata = {}) {
     if (!file) return 0;
     const fd = new FormData();
     fd.append("file", file);
     fd.append("context_type", "pulse_comm_v2");
     fd.append("conversation_id", state.active?.conversation_id || "");
+    Object.entries(metadata || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) fd.append(key, typeof value === "string" ? value : JSON.stringify(value));
+    });
     const started = performance.now();
     const res = await fetch(`${API}/attachments/upload`, { method: "POST", credentials: "same-origin", body: fd });
     const text = await res.text();
@@ -309,6 +349,233 @@
     console.info("Pulse Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
     if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
     return Number(data.media?.id || 0);
+  }
+
+  function recorderMimeType() {
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+    return candidates.find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || "";
+  }
+
+  function formatDuration(seconds) {
+    const value = Math.max(0, Number(seconds || 0));
+    const mins = Math.floor(value / 60);
+    const secs = Math.floor(value % 60);
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  }
+
+  function updateVoicePanel() {
+    const panel = el("[data-voice-panel]");
+    const stateLabel = el("[data-voice-state]");
+    const timer = el("[data-voice-timer]");
+    const pause = el("[data-voice-pause]");
+    const resume = el("[data-voice-resume]");
+    const stop = el("[data-voice-stop]");
+    const preview = el("[data-voice-preview]");
+    const wave = el("[data-voice-waveform]");
+    const voiceState = state.voice.state;
+    if (!panel) return;
+    panel.hidden = voiceState === "idle";
+    panel.dataset.state = voiceState;
+    el("[data-voice-start]")?.classList.toggle("is-recording", voiceState === "recording");
+    if (stateLabel) stateLabel.textContent = voiceState === "recording" ? "Recording..." : voiceState === "paused" ? "Paused" : voiceState === "ready" ? "Ready to send" : "Ready to record";
+    if (timer) timer.textContent = formatDuration((state.voice.elapsedMs || 0) / 1000);
+    if (pause) pause.hidden = voiceState !== "recording";
+    if (resume) resume.hidden = voiceState !== "paused";
+    if (stop) stop.hidden = !["recording", "paused"].includes(voiceState);
+    if (preview) {
+      preview.hidden = voiceState !== "ready";
+      if (state.voice.url && preview.src !== state.voice.url) preview.src = state.voice.url;
+    }
+    if (wave) wave.innerHTML = (state.voice.waveform.length ? state.voice.waveform : Array.from({ length: 32 }, () => 12)).slice(-56).map((level) => `<i style="--level:${Math.max(8, Math.min(100, Number(level) || 12))}"></i>`).join("");
+  }
+
+  function startVoiceTimer() {
+    window.clearTimeout(state.voice.timer);
+    state.voice.startedAt = Date.now();
+    const tick = () => {
+      if (state.voice.state === "recording") {
+        state.voice.elapsedMs += Date.now() - state.voice.startedAt;
+        state.voice.startedAt = Date.now();
+        updateVoicePanel();
+        state.voice.timer = window.setTimeout(tick, 300);
+      }
+    };
+    state.voice.timer = window.setTimeout(tick, 300);
+  }
+
+  async function startVoiceRecording() {
+    if (!state.active) return setStatus("Choose a conversation before recording.", "error");
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      return setStatus("Voice recording is not supported in this browser.", "error");
+    }
+    discardVoiceRecording({ silent: true });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const mimeType = recorderMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      state.voice.stream = stream;
+      state.voice.recorder = recorder;
+      state.voice.chunks = [];
+      state.voice.waveform = [];
+      state.voice.elapsedMs = 0;
+      state.voice.state = "recording";
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data && event.data.size) state.voice.chunks.push(event.data);
+      });
+      recorder.addEventListener("stop", () => {
+        if (recorder._discarded) return;
+        finalizeVoiceRecording(mimeType || recorder.mimeType || "audio/webm");
+      });
+      recorder.start(500);
+      startVoiceAnalyser(stream);
+      startVoiceTimer();
+      updateVoicePanel();
+      setStatus("Recording voice note...");
+    } catch (error) {
+      discardVoiceRecording({ silent: true });
+      setStatus(error?.name === "NotAllowedError" ? "Microphone permission was denied." : "Microphone could not start. Try again.", "error");
+    }
+  }
+
+  function startVoiceAnalyser(stream) {
+    window.clearTimeout(state.voice.analyserTimer);
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const context = new AudioCtx();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 128;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const sample = () => {
+        if (state.voice.state !== "recording") return;
+        analyser.getByteTimeDomainData(data);
+        const peak = data.reduce((max, value) => Math.max(max, Math.abs(value - 128)), 0);
+        state.voice.waveform.push(Math.max(8, Math.min(100, Math.round((peak / 128) * 100))));
+        if (state.voice.waveform.length > 80) state.voice.waveform.shift();
+        updateVoicePanel();
+        state.voice.analyserTimer = window.setTimeout(sample, 180);
+      };
+      state.voice.analyserTimer = window.setTimeout(sample, 180);
+    } catch (_) {}
+  }
+
+  function pauseVoiceRecording() {
+    if (state.voice.recorder?.state === "recording") {
+      state.voice.elapsedMs += Date.now() - state.voice.startedAt;
+      state.voice.recorder.pause();
+      state.voice.state = "paused";
+      updateVoicePanel();
+      setStatus("Voice recording paused.");
+    }
+  }
+
+  function resumeVoiceRecording() {
+    if (state.voice.recorder?.state === "paused") {
+      state.voice.startedAt = Date.now();
+      state.voice.recorder.resume();
+      state.voice.state = "recording";
+      updateVoicePanel();
+      setStatus("Recording voice note...");
+    }
+  }
+
+  function stopVoiceRecording() {
+    if (!state.voice.recorder || !["recording", "paused"].includes(state.voice.recorder.state)) return;
+    if (state.voice.recorder.state === "recording") state.voice.elapsedMs += Date.now() - state.voice.startedAt;
+    state.voice.recorder.stop();
+    window.clearTimeout(state.voice.timer);
+    window.clearTimeout(state.voice.analyserTimer);
+    state.voice.stream?.getTracks?.().forEach((track) => track.stop());
+  }
+
+  function finalizeVoiceRecording(mimeType) {
+    const blob = new Blob(state.voice.chunks, { type: mimeType || "audio/webm" });
+    if (blob.size < 64) {
+      discardVoiceRecording({ silent: true });
+      return setStatus("Voice note was too short. Try again.", "error");
+    }
+    state.voice.blob = blob;
+    state.voice.url = URL.createObjectURL(blob);
+    state.voice.state = "ready";
+    if (!state.voice.waveform.length) state.voice.waveform = Array.from({ length: 36 }, (_, index) => 18 + ((index * 13) % 58));
+    updateVoicePanel();
+    setStatus("Voice note ready to send.");
+  }
+
+  function discardVoiceRecording(options = {}) {
+    window.clearTimeout(state.voice.timer);
+    window.clearTimeout(state.voice.analyserTimer);
+    try {
+      if (state.voice.recorder && ["recording", "paused"].includes(state.voice.recorder.state)) {
+        state.voice.recorder._discarded = true;
+        state.voice.recorder.stop();
+      }
+    } catch (_) {}
+    state.voice.stream?.getTracks?.().forEach((track) => track.stop());
+    if (state.voice.url) URL.revokeObjectURL(state.voice.url);
+    state.voice = { stream: null, recorder: null, chunks: [], blob: null, url: "", startedAt: 0, elapsedMs: 0, timer: 0, analyserTimer: 0, waveform: [], state: "idle" };
+    updateVoicePanel();
+    if (!options.silent) setStatus("Voice note discarded.");
+  }
+
+  async function uploadVoiceDraft() {
+    if (!state.voice.blob || state.voice.state !== "ready") return 0;
+    const ext = state.voice.blob.type.includes("mp4") ? "m4a" : "ogg";
+    const file = new File([state.voice.blob], `pulse-voice-note-${Date.now()}.${ext}`, { type: state.voice.blob.type || "audio/webm" });
+    return uploadSelectedFile(file, {
+      attachment_kind: "voice_note",
+      duration_seconds: Math.max(1, Math.round((state.voice.elapsedMs || 0) / 1000)),
+      waveform_json: JSON.stringify(state.voice.waveform || []),
+    });
+  }
+
+  function toggleVoicePlayback(container) {
+    const audio = container?.querySelector("[data-voice-audio]");
+    const button = container?.querySelector("[data-voice-play]");
+    if (!audio || !button) return;
+    document.querySelectorAll("[data-voice-audio]").forEach((item) => {
+      if (item !== audio) item.pause();
+    });
+    if (audio.paused) {
+      audio.play().catch(() => setStatus("Tap again to play this voice note.", "error"));
+      button.textContent = "Pause";
+    } else {
+      audio.pause();
+      button.textContent = "Play";
+    }
+    bindVoiceAudio(container);
+  }
+
+  function setVoicePlaybackSpeed(container, speed) {
+    const audio = container?.querySelector("[data-voice-audio]");
+    if (audio) audio.playbackRate = Number(speed || 1);
+  }
+
+  function bindVoiceAudio(container) {
+    const audio = container?.querySelector("[data-voice-audio]");
+    if (!audio || audio.dataset.bound === "1") return;
+    audio.dataset.bound = "1";
+    const progress = container.querySelector("[data-voice-progress]");
+    const current = container.querySelector("[data-voice-current]");
+    const duration = container.querySelector("[data-voice-duration]");
+    audio.addEventListener("loadedmetadata", () => {
+      if (duration) duration.textContent = formatDuration(audio.duration || 0);
+    });
+    audio.addEventListener("timeupdate", () => {
+      if (current) current.textContent = formatDuration(audio.currentTime || 0);
+      if (progress) progress.value = audio.duration ? Math.round((audio.currentTime / audio.duration) * 100) : 0;
+    });
+    audio.addEventListener("ended", () => {
+      const button = container.querySelector("[data-voice-play]");
+      if (button) button.textContent = "Play";
+    });
+    progress?.addEventListener("click", (event) => {
+      if (!audio.duration) return;
+      const box = progress.getBoundingClientRect();
+      audio.currentTime = ((event.clientX - box.left) / Math.max(1, box.width)) * audio.duration;
+    });
   }
 
   function bind() {
@@ -370,6 +637,15 @@
         const createRoomButton = target.closest("[data-create-room]");
         if (createRoomButton) return await runAction(createRoomButton, "Creating room...", createRoom);
         if (target.closest("[data-pick-file]")) return el("[data-file]")?.click();
+        if (target.closest("[data-voice-start]")) return await startVoiceRecording();
+        if (target.closest("[data-voice-pause]")) return pauseVoiceRecording();
+        if (target.closest("[data-voice-resume]")) return resumeVoiceRecording();
+        if (target.closest("[data-voice-stop]")) return stopVoiceRecording();
+        if (target.closest("[data-voice-discard]")) return discardVoiceRecording();
+        const voicePlay = target.closest("[data-voice-play]");
+        if (voicePlay) return toggleVoicePlayback(voicePlay.closest("[data-voice-message]"));
+        const speed = target.closest("[data-voice-speed]");
+        if (speed) return setVoicePlaybackSpeed(speed.closest("[data-voice-message]"), speed.value);
         if (target.closest("[data-load-older]")) return await loadOlderMessages();
         const room = target.closest("[data-room-id]");
         if (room) return await runAction(room, "Opening room...", () => openRoom(Number(room.dataset.roomId || 0)));
@@ -399,6 +675,11 @@
     el("[data-conversation-search]")?.addEventListener("input", (event) => {
       state.conversationSearch = event.target.value || "";
       renderConversations();
+    });
+    document.addEventListener("change", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const speed = target?.closest("[data-voice-speed]");
+      if (speed) setVoicePlaybackSpeed(speed.closest("[data-voice-message]"), speed.value);
     });
     document.addEventListener("keydown", async (event) => {
       if (event.key === "Escape") return closeModals();
@@ -680,19 +961,22 @@
     const fileInput = el("[data-file]");
     const body = input?.value || "";
     const file = fileInput?.files?.[0];
+    const hasVoice = state.voice.state === "ready" && !!state.voice.blob;
     try {
-      setStatus(file ? "Uploading attachment..." : "Sending...");
-      const mediaId = await uploadSelectedFile(file);
+      setStatus(hasVoice ? "Uploading voice note..." : file ? "Uploading attachment..." : "Sending...");
+      const mediaId = hasVoice ? await uploadVoiceDraft() : await uploadSelectedFile(file);
       const data = await api(`/conversations/${state.active.conversation_id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ body, media_ids: mediaId ? [mediaId] : [], reply_to_message_id: state.replyTo?.id || 0 }),
+        body: JSON.stringify({ body, message_type: hasVoice ? "voice" : "text", media_ids: mediaId ? [mediaId] : [], reply_to_message_id: state.replyTo?.id || 0 }),
       }, "send_message");
       if (input) input.value = "";
       if (fileInput) fileInput.value = "";
+      if (hasVoice) discardVoiceRecording({ silent: true });
       state.replyTo = null;
       if (data.message) {
         state.messages = [...state.messages, data.message];
         renderMessages();
+        document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
       } else {
         await loadMessages(state.active.conversation_id);
       }
