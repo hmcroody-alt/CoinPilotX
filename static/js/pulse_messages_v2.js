@@ -596,6 +596,8 @@
     const pause = el("[data-voice-pause]");
     const resume = el("[data-voice-resume]");
     const stop = el("[data-voice-stop]");
+    const sendVoice = el("[data-voice-send]");
+    const composerSend = el("[data-send-button]");
     const preview = el("[data-voice-preview]");
     const wave = el("[data-voice-waveform]");
     const voiceState = state.voice.state;
@@ -608,6 +610,12 @@
     if (pause) pause.hidden = voiceState !== "recording";
     if (resume) resume.hidden = voiceState !== "paused";
     if (stop) stop.hidden = !["recording", "paused"].includes(voiceState);
+    if (sendVoice) sendVoice.hidden = voiceState !== "ready";
+    if (composerSend) {
+      composerSend.classList.toggle("is-voice-ready", voiceState === "ready");
+      composerSend.setAttribute("aria-label", voiceState === "ready" ? "Send voice note" : "Send message");
+      composerSend.title = voiceState === "ready" ? "Send voice note" : "Send message";
+    }
     if (preview) {
       preview.hidden = voiceState !== "ready";
       if (state.voice.url && preview.src !== state.voice.url) preview.src = state.voice.url;
@@ -727,7 +735,7 @@
     state.voice.state = "ready";
     if (!state.voice.waveform.length) state.voice.waveform = Array.from({ length: 36 }, (_, index) => 18 + ((index * 13) % 58));
     updateVoicePanel();
-    setStatus("Voice note ready to send.");
+    setStatus("Recording complete. Tap Send voice note.");
   }
 
   function discardVoiceRecording(options = {}) {
@@ -744,6 +752,18 @@
     state.voice = { stream: null, recorder: null, chunks: [], blob: null, url: "", startedAt: 0, elapsedMs: 0, timer: 0, analyserTimer: 0, waveform: [], state: "idle" };
     updateVoicePanel();
     if (!options.silent) setStatus("Voice note discarded.");
+  }
+
+  function messageTypeForSend(hasVoice, mediaIds) {
+    if (hasVoice) return "voice";
+    if (!mediaIds.length) return "text";
+    const kinds = state.attachmentQueue
+      .filter((item) => item.mediaId && mediaIds.includes(item.mediaId))
+      .map((item) => item.kind);
+    if (kinds.includes("video")) return "video";
+    if (kinds.includes("audio")) return "audio";
+    if (kinds.includes("image")) return "image";
+    return "file";
   }
 
   async function uploadVoiceDraft() {
@@ -906,6 +926,7 @@
         if (target.closest("[data-voice-pause]")) return pauseVoiceRecording();
         if (target.closest("[data-voice-resume]")) return resumeVoiceRecording();
         if (target.closest("[data-voice-stop]")) return stopVoiceRecording();
+        if (target.closest("[data-voice-send]")) return el("[data-composer]")?.requestSubmit();
         if (target.closest("[data-voice-discard]")) return discardVoiceRecording();
         const voicePlay = target.closest("[data-voice-play]");
         if (voicePlay) return toggleVoicePlayback(voicePlay.closest("[data-voice-message]"));
@@ -1233,12 +1254,13 @@
       setStatus(hasVoice ? "Uploading voice note..." : state.attachmentQueue.length ? "Uploading attachments..." : "Sending...");
       const mediaIds = state.attachmentQueue.length ? await uploadAttachmentQueue() : [];
       const voiceId = hasVoice ? await uploadVoiceDraft() : 0;
+      const allMediaIds = [...mediaIds, ...(voiceId ? [voiceId] : [])];
       const data = await api(`/conversations/${state.active.conversation_id}/messages`, {
         method: "POST",
         body: JSON.stringify({
           body,
-          message_type: hasVoice ? "voice" : mediaIds.length ? "media" : "text",
-          media_ids: [...mediaIds, ...(voiceId ? [voiceId] : [])],
+          message_type: messageTypeForSend(hasVoice, allMediaIds),
+          media_ids: allMediaIds,
           reply_to_message_id: state.replyTo?.id || 0,
           client_message_id: clientMessageId,
         }),

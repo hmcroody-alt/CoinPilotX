@@ -54,6 +54,22 @@
       </div>
       <div class="typing-pill" data-typing-pill hidden></div>
       <section class="attachment-preview-rail" data-attachment-preview hidden aria-label="Selected attachments"></section>
+      <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
+        <div class="voice-recorder-main">
+          <span class="voice-dot" aria-hidden="true"></span>
+          <strong data-voice-state>Ready to record</strong>
+          <span data-voice-timer>0:00</span>
+        </div>
+        <div class="voice-waveform" data-voice-waveform aria-label="Voice waveform"></div>
+        <audio data-voice-preview controls preload="metadata" hidden></audio>
+        <div class="voice-actions">
+          <button type="button" data-voice-pause>Pause</button>
+          <button type="button" data-voice-resume hidden>Resume</button>
+          <button type="button" data-voice-stop>Stop</button>
+          <button class="primary" type="button" data-voice-send hidden>Send voice note</button>
+          <button type="button" data-voice-discard>Discard</button>
+        </div>
+      </section>
       <section class="attachment-sheet" data-attachment-sheet hidden aria-label="Add attachment">
         <button type="button" data-attachment-option="camera">Camera</button>
         <button type="button" data-attachment-option="photo">Photo</button>
@@ -70,23 +86,8 @@
         <button class="icon-btn attachment-trigger" type="button" data-toggle-attachments title="Attach media" aria-label="Attach media">+</button>
         <input data-message-input autocomplete="off" placeholder="Type a message">
         <button class="icon-btn voice-trigger" type="button" data-voice-start title="Record voice note" aria-label="Record voice note">🎤</button>
-        <button class="send-btn" type="submit" aria-label="Send message">➤</button>
+        <button class="send-btn" type="submit" aria-label="Send message" data-send-button>➤</button>
       </form>
-      <section class="voice-recorder" data-voice-panel hidden aria-live="polite">
-        <div class="voice-recorder-main">
-          <span class="voice-dot" aria-hidden="true"></span>
-          <strong data-voice-state>Ready to record</strong>
-          <span data-voice-timer>0:00</span>
-        </div>
-        <div class="voice-waveform" data-voice-waveform aria-label="Voice waveform"></div>
-        <audio data-voice-preview controls preload="metadata" hidden></audio>
-        <div class="voice-actions">
-          <button type="button" data-voice-pause>Pause</button>
-          <button type="button" data-voice-resume hidden>Resume</button>
-          <button type="button" data-voice-stop>Stop</button>
-          <button type="button" data-voice-discard>Discard</button>
-        </div>
-      </section>
       <div class="composer-status" data-status role="status" aria-live="polite"></div>
     </section>
 

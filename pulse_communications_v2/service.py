@@ -17,7 +17,7 @@ from .models import ensure_schema
 
 DISABLED_MESSAGE = "Pulse Communications 2.0 is not public yet."
 ALLOWED_CONVERSATION_TYPES = {"direct", "group", "room", "community_channel"}
-ALLOWED_MESSAGE_TYPES = {"text", "image", "gif", "video", "audio", "voice", "file", "system"}
+ALLOWED_MESSAGE_TYPES = {"text", "image", "gif", "video", "audio", "voice", "file", "media", "system"}
 _SCHEMA_READY = False
 _SCHEMA_LOCK = threading.Lock()
 
@@ -724,7 +724,10 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
     if not body and not media_ids:
         return _err("Write a message or attach a file before sending.", 400, "empty_message")
     conn, cur = _open_db()
+    step = "open_db"
+    message_id = 0
     try:
+        step = "conversation_access"
         conversation, access = _conversation_access(cur, user_id, conversation_ref, join_public=True)
         if access == "missing":
             return _err("Conversation not found.", 404, "not_found")
@@ -733,6 +736,7 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         if access == "blocked":
             return _err("Messaging is unavailable for this conversation.", 403, "blocked")
         conversation_id = int(conversation["id"])
+        step = "validate_attachments"
         valid_media_ids, media_error = _validate_message_media_ids(cur, user_id, conversation_id, media_ids)
         if media_error:
             return media_error
@@ -751,6 +755,17 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         if reply_to and not thread_root:
             thread_root = reply_to
         now = _now()
+        step = "insert_message"
+        logging.info(
+            "COMM_V2_SEND_STEP step=%s user_id=%s conversation_id=%s message_type=%s body_len=%s media_ids=%s client_message_id=%s",
+            step,
+            int(user_id),
+            conversation_id,
+            message_type,
+            len(body or ""),
+            media_ids,
+            client_id,
+        )
         cur.execute(
             """
             INSERT INTO comm_v2_messages
@@ -760,11 +775,14 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
             (_public_id("msg"), conversation_id, int(user_id), message_type, body, reply_to, thread_root, client_id, json.dumps(payload.get("metadata") or {}, default=str)[:4000], now, now),
         )
         message_id = int(cur.lastrowid)
+        step = "attach_media"
         attachments = _attach_media(cur, user_id, conversation_id, message_id, media_ids)
+        step = "update_conversation"
         cur.execute(
             "UPDATE comm_v2_conversations SET last_message_id=?, last_message_at=?, last_activity_at=?, updated_at=? WHERE id=?",
             (message_id, now, now, now, conversation_id),
         )
+        step = "update_participants"
         cur.execute(
             """
             UPDATE comm_v2_participants
@@ -775,15 +793,39 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
             """,
             (int(user_id), int(user_id), now, now, conversation_id),
         )
+        step = "mark_read"
         mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
+        step = "message_payload"
         cur.execute("SELECT * FROM comm_v2_messages WHERE id=?", (message_id,))
         message = _message_payload(cur, _row(cur.fetchone()), user_id)
         if attachments:
             message["attachments"] = attachments
+        step = "commit"
         conn.commit()
+        side_effects = _dispatch_message_side_effects(user_id, conversation_id, message)
+        logging.info(
+            "COMM_V2_SEND_COMPLETE user_id=%s conversation_id=%s message_id=%s attachment_count=%s side_effects=%s",
+            int(user_id),
+            conversation_id,
+            message_id,
+            len(attachments or []),
+            side_effects,
+        )
         return _ok({"message": message, "message_id": message_id, "conversation_id": conversation_id}, "Message sent.")
-    except Exception:
+    except Exception as exc:
         conn.rollback()
+        logging.exception(
+            "COMM_V2_SEND_FAILED step=%s user_id=%s conversation_ref=%s message_id=%s message_type=%s body_len=%s media_ids=%s payload_keys=%s error_type=%s",
+            step,
+            int(user_id or 0),
+            conversation_ref,
+            message_id,
+            message_type,
+            len(body or ""),
+            media_ids,
+            sorted((payload or {}).keys()),
+            type(exc).__name__,
+        )
         raise
     finally:
         conn.close()
@@ -827,7 +869,8 @@ def _validate_message_media_ids(cur, user_id: int, conversation_id: int, media_i
         availability_error = str(media.get("availability_error") or media.get("error_message") or "")
         verification = str(media.get("verification_status") or "verified").lower()
         processing = str(media.get("processing_status") or "ready").lower()
-        if verification in {"failed", "blocked"} or processing in {"failed", "blocked"} or availability_error:
+        has_deliverable_url = any(media.get(key) for key in ("media_url", "public_url", "cdn_url", "playback_url", "storage_key", "object_key"))
+        if verification in {"failed", "blocked"} or processing in {"failed", "blocked"} or (availability_error and not has_deliverable_url):
             invalid.append({"media_id": int(media_id), "verification": verification, "processing": processing, "availability_error": availability_error[:160]})
     if invalid:
         logging.warning(
@@ -840,18 +883,95 @@ def _validate_message_media_ids(cur, user_id: int, conversation_id: int, media_i
     return unique_ids, None
 
 
+def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: dict) -> dict:
+    results = {"notifications": "skipped", "realtime": "skipped"}
+    try:
+        recipient_ids = [uid for uid in _participant_ids_for_side_effects(conversation_id) if int(uid) != int(user_id)]
+        if recipient_ids:
+            from services import notification_service
+
+            preview = message.get("body") or ("Sent a voice note." if message.get("message_type") == "voice" else "Sent an attachment.")
+            for recipient_id in recipient_ids[:25]:
+                notification_service.create_pulse_notification(
+                    int(recipient_id),
+                    note_type="voice_message" if message.get("message_type") == "voice" else "message",
+                    title="New Pulse message",
+                    body=preview[:220],
+                    actor_user_id=int(user_id),
+                    entity_type="comm_v2_message",
+                    entity_id=int(message.get("id") or 0),
+                    deep_link=f"/pulse/messages-v2?conversation={int(conversation_id)}",
+                    metadata={"conversation_id": int(conversation_id), "message_id": int(message.get("id") or 0)},
+                )
+            results["notifications"] = f"created:{len(recipient_ids[:25])}"
+    except Exception as exc:
+        logging.exception("COMM_V2_NOTIFICATION_DISPATCH_FAILED conversation_id=%s message_id=%s error_type=%s", conversation_id, message.get("id"), type(exc).__name__)
+        results["notifications"] = "failed"
+    try:
+        from services import realtime_engine
+
+        realtime_engine.publish_event(
+            f"comm_v2:conversation:{int(conversation_id)}",
+            "message_created",
+            {"conversation_id": int(conversation_id), "message": message},
+        )
+        results["realtime"] = "published"
+    except Exception as exc:
+        logging.exception("COMM_V2_REALTIME_BROADCAST_FAILED conversation_id=%s message_id=%s error_type=%s", conversation_id, message.get("id"), type(exc).__name__)
+        results["realtime"] = "failed"
+    return results
+
+
+def _participant_ids_for_side_effects(conversation_id: int) -> list[int]:
+    conn, cur = _open_db()
+    try:
+        return _participant_ids(cur, int(conversation_id))
+    finally:
+        conn.close()
+
+
 def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, media_ids: list[int]) -> list[dict]:
     out = []
-    for media_id in media_ids[:6]:
+    max_attachments = int(os.getenv("COMM_V2_MAX_ATTACHMENTS", "8") or 8)
+    for media_id in media_ids[:max_attachments]:
+        logging.info(
+            "COMM_V2_ATTACHMENT_STEP step=load_media user_id=%s conversation_id=%s message_id=%s media_id=%s",
+            int(user_id),
+            int(conversation_id),
+            int(message_id),
+            int(media_id),
+        )
         cur.execute(
             "SELECT * FROM chat_media_uploads WHERE id=? AND uploader_user_id=? AND COALESCE(deleted_at,'')='' LIMIT 1",
             (int(media_id), int(user_id)),
         )
         media = _row(cur.fetchone())
         if not media:
+            logging.warning("COMM_V2_ATTACHMENT_MISSING user_id=%s conversation_id=%s message_id=%s media_id=%s", int(user_id), int(conversation_id), int(message_id), int(media_id))
             continue
+        logging.info(
+            "COMM_V2_ATTACHMENT_STEP step=prepare_media user_id=%s conversation_id=%s message_id=%s media_id=%s media_type=%s mime_type=%s processing=%s verification=%s",
+            int(user_id),
+            int(conversation_id),
+            int(message_id),
+            int(media_id),
+            media.get("media_type") or "",
+            media.get("mime_type") or "",
+            media.get("processing_status") or "",
+            media.get("verification_status") or "",
+        )
         media = _prepare_attachment_media(cur, media, media_id)
         now = _now()
+        logging.info(
+            "COMM_V2_ATTACHMENT_STEP step=insert_attachment user_id=%s conversation_id=%s message_id=%s media_id=%s url=%s cdn=%s playback=%s",
+            int(user_id),
+            int(conversation_id),
+            int(message_id),
+            int(media_id),
+            bool(media.get("url") or media.get("media_url") or media.get("public_url")),
+            bool(media.get("cdn_url") or media.get("valid_url")),
+            bool(media.get("playback_url")),
+        )
         cur.execute(
             """
             INSERT INTO comm_v2_attachments
@@ -886,6 +1006,7 @@ def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, medi
                 now,
             ),
         )
+        logging.info("COMM_V2_ATTACHMENT_STEP step=link_upload user_id=%s conversation_id=%s message_id=%s media_id=%s", int(user_id), int(conversation_id), int(message_id), int(media_id))
         cur.execute(
             "UPDATE chat_media_uploads SET message_id=?, context_type='pulse_comm_v2', context_id=? WHERE id=?",
             (int(message_id), str(conversation_id), int(media_id)),

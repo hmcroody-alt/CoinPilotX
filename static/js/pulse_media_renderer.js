@@ -483,6 +483,7 @@
     video.preload = "auto";
     const shouldTrySound = !!preferSound && soundEnabled();
     video.volume = Number(video.dataset.pulsePreferredVolume || 1);
+    if (shouldTrySound) video.defaultMuted = false;
     setVideoMuted(video, !shouldTrySound, "autoplay");
     try {
       await video.play();
@@ -530,7 +531,7 @@
     if (canHoverPreview) {
       wrap.addEventListener("pointerenter", () => {
         hoverVideo = video;
-        playVisibleVideo(video, false);
+        playVisibleVideo(video, soundEnabled());
       });
       wrap.addEventListener("pointerleave", () => {
         if (hoverVideo === video) hoverVideo = null;
@@ -580,7 +581,7 @@
         if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
         const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
-        playVisibleVideo(vid, false);
+        playVisibleVideo(vid, soundEnabled());
         preloadNextVideo(vid);
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
