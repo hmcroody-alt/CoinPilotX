@@ -85,7 +85,7 @@ def main() -> None:
     for token in ["@media (min-width: 941px)", "clamp(320px, 24vw, 360px)", "minmax(0, 1fr)", ".comm-actions"]:
         expect(token in css, f"desktop CSS includes {token}")
     expect("@media (max-width: 720px)" in css and ".mobile-only { display: inline-grid; }" in css, "mobile rules remain present")
-    expect("comm-details" not in html and "data-toggle-details" not in html, "desktop uses the requested two-column layout")
+    expect("comm-details" in html and "data-toggle-details" in html, "desktop keeps the collapsible details panel")
     expect("Pulse Intelligence" not in html and "Coming soon" not in html and "Coming Soon" not in html, "placeholder panels are not rendered")
     expect("data-open-new-chat" in html and "data-open-new-group" in html and "data-open-new-room" in html, "chat and room creation actions are present")
     expect("INITIAL_MESSAGE_LIMIT = 40" in js, "initial message limit is 40")
@@ -94,8 +94,8 @@ def main() -> None:
     expect("data-load-older" in js and "before_id=" in js, "load older pagination exists")
     expect("conversationCache" in js, "conversation metadata cache exists")
     expect("setTimeout(sendTypingIndicator, 450)" in js, "typing indicator is debounced")
-    expect("  loadConversations();\n  loadRooms();\n})();" in js, "single page-load conversation and room fetch triggers")
-    expect("setInterval(" not in js, "no repeated polling interval")
+    expect("  loadConversations();\n  loadRooms();\n  bindRealtimeDelivery();\n})();" in js, "single page-load fetches plus realtime delivery startup")
+    expect("setInterval(" not in js and "scheduleRealtimePoll" in js, "no interval loop; realtime fallback uses visible-tab timeout polling")
 
     start = time.perf_counter()
     page = client.get("/pulse/messages-v2")

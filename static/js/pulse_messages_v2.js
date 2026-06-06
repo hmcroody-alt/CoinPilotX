@@ -49,6 +49,11 @@
       waveform: [],
       state: "idle",
     },
+    realtimeAfterId: 0,
+    realtimeTimer: 0,
+    realtimePolling: false,
+    realtimeBound: false,
+    tabChannel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-comm-v2") : null,
   };
   const el = (sel) => document.querySelector(sel);
   const root = el(".comm-shell");
@@ -110,6 +115,25 @@
     const merged = { ...(state.conversationCache.get(id) || {}), ...item, conversation_id: id };
     state.conversationCache.set(id, merged);
     return merged;
+  }
+
+  function sortConversations() {
+    state.conversations.sort((a, b) => {
+      const ad = new Date(a.last_activity_at || a.last_message_at || a.updated_at || a.created_at || 0).getTime() || 0;
+      const bd = new Date(b.last_activity_at || b.last_message_at || b.updated_at || b.created_at || 0).getTime() || 0;
+      return bd - ad || Number(b.conversation_id || 0) - Number(a.conversation_id || 0);
+    });
+  }
+
+  function upsertConversation(item) {
+    const remembered = rememberConversation(item);
+    if (!remembered?.conversation_id) return null;
+    const id = Number(remembered.conversation_id);
+    const index = state.conversations.findIndex((conversation) => Number(conversation.conversation_id) === id);
+    if (index >= 0) state.conversations[index] = remembered;
+    else state.conversations.unshift(remembered);
+    sortConversations();
+    return remembered;
   }
 
   function initials(title) {
@@ -334,6 +358,7 @@
       const query = state.filter === "all" ? "" : `?type=${encodeURIComponent(state.filter)}`;
       const data = await api(`/conversations${query}`, {}, "conversations_list");
       state.conversations = (data.items || data.conversations || []).map(rememberConversation);
+      sortConversations();
       if (selectFirst && !state.active && state.conversations.length) {
         state.active = state.conversations[0];
       } else if (state.active) {
@@ -386,6 +411,119 @@
     const previousHeight = messages?.scrollHeight || 0;
     await loadMessages(state.active.conversation_id, { beforeId: state.oldestMessageId, appendOlder: true });
     if (messages) messages.scrollTop = Math.max(0, messages.scrollHeight - previousHeight);
+  }
+
+  function updateNotificationBadges(count) {
+    if (!(count || count === 0)) return;
+    document.querySelectorAll("[data-notification-unread]").forEach((node) => {
+      node.textContent = Number(count || 0);
+      node.hidden = Number(count || 0) <= 0;
+    });
+    window.CoinPilotNotifications?.pollNotifications?.({ refreshList: true });
+  }
+
+  function appendRealtimeMessage(message) {
+    if (!message?.id || !state.active || Number(message.conversation_id) !== Number(state.active.conversation_id)) return false;
+    if (state.messages.some((item) => Number(item.id) === Number(message.id))) return false;
+    state.messages = [...state.messages, message];
+    renderMessages();
+    document.querySelectorAll("[data-voice-message]").forEach(bindVoiceAudio);
+    if (window.PulseMediaRenderer) window.PulseMediaRenderer.hydrate(messages);
+    api(`/conversations/${state.active.conversation_id}/read`, { method: "POST", body: JSON.stringify({}) }, "read_receipt").catch(() => {});
+    return true;
+  }
+
+  function mergeRealtimeConversation(payload) {
+    const message = payload?.message || {};
+    const conversationId = Number(payload?.conversation_id || message.conversation_id || 0);
+    const incomingConversation = payload?.conversation || state.conversationCache.get(conversationId) || {};
+    const activeConversation = Number(state.active?.conversation_id || 0) === conversationId;
+    const fallbackPreview = message.body || (message.message_type === "voice" ? "Sent a voice note." : message.message_type ? "Sent an attachment." : "");
+    const next = upsertConversation({
+      ...incomingConversation,
+      conversation_id: conversationId,
+      id: conversationId,
+      last_message_id: Number(message.id || payload?.message_id || incomingConversation.last_message_id || 0),
+      last_message_at: message.created_at || incomingConversation.last_message_at || new Date().toISOString(),
+      last_activity_at: message.created_at || incomingConversation.last_activity_at || new Date().toISOString(),
+      last_message_preview: fallbackPreview || incomingConversation.last_message_preview || incomingConversation.description || "",
+      unread_count: activeConversation ? 0 : Number(incomingConversation.unread_count || 0),
+    });
+    if (activeConversation && next) state.active = next;
+    renderConversations();
+  }
+
+  function broadcastCommEvent(payload) {
+    const message = { type: "comm-v2-live-event", payload, at: Date.now() };
+    try { state.tabChannel?.postMessage(message); } catch (_) {}
+    try { localStorage.setItem("pulseCommV2LiveEvent", JSON.stringify(message)); } catch (_) {}
+  }
+
+  function handleRealtimeEvent(envelope, options = {}) {
+    const payload = envelope?.payload || envelope || {};
+    const type = envelope?.event_type || envelope?.type || "message_notification";
+    const conversationId = Number(payload.conversation_id || payload.message?.conversation_id || 0);
+    if (!conversationId) return;
+    if (envelope?.id) state.realtimeAfterId = Math.max(state.realtimeAfterId, Number(envelope.id) || 0);
+    mergeRealtimeConversation(payload);
+    if (type === "message_created" || type === "message_notification" || type === "notification_created") {
+      appendRealtimeMessage(payload.message);
+      updateNotificationBadges(payload.unread_count);
+      if (!options.fromBroadcast) broadcastCommEvent(envelope);
+    }
+  }
+
+  async function pollRealtime() {
+    if (state.realtimePolling) return;
+    state.realtimePolling = true;
+    try {
+      const params = new URLSearchParams({
+        after_id: String(state.realtimeAfterId || 0),
+        limit: "80",
+      });
+      if (state.active?.conversation_id) params.set("conversation_id", String(state.active.conversation_id));
+      const data = await api(`/realtime?${params.toString()}`, {}, "realtime_delivery");
+      state.realtimeAfterId = Math.max(state.realtimeAfterId, Number(data.latest_event_id || 0));
+      (data.events || []).forEach(handleRealtimeEvent);
+      updateNotificationBadges(data.unread_count);
+    } catch (_) {
+    } finally {
+      state.realtimePolling = false;
+    }
+  }
+
+  function scheduleRealtimePoll(delay = 12000) {
+    window.clearTimeout(state.realtimeTimer);
+    state.realtimeTimer = window.setTimeout(async () => {
+      if (!document.hidden) await pollRealtime();
+      scheduleRealtimePoll(document.hidden ? 45000 : 12000);
+    }, delay);
+  }
+
+  function bindRealtimeDelivery() {
+    if (state.realtimeBound) return;
+    state.realtimeBound = true;
+    if (window.PulseRealtime) {
+      window.PulseRealtime.on("message_notification", handleRealtimeEvent);
+      window.PulseRealtime.on("notification_created", handleRealtimeEvent);
+      window.PulseRealtime.connect();
+    }
+    state.tabChannel?.addEventListener("message", (event) => {
+      if (event.data?.type === "comm-v2-live-event") handleRealtimeEvent(event.data.payload, { fromBroadcast: true });
+    });
+    window.addEventListener("storage", (event) => {
+      if (event.key !== "pulseCommV2LiveEvent" || !event.newValue) return;
+      try {
+        const data = JSON.parse(event.newValue);
+        if (data?.payload) handleRealtimeEvent(data.payload, { fromBroadcast: true });
+      } catch (_) {}
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) pollRealtime();
+      scheduleRealtimePoll(document.hidden ? 45000 : 12000);
+    });
+    pollRealtime();
+    scheduleRealtimePoll(12000);
   }
 
   async function loadRooms() {
@@ -1411,4 +1549,5 @@
   renderRooms();
   loadConversations();
   loadRooms();
+  bindRealtimeDelivery();
 })();

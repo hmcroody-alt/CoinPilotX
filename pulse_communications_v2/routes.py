@@ -201,6 +201,15 @@ def send_message(conversation_ref):
     return _timed_json("send_message", lambda: service.send_message(user["user_id"], conversation_ref, request.get_json(silent=True) or {}))
 
 
+@comm_v2_blueprint.get(f"{API_PREFIX}/realtime")
+@comm_v2_blueprint.get("/api/pulse/comm/v2/realtime")
+def realtime_events():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("realtime_delivery", lambda: service.poll_realtime_events(user["user_id"], request.args))
+
+
 @comm_v2_blueprint.post(f"{API_PREFIX}/attachments/upload")
 def upload_attachment():
     user, denied = _require_user()

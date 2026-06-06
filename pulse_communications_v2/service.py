@@ -885,6 +885,7 @@ def _validate_message_media_ids(cur, user_id: int, conversation_id: int, media_i
 
 def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: dict) -> dict:
     results = {"notifications": "skipped", "realtime": "skipped"}
+    realtime_payloads: list[dict] = []
     try:
         recipient_ids = [uid for uid in _participant_ids_for_side_effects(conversation_id) if int(uid) != int(user_id)]
         if recipient_ids:
@@ -892,7 +893,8 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
 
             preview = message.get("body") or ("Sent a voice note." if message.get("message_type") == "voice" else "Sent an attachment.")
             for recipient_id in recipient_ids[:25]:
-                notification_service.create_pulse_notification(
+                recipient_message = _side_effect_message_payload(int(recipient_id), int(message.get("id") or 0)) or message
+                note = notification_service.create_pulse_notification(
                     int(recipient_id),
                     note_type="voice_message" if message.get("message_type") == "voice" else "message",
                     title="New Pulse message",
@@ -903,6 +905,28 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                     deep_link=f"/pulse/messages-v2?conversation={int(conversation_id)}",
                     metadata={"conversation_id": int(conversation_id), "message_id": int(message.get("id") or 0)},
                 )
+                unread = notification_service.pulse_unread_count(int(recipient_id))
+                realtime_payloads.append({
+                    "recipient_user_id": int(recipient_id),
+                    "conversation_id": int(conversation_id),
+                    "message_id": int(message.get("id") or 0),
+                    "sender_user_id": int(user_id),
+                    "message": recipient_message,
+                    "notification": {
+                        "id": int(note.get("notification_id") or 0),
+                        "type": "voice_message" if message.get("message_type") == "voice" else "message",
+                        "category": "messages",
+                        "title": "New Pulse message",
+                        "body": preview[:220],
+                        "deep_link": f"/pulse/messages-v2?conversation={int(conversation_id)}",
+                        "target_url": f"/pulse/messages-v2?conversation={int(conversation_id)}",
+                        "read": False,
+                        "status": "unread",
+                        "created_at": _now(),
+                    },
+                    "unread_count": int(unread.get("unread_count") or unread.get("count") or 0),
+                    "conversation": _side_effect_conversation_payload(int(recipient_id), int(conversation_id)),
+                })
             results["notifications"] = f"created:{len(recipient_ids[:25])}"
     except Exception as exc:
         logging.exception("COMM_V2_NOTIFICATION_DISPATCH_FAILED conversation_id=%s message_id=%s error_type=%s", conversation_id, message.get("id"), type(exc).__name__)
@@ -915,11 +939,48 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
             "message_created",
             {"conversation_id": int(conversation_id), "message": message},
         )
-        results["realtime"] = "published"
+        for payload in realtime_payloads:
+            realtime_engine.publish_event(
+                f"comm_v2:user:{int(payload['recipient_user_id'])}",
+                "message_notification",
+                payload,
+            )
+            realtime_engine.publish_event(
+                f"pulse:user:{int(payload['recipient_user_id'])}",
+                "notification_created",
+                payload,
+            )
+        results["realtime"] = f"published:{1 + len(realtime_payloads) * 2}"
     except Exception as exc:
         logging.exception("COMM_V2_REALTIME_BROADCAST_FAILED conversation_id=%s message_id=%s error_type=%s", conversation_id, message.get("id"), type(exc).__name__)
         results["realtime"] = "failed"
     return results
+
+
+def _side_effect_conversation_payload(user_id: int, conversation_id: int) -> dict:
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_conversations WHERE id=? AND COALESCE(deleted_at,'')=''", (int(conversation_id),))
+        row = _row(cur.fetchone())
+        return _conversation_payload(cur, row, int(user_id)) if row else {}
+    except Exception:
+        logging.exception("COMM_V2_SIDE_EFFECT_CONVERSATION_PAYLOAD_FAILED user_id=%s conversation_id=%s", user_id, conversation_id)
+        return {}
+    finally:
+        conn.close()
+
+
+def _side_effect_message_payload(user_id: int, message_id: int) -> dict:
+    conn, cur = _open_db()
+    try:
+        cur.execute("SELECT * FROM comm_v2_messages WHERE id=? AND COALESCE(deleted_at,'')=''", (int(message_id),))
+        row = _row(cur.fetchone())
+        return _message_payload(cur, row, int(user_id)) if row else {}
+    except Exception:
+        logging.exception("COMM_V2_SIDE_EFFECT_MESSAGE_PAYLOAD_FAILED user_id=%s message_id=%s", user_id, message_id)
+        return {}
+    finally:
+        conn.close()
 
 
 def _participant_ids_for_side_effects(conversation_id: int) -> list[int]:
@@ -928,6 +989,39 @@ def _participant_ids_for_side_effects(conversation_id: int) -> list[int]:
         return _participant_ids(cur, int(conversation_id))
     finally:
         conn.close()
+
+
+def poll_realtime_events(user_id: int, args) -> dict:
+    disabled = _disabled("realtime")
+    if disabled:
+        return disabled
+    from services import notification_service, realtime_engine
+
+    after_id = int(args.get("after_id") or args.get("since_id") or 0)
+    limit = max(1, min(int(args.get("limit") or 80), 160))
+    conversation_ref = args.get("conversation_id") or args.get("conversation") or ""
+    channels = [f"comm_v2:user:{int(user_id)}", f"pulse:user:{int(user_id)}"]
+    if conversation_ref:
+        conn, cur = _open_db()
+        try:
+            conversation, access = _conversation_access(cur, user_id, conversation_ref, join_public=False)
+            if access == "ok" and conversation:
+                channels.append(f"comm_v2:conversation:{int(conversation['id'])}")
+        finally:
+            conn.close()
+    events_by_id: dict[int, dict] = {}
+    for channel in channels:
+        for event in realtime_engine.poll_events(channel, after_id=after_id, limit=limit):
+            events_by_id[int(event.get("id") or 0)] = event
+    events = [events_by_id[key] for key in sorted(events_by_id)]
+    latest_event_id = max([after_id, *[int(item.get("id") or 0) for item in events]], default=after_id)
+    unread = notification_service.pulse_unread_count(int(user_id))
+    return _ok({
+        "events": events[-limit:],
+        "latest_event_id": latest_event_id,
+        "unread_count": int(unread.get("unread_count") or unread.get("count") or 0),
+        "poll_interval_ms": 12000,
+    })
 
 
 def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, media_ids: list[int]) -> list[dict]:

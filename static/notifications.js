@@ -4,7 +4,10 @@
     lastUnread: null,
     lastAlertAt: 0,
     interacted: false,
-    pollTimer: null
+    pollTimer: null,
+    listLoaded: false,
+    realtimeBound: false,
+    channel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-notifications") : null
   };
 
   function bool(value, fallback) {
@@ -96,15 +99,111 @@
     return Number(payload.unread_count || payload.count || 0);
   }
 
-  async function pollNotifications() {
+  function setBadges(count) {
+    document.querySelectorAll("[data-notification-unread]").forEach(node => {
+      node.textContent = count;
+      node.hidden = count <= 0;
+    });
+    document.title = count > 0 && !/^\(\d+\)/.test(document.title) ? `(${count}) ${document.title}` : document.title.replace(/^\(\d+\)\s+/, count > 0 ? `(${count}) ` : "");
+  }
+
+  function noteUrl(note) {
+    return note.deep_link || note.target_url || "/pulse/notifications";
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  }
+
+  function notificationCard(note, compact) {
+    const unread = !note.read && note.status !== "read";
+    const title = note.title || "Pulse update";
+    const body = note.body || "";
+    return `
+      <article class="pulse-notification-card ${unread ? "unread" : ""}" data-note-id="${Number(note.id || 0)}">
+        <div class="pulse-note-head"><span class="pill">${escapeHtml(note.category || note.type || "Pulse")}</span><small>${escapeHtml(note.created_at || "")}</small></div>
+        <h${compact ? "3" : "2"}>${escapeHtml(title)}</h${compact ? "3" : "2"}>
+        <p>${escapeHtml(body)}</p>
+        <div class="actions">
+          <a class="button primary" data-open-note href="${escapeHtml(noteUrl(note))}">Open</a>
+          ${compact ? "" : `<button class="button" data-read-note="${Number(note.id || 0)}">Mark read</button><button class="button" data-delete-note="${Number(note.id || 0)}">Delete</button>`}
+        </div>
+      </article>
+    `;
+  }
+
+  function ensureDropdownList() {
+    let target = document.querySelector("[data-notification-list]");
+    if (target) return target;
+    const dropdownCard = document.querySelector(".pulse-notification-dropdown .card");
+    if (!dropdownCard) return null;
+    target = document.createElement("div");
+    target.dataset.notificationList = "dropdown";
+    target.className = "pulse-notification-live-list";
+    const firstAction = dropdownCard.querySelector("a,button");
+    dropdownCard.insertBefore(target, firstAction || null);
+    return target;
+  }
+
+  async function refreshNotificationList() {
+    const targets = [ensureDropdownList(), ...document.querySelectorAll("[data-pulse-notification-list]")].filter(Boolean);
+    if (!targets.length) return;
+    const response = await fetch("/api/pulse/notifications?limit=12", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const notes = payload.notifications || [];
+    targets.forEach(target => {
+      const compact = target.dataset.notificationList === "dropdown";
+      target.innerHTML = notes.length
+        ? notes.map(note => notificationCard(note, compact)).join("")
+        : `<div class="empty-state">No notifications yet.</div>`;
+    });
+    STATE.listLoaded = true;
+  }
+
+  function broadcastRefresh(reason) {
+    const message = { type: "pulse-notification-refresh", reason: reason || "update", at: Date.now() };
+    try { STATE.channel?.postMessage(message); } catch (_) {}
+    try { localStorage.setItem("pulseNotificationRefresh", JSON.stringify(message)); } catch (_) {}
+  }
+
+  async function handleLiveNotification(payload) {
+    const count = Number(payload?.unread_count || 0);
+    if (count || count === 0) {
+      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser();
+      STATE.lastUnread = count;
+      setBadges(count);
+    }
+    await refreshNotificationList().catch(() => {});
+    broadcastRefresh("live-event");
+  }
+
+  async function pollNotifications(options = {}) {
     try {
       if (!STATE.prefs) await loadPreferences();
       const count = await unreadCount();
       if (count === null) return;
       if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser();
       STATE.lastUnread = count;
-      document.querySelectorAll("[data-notification-unread]").forEach(node => { node.textContent = count; node.hidden = count <= 0; });
+      setBadges(count);
+      if (options.refreshList || !STATE.listLoaded) await refreshNotificationList().catch(() => {});
     } catch (_) {}
+  }
+
+  function schedulePolling(delay) {
+    window.clearTimeout(STATE.pollTimer);
+    STATE.pollTimer = window.setTimeout(async () => {
+      if (!document.hidden) await pollNotifications({ refreshList: true });
+      schedulePolling(document.hidden ? 45000 : 12000);
+    }, delay);
+  }
+
+  function bindRealtime() {
+    if (STATE.realtimeBound || !window.PulseRealtime) return;
+    STATE.realtimeBound = true;
+    window.PulseRealtime.on("notification_created", (event) => handleLiveNotification(event.payload || event));
+    window.PulseRealtime.on("message_notification", (event) => handleLiveNotification(event.payload || event));
+    window.PulseRealtime.connect();
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -241,12 +340,25 @@
     window.addEventListener(type, () => { STATE.interacted = true; }, { once: true, passive: true });
   });
 
-  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications };
+  STATE.channel?.addEventListener("message", event => {
+    if (event.data?.type === "pulse-notification-refresh") pollNotifications({ refreshList: true });
+  });
+  window.addEventListener("storage", event => {
+    if (event.key === "pulseNotificationRefresh") pollNotifications({ refreshList: true });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pollNotifications({ refreshList: true });
+    schedulePolling(document.hidden ? 45000 : 12000);
+  });
+
+  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification };
 
   document.addEventListener("DOMContentLoaded", async () => {
     bindSettings();
     await loadPreferences().then(renderSettings).catch(() => {});
-    pollNotifications();
-    STATE.pollTimer = window.setInterval(pollNotifications, 45000);
+    bindRealtime();
+    window.setTimeout(bindRealtime, 500);
+    pollNotifications({ refreshList: true });
+    schedulePolling(12000);
   });
 })();
