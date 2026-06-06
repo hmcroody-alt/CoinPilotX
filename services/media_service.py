@@ -18,11 +18,11 @@ from . import media_storage
 from . import user_context
 
 
-ALLOWED_TYPES = {x.strip().lower() for x in os.getenv("MEDIA_UPLOAD_ALLOWED_TYPES", "jpg,jpeg,png,webp,gif,mp4,webm,mov,mp3,m4a,wav,ogg,pdf,txt,doc,docx").split(",")}
+ALLOWED_TYPES = {x.strip().lower() for x in os.getenv("MEDIA_UPLOAD_ALLOWED_TYPES", "jpg,jpeg,png,webp,gif,mp4,webm,mov,mp3,m4a,aac,wav,ogg,pdf,txt,doc,docx").split(",")}
 IMAGE_EXTS = {"jpg", "jpeg", "png", "webp"}
 GIF_EXTS = {"gif"}
 VIDEO_EXTS = {"mp4", "webm", "mov"}
-AUDIO_EXTS = {"mp3", "m4a", "wav", "ogg"}
+AUDIO_EXTS = {"mp3", "m4a", "aac", "wav", "ogg"}
 FILE_EXTS = {"pdf", "txt", "doc", "docx"}
 UPLOAD_ROOT = Path(os.getenv("MEDIA_UPLOAD_DIR", "static/uploads/chat_media"))
 STATIC_ROOT = Path(os.getenv("STATIC_ROOT", "static")).resolve()
@@ -844,6 +844,8 @@ def _media_header_ok(ext, header):
         return header.startswith(b"\x1a\x45\xdf\xa3")
     if ext == "mp3":
         return header.startswith(b"ID3") or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0)
+    if ext == "aac":
+        return len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xF0) == 0xF0
     if ext == "wav":
         return header.startswith(b"RIFF") and header[8:12] == b"WAVE"
     if ext == "ogg":
@@ -952,7 +954,10 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
     if ext not in ALLOWED_TYPES:
         return {"ok": False, "message": "That file type is not supported."}, 400
+    mime_hint = (getattr(file_storage, "mimetype", "") or mimetypes.guess_type(original)[0] or "").lower()
     media_type = _media_type(ext)
+    if mime_hint.startswith("audio/") and ext in {"webm", "mp4", "m4a", "aac", "ogg", "mp3", "wav"}:
+        media_type = "audio"
     if not media_type:
         return {"ok": False, "message": "That file type is not supported."}, 400
     if rate_limited(user_id, media_type):
@@ -965,6 +970,19 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     header = file_storage.stream.read(512)
     file_storage.stream.seek(0)
     if size and not _media_header_ok(ext, header):
+        logging.warning(
+            "PULSE_MEDIA_UPLOAD_HEADER_REJECTED trace_id=%s user_id=%s context_type=%s filename=%s ext=%s mime_type=%s size=%s header_prefix=%s",
+            upload_trace,
+            int(user_id),
+            context_type,
+            original,
+            ext,
+            mime_hint,
+            size,
+            header[:16].hex(),
+        )
+        if media_type == "audio":
+            return {"ok": False, "message": "Unsupported audio format. Please record again or choose a supported audio file."}, 400
         return {"ok": False, "message": "This media file could not be verified safely."}, 400
     folder = "pulse_media" if str(context_type or "").startswith("pulse") else "chat_media"
     logging.info(

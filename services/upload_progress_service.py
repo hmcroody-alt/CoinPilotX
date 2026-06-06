@@ -12,7 +12,7 @@ from . import media_service, media_storage
 
 
 VIDEO_MIME_TYPES = {"video/mp4", "video/webm", "video/quicktime", "video/x-m4v"}
-AUDIO_MIME_TYPES = {"audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/ogg", "audio/webm", "application/ogg"}
+AUDIO_MIME_TYPES = {"audio/mpeg", "audio/mp4", "audio/aac", "audio/mp4a-latm", "audio/x-m4a", "audio/m4a", "audio/wav", "audio/ogg", "audio/webm", "application/ogg"}
 IMAGE_MIME_PREFIX = "image/"
 FILE_MIME_TYPES = {
     "application/pdf",
@@ -21,7 +21,7 @@ FILE_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 VIDEO_EXTENSIONS = {"mp4", "webm", "mov", "m4v"}
-AUDIO_EXTENSIONS = {"mp3", "m4a", "wav", "ogg"}
+AUDIO_EXTENSIONS = {"mp3", "m4a", "aac", "wav", "ogg"}
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
 FILE_EXTENSIONS = {"pdf", "txt", "doc", "docx"}
 
@@ -60,10 +60,10 @@ def validate_media_file(file_storage) -> dict:
     filename = file_storage.filename or ""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     mime_type = (getattr(file_storage, "mimetype", "") or "").lower()
-    if ext in VIDEO_EXTENSIONS or mime_type in VIDEO_MIME_TYPES:
-        media_type = "video"
-    elif ext in AUDIO_EXTENSIONS or mime_type in AUDIO_MIME_TYPES:
+    if ext in AUDIO_EXTENSIONS or mime_type in AUDIO_MIME_TYPES or mime_type.startswith("audio/"):
         media_type = "audio"
+    elif ext in VIDEO_EXTENSIONS or mime_type in VIDEO_MIME_TYPES:
+        media_type = "video"
     elif ext in FILE_EXTENSIONS or mime_type in FILE_MIME_TYPES:
         media_type = "file"
     else:

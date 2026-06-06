@@ -748,8 +748,23 @@
 
   async function uploadVoiceDraft() {
     if (!state.voice.blob || state.voice.state !== "ready") return 0;
-    const ext = state.voice.blob.type.includes("mp4") ? "m4a" : "ogg";
-    const file = new File([state.voice.blob], `pulse-voice-note-${Date.now()}.${ext}`, { type: state.voice.blob.type || "audio/webm" });
+    const voiceType = String(state.voice.blob.type || "audio/webm").toLowerCase();
+    const ext = voiceType.includes("webm")
+      ? "webm"
+      : voiceType.includes("ogg")
+        ? "ogg"
+        : voiceType.includes("aac")
+          ? "aac"
+          : voiceType.includes("mp4") || voiceType.includes("m4a")
+            ? "m4a"
+            : "webm";
+    console.info("Pulse Communications V2 voice upload", {
+      mimeType: voiceType,
+      extension: ext,
+      size: state.voice.blob.size,
+      durationSeconds: Math.max(1, Math.round((state.voice.elapsedMs || 0) / 1000)),
+    });
+    const file = new File([state.voice.blob], `pulse-voice-note-${Date.now()}.${ext}`, { type: voiceType });
     return uploadSelectedFile(file, {
       attachment_kind: "voice_note",
       duration_seconds: Math.max(1, Math.round((state.voice.elapsedMs || 0) / 1000)),

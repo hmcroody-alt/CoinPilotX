@@ -40,20 +40,43 @@ def _json(payload: dict):
 
 def _timed_json(metric: str, action):
     started = time.perf_counter()
-    payload = action()
-    elapsed_ms = int((time.perf_counter() - started) * 1000)
-    logging.info(
-        "PULSE_COMM_V2_TIMING metric=%s duration_ms=%s method=%s path=%s ok=%s status=%s",
-        metric,
-        elapsed_ms,
-        request.method,
-        request.path,
-        bool(payload.get("ok")) if isinstance(payload, dict) else False,
-        payload.get("status") if isinstance(payload, dict) else "",
-    )
-    if isinstance(payload, dict):
-        payload.setdefault("timing_ms", elapsed_ms)
-    return _json(payload)
+    trace_id = service._trace()
+    try:
+        payload = action()
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logging.info(
+            "PULSE_COMM_V2_TIMING metric=%s duration_ms=%s method=%s path=%s ok=%s status=%s trace_id=%s",
+            metric,
+            elapsed_ms,
+            request.method,
+            request.path,
+            bool(payload.get("ok")) if isinstance(payload, dict) else False,
+            payload.get("status") if isinstance(payload, dict) else "",
+            payload.get("trace_id") if isinstance(payload, dict) else trace_id,
+        )
+        if isinstance(payload, dict):
+            payload.setdefault("timing_ms", elapsed_ms)
+        return _json(payload)
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        logging.exception(
+            "PULSE_COMM_V2_ROUTE_EXCEPTION metric=%s duration_ms=%s method=%s path=%s trace_id=%s content_type=%s error_type=%s",
+            metric,
+            elapsed_ms,
+            request.method,
+            request.path,
+            trace_id,
+            request.content_type or "",
+            type(exc).__name__,
+        )
+        return _json({
+            "ok": False,
+            "status": "server_error",
+            "message": "Messenger is temporarily unavailable. Please try again.",
+            "trace_id": trace_id,
+            "http_status": 500,
+            "timing_ms": elapsed_ms,
+        })
 
 
 def _require_user():

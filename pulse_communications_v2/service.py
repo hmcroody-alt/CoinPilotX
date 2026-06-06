@@ -733,6 +733,10 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         if access == "blocked":
             return _err("Messaging is unavailable for this conversation.", 403, "blocked")
         conversation_id = int(conversation["id"])
+        valid_media_ids, media_error = _validate_message_media_ids(cur, user_id, conversation_id, media_ids)
+        if media_error:
+            return media_error
+        media_ids = valid_media_ids
         client_id = _clean(payload.get("client_message_id") or "", 120)
         if client_id:
             cur.execute(
@@ -783,6 +787,57 @@ def send_message(user_id: int, conversation_ref: int | str, payload: dict | None
         raise
     finally:
         conn.close()
+
+
+def _validate_message_media_ids(cur, user_id: int, conversation_id: int, media_ids: list[int]) -> tuple[list[int], dict | None]:
+    ids = [int(x) for x in (media_ids or []) if int(x or 0)]
+    if not ids:
+        return [], None
+    unique_ids = []
+    seen = set()
+    for media_id in ids:
+        if media_id not in seen:
+            unique_ids.append(media_id)
+            seen.add(media_id)
+    placeholders = ",".join(["?"] * len(unique_ids))
+    cur.execute(
+        f"""
+        SELECT *
+        FROM chat_media_uploads
+        WHERE id IN ({placeholders})
+          AND uploader_user_id=?
+          AND COALESCE(deleted_at,'')=''
+          AND COALESCE(moderation_status,'approved')!='blocked'
+        """,
+        (*unique_ids, int(user_id)),
+    )
+    rows = {_row(row).get("id"): _row(row) for row in cur.fetchall()}
+    missing = [media_id for media_id in unique_ids if media_id not in rows]
+    if missing:
+        logging.warning(
+            "COMM_V2_ATTACHMENT_INVALID user_id=%s conversation_id=%s missing_media_ids=%s requested_media_ids=%s",
+            int(user_id),
+            int(conversation_id),
+            missing,
+            unique_ids,
+        )
+        return [], _err("Attachment invalid or expired. Please upload it again.", 400, "attachment_invalid")
+    invalid = []
+    for media_id, media in rows.items():
+        availability_error = str(media.get("availability_error") or media.get("error_message") or "")
+        verification = str(media.get("verification_status") or "verified").lower()
+        processing = str(media.get("processing_status") or "ready").lower()
+        if verification in {"failed", "blocked"} or processing in {"failed", "blocked"} or availability_error:
+            invalid.append({"media_id": int(media_id), "verification": verification, "processing": processing, "availability_error": availability_error[:160]})
+    if invalid:
+        logging.warning(
+            "COMM_V2_ATTACHMENT_VERIFY_FAILED user_id=%s conversation_id=%s invalid=%s",
+            int(user_id),
+            int(conversation_id),
+            invalid,
+        )
+        return [], _err("Attachment could not be verified. Please upload it again.", 400, "attachment_verification_failed")
+    return unique_ids, None
 
 
 def _attach_media(cur, user_id: int, conversation_id: int, message_id: int, media_ids: list[int]) -> list[dict]:
@@ -941,11 +996,37 @@ def _validate_voice_upload(file_storage, metadata: dict) -> dict:
         return {"ok": True}
     mime = (getattr(file_storage, "mimetype", "") or "").lower()
     name = (getattr(file_storage, "filename", "") or "").lower()
-    allowed_mimes = {"audio/webm", "audio/ogg", "application/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/x-m4a", "application/octet-stream", "video/webm"}
-    allowed_ext = (".webm", ".ogg", ".oga", ".m4a", ".mp3", ".wav")
+    allowed_mimes = {
+        "audio/webm",
+        "audio/ogg",
+        "application/ogg",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/aac",
+        "audio/mp4a-latm",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/x-m4a",
+        "audio/m4a",
+        "application/octet-stream",
+        "video/webm",
+    }
+    allowed_ext = (".webm", ".ogg", ".oga", ".m4a", ".mp3", ".aac", ".wav")
     if mime and mime not in allowed_mimes and not mime.startswith("audio/"):
+        logging.warning(
+            "COMM_V2_VOICE_MIME_REJECTED filename=%s mime_type=%s duration_seconds=%s",
+            name,
+            mime,
+            metadata.get("duration_seconds") or 0,
+        )
         return _err("That recording format is not supported. Try recording again.", 400, "unsupported_voice_mime")
     if name and not name.endswith(allowed_ext):
+        logging.warning(
+            "COMM_V2_VOICE_EXTENSION_REJECTED filename=%s mime_type=%s duration_seconds=%s",
+            name,
+            mime,
+            metadata.get("duration_seconds") or 0,
+        )
         return _err("Voice notes must be audio recordings.", 400, "unsupported_voice_extension")
     duration = float(metadata.get("duration_seconds") or 0)
     max_duration = int(os.getenv("COMM_V2_VOICE_MAX_SECONDS", "300") or 300)

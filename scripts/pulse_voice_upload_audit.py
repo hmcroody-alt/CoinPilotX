@@ -76,4 +76,32 @@ ok(attachment.get("voice_note") is True, "voice attachment persists")
 ok(int(attachment.get("duration_seconds") or 0) == 7, "voice duration persists")
 ok(attachment.get("waveform"), "voice waveform persists")
 
+webm_upload = owner.post(
+    "/api/pulse/communications/v2/attachments/upload",
+    data={
+        "conversation_id": str(conversation_id),
+        "attachment_kind": "voice_note",
+        "duration_seconds": "5",
+        "waveform_json": "[14,28,42]",
+        "file": (io.BytesIO(b"\x1a\x45\xdf\xa3" + b"\x00" * 2048), "safari-compatible-voice.webm", "audio/webm"),
+    },
+    content_type="multipart/form-data",
+)
+webm_payload = webm_upload.get_json() or {}
+ok(webm_upload.status_code == 200 and webm_payload.get("media", {}).get("media_type") == "audio", "audio/webm voice upload stays audio", str(webm_payload))
+
+m4a_upload = owner.post(
+    "/api/pulse/communications/v2/attachments/upload",
+    data={
+        "conversation_id": str(conversation_id),
+        "attachment_kind": "voice_note",
+        "duration_seconds": "6",
+        "waveform_json": "[16,32,48]",
+        "file": (io.BytesIO(b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 2048), "iphone-voice.m4a", "audio/mp4"),
+    },
+    content_type="multipart/form-data",
+)
+m4a_payload = m4a_upload.get_json() or {}
+ok(m4a_upload.status_code == 200 and m4a_payload.get("media", {}).get("voice_note") is True, "audio/mp4 m4a voice upload succeeds", str(m4a_payload))
+
 print("pulse voice upload audit ok")
