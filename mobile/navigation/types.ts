@@ -9,6 +9,9 @@ export type AuthStackParamList = {
 
 export type MainStackParamList = {
   HomeFeed: undefined;
+  CreatePulse: undefined;
+  PostDetail: { postId: number };
+  ProfileDetail: { username: string; displayName?: string; avatarUrl?: string };
 };
 
 export type MainTabParamList = {

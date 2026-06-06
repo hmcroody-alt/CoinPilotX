@@ -27,6 +27,15 @@ export const linking: LinkingOptions<RootParamList> = {
         }
       },
       HomeFeed: "pulse",
+      CreatePulse: "create",
+      PostDetail: {
+        path: "post/:postId",
+        parse: { postId: Number }
+      },
+      ProfileDetail: {
+        path: "profile/:username",
+        parse: { username: String }
+      },
       Reels: "pulse/reels",
       Messages: "pulse/messages-v2",
       Notifications: "pulse/notifications",
