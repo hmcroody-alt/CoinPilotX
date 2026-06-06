@@ -6,7 +6,7 @@ from datetime import datetime
 from xml.sax.saxutils import escape
 
 
-BASE_URL = "https://coinpilotx.app"
+BASE_URL = "https://pulsesoc.com"
 
 PUBLIC_LEARN_PATHS = [
     "/learn/crypto-scams",
@@ -29,21 +29,21 @@ ADS_LANDING_PATHS = [
 def page_meta(path="/"):
     path = path or "/"
     title_map = {
-        "/": "CoinPilotXAI | AI Crypto Command Center and Alpha Arena",
+        "/": "Pulse | AI Crypto Command Center and Alpha Arena",
         "/arena/play": "Alpha Arena | Simulated Crypto Training Battles",
         "/arena/roast-battle": "Roast Battle Arena | Live Social Competition",
         "/scam-shield": "Scam Shield | AI Crypto Scam Detection",
-        "/live-roast-battle": "Live Roast Battle | CoinPilotXAI",
-        "/crypto-scam-scanner": "Crypto Scam Scanner | CoinPilotXAI Scam Shield",
+        "/live-roast-battle": "Live Roast Battle | Pulse",
+        "/crypto-scam-scanner": "Crypto Scam Scanner | Pulse Scam Shield",
         "/alpha-arena": "Alpha Arena | Crypto Training Simulator",
-        "/crypto-training-simulator": "Crypto Training Simulator | CoinPilotXAI",
+        "/crypto-training-simulator": "Crypto Training Simulator | Pulse",
     }
-    title = title_map.get(path, "CoinPilotXAI | AI Crypto Intelligence")
-    description = "CoinPilotXAI combines AI crypto intelligence, Alpha Arena simulated training, Scam Shield education, alerts, and live social gameplay."
+    title = title_map.get(path, "Pulse | AI Crypto Intelligence")
+    description = "Pulse combines AI crypto intelligence, Alpha Arena simulated training, Scam Shield education, alerts, and live social gameplay."
     if "roast" in path:
         description = "Enter Roast Battle Arena, a moderated live social stage with call signs, crowd heat, virtual-dollar scoring, and replayable highlights."
     if "scam" in path:
-        description = "Learn how to detect phishing, wallet drainers, fake giveaways, impersonation, and crypto scam patterns with CoinPilotXAI."
+        description = "Learn how to detect phishing, wallet drainers, fake giveaways, impersonation, and crypto scam patterns with Pulse."
     return {
         "title": title,
         "description": description,
@@ -93,7 +93,7 @@ def json_ld(path="/"):
     return {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "CoinPilotXAI",
+        "name": "Pulse",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Web, iOS PWA, Android PWA",
         "url": meta["canonical"],

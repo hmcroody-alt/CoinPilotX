@@ -199,7 +199,7 @@ def _public_author(row):
     badge_key_set = {str(key) for key in badge_keys}
     label_set = {str(label).strip().lower() for label in badges}
     if premium_identity_engine.is_owner(item) or {"owner", "founder"} & badge_key_set:
-        primary_label = "Founder · CoinPilotXAI Pulse"
+        primary_label = "Founder · Pulse"
     elif {"creator", "verified", "partner_creator"} & badge_key_set or "creator" in label_set:
         primary_label = "Verified Creator"
     elif "teacher" in badge_key_set or "teacher" in label_set:

@@ -8,8 +8,8 @@
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
   {% if page.keywords %}<meta name="keywords" content="{{ page.keywords|join(', ') }}" />{% endif %}
   <meta name="ai-content-declaration" content="Educational AI intelligence, public-data safety guidance, no financial or betting advice, no guaranteed outcomes." />
-  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable CoinPilotXAI metadata" />
-  <link rel="alternate" type="application/json" href="/ai-index.json" title="CoinPilotXAI public AI index" />
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable Pulse metadata" />
+  <link rel="alternate" type="application/json" href="/ai-index.json" title="Pulse public AI index" />
   {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}" />{% endif %}
   {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="{{ page.canonical }}" />
@@ -18,7 +18,7 @@
   <meta property="og:image" content="{{ page.image }}" />
   <meta property="og:type" content="{{ page.og_type or 'website' }}" />
   <meta property="og:url" content="{{ page.canonical }}" />
-  <meta property="og:site_name" content="CoinPilotXAI Inc." />
+  <meta property="og:site_name" content="Pulse" />
   {% if page.og_type == 'article' %}
   <meta property="article:published_time" content="{{ page.published }}" />
   <meta property="article:modified_time" content="{{ page.updated }}" />
@@ -31,7 +31,7 @@
   <meta name="twitter:url" content="{{ page.canonical }}" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="CoinPilotXAI" />
+  <meta name="apple-mobile-web-app-title" content="Pulse" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
@@ -76,9 +76,9 @@
   <header>
     <div class="container">
       <nav aria-label="Growth page navigation">
-        <a class="brand" href="/" aria-label="CoinPilotXAI Inc. home">
-          <img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo" width="44" height="44" decoding="async" />
-          <span>CoinPilotXAI Inc.</span>
+        <a class="brand" href="/" aria-label="Pulse home">
+          <img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="Pulse logo" width="44" height="44" decoding="async" />
+          <span>Pulse</span>
         </a>
         <div class="nav-links">
           <a href="/">Home</a>
@@ -100,7 +100,7 @@
           <h1>{{ page.h1 }}</h1>
           <p class="lead">{{ page.intro }}</p>
           <div class="actions">
-            <a class="button primary" href="/signup" data-analytics="launch_free">Launch CoinPilotXAI Free</a>
+            <a class="button primary" href="/signup" data-analytics="launch_free">Launch Pulse Free</a>
             <a class="button" href="/#pricing" data-analytics="upgrade_pro">Unlock Pro Intelligence</a>
             <a class="button gold" href="/signup" data-analytics="signup_click">Create Account</a>
           </div>
@@ -112,7 +112,7 @@
           </div>
         </div>
         <aside class="panel live-card" aria-label="Live intelligence context">
-          <div class="kicker">CoinPilotX Intelligence</div>
+          <div class="kicker">Pulse Intelligence</div>
           <h2>Clear context before action.</h2>
           <div class="live-row"><span>AI Assistant</span><strong>Crypto-aware</strong></div>
           <div class="live-row"><span>Scam Shield</span><strong>Safety-first</strong></div>
@@ -130,7 +130,7 @@
         <div class="answer-block">
           <h2>Quick Answer</h2>
           <p><strong>{{ page.answer }}</strong></p>
-          <p>CoinPilotX is built for education, risk awareness, and practical context. It avoids guaranteed-profit language, fake urgency, fake testimonials, and dark-pattern conversion tactics.</p>
+          <p>Pulse is built for education, risk awareness, and practical context. It avoids guaranteed-profit language, fake urgency, fake testimonials, and dark-pattern conversion tactics.</p>
         </div>
       </div>
     </section>
@@ -143,7 +143,7 @@
           {% for item in page.points %}
           <article class="card">
             <h3>{{ item }}</h3>
-            <p>CoinPilotX explains this topic in plain language so users can review risk, context, and safer next steps before acting.</p>
+            <p>Pulse explains this topic in plain language so users can review risk, context, and safer next steps before acting.</p>
           </article>
           {% endfor %}
         </div>
@@ -187,8 +187,8 @@
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
             <input name="phone" type="tel" autocomplete="tel" placeholder="Phone (optional for SMS)" />
             <input name="country" autocomplete="country-name" placeholder="Country (optional)" />
-            <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from CoinPilotXAI Inc. I can unsubscribe anytime.</span></label>
-            <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from CoinPilotXAI Inc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
+            <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from Pulse. I can unsubscribe anytime.</span></label>
+            <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from Pulse. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
             <button class="button primary" type="submit" data-analytics="signup_form_submit">Join Updates</button>
             <div class="form-message" data-lead-message role="status" aria-live="polite"></div>
           </form>
@@ -227,8 +227,8 @@
   <footer>
     <div class="container footer-grid">
       <div>
-        <strong>CoinPilotXAI Inc.</strong>
-        <p>AI-powered crypto intelligence focused on education, safety, and market awareness.</p>
+        <strong>Pulse — Powered by CoinPilotXAI</strong>
+        <p>AI-powered community intelligence focused on education, safety, and market awareness.</p>
         <p>CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</p>
       </div>
       <div class="footer-links">

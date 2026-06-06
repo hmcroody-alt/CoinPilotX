@@ -339,7 +339,7 @@ def get_user_dashboard_data(user_id):
     data = {
         "ok": True,
         "user": {
-            "name": user.get("full_name") or user.get("display_name") or "CoinPilotX user",
+            "name": user.get("full_name") or user.get("display_name") or "Pulse user",
             "email": user_context.mask_email(user.get("email")),
             "plan": "Pulse Premium" if paid_pro else "Legacy Trial" if trialing else "Premium" if pro else "Free Core",
             "subscription_status": user.get("subscription_status") or "inactive",

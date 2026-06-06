@@ -32,7 +32,7 @@ def share_urls(url, text):
     }
 
 
-def share_card(profile=None, achievement=None, base_url="https://coinpilotx.app"):
+def share_card(profile=None, achievement=None, base_url="https://pulsesoc.com"):
     profile = profile or {}
     public_id = profile.get("public_player_id") or profile.get("username") or "arena-pilot"
     name = profile.get("display_name") or public_id

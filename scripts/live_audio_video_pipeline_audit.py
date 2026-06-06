@@ -61,9 +61,12 @@ def main():
         sess["account_user_id"] = user_id
     publish = client.post(f"/api/pulse/live/{live_id}/browser-publish", json={"audio_tracks": 1, "video_tracks": 1}).get_json() or {}
     require(publish.get("ok"), "browser publish endpoint accepts real audio and video tracks")
+    require(publish.get("publish_path") == "preview_only", "browser publish stays in preview-only path before RTMP/Mux broadcast")
+    require(publish.get("requires_rtmp_encoder") is True, "browser publish declares RTMP encoder requirement")
+    require(publish.get("playback", {}).get("supports_hls"), "browser publish response exposes HLS fallback")
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
-    require(state.get("status") == "live", "published media moves session into live state")
-    require(state.get("publish_state") == "live", "publish state machine is live")
+    require(state.get("status") == "publishing", "browser preview keeps session in publishing state")
+    require(state.get("publish_state") == "browser_preview", "publish state machine records browser preview")
     require(state.get("playback", {}).get("supports_hls"), "viewer state exposes playable HLS")
     conn = db_service.connect()
     conn.row_factory = bot.sqlite3.Row

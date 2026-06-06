@@ -21,7 +21,7 @@ def start_stream(user_id, title="", category="Crypto Education", premium_only=Fa
         "hls_url": f"{playback_base}/{stream_id}.m3u8",
         "webrtc_room_id": f"pulse-webrtc-{stream_id}",
         "channel": f"pulse_live_{int(user_id or 0)}_{uuid4().hex[:10]}",
-        "title": title or "CoinPilotXAI Pulse Live",
+        "title": title or "Pulse Live",
         "category": category or "Crypto Education",
         "premium_only": bool(premium_only),
         "provider": "pulse-native",

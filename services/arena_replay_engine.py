@@ -16,7 +16,7 @@ def _rows(cur):
     return [dict(row) for row in cur.fetchall()]
 
 
-def generate_replay(match_id, winner_id=0, base_url="https://coinpilotx.app"):
+def generate_replay(match_id, winner_id=0, base_url="https://pulsesoc.com"):
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute("SELECT * FROM arena_matches WHERE id=? LIMIT 1", (int(match_id),))

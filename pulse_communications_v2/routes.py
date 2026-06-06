@@ -67,7 +67,7 @@ def _require_user():
 def messages_v2_page():
     user = _current_user()
     if not user:
-        return _bot().redirect(_bot().url_for("login", next="/pulse/messages-v2"))
+        return _bot().redirect(_bot().url_for("login_page", next="/pulse/messages-v2"))
     return render_template("pulse_messages_v2.html", enabled=flags.is_enabled(), current_user=user)
 
 

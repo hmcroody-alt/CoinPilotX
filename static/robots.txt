@@ -22,9 +22,9 @@ Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /stripe-webhook
 
-Sitemap: https://coinpilotx.app/sitemap.xml
-Host: https://coinpilotx.app
-LLM-Content: https://coinpilotx.app/llms.txt
+Sitemap: https://pulsesoc.com/sitemap.xml
+Host: https://pulsesoc.com
+LLM-Content: https://pulsesoc.com/llms.txt
 
 # AI/search crawlers are allowed to index public educational pages.
 # Private/account/API/admin/debug routes are not included in the sitemap.
@@ -245,15 +245,15 @@ Disallow: /verify-email
 Disallow: /stripe-webhook
 
 # IndexNow:
-# Key location: https://coinpilotx.app/indexnow-key.txt
-# Metadata endpoint: https://coinpilotx.app/api/indexnow
+# Key location: https://pulsesoc.com/indexnow-key.txt
+# Metadata endpoint: https://pulsesoc.com/api/indexnow
 
 # Google Search Console:
-# 1. Add https://coinpilotx.app/ as a property.
+# 1. Add https://pulsesoc.com/ as a property.
 # 2. Verify domain or URL-prefix ownership.
-# 3. Submit https://coinpilotx.app/sitemap.xml under Sitemaps.
+# 3. Submit https://pulsesoc.com/sitemap.xml under Sitemaps.
 
 # Bing Webmaster Tools:
-# 1. Add https://coinpilotx.app/ as a site.
+# 1. Add https://pulsesoc.com/ as a site.
 # 2. Verify ownership.
-# 3. Submit https://coinpilotx.app/sitemap.xml and use IndexNow for faster discovery.
+# 3. Submit https://pulsesoc.com/sitemap.xml and use IndexNow for faster discovery.

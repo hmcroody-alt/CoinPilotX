@@ -51,7 +51,7 @@ def main():
         "applyAmbientColor",
         "bindVideoAmbient",
         "Pulse video diagnostic",
-        "Pulse video CDN HEAD",
+        "Pulse video request HEAD",
         "setMediaSource",
         "data-media-mime",
         "<source src=",
@@ -72,7 +72,7 @@ def main():
         "--pulse-media-secondary-rgb",
         "--pulse-media-accent-rgb",
         "--pulse-card-media-bleed",
-        "edge-20260527",
+        "pulse-polish-20260603",
         "border: 0 !important",
     ]:
         expect(token in source + cinematic_css + cinematic_js, f"cinematic media atmosphere present: {token}")
@@ -101,8 +101,12 @@ def main():
     expect(resolved["fallback_url"].endswith("media-unavailable.svg"), "fallback asset returned")
     expect(media_storage.storage_status().get("provider") in {"local", "r2", "s3"}, "storage provider status loads")
     media_css = (ROOT / "static/css/pulse_reels_experience.css").read_text(encoding="utf-8")
-    for token in ["object-fit: contain", "data-orientation"]:
-        expect(token in source + media_css, f"adaptive media/Reels rule present: {token}")
+    combined_media_source = source + media_css
+    expect(
+        "object-fit: contain" in combined_media_source or "object-fit:contain" in combined_media_source,
+        "adaptive media/Reels rule present: object-fit contain",
+    )
+    expect("data-orientation" in combined_media_source, "adaptive media/Reels rule present: data-orientation")
     for token in ["Adaptive " + "playback", "poster " + "first"]:
         expect(token not in source, f"internal Reels implementation text hidden: {token}")
     expect("@webhook_app.route(\"/admin/media-health\"" in source, "admin media health route exists")

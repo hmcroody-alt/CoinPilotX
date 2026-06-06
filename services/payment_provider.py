@@ -14,7 +14,7 @@ import stripe
 
 
 def _base_url() -> str:
-    return (os.getenv("APP_BASE_URL") or os.getenv("BASE_URL") or "https://coinpilotx.app").rstrip("/")
+    return (os.getenv("APP_BASE_URL") or os.getenv("BASE_URL") or "https://pulsesoc.com").rstrip("/")
 
 
 def _stripe_ready() -> bool:

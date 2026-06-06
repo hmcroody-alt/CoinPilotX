@@ -53,7 +53,7 @@ function isStaticAsset(request, pathname) {
 
 function offlineResponse() {
   return fetch("/offline?ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
-    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>CoinPilotXAI Inc. needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
+    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>Pulse needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   ));
 }

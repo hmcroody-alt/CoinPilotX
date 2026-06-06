@@ -390,7 +390,7 @@
           if (!response.ok || !result.ok) {
             throw new Error(result.message || "Please check the form and try again.");
           }
-          setMessage(result.message || "Thanks — you’re on the CoinPilotXAI Inc. update list.", "success");
+          setMessage(result.message || "Thanks — you’re on the Pulse update list.", "success");
           form.reset();
           window.coinPilotXTrack("signup_form_submit", {
             source: payload.source,
@@ -507,7 +507,7 @@
     if (aiForm) {
       aiForm.addEventListener("submit", async function (event) {
         event.preventDefault();
-        setOutput("CoinPilotX AI is thinking...");
+        setOutput("Pulse AI is thinking...");
         try {
           var data = await postJson("/api/ai-assistant", { question: aiForm.elements.question.value });
           setOutput(data.response);
@@ -656,13 +656,13 @@
 
     async function renderResult() {
       progress.textContent = "Generating Day Signal";
-      questionEl.textContent = "CoinPilotX is checking readiness, discipline, and risk alignment...";
+      questionEl.textContent = "Pulse is checking readiness, discipline, and risk alignment...";
       helper.textContent = "This is a responsible confidence check, not a prediction of fate or guaranteed outcome.";
       options.innerHTML = "";
       try {
         var data = await postJson("/api/day-signal", { answers: answers });
         progress.textContent = "Day Signal Ready";
-        questionEl.textContent = "CoinPilotX Day Signal";
+        questionEl.textContent = "Pulse Day Signal";
         helper.textContent = "Use this as a pause point before acting.";
         resultEl.hidden = false;
         resultEl.textContent = data.response;
@@ -984,7 +984,7 @@
 
   function telegramSportsPrompt(game) {
     return (
-      "Open CoinPilotX Bot and ask:\\n\\n" +
+      "Open Pulse and ask:\\n\\n" +
       "Analyze this Sports Edge game:\\n" +
       "League: " + (game.league_label || game.league || "Live") + "\\n" +
       "Game: " + (game.away_team || "Away") + " at " + (game.home_team || "Home") + "\\n" +

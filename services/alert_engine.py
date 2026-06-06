@@ -665,8 +665,8 @@ def dispatch_alert_event(event, rule=None):
     user_id = event.get("user_id") or rule.get("user_id")
     user = _user_record(user_id)
     channels = _normalize_channels(rule.get("channels") or _json_loads(rule.get("channels_json"), {}))
-    title = f"CoinPilotXAI Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
-    body = event.get("message") or "Your CoinPilotXAI alert condition was met."
+    title = f"Pulse Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
+    body = event.get("message") or "Your Pulse alert condition was met."
     metadata = {
         "url": "/alerts",
         "push_type": "market_alert",
@@ -699,7 +699,7 @@ def dispatch_alert_event(event, rule=None):
                 status = "not_configured"
                 result = {"ok": False, "message": "Email address or BREVO_API_KEY is missing."}
             else:
-                html = f"<p>{body}</p><p><a href='https://coinpilotx.app/alerts'>Open Alerts Command Center</a></p>"
+                html = f"<p>{body}</p><p><a href='https://pulsesoc.com/alerts'>Open Alerts Command Center</a></p>"
                 result = email_service.send_email(user.get("email"), title, html, body, email_type="market_alerts", user_id=user_id)
                 status = "sent" if result.get("ok") else "failed"
             delivery["channels"][channel] = status

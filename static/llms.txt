@@ -1,52 +1,52 @@
-# CoinPilotXAI Inc.
+# Pulse — Powered by CoinPilotXAI
 
-CoinPilotXAI Inc. operates CoinPilotXAI, an educational AI intelligence platform for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Pro Arena simulation training.
+CoinPilotXAI Inc. operates Pulse, an educational AI intelligence platform for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Pro Arena simulation training.
 
-Primary site: https://coinpilotx.app/
-Support: https://coinpilotx.app/support
-Privacy: https://coinpilotx.app/privacy
-Terms: https://coinpilotx.app/terms
+Primary site: https://pulsesoc.com/
+Support: https://pulsesoc.com/support
+Privacy: https://pulsesoc.com/privacy
+Terms: https://pulsesoc.com/terms
 Optional Telegram companion: https://t.me/DocShieldX_bot
-Machine-readable public index: https://coinpilotx.app/ai-index.json
-Canonical sitemap: https://coinpilotx.app/sitemap.xml
+Machine-readable public index: https://pulsesoc.com/ai-index.json
+Canonical sitemap: https://pulsesoc.com/sitemap.xml
 
 ## Important Safety Context
 
 CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.
 
-CoinPilotX never holds user funds and never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.
+Pulse never holds user funds and never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.
 
 Sports Edge is informational only and does not provide guaranteed betting outcomes.
 
 ## Core Public Pages
 
-- Live crypto market board: https://coinpilotx.app/live-crypto-market
-- About CoinPilotXAI: https://coinpilotx.app/about
-- CoinPilotXAI Arena preview: https://coinpilotx.app/arena-preview
-- Live Quote Market Center: https://coinpilotx.app/quote
-- Bitcoin live quote: https://coinpilotx.app/quote/crypto/BTC
-- Ethereum live quote: https://coinpilotx.app/quote/crypto/ETH
-- Crypto Predictions Intelligence: https://coinpilotx.app/predictions/crypto
-- Trending crypto intelligence: https://coinpilotx.app/trending-crypto
-- Bitcoin prediction context: https://coinpilotx.app/bitcoin-prediction
-- BTC price prediction scenarios: https://coinpilotx.app/btc-price-prediction
-- AI market intelligence: https://coinpilotx.app/ai-market-analysis
-- AI crypto assistant: https://coinpilotx.app/ai-crypto-assistant
-- Telegram crypto bot: https://coinpilotx.app/telegram-crypto-bot
-- Scam Shield and crypto scam checker: https://coinpilotx.app/crypto-scams
-- Wallet security: https://coinpilotx.app/wallet-security
-- Blockchain wallet intelligence: https://coinpilotx.app/blockchain-wallet-intelligence
-- Whale alerts: https://coinpilotx.app/whale-alerts
-- Portfolio intelligence: https://coinpilotx.app/portfolio-intelligence
-- Sports Edge: https://coinpilotx.app/sports-edge
-- Sports betting intelligence: https://coinpilotx.app/sports-betting-intelligence
-- Day Signal: https://coinpilotx.app/day-signal
-- Crypto safety: https://coinpilotx.app/crypto-safety
-- News and insights hub: https://coinpilotx.app/insights
+- Live crypto market board: https://pulsesoc.com/live-crypto-market
+- About Pulse: https://pulsesoc.com/about
+- Pulse Arena preview: https://pulsesoc.com/arena-preview
+- Live Quote Market Center: https://pulsesoc.com/quote
+- Bitcoin live quote: https://pulsesoc.com/quote/crypto/BTC
+- Ethereum live quote: https://pulsesoc.com/quote/crypto/ETH
+- Crypto Predictions Intelligence: https://pulsesoc.com/predictions/crypto
+- Trending crypto intelligence: https://pulsesoc.com/trending-crypto
+- Bitcoin prediction context: https://pulsesoc.com/bitcoin-prediction
+- BTC price prediction scenarios: https://pulsesoc.com/btc-price-prediction
+- AI market intelligence: https://pulsesoc.com/ai-market-analysis
+- AI crypto assistant: https://pulsesoc.com/ai-crypto-assistant
+- Telegram crypto bot: https://pulsesoc.com/telegram-crypto-bot
+- Scam Shield and crypto scam checker: https://pulsesoc.com/crypto-scams
+- Wallet security: https://pulsesoc.com/wallet-security
+- Blockchain wallet intelligence: https://pulsesoc.com/blockchain-wallet-intelligence
+- Whale alerts: https://pulsesoc.com/whale-alerts
+- Portfolio intelligence: https://pulsesoc.com/portfolio-intelligence
+- Sports Edge: https://pulsesoc.com/sports-edge
+- Sports betting intelligence: https://pulsesoc.com/sports-betting-intelligence
+- Day Signal: https://pulsesoc.com/day-signal
+- Crypto safety: https://pulsesoc.com/crypto-safety
+- News and insights hub: https://pulsesoc.com/insights
 
 ## Indexable Content Collections
 
-- Market pages: https://coinpilotx.app/markets/btc, /markets/eth, /markets/sol, and additional major assets.
+- Market pages: https://pulsesoc.com/markets/btc, /markets/eth, /markets/sol, and additional major assets.
 - Prediction scenario pages: /markets/btc/prediction, /markets/eth/prediction, and equivalent major asset scenario pages.
 - Live market pages: /markets/btc/live, /markets/eth/live, and equivalent major asset live context pages.
 - Sports Edge pages: /sports-edge/nba, /sports-edge/nfl, /sports-edge/mlb, /sports-edge/nhl, /sports-edge/soccer, /sports-edge/tennis, /sports-edge/live-games.
@@ -64,7 +64,7 @@ Sports Edge is informational only and does not provide guaranteed betting outcom
 
 ## AI Search Summary
 
-CoinPilotXAI helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, Pro Arena virtual-dollar simulations, and Sports Edge context across web, mobile, and optional Telegram alerts. The product emphasizes clarity, safety, public data, user control, privacy-safe Arena identities, and ethical conversion. It avoids gambling mechanics, fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
+Pulse helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, Pro Arena virtual-dollar simulations, and Sports Edge context across web, mobile, and optional Telegram alerts. The product emphasizes clarity, safety, public data, user control, privacy-safe Arena identities, and ethical conversion. It avoids gambling mechanics, fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
 
 ## Crawler Guidance
 

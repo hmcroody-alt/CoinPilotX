@@ -11,7 +11,7 @@ def fallback_response(question, pro=False):
     live_note = snapshot.get("warning") or "Live market data is available from public sources."
     depth = "Pro view includes deeper risk context and what could change the signal." if pro else "Free view gives a shorter safety-first summary."
     return (
-        "💬 CoinPilotX AI Assistant\n\n"
+        "💬 Pulse AI Assistant\n\n"
         f"Market Snapshot:\nBTC: {summary.get('btc_price') or 'unavailable'} · ETH: {summary.get('eth_price') or 'unavailable'}\n"
         f"Momentum Read:\nMarket trend appears {summary.get('market_trend', 'mixed')} based on available live data.\n\n"
         f"Risk Level:\n{summary.get('risk_level', 'Medium')}\n\n"
@@ -32,7 +32,7 @@ def assistant_response(user_id, question, pro=False):
         )
     snapshot = market_data.live_market_board(limit=10)
     system = (
-        "You are CoinPilotX, powered by CoinPilotXAI Inc. Give honest crypto, wallet, scam, market, sports, and portfolio education. "
+        "You are Pulse, operated by CoinPilotXAI Inc. Give honest crypto, wallet, scam, market, sports, and portfolio education. "
         "Never guarantee profits, betting wins, certainty, or insider information. Never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials. "
         "Use sections: Market Snapshot, Momentum Read, Risk Level, What to Watch, Safer Next Step, Disclaimer. "
         "If live data is unavailable, say so clearly."

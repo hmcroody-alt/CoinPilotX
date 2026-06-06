@@ -144,9 +144,11 @@ def local_contract_audit():
     storage = (ROOT / "services/media_storage.py").read_text(encoding="utf-8")
     upload_progress = (ROOT / "services/upload_progress_service.py").read_text(encoding="utf-8")
     for token in [
-        "PulseMediaRenderer = { hydrate, retry, normalizeMedia, renderMedia, renderInto }",
-        "playsinline preload=\"metadata\"",
-        "Pulse video CDN HEAD",
+        "const PulseVideo = { hydrate, retry, normalizeMedia, renderMedia, renderInto",
+        "window.PulseMediaRenderer = PulseVideo",
+        "playsinline",
+        "preload=\"metadata\"",
+        "Pulse video request HEAD",
         "r2.cloudflarestorage.com",
         "data-media-diag",
     ]:

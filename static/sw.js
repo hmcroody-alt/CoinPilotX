@@ -48,13 +48,13 @@ function isStaticAsset(request, pathname) {
 
 function offlineResponse() {
   return fetch("/offline?ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
-    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>CoinPilotXAI Inc. needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
+    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>Pulse needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   ));
 }
 
 self.addEventListener("install", (event) => {
-  console.log("[CoinPilotXAI SW] service worker installed", CACHE_NAME);
+  console.log("[Pulse SW] service worker installed", CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(STATIC_ASSETS))
@@ -63,12 +63,12 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  console.log("[CoinPilotXAI SW] service worker activated", CACHE_NAME);
+  console.log("[Pulse SW] service worker activated", CACHE_NAME);
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.map((key) => {
         if (key !== CACHE_NAME) {
-          console.log("[CoinPilotXAI SW] old cache deleted", key);
+          console.log("[Pulse SW] old cache deleted", key);
         }
         return key === CACHE_NAME ? Promise.resolve() : caches.delete(key);
       }))
@@ -85,15 +85,15 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    console.log("[CoinPilotXAI SW] navigation fetch attempted", url.pathname);
+    console.log("[Pulse SW] navigation fetch attempted", url.pathname);
     event.respondWith(
       fetch(request, { cache: "no-store" })
         .then((response) => {
-          console.log("[CoinPilotXAI SW] navigation fetch succeeded", url.pathname, response.status);
+          console.log("[Pulse SW] navigation fetch succeeded", url.pathname, response.status);
           return response;
         })
         .catch((error) => {
-          console.log("[CoinPilotXAI SW] navigation fallback to offline used", url.pathname, error && error.message ? error.message : error);
+          console.log("[Pulse SW] navigation fallback to offline used", url.pathname, error && error.message ? error.message : error);
           return offlineResponse();
         })
     );
@@ -102,7 +102,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isNeverCachePath(url.pathname)) {
     event.respondWith(fetch(request, { cache: "no-store" }).catch((error) => {
-      console.log("[CoinPilotXAI SW] fetch failure", url.pathname, error && error.message ? error.message : error);
+      console.log("[Pulse SW] fetch failure", url.pathname, error && error.message ? error.message : error);
       throw error;
     }));
     return;
@@ -121,7 +121,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         }).catch((error) => {
-          console.log("[CoinPilotXAI SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
+          console.log("[Pulse SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
           throw error;
         });
       })
@@ -137,11 +137,11 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch (error) {
-    payload = { title: "CoinPilotXAI Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+    payload = { title: "Pulse Alert", body: event.data ? event.data.text() : "New intelligence alert." };
   }
-  const title = payload.title || "CoinPilotXAI Alert";
+  const title = payload.title || "Pulse Alert";
   const options = {
-    body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
+    body: payload.body || payload.message || "New Pulse intelligence update.",
     icon: payload.icon || "/icons/icon-192.png",
     badge: payload.badge || "/icons/icon-192.png",
     vibrate: payload.vibrate || [200, 100, 200],

@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard | CoinPilotXAI Inc.</title>
-  <meta name="description" content="Private CoinPilotXAI Inc. account dashboard for portfolio tracking, watchlists, alerts, native notifications, and account sync." />
+  <title>Dashboard | Pulse</title>
+  <meta name="description" content="Private Pulse account dashboard for portfolio tracking, watchlists, alerts, native notifications, and account sync." />
   <meta name="robots" content="noindex, nofollow" />
-  <link rel="canonical" href="https://coinpilotx.app/dashboard" />
+  <link rel="canonical" href="https://pulsesoc.com/dashboard" />
   <meta name="theme-color" content="#00e5ff" />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" />
   <link rel="manifest" href="/manifest.json" />
@@ -174,7 +174,7 @@
   <header>
     <div class="container">
       <nav>
-        <a class="brand" href="/"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="CoinPilotXAI Inc. logo"><span>CoinPilotXAI Inc.</span></a>
+        <a class="brand" href="/"><img src="{{ url_for('static', filename='Coinpilot Logo/NewLogo.png') }}" alt="Pulse logo"><span>Pulse</span></a>
         <div class="nav-links" data-home-action-group="compact_menu">
           <a class="button" href="/account">Account</a>
           <details>
@@ -310,7 +310,7 @@
       </article>
       <article class="card">
         <h2>AI Memory Card</h2>
-        <p>CoinPilotXAI remembers your watchlist, alerts, portfolio, and recent questions for your private account context.</p>
+        <p>Pulse remembers your watchlist, alerts, portfolio, and recent questions for your private account context.</p>
         <p class="muted" data-memory-card>Recent saved insights and suggested next actions will appear here.</p>
       </article>
 
@@ -431,7 +431,7 @@
       <header class="private-chat-head">
         <div>
           <strong id="private-chat-title">Private Chat</strong>
-          <small class="muted">Message another CoinPilotXAI user securely.</small>
+          <small class="muted">Message another Pulse user securely.</small>
         </div>
         <div class="private-chat-tools">
           <button class="button" type="button" data-chat-menu-toggle aria-label="Conversation options">...</button>
@@ -467,7 +467,7 @@
             <p class="muted" data-chat-start-message></p>
           </form>
           <div data-chat-conversations>
-            <div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another CoinPilotXAI user.</div>
+            <div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another Pulse user.</div>
           </div>
         </div>
         <div class="private-chat-view" data-chat-thread-view hidden>
@@ -619,7 +619,7 @@
       const node = document.querySelector("[data-chat-conversations]");
       const groupNode = document.querySelector("[data-chat-groups]");
       if (!node) return;
-      node.innerHTML = '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another CoinPilotXAI user.</div>';
+      node.innerHTML = '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another Pulse user.</div>';
       if (groupNode) groupNode.innerHTML = '<div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>';
       try {
         const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
@@ -633,10 +633,10 @@
         }
         node.innerHTML = (data.conversations || []).map(item => `
           <button class="conversation-row" type="button" data-open-conversation="${item.id}" data-other-user-id="${item.other_user_id || ""}">
-            <strong>${escapeHtml(item.title || "CoinPilotXAI user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
+            <strong>${escapeHtml(item.title || "Pulse user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
             <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
             <span class="conversation-meta"><span class="online-dot">${item.other_last_seen_at ? "Recently active" : "User"}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
-          </button>`).join("") || '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another CoinPilotXAI user.</div>';
+          </button>`).join("") || '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another Pulse user.</div>';
         if (groupNode) {
           const pulseResponse = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
           const pulseData = await pulseResponse.json();
@@ -670,7 +670,7 @@
     function chatMessageHtml(message, optimistic = false) {
       const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_id || message.sender_user_id) === Number(chatState.currentUserId);
       const id = message.message_id || message.id || "";
-      return `<div class="chat-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><strong>${mine ? "You" : "CoinPilotXAI user"}</strong><div>${escapeHtml(message.body)}</div><small>${optimistic ? "sending..." : friendlyTime(message.created_at) + " · " + escapeHtml(message.delivery_status || "delivered")}</small></div>`;
+      return `<div class="chat-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><strong>${mine ? "You" : "Pulse user"}</strong><div>${escapeHtml(message.body)}</div><small>${optimistic ? "sending..." : friendlyTime(message.created_at) + " · " + escapeHtml(message.delivery_status || "delivered")}</small></div>`;
     }
 
     function renderChatMessages(messages) {
@@ -738,7 +738,7 @@
     }
 
     function render(data) {
-      text("[data-user-name]", "Welcome back, " + (data.user.name || "CoinPilotX user"));
+      text("[data-user-name]", "Welcome back, " + (data.user.name || "Pulse user"));
       text("[data-plan]", data.user.plan || "Free");
       text("[data-subscription]", data.user.subscription_status || "inactive");
       text("[data-telegram]", data.user.telegram_linked ? "Connected" : "Not connected");
@@ -788,7 +788,7 @@
         return Math.floor(hours / 24) + "d ago";
       };
       const latest = activity[0];
-      text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "CoinPilotXAI"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
+      text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "Pulse"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
       setHTML("[data-activity]", activity.slice(0, 10).map(item => `
         <div class="activity-row"><strong>✓ ${String(item.event_type || "activity").replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${relative(item.created_at)}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>');
 
@@ -885,7 +885,7 @@
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not activate.");
         const alerts = Array.isArray(data.alerts) ? data.alerts : (Array.isArray(data.created) ? data.created : []);
-        if (result) result.textContent = data.message || `Auto Signals activated. CoinPilotXAI is now monitoring your market alerts. ${alerts.length} signal rules active.`;
+        if (result) result.textContent = data.message || `Auto Signals activated. Pulse is now monitoring your market alerts. ${alerts.length} signal rules active.`;
         setHTML("[data-auto-signals-alerts]", alerts.map(item => `
           <div class="alert-row">
             <strong>${escapeHtml(item.symbol || "Signal")}</strong>

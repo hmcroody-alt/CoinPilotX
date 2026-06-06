@@ -6,7 +6,7 @@ from . import ai_social_engine
 
 
 def generate_captions(text="", topic=""):
-    base = (text or "").strip() or "New CoinPilotXAI Pulse insight"
+    base = (text or "").strip() or "New Pulse insight"
     return [
         base[:180],
         f"What this means: {base[:140]}",

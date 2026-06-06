@@ -6,7 +6,7 @@ INDEX = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 
 required_homepage_tokens = [
-    "CoinPilotXAI Pulse",
+    "Pulse",
     "Sign In to Pulse",
     "Join Pulse",
     "Explore Pulse",
@@ -59,5 +59,6 @@ assert '@webhook_app.route("/roast-battle-preview"' in BOT
 assert "Roast Battle is the entertainment feature" in INDEX
 assert 'href="/arena"' not in INDEX
 assert "redirect_www_to_apex_domain" in BOT
-assert "www.coinpilotx.app" in BOT and "https://coinpilotx.app" in BOT
+assert "www.coinpilotx.app" in BOT
+assert "https://pulsesoc.com" in BOT
 print("pulse public homepage positioning audit ok")

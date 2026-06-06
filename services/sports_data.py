@@ -72,7 +72,7 @@ def risk_label(game):
 
 def odds_text(game):
     if not game.get("odds_available"):
-        return "Odds unavailable in current feed. CoinPilotX will not invent market pricing."
+        return "Odds unavailable in current feed. Pulse will not invent market pricing."
     return game.get("odds_note") or "Odds are available from the connected feed."
 
 

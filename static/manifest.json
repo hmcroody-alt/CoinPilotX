@@ -1,7 +1,7 @@
 {
-  "name": "CoinPilotXAI Inc",
-  "short_name": "CoinPilotXAI",
-  "description": "AI crypto intelligence platform for market alerts, scam awareness, wallet analysis, portfolio monitoring, and optional Telegram companion alerts.",
+  "name": "Pulse",
+  "short_name": "Pulse",
+  "description": "Pulse social, creator, and AI intelligence platform.",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",
@@ -37,21 +37,21 @@
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "CoinPilotXAI command center"
+      "label": "Pulse command center"
     },
     {
       "src": "/static/screenshots/analysis.png",
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "CoinPilotX AI market analysis"
+      "label": "Pulse AI market analysis"
     },
     {
       "src": "/static/screenshots/portfolio.png",
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "CoinPilotX portfolio intelligence"
+      "label": "Pulse portfolio intelligence"
     }
   ]
 }

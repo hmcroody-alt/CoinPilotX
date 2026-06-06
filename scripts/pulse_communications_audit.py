@@ -182,12 +182,30 @@ def main() -> None:
     if not page_text:
         page_response = client.get("/pulse/messages")
         page_text = page_response.get_data(as_text=True)
-    expect("Pulse Communications API" in page_text, "communications frontend logs endpoint diagnostics")
-    expect("Pulse Communications messages failed" in page_text, "communications frontend logs message failures")
-    expect("data-comm-room-id" in page_text, "communications frontend carries room ids")
+    comm_js = (ROOT / "static/js/pulse_messages_v2.js").read_text(encoding="utf-8")
+    frontend_text = page_text + comm_js
+    expect(
+        "Pulse Communications API" in frontend_text or "Pulse Communications V2 timing" in frontend_text,
+        "communications frontend logs endpoint diagnostics",
+    )
+    expect(
+        "Pulse Communications messages failed" in frontend_text or "Pulse Communications V2 action failed" in frontend_text,
+        "communications frontend logs message failures",
+    )
+    expect(
+        "data-comm-room-id" in frontend_text or "data-room-id" in frontend_text,
+        "communications frontend carries room ids",
+    )
     expect("pulse-comm-intel" not in page_text, "communications frontend omits placeholder intelligence panel")
     expect("Future Channels" not in page_text and "Coming Soon" not in page_text, "communications frontend omits coming-soon messaging UI")
-    expect("/api/pulse/comm/v2/conversations/" in page_text, "communications frontend uses v2 member intelligence endpoint")
+    expect(
+        "/api/pulse/comm/v2/conversations/" in frontend_text
+        or (
+            'const API = "/api/pulse/communications/v2"' in frontend_text
+            and "`/conversations/${conversationId}/messages" in frontend_text
+        ),
+        "communications frontend uses v2 member intelligence endpoint",
+    )
 
     print("pulse communications audit ok")
 

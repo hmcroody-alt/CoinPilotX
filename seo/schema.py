@@ -1,16 +1,17 @@
 import json
+import os
 
-SITE_URL = "https://coinpilotx.app"
+SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://pulsesoc.com").rstrip("/")
 LOGO_URL = f"{SITE_URL}/static/Coinpilot%20Logo/NewLogo.png"
 SHARE_IMAGE_URL = f"{SITE_URL}/static/assets/coinpilotxai-share-card.svg"
-SUPPORT_EMAIL = "support@coinpilotx.app"
+SUPPORT_EMAIL = "support@pulsesoc.com"
 
 
 def organization_schema():
     return {
         "@type": "Organization",
         "@id": f"{SITE_URL}/#organization",
-        "name": "CoinPilotXAI Inc.",
+        "name": "Pulse",
         "legalName": "CoinPilotXAI Inc.",
         "url": SITE_URL + "/",
         "logo": LOGO_URL,
@@ -30,11 +31,11 @@ def website_schema():
     return {
         "@type": "WebSite",
         "@id": f"{SITE_URL}/#website",
-        "name": "CoinPilotX",
+        "name": "Pulse",
         "url": SITE_URL + "/",
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "inLanguage": "en",
-        "description": "CoinPilotX is an AI crypto intelligence, scam awareness, wallet risk, sports edge, and AI-powered crypto intelligence platform powered by CoinPilotXAI Inc.",
+        "description": "Pulse is a social, creator, safety, market-intelligence, and premium community platform powered by CoinPilotXAI.",
         "potentialAction": {
             "@type": "SearchAction",
             "target": f"{SITE_URL}/search?q={{search_term_string}}",
@@ -47,13 +48,13 @@ def software_schema():
     return {
         "@type": "SoftwareApplication",
         "@id": f"{SITE_URL}/#software",
-        "name": "CoinPilotX",
+        "name": "Pulse",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Telegram, Web, PWA",
         "url": SITE_URL + "/",
         "image": SHARE_IMAGE_URL,
         "publisher": {"@id": f"{SITE_URL}/#organization"},
-        "description": "AI crypto intelligence, wallet scanning education, scam protection, whale alerts, Sports Edge, portfolio context, and real-time market analysis with optional Telegram alerts.",
+        "description": "Creator, video, live, messaging, scam-safety, portfolio context, market intelligence, and premium community features.",
         "offers": {
             "@type": "Offer",
             "price": "14.99",
@@ -129,9 +130,9 @@ def product_schema():
     return {
         "@type": "Product",
         "@id": f"{SITE_URL}/#product",
-        "name": "CoinPilotX Pro",
+        "name": "Pulse Premium",
         "brand": {"@id": f"{SITE_URL}/#organization"},
-        "description": "CoinPilotX Pro adds deeper AI reasoning, whale intelligence, wallet risk context, Sports Edge intelligence, portfolio scenario analysis, and advanced scam protection.",
+        "description": "Pulse Premium adds prestige identity, creator enhancements, advanced safety and intelligence features, and premium community tools.",
         "image": SHARE_IMAGE_URL,
         "offers": {
             "@type": "Offer",
@@ -172,7 +173,7 @@ def related_item_list_schema(page):
     return {
         "@type": "ItemList",
         "@id": page["canonical"] + "#related",
-        "name": f"Related CoinPilotXAI intelligence pages for {page['h1']}",
+        "name": f"Related Pulse intelligence pages for {page['h1']}",
         "itemListElement": [
             {
                 "@type": "ListItem",

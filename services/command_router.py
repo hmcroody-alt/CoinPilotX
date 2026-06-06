@@ -95,7 +95,7 @@ def _pro(user):
     return pro_access.has_pro_access(user or {})
 
 
-def _card(action_key, title, summary, source="CoinPilotXAI platform", confidence="Medium", actions=None):
+def _card(action_key, title, summary, source="Pulse platform", confidence="Medium", actions=None):
     return {
         "ok": True,
         "action_key": action_key,
@@ -179,7 +179,7 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
     if action_key == "fear_greed":
         return _card(action_key, "Fear & Greed", "Fear & Greed source temporarily unavailable. The platform will show this live once the sentiment feed is connected.", "sentiment source unavailable", "Low")
     if action_key == "crypto_wisdom":
-        return _card(action_key, "Crypto Wisdom", "Patience is a position. Slow decisions, smaller size, and clear invalidation rules usually beat emotional reaction.", "CoinPilotXAI education library", "High")
+        return _card(action_key, "Crypto Wisdom", "Patience is a position. Slow decisions, smaller size, and clear invalidation rules usually beat emotional reaction.", "Pulse education library", "High")
     if action_key in {"scam_stories", "chain_intel", "btc_network", "whale_alerts"}:
         title_map = {
             "scam_stories": "Scam Stories",
@@ -187,7 +187,7 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
             "btc_network": "BTC Network",
             "whale_alerts": "Whale Alerts",
         }
-        source = "public-data service unavailable" if action_key != "scam_stories" else "CoinPilotXAI scam education library"
+        source = "public-data service unavailable" if action_key != "scam_stories" else "Pulse scam education library"
         summary = "Live data source temporarily unavailable." if action_key != "scam_stories" else "Common crypto scam patterns include fake support, wallet-drainer approvals, fake airdrops, guaranteed-return dashboards, and urgency pressure."
         return _card(action_key, title_map[action_key], summary, source, "Low" if action_key != "scam_stories" else "High")
     if action_key in {"ai_analysis", "ai_crypto_assistant", "chat_assistant"}:
@@ -199,7 +199,7 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         text = payload.get("text") or payload.get("query") or "Paste suspicious text or a URL to scan."
         result = scam_shield.analyze_text(text)
         user_context.log_interaction(user_id or 0, "scam_shield_used", text, result.get("response", ""), channel)
-        return _card(action_key, "Scam Shield", result.get("response", ""), "CoinPilotXAI risk rules", "Medium", ["Run another scan", "Share safety card"])
+        return _card(action_key, "Scam Shield", result.get("response", ""), "Pulse risk rules", "Medium", ["Run another scan", "Share safety card"])
     if action_key in {"wallet_intel", "tx_explorer"}:
         value = payload.get("address") or payload.get("query") or ""
         if not value:
@@ -210,11 +210,11 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
     if action_key == "today_day_signal":
         answers = payload.get("answers") or {}
         if not answers:
-            return _card(action_key, "CoinPilotX Day Signal", "Answer the four quick readiness questions to generate your Day Signal score.", "CoinPilotXAI readiness model", "Medium", ["Start Day Signal"])
+            return _card(action_key, "CoinPilotX Day Signal", "Answer the four quick readiness questions to generate your Day Signal score.", "Pulse readiness model", "Medium", ["Start Day Signal"])
         result = day_signal.generate(answers, pro=pro)
         if result.get("ok"):
             day_signal.save_result(user_id or 0, result, answers)
-        return _card(action_key, "CoinPilotX Day Signal", result.get("response", "Day Signal is unavailable right now."), "CoinPilotXAI readiness model", "Medium")
+        return _card(action_key, "CoinPilotX Day Signal", result.get("response", "Day Signal is unavailable right now."), "Pulse readiness model", "Medium")
     if action_key in {"sports_edge", "live_sports_edge"}:
         result = sports_data.live_sports_edge()
         summary = result.get("warning") or "Live Sports Edge feed loaded."
@@ -253,7 +253,7 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
         return _card(action_key, "Dashboard", "Open the website dashboard to manage account, billing, portfolio, alerts, and optional Telegram connection.", "Website account database", "High", ["Open dashboard"])
     if action_key == "account":
         if not user_id:
-            return _card(action_key, "Account", "Log in to view your CoinPilotXAI account.", "Website account database", "High", ["Login", "Create account"])
+            return _card(action_key, "Account", "Log in to view your Pulse account.", "Website account database", "High", ["Login", "Create account"])
         access_type = pro_access.pro_access_type(user)
         label = "Pulse Premium active" if access_type == "paid" else "Legacy trial active" if access_type == "trial" else "Free Core"
         return _card(action_key, "Account", f"Plan: {label}\nSubscription: {user.get('subscription_status') or 'inactive'}\nTelegram: {'Connected' if user.get('telegram_user_id') else 'Optional and not connected'}", "Website account database", "High", ["Open dashboard", "Account settings"])
@@ -262,14 +262,14 @@ def execute_menu_action(user_id, action_key, channel="web", payload=None):
             return _card(action_key, "Pulse Premium", "Pulse Premium is active for this account.", "Website account database", "High", ["Open dashboard", "Account"])
         return _card(action_key, "Pulse Premium", "Core tools are free. Pulse Premium adds prestige identity, advanced creator effects, elite AI tools, and creator analytics.", "Stripe hosted checkout", "High", ["Explore Pulse Premium"])
     if action_key == "help":
-        return _card(action_key, "Help", "Use buttons or slash commands like /price BTC, /market, /scam, /wallet, /portfolio, /day, /sports, or ask naturally.", "CoinPilotXAI command router", "High")
-    return _card(action_key, "CoinPilotXAI Command", "Live source temporarily unavailable or this command is being connected.", "CoinPilotXAI platform", "Low")
+        return _card(action_key, "Help", "Use buttons or slash commands like /price BTC, /market, /scam, /wallet, /portfolio, /day, /sports, or ask naturally.", "Pulse command router", "High")
+    return _card(action_key, "Pulse Command", "Live source temporarily unavailable or this command is being connected.", "Pulse platform", "Low")
 
 
 def handle_command(user_id, command_text, channel="web"):
     text = (command_text or "").strip()
     if not text:
-        return _card("help", "Command Center", "Ask CoinPilotXAI anything or choose a command card.", "CoinPilotXAI command router", "High")
+        return _card("help", "Command Center", "Ask Pulse anything or choose a command card.", "Pulse command router", "High")
     first, _, rest = text.partition(" ")
     action = COMMAND_ALIASES.get(first.lower())
     payload = {"query": rest.strip(), "question": text}
@@ -292,4 +292,4 @@ def format_response_for_web(result):
 
 def format_response_for_telegram(result):
     result = result or {}
-    return f"{result.get('title', 'CoinPilotXAI')}\n\n{result.get('summary', '')}\n\nSource: {result.get('source', 'CoinPilotXAI platform')}\n{result.get('disclaimer', DISCLAIMER)}"
+    return f"{result.get('title', 'CoinPilotXAI')}\n\n{result.get('summary', '')}\n\nSource: {result.get('source', 'Pulse platform')}\n{result.get('disclaimer', DISCLAIMER)}"

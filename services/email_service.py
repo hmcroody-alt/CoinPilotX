@@ -16,13 +16,13 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
     channel = (channel or "transactional").lower()
     if channel == "support":
         default_email = os.getenv("SUPPORT_FROM_ADDRESS", "support@pulsesoc.com")
-        default_name = os.getenv("SUPPORT_FROM_NAME", "CoinPilotXAI Support")
+        default_name = os.getenv("SUPPORT_FROM_NAME", "PulseSoc Support")
     elif channel == "security":
         default_email = os.getenv("SECURITY_FROM_ADDRESS", "security@pulsesoc.com")
-        default_name = os.getenv("SECURITY_FROM_NAME", "CoinPilotXAI Security")
+        default_name = os.getenv("SECURITY_FROM_NAME", "PulseSoc Security")
     else:
         default_email = "noreply@pulsesoc.com"
-        default_name = "CoinPilotXAI"
+        default_name = "PulseSoc"
     return {
         "email": _coalesce(from_email, os.getenv("BREVO_SENDER_EMAIL"), os.getenv("MAIL_FROM_ADDRESS"), default_email),
         "name": _coalesce(from_name, os.getenv("BREVO_SENDER_NAME"), os.getenv("MAIL_FROM_NAME"), default_name),
@@ -123,16 +123,16 @@ def send_welcome_email(user):
     name = (user or {}).get("full_name") or "there"
     return send_email(
         (user or {}).get("email"),
-        "Welcome to CoinPilotX — Powered by CoinPilotXAI Inc.",
-        f"<p>Hi {name}, welcome to CoinPilotX.</p>",
-        f"Hi {name}, welcome to CoinPilotX.",
+        "Welcome to Pulse — Powered by CoinPilotXAI",
+        f"<p>Hi {name}, welcome to Pulse.</p>",
+        f"Hi {name}, welcome to Pulse.",
     )
 
 
 def send_email_verification(user, verification_url):
     return send_email(
         (user or {}).get("email"),
-        "Verify your CoinPilotX email",
+        "Verify your Pulse email",
         f"<p><a href='{verification_url}'>Verify email</a></p>",
         f"Verify your email: {verification_url}",
     )
@@ -141,7 +141,7 @@ def send_email_verification(user, verification_url):
 def send_password_reset_email(user, reset_url):
     return send_email(
         (user or {}).get("email"),
-        "Reset your CoinPilotX password",
+        "Reset your Pulse password",
         f"<p><a href='{reset_url}'>Reset password</a></p>",
         f"Reset your password: {reset_url}",
     )
@@ -150,23 +150,23 @@ def send_password_reset_email(user, reset_url):
 def send_password_changed_email(user):
     return send_email(
         (user or {}).get("email"),
-        "Your CoinPilotX password was changed",
-        "<p>Your CoinPilotX password was changed successfully.</p>",
-        "Your CoinPilotX password was changed successfully.",
+        "Your Pulse password was changed",
+        "<p>Your Pulse password was changed successfully.</p>",
+        "Your Pulse password was changed successfully.",
     )
 
 
 def send_username_recovery_email(user):
     email = (user or {}).get("email")
-    return send_email(email, "Your CoinPilotX account login", f"<p>Login email: {email}</p>", f"Login email: {email}")
+    return send_email(email, "Your Pulse account login", f"<p>Login email: {email}</p>", f"Login email: {email}")
 
 
 def send_update_signup_email(lead):
     return send_email(
         (lead or {}).get("email"),
-        "You’re on the CoinPilotXAI Inc. update list",
-        "<p>Thanks for joining the CoinPilotXAI Inc. update list.</p>",
-        "Thanks for joining the CoinPilotXAI Inc. update list.",
+        "You’re on the Pulse update list",
+        "<p>Thanks for joining the Pulse update list.</p>",
+        "Thanks for joining the Pulse update list.",
     )
 
 
@@ -185,11 +185,11 @@ def send_payment_confirmation(user, payment_details=None):
         (
             "<p>Your Pulse Premium access is active.</p>"
             f"{amount_line}"
-            "<p>Dashboard: <a href='https://coinpilotx.app/dashboard'>https://coinpilotx.app/dashboard</a></p>"
-            "<p>If you experience any issue after payment, please email support@pulsesoc.com and include the email address used for your CoinPilotXAI account.</p>"
+            "<p>Account: <a href='https://pulsesoc.com/account'>https://pulsesoc.com/account</a></p>"
+            "<p>If you experience any issue after payment, please email support@pulsesoc.com and include the email address used for your Pulse account.</p>"
             "<p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
         ),
-        "Your Pulse Premium access is active. Dashboard: https://coinpilotx.app/dashboard. Support: support@pulsesoc.com",
+        "Your Pulse Premium access is active. Account: https://pulsesoc.com/account. Support: support@pulsesoc.com",
         email_type="payment_confirmation",
     )
 
