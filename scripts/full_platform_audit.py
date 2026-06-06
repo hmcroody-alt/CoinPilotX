@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full CoinPilotXAI Pulse platform audit gate.
+"""Full Pulse platform audit gate.
 
 Audit plan:
 1. Database/migration integrity.
@@ -119,7 +119,7 @@ def railway_env_audit():
 
 
 def main():
-    print("CoinPilotXAI Pulse full platform audit")
+    print("Pulse full platform audit")
     print("Audit plan:")
     for label, script in AUDIT_PLAN:
         print(f"- {label}: {script}")
