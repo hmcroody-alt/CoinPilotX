@@ -778,7 +778,7 @@ def _empty_intelligence(topic=""):
         "trending_topics": [],
         "top_spaces": [
             {"name": "Scam Watch", "slug": "scam-watch", "heat": 0},
-            {"name": "Crypto Teachers", "slug": "crypto-teachers", "heat": 0},
+            {"name": "Educators", "slug": "educators", "heat": 0},
             {"name": "Alpha Arena", "slug": "alpha-arena", "heat": 0},
             {"name": "Roast Battle", "slug": "roast-battle", "heat": 0},
         ],

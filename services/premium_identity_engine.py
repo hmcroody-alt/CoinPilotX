@@ -41,6 +41,8 @@ def has_active_premium(row):
     row = row or {}
     if is_owner(row):
         return True
+    if str(row.get("founder_status") or "").lower() == "active" or int(row.get("founder_number") or 0):
+        return True
     if int(row.get("premium_mark_override") or row.get("premium_glow_manual_grant") or 0):
         return True
     plan = str(row.get("plan") or row.get("subscription_plan") or "").lower()
@@ -54,6 +56,16 @@ def has_active_premium(row):
 
 def identity_mark(row=None, badge_keys=None):
     row = row or {}
+    founder_number = int(row.get("founder_number") or 0)
+    if str(row.get("founder_status") or "").lower() == "active" or founder_number:
+        number_label = f" #{founder_number}" if founder_number else ""
+        return {
+            "type": "founder",
+            "badge_key": "founder_badge",
+            "symbol": "F",
+            "title": f"Pulse Founder{number_label}",
+            "founder_number": founder_number,
+        }
     if has_active_premium(row):
         mark_type = str(row.get("premium_mark_type") or "").lower()
         if mark_type == "check":

@@ -14,7 +14,7 @@ def primary_label(row=None, badge_keys=None, badge_labels=None) -> str:
     row = row or {}
     badge_key_set = {str(key) for key in (badge_keys or [])}
     label_set = {str(label).strip().lower() for label in (badge_labels or [])}
-    if premium_identity_engine.is_owner(row) or {"owner", "founder"} & badge_key_set:
+    if premium_identity_engine.is_owner(row) or {"owner", "founder", "founder_badge"} & badge_key_set:
         return "Founder · Pulse"
     if {"creator", "verified", "partner_creator"} & badge_key_set or {"creator", "verified creator"} & label_set:
         return "Verified Creator"
@@ -65,7 +65,7 @@ def build_identity(row=None, badge_keys=None, badge_labels=None) -> dict:
         "premium_mark_type": (mark or {}).get("type") if mark else "",
         "premium_mark": mark,
         "premium_verified": bool(mark),
-        "is_owner": bool(premium_identity_engine.is_owner(row) or {"owner", "founder"} & badge_set),
+        "is_owner": bool(premium_identity_engine.is_owner(row) or {"owner", "founder", "founder_badge"} & badge_set),
         "is_premium": bool(mark),
         "is_verified": bool({"verified", "creator", "teacher", "safety_verified"} & badge_set),
         "is_creator": bool({"creator", "partner_creator"} & badge_set),
