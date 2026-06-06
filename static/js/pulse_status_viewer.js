@@ -80,7 +80,21 @@
       });
       return `${rendered}${item.body ? `<p>${text}</p>` : ""}`;
     }
-    if (src && kind === "video") return `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ""} controls autoplay playsinline webkit-playsinline preload="metadata"></video>${item.body ? `<p>${text}</p>` : ""}`;
+    if (src && kind === "video") {
+      if (window.PulseMediaRenderer?.renderMedia) {
+        return `${window.PulseMediaRenderer.renderMedia({
+          id: item.id || item.status_id || "",
+          media_type: "video",
+          media_url: src,
+          playback_url: src,
+          thumbnail_url: poster,
+          poster_url: poster,
+          mux_playback_id: item.mux_playback_id || "",
+          duration_seconds: item.duration_seconds || item.duration || 0,
+        }, { surface: "status", loop: true })}${item.body ? `<p>${text}</p>` : ""}`;
+      }
+      return `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ""} controls autoplay muted playsinline webkit-playsinline preload="metadata"></video>${item.body ? `<p>${text}</p>` : ""}`;
+    }
     if (src && kind === "image") return `<img src="${esc(src)}" alt="${text}" loading="eager" decoding="async">${item.body ? `<p>${text}</p>` : ""}`;
     return `<div class="pulse-status-story-text style-${esc(item.status_style?.card_style || item.status_tools?.status_style?.card_style || "soft")}" style="${esc(styleFor(item))}"><strong>${text}</strong></div>`;
   }

@@ -140,6 +140,9 @@
       button.hidden = !!enabled && button.dataset.pulseSoundBlocked !== "1";
       button.textContent = enabled ? "Sound on" : "Tap for sound";
     });
+    try {
+      window.dispatchEvent(new CustomEvent("pulse:media-sound-change", { detail: { enabled: !!enabled } }));
+    } catch (_) {}
   }
 
   function setVideoMuted(video, muted, reason = "system") {
@@ -147,6 +150,14 @@
     video.dataset.pulseSoundChangeReason = reason;
     video._pulseExpectedMuted = !!muted;
     video.muted = !!muted;
+    if (muted) video.setAttribute("muted", "");
+    else video.removeAttribute("muted");
+    queueMicrotask(() => {
+      if (video.dataset.pulseSoundChangeReason === reason && video.muted === video._pulseExpectedMuted) {
+        delete video.dataset.pulseSoundChangeReason;
+        video._pulseExpectedMuted = undefined;
+      }
+    });
   }
 
   function isPulseStreamUrl(url) {
@@ -288,7 +299,7 @@
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
       const controls = options.controls === false ? "" : " controls";
       const loop = options.loop ? " loop" : "";
-      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${controls}${loop} playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${controls}${loop} muted playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
     }
     if (media.type === "audio") {
       return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
@@ -442,8 +453,8 @@
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
     video.setAttribute("x-webkit-airplay", "allow");
-    video.defaultMuted = false;
-    video.removeAttribute("muted");
+    video.defaultMuted = true;
+    if (!soundEnabled()) setVideoMuted(video, true, "prepare");
     if (!video.preload || video.preload === "none") video.preload = "metadata";
   }
 
@@ -463,7 +474,7 @@
     if (activeHlsVideo === video) activeHlsVideo = null;
   }
 
-  async function playVisibleVideo(video, preferSound = soundEnabled()) {
+  async function playVisibleVideo(video, preferSound = false) {
     if (!video || !autoplayAllowed()) return;
     const wrap = mediaVideoWrap(video);
     pauseOtherVideos(video);
@@ -519,7 +530,7 @@
     if (canHoverPreview) {
       wrap.addEventListener("pointerenter", () => {
         hoverVideo = video;
-        playVisibleVideo(video, soundEnabled());
+        playVisibleVideo(video, false);
       });
       wrap.addEventListener("pointerleave", () => {
         if (hoverVideo === video) hoverVideo = null;
@@ -569,7 +580,7 @@
         if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
         const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
-        playVisibleVideo(vid, soundEnabled());
+        playVisibleVideo(vid, false);
         preloadNextVideo(vid);
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
