@@ -51,15 +51,20 @@ Set these without exposing values in logs or reports:
 
 ## Stripe Dashboard Setup
 
-Status: not completed from this coding pass. The dashboard currently requires manual product/price/webhook setup and secret storage in Railway without exposing secrets in chat or reports.
+Status: completed for products, prices, webhook destination, and non-secret Railway variables on 2026-06-06.
 
-Create or verify:
+Configured:
 
 - Product: Pulse Founder Premium
-- Recurring monthly price: `$4.99`
-- Save the price ID into `STRIPE_FOUNDER_PRICE_ID`
+- Product ID: `prod_UeiBmA8SD9btgM`
+- Recurring monthly price: `$4.99 USD/month`
+- Founder Price ID: ending in `TFniEl`
+- Lookup key: `pulse_founder_premium_monthly`
+- Optional future product: Pulse Premium at `$9.99 USD/month`
+- Optional future product: Pulse Premium Plus at `$19.99 USD/month`
 - Webhook endpoint: `https://pulsesoc.com/api/stripe/webhook`
-- Events:
+- Webhook destination ID: `we_1TfOwTFP8qvvGWBIyx0agani`
+- Events enabled:
   - `checkout.session.completed`
   - `customer.subscription.created`
   - `customer.subscription.updated`
@@ -67,7 +72,21 @@ Create or verify:
   - `invoice.payment_succeeded`
   - `invoice.payment_failed`
 
-Do not paste webhook signing secrets into chat or reports. Store the signing secret only in Railway as `STRIPE_WEBHOOK_SECRET`.
+Railway production variables added:
+
+- `STRIPE_FOUNDER_PRICE_ID`
+- `STRIPE_PREMIUM_PRICE_ID`
+- `STRIPE_PREMIUM_PLUS_PRICE_ID`
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+- `PAYMENT_PROVIDER_ENABLED=true`
+- `PULSE_APP_URL=https://pulsesoc.com`
+
+Railway production variables still pending:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+
+Stripe masks the live secret key and webhook signing secret in the Dashboard. They were not exposed, copied into reports, or committed. Store those values only in Railway.
 
 ## Webhook Events Configured
 
@@ -86,22 +105,33 @@ Required events:
 
 ## Test Payment Status
 
-No live or test payment was completed in this local pass because the Stripe product price ID and webhook signing secret must be configured in the deployment environment first.
+No live checkout payment was completed yet because `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are still missing from the production environment. The checkout and webhook code should remain entitlement-safe because the success page does not grant Founder access.
 
 ## Entitlement Activation Result
 
-Local code path is ready:
+Pending live verification after the two secret Railway variables are set:
 
 - Checkout creates a Stripe-hosted subscription session.
 - Success URL displays a pending activation message only.
 - Verified webhook activates Founder membership, assigns Founder number once, stores Stripe subscription fields, and records payment/audit state.
 - Verified subscription deletion or terminal inactive state revokes active paid Premium/Founder access while preserving admin manual grant capability.
 
+Refreshing the success page is expected not to duplicate Founder numbers because Founder activation is driven by verified webhook processing, not by the success route.
+
+## Billing Portal Result
+
+Pending live verification after the first successful checkout creates a Stripe customer profile. The app already routes active paid members to Stripe's hosted Customer Portal through `POST /api/premium/billing-portal`.
+
 ## Known Issues
 
-- Stripe Dashboard product/price/webhook setup still needs manual completion.
-- Railway must be updated with the required env vars before live checkout can be tested.
+- Stripe Dashboard product, price, and webhook setup is complete.
+- Railway still needs `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to be entered without exposing them.
+- Full checkout, webhook entitlement, badge, active membership, billing portal, and cancellation QA are blocked until those two secret values are set and the deployment restarts.
 - Customer Portal requires a Stripe customer ID, so it appears only after a checkout/customer profile exists.
+
+## Unrelated CSS Inspection
+
+`static/css/pulse_status_system.css` had no current local diff during this pass. There was nothing to classify or commit separately for the homepage feed status empty-space fix.
 
 ## Validation Notes
 
@@ -109,7 +139,7 @@ The implementation follows Stripe’s requirement that webhook signature verific
 
 ## Remaining Live QA
 
-Live Stripe QA requires configured Railway environment values and a Stripe test/live product price:
+Live Stripe QA requires `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in Railway:
 
 - Open `/pulse/premium`.
 - Click Activate Founder Membership.
