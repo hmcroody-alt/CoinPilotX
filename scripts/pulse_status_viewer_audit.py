@@ -38,7 +38,7 @@ def main() -> None:
         "data-status-viewer-next",
         "PulseMediaRenderer.renderMedia",
         "PulseMediaRenderer?.hydrate(viewer)",
-        "PulseMediaRenderer?.playVisibleVideo",
+        "playStatusViewerVideo(viewer)",
     ]:
         expect(token in bot, f"status viewer includes {token}")
 
@@ -51,13 +51,13 @@ def main() -> None:
     expect("window.PulseStatusViewer" in shared_viewer, "shared StatusViewer component is available")
     expect("window.PulseStatusViewer?.render(item)" in bot, "home and dedicated viewers delegate to shared StatusViewer")
     expect(bot.count("window.PulseStatusViewer?.render(item)") >= 2, "both Status entry points use the shared renderer")
-    expect("height: min(90dvh, 900px)" in status_css and "aspect-ratio: 9 / 16" in status_css, "desktop viewer uses a large story frame")
+    expect("height: min(96dvh, 940px)" in status_css and "aspect-ratio: 9 / 16" in status_css, "desktop viewer uses a large immersive story frame")
     expect("width: 100%" in status_css and "min-height: 100%" in status_css, "text status fills the story frame")
     for action in ["Like", "Comment", "Share", "Save", "More"]:
         expect(f">{action}<" in bot, f"status viewer exposes {action} action")
     compact_status_css = "".join(status_css.split())
     expect(".pulse-status-story-viewer" in status_css and "position:fixed" in compact_status_css, "status viewer is a full-screen overlay")
-    expect("flex: 0 0 auto" in status_css and ".pulse-status-full-tabs" in status_css, "mobile status tabs avoid squeezed/cut-off buttons")
+    expect("top: 28%" in status_css and ".pulse-status-full-tabs" in status_css, "mobile status tabs remain safe while viewer actions float over media")
 
 
 if __name__ == "__main__":
