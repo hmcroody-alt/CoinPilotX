@@ -14,6 +14,8 @@ def main():
         failures.append("admin email diagnostics API missing")
     if "/api/admin/email/direct-test" not in BOT:
         failures.append("admin direct Brevo test API missing")
+    if "ensure_email_logs_reporting_schema" not in BOT:
+        failures.append("admin email logs page lacks schema drift guard")
     for column in ["trace_id", "retry_count", "delivery_status", "last_webhook_event"]:
         if column not in BOT:
             failures.append(f"email log column missing: {column}")
