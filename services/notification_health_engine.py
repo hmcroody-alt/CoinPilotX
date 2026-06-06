@@ -22,8 +22,9 @@ def provider_config_status(conn):
     return {
         "in_app": {"status": "healthy", "configured": True, "message": "Database notifications are available."},
         "email": {
-            "status": "healthy" if os.getenv("BREVO_API_KEY") else "missing_config",
-            "configured": bool(os.getenv("BREVO_API_KEY")),
+            "status": "healthy" if os.getenv("BREVO_API_KEY") and os.getenv("BREVO_EMAIL_ENABLED", "true").lower() not in {"0", "false", "no", "off"} else "missing_config",
+            "configured": bool(os.getenv("BREVO_API_KEY") and os.getenv("BREVO_EMAIL_ENABLED", "true").lower() not in {"0", "false", "no", "off"}),
+            "enabled": os.getenv("BREVO_EMAIL_ENABLED", "true").lower() not in {"0", "false", "no", "off"},
             "sender": os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or "noreply@pulsesoc.com",
         },
         "push": {
@@ -37,8 +38,9 @@ def provider_config_status(conn):
             "linked_users": _count(cur, "SELECT COUNT(*) AS total FROM users WHERE telegram_chat_id IS NOT NULL AND telegram_chat_id!=''"),
         },
         "sms": {
-            "status": "healthy" if os.getenv("BREVO_SMS_API_KEY") or os.getenv("TWILIO_ACCOUNT_SID") else "missing_config",
-            "configured": bool(os.getenv("BREVO_SMS_API_KEY") or os.getenv("TWILIO_ACCOUNT_SID")),
+            "status": "healthy" if (os.getenv("BREVO_SMS_API_KEY") or os.getenv("BREVO_API_KEY")) and os.getenv("BREVO_SMS_ENABLED", "").lower() == "true" and os.getenv("BREVO_SMS_SENDER") else "missing_config",
+            "configured": bool((os.getenv("BREVO_SMS_API_KEY") or os.getenv("BREVO_API_KEY")) and os.getenv("BREVO_SMS_ENABLED", "").lower() == "true" and os.getenv("BREVO_SMS_SENDER")),
+            "provider": "brevo_sms",
             "opted_in": _count(cur, "SELECT COUNT(*) AS total FROM users WHERE COALESCE(sms_opt_in,0)=1"),
         },
     }

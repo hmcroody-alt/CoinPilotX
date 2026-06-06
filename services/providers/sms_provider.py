@@ -6,8 +6,8 @@ from services import sms_service
 
 
 def validate():
-    configured = bool(os.getenv("BREVO_SMS_API_KEY") or os.getenv("TWILIO_ACCOUNT_SID"))
-    return {"ok": configured, "status": "healthy" if configured else "missing_config", "provider": "sms"}
+    configured = bool((os.getenv("BREVO_SMS_API_KEY") or os.getenv("BREVO_API_KEY")) and os.getenv("BREVO_SMS_ENABLED", "").lower() == "true" and os.getenv("BREVO_SMS_SENDER"))
+    return {"ok": configured, "status": "healthy" if configured else "missing_config", "provider": "brevo_sms"}
 
 
 def health():

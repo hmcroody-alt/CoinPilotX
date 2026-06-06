@@ -22,7 +22,7 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
         default_name = os.getenv("SECURITY_FROM_NAME", "PulseSoc Security")
     else:
         default_email = "noreply@pulsesoc.com"
-        default_name = "PulseSoc"
+        default_name = "Pulse"
     return {
         "email": _coalesce(from_email, os.getenv("BREVO_SENDER_EMAIL"), os.getenv("MAIL_FROM_ADDRESS"), default_email),
         "name": _coalesce(from_name, os.getenv("BREVO_SENDER_NAME"), os.getenv("MAIL_FROM_NAME"), default_name),
@@ -41,7 +41,8 @@ def provider_status():
         missing.append("BREVO_SENDER_NAME")
     return {
         "provider": "brevo",
-        "ready": not missing,
+        "ready": not missing and os.getenv("BREVO_EMAIL_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"},
+        "enabled": os.getenv("BREVO_EMAIL_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"},
         "api_key_configured": bool(os.getenv("BREVO_API_KEY")),
         "sender_email_configured": bool(os.getenv("BREVO_SENDER_EMAIL")),
         "sender_name_configured": bool(os.getenv("BREVO_SENDER_NAME")),
@@ -54,6 +55,15 @@ def provider_status():
 def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None, from_name=None, channel="transactional"):
     api_key = os.getenv("BREVO_API_KEY")
     config = sender_config(channel=channel, from_email=from_email, from_name=from_name)
+    if os.getenv("BREVO_EMAIL_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return {
+            "ok": False,
+            "status_code": None,
+            "response": {"message": "Brevo email notifications are disabled."},
+            "error": "Brevo email notifications are disabled.",
+            "error_code": "brevo_email_disabled",
+            "sender": config,
+        }
     if not to_email:
         return {"ok": False, "status_code": None, "response": {"message": "recipient email missing"}, "error": "recipient email missing", "sender": config}
     missing = []

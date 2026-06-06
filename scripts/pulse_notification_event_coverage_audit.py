@@ -94,8 +94,11 @@ def main() -> int:
         failures.append("notify_user must write pulse_notification_deliveries.")
 
     send_user_alert_body = re.search(r"def send_user_alert\([\s\S]+?\n\ndef ", service)
-    if not send_user_alert_body or "create_pulse_notification" not in send_user_alert_body.group(0):
-        failures.append("send_user_alert must mirror legacy alerts into pulse_notifications.")
+    if not send_user_alert_body or not any(
+        token in send_user_alert_body.group(0)
+        for token in ["create_pulse_notification", "send_multi_channel_notification"]
+    ):
+        failures.append("send_user_alert must mirror legacy alerts into pulse_notifications through the centralized sender.")
 
     if failures:
         print("Pulse notification event coverage audit FAILED")
