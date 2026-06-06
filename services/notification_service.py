@@ -28,23 +28,32 @@ PULSE_TYPE_TO_CATEGORY = {
     "like": "likes",
     "comment": "comments",
     "reply": "comments",
+    "save": "likes",
+    "share": "likes",
     "mention": "mentions",
+    "status_mention": "mentions",
     "follow": "follows",
+    "follow_accept": "follows",
     "message": "messages",
+    "voice_message": "messages",
     "group_invite": "messages",
     "room_invite": "messages",
     "status_view": "likes",
     "status_reaction": "likes",
     "reel_like": "likes",
     "reel_comment": "comments",
+    "reel_mention": "mentions",
     "reel_share": "likes",
     "video_like": "likes",
     "video_comment": "comments",
+    "video_mention": "mentions",
     "video_share": "likes",
     "video_save": "likes",
     "live_started": "lives",
+    "live_invite": "lives",
     "live_ended": "lives",
     "live_replay_ready": "lives",
+    "replay_available": "lives",
     "roast_battle_invite": "roast_battle",
     "roast_battle_result": "roast_battle",
     "premium_alert": "premium",
@@ -59,6 +68,27 @@ PULSE_TYPE_TO_CATEGORY = {
 
 def _pulse_category(note_type):
     return PULSE_TYPE_TO_CATEGORY.get(str(note_type or "").strip(), "messages")
+
+
+def _pulse_type_for_alert(alert_type):
+    alert_type = str(alert_type or "").strip()
+    direct = {
+        "pulse": "message",
+        "private_message": "message",
+        "payment_confirmations": "premium_alert",
+        "pro_activation": "premium_alert",
+        "market_alerts": "premium_alert",
+        "account_security": "security_alert",
+        "password_changed": "security_alert",
+        "email_changed": "security_alert",
+        "new_login": "account_login",
+        "login": "account_login",
+        "device": "new_device",
+        "subscription_renewal": "premium_alert",
+        "payment_success": "premium_alert",
+        "payment_failure": "premium_alert",
+    }.get(alert_type)
+    return direct or (alert_type if alert_type in PULSE_TYPE_TO_CATEGORY else "message")
 
 
 def _pulse_row(row):
@@ -135,8 +165,8 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
     if unread_only:
         clauses.append("(is_read=0 OR read_at IS NULL)")
     category_types = {
-        "messages": ["message", "group_invite", "room_invite", "teacher_update", "student_update"],
-        "social": ["like", "comment", "reply", "mention", "follow", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_share", "video_like", "video_comment", "video_share", "video_save"],
+        "messages": ["message", "voice_message", "group_invite", "room_invite", "teacher_update", "student_update"],
+        "social": ["like", "comment", "reply", "save", "share", "mention", "status_mention", "follow", "follow_accept", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_mention", "reel_share", "video_like", "video_comment", "video_mention", "video_share", "video_save"],
         "security": ["security_alert", "account_login", "new_device"],
         "premium": ["premium_alert", "marketplace_update"],
     }.get(str(category or "all").lower())
@@ -614,7 +644,25 @@ def send_user_alert(user_id, alert_type, title, body, data=None, channels=None):
                 requested.add(key)
     created = queue_notification(user_id, title, body, alert_type, data)
     notification_id = created.get("notification_id")
-    result = {"ok": True, "notification_id": notification_id, "in_app": "created"}
+    pulse_link = data.get("deep_link") or data.get("target_url") or data.get("next_url") or data.get("url") or data.get("href") or "/pulse/notifications"
+    pulse_created = create_pulse_notification(
+        user_id,
+        _pulse_type_for_alert(alert_type),
+        title,
+        body,
+        actor_user_id=data.get("actor_user_id") or data.get("sender_user_id") or data.get("from_user_id") or 0,
+        entity_type=data.get("entity_type") or data.get("content_type") or "",
+        entity_id=data.get("entity_id") or data.get("post_id") or data.get("message_id") or data.get("conversation_id") or "",
+        deep_link=pulse_link,
+        delivery_status="created",
+        metadata={**data, "legacy_notification_id": notification_id, "legacy_alert_type": alert_type},
+    )
+    result = {
+        "ok": True,
+        "notification_id": notification_id,
+        "pulse_notification_id": pulse_created.get("notification_id"),
+        "in_app": "created",
+    }
     _log_delivery(user_id, notification_id, "in_app", "created", {"notification_id": notification_id}, "")
     if "email" in requested:
         if prefs.get("email") or "email" in (channels or []):
