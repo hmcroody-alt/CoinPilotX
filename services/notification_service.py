@@ -14,6 +14,18 @@ def _now():
     return datetime.now().isoformat()
 
 
+def _json(value, default=None):
+    if value in (None, ""):
+        return default or {}
+    if isinstance(value, dict):
+        return value
+    try:
+        loaded = json.loads(value)
+        return loaded if isinstance(loaded, dict) else (default or {})
+    except Exception:
+        return default or {}
+
+
 PULSE_NOTIFICATION_CATEGORIES = {
     "account": {"in_app": True, "push": True, "email": True, "sms": False},
     "premium": {"in_app": True, "push": True, "email": True, "sms": False},
@@ -333,7 +345,55 @@ def _pulse_row(row):
     item["deep_link"] = item.get("deep_link") or item.get("target_url") or "/pulse"
     item["target_url"] = item["deep_link"]
     item["category"] = _pulse_category(item.get("type"))
+    metadata = _json(item.get("metadata_json"), {})
+    item["metadata"] = metadata
+    item["actor_name"] = metadata.get("actor_name") or metadata.get("sender_name") or ""
+    item["actor_avatar"] = metadata.get("actor_avatar") or metadata.get("sender_avatar") or ""
+    item["preview_text"] = metadata.get("preview_text") or metadata.get("reply_preview") or metadata.get("comment_preview") or metadata.get("message_preview") or item.get("body") or ""
+    item["original_preview"] = metadata.get("original_preview") or metadata.get("post_preview") or metadata.get("status_preview") or ""
+    item["postId"] = metadata.get("post_id") or metadata.get("postId") or ""
+    item["statusId"] = metadata.get("status_id") or metadata.get("statusId") or ""
+    item["commentId"] = metadata.get("comment_id") or metadata.get("commentId") or ""
+    item["replyId"] = metadata.get("reply_id") or metadata.get("replyId") or ""
+    item["conversationId"] = metadata.get("conversation_id") or metadata.get("conversationId") or ""
+    item["content_type"] = metadata.get("content_type") or metadata.get("source_type") or item.get("entity_type") or item.get("type") or ""
+    item["mobile_deep_link"] = metadata.get("mobile_deep_link") or _mobile_deep_link(item)
+    item["deepLink"] = item["mobile_deep_link"]
+    if item["actor_user_id"] and (not item["actor_name"] or not item["actor_avatar"]):
+        try:
+            conn = user_context.connect()
+            cur = conn.cursor()
+            cur.execute("SELECT display_name, full_name, username, avatar_url FROM users WHERE user_id=? LIMIT 1", (item["actor_user_id"],))
+            actor = user_context.row_to_dict(cur.fetchone()) or {}
+            conn.close()
+            item["actor_name"] = item["actor_name"] or actor.get("display_name") or actor.get("full_name") or actor.get("username") or ""
+            item["actor_avatar"] = item["actor_avatar"] or actor.get("avatar_url") or ""
+        except Exception:
+            item["actor_name"] = item["actor_name"] or ""
     return item
+
+
+def _mobile_deep_link(item):
+    metadata = item.get("metadata") or {}
+    post_id = metadata.get("post_id") or metadata.get("postId")
+    status_id = metadata.get("status_id") or metadata.get("statusId")
+    comment_id = metadata.get("comment_id") or metadata.get("commentId")
+    reply_id = metadata.get("reply_id") or metadata.get("replyId")
+    conversation_id = metadata.get("conversation_id") or metadata.get("conversationId")
+    note_type = str(item.get("type") or "")
+    if conversation_id:
+        return f"pulse://messages/{conversation_id}"
+    if status_id:
+        if reply_id or comment_id:
+            return f"pulse://status/{status_id}/reply/{reply_id or comment_id}"
+        return f"pulse://status/{status_id}"
+    if post_id:
+        if comment_id:
+            return f"pulse://post/{post_id}/comment/{comment_id}"
+        return f"pulse://post/{post_id}"
+    if note_type == "message" and item.get("entity_id"):
+        return f"pulse://messages/{item.get('entity_id')}"
+    return item.get("deep_link") or item.get("target_url") or "pulse://pulse/notifications"
 
 
 def create_pulse_notification(

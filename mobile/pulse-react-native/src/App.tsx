@@ -8,6 +8,7 @@ import { linking, PulseRootParamList } from "./navigation/linking";
 import { bindNotificationRouting, registerPushToken } from "./notifications/notifications";
 import { ApiListScreen } from "./screens/ApiListScreen";
 import { AuthScreen } from "./screens/AuthScreen";
+import { NotificationsScreen } from "./screens/NotificationsScreen";
 import { colors, screenStyles } from "./styles/theme";
 
 const Tab = createBottomTabNavigator<PulseRootParamList>();
@@ -55,7 +56,7 @@ function RootNavigator() {
       <Tab.Screen name="Reels">{() => <ApiListScreen title="Reels" endpoint="/api/pulse/reels/feed" listKey="reels" empty="No reels yet." />}</Tab.Screen>
       <Tab.Screen name="Videos">{() => <ApiListScreen title="Videos" endpoint="/api/pulse/videos" listKey="videos" empty="No videos yet." />}</Tab.Screen>
       <Tab.Screen name="Messages">{() => <ApiListScreen title="Messages" endpoint="/api/pulse/messages/conversations" listKey="conversations" empty="No conversations yet." />}</Tab.Screen>
-      <Tab.Screen name="Notifications">{() => <ApiListScreen title="Notifications" endpoint="/api/pulse/notifications" listKey="notifications" empty="No notifications yet." />}</Tab.Screen>
+      <Tab.Screen name="Notifications" component={NotificationsScreen} />
       <Tab.Screen name="Profile">{() => <ProfileScreen />}</Tab.Screen>
       <Tab.Screen name="Premium">{() => <ApiListScreen title="Premium" endpoint="/api/pulse/profile/me" listKey="premium_features" empty="Premium status loads from your Pulse profile." />}</Tab.Screen>
     </Tab.Navigator>

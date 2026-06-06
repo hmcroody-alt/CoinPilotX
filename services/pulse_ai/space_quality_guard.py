@@ -23,6 +23,8 @@ GENERIC_PHRASES = [
     "unlock your potential",
     "game changer",
     "revolutionize the industry",
+    "the community that wins is not the loudest one",
+    "what is the strongest counterexample",
 ]
 
 
