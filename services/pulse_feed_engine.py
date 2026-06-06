@@ -295,6 +295,14 @@ def _comment_counts(cur, post_ids):
 def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=None, viewer_user_id=None):
     item = dict(row)
     author = _public_author(item)
+    repost_original = item.get("_repost_original") or None
+    display_media = media or []
+    if repost_original and not display_media:
+        display_media = repost_original.get("media") or []
+    display_body = item.get("body") or ""
+    if repost_original and repost_original.get("body") and repost_original.get("body") not in display_body:
+        display_body = "\n\n".join(part for part in [display_body, repost_original.get("body")] if part)
+    display_title = item.get("title") or (repost_original or {}).get("title") or ""
     reaction_counts = reactions or {}
     reaction_total = sum(int(v or 0) for v in reaction_counts.values())
     can_delete = bool(viewer_user_id and int(item.get("user_id") or 0) == int(viewer_user_id or 0))
@@ -313,8 +321,8 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
     return {
         "id": item.get("id"),
         "post_type": item.get("post_type") or "text",
-        "title": item.get("title") or "",
-        "body": item.get("body") or "",
+        "title": display_title,
+        "body": display_body,
         "visibility": item.get("visibility") or "public",
         "moderation_status": item.get("moderation_status") or "approved",
         "ai_summary": item.get("ai_summary") or "",
@@ -329,7 +337,13 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "author_public_name": author.get("display_name"),
         "author_avatar": author.get("avatar_url"),
         "author_public_player_id": author.get("public_player_id"),
-        "media": media or [],
+        "media": display_media,
+        "repost": {
+            "original_post_id": int(item.get("repost_of_post_id") or 0),
+            "caption": item.get("body") or "",
+            "original": repost_original,
+        } if repost_original else None,
+        "original_post": repost_original,
         "reaction_counts": reaction_counts,
         "reactions_count": reaction_total,
         "comment_count": comments,
@@ -338,6 +352,58 @@ def _public_post(row, media=None, reactions=None, comments=0, viewer_reaction=No
         "can_delete": can_delete,
         "live": live_payload,
         "permalink": live_payload.get("live_url") or f"/pulse/post/{item.get('id')}",
+    }
+
+
+def _repost_originals(cur, rows, viewer_user_id=None):
+    original_ids = sorted({
+        int((row or {}).get("repost_of_post_id") or 0)
+        for row in rows or []
+        if int((row or {}).get("repost_of_post_id") or 0) > 0
+    })
+    if not original_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(original_ids))
+    cur.execute(
+        f"""
+        SELECT p.*, u.username, u.email, u.full_name, u.display_name AS user_display_name, u.avatar_url AS user_avatar_url,
+               u.plan, u.subscription_plan, u.subscription_status, u.is_pro, u.pro_active, u.pro_expires_at, u.subscription_expires_at,
+               u.premium_status, u.premium_expires_at, u.lifetime_premium, u.premium_glow_manual_grant, u.premium_mark_override, u.premium_mark_type,
+               ap.avatar_url AS arena_avatar_url, ap.public_player_id AS author_public_player_id
+        FROM pulse_posts p
+        LEFT JOIN users u ON u.user_id=p.user_id
+        LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
+        WHERE p.id IN ({placeholders}) AND p.deleted_at IS NULL
+        """,
+        original_ids,
+    )
+    originals = []
+    for row in cur.fetchall():
+        item = _row(row)
+        visible, _reason = pulse_visibility_decision(item, viewer_user_id=viewer_user_id, include_private=False)
+        if visible:
+            originals.append(item)
+    if not originals:
+        return {}
+    hydrated_ids = [int(row["id"]) for row in originals]
+    reactions = _reaction_counts(cur, hydrated_ids)
+    comments = _comment_counts(cur, hydrated_ids)
+    viewer_reactions = {}
+    if viewer_user_id and hydrated_ids:
+        reaction_placeholders = ",".join(["?"] * len(hydrated_ids))
+        cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({reaction_placeholders})", (int(viewer_user_id), *hydrated_ids))
+        viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    media = _media_for_posts(hydrated_ids)
+    return {
+        int(row["id"]): _public_post(
+            row,
+            media.get(int(row["id"]), []),
+            reactions.get(int(row["id"]), {}),
+            comments.get(int(row["id"]), 0),
+            viewer_reactions.get(int(row["id"])),
+            viewer_user_id,
+        )
+        for row in originals
     }
 
 
@@ -533,6 +599,9 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     if viewer_user_id:
         cur.execute("SELECT reaction_type FROM pulse_reactions WHERE post_id=? AND user_id=? LIMIT 1", (int(post_id), int(viewer_user_id)))
         viewer_reaction = (_row(cur.fetchone()) or {}).get("reaction_type")
+    repost_originals = _repost_originals(cur, [row], viewer_user_id=viewer_user_id)
+    if int(row.get("repost_of_post_id") or 0):
+        row["_repost_original"] = repost_originals.get(int(row.get("repost_of_post_id") or 0))
     conn.close()
     media = _media_for_posts(post_ids)
     return _public_post(row, media.get(int(post_id), []), reactions.get(int(post_id), {}), comments.get(int(post_id), 0), viewer_reaction, viewer_user_id)
@@ -611,6 +680,11 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         placeholders = ",".join(["?"] * len(post_ids))
         cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({placeholders})", (int(viewer_user_id), *post_ids))
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    repost_originals = _repost_originals(cur, rows, viewer_user_id=viewer_user_id)
+    for row in rows:
+        original_id = int(row.get("repost_of_post_id") or 0)
+        if original_id:
+            row["_repost_original"] = repost_originals.get(original_id)
     conn.close()
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]
@@ -659,6 +733,11 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         placeholders = ",".join(["?"] * len(post_ids))
         cur.execute(f"SELECT post_id, reaction_type FROM pulse_reactions WHERE user_id=? AND post_id IN ({placeholders})", (int(viewer_user_id), *post_ids))
         viewer_reactions = {int(row["post_id"]): row["reaction_type"] for row in cur.fetchall()}
+    repost_originals = _repost_originals(cur, rows, viewer_user_id=viewer_user_id)
+    for row in rows:
+        original_id = int(row.get("repost_of_post_id") or 0)
+        if original_id:
+            row["_repost_original"] = repost_originals.get(original_id)
     conn.close()
     media = _media_for_posts(post_ids)
     posts = [_public_post(row, media.get(int(row["id"]), []), reactions.get(int(row["id"]), {}), comments.get(int(row["id"]), 0), viewer_reactions.get(int(row["id"])), viewer_user_id) for row in rows]

@@ -38,7 +38,7 @@ def build_identity(row=None, badge_keys=None, badge_labels=None) -> dict:
     badge_keys = list(badge_keys or [])
     badge_labels = list(badge_labels or [])
     user_id = int(row.get("user_id") or 0)
-    public_id = row.get("public_player_id") or f"pilot-{str(user_id)[-6:]}"
+    public_id = row.get("public_player_id") or f"Pulse-{str(user_id)[-6:]}"
     name = (
         row.get("user_display_name")
         or row.get("display_name")

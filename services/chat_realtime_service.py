@@ -32,7 +32,7 @@ def _public_profile(cur, user_id):
         (int(user_id),),
     )
     row = _row(cur.fetchone()) or {}
-    public_id = row.get("public_player_id") or f"Pilot-{str(abs(int(row.get('user_id') or 0)))[-4:].rjust(4, '0')}"
+    public_id = row.get("public_player_id") or f"Pulse-{str(abs(int(row.get('user_id') or 0)))[-4:].rjust(4, '0')}"
     display = row.get("display_name") or row.get("full_name") or row.get("username") or row.get("arena_name") or f"Pulse user #{int(row.get('user_id') or 0)}"
     return {
         "player_id": public_id,

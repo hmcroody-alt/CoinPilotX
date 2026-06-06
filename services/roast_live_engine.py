@@ -67,9 +67,9 @@ def _target_from_public(cur, target_public_player_id):
     row = cur.fetchone()
     if row:
         return int(row["user_id"] if hasattr(row, "keys") else row[0])
-    if target_public_player_id.startswith("pilot-"):
+    if target_public_player_id.lower().startswith(("pilot-", "pulse-")):
         try:
-            return int(target_public_player_id.replace("pilot-", "", 1))
+            return int(target_public_player_id.rsplit("-", 1)[-1])
         except Exception:
             return 0
     return 0
@@ -90,7 +90,7 @@ def record_vote(user_id, match_id, target_user_id=0, target_public_player_id="")
     cur.execute(
         """
         SELECT COALESCE(p.call_sign, u.roast_call_sign, 'Arena Pilot #' || p.user_id) AS call_sign,
-               COALESCE(ap.public_player_id, 'pilot-' || p.user_id) AS public_player_id
+               COALESCE(ap.public_player_id, 'Pulse-' || p.user_id) AS public_player_id
         FROM arena_roast_participants p
         LEFT JOIN users u ON u.user_id=p.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id
