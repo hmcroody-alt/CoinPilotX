@@ -2,8 +2,8 @@ import json
 import os
 
 SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://pulsesoc.com").rstrip("/")
-LOGO_URL = f"{SITE_URL}/static/Coinpilot%20Logo/NewLogo.png"
-SHARE_IMAGE_URL = f"{SITE_URL}/static/assets/coinpilotxai-share-card.svg"
+LOGO_URL = f"{SITE_URL}/static/brand/pulse-logo-20260606.png"
+SHARE_IMAGE_URL = LOGO_URL
 SUPPORT_EMAIL = "support@pulsesoc.com"
 
 

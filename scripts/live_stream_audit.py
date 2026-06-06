@@ -27,7 +27,7 @@ def create_owner() -> int:
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO users (username, display_name, email, email_verified, avatar_url, bio, signup_time, created_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?)",
-        ("livestreamaudit", "Roody Cherie", "coinpilotxai@gmail.com", "/static/Coinpilot%20Logo/NewLogo.png", "Live audit creator", now, now),
+        ("livestreamaudit", "Roody Cherie", "coinpilotxai@gmail.com", "/static/brand/pulse-logo-20260606.png", "Live audit creator", now, now),
     )
     user_id = int(cur.lastrowid)
     conn.commit()

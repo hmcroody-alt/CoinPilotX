@@ -4,11 +4,10 @@ const STATIC_ASSETS = [
   "/static/analytics.js",
   "/static/notifications.js",
   "/static/sounds/notification-soft.wav",
-  "/static/Coinpilot%20Logo/NewLogo.png",
-  "/static/assets/coinpilotxai-share-card.svg",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/apple-touch-icon.png"
+  "/static/brand/pulse-logo-20260606.png",
+  "/static/brand/pulse-icon-192-20260606.png",
+  "/static/brand/pulse-icon-512-20260606.png",
+  "/static/brand/pulse-apple-touch-icon-20260606.png"
 ];
 
 function isNeverCachePath(pathname) {
@@ -147,8 +146,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "CoinPilotXAI Alert";
   const options = {
     body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
-    icon: payload.icon || "/icons/icon-192.png",
-    badge: payload.badge || "/icons/icon-192.png",
+    icon: payload.icon || "/static/brand/pulse-icon-192-20260606.png",
+    badge: payload.badge || "/static/brand/pulse-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
     data: payload.data || { url: payload.url || "/notifications" },
     tag: payload.tag || "coinpilotxai-alert",
