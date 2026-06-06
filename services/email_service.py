@@ -21,16 +21,16 @@ def _coalesce(*values):
 def sender_config(channel="transactional", from_email=None, from_name=None):
     channel = (channel or "transactional").lower()
     if channel == "support":
-        default_email = os.getenv("SUPPORT_FROM_ADDRESS", "support@pulsesoc.com")
+        default_email = os.getenv("SUPPORT_EMAIL") or os.getenv("SUPPORT_FROM_ADDRESS") or "support@pulsesoc.com"
         default_name = os.getenv("SUPPORT_FROM_NAME", "PulseSoc Support")
     elif channel == "security":
-        default_email = os.getenv("SECURITY_FROM_ADDRESS", "security@pulsesoc.com")
+        default_email = os.getenv("SECURITY_EMAIL") or os.getenv("SECURITY_FROM_ADDRESS") or "security@pulsesoc.com"
         default_name = os.getenv("SECURITY_FROM_NAME", "PulseSoc Security")
     else:
-        default_email = "noreply@pulsesoc.com"
+        default_email = os.getenv("DEFAULT_FROM_EMAIL") or "noreply@pulsesoc.com"
         default_name = "Pulse"
     return {
-        "email": _coalesce(from_email, os.getenv("BREVO_SENDER_EMAIL"), os.getenv("MAIL_FROM_ADDRESS"), default_email),
+        "email": _coalesce(from_email, os.getenv("BREVO_SENDER_EMAIL"), os.getenv("MAIL_FROM_ADDRESS"), os.getenv("DEFAULT_FROM_EMAIL"), default_email),
         "name": _coalesce(from_name, os.getenv("BREVO_SENDER_NAME"), os.getenv("MAIL_FROM_NAME"), default_name),
         "channel": channel,
     }
@@ -41,17 +41,18 @@ def provider_status():
     missing = []
     if not os.getenv("BREVO_API_KEY"):
         missing.append("BREVO_API_KEY")
-    if not os.getenv("BREVO_SENDER_EMAIL"):
-        missing.append("BREVO_SENDER_EMAIL")
-    if not os.getenv("BREVO_SENDER_NAME"):
-        missing.append("BREVO_SENDER_NAME")
+    if not (os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or os.getenv("DEFAULT_FROM_EMAIL")):
+        missing.append("BREVO_SENDER_EMAIL or DEFAULT_FROM_EMAIL")
     return {
         "provider": "brevo",
         "ready": not missing and _truthy_env("BREVO_EMAIL_ENABLED", True),
         "enabled": _truthy_env("BREVO_EMAIL_ENABLED", True),
         "api_key_configured": bool(os.getenv("BREVO_API_KEY")),
-        "sender_email_configured": bool(os.getenv("BREVO_SENDER_EMAIL")),
-        "sender_name_configured": bool(os.getenv("BREVO_SENDER_NAME")),
+        "sender_email_configured": bool(os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or os.getenv("DEFAULT_FROM_EMAIL")),
+        "sender_name_configured": bool(os.getenv("BREVO_SENDER_NAME") or os.getenv("MAIL_FROM_NAME")),
+        "default_from_email_configured": bool(os.getenv("DEFAULT_FROM_EMAIL")),
+        "support_email_configured": bool(os.getenv("SUPPORT_EMAIL")),
+        "security_email_configured": bool(os.getenv("SECURITY_EMAIL")),
         "missing_fields": missing,
         "sender_email": config["email"],
         "sender_name": config["name"],
@@ -75,10 +76,8 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
     missing = []
     if not api_key:
         missing.append("BREVO_API_KEY")
-    if not os.getenv("BREVO_SENDER_EMAIL"):
-        missing.append("BREVO_SENDER_EMAIL")
-    if not os.getenv("BREVO_SENDER_NAME"):
-        missing.append("BREVO_SENDER_NAME")
+    if not (os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or os.getenv("DEFAULT_FROM_EMAIL")):
+        missing.append("BREVO_SENDER_EMAIL or DEFAULT_FROM_EMAIL")
     if missing:
         return {
             "ok": False,

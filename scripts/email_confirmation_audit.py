@@ -15,6 +15,7 @@ def main():
     failures = []
     require("def send_account_confirmation_email" in BOT, "missing reusable account confirmation sender", failures)
     require("public_url_for(\"verify_email_page\"" in BOT, "confirmation link does not use production public URL helper", failures)
+    require("PUBLIC_BASE_URL" in BOT and "https://coinpilotx.app" in BOT, "public URL helper does not support production base URL alias", failures)
     require("@webhook_app.route(\"/resend-confirmation\"" in BOT, "missing resend confirmation route", failures)
     require("login_unconfirmed" in BOT and "email_not_confirmed" in BOT, "login/mobile auth do not block unconfirmed accounts", failures)
     require("Resend Confirmation Email" in ACCOUNT, "login page does not expose resend confirmation button", failures)

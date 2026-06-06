@@ -10,9 +10,16 @@ def main():
     failures = []
     if "/api/brevo/webhook" not in BOT or "/webhooks/brevo" not in BOT:
         failures.append("Brevo delivery webhook route missing")
+    if "/api/admin/email/diagnostics" not in BOT:
+        failures.append("admin email diagnostics API missing")
+    if "/api/admin/email/direct-test" not in BOT:
+        failures.append("admin direct Brevo test API missing")
     for column in ["trace_id", "retry_count", "delivery_status", "last_webhook_event"]:
         if column not in BOT:
             failures.append(f"email log column missing: {column}")
+    for env_name in ["DEFAULT_FROM_EMAIL", "SUPPORT_EMAIL", "SECURITY_EMAIL", "PUBLIC_BASE_URL"]:
+        if env_name not in BOT:
+            failures.append(f"production email diagnostic missing env: {env_name}")
     if "send_email_notification" not in NOTIFICATIONS:
         failures.append("Pulse notification email sender missing")
     if "BREVO_EMAIL_ENABLED" not in NOTIFICATIONS:
