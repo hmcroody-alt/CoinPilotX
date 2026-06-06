@@ -864,9 +864,12 @@ def list_comments(post_id, limit=80):
         comments.append({
             "id": item.get("id"),
             "post_id": item.get("post_id"),
+            "user_id": item.get("user_id"),
             "parent_comment_id": item.get("parent_comment_id"),
             "body": item.get("body"),
             "created_at": item.get("created_at"),
+            "updated_at": item.get("updated_at"),
+            "edited_at": item.get("edited_at"),
             "author": _public_author(item),
         })
     conn.close()
@@ -896,9 +899,12 @@ def get_comment(comment_id):
     return {
         "id": row.get("id"),
         "post_id": row.get("post_id"),
+        "user_id": row.get("user_id"),
         "parent_comment_id": row.get("parent_comment_id"),
         "body": row.get("body"),
         "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+        "edited_at": row.get("edited_at"),
         "author": _public_author(row),
     }
 

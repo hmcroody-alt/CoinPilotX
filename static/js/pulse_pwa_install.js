@@ -9,6 +9,8 @@
   let deferredPrompt = null;
   let promptShown = false;
   let usageTimer = null;
+  let usageStartedAt = 0;
+  let usageMatured = false;
 
   function now() {
     return Date.now();
@@ -171,6 +173,7 @@
   }
 
   function maybeShowPrompt() {
+    usageMatured = true;
     if (promptShown || isInstalledKnown() || recentlyDismissed()) return;
     if (canShowBrowserPrompt()) {
       promptShown = true;
@@ -185,7 +188,17 @@
 
   function startMeaningfulUsageTimer() {
     if (usageTimer || isInstalledKnown() || recentlyDismissed()) return;
+    if (!usageStartedAt) usageStartedAt = now();
     usageTimer = window.setTimeout(maybeShowPrompt, PROMPT_DELAY_MS);
+  }
+
+  function promptWhenUsageIsMeaningful() {
+    if (!usageStartedAt) usageStartedAt = now();
+    if (usageMatured || now() - usageStartedAt >= PROMPT_DELAY_MS) {
+      maybeShowPrompt();
+      return;
+    }
+    startMeaningfulUsageTimer();
   }
 
   function registerServiceWorker() {
@@ -203,7 +216,7 @@
     event.preventDefault();
     deferredPrompt = event;
     log("available", { path: location.pathname });
-    startMeaningfulUsageTimer();
+    promptWhenUsageIsMeaningful();
   });
 
   window.addEventListener("appinstalled", () => {
@@ -224,8 +237,12 @@
 
   window.PulsePWAInstall = {
     maybeShowPrompt,
+    promptWhenUsageIsMeaningful,
     get deferredPromptAvailable() {
       return Boolean(deferredPrompt);
+    },
+    get usageMatured() {
+      return usageMatured;
     },
     isStandalone,
   };

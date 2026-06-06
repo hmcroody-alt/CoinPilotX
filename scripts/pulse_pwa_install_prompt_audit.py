@@ -40,9 +40,12 @@ def main():
         ("data-pulse-pwa-dismiss", "dismiss/close controls"),
         ("pulsePwaInstallDismissedAt", "dismissal timestamp storage"),
         ("PulsePWAInstall", "QA hook is exposed"),
+        ("usageMatured", "meaningful usage state is tracked"),
+        ("promptWhenUsageIsMeaningful", "late beforeinstallprompt events can still show after 60 seconds"),
     ]:
         require(token in source, label)
     require("/static/js/pulse_pwa_install.js" in bot, "install script is injected globally")
+    require("install-20260606-restore" in bot, "install script cache version is bumped")
     require("coinPilotXTrack" in source or "gtag" in source, "install events are logged safely")
     print("pulse PWA install prompt audit ok")
 
