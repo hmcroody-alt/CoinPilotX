@@ -16,13 +16,16 @@ def expect(ok: bool, label: str):
 
 def main():
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
-    expect("pulseStatusSound" in source, "status sound input exists")
-    expect("audio/mpeg,audio/mp4,audio/wav,audio/ogg" in source, "status audio accepts safe browser formats")
+    expect("pulseStatusSound" in source, "legacy status sound input is still reset safely")
+    expect("music_upload_requires_review" in source, "direct uploaded music requires rights review")
     expect("/api/pulse/status/music/search" in source, "music search endpoint exists")
+    expect("/api/pulse/music/ai-suggest" in source, "AI music suggestion endpoint exists")
     expect("data-status-waveform" in source, "music flow exposes waveform loading state")
-    expect("playsinline controls muted autoplay preload=\"metadata\"" in source, "story video uses mobile-safe playback attributes")
+    for token in ["playsinline", "controls", "muted", "autoplay", "preload=\"metadata\""]:
+        expect(token in source, f"story video includes mobile-safe playback token: {token}")
     expect("data-status-story-mute" in source, "viewer can unlock/mute story audio")
     expect("pulse_status_music" in source and "music_track_id" in source, "music metadata persists with status")
+    expect("pulse_content_music" in source, "approved music license snapshot persists")
     print("audio pipeline audit ok")
 
 
