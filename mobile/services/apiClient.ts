@@ -5,6 +5,20 @@ export type ApiRequestOptions = RequestInit & {
   skipJsonHeader?: boolean;
 };
 
+export class PulseApiError extends Error {
+  status: number;
+  code?: string;
+  traceId?: string;
+
+  constructor(message: string, status: number, code?: string, traceId?: string) {
+    super(message);
+    this.name = "PulseApiError";
+    this.status = status;
+    this.code = code;
+    this.traceId = traceId;
+  }
+}
+
 export async function pulseApi<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
   const body = options.body;
@@ -29,7 +43,12 @@ export async function pulseApi<T>(path: string, options: ApiRequestOptions = {})
   const text = await response.text();
   const data = parseJson(text);
   if (!response.ok || data.ok === false) {
-    throw new Error(String(data.message || data.error || "Pulse request failed."));
+    throw new PulseApiError(
+      String(data.message || "Pulse request failed."),
+      response.status,
+      typeof data.error === "string" ? data.error : undefined,
+      typeof data.trace_id === "string" ? data.trace_id : undefined
+    );
   }
   return data as T;
 }
@@ -46,4 +65,9 @@ function parseJson(text: string): Record<string, unknown> {
   } catch {
     return { ok: false, message: "Pulse returned a non-JSON response." };
   }
+}
+
+export function isOfflineError(error: unknown) {
+  if (error instanceof PulseApiError) return false;
+  return error instanceof TypeError || String(error).toLowerCase().includes("network request failed");
 }

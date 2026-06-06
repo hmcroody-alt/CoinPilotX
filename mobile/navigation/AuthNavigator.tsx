@@ -1,8 +1,10 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { AuthStackParamList } from "./types";
+import { EmailConfirmationPendingScreen } from "../screens/auth/EmailConfirmationPendingScreen";
 import { ForgotPasswordScreen } from "../screens/auth/ForgotPasswordScreen";
 import { LoginScreen } from "../screens/auth/LoginScreen";
+import { ResetPasswordScreen } from "../screens/auth/ResetPasswordScreen";
 import { SignupScreen } from "../screens/auth/SignupScreen";
 import { SplashScreen } from "../screens/auth/SplashScreen";
 
@@ -15,6 +17,8 @@ export function AuthNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Signup" component={SignupScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="EmailConfirmationPending" component={EmailConfirmationPendingScreen} />
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 }

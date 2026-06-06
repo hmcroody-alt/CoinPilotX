@@ -3,6 +3,12 @@ export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
   ForgotPassword: undefined;
+  EmailConfirmationPending: { email?: string; token?: string };
+  ResetPassword: { token?: string };
+};
+
+export type MainStackParamList = {
+  HomeFeed: undefined;
 };
 
 export type MainTabParamList = {

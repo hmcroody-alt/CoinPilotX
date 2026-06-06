@@ -9,7 +9,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "audit:foundation": "node scripts/foundation-audit.js"
+    "audit:foundation": "node scripts/foundation-audit.js",
+    "audit:authentication": "node scripts/authentication-audit.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",

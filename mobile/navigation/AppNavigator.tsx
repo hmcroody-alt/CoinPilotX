@@ -1,9 +1,9 @@
 import React from "react";
 import { useAuthStore } from "../store/authStore";
 import { AuthNavigator } from "./AuthNavigator";
-import { MainTabs } from "./MainTabs";
+import { MainNavigator } from "./MainNavigator";
 
 export function AppNavigator() {
   const signedIn = useAuthStore(state => state.signedIn);
-  return signedIn ? <MainTabs /> : <AuthNavigator />;
+  return signedIn ? <MainNavigator /> : <AuthNavigator />;
 }
