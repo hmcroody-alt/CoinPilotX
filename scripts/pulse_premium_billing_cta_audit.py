@@ -10,7 +10,7 @@ def expect(ok, label):
     print(f"ok - {label}")
 
 def main():
-    for token in ["Premium billing setup is coming soon", "Manage Subscription", "data-premium-coming-soon", "/pulse/premium/activate"]:
+    for token in ["Founder checkout is being connected. Admin Founder access is available now.", "Manage Billing", "data-founder-checkout", "/api/premium/checkout", "/api/premium/billing-portal"]:
         expect(token in SOURCE, f"billing CTA includes {token}")
     print("pulse premium billing cta audit ok")
 

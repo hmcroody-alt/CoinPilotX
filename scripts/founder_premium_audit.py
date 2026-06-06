@@ -101,7 +101,8 @@ def main() -> None:
     conn.close()
 
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
-    assert_true("Founder Access Available — Checkout Coming Online" in source, "Founder checkout CTA missing.")
+    assert_true("Activate Founder Membership" in source, "Founder checkout CTA missing.")
+    assert_true("Founder checkout is being connected. Admin Founder access is available now." in source, "Founder checkout fallback message missing.")
     assert_true("grant_founder" in source, "Admin Founder grant action missing.")
     assert_true("self_founder" not in source, "Self Founder grant path should not exist.")
 

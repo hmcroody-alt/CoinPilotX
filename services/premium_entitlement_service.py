@@ -116,6 +116,46 @@ def ensure_founder_schema() -> None:
         )
         """
     )
+    for column, definition in [
+        ("stripe_customer_id", "TEXT"),
+        ("stripe_subscription_id", "TEXT"),
+        ("stripe_checkout_session_id", "TEXT"),
+        ("stripe_price_id", "TEXT"),
+        ("stripe_product_id", "TEXT"),
+        ("provider_status", "TEXT"),
+        ("current_period_start", "TEXT"),
+        ("current_period_end", "TEXT"),
+        ("cancel_at_period_end", "INTEGER DEFAULT 0"),
+        ("canceled_at", "TEXT"),
+    ]:
+        try:
+            cur.execute(f"ALTER TABLE user_subscriptions ADD COLUMN {column} {definition}")
+        except Exception:
+            pass
+    for column, definition in [
+        ("stripe_customer_id", "TEXT"),
+    ]:
+        try:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+        except Exception:
+            pass
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stripe_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stripe_event_id TEXT UNIQUE,
+            event_id TEXT UNIQUE,
+            event_type TEXT,
+            user_id INTEGER,
+            status TEXT,
+            error_message TEXT,
+            payload_summary TEXT,
+            payload_json TEXT,
+            created_at TEXT,
+            processed_at TEXT
+        )
+        """
+    )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS user_entitlements (
@@ -262,6 +302,109 @@ def payment_config_status() -> dict[str, Any]:
         "stripe_premium_price_configured": bool(STRIPE_PREMIUM_PRICE_ID),
         "stripe_premium_plus_price_configured": bool(STRIPE_PREMIUM_PLUS_PRICE_ID),
     }
+
+
+def stripe_founder_ready() -> bool:
+    return bool(PAYMENT_PROVIDER_ENABLED and STRIPE_FOUNDER_PRICE_ID)
+
+
+def update_founder_stripe_subscription(
+    user_id: int,
+    *,
+    stripe_customer_id: str = "",
+    stripe_subscription_id: str = "",
+    stripe_checkout_session_id: str = "",
+    stripe_price_id: str = "",
+    stripe_product_id: str = "",
+    provider_status: str = "",
+    status: str = "active",
+    current_period_start: str = "",
+    current_period_end: str = "",
+    cancel_at_period_end: bool = False,
+    canceled_at: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    ensure_founder_schema()
+    now = _now()
+    payload = metadata or {}
+    conn = db_service.connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO user_subscriptions
+        (user_id, plan_key, provider, provider_subscription_id, status, locked_price_cents, currency,
+         started_at, expires_at, metadata_json, created_at, updated_at, stripe_customer_id,
+         stripe_subscription_id, stripe_checkout_session_id, stripe_price_id, stripe_product_id,
+         provider_status, current_period_start, current_period_end, cancel_at_period_end, canceled_at)
+        VALUES (?, 'founder_premium', 'stripe', ?, ?, ?, 'usd', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, plan_key) DO UPDATE SET
+            provider='stripe',
+            provider_subscription_id=COALESCE(NULLIF(excluded.provider_subscription_id, ''), user_subscriptions.provider_subscription_id),
+            status=excluded.status,
+            locked_price_cents=excluded.locked_price_cents,
+            currency='usd',
+            started_at=COALESCE(user_subscriptions.started_at, excluded.started_at),
+            expires_at=excluded.expires_at,
+            metadata_json=excluded.metadata_json,
+            updated_at=excluded.updated_at,
+            stripe_customer_id=COALESCE(NULLIF(excluded.stripe_customer_id, ''), user_subscriptions.stripe_customer_id),
+            stripe_subscription_id=COALESCE(NULLIF(excluded.stripe_subscription_id, ''), user_subscriptions.stripe_subscription_id),
+            stripe_checkout_session_id=COALESCE(NULLIF(excluded.stripe_checkout_session_id, ''), user_subscriptions.stripe_checkout_session_id),
+            stripe_price_id=COALESCE(NULLIF(excluded.stripe_price_id, ''), user_subscriptions.stripe_price_id),
+            stripe_product_id=COALESCE(NULLIF(excluded.stripe_product_id, ''), user_subscriptions.stripe_product_id),
+            provider_status=excluded.provider_status,
+            current_period_start=excluded.current_period_start,
+            current_period_end=excluded.current_period_end,
+            cancel_at_period_end=excluded.cancel_at_period_end,
+            canceled_at=excluded.canceled_at
+        """,
+        (
+            int(user_id),
+            stripe_subscription_id,
+            status,
+            FOUNDER_PRICE_CENTS,
+            now,
+            current_period_end or "",
+            json.dumps(payload, default=str),
+            now,
+            now,
+            stripe_customer_id or "",
+            stripe_subscription_id or "",
+            stripe_checkout_session_id or "",
+            stripe_price_id or STRIPE_FOUNDER_PRICE_ID,
+            stripe_product_id or "",
+            provider_status or status,
+            current_period_start or "",
+            current_period_end or "",
+            1 if cancel_at_period_end else 0,
+            canceled_at or "",
+        ),
+    )
+    cur.execute(
+        """
+        UPDATE users SET
+            stripe_customer_id=COALESCE(NULLIF(?, ''), stripe_customer_id),
+            stripe_subscription_id=COALESCE(NULLIF(?, ''), stripe_subscription_id),
+            provider_subscription_id=COALESCE(NULLIF(?, ''), provider_subscription_id),
+            payment_provider='stripe',
+            subscription_status=?,
+            subscription_expires_at=COALESCE(NULLIF(?, ''), subscription_expires_at),
+            updated_at=?
+        WHERE user_id=?
+        """,
+        (
+            stripe_customer_id or "",
+            stripe_subscription_id or "",
+            stripe_subscription_id or "",
+            status,
+            current_period_end or "",
+            now,
+            int(user_id),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "user_id": int(user_id), "status": status, "stripe_subscription_id": stripe_subscription_id}
 
 
 def _next_founder_number(cur, user_id: int) -> int:
