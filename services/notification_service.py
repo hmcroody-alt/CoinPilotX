@@ -12,6 +12,284 @@ def _now():
     return datetime.now().isoformat()
 
 
+PULSE_NOTIFICATION_CATEGORIES = {
+    "messages": {"in_app": True, "push": True, "email": False, "sms": False},
+    "comments": {"in_app": True, "push": True, "email": False, "sms": False},
+    "likes": {"in_app": True, "push": False, "email": False, "sms": False},
+    "mentions": {"in_app": True, "push": True, "email": False, "sms": False},
+    "follows": {"in_app": True, "push": True, "email": False, "sms": False},
+    "lives": {"in_app": True, "push": True, "email": False, "sms": False},
+    "roast_battle": {"in_app": True, "push": True, "email": False, "sms": False},
+    "premium": {"in_app": True, "push": True, "email": True, "sms": False},
+    "security": {"in_app": True, "push": True, "email": True, "sms": False},
+}
+
+PULSE_TYPE_TO_CATEGORY = {
+    "like": "likes",
+    "comment": "comments",
+    "reply": "comments",
+    "mention": "mentions",
+    "follow": "follows",
+    "message": "messages",
+    "group_invite": "messages",
+    "room_invite": "messages",
+    "status_view": "likes",
+    "status_reaction": "likes",
+    "reel_like": "likes",
+    "reel_comment": "comments",
+    "reel_share": "likes",
+    "video_like": "likes",
+    "video_comment": "comments",
+    "video_share": "likes",
+    "video_save": "likes",
+    "live_started": "lives",
+    "live_ended": "lives",
+    "live_replay_ready": "lives",
+    "roast_battle_invite": "roast_battle",
+    "roast_battle_result": "roast_battle",
+    "premium_alert": "premium",
+    "security_alert": "security",
+    "account_login": "security",
+    "new_device": "security",
+    "teacher_update": "messages",
+    "student_update": "messages",
+    "marketplace_update": "premium",
+}
+
+
+def _pulse_category(note_type):
+    return PULSE_TYPE_TO_CATEGORY.get(str(note_type or "").strip(), "messages")
+
+
+def _pulse_row(row):
+    item = user_context.row_to_dict(row) or {}
+    item["id"] = int(item.get("id") or 0)
+    item["actor_user_id"] = int(item.get("actor_user_id") or 0)
+    item["read"] = bool(item.get("is_read") or item.get("read_at"))
+    item["status"] = "read" if item["read"] else "unread"
+    item["deep_link"] = item.get("deep_link") or item.get("target_url") or "/pulse"
+    item["target_url"] = item["deep_link"]
+    item["category"] = _pulse_category(item.get("type"))
+    return item
+
+
+def create_pulse_notification(
+    user_id,
+    note_type,
+    title,
+    body,
+    actor_user_id=0,
+    entity_type="",
+    entity_id="",
+    deep_link="/pulse",
+    delivery_status="created",
+    metadata=None,
+):
+    if not user_id:
+        return {"ok": False, "message": "User required."}
+    conn = user_context.connect()
+    cur = conn.cursor()
+    now = _now()
+    cur.execute(
+        """
+        INSERT INTO pulse_notifications
+        (user_id, actor_user_id, type, title, body, entity_type, entity_id, deep_link, target_url,
+         is_read, delivery_status, metadata_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            int(actor_user_id or 0),
+            str(note_type or "message")[:80],
+            str(title or "Pulse notification")[:180],
+            str(body or "")[:2000],
+            str(entity_type or "")[:80],
+            str(entity_id or "")[:120],
+            str(deep_link or "/pulse")[:700],
+            str(deep_link or "/pulse")[:700],
+            str(delivery_status or "created")[:60],
+            json.dumps(metadata or {})[:4000],
+            now,
+        ),
+    )
+    notification_id = cur.lastrowid
+    cur.execute(
+        """
+        INSERT INTO pulse_notification_deliveries
+        (notification_id, user_id, channel, provider, status, created_at, sent_at)
+        VALUES (?, ?, 'in_app', 'pulse', ?, ?, ?)
+        """,
+        (notification_id, int(user_id), str(delivery_status or "created")[:60], now, now),
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "notification_id": notification_id}
+
+
+def list_pulse_notifications(user_id, limit=50, category="all", unread_only=False):
+    conn = user_context.connect()
+    conn.row_factory = __import__("sqlite3").Row
+    cur = conn.cursor()
+    clauses = ["user_id=?"]
+    params = [int(user_id)]
+    if unread_only:
+        clauses.append("(is_read=0 OR read_at IS NULL)")
+    category_types = {
+        "messages": ["message", "group_invite", "room_invite", "teacher_update", "student_update"],
+        "social": ["like", "comment", "reply", "mention", "follow", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_share", "video_like", "video_comment", "video_share", "video_save"],
+        "security": ["security_alert", "account_login", "new_device"],
+        "premium": ["premium_alert", "marketplace_update"],
+    }.get(str(category or "all").lower())
+    if category_types:
+        clauses.append("type IN (%s)" % ",".join("?" for _ in category_types))
+        params.extend(category_types)
+    params.append(max(1, min(int(limit or 50), 100)))
+    cur.execute(
+        f"""
+        SELECT *
+        FROM pulse_notifications
+        WHERE {' AND '.join(clauses)}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        tuple(params),
+    )
+    rows = [_pulse_row(row) for row in cur.fetchall()]
+    conn.close()
+    return {"ok": True, "notifications": rows}
+
+
+def pulse_unread_count(user_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM pulse_notifications WHERE user_id=? AND (is_read=0 OR read_at IS NULL)", (int(user_id),))
+    count = int(cur.fetchone()[0] or 0)
+    conn.close()
+    return {"ok": True, "count": count, "unread_count": count}
+
+
+def mark_pulse_read(user_id, notification_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE pulse_notifications SET is_read=1, read_at=? WHERE id=? AND user_id=?",
+        (_now(), int(notification_id or 0), int(user_id)),
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "updated": changed}
+
+
+def mark_all_pulse_read(user_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE pulse_notifications SET is_read=1, read_at=? WHERE user_id=? AND (is_read=0 OR read_at IS NULL)",
+        (_now(), int(user_id)),
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "updated": changed}
+
+
+def delete_pulse_notification(user_id, notification_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM pulse_notifications WHERE id=? AND user_id=?", (int(notification_id or 0), int(user_id)))
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return {"ok": True, "deleted": changed}
+
+
+def pulse_preferences(user_id):
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute("SELECT category, in_app, email, sms, push FROM pulse_notification_preferences WHERE user_id=?", (int(user_id),))
+    existing = {
+        row[0]: {"in_app": bool(row[1]), "email": bool(row[2]), "sms": bool(row[3]), "push": bool(row[4])}
+        for row in cur.fetchall()
+    }
+    conn.close()
+    return {
+        "ok": True,
+        "preferences": {
+            category: existing.get(category, defaults.copy())
+            for category, defaults in PULSE_NOTIFICATION_CATEGORIES.items()
+        },
+        "categories": list(PULSE_NOTIFICATION_CATEGORIES.keys()),
+    }
+
+
+def update_pulse_preferences(user_id, payload):
+    payload = payload or {}
+    prefs = payload.get("preferences") if isinstance(payload.get("preferences"), dict) else payload
+    conn = user_context.connect()
+    cur = conn.cursor()
+    now = _now()
+    for category, values in (prefs or {}).items():
+        if category not in PULSE_NOTIFICATION_CATEGORIES or not isinstance(values, dict):
+            continue
+        defaults = PULSE_NOTIFICATION_CATEGORIES[category]
+        if category == "security":
+            values = {**values, "in_app": True}
+        cur.execute(
+            """
+            INSERT INTO pulse_notification_preferences (user_id, category, in_app, email, sms, push, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, category) DO UPDATE SET
+              in_app=excluded.in_app, email=excluded.email, sms=excluded.sms, push=excluded.push, updated_at=excluded.updated_at
+            """,
+            (
+                int(user_id),
+                category,
+                1 if values.get("in_app", defaults["in_app"]) else 0,
+                1 if values.get("email", defaults["email"]) else 0,
+                1 if values.get("sms", defaults["sms"]) else 0,
+                1 if values.get("push", defaults["push"]) else 0,
+                now,
+            ),
+        )
+    conn.commit()
+    conn.close()
+    return pulse_preferences(user_id)
+
+
+def save_pulse_device(user_id, subscription, user_agent=""):
+    result = save_push_subscription(user_id, subscription, user_agent)
+    endpoint = (subscription or {}).get("endpoint") or ""
+    conn = user_context.connect()
+    cur = conn.cursor()
+    now = _now()
+    token_preview = endpoint[-18:] if endpoint else ""
+    cur.execute(
+        """
+        INSERT INTO pulse_notification_devices
+        (user_id, device_type, provider, endpoint, token_preview, subscription_json, user_agent, active, created_at, updated_at, last_seen_at)
+        VALUES (?, ?, 'web_push', ?, ?, ?, ?, 1, ?, ?, ?)
+        ON CONFLICT(endpoint) DO UPDATE SET
+          user_id=excluded.user_id, subscription_json=excluded.subscription_json, user_agent=excluded.user_agent,
+          active=1, updated_at=excluded.updated_at, last_seen_at=excluded.last_seen_at
+        """,
+        (
+            int(user_id),
+            "mobile" if any(token in (user_agent or "").lower() for token in ["iphone", "android", "mobile"]) else "desktop",
+            endpoint,
+            token_preview,
+            json.dumps(subscription or {})[:8000],
+            str(user_agent or "")[:800],
+            now,
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return result
+
+
 def queue_notification(user_id, title, message, notification_type="general", metadata=None):
     if not user_id:
         return {"ok": False, "message": "User required."}

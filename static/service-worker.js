@@ -28,7 +28,7 @@ function isNeverCachePath(pathname) {
     pathname.startsWith("/intelligence") ||
     pathname.startsWith("/chat") ||
     pathname.startsWith("/messages") ||
-    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/pulse/notifications") ||
     pathname.startsWith("/alerts") ||
     pathname.startsWith("/upgrade") ||
     pathname.startsWith("/forgot-password") ||
@@ -141,15 +141,15 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch (error) {
-    payload = { title: "CoinPilotXAI Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+    payload = { title: "Pulse Alert", body: event.data ? event.data.text() : "New intelligence alert." };
   }
-  const title = payload.title || "CoinPilotXAI Alert";
+  const title = payload.title || "Pulse Alert";
   const options = {
     body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
     icon: payload.icon || "/static/brand/pulse-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulse-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
-    data: payload.data || { url: payload.url || "/notifications" },
+    data: payload.data || { url: payload.url || "/pulse/notifications" },
     tag: payload.tag || "coinpilotxai-alert",
     renotify: payload.renotify !== false,
     actions: payload.actions || [
@@ -163,7 +163,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   if (event.action === "dismiss") return;
-  const url = (event.notification.data && event.notification.data.url) || "/notifications";
+  const url = (event.notification.data && event.notification.data.url) || "/pulse/notifications";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

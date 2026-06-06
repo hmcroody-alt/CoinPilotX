@@ -90,11 +90,10 @@
   }
 
   async function unreadCount() {
-    const response = await fetch("/api/notifications?limit=20", { cache: "no-store", credentials: "same-origin" });
+    const response = await fetch("/api/pulse/notifications/unread-count", { cache: "no-store", credentials: "same-origin" });
     if (!response.ok) return null;
     const payload = await response.json();
-    const list = payload.notifications || [];
-    return list.filter(item => item.status !== "read").length;
+    return Number(payload.unread_count || payload.count || 0);
   }
 
   async function pollNotifications() {
@@ -199,6 +198,12 @@
     }
   }
 
+  async function loadPulsePreferences() {
+    const response = await fetch("/api/pulse/notifications/preferences", { cache: "no-store", credentials: "same-origin" });
+    if (!response.ok) throw new Error("Pulse notification preferences unavailable.");
+    return response.json();
+  }
+
   function bindSettings() {
     const root = document.querySelector("[data-notification-settings]");
     if (!root) return;
@@ -236,7 +241,7 @@
     window.addEventListener(type, () => { STATE.interacted = true; }, { once: true, passive: true });
   });
 
-  window.CoinPilotNotifications = { loadPreferences, subscribePush, unsubscribePush, testNotification, playSound, vibrate };
+  window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications };
 
   document.addEventListener("DOMContentLoaded", async () => {
     bindSettings();

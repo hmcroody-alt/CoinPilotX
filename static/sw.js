@@ -25,7 +25,7 @@ function isNeverCachePath(pathname) {
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/app") ||
     pathname.startsWith("/intelligence") ||
-    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/pulse/notifications") ||
     pathname.startsWith("/alerts") ||
     pathname.startsWith("/upgrade") ||
     pathname.startsWith("/forgot-password") ||
@@ -144,7 +144,7 @@ self.addEventListener("push", (event) => {
     icon: payload.icon || "/static/brand/pulse-icon-192-20260606.png",
     badge: payload.badge || "/static/brand/pulse-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
-    data: payload.data || { url: payload.url || "/notifications" },
+    data: payload.data || { url: payload.url || "/pulse/notifications" },
     tag: payload.tag || "coinpilotxai-alert",
     renotify: payload.renotify !== false,
     actions: payload.actions || [
@@ -158,7 +158,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   if (event.action === "dismiss") return;
-  const url = (event.notification.data && event.notification.data.url) || "/notifications";
+  const url = (event.notification.data && event.notification.data.url) || "/pulse/notifications";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

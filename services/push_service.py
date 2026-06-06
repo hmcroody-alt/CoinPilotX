@@ -67,7 +67,7 @@ def _payload(title, body, data=None, push_type="general"):
         "btc_breakout": "/quote/crypto/BTC",
         "whale_alert": "/whale-alerts",
         "scam_warning": "/scam-shield",
-    }.get(push_type, "/notifications")
+    }.get(push_type, "/pulse/notifications")
     return {
         "title": title[:120],
         "body": body[:240],
@@ -126,7 +126,7 @@ def broadcast_user_notification(user_id, notification):
     notification = notification or {}
     return send_push(
         user_id,
-        notification.get("title") or "CoinPilotXAI Alert",
+        notification.get("title") or "Pulse Alert",
         notification.get("message") or notification.get("body") or "New intelligence update.",
         notification.get("data") or {},
         notification.get("push_type") or notification.get("notification_type") or "general",
