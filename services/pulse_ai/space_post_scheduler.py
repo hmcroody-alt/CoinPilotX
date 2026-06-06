@@ -9,7 +9,9 @@ from .space_prompt_builder import DEFAULT_FORMATS
 from .space_quality_guard import duplicate_risk
 from .space_topic_memory import get_space_memory, update_space_memory
 
-SCHEDULE_SLOTS = (("morning", "09:00"), ("evening", "19:00"))
+ROTATION_INTERVAL_HOURS = 3
+ROTATION_SLOT = "rotation"
+ROTATION_STATE_ID = 1
 
 
 def _now():
@@ -28,46 +30,97 @@ def _row_dict(row):
     return dict(row)
 
 
-def next_run_for_slot(slot, base=None):
+def _next_three_hour_boundary(base=None):
     base = base or _now()
-    hour = 9 if slot == "morning" else 19
-    candidate = base.replace(hour=hour, minute=0, second=0, microsecond=0)
-    if candidate <= base:
-        candidate += timedelta(days=1)
+    candidate = base.replace(minute=0, second=0, microsecond=0)
+    hours_to_add = ROTATION_INTERVAL_HOURS - (candidate.hour % ROTATION_INTERVAL_HOURS)
+    if hours_to_add == 0 and candidate <= base:
+        hours_to_add = ROTATION_INTERVAL_HOURS
+    candidate += timedelta(hours=hours_to_add)
     return _iso(candidate)
 
 
-def seed_space_ai_schedules(cur, spaces):
+def _rotation_run_key(base=None):
+    base = base or _now()
+    slot_start = base.replace(minute=0, second=0, microsecond=0)
+    slot_start -= timedelta(hours=slot_start.hour % ROTATION_INTERVAL_HOURS)
+    return _iso(slot_start)
+
+
+def next_rotation_run(base=None):
+    base = base or _now()
+    candidate = base + timedelta(hours=ROTATION_INTERVAL_HOURS)
+    if candidate <= base:
+        candidate += timedelta(hours=ROTATION_INTERVAL_HOURS)
+    return _iso(candidate)
+
+
+def _ensure_rotation_state(cur):
     now = _iso(_now())
-    active_first = live_space_slugs()
-    for space in spaces or []:
-        slug = space.get("slug") or ""
-        if not slug:
-            continue
-        for slot, run_time in SCHEDULE_SLOTS:
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO pulse_ai_schedules
-                (space_slug, schedule_type, slot, local_time, enabled, approve_only, next_run_at, created_at, updated_at)
-                VALUES (?, 'daily', ?, ?, 1, 0, ?, ?, ?)
-                """,
-                (slug, slot, run_time, next_run_for_slot(slot), now, now),
-            )
-            if slug in active_first:
-                cur.execute(
-                    "UPDATE pulse_ai_schedules SET enabled=1, updated_at=? WHERE space_slug=? AND slot=?",
-                    (now, slug, slot),
-                )
-
-
-def _already_posted_today(cur, space_slug, slot):
-    today = _now().strftime("%Y-%m-%d")
     cur.execute(
         """
-        SELECT COUNT(*) AS total FROM pulse_ai_posts
-        WHERE space_slug=? AND schedule_slot=? AND substr(created_at, 1, 10)=?
+        CREATE TABLE IF NOT EXISTS pulse_ai_rotation_state (
+            id INTEGER PRIMARY KEY,
+            next_index INTEGER DEFAULT 0,
+            next_run_at TEXT,
+            last_run_at TEXT,
+            last_run_key TEXT,
+            last_space_slug TEXT,
+            cycle_count INTEGER DEFAULT 0,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO pulse_ai_rotation_state
+        (id, next_index, next_run_at, created_at, updated_at)
+        VALUES (?, 0, ?, ?, ?)
         """,
-        (space_slug, slot, today),
+        (ROTATION_STATE_ID, _next_three_hour_boundary(), now, now),
+    )
+
+
+def _disable_legacy_daily_schedules(cur):
+    now = _iso(_now())
+    cur.execute(
+        """
+        UPDATE pulse_ai_schedules
+        SET enabled=0, updated_at=?
+        WHERE COALESCE(schedule_type, '')='daily'
+           OR COALESCE(slot, '') IN ('morning', 'afternoon', 'evening')
+        """,
+        (now,),
+    )
+
+
+def seed_space_ai_schedules(cur, spaces):
+    _ensure_rotation_state(cur)
+    _disable_legacy_daily_schedules(cur)
+
+
+def _rotation_spaces(spaces):
+    active_slugs = set(live_space_slugs() or [])
+    valid_spaces = [space for space in spaces or [] if space.get("slug")]
+    active_spaces = [space for space in valid_spaces if space.get("slug") in active_slugs]
+    return active_spaces or valid_spaces
+
+
+def _rotation_state(cur):
+    _ensure_rotation_state(cur)
+    cur.execute("SELECT * FROM pulse_ai_rotation_state WHERE id=?", (ROTATION_STATE_ID,))
+    return _row_dict(cur.fetchone())
+
+
+def _already_ran_rotation_key(cur, run_key):
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM pulse_ai_posts
+        WHERE schedule_slot=? AND metadata_json LIKE ?
+        """,
+        (ROTATION_SLOT, f'%"rotation_key": "{run_key}"%'),
     )
     row = _row_dict(cur.fetchone())
     return int(row.get("total") or 0) > 0
@@ -110,8 +163,9 @@ def generate_publishable_post(cur, space, slot):
     memory = get_space_memory(cur, space.get("slug") or "")
     recent = recent_ai_posts(cur, space.get("slug") or "", limit=10)
     last_generated = None
+    slot_offset = 0 if slot in {"morning", ROTATION_SLOT} else 4
     for attempt in range(8):
-        post_type = DEFAULT_FORMATS[(attempt + (0 if slot == "morning" else 4)) % len(DEFAULT_FORMATS)]
+        post_type = DEFAULT_FORMATS[(attempt + slot_offset) % len(DEFAULT_FORMATS)]
         generated = generate_space_post(space, post_type=post_type, memory=memory, schedule_slot=slot, attempt=attempt)
         risk = duplicate_risk(generated, recent)
         generated.setdefault("metadata", {})["duplicate_risk"] = risk
@@ -149,8 +203,12 @@ def recent_ai_posts(cur, space_slug, limit=10):
     return rows
 
 
-def publish_space_ai_post(cur, space, slot, pulse_create_post=None, approve_only=False):
+def publish_space_ai_post(cur, space, slot, pulse_create_post=None, approve_only=False, rotation_meta=None):
     generated = generate_publishable_post(cur, space, slot)
+    if rotation_meta:
+        metadata = generated.setdefault("metadata", {})
+        metadata.update(rotation_meta)
+        generated["metadata_json"] = json.dumps(metadata, ensure_ascii=True)
     status = "pending_approval" if approve_only else "published"
     pulse_post_id = 0
     if not generated.get("ok"):
@@ -177,36 +235,90 @@ def publish_space_ai_post(cur, space, slot, pulse_create_post=None, approve_only
 
 
 def run_due_space_ai_posts(cur, spaces, pulse_create_post=None, force=False, limit=80):
-    now = _iso(_now())
-    spaces_by_slug = {space.get("slug"): space for space in spaces or []}
+    del limit
+    seed_space_ai_schedules(cur, spaces)
+    now_dt = _now()
+    now = _iso(now_dt)
+    rotation_spaces = _rotation_spaces(spaces)
+    if not rotation_spaces:
+        return {"ok": True, "ran": 0, "results": [], "message": "No Spaces are available for rotation."}
+
+    state = _rotation_state(cur)
+    next_run_at = state.get("next_run_at") or _next_three_hour_boundary(now_dt)
+    if not force and next_run_at > now:
+        return {"ok": True, "ran": 0, "results": [], "next_run_at": next_run_at}
+
+    run_key = _rotation_run_key(now_dt)
+    if not force and (state.get("last_run_key") == run_key or _already_ran_rotation_key(cur, run_key)):
+        logging.info("SPACE_AI_ROTATION_DUPLICATE_SKIP scheduled_time=%s", run_key)
+        return {"ok": True, "ran": 0, "results": [], "skipped": "duplicate_tick", "scheduled_time": run_key}
+
+    current_index = int(state.get("next_index") or 0) % len(rotation_spaces)
+    next_index = (current_index + 1) % len(rotation_spaces)
+    selected_space = rotation_spaces[current_index]
+    next_space = rotation_spaces[next_index]
+    slug = selected_space.get("slug") or ""
+    next_slug = next_space.get("slug") or ""
+    next_run_at = next_rotation_run(now_dt)
+    cycle_count = int(state.get("cycle_count") or 0) + (1 if next_index == 0 else 0)
+
+    logging.info(
+        "SPACE_AI_ROTATION_SELECTED selected_space=%s scheduled_time=%s rotation_index=%s total_spaces=%s",
+        slug,
+        run_key,
+        current_index,
+        len(rotation_spaces),
+    )
+    result = publish_space_ai_post(
+        cur,
+        selected_space,
+        ROTATION_SLOT,
+        pulse_create_post=pulse_create_post,
+        approve_only=False,
+        rotation_meta={
+            "rotation_key": run_key,
+            "rotation_index": current_index,
+            "rotation_total": len(rotation_spaces),
+            "next_space_slug": next_slug,
+        },
+    )
+    logging.info(
+        "SPACE_AI_ROTATION_POST_CREATED selected_space=%s scheduled_time=%s ai_post_id=%s pulse_post_id=%s status=%s",
+        slug,
+        run_key,
+        result.get("ai_post_id"),
+        result.get("pulse_post_id"),
+        result.get("status"),
+    )
     cur.execute(
         """
-        SELECT * FROM pulse_ai_schedules
-        WHERE enabled=1 AND (?=1 OR COALESCE(next_run_at, '') <= ?)
-        ORDER BY COALESCE(next_run_at, created_at) ASC
-        LIMIT ?
+        UPDATE pulse_ai_rotation_state
+        SET next_index=?, next_run_at=?, last_run_at=?, last_run_key=?, last_space_slug=?,
+            cycle_count=?, updated_at=?
+        WHERE id=?
         """,
-        (1 if force else 0, now, int(limit or 80)),
+        (next_index, next_run_at, now, run_key, slug, cycle_count, now, ROTATION_STATE_ID),
     )
-    rows = [_row_dict(row) for row in cur.fetchall()]
-    results = []
-    for schedule in rows:
-        slug = schedule.get("space_slug") or ""
-        slot = schedule.get("slot") or "morning"
-        space = spaces_by_slug.get(slug)
-        if not space:
-            continue
-        if not force and _already_posted_today(cur, slug, slot):
-            cur.execute("UPDATE pulse_ai_schedules SET next_run_at=?, updated_at=? WHERE id=?", (next_run_for_slot(slot), now, schedule.get("id")))
-            continue
-        result = publish_space_ai_post(cur, space, slot, pulse_create_post=pulse_create_post, approve_only=bool(schedule.get("approve_only")))
-        cur.execute(
-            "UPDATE pulse_ai_schedules SET last_run_at=?, next_run_at=?, updated_at=? WHERE id=?",
-            (now, next_run_for_slot(slot), now, schedule.get("id")),
-        )
-        try:
-            cur.connection.commit()
-        except Exception:
-            pass
-        results.append(result)
-    return {"ok": True, "ran": len(results), "results": results}
+    _disable_legacy_daily_schedules(cur)
+    logging.info(
+        "SPACE_AI_ROTATION_NEXT next_space=%s next_index=%s next_run_at=%s",
+        next_slug,
+        next_index,
+        next_run_at,
+    )
+    try:
+        cur.connection.commit()
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "ran": 1,
+        "results": [result],
+        "rotation": {
+            "selected_space": slug,
+            "scheduled_time": run_key,
+            "next_space": next_slug,
+            "next_run_at": next_run_at,
+            "cycle_count": cycle_count,
+        },
+    }
