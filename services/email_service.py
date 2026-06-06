@@ -15,13 +15,13 @@ def _coalesce(*values):
 def sender_config(channel="transactional", from_email=None, from_name=None):
     channel = (channel or "transactional").lower()
     if channel == "support":
-        default_email = os.getenv("SUPPORT_FROM_ADDRESS", "support@coinpilotx.app")
+        default_email = os.getenv("SUPPORT_FROM_ADDRESS", "support@pulsesoc.com")
         default_name = os.getenv("SUPPORT_FROM_NAME", "CoinPilotXAI Support")
     elif channel == "security":
-        default_email = os.getenv("SECURITY_FROM_ADDRESS", "security@coinpilotx.app")
+        default_email = os.getenv("SECURITY_FROM_ADDRESS", "security@pulsesoc.com")
         default_name = os.getenv("SECURITY_FROM_NAME", "CoinPilotXAI Security")
     else:
-        default_email = "noreply@coinpilotx.app"
+        default_email = "noreply@pulsesoc.com"
         default_name = "CoinPilotXAI"
     return {
         "email": _coalesce(from_email, os.getenv("BREVO_SENDER_EMAIL"), os.getenv("MAIL_FROM_ADDRESS"), default_email),
@@ -186,10 +186,10 @@ def send_payment_confirmation(user, payment_details=None):
             "<p>Your Pulse Premium access is active.</p>"
             f"{amount_line}"
             "<p>Dashboard: <a href='https://coinpilotx.app/dashboard'>https://coinpilotx.app/dashboard</a></p>"
-            "<p>If you experience any issue after payment, please email support@coinpilotx.app and include the email address used for your CoinPilotXAI account.</p>"
+            "<p>If you experience any issue after payment, please email support@pulsesoc.com and include the email address used for your CoinPilotXAI account.</p>"
             "<p>CoinPilotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>"
         ),
-        "Your Pulse Premium access is active. Dashboard: https://coinpilotx.app/dashboard. Support: support@coinpilotx.app",
+        "Your Pulse Premium access is active. Dashboard: https://coinpilotx.app/dashboard. Support: support@pulsesoc.com",
         email_type="payment_confirmation",
     )
 

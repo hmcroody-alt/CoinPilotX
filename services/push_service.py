@@ -104,7 +104,7 @@ def send_push(user_id, title, body, data=None, push_type="general"):
                 subscription_info=json.loads(subscription_json),
                 data=json.dumps(payload),
                 vapid_private_key=os.getenv("VAPID_PRIVATE_KEY"),
-                vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:support@coinpilotx.app")},
+                vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:support@pulsesoc.com")},
                 timeout=10,
             )
             sent += 1

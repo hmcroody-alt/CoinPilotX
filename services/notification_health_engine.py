@@ -24,7 +24,7 @@ def provider_config_status(conn):
         "email": {
             "status": "healthy" if os.getenv("BREVO_API_KEY") else "missing_config",
             "configured": bool(os.getenv("BREVO_API_KEY")),
-            "sender": os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or "noreply@coinpilotx.app",
+            "sender": os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or "noreply@pulsesoc.com",
         },
         "push": {
             "status": "healthy" if os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY") else "missing_config",
