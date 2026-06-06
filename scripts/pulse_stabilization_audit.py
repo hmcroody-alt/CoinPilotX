@@ -27,15 +27,15 @@ def main():
     status = read("static/js/pulse_status_viewer.js")
     messages_css = read("static/css/pulse_messages_v2.css")
 
-    require(media, 'muted playsinline', "muted default video render", failures)
-    require(media, 'playVisibleVideo(video, false)', "muted hover preview", failures)
-    require(media, 'playVisibleVideo(vid, false)', "muted in-view preview", failures)
+    require(media, 'data-pulse-video-player${controls}${loop} playsinline webkit-playsinline', "unmuted default video render", failures)
+    require(media, 'playVisibleVideo(video, soundEnabled())', "sound-aware hover preview", failures)
+    require(media, 'playVisibleVideo(vid, soundEnabled())', "sound-aware in-view preview", failures)
     require(media, 'pulse:media-sound-change', "shared sound preference event", failures)
     require(status, 'window.PulseMediaRenderer.renderMedia', "status shared renderer", failures)
-    require(status, 'autoplay muted playsinline', "status fallback muted autoplay", failures)
+    require(status, 'autoplay playsinline', "status fallback unmuted autoplay", failures)
     require(bot, "conn.row_factory = sqlite3.Row\n    cur = conn.cursor()\n    now = datetime.utcnow().isoformat(timespec=\"seconds\")\n    cur.execute(\n        \"UPDATE users SET avatar_url=?", "avatar persistence row handling", failures)
     require(bot, "thumbnail_url_cache_busted", "avatar thumbnail cache busting", failures)
-    require(bot, "video.defaultMuted=true;video.setAttribute('muted','');", "reels muted default", failures)
+    require(bot, "video.defaultMuted=false;video.removeAttribute('muted');", "reels unmuted default", failures)
     if "@media(max-width:" not in messages_css and "@media (max-width:" not in messages_css:
         failures.append("Missing messages mobile media query.")
 

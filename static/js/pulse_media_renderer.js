@@ -108,9 +108,12 @@
       const saved = window.localStorage?.getItem(SOUND_KEY);
       if (saved === "true") return true;
       if (saved === "false") return false;
-      return window.localStorage?.getItem(REELS_SOUND_KEY) === "true";
+      const legacyReels = window.localStorage?.getItem(REELS_SOUND_KEY);
+      if (legacyReels === "false") return false;
+      if (legacyReels === "true") return true;
+      return true;
     } catch (_) {
-      return false;
+      return true;
     }
   }
 
@@ -299,7 +302,7 @@
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
       const controls = options.controls === false ? "" : " controls";
       const loop = options.loop ? " loop" : "";
-      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${controls}${loop} muted playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
+      return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${controls}${loop} playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
     }
     if (media.type === "audio") {
       return `<div class="${shellClass} media-kind-audio" data-fit="smart" ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<audio controls preload="metadata" src="${esc(media.valid_url || media.url)}"></audio>${fallback}</div>`;
@@ -453,8 +456,10 @@
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
     video.setAttribute("x-webkit-airplay", "allow");
-    video.defaultMuted = true;
-    if (!soundEnabled()) setVideoMuted(video, true, "prepare");
+    video.defaultMuted = false;
+    video.removeAttribute("muted");
+    video.volume = Number(video.dataset.pulsePreferredVolume || video.volume || 1) || 1;
+    if (!soundEnabled()) setVideoMuted(video, true, "prepare-user-muted");
     if (!video.preload || video.preload === "none") video.preload = "metadata";
   }
 
@@ -481,9 +486,10 @@
     activeVideo = video;
     prepareMobileVideo(video);
     video.preload = "auto";
-    const shouldTrySound = !!preferSound && soundEnabled();
+    const shouldTrySound = preferSound !== false && soundEnabled();
     video.volume = Number(video.dataset.pulsePreferredVolume || 1);
-    if (shouldTrySound) video.defaultMuted = false;
+    video.defaultMuted = false;
+    video.removeAttribute("muted");
     setVideoMuted(video, !shouldTrySound, "autoplay");
     try {
       await video.play();
@@ -545,6 +551,18 @@
       wrap.classList.add("is-playing");
     });
     video.addEventListener("pause", () => wrap.classList.remove("is-playing"));
+    video.addEventListener("click", event => {
+      if (event.defaultPrevented || event.target.closest?.("button,a")) return;
+      const nextMuted = !(video.muted || Number(video.volume || 0) === 0);
+      setVideoMuted(video, nextMuted, "user-toggle");
+      setSoundEnabled(!nextMuted);
+      if (!nextMuted) {
+        video.volume = Number(video.dataset.pulsePreferredVolume || 1) || 1;
+        video.play().catch(() => showSoundPrompt(wrap, true, true));
+      } else {
+        showSoundPrompt(wrap, true);
+      }
+    });
     video.addEventListener("volumechange", () => {
       const reason = video.dataset.pulseSoundChangeReason || "";
       if (reason && video.muted === video._pulseExpectedMuted) return;

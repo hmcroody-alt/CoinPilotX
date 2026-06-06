@@ -340,7 +340,8 @@
     root.__pulseLivePlaybackPolicy = playbackPolicy;
     pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTransceiver("audio", { direction: "recvonly" });
-    player.muted = true;
+    player.defaultMuted = false;
+    player.removeAttribute("muted");
     player.playsInline = true;
     player.preload = "metadata";
     pc.ontrack = async (event) => {
@@ -534,6 +535,8 @@
     qs(root, "[data-live-unmute]")?.addEventListener("click", async (event) => {
       const player = qs(root, "[data-live-player]");
       if (!player) return;
+      player.defaultMuted = false;
+      player.removeAttribute("muted");
       player.muted = false;
       root.__pulseLivePlaybackPolicy = root.__pulseLivePlaybackPolicy || {};
       root.__pulseLivePlaybackPolicy.unmuted = true;

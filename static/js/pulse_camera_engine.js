@@ -408,7 +408,7 @@
   function previewMarkup(destination, sourceUrl, isVideo) {
     const safeCaption = (previewCaption?.value || "Created with Pulse Camera").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
     const mediaHtml = isVideo
-      ? `<video src="${sourceUrl}" autoplay muted loop playsinline controls></video>`
+      ? `<video src="${sourceUrl}" autoplay loop playsinline controls></video>`
       : `<img src="${sourceUrl}" alt="Pulse Camera preview" decoding="async">`;
     if (destination === "status") {
       return `<article class="pulse-preview-status">${mediaHtml}<div class="pulse-preview-progress"></div><div class="pulse-preview-copy"><strong>Your Pulse Status</strong><span>${safeCaption}</span></div></article>`;

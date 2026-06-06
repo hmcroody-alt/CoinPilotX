@@ -493,7 +493,7 @@
       const media = item.kind === "image"
         ? `<img src="${escapeAttr(item.previewUrl)}" alt="">`
         : item.kind === "video"
-          ? `<video src="${escapeAttr(item.previewUrl)}" muted playsinline preload="metadata"></video>`
+          ? `<video src="${escapeAttr(item.previewUrl)}" playsinline preload="metadata"></video>`
           : item.kind === "audio"
             ? `<div class="attachment-file-icon">♪</div>`
             : `<div class="attachment-file-icon">FILE</div>`;

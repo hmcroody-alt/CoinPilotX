@@ -44,7 +44,7 @@ def main() -> None:
 
     expect("controls autoplay playsinline webkit-playsinline preload=\"metadata\"" in bot + (ROOT / "static/js/pulse_status_viewer.js").read_text(encoding="utf-8"), "Status viewer inline videos are mobile-safe")
     expect("controls playsinline webkit-playsinline preload" in bot, "Feed inline videos are mobile-safe")
-    expect("autoplay muted playsinline webkit-playsinline" in bot, "Reels/live inline videos are mobile-safe")
+    expect("autoplay playsinline webkit-playsinline" in bot, "Reels/live inline videos are mobile-safe without forced mute")
 
 
 if __name__ == "__main__":

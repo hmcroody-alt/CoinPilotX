@@ -21,7 +21,7 @@ def main() -> None:
     play_block = renderer[renderer.find("async function playVisibleVideo"):renderer.find("function preloadNextVideo")]
 
     for token in [
-        "const shouldTrySound = !!preferSound && soundEnabled()",
+        "const shouldTrySound = preferSound !== false && soundEnabled()",
         "setVideoMuted(video, !shouldTrySound, \"autoplay\")",
         "setVideoMuted(video, true, \"autoplay-fallback\")",
         "showSoundPrompt(wrap, true, true)",
