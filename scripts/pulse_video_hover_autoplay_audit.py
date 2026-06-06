@@ -11,7 +11,7 @@ for token in [
     "pointerenter",
     "pointerleave",
     "hoverVideo = video",
-    "playVisibleVideo(video, soundEnabled())",
+    "playVisibleVideo(video, false)",
     "setVideoMuted(video, !shouldTrySound, \"autoplay\")",
     "pauseOtherVideos(video)",
 ]:

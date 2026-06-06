@@ -16,7 +16,7 @@ def main():
     source = (ROOT / "bot.py").read_text(encoding="utf-8")
     required = [
         "Premium Command Center",
-        "Pulse AI Pro",
+        "Premium AI Studio",
         "Creator Intelligence",
         "Premium Learning Hub",
         "Premium Media Vault",

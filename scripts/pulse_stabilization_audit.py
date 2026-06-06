@@ -31,7 +31,6 @@ def main():
     require(media, 'playVisibleVideo(video, false)', "muted hover preview", failures)
     require(media, 'playVisibleVideo(vid, false)', "muted in-view preview", failures)
     require(media, 'pulse:media-sound-change', "shared sound preference event", failures)
-    require(media, 'conn.row_factory = sqlite3.Row', "profile row factory should not be in media", [])
     require(status, 'window.PulseMediaRenderer.renderMedia', "status shared renderer", failures)
     require(status, 'autoplay muted playsinline', "status fallback muted autoplay", failures)
     require(bot, "conn.row_factory = sqlite3.Row\n    cur = conn.cursor()\n    now = datetime.utcnow().isoformat(timespec=\"seconds\")\n    cur.execute(\n        \"UPDATE users SET avatar_url=?", "avatar persistence row handling", failures)

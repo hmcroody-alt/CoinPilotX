@@ -290,6 +290,10 @@ def update_pulse_preferences(user_id, payload):
 def save_pulse_device(user_id, subscription, user_agent=""):
     result = save_push_subscription(user_id, subscription, user_agent)
     endpoint = (subscription or {}).get("endpoint") or ""
+    provider = str((subscription or {}).get("provider") or "web_push")[:40]
+    requested_device_type = str((subscription or {}).get("device_type") or "").lower()
+    ua_device_type = "mobile" if any(token in (user_agent or "").lower() for token in ["iphone", "android", "mobile"]) else "desktop"
+    device_type = requested_device_type if requested_device_type in {"mobile", "desktop", "native"} else ua_device_type
     conn = user_context.connect()
     cur = conn.cursor()
     now = _now()
@@ -298,14 +302,16 @@ def save_pulse_device(user_id, subscription, user_agent=""):
         """
         INSERT INTO pulse_notification_devices
         (user_id, device_type, provider, endpoint, token_preview, subscription_json, user_agent, active, created_at, updated_at, last_seen_at)
-        VALUES (?, ?, 'web_push', ?, ?, ?, ?, 1, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
         ON CONFLICT(endpoint) DO UPDATE SET
-          user_id=excluded.user_id, subscription_json=excluded.subscription_json, user_agent=excluded.user_agent,
+          user_id=excluded.user_id, device_type=excluded.device_type, provider=excluded.provider,
+          subscription_json=excluded.subscription_json, user_agent=excluded.user_agent,
           active=1, updated_at=excluded.updated_at, last_seen_at=excluded.last_seen_at
         """,
         (
             int(user_id),
-            "mobile" if any(token in (user_agent or "").lower() for token in ["iphone", "android", "mobile"]) else "desktop",
+            device_type,
+            provider,
             endpoint,
             token_preview,
             json.dumps(subscription or {})[:8000],

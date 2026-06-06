@@ -9,7 +9,7 @@ renderer = (root / "static/js/pulse_media_renderer.js").read_text(encoding="utf-
 for token in [
     "IntersectionObserver(entries =>",
     "entry.intersectionRatio < .58",
-    "playVisibleVideo(vid, soundEnabled())",
+    "playVisibleVideo(vid, false)",
     "preloadNextVideo(vid)",
     "targetWrap?.classList.add(\"is-active-media\")",
     "desktopPointer() && hoverVideo",
