@@ -5,6 +5,12 @@ import requests
 BREVO_SMTP_URL = "https://api.brevo.com/v3/smtp/email"
 
 
+def _truthy_env(key, default=True):
+    if key not in os.environ:
+        return bool(default)
+    return os.getenv(key, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _coalesce(*values):
     for value in values:
         if value:
@@ -41,8 +47,8 @@ def provider_status():
         missing.append("BREVO_SENDER_NAME")
     return {
         "provider": "brevo",
-        "ready": not missing and os.getenv("BREVO_EMAIL_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"},
-        "enabled": os.getenv("BREVO_EMAIL_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"},
+        "ready": not missing and _truthy_env("BREVO_EMAIL_ENABLED", True),
+        "enabled": _truthy_env("BREVO_EMAIL_ENABLED", True),
         "api_key_configured": bool(os.getenv("BREVO_API_KEY")),
         "sender_email_configured": bool(os.getenv("BREVO_SENDER_EMAIL")),
         "sender_name_configured": bool(os.getenv("BREVO_SENDER_NAME")),
@@ -55,7 +61,7 @@ def provider_status():
 def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None, from_name=None, channel="transactional"):
     api_key = os.getenv("BREVO_API_KEY")
     config = sender_config(channel=channel, from_email=from_email, from_name=from_name)
-    if os.getenv("BREVO_EMAIL_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+    if not _truthy_env("BREVO_EMAIL_ENABLED", True):
         return {
             "ok": False,
             "status_code": None,
@@ -103,14 +109,30 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
         message_id = body.get("messageId")
         if not message_id and isinstance(body.get("messageIds"), list) and body["messageIds"]:
             message_id = body["messageIds"][0]
+        error = ""
+        error_code = ""
+        if 200 <= response.status_code < 300:
+            error = ""
+        elif response.status_code == 401:
+            error = "Brevo rejected the request. Check BREVO_API_KEY in Railway."
+            error_code = "brevo_unauthorized"
+        elif response.status_code == 403:
+            error = "Brevo rejected the sender or domain. Verify BREVO_SENDER_EMAIL and domain authentication in Brevo."
+            error_code = "brevo_forbidden"
+        elif response.status_code == 429:
+            error = "Brevo rate limit reached. Retry shortly."
+            error_code = "brevo_rate_limited"
+        else:
+            error = body.get("message") or body.get("code") or response.text[:500]
+            error_code = body.get("code") or ""
         return {
             "ok": 200 <= response.status_code < 300,
             "status_code": response.status_code,
             "response": body,
             "provider_response": body,
             "message_id": message_id or "",
-            "error": "" if 200 <= response.status_code < 300 else ("Brevo rejected the request. Check BREVO_API_KEY in Railway." if response.status_code == 401 else (body.get("message") or body.get("code") or response.text[:500])),
-            "error_code": "brevo_unauthorized" if response.status_code == 401 else (body.get("code") or ""),
+            "error": error,
+            "error_code": error_code,
             "sender": config,
         }
     except Exception as exc:

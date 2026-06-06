@@ -179,10 +179,16 @@
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
-            <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
             <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
             <button class="button primary" type="submit">Login</button>
           </form>
+          <form method="post" action="/resend-confirmation">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
+            <button class="button" type="submit">Resend Confirmation Email</button>
+          </form>
+          <p class="muted">If your account is new, check your email to confirm your account before logging in.</p>
           <p class="muted"><a href="/forgot-password">Forgot password?</a> · <a href="/forgot-username">Forgot account email?</a> · <a href="/signup">Create account</a></p>
 
         {% elif page == "forgot" %}
