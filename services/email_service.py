@@ -29,10 +29,40 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
     else:
         default_email = os.getenv("DEFAULT_FROM_EMAIL") or "noreply@pulsesoc.com"
         default_name = "Pulse"
+    sender_candidates = [
+        ("explicit", from_email),
+        ("BREVO_SENDER_EMAIL", os.getenv("BREVO_SENDER_EMAIL")),
+        ("MAIL_FROM_ADDRESS", os.getenv("MAIL_FROM_ADDRESS")),
+        ("DEFAULT_FROM_EMAIL", os.getenv("DEFAULT_FROM_EMAIL")),
+        ("channel_default", default_email),
+    ]
+    name_candidates = [
+        ("explicit", from_name),
+        ("BREVO_SENDER_NAME", os.getenv("BREVO_SENDER_NAME")),
+        ("MAIL_FROM_NAME", os.getenv("MAIL_FROM_NAME")),
+        ("channel_default", default_name),
+    ]
+    sender_email = ""
+    sender_source = ""
+    for source, value in sender_candidates:
+        if value:
+            sender_email = value
+            sender_source = source
+            break
+    sender_name = ""
+    sender_name_source = ""
+    for source, value in name_candidates:
+        if value:
+            sender_name = value
+            sender_name_source = source
+            break
     return {
-        "email": _coalesce(from_email, os.getenv("BREVO_SENDER_EMAIL"), os.getenv("MAIL_FROM_ADDRESS"), os.getenv("DEFAULT_FROM_EMAIL"), default_email),
-        "name": _coalesce(from_name, os.getenv("BREVO_SENDER_NAME"), os.getenv("MAIL_FROM_NAME"), default_name),
+        "email": sender_email,
+        "name": sender_name,
         "channel": channel,
+        "email_source": sender_source,
+        "name_source": sender_name_source,
+        "using_default_sender": sender_source == "channel_default",
     }
 
 
@@ -41,21 +71,26 @@ def provider_status():
     missing = []
     if not os.getenv("BREVO_API_KEY"):
         missing.append("BREVO_API_KEY")
-    if not (os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or os.getenv("DEFAULT_FROM_EMAIL")):
-        missing.append("BREVO_SENDER_EMAIL or DEFAULT_FROM_EMAIL")
+    if not config.get("email"):
+        missing.append("sender email")
+    sender_domain = config["email"].split("@")[-1].lower() if "@" in config["email"] else ""
     return {
         "provider": "brevo",
         "ready": not missing and _truthy_env("BREVO_EMAIL_ENABLED", True),
         "enabled": _truthy_env("BREVO_EMAIL_ENABLED", True),
         "api_key_configured": bool(os.getenv("BREVO_API_KEY")),
-        "sender_email_configured": bool(os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or os.getenv("DEFAULT_FROM_EMAIL")),
-        "sender_name_configured": bool(os.getenv("BREVO_SENDER_NAME") or os.getenv("MAIL_FROM_NAME")),
+        "sender_email_configured": bool(config.get("email")),
+        "sender_name_configured": bool(config.get("name")),
         "default_from_email_configured": bool(os.getenv("DEFAULT_FROM_EMAIL")),
         "support_email_configured": bool(os.getenv("SUPPORT_EMAIL")),
         "security_email_configured": bool(os.getenv("SECURITY_EMAIL")),
         "missing_fields": missing,
         "sender_email": config["email"],
         "sender_name": config["name"],
+        "sender_email_source": config.get("email_source") or "",
+        "sender_name_source": config.get("name_source") or "",
+        "sender_domain": sender_domain,
+        "using_default_sender": bool(config.get("using_default_sender")),
     }
 
 
@@ -76,8 +111,8 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
     missing = []
     if not api_key:
         missing.append("BREVO_API_KEY")
-    if not (os.getenv("BREVO_SENDER_EMAIL") or os.getenv("MAIL_FROM_ADDRESS") or os.getenv("DEFAULT_FROM_EMAIL")):
-        missing.append("BREVO_SENDER_EMAIL or DEFAULT_FROM_EMAIL")
+    if not config.get("email"):
+        missing.append("sender email")
     if missing:
         return {
             "ok": False,

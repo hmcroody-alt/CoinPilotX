@@ -22,6 +22,11 @@ def main():
     for env_name in ["DEFAULT_FROM_EMAIL", "SUPPORT_EMAIL", "SECURITY_EMAIL", "PUBLIC_BASE_URL"]:
         if env_name not in BOT:
             failures.append(f"production email diagnostic missing env: {env_name}")
+    for marker in ["sender_email_masked", "sender_email_source", "sender_domain", "using_default_sender"]:
+        if marker not in BOT:
+            failures.append(f"safe production email diagnostic missing marker: {marker}")
+    if '"sender": (result.get("sender")' in BOT:
+        failures.append("admin direct-test API exposes raw sender email instead of masked sender diagnostics")
     if "send_email_notification" not in NOTIFICATIONS:
         failures.append("Pulse notification email sender missing")
     if "BREVO_EMAIL_ENABLED" not in NOTIFICATIONS:
