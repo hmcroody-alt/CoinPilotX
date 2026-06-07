@@ -30,8 +30,10 @@ Not complete. Per mission rules, this validation must not be marked complete unt
 
 ## Firebase / EAS Secret Files
 
-Firebase mobile config files remain uncommitted. To support cloud builds without committing those files, the following EAS production secret file variables were created:
+Firebase mobile config files remain uncommitted. To support cloud builds without committing those files, the following EAS production file variables were created:
 
+- `EAS_GOOGLE_SERVICES_JSON`
+- `EAS_GOOGLE_SERVICE_INFO_PLIST`
 - `GOOGLE_SERVICES_JSON`
 - `GOOGLE_SERVICE_INFO_PLIST`
 
@@ -41,20 +43,25 @@ No file contents or secret values were printed.
 
 ### Android
 
-- Build command started successfully.
+- Build command completed successfully.
 - EAS build ID: `1dfd8b56-ae3f-4bef-bae7-13c48c1c973f`
-- Status at last check: `IN_PROGRESS`
+- Status at last check: `FINISHED`
 - Build profile: `production`
 - Distribution: store
 - Version code: `3`
+- Build artifact: `https://expo.dev/artifacts/eas/4GN3JjK1MDXtdxG3rEzPsp.aab`
 - Logs: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/1dfd8b56-ae3f-4bef-bae7-13c48c1c973f`
 
 ### iOS
 
-- iOS build setup reached Apple credential validation.
-- EAS requested Apple Developer login to generate and validate signing credentials.
-- Apple credential prompt was not completed during this pass.
-- iOS TestFlight build was not created yet.
+- Apple Developer account validation was completed by the account owner.
+- EAS iOS production build queued successfully.
+- EAS build ID: `17ea56bf-1702-456b-9545-ff8b385c2f9f`
+- Status at last check: `IN_PROGRESS`
+- Build profile: `production`
+- Distribution: store
+- Build number: `6`
+- Logs: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/17ea56bf-1702-456b-9545-ff8b385c2f9f`
 
 ## Live Notification Tests
 
@@ -78,9 +85,9 @@ For each test, verify:
 
 ## Current Blockers
 
-1. Complete Apple Developer credential setup in EAS for iOS signing.
-2. Wait for Android EAS build to finish, then install it on a real Android device.
-3. Create an iOS TestFlight build, then install it on a real iPhone.
+1. Wait for iOS EAS build to finish, then upload/submit it to TestFlight if EAS does not auto-submit.
+2. Install the Android build on a real Android device or submit it to Google Play internal testing.
+3. Install the iOS build on a real iPhone through TestFlight.
 4. Log into PulseSoc on both devices.
 5. Accept notification permission on both devices.
 6. Trigger live notification events and confirm delivery on both devices.
@@ -97,10 +104,10 @@ For each test, verify:
 
 ## Next Action
 
-Resume iOS build with:
+Monitor iOS build with:
 
 ```bash
-npx eas-cli build --platform ios --profile production --no-wait --message "PulseSoc real device push QA"
+npx eas-cli build:list --platform ios --limit 1
 ```
 
-When EAS asks for Apple ID, password, or 2FA, the account owner must enter those directly. After the iOS and Android builds are installed on real devices, run the live notification test matrix above.
+After the iOS and Android builds are installed on real devices, run the live notification test matrix above.
