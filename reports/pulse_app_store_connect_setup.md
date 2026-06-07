@@ -1,4 +1,4 @@
-# Pulse App Store Connect Setup
+# PulseSoc App Store Connect Setup
 
 Date: 2026-06-06
 
@@ -6,7 +6,7 @@ Date: 2026-06-06
 
 - Accepted App Store Connect access gate was completed by the account owner.
 - Registered Apple Bundle ID:
-  - Description: `Pulse`
+  - Description: `PulseSoc`
   - Bundle ID: `com.pulsesoc.app`
   - Team ID prefix: `87ZC69AGSR`
   - Associated Domains: enabled
@@ -35,7 +35,7 @@ Date: 2026-06-06
 ## Notes
 
 - The plain App Store listing name `Pulse` was unavailable in App Store Connect, so the store listing was created as `PulseSoc`.
-- The in-app product branding can remain `Pulse`.
+- The in-app product branding and mobile app package now use `PulseSoc`.
 - No certificates, private keys, banking, tax, payment, or production secrets were created or changed.
 - No app was submitted for review.
 - Reviewer credentials were not entered.
@@ -52,6 +52,15 @@ Date: 2026-06-06
 - Complete App Privacy responses.
 - Complete EU Digital Services Act trader status if distribution includes the EU.
 - Add screenshots and final metadata.
+
+## 2026-06-07 Continuation
+
+- Verified the native app package is branded as `PulseSoc`.
+- Verified the app package uses the PulseSoc logo for app icon, adaptive icon, splash, and notification icon.
+- Aligned the alternate top-level Expo shell at `mobile/app.json` to `PulseSoc`, `com.pulsesoc.app`, and the PulseSoc logo assets.
+- App Store Connect browser automation reached the Apple login page; the account owner must complete login and any 2FA manually before more dashboard work can continue.
+- EAS CLI is available through `npx eas-cli`, but the local Expo account is not logged in yet.
+- No App Store review submission was attempted.
 
 ## Still Required Before Public App Review
 

@@ -1,23 +1,23 @@
-# Pulse App Store and Play Store Readiness
+# PulseSoc App Store and Play Store Readiness
 
 Date: 2026-06-06
 
 ## Current Status
 
-Pulse is now repo-ready for internal native build preparation, but not yet submission-ready for public App Store or Play Store release.
+PulseSoc is now repo-ready for internal native build preparation, but not yet submission-ready for public App Store or Play Store release.
 
 The repository now includes the native submission scaffolding that can be completed once Apple, Google, Firebase, APNs, and real-device QA access are available.
 
 ## Completed In Repo
 
 - Expo app identity configured:
-  - App name: Pulse
+  - App name: PulseSoc
   - App Store listing name: PulseSoc
   - Scheme: `pulse`
   - iOS bundle ID: `com.pulsesoc.app`
   - Android package: `com.pulsesoc.app`
 - Apple Bundle ID registered:
-  - Description: `Pulse`
+  - Description: `PulseSoc`
   - Bundle ID: `com.pulsesoc.app`
   - Associated Domains enabled
   - Push Notifications enabled
@@ -31,7 +31,7 @@ The repository now includes the native submission scaffolding that can be comple
   - Secondary category: Photo & Video
   - iOS 1.0 public listing copy and URLs saved
   - Release mode set to manual
-- App assets added:
+- App assets added and aligned to the PulseSoc logo:
   - `assets/icon.png`
   - `assets/adaptive-icon.png`
   - `assets/splash.png`
@@ -79,7 +79,7 @@ The repository now includes the native submission scaffolding that can be comple
 
 ## Premium Risk
 
-Pulse Premium and Founder Premium may be considered digital goods or digital subscriptions in mobile apps. Public production submission should not rely on Stripe checkout inside the native app until Apple and Google policy handling is finalized.
+PulseSoc Premium and Founder Premium may be considered digital goods or digital subscriptions in mobile apps. Public production submission should not rely on Stripe checkout inside the native app until Apple and Google policy handling is finalized.
 
 Recommended path:
 
@@ -90,7 +90,7 @@ Recommended path:
 
 ## UGC Risk
 
-Pulse includes user-generated posts, reels, videos, statuses, comments, messages, profiles, and marketplace/community surfaces.
+PulseSoc includes user-generated posts, reels, videos, statuses, comments, messages, profiles, and marketplace/community surfaces.
 
 Before public submission:
 
@@ -102,6 +102,14 @@ Before public submission:
 
 ## Launch Gate
 
-Pulse can move to internal build preparation after credentials are available.
+PulseSoc can move to internal build preparation after credentials are available.
 
-Pulse should not be submitted for public store review until real-device QA and the remaining compliance gates above are complete.
+PulseSoc should not be submitted for public store review until real-device QA and the remaining compliance gates above are complete.
+
+## 2026-06-07 App Store Continuation
+
+- PulseSoc logo assets are present in the real native app and the alternate Expo shell.
+- Expo public config resolves to `PulseSoc` with `com.pulsesoc.app`, PulseSoc icons, PulseSoc splash, PulseSoc app links, and production API base URL `https://pulsesoc.com`.
+- Native checks passed: TypeScript, foundation audit, authentication audit, feed audit, notifications audit, and store submission readiness audit.
+- Build/upload is blocked until Expo/EAS login is completed locally.
+- App Store Connect dashboard work is blocked until Apple login and any required 2FA are completed manually by the account owner.
