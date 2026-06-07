@@ -8,6 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "eas-build-pre-install": "node scripts/prepare-firebase-config.js",
     "typecheck": "tsc --noEmit",
     "audit": "npm run audit:foundation && npm run audit:authentication && npm run audit:feed && npm run audit:notifications && npm run audit:firebase && npm run audit:store",
     "audit:foundation": "node scripts/foundation-audit.js",

@@ -20,6 +20,9 @@ def main():
     failures = []
     app = json.loads(read("mobile/pulse-react-native/app.json"))["expo"]
     eas = json.loads(read("mobile/pulse-react-native/eas.json"))
+    package_json = json.loads(read("mobile/pulse-react-native/package.json"))
+    dependencies = package_json.get("dependencies") or {}
+    build_profiles = eas.get("build") or {}
 
     required_files = [
         "mobile/pulse-react-native/assets/icon.png",
@@ -50,11 +53,14 @@ def main():
         "android package": (app.get("android") or {}).get("package") == "com.pulsesoc.app",
         "android firebase config": (app.get("android") or {}).get("googleServicesFile") == "./credentials/firebase/google-services.json",
         "ios permissions": all(key in json.dumps(app.get("ios") or {}) for key in ["NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSPhotoLibraryUsageDescription"]),
+        "ios encryption declaration": (app.get("ios") or {}).get("infoPlist", {}).get("ITSAppUsesNonExemptEncryption") is False,
         "ios associated domains": "applinks:pulsesoc.com" in json.dumps(app.get("ios") or {}),
         "android app links": "pulsesoc.com" in json.dumps(app.get("android") or {}),
         "android notification permission": "POST_NOTIFICATIONS" in json.dumps(app.get("android") or {}),
         "expo notifications plugin": "expo-notifications" in json.dumps(app.get("plugins") or []),
-        "eas production build": "production" in (eas.get("build") or {}),
+        "eas project id": (app.get("extra") or {}).get("eas", {}).get("projectId") == "712c1e38-a984-433f-bce1-f517693bd3fb",
+        "eas production build": "production" in build_profiles,
+        "eas channel requires expo updates": all("channel" not in (profile or {}) for profile in build_profiles.values()) or "expo-updates" in dependencies,
         "eas apple app id": (eas.get("submit") or {}).get("production", {}).get("ios", {}).get("ascAppId") == "6777591572",
         "play service account ignored": (MOBILE / "credentials" / ".gitignore").exists(),
     }

@@ -6,6 +6,8 @@ const app = JSON.parse(read("app.json")).expo;
 const push = read("services/push.ts");
 const authStore = read("store/authStore.ts");
 const linking = read("navigation/linking.ts");
+const packageJson = JSON.parse(read("package.json"));
+const firebasePrep = read("scripts/prepare-firebase-config.js");
 const failures = [];
 
 const ios = app.ios || {};
@@ -18,6 +20,8 @@ const android = app.android || {};
   ["Android package name", android.package === "com.pulsesoc.app"],
   ["iOS Firebase config reference", ios.googleServicesFile === "./credentials/firebase/GoogleService-Info.plist"],
   ["Android Firebase config reference", android.googleServicesFile === "./credentials/firebase/google-services.json"],
+  ["EAS Firebase prep hook", packageJson.scripts["eas-build-pre-install"] === "node scripts/prepare-firebase-config.js"],
+  ["EAS Firebase file env support", firebasePrep.includes("EAS_GOOGLE_SERVICES_JSON") && firebasePrep.includes("EAS_GOOGLE_SERVICE_INFO_PLIST")],
   ["notification permission configured", JSON.stringify(android.permissions || []).includes("POST_NOTIFICATIONS")],
   ["iOS app links configured", JSON.stringify(ios.associatedDomains || []).includes("applinks:pulsesoc.com")],
   ["Android app links configured", JSON.stringify(android.intentFilters || []).includes("pulsesoc.com")],

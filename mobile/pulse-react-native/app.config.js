@@ -1,16 +1,22 @@
 const appJson = require("./app.json");
 
-module.exports = () => {
-  const config = appJson.expo;
+module.exports = ({ config }) => {
+  const baseConfig = { ...config, ...appJson.expo };
   return {
-    ...config,
+    ...baseConfig,
     ios: {
-      ...config.ios,
-      googleServicesFile: process.env.GOOGLE_SERVICE_INFO_PLIST || config.ios.googleServicesFile
+      ...baseConfig.ios,
+      googleServicesFile:
+        process.env.EAS_GOOGLE_SERVICE_INFO_PLIST ||
+        process.env.GOOGLE_SERVICE_INFO_PLIST ||
+        baseConfig.ios.googleServicesFile
     },
     android: {
-      ...config.android,
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || config.android.googleServicesFile
+      ...baseConfig.android,
+      googleServicesFile:
+        process.env.EAS_GOOGLE_SERVICES_JSON ||
+        process.env.GOOGLE_SERVICES_JSON ||
+        baseConfig.android.googleServicesFile
     }
   };
 };

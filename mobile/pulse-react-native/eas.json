@@ -13,13 +13,11 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview",
       "env": {
         "EXPO_PUBLIC_PULSE_API_BASE_URL": "https://pulsesoc.com"
       }
     },
     "production": {
-      "channel": "production",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_PULSE_API_BASE_URL": "https://pulsesoc.com"
