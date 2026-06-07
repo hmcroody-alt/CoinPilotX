@@ -41,12 +41,14 @@ def main():
             failures.append(f"Missing required file: {path}")
 
     checks = {
-        "app name": app.get("name") == "PulseSoc",
+        "app display name": app.get("name") == "Pulse",
         "scheme": app.get("scheme") == "pulse",
         "icon configured": app.get("icon") == "./assets/icon.png",
         "splash configured": (app.get("splash") or {}).get("image") == "./assets/splash.png",
         "ios bundle id": (app.get("ios") or {}).get("bundleIdentifier") == "com.pulsesoc.app",
+        "ios firebase config": (app.get("ios") or {}).get("googleServicesFile") == "./credentials/firebase/GoogleService-Info.plist",
         "android package": (app.get("android") or {}).get("package") == "com.pulsesoc.app",
+        "android firebase config": (app.get("android") or {}).get("googleServicesFile") == "./credentials/firebase/google-services.json",
         "ios permissions": all(key in json.dumps(app.get("ios") or {}) for key in ["NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSPhotoLibraryUsageDescription"]),
         "ios associated domains": "applinks:pulsesoc.com" in json.dumps(app.get("ios") or {}),
         "android app links": "pulsesoc.com" in json.dumps(app.get("android") or {}),

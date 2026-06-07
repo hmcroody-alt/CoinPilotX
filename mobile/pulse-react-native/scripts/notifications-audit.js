@@ -4,6 +4,8 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const screen = read("src/screens/NotificationsScreen.tsx");
 const app = read("src/App.tsx");
+const push = read("services/push.ts");
+const authStore = read("store/authStore.ts");
 const failures = [];
 
 [
@@ -18,7 +20,11 @@ const failures = [];
   ["Sends status quick reply", screen, "/api/pulse/status/${statusId}/reply"],
   ["Sends post quick reply", screen, "/api/pulse/posts/${postId}/comments"],
   ["Sends message quick reply", screen, "/api/pulse/messages/send"],
-  ["Uses safe fallback for hidden content", screen, "Reply hidden or unavailable."]
+  ["Uses safe fallback for hidden content", screen, "Reply hidden or unavailable."],
+  ["Registers Expo/native push token", push, "getExpoPushTokenAsync"],
+  ["Subscribes native push token", push, "/api/push/subscribe"],
+  ["Unsubscribes native push token", push, "/api/push/unsubscribe"],
+  ["Cleans up native push token on logout", authStore, "unregisterPushNotifications"]
 ].forEach(([label, text, needle]) => {
   if (!text.includes(needle)) failures.push(`${label} missing`);
 });

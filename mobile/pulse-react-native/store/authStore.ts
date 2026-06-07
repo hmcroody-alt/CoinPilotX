@@ -14,6 +14,7 @@ import {
 } from "../services/auth";
 import { PulseApiError, isOfflineError } from "../services/apiClient";
 import { ProfileBootstrap, loadProfileBootstrap } from "../services/profileBootstrap";
+import { unregisterPushNotifications } from "../services/push";
 import { clearPersistedSessionCookie, clearRefreshToken, clearSecureSession, getRefreshToken, getSessionCookie, setRefreshToken } from "../services/secureSession";
 
 type AuthState = {
@@ -130,6 +131,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ bootstrap, user: bootstrap.user || current, offline: false });
   },
   async logout() {
+    await unregisterPushNotifications().catch(() => undefined);
     await logoutMobileSession().catch(() => undefined);
     await clearSecureSession();
     set({ signedIn: false, user: null, bootstrap: null, pendingConfirmationEmail: "" });

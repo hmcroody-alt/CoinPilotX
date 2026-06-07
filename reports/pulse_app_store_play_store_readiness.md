@@ -11,7 +11,7 @@ The repository now includes the native submission scaffolding that can be comple
 ## Completed In Repo
 
 - Expo app identity configured:
-  - App name: PulseSoc
+  - App display name: Pulse
   - App Store listing name: PulseSoc
   - Scheme: `pulse`
   - iOS bundle ID: `com.pulsesoc.app`
@@ -109,7 +109,7 @@ PulseSoc should not be submitted for public store review until real-device QA an
 ## 2026-06-07 App Store Continuation
 
 - PulseSoc logo assets are present in the real native app and the alternate Expo shell.
-- Expo public config resolves to `PulseSoc` with `com.pulsesoc.app`, PulseSoc icons, PulseSoc splash, PulseSoc app links, and production API base URL `https://pulsesoc.com`.
+- Expo public config resolves to display name `Pulse` with `com.pulsesoc.app`, PulseSoc icons, PulseSoc splash, PulseSoc app links, and production API base URL `https://pulsesoc.com`.
 - Native checks passed: TypeScript, foundation audit, authentication audit, feed audit, notifications audit, and store submission readiness audit.
 - Build/upload is blocked until Expo/EAS login is completed locally.
 - App Store Connect dashboard work is blocked until Apple login and any required 2FA are completed manually by the account owner.

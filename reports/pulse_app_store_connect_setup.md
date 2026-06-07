@@ -55,9 +55,9 @@ Date: 2026-06-06
 
 ## 2026-06-07 Continuation
 
-- Verified the native app package is branded as `PulseSoc`.
+- Verified the native app package uses display name `Pulse`.
 - Verified the app package uses the PulseSoc logo for app icon, adaptive icon, splash, and notification icon.
-- Aligned the alternate top-level Expo shell at `mobile/app.json` to `PulseSoc`, `com.pulsesoc.app`, and the PulseSoc logo assets.
+- Aligned the alternate top-level Expo shell at `mobile/app.json` to display name `Pulse`, `com.pulsesoc.app`, and the PulseSoc logo assets.
 - App Store Connect browser automation reached the Apple login page; the account owner must complete login and any 2FA manually before more dashboard work can continue.
 - EAS CLI is available through `npx eas-cli`, but the local Expo account is not logged in yet.
 - No App Store review submission was attempted.

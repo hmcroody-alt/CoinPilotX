@@ -44,6 +44,23 @@ export async function registerForPushNotifications() {
   });
 }
 
+export async function unregisterPushNotifications() {
+  if (!Device.isDevice) {
+    return { ok: false, message: "Push unregister requires a physical device." };
+  }
+
+  const token = await Notifications.getExpoPushTokenAsync(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : undefined);
+  return pulseApi("/api/push/unsubscribe", {
+    method: "POST",
+    body: JSON.stringify({
+      endpoint: token.data,
+      provider: "expo",
+      token: token.data,
+      device_type: "native"
+    })
+  });
+}
+
 export function wireNotificationLinks() {
   return Notifications.addNotificationResponseReceivedListener(response => {
     const url = response.notification.request.content.data?.url;
