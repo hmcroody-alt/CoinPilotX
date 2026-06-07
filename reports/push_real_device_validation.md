@@ -55,13 +55,16 @@ No file contents or secret values were printed.
 ### iOS
 
 - Apple Developer account validation was completed by the account owner.
-- EAS iOS production build queued successfully.
+- EAS iOS production build completed successfully.
 - EAS build ID: `17ea56bf-1702-456b-9545-ff8b385c2f9f`
-- Status at last check: `IN_PROGRESS`
+- Status at last check: `FINISHED`
 - Build profile: `production`
 - Distribution: store
 - Build number: `6`
+- IPA artifact: `https://expo.dev/artifacts/eas/3XhtDVFabjgusarohxhXut.ipa`
 - Logs: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/17ea56bf-1702-456b-9545-ff8b385c2f9f`
+- App Store Connect TestFlight status: no builds visible yet.
+- Internal testers: not configured yet; TestFlight -> All Testers shows `Testers (0)`.
 
 ## Live Notification Tests
 
@@ -85,12 +88,15 @@ For each test, verify:
 
 ## Current Blockers
 
-1. Wait for iOS EAS build to finish, then upload/submit it to TestFlight if EAS does not auto-submit.
-2. Install the Android build on a real Android device or submit it to Google Play internal testing.
-3. Install the iOS build on a real iPhone through TestFlight.
-4. Log into PulseSoc on both devices.
-5. Accept notification permission on both devices.
-6. Trigger live notification events and confirm delivery on both devices.
+1. Submit the finished iOS IPA to App Store Connect/TestFlight using EAS Submit in a visible terminal.
+2. Wait for App Store Connect build processing.
+3. Create/enable an Internal Testing group and add the Apple ID as an internal tester.
+4. Assign the processed build to the internal testing group.
+5. Install the Android build on a real Android device or submit it to Google Play internal testing.
+6. Install the iOS build on a real iPhone through TestFlight.
+7. Log into PulseSoc on both devices.
+8. Accept notification permission on both devices.
+9. Trigger live notification events and confirm delivery on both devices.
 
 ## QA Already Passed
 
@@ -104,10 +110,10 @@ For each test, verify:
 
 ## Next Action
 
-Monitor iOS build with:
+Submit iOS build with:
 
 ```bash
-npx eas-cli build:list --platform ios --limit 1
+npx eas-cli submit --platform ios --profile production --id 17ea56bf-1702-456b-9545-ff8b385c2f9f --wait --what-to-test "PulseSoc real-device push QA build"
 ```
 
-After the iOS and Android builds are installed on real devices, run the live notification test matrix above.
+Run the submit command in a visible terminal and enter Apple credentials there. After PulseSoc appears in TestFlight and the Android build is installed, run the live notification test matrix above.
