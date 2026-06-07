@@ -12,9 +12,25 @@ The repository now includes the native submission scaffolding that can be comple
 
 - Expo app identity configured:
   - App name: Pulse
+  - App Store listing name: PulseSoc
   - Scheme: `pulse`
   - iOS bundle ID: `com.pulsesoc.app`
   - Android package: `com.pulsesoc.app`
+- Apple Bundle ID registered:
+  - Description: `Pulse`
+  - Bundle ID: `com.pulsesoc.app`
+  - Associated Domains enabled
+  - Push Notifications enabled
+- App Store Connect app record created:
+  - Apple app ID: `6777591572`
+  - SKU: `pulse-ios-001`
+  - Platform: iOS
+- App Store metadata draft saved:
+  - Subtitle: `Create, connect, stay aware`
+  - Primary category: Social Networking
+  - Secondary category: Photo & Video
+  - iOS 1.0 public listing copy and URLs saved
+  - Release mode set to manual
 - App assets added:
   - `assets/icon.png`
   - `assets/adaptive-icon.png`
@@ -29,7 +45,7 @@ The repository now includes the native submission scaffolding that can be comple
   - development
   - preview
   - production
-- EAS submit placeholders added without secrets.
+- EAS submit configured with the real App Store Connect app ID.
 - Google Play service account path protected with `.gitignore`.
 - Store metadata drafts added:
   - App Store listing
@@ -40,18 +56,20 @@ The repository now includes the native submission scaffolding that can be comple
 
 ## Still Missing Before Public Submission
 
-- Apple Developer Program access.
-- App Store Connect app record.
 - Google Play Console app record.
 - Firebase project and Android FCM credentials.
 - APNs key/certificate or EAS-managed APNs credentials.
 - Expo/EAS project ID.
-- App Store Connect app ID replacing `REPLACE_WITH_APP_STORE_CONNECT_APP_ID`.
 - Google Play service account JSON stored locally but not committed.
 - Test account credentials for Apple/Google review.
 - Final screenshots for each required device class.
+- App Privacy responses.
+- Age Rating questionnaire.
+- EU Digital Services Act trader status/compliance information.
+- App Store reviewer credentials and contact details.
 - Physical iPhone QA pass.
 - Physical Android QA pass.
+- First iOS build uploaded to TestFlight.
 - TestFlight internal test pass.
 - Google Play internal test pass.
 - Native report/block entry points verified for user-generated content.

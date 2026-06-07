@@ -33,6 +33,7 @@ def main():
         "mobile/pulse-react-native/store-metadata/data-safety.md",
         "mobile/pulse-react-native/store-metadata/moderation.md",
         "mobile/pulse-react-native/store-metadata/premium-compliance.md",
+        "reports/pulse_app_store_connect_setup.md",
         "reports/pulse_app_store_play_store_readiness.md",
     ]
     for path in required_files:
@@ -52,7 +53,7 @@ def main():
         "android notification permission": "POST_NOTIFICATIONS" in json.dumps(app.get("android") or {}),
         "expo notifications plugin": "expo-notifications" in json.dumps(app.get("plugins") or []),
         "eas production build": "production" in (eas.get("build") or {}),
-        "eas submit placeholders": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID" in json.dumps(eas),
+        "eas apple app id": (eas.get("submit") or {}).get("production", {}).get("ios", {}).get("ascAppId") == "6777591572",
         "play service account ignored": (MOBILE / "credentials" / ".gitignore").exists(),
     }
     for label, ok in checks.items():

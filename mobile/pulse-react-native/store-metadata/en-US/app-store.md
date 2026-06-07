@@ -2,11 +2,11 @@
 
 ## App Name
 
-Pulse
+PulseSoc
 
 ## Subtitle
 
-Create, connect, and stay aware.
+Create, connect, stay aware
 
 ## Promotional Text
 
