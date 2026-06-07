@@ -433,6 +433,26 @@ def _replace_question_placeholders(sql):
     return "".join(out)
 
 
+def _escape_postgres_percent_literals(sql):
+    if not IS_POSTGRES:
+        return sql
+    out = []
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        if char == "%":
+            next_char = sql[index + 1] if index + 1 < len(sql) else ""
+            if next_char in {"s", "%"}:
+                out.append(char)
+            else:
+                out.append("%%")
+            index += 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def _translate_create_table(sql):
     sql = re.sub(r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b", "SERIAL PRIMARY KEY", sql, flags=re.I)
     sql = re.sub(r"\b(\w+)\s+INTEGER\s+PRIMARY\s+KEY\b", r"\1 SERIAL PRIMARY KEY", sql, flags=re.I)
@@ -458,6 +478,7 @@ def _translate_sql(sql):
     translated = translated.replace('datetime("now")', "CURRENT_TIMESTAMP")
     translated = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", translated, flags=re.I)
     translated = _replace_question_placeholders(translated)
+    translated = _escape_postgres_percent_literals(translated)
     return translated
 
 

@@ -104,6 +104,7 @@ def main():
         "/admin/group-chat-health",
         "/admin/messages-health",
         "/admin/reels-health",
+        "/admin/emails",
         "/admin/performance",
         "/admin/system-audit",
     ]
