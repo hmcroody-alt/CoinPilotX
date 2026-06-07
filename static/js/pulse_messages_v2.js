@@ -31,10 +31,10 @@
     attachmentSheetOpen: false,
     maxAttachments: 8,
     uploadLimits: {
-      image: 25 * 1024 * 1024,
-      video: 250 * 1024 * 1024,
-      audio: 25 * 1024 * 1024,
-      file: 50 * 1024 * 1024,
+      image: 100 * 1024 * 1024,
+      video: 1024 * 1024 * 1024,
+      audio: 100 * 1024 * 1024,
+      file: 1024 * 1024 * 1024,
     },
     voice: {
       stream: null,
@@ -77,6 +77,7 @@
     if (status) {
       status.textContent = text || "";
       status.dataset.kind = kind;
+      status.hidden = !text;
     }
     const modalStatus = document.querySelector("[data-modal]:not([hidden]) [data-modal-status]");
     if (modalStatus) {
@@ -575,7 +576,7 @@
     const blocked = /\.(exe|dll|bat|cmd|com|scr|js|jar|msi|ps1|sh)$/i;
     if (blocked.test(name)) return "That file type is blocked for safety.";
     const limit = state.uploadLimits[kind] || state.uploadLimits.file;
-    if (file.size > limit) return `${name} is too large. Limit: ${formatBytes(limit)}.`;
+    if (file.size > limit) return `${name} is too large for Messenger. Limit: ${formatBytes(limit)}.`;
     if (state.attachmentQueue.length >= state.maxAttachments) return `You can send up to ${state.maxAttachments} attachments at once.`;
     return "";
   }
@@ -603,7 +604,7 @@
     }
     state.attachmentQueue = [...state.attachmentQueue, ...next].slice(0, state.maxAttachments);
     renderAttachmentPreview();
-    if (next.length) setStatus(`${next.length} attachment${next.length === 1 ? "" : "s"} ready.`);
+    if (next.length) setStatus(`${next.length} attachment${next.length === 1 ? "" : "s"} ready. You can send without typing a message.`);
   }
 
   function removeAttachment(id) {
@@ -636,12 +637,13 @@
             ? `<div class="attachment-file-icon">♪</div>`
             : `<div class="attachment-file-icon">FILE</div>`;
       const progress = item.status === "uploading" ? `<progress max="100" value="${Number(item.progress || 0)}"></progress>` : "";
+      const stateLabel = item.status === "queued" ? "Ready to send" : item.status === "uploaded" ? "Uploaded" : item.status === "failed" ? "Needs retry" : "Uploading";
       return `
         <article class="attachment-preview-card" data-attachment-id="${escapeAttr(item.id)}" data-state="${escapeAttr(item.status)}">
           ${media}
           <div>
             <strong>${escapeHtml(item.file.name || "Attachment")}</strong>
-            <small>${escapeHtml(item.error || `${item.kind} / ${formatBytes(item.file.size || 0)} / ${item.status}`)}</small>
+            <small>${escapeHtml(item.error || `${stateLabel} / ${formatBytes(item.file.size || 0)}`)}</small>
             ${progress}
           </div>
           <div class="attachment-preview-actions">
@@ -716,7 +718,7 @@
   }
 
   function recorderMimeType() {
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+    const candidates = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg"];
     return candidates.find((type) => window.MediaRecorder?.isTypeSupported?.(type)) || "";
   }
 
@@ -743,7 +745,7 @@
     panel.hidden = voiceState === "idle";
     panel.dataset.state = voiceState;
     el("[data-voice-start]")?.classList.toggle("is-recording", voiceState === "recording");
-    if (stateLabel) stateLabel.textContent = voiceState === "recording" ? "Recording..." : voiceState === "paused" ? "Paused" : voiceState === "ready" ? "Ready to send" : "Ready to record";
+    if (stateLabel) stateLabel.textContent = voiceState === "recording" ? "Recording voice" : voiceState === "paused" ? "Paused" : voiceState === "ready" ? "Voice ready" : "Ready to record";
     if (timer) timer.textContent = formatDuration((state.voice.elapsedMs || 0) / 1000);
     if (pause) pause.hidden = voiceState !== "recording";
     if (resume) resume.hidden = voiceState !== "paused";
@@ -873,7 +875,7 @@
     state.voice.state = "ready";
     if (!state.voice.waveform.length) state.voice.waveform = Array.from({ length: 36 }, (_, index) => 18 + ((index * 13) % 58));
     updateVoicePanel();
-    setStatus("Recording complete. Tap Send voice note.");
+    setStatus("Voice note ready. Tap send, or discard and record again.");
   }
 
   function discardVoiceRecording(options = {}) {
@@ -1387,6 +1389,9 @@
     const input = el("[data-message-input]");
     const body = input?.value || "";
     const hasVoice = state.voice.state === "ready" && !!state.voice.blob;
+    if (!body.trim() && !state.attachmentQueue.length && !hasVoice) {
+      return setStatus("Type a message, attach something, or record a voice note.", "error");
+    }
     const clientMessageId = `comm-v2-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     try {
       setStatus(hasVoice ? "Uploading voice note..." : state.attachmentQueue.length ? "Uploading attachments..." : "Sending...");

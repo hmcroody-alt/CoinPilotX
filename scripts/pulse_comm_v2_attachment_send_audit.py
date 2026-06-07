@@ -65,7 +65,7 @@ def send_with_attachment(client, conversation_id: int, media_id: int, message_ty
     status, payload = post_json(
         client,
         f"/api/pulse/communications/v2/conversations/{conversation_id}/messages",
-        {"body": f"attachment audit: {label}", "message_type": message_type, "media_ids": [media_id]},
+        {"body": "" if label == "image" else f"attachment audit: {label}", "message_type": message_type, "media_ids": [media_id]},
     )
     expect(status == 200 and payload.get("ok"), f"{label} message send succeeds", f"status={status} body={payload}")
     message = payload.get("message") or {}

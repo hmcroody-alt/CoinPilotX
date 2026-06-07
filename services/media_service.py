@@ -38,7 +38,19 @@ def _now():
     return datetime.utcnow().isoformat(timespec="seconds")
 
 
-def _limit_bytes(ext):
+def _comm_v2_limit_mb(ext):
+    if ext in IMAGE_EXTS or ext in GIF_EXTS:
+        return float(os.getenv("COMM_V2_IMAGE_MAX_MB", "100"))
+    if ext in AUDIO_EXTS:
+        return float(os.getenv("COMM_V2_AUDIO_MAX_MB", os.getenv("COMM_V2_VOICE_MAX_MB", "100")))
+    if ext in FILE_EXTS:
+        return float(os.getenv("COMM_V2_FILE_MAX_MB", "1024"))
+    return float(os.getenv("COMM_V2_VIDEO_MAX_MB", "1024"))
+
+
+def _limit_bytes(ext, context_type=""):
+    if str(context_type or "").startswith("pulse_comm_v2"):
+        return int(_comm_v2_limit_mb(ext) * 1024 * 1024)
     if ext in IMAGE_EXTS:
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", "5")) * 1024 * 1024)
     if ext in GIF_EXTS:
@@ -965,7 +977,7 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     file_storage.stream.seek(0, os.SEEK_END)
     size = file_storage.stream.tell()
     file_storage.stream.seek(0)
-    if size > _limit_bytes(ext):
+    if size > _limit_bytes(ext, context_type):
         return {"ok": False, "message": "File too large. Please upload a smaller media file."}, 400
     header = file_storage.stream.read(512)
     file_storage.stream.seek(0)
@@ -981,9 +993,19 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
             size,
             header[:16].hex(),
         )
-        if media_type == "audio":
+        if media_type == "audio" and str(context_type or "").startswith("pulse_comm_v2") and original.startswith("pulse-voice-note-"):
+            logging.info(
+                "COMM_V2_VOICE_HEADER_ACCEPTED trace_id=%s user_id=%s filename=%s mime_type=%s size=%s",
+                upload_trace,
+                int(user_id),
+                original,
+                mime_hint,
+                size,
+            )
+        elif media_type == "audio":
             return {"ok": False, "message": "Unsupported audio format. Please record again or choose a supported audio file."}, 400
-        return {"ok": False, "message": "This media file could not be verified safely."}, 400
+        else:
+            return {"ok": False, "message": "This media file could not be verified safely."}, 400
     folder = "pulse_media" if str(context_type or "").startswith("pulse") else "chat_media"
     logging.info(
         "PULSE_MEDIA_UPLOAD_START trace_id=%s user_id=%s context_type=%s context_id=%s filename=%s media_type=%s size=%s provider=%s",

@@ -11,6 +11,7 @@
   --danger: #b42318;
   --ok: #18794e;
 }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -2088,5 +2089,184 @@ body {
     min-height: 0;
     padding: 0;
     pointer-events: none;
+  }
+}
+
+/* Communications V2 mobile composer polish: keep attachments, voice, and send easy to reach. */
+.attachment-preview-rail {
+  gap: 6px;
+}
+
+.attachment-preview-card {
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  border-radius: 18px;
+  padding: 8px;
+}
+
+.attachment-preview-card[data-state="failed"] {
+  border-color: rgba(255, 94, 94, .42);
+  background: rgba(99, 18, 24, .34);
+}
+
+.attachment-preview-actions button {
+  min-width: 34px;
+}
+
+.attachment-sheet button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 850;
+}
+
+.attachment-sheet button span {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.voice-recorder {
+  border-top: 1px solid var(--comm-line);
+  background: rgba(5, 11, 20, .97);
+}
+
+.voice-recorder-main {
+  font-size: 14px;
+}
+
+.voice-actions [data-voice-send] {
+  background: linear-gradient(135deg, #36e58f, #6edff6);
+  color: #06101b;
+  border-color: transparent;
+}
+
+.composer-status[hidden],
+.composer-status:empty {
+  display: none;
+}
+
+.composer-status[data-kind="error"] {
+  color: #ffd8d8;
+  background: rgba(161, 35, 45, .92);
+  border: 1px solid rgba(255, 135, 145, .32);
+  border-radius: 14px;
+  padding: 9px 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .32);
+}
+
+@media (max-width: 768px) {
+  .comm-thread {
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  }
+
+  .attachment-preview-rail {
+    max-height: min(34dvh, 230px);
+    padding: 8px 10px 6px;
+    background: rgba(5, 11, 20, .96);
+  }
+
+  .attachment-preview-card {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    padding: 7px;
+  }
+
+  .attachment-preview-card img,
+  .attachment-preview-card video,
+  .attachment-file-icon {
+    width: 48px;
+    height: 44px;
+  }
+
+  .attachment-preview-actions {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(34px, auto);
+    gap: 4px;
+  }
+
+  .attachment-preview-actions button {
+    min-height: 34px;
+    padding: 4px 8px;
+  }
+
+  .attachment-preview-actions button[data-attachment-move] {
+    width: 34px;
+    padding: 0;
+  }
+
+  .attachment-sheet {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .attachment-sheet button {
+    min-height: 54px;
+    flex-direction: column;
+    gap: 5px;
+    border-radius: 16px;
+    font-size: 12px;
+  }
+
+  .composer {
+    grid-template-columns: 48px minmax(0, 1fr) 48px 56px;
+    gap: 8px;
+    min-height: 74px;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(5, 11, 20, .985);
+  }
+
+  .composer input[data-message-input] {
+    min-height: 52px;
+    font-size: 16px;
+  }
+
+  .composer .icon-btn,
+  .composer .send-btn {
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    min-height: 48px;
+  }
+
+  .composer .send-btn {
+    width: 56px;
+    min-width: 56px;
+  }
+
+  .voice-recorder {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .voice-recorder-main {
+    min-height: 30px;
+  }
+
+  .voice-waveform {
+    min-height: 42px;
+    border-radius: 16px;
+  }
+
+  .voice-actions {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .voice-actions button {
+    min-height: 38px;
+    border-radius: 14px;
+  }
+
+  .voice-actions [data-voice-send] {
+    grid-column: span 2;
+  }
+
+  .composer-status {
+    left: 12px;
+    right: 12px;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    font-size: 13px;
   }
 }

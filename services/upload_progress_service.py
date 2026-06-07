@@ -54,7 +54,34 @@ def default_stages(media_type: str = "media") -> list[dict[str, Any]]:
     ]
 
 
-def validate_media_file(file_storage) -> dict:
+def _limit_bytes_for(media_type: str, *, context_type: str = "") -> tuple[int, str]:
+    comm_v2 = str(context_type or "").startswith("pulse_comm_v2")
+    if comm_v2 and media_type == "video":
+        mb = float(os.getenv("COMM_V2_VIDEO_MAX_MB", "1024"))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    if comm_v2 and media_type == "audio":
+        mb = float(os.getenv("COMM_V2_AUDIO_MAX_MB", os.getenv("COMM_V2_VOICE_MAX_MB", "100")))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    if comm_v2 and media_type == "file":
+        mb = float(os.getenv("COMM_V2_FILE_MAX_MB", "1024"))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    if comm_v2 and media_type in {"image", "gif"}:
+        mb = float(os.getenv("COMM_V2_IMAGE_MAX_MB", "100"))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    if media_type == "video":
+        mb = float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150"))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    if media_type == "audio":
+        mb = float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15"))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    if media_type == "file":
+        mb = float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12"))
+        return int(mb * 1024 * 1024), f"{int(mb)} MB"
+    mb = float(os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", os.getenv("MAX_UPLOAD_MB", "12")))
+    return int(mb * 1024 * 1024), f"{int(mb)} MB"
+
+
+def validate_media_file(file_storage, *, context_type: str = "") -> dict:
     if not file_storage or not getattr(file_storage, "filename", ""):
         return {"ok": False, "message": "Choose an image, video, audio clip, or safe file to upload.", "status": 400}
     filename = file_storage.filename or ""
@@ -92,19 +119,9 @@ def validate_media_file(file_storage) -> dict:
         file_storage.stream.seek(0)
     except Exception:
         size = 0
-    max_video_mb = float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150"))
-    max_video = int(max_video_mb * 1024 * 1024)
-    max_audio = int(float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")) * 1024 * 1024)
-    max_file = int(float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12")) * 1024 * 1024)
-    max_image = int(float(os.getenv("MEDIA_UPLOAD_MAX_IMAGE_MB", os.getenv("MAX_UPLOAD_MB", "12"))) * 1024 * 1024)
-    if media_type == "video" and size and size > max_video:
-        return {"ok": False, "message": f"Video is too large. Please choose a video under {int(max_video_mb)} MB.", "status": 400}
-    if media_type == "audio" and size and size > max_audio:
-        return {"ok": False, "message": "Audio is too large. Please upload a shorter or compressed clip.", "status": 400}
-    if media_type == "file" and size and size > max_file:
-        return {"ok": False, "message": "File is too large. Please upload a smaller file.", "status": 400}
-    if media_type in {"image", "gif"} and size and size > max_image:
-        return {"ok": False, "message": "Image is too large. Please upload a smaller image.", "status": 400}
+    max_bytes, max_label = _limit_bytes_for(media_type, context_type=context_type)
+    if size and size > max_bytes:
+        return {"ok": False, "message": f"This {media_type if media_type != 'gif' else 'image'} is too large. Limit: {max_label}.", "status": 400}
     return {
         "ok": True,
         "media_type": media_type,
@@ -126,7 +143,7 @@ def verify_media(media: dict) -> dict:
 
 def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_upload", context_id: str = "") -> tuple[dict, int]:
     tid = trace_id()
-    validation = validate_media_file(file_storage)
+    validation = validate_media_file(file_storage, context_type=context_type)
     if not validation.get("ok"):
         logging.warning("PULSE_UPLOAD_VALIDATION_FAILED trace_id=%s user_id=%s context_type=%s message=%s", tid, user_id, context_type, validation.get("message"))
         return {
