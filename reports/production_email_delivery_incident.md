@@ -25,6 +25,7 @@ Users can create accounts, but production confirmation emails are not confirmed 
 - Admin direct-test API now returns masked sender diagnostics instead of raw sender email.
 - Admin email page now shows sender source/domain and warns when the built-in fallback is being used.
 - Fixed the production PostgreSQL compatibility layer so SQL literals like `LIKE 'sent%'` are escaped before they reach the driver. This prevents `/admin/emails` from crashing with `IndexError: tuple index out of range`.
+- Fixed `public_url_for()` so confirmation links can be generated safely outside an active request, including admin/console/background resend contexts.
 - `.env.example` now includes `DEFAULT_FROM_EMAIL=noreply@pulsesoc.com`.
 - Added audit guards for the production email incident diagnostics and PostgreSQL percent placeholder handling.
 
@@ -33,6 +34,8 @@ Users can create accounts, but production confirmation emails are not confirmed 
 Production root cause at provider-submission level is classified as A: Brevo API key/configuration failure. Evidence: production email logs recorded `failed_brevo_401` for confirmation/welcome attempts, followed later by `sent_brevo` with status `201` for password reset/password changed after configuration was corrected.
 
 Production admin visibility root cause is classified as H: App/admin diagnostics route failure. Evidence: `/admin/emails` crashed in the production database wrapper while running email dashboard queries containing literal `%` patterns.
+
+Production resend/ops helper root cause is classified as H: request-context dependent link generation. Evidence: console/admin-style confirmation sends could not build verification links outside an active request until `public_url_for()` was made context-safe.
 
 Inbox delivery is not proven yet because a real recipient inbox was not accessible in this session.
 
