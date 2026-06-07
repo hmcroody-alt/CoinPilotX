@@ -41,7 +41,7 @@ def main():
             failures.append(f"Missing required file: {path}")
 
     checks = {
-        "app display name": app.get("name") == "Pulse",
+        "app display name": app.get("name") == "PulseSoc",
         "scheme": app.get("scheme") == "pulse",
         "icon configured": app.get("icon") == "./assets/icon.png",
         "splash configured": (app.get("splash") or {}).get("image") == "./assets/splash.png",

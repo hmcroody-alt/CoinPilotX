@@ -12,7 +12,7 @@ const ios = app.ios || {};
 const android = app.android || {};
 
 [
-  ["app display name is Pulse", app.name === "Pulse"],
+  ["app display name is PulseSoc", app.name === "PulseSoc"],
   ["deep link scheme is pulse", app.scheme === "pulse"],
   ["iOS bundle identifier", ios.bundleIdentifier === "com.pulsesoc.app"],
   ["Android package name", android.package === "com.pulsesoc.app"],

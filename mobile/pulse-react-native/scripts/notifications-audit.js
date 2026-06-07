@@ -38,6 +38,9 @@ const failures = [];
   ["Registers Expo/native push token", push, "getExpoPushTokenAsync"],
   ["Subscribes native push token", push, "/api/push/subscribe"],
   ["Unsubscribes native push token", push, "/api/push/unsubscribe"],
+  ["Foreground notifications can play sound", push, "shouldPlaySound: true"],
+  ["Android notification channel is high importance", push, "AndroidImportance.HIGH"],
+  ["Android notification channel can vibrate", push, "enableVibrate: true"],
   ["Cleans up native push token on logout", authStore, "unregisterPushNotifications"]
 ].forEach(([label, text, needle]) => {
   if (!text.includes(needle)) failures.push(`${label} missing`);

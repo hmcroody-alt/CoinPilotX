@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Pulse",
-    "slug": "pulse",
+    "name": "PulseSoc",
+    "slug": "pulsesoc",
     "scheme": "pulse",
     "version": "0.1.0",
     "orientation": "portrait",

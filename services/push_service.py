@@ -10,6 +10,8 @@ import json
 import os
 from datetime import datetime
 
+import requests
+
 from . import user_context
 
 
@@ -79,20 +81,58 @@ def _payload(title, body, data=None, push_type="general"):
     }
 
 
-def send_push(user_id, title, body, data=None, push_type="general"):
-    if not os.getenv("VAPID_PUBLIC_KEY") or not os.getenv("VAPID_PRIVATE_KEY"):
-        return {"ok": False, "status": "not_configured", "message": "VAPID push variables are not configured."}
+def _is_expo_token(endpoint, subscription=None):
+    endpoint = str(endpoint or "")
+    subscription = subscription or {}
+    token = subscription.get("expo_push_token") or subscription.get("token") or endpoint
+    return str(token or "").startswith(("ExponentPushToken[", "ExpoPushToken["))
+
+
+def _expo_token(endpoint, subscription=None):
+    subscription = subscription or {}
+    return str(subscription.get("expo_push_token") or subscription.get("token") or endpoint or "")
+
+
+def _send_expo_push(endpoint, payload):
+    token = _expo_token(endpoint, payload.get("subscription") or {})
+    if not token:
+        return {"ok": False, "status": "failed", "message": "Expo push token missing."}
+    message = {
+        "to": token,
+        "title": payload.get("title") or "PulseSoc",
+        "body": payload.get("body") or "New PulseSoc notification.",
+        "data": payload.get("data") or {},
+        "sound": "default",
+        "priority": "high",
+        "channelId": "default",
+    }
     try:
-        from pywebpush import WebPushException, webpush
+        response = requests.post(
+            "https://exp.host/--/api/v2/push/send",
+            json=message,
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=10,
+        )
+        response_json = response.json() if response.content else {}
+        status = (response_json.get("data") or {}).get("status")
+        details = (response_json.get("data") or {}).get("details") or {}
+        if response.ok and status == "ok":
+            return {"ok": True, "status": "sent", "provider": "expo"}
+        if details.get("error") == "DeviceNotRegistered":
+            return {"ok": False, "status": "invalid", "provider": "expo", "message": "Expo device token is no longer registered."}
+        return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service rejected the notification."}
     except Exception:
-        return {"ok": False, "status": "not_configured", "message": "pywebpush is not installed."}
+        return {"ok": False, "status": "failed", "provider": "expo", "message": "Expo push service request failed."}
+
+
+def send_push(user_id, title, body, data=None, push_type="general"):
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute("SELECT id, endpoint, subscription_json FROM push_subscriptions WHERE user_id=? AND COALESCE(is_active, active, 1)=1", (user_id,))
     rows = cur.fetchall()
     if not rows:
         conn.close()
-        return {"ok": False, "status": "not_configured", "message": "No active browser push subscription."}
+        return {"ok": False, "status": "not_configured", "message": "No active push subscription."}
     sent = 0
     failures = []
     invalid_ids = []
@@ -100,8 +140,32 @@ def send_push(user_id, title, body, data=None, push_type="general"):
     for row in rows:
         sub_id, endpoint, subscription_json = row[0], row[1], row[2]
         try:
+            subscription = json.loads(subscription_json or "{}")
+        except Exception:
+            subscription = {}
+        if _is_expo_token(endpoint, subscription):
+            expo_payload = {**payload, "subscription": subscription}
+            expo_result = _send_expo_push(endpoint, expo_payload)
+            if expo_result.get("ok"):
+                sent += 1
+            elif expo_result.get("status") == "invalid":
+                invalid_ids.append(sub_id)
+                failures.append(expo_result.get("message", "Expo device token is invalid."))
+            else:
+                failures.append(expo_result.get("message", "Expo push failed."))
+            continue
+        if not os.getenv("VAPID_PUBLIC_KEY") or not os.getenv("VAPID_PRIVATE_KEY"):
+            failures.append("VAPID push variables are not configured.")
+            continue
+        try:
+            from pywebpush import WebPushException, webpush
+        except Exception:
+            failures.append("pywebpush is not installed.")
+            continue
+
+        try:
             webpush(
-                subscription_info=json.loads(subscription_json),
+                subscription_info=subscription,
                 data=json.dumps(payload),
                 vapid_private_key=os.getenv("VAPID_PRIVATE_KEY"),
                 vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:support@pulsesoc.com")},

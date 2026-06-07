@@ -16,6 +16,8 @@ checks = {
     "service worker push": 'self.addEventListener("push"' in sw,
     "click deep link": "/pulse/notifications" in sw,
     "vapid readiness": "VAPID_PUBLIC_KEY" in push and "VAPID_PRIVATE_KEY" in push,
+    "expo native token detection": "_is_expo_token" in push and "ExpoPushToken[" in push,
+    "expo native delivery": "https://exp.host/--/api/v2/push/send" in push and '"sound": "default"' in push,
 }
 
 failed = [name for name, ok in checks.items() if not ok]

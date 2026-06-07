@@ -8,7 +8,7 @@ import { EXPO_PROJECT_ID } from "./config";
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
-    shouldPlaySound: false,
+    shouldPlaySound: true,
     shouldSetBadge: true
   })
 });
@@ -27,7 +27,10 @@ export async function registerForPushNotifications() {
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
       name: "PulseSoc",
-      importance: Notifications.AndroidImportance.DEFAULT
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: [0, 250, 250, 250]
     });
   }
 
