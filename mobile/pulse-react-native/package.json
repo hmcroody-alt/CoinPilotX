@@ -12,7 +12,8 @@
     "audit:foundation": "node scripts/foundation-audit.js",
     "audit:authentication": "node scripts/authentication-audit.js",
     "audit:feed": "node scripts/feed-audit.js",
-    "audit:notifications": "node scripts/notifications-audit.js"
+    "audit:notifications": "node scripts/notifications-audit.js",
+    "audit:store": "cd ../.. && .venv/bin/python scripts/pulse_store_submission_readiness_audit.py"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

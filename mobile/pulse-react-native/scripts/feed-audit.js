@@ -4,10 +4,14 @@ const path = require("path");
 const mobileRoot = path.resolve(__dirname, "..");
 
 const checks = [
-  ["Feed screen", "src/App.tsx", "endpoint=\"/api/pulse/feed\""],
-  ["Reels screen", "src/App.tsx", "endpoint=\"/api/pulse/reels/feed\""],
-  ["Videos screen", "src/App.tsx", "endpoint=\"/api/pulse/videos\""],
-  ["Messages screen", "src/App.tsx", "endpoint=\"/api/pulse/messages/conversations\""],
+  ["Feed screen", "src/App.tsx", "endpoint={pulseApiEndpoints.feed}"],
+  ["Reels screen", "src/App.tsx", "endpoint={pulseApiEndpoints.reels}"],
+  ["Videos screen", "src/App.tsx", "endpoint={pulseApiEndpoints.videos}"],
+  ["Messages screen", "src/App.tsx", "endpoint={pulseApiEndpoints.messages}"],
+  ["Feed API endpoint", "src/App.tsx", "/api/pulse/feed"],
+  ["Reels API endpoint", "src/App.tsx", "/api/pulse/reels/feed"],
+  ["Videos API endpoint", "src/App.tsx", "/api/pulse/videos"],
+  ["Messages API endpoint", "src/App.tsx", "/api/pulse/messages/conversations"],
   ["Notifications screen", "src/App.tsx", "NotificationsScreen"],
   ["Notification inbox endpoint", "src/screens/NotificationsScreen.tsx", "/api/pulse/notifications?limit=80"],
   ["Notification quick status reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/status/${statusId}/reply"],
