@@ -8,6 +8,7 @@ import { linking, PulseRootParamList } from "./navigation/linking";
 import { bindNotificationRouting, registerPushToken } from "./notifications/notifications";
 import { ApiListScreen } from "./screens/ApiListScreen";
 import { AuthScreen } from "./screens/AuthScreen";
+import { CommunicationsScreen } from "./screens/CommunicationsScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
 import { colors, screenStyles } from "./styles/theme";
 
@@ -64,7 +65,7 @@ function RootNavigator() {
       <Tab.Screen name="Feed">{() => <ApiListScreen title="Feed" endpoint={pulseApiEndpoints.feed} listKey="posts" empty="Create the first PulseSoc post." />}</Tab.Screen>
       <Tab.Screen name="Reels">{() => <ApiListScreen title="Reels" endpoint={pulseApiEndpoints.reels} listKey="reels" empty="No reels yet." />}</Tab.Screen>
       <Tab.Screen name="Videos">{() => <ApiListScreen title="Videos" endpoint={pulseApiEndpoints.videos} listKey="videos" empty="No videos yet." />}</Tab.Screen>
-      <Tab.Screen name="Messages">{() => <ApiListScreen title="Messages" endpoint={pulseApiEndpoints.messages} listKey="conversations" empty="No conversations yet." />}</Tab.Screen>
+      <Tab.Screen name="Messages" component={CommunicationsScreen} />
       <Tab.Screen name="Notifications" component={NotificationsScreen} />
       <Tab.Screen name="Profile">{() => <ProfileScreen />}</Tab.Screen>
       <Tab.Screen name="Premium">{() => <ApiListScreen title="Premium" endpoint={pulseApiEndpoints.profile} listKey="premium_features" empty="Premium status loads from your PulseSoc profile." />}</Tab.Screen>

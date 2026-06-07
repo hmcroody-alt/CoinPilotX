@@ -7,6 +7,10 @@ export type PulseRootParamList = {
   Reels: undefined;
   Videos: undefined;
   Messages: undefined;
+  Groups: undefined;
+  Rooms: undefined;
+  Communities: undefined;
+  Channels: undefined;
   Notifications: undefined;
   Profile: undefined;
   Settings: undefined;
@@ -22,6 +26,10 @@ export const linking: LinkingOptions<PulseRootParamList> = {
       Reels: "pulse/reels",
       Videos: "pulse/videos",
       Messages: "pulse/messages-v2",
+      Groups: "pulse/groups",
+      Rooms: "pulse/rooms",
+      Communities: "pulse/communities",
+      Channels: "pulse/channels",
       Notifications: "pulse/notifications",
       Profile: "pulse/profile",
       Settings: "pulse/settings",

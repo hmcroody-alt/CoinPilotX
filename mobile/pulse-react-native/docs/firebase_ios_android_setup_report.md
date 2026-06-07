@@ -31,9 +31,21 @@ Expo config now references:
 - Android: `./credentials/firebase/google-services.json`
 - iOS: `./credentials/firebase/GoogleService-Info.plist`
 
-The QA browser confirmed both config-file download buttons, but Codex in-app browser downloads are not supported. No Firebase config file contents were printed or exposed.
+The Firebase config files were manually downloaded and placed in the configured Expo/EAS paths after Firebase registration.
 
-Manual download steps:
+Verification results:
+
+- `google-services.json` exists in `mobile/pulse-react-native/credentials/firebase/`.
+- `GoogleService-Info.plist` exists in `mobile/pulse-react-native/credentials/firebase/`.
+- Android config project ID resolves to `pulsesoc-3e0a6`.
+- Android config contains package `com.pulsesoc.app`.
+- iOS config project ID resolves to `pulsesoc-3e0a6`.
+- iOS config contains bundle ID `com.pulsesoc.app`.
+- No service-account private key markers were found in either app config file.
+
+No Firebase config contents were printed or exposed.
+
+Manual download steps if the files ever need to be re-downloaded:
 
 1. Open Firebase Console.
 2. Open project `PulseSoc`.
@@ -52,6 +64,7 @@ Manual download steps:
 - Token registration: posts native Expo token to `/api/push/subscribe`.
 - Token cleanup: logout now calls `/api/push/unsubscribe`.
 - Notification tap routing: uses notification response listener and opens deep links.
+- Firebase Android/iOS apps are registered for future native FCM/APNs build integration.
 - Real push sends: not enabled in this task.
 
 ## Backend/Railway Variables Needed Later
@@ -81,8 +94,6 @@ Do not create or expose these until push sending is explicitly approved:
 
 ## Remaining Manual Steps
 
-- Manually download and place `google-services.json`.
-- Manually download and place `GoogleService-Info.plist`.
 - Log into Expo/EAS locally before creating or uploading builds.
 - Configure APNs/FCM sending credentials only when native push sending is approved.
 - Run real-device iOS and Android notification QA after builds include the Firebase config files.

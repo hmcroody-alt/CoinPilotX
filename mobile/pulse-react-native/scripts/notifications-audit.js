@@ -3,6 +3,8 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const screen = read("src/screens/NotificationsScreen.tsx");
+const communications = read("src/screens/CommunicationsScreen.tsx");
+const communicationsService = read("src/services/communications.ts");
 const app = read("src/App.tsx");
 const push = read("services/push.ts");
 const authStore = read("store/authStore.ts");
@@ -21,6 +23,18 @@ const failures = [];
   ["Sends post quick reply", screen, "/api/pulse/posts/${postId}/comments"],
   ["Sends message quick reply", screen, "/api/pulse/messages/send"],
   ["Uses safe fallback for hidden content", screen, "Reply hidden or unavailable."],
+  ["Messages tab uses communications screen", app, "CommunicationsScreen"],
+  ["Direct messages loaded", communicationsService, "/api/pulse/messages/conversations"],
+  ["Groups loaded", communicationsService, "/api/pulse/groups"],
+  ["Rooms loaded", communicationsService, "/api/pulse/rooms"],
+  ["Communities loaded", communicationsService, "/api/pulse/communities"],
+  ["Channels loaded", communicationsService, "/api/pulse/channels"],
+  ["Message previews shown", communications, "previewText"],
+  ["Read receipts shown", communications, "readReceiptText"],
+  ["Typing indicator shown", communications, "typingText"],
+  ["Presence shown", communications, "presenceText"],
+  ["Offline queue implemented", communicationsService, "OFFLINE_QUEUE_KEY"],
+  ["Realtime typing heartbeat prepared", communicationsService, "sendTypingHeartbeat"],
   ["Registers Expo/native push token", push, "getExpoPushTokenAsync"],
   ["Subscribes native push token", push, "/api/push/subscribe"],
   ["Unsubscribes native push token", push, "/api/push/unsubscribe"],
