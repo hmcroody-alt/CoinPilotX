@@ -8,22 +8,22 @@ Verified native mobile push credential readiness for PulseSoc without printing p
 
 ## APNs Checks
 
-- `APNS_KEY_ID`: audit support added; local shell value not loaded.
-- `APNS_TEAM_ID`: audit support added; local shell value not loaded.
-- `APNS_BUNDLE_ID`: audit support added; expected value is `com.pulsesoc.app`; local shell value not loaded.
-- `APNS_PRIVATE_KEY`: audit support added; local shell value not loaded.
+- `APNS_KEY_ID`: loaded in Railway production.
+- `APNS_TEAM_ID`: loaded in Railway production.
+- `APNS_BUNDLE_ID`: loaded in Railway production and equals `com.pulsesoc.app`.
+- `APNS_PRIVATE_KEY`: loaded in Railway production.
 - APNs private key newline handling: implemented through escaped-newline normalization before validation.
-- APNs provider safe initialization: implemented by validating the normalized PEM with `cryptography` without sending a notification.
+- APNs provider safe initialization: verified in Railway production by validating the normalized PEM with `cryptography` without sending a notification.
 - APNs private key exposure: no key value is printed by the audit.
 - `.p8` files committed: none found in tracked files.
 
 ## Android FCM Checks
 
-- `FCM_PROJECT_ID`: audit support added; local shell value not loaded.
-- `FCM_CLIENT_EMAIL`: audit support added; local shell value not loaded.
-- `FCM_PRIVATE_KEY`: audit support added; local shell value not loaded.
+- `FCM_PROJECT_ID`: loaded in Railway production.
+- `FCM_CLIENT_EMAIL`: loaded in Railway production.
+- `FCM_PRIVATE_KEY`: loaded in Railway production.
 - Firebase Admin dependency: added to production requirements as `firebase-admin>=6.5,<7`.
-- Firebase Admin safe initialization: implemented through a named readiness app using sanitized service-account fields when runtime values are present.
+- Firebase Admin safe initialization: verified in Railway production through a named readiness app using sanitized service-account fields.
 - Firebase private key exposure: no key value is printed by the audit.
 
 ## Synthetic Initialization Check
@@ -43,18 +43,24 @@ Synthetic result:
 
 ## Railway Runtime Verification
 
-Railway CLI is installed, but this workstation's Railway session could not be used for runtime verification because the OAuth token refresh failed and requires `railway login` again.
+Railway production variables were verified with the redacted readiness audit. No APNs or FCM secret values were printed.
 
-After login, run this from the project root to verify the real Railway environment without exposing credentials:
+Command used:
 
 ```bash
-railway run python3 scripts/push_credentials_readiness_audit.py
+railway run .venv/bin/python scripts/push_credentials_readiness_audit.py --json
 ```
 
-Expected production result:
+Production result:
 
+- `APNS_KEY_ID` loaded: `True`
+- `APNS_TEAM_ID` loaded: `True`
+- `APNS_BUNDLE_ID` equals `com.pulsesoc.app`: `True`
+- `APNS_PRIVATE_KEY` loaded: `True`
+- `FCM_PROJECT_ID` loaded: `True`
+- `FCM_CLIENT_EMAIL` loaded: `True`
+- `FCM_PRIVATE_KEY` loaded: `True`
 - APNs provider initializable safely: `True`
-- APNs bundle id expected: `True`
 - Firebase Admin initializes safely: `True`
 - Tracked APNs `.p8` files committed: `0`
 - Overall ready: `True`
@@ -74,4 +80,4 @@ Local shell environment check was intentionally redacted. It confirmed:
 
 ## Status
 
-Code-level readiness is complete and the provider initialization path passes with synthetic non-secret keys. Final production verification requires a refreshed Railway login so the redacted audit can run inside the Railway runtime where the APNs and FCM variables were added.
+Production push credential readiness is verified for APNs and Android FCM. The backend can safely initialize both native push providers, and no APNs `.p8` file is committed.
