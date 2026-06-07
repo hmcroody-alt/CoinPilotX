@@ -19,6 +19,7 @@ def main():
     require("using_default_sender" in EMAIL_SERVICE, "sender fallback diagnostic missing from email service", failures)
     require('api_key = (os.getenv("BREVO_API_KEY") or "").strip()' in EMAIL_SERVICE, "Brevo API key must be stripped before provider requests", failures)
     require("api_key_has_surrounding_whitespace" in EMAIL_SERVICE, "Brevo API key whitespace diagnostic missing", failures)
+    require("brevo_unauthorized_ip" in EMAIL_SERVICE and "failed_brevo_unauthorized_ip" in BOT, "Brevo authorized-IP failure classification missing", failures)
     require("sender_email_masked" in BOT, "admin diagnostics must return masked sender email", failures)
     require('"sender_masked"' in BOT, "direct-test API must return masked sender email", failures)
     require("/api/admin/email/diagnostics" in BOT, "admin email diagnostics endpoint missing", failures)

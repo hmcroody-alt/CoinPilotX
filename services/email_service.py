@@ -151,8 +151,13 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
         if 200 <= response.status_code < 300:
             error = ""
         elif response.status_code == 401:
-            error = "Brevo rejected the request. Check BREVO_API_KEY in Railway."
-            error_code = "brevo_unauthorized"
+            body_message = str(body.get("message") or "")
+            if "unrecognised IP address" in body_message or "unrecognized IP address" in body_message:
+                error = "Brevo rejected the request because the Railway server IP is not authorized in Brevo."
+                error_code = "brevo_unauthorized_ip"
+            else:
+                error = "Brevo rejected the request. Check BREVO_API_KEY in Railway."
+                error_code = "brevo_unauthorized"
         elif response.status_code == 403:
             error = "Brevo rejected the sender or domain. Verify BREVO_SENDER_EMAIL and domain authentication in Brevo."
             error_code = "brevo_forbidden"

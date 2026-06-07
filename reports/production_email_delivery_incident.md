@@ -18,6 +18,7 @@ Users can create accounts, but production confirmation emails are not confirmed 
 - Production email logs show newer password reset/password-changed messages accepted by Brevo with `201`.
 - A real production route-level QA after the direct inbox test showed fresh signup confirmation, password reset, welcome, and payment confirmation attempts still returning Brevo `401` from the normal transactional sender path.
 - The direct inbox test proved that at least one production diagnostic path could reach Brevo/Gmail, but it did not prove the user-facing signup/reset/payment wrappers were healthy.
+- A raw production Brevo `/v3/account` probe returned `401` with Brevo's authorized-IP message. Railway's current production egress IP reported by Brevo is `52.8.164.129`, which must be allowed in Brevo's authorized IP settings.
 - Local workspace environment does not contain Brevo credentials. Local email logs show Brevo-not-configured failures, but those are local-only and are not enough to classify the production root cause.
 
 ## Code Changes
@@ -30,19 +31,20 @@ Users can create accounts, but production confirmation emails are not confirmed 
 - Fixed `public_url_for()` so confirmation links can be generated safely outside an active request, including admin/console/background resend contexts.
 - The Brevo API key is now stripped before provider requests. This protects production from hidden leading/trailing whitespace in Railway environment values, which can make the key appear configured while Brevo still returns `401`.
 - Safe diagnostics now expose only whether API-key whitespace was detected/cleaned, never the key.
+- Brevo `401` responses caused by authorized-IP restrictions are now classified as `failed_brevo_unauthorized_ip` instead of a generic API-key failure.
 - Added a shared failed-email queue retry helper and an admin `/admin/emails/retry-failed` action so signup confirmations, password resets, welcome emails, and payment-related queued failures can be retried after provider configuration is corrected.
 - `.env.example` now includes `DEFAULT_FROM_EMAIL=noreply@pulsesoc.com`.
 - Added audit guards for the production email incident diagnostics and PostgreSQL percent placeholder handling.
 
 ## Current Classification
 
-Production root cause at provider-submission level is classified as A: Brevo API key/configuration failure, with a likely hidden environment-value normalization issue. Evidence: production route-level QA recorded fresh `failed_brevo_401` rows for signup confirmation, password reset, welcome, and premium confirmation even after the direct email test reached Gmail. The sender now trims the configured key before all Brevo SMTP API requests.
+Production root cause at provider-submission level is classified as A: Brevo provider security configuration failure. Evidence: production route-level QA recorded fresh `failed_brevo_401` rows for signup confirmation, password reset, welcome, and premium confirmation even after the direct email test reached Gmail. A raw Brevo account API probe from Railway returned Brevo's message that IP `52.8.164.129` is not authorized. The required external fix is to add that Railway egress IP to Brevo's authorized IP list or disable Brevo API IP restriction for this key according to Brevo account policy.
 
 Production admin visibility root cause is classified as H: App/admin diagnostics route failure. Evidence: `/admin/emails` crashed in the production database wrapper while running email dashboard queries containing literal `%` patterns.
 
 Production resend/ops helper root cause is classified as H: request-context dependent link generation. Evidence: console/admin-style confirmation sends could not build verification links outside an active request until `public_url_for()` was made context-safe.
 
-Inbox delivery proof is mixed: the direct production test reached Gmail, but user-facing transactional flows still failed before the key-normalization fix. Fresh signup/reset/payment flow proof must be repeated after deploy.
+Inbox delivery proof is mixed: the direct production test reached Gmail, but user-facing transactional flows still failed because Brevo is blocking the Railway production IP. Fresh signup/reset/payment flow proof must be repeated after the Brevo authorized-IP setting is corrected.
 
 Remaining buckets to verify next:
 
@@ -54,13 +56,14 @@ Remaining buckets to verify next:
 Use the production admin session or Brevo/Railway dashboards and verify:
 
 1. `/api/admin/email/diagnostics` returns `ready=true` and only safe booleans for key whitespace.
-2. Direct production email test arrives in a real inbox.
-3. New signup confirmation email arrives in a real inbox.
-4. Confirmation link opens and marks the account verified.
-5. Password reset email arrives in a real inbox.
-6. Premium/payment confirmation email arrives in a real inbox.
-7. Brevo transactional logs show accepted/delivered status for the same trace IDs.
-8. Failed-email queue retry sends queued rows successfully after the provider path is healthy.
+2. Brevo authorized IPs include Railway egress IP `52.8.164.129` or API IP restrictions are intentionally disabled for this transactional key.
+3. Direct production email test arrives in a real inbox.
+4. New signup confirmation email arrives in a real inbox.
+5. Confirmation link opens and marks the account verified.
+6. Password reset email arrives in a real inbox.
+7. Premium/payment confirmation email arrives in a real inbox.
+8. Brevo transactional logs show accepted/delivered status for the same trace IDs.
+9. Failed-email queue retry sends queued rows successfully after the provider path is healthy.
 
 ## Safe Production Checks
 
@@ -80,6 +83,7 @@ Do not print or screenshot secrets. Only record:
 
 - If diagnostics show missing config, set the missing Railway env and redeploy.
 - If Brevo returns 401, replace the API key in Railway.
+- If Brevo returns `unauthorized` with an unrecognized IP message, add the Railway egress IP shown in Brevo's message to Brevo authorized IPs.
 - If Brevo returns 403, verify sender/domain authentication in Brevo and Cloudflare DNS.
 - If Brevo accepts but inbox does not receive, inspect Brevo delivery logs for bounce/block/spam/deferred and check recipient spam/quarantine.
 - If confirmation links arrive but fail, verify `PUBLIC_BASE_URL` or `APP_BASE_URL` resolves to `https://coinpilotx.app`.
