@@ -1,6 +1,6 @@
 import React from "react";
 import { Image, Text, View } from "react-native";
-import { ResizeMode, Video } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { PulseMedia } from "../../services/feed/types";
 import { colors, screenStyles } from "../theme";
 
@@ -28,22 +28,29 @@ function MediaItem({ item }: { item: PulseMedia }) {
   }
 
   if (type.includes("video")) {
-    return (
-      <Video
-        source={{ uri: source || poster }}
-        posterSource={poster ? { uri: poster } : undefined}
-        usePoster={!!poster}
-        useNativeControls
-        resizeMode={ResizeMode.CONTAIN}
-        style={{ width: "100%", aspectRatio, borderRadius: 8, backgroundColor: colors.surfaceSoft }}
-      />
-    );
+    return <VideoMediaItem source={source || poster} aspectRatio={aspectRatio} />;
   }
 
   return (
     <Image
       source={{ uri: source || poster }}
       resizeMode="cover"
+      style={{ width: "100%", aspectRatio, borderRadius: 8, backgroundColor: colors.surfaceSoft }}
+    />
+  );
+}
+
+function VideoMediaItem({ source, aspectRatio }: { source: string; aspectRatio: number }) {
+  const player = useVideoPlayer(source, nextPlayer => {
+    nextPlayer.loop = false;
+    nextPlayer.muted = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      nativeControls
+      contentFit="contain"
       style={{ width: "100%", aspectRatio, borderRadius: 8, backgroundColor: colors.surfaceSoft }}
     />
   );

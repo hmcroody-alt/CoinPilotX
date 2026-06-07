@@ -18,6 +18,9 @@
       }
     },
     "production": {
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.2"
+      },
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_PULSE_API_BASE_URL": "https://pulsesoc.com"
