@@ -1,6 +1,6 @@
-# Pulse User-Generated Content Moderation Draft
+# PulseSoc User-Generated Content Moderation Draft
 
-Pulse includes user-generated posts, comments, reels, videos, statuses, messages, profiles, and marketplace/community surfaces.
+PulseSoc includes user-generated posts, comments, reels, videos, statuses, messages, profiles, and marketplace/community surfaces.
 
 ## Required Moderation Controls
 

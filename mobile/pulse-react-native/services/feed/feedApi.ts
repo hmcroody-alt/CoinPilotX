@@ -64,7 +64,7 @@ export async function addComment(postId: number, body: string, parentCommentId?:
 
 export async function sharePost(post: PulsePost) {
   const url = post.permalink?.startsWith("http") ? post.permalink : `https://pulsesoc.com${post.permalink || `/pulse/post/${post.id}`}`;
-  await Share.share({ title: post.title || "Pulse post", message: `${post.body || "Pulse post"}\n${url}`, url });
+  await Share.share({ title: post.title || "PulseSoc post", message: `${post.body || "PulseSoc post"}\n${url}`, url });
   return { ok: true };
 }
 

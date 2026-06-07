@@ -6,13 +6,13 @@
   <meta name="robots" content="noindex, nofollow" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Pulse" />
+  <meta name="apple-mobile-web-app-title" content="PulseSoc" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/static/brand/pulse-apple-touch-icon-20260606.png" />
+  <link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
-  <title>Offline | Pulse</title>
+  <title>Offline | PulseSoc</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -81,9 +81,9 @@
 </head>
 <body>
   <main class="card">
-    <img src="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" alt="Pulse logo" />
+    <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo" />
     <h1>You’re offline.</h1>
-    <p>You’re offline. Pulse needs an internet connection for live intelligence.</p>
+    <p>You’re offline. PulseSoc needs an internet connection for live intelligence.</p>
     <p>Reconnect to load market data, wallet checks, Sports Edge, and Telegram-powered intelligence.</p>
     <p class="status" data-health-status>Checking connection...</p>
     <button type="button" data-try-again>Try Again</button>
@@ -96,25 +96,25 @@
       var button = document.querySelector("[data-try-again]");
 
       async function checkHealth() {
-        console.log("[Pulse PWA] navigator.onLine state", navigator.onLine);
+        console.log("[PulseSoc PWA] navigator.onLine state", navigator.onLine);
         if (navigator.onLine === false) {
           failures += 1;
           if (status) status.textContent = "Browser reports offline. Waiting for connection...";
-          console.log("[Pulse PWA] offline mode entered");
+          console.log("[PulseSoc PWA] offline mode entered");
           return false;
         }
         try {
           var response = await fetch("/health?ts=" + Date.now(), { cache: "no-store" });
-          console.log("[Pulse PWA] /health response status", response.status);
+          console.log("[PulseSoc PWA] /health response status", response.status);
           if (response.ok) {
             failures = 0;
             if (status) status.textContent = "Connection restored. Reloading...";
-            console.log("[Pulse PWA] offline mode exited");
+            console.log("[PulseSoc PWA] offline mode exited");
             window.location.href = "/";
             return true;
           }
         } catch (error) {
-          console.log("[Pulse PWA] /health fetch failed", error && error.message ? error.message : error);
+          console.log("[PulseSoc PWA] /health fetch failed", error && error.message ? error.message : error);
         }
         failures += 1;
         if (status) status.textContent = failures >= 2 ? "Still offline. Retrying..." : "Checking again...";

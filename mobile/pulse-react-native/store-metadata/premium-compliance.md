@@ -1,6 +1,6 @@
-# Pulse Premium Mobile Payment Compliance Draft
+# PulseSoc Premium Mobile Payment Compliance Draft
 
-Pulse currently uses Stripe-backed Premium and Founder membership flows on the web.
+PulseSoc currently uses Stripe-backed Premium and Founder membership flows on the web.
 
 ## Store Risk
 
@@ -11,7 +11,7 @@ Apple and Google may require in-app purchase for digital features, subscriptions
 - Keep mobile Premium status visible.
 - Do not present Stripe checkout as the primary in-app purchase path in production store builds until Apple/Google rules are reviewed.
 - Use web billing management for existing subscribers only if policy allows.
-- Prepare an in-app purchase implementation plan for Pulse Premium and Founder-equivalent benefits if required.
+- Prepare an in-app purchase implementation plan for PulseSoc Premium and Founder-equivalent benefits if required.
 
 ## Required Before Production Submission
 

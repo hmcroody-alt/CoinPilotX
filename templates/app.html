@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pulse App | AI Crypto Intelligence Platform</title>
-  <meta name="description" content="Use the Pulse command center for AI crypto intelligence, live markets, Scam Shield, Wallet Intel, portfolio tools, alerts, and private AI chat." />
+  <title>PulseSoc App | AI Crypto Intelligence Platform</title>
+  <meta name="description" content="Use the PulseSoc command center for AI crypto intelligence, live markets, Scam Shield, Wallet Intel, portfolio tools, alerts, and private AI chat." />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#00e5ff" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   <style>
@@ -79,7 +79,7 @@
   <header>
     <div class="shell">
       <nav>
-        <a class="brand" href="/app"><img src="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" alt="Pulse logo"><span>Pulse</span></a>
+        <a class="brand" href="/app"><img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo"><span>PulseSoc</span></a>
         {% if is_guest %}
           <a class="button primary" href="/signup?next=/app">Start Free</a>
         {% else %}
@@ -94,30 +94,30 @@
     <section class="hero">
       <article class="card">
         <div class="kicker">Standalone Web/PWA Command Center</div>
-        <h1>{% if chat_mode %}Pulse Native Chat{% else %}AI Crypto Intelligence Platform{% endif %}</h1>
-        <p>{% if chat_mode %}Chat with Pulse from the web app, run slash commands, and keep your AI history connected to your account. If AI is unavailable, the app will show a clear fallback.{% else %}Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the Pulse app.{% endif %}</p>
+        <h1>{% if chat_mode %}PulseSoc Native Chat{% else %}AI Crypto Intelligence Platform{% endif %}</h1>
+        <p>{% if chat_mode %}Chat with PulseSoc from the web app, run slash commands, and keep your AI history connected to your account. If AI is unavailable, the app will show a clear fallback.{% else %}Run live market checks, AI analysis, Scam Shield, Wallet Intel, portfolio tools, alerts, Sports Edge, and account commands directly from the PulseSoc app.{% endif %}</p>
       </article>
       <article class="card">
         <div class="kicker">Live Account</div>
         {% if is_guest %}
           <p><strong>Create a free account to run commands.</strong></p>
           <p>Logged-out users can preview the platform menu. Running a command opens signup so your dashboard, alerts, and history stay connected.</p>
-          <p><a class="button primary" href="/signup?next=/app">Launch Pulse Free</a></p>
+          <p><a class="button primary" href="/signup?next=/app">Launch PulseSoc Free</a></p>
         {% else %}
         <p><strong>{{ access.label }}</strong></p>
         {% if access.is_paid_pro %}
-          <p>Pulse Premium active. Prestige identity and creator enhancements are enabled.</p>
+          <p>PulseSoc Premium active. Prestige identity and creator enhancements are enabled.</p>
         {% elif access.is_trial %}
           <p>Legacy trial active until {{ access.trial_end }}. Core access remains free.</p>
         {% else %}
-          <p>Free core access. Pulse Premium is optional for prestige identity and creator enhancements.</p>
+          <p>Free core access. PulseSoc Premium is optional for prestige identity and creator enhancements.</p>
         {% endif %}
         {% endif %}
       </article>
     </section>
 
     <form class="command-bar" data-command-form>
-      <input name="command" placeholder="Ask Pulse anything... try /price BTC, /market, /scam, /wallet, /portfolio" autocomplete="off" />
+      <input name="command" placeholder="Ask PulseSoc anything... try /price BTC, /market, /scam, /wallet, /portfolio" autocomplete="off" />
       <button class="button primary" type="submit">{% if chat_mode %}Send{% else %}Run{% endif %}</button>
     </form>
 
@@ -149,8 +149,8 @@
         <div class="chat-message ai">
           <div class="chat-avatar">AI</div>
           <div>
-            <div class="chat-label"><span>Pulse</span><span data-initial-time></span></div>
-            <div class="chat-bubble">Choose a command or ask Pulse anything. Results include source status, last updated time, safety notes, and helpful next actions.</div>
+            <div class="chat-label"><span>PulseSoc</span><span data-initial-time></span></div>
+            <div class="chat-bubble">Choose a command or ask PulseSoc anything. Results include source status, last updated time, safety notes, and helpful next actions.</div>
           </div>
         </div>
       </div>
@@ -206,7 +206,7 @@
       node.innerHTML = `
         <div class="chat-avatar">${isUser ? "You" : "AI"}</div>
         <div>
-          <div class="chat-label"><span>${isUser ? "You" : "Pulse"}</span><span>${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
+          <div class="chat-label"><span>${isUser ? "You" : "PulseSoc"}</span><span>${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>
           <div class="chat-bubble">${escapeHtml(text)}</div>
           ${chips}
         </div>`;
@@ -218,10 +218,10 @@
     function renderResult(data) {
       if (!data || !data.ok) throw new Error((data && (data.error || data.message)) || "Command failed");
       const summary = data.response || data.summary || "";
-      addMessage("ai", `${data.title ? data.title + "\n\n" : ""}${summary}\n\nSource: ${data.source || "Pulse platform"} · Updated: ${data.last_updated || "now"} · Confidence: ${data.confidence || "Medium"}${data.disclaimer ? "\n\n" + data.disclaimer : ""}`, {
+      addMessage("ai", `${data.title ? data.title + "\n\n" : ""}${summary}\n\nSource: ${data.source || "PulseSoc platform"} · Updated: ${data.last_updated || "now"} · Confidence: ${data.confidence || "Medium"}${data.disclaimer ? "\n\n" + data.disclaimer : ""}`, {
         chips: ["Create Alert", "Scan Wallet", "Check Market", "Save Insight", "Ask Follow-up"]
       });
-      commandHistory.unshift({ title: data.title || "Pulse", time: new Date().toLocaleTimeString() });
+      commandHistory.unshift({ title: data.title || "PulseSoc", time: new Date().toLocaleTimeString() });
       commandHistory.splice(6);
       const historyCard = document.querySelector("[data-history-card]");
       const historyNode = document.querySelector("[data-command-history]");
@@ -232,7 +232,7 @@
     }
     async function runCommand(payload) {
       if (payload.command || payload.message) addMessage("user", payload.command || payload.message);
-      const thinking = addMessage("ai", "Pulse is thinking...");
+      const thinking = addMessage("ai", "PulseSoc is thinking...");
       const endpoint = CHAT_MODE && !payload.action_key ? "/api/ai/chat" : (payload.action_key ? "/api/menu-action" : "/api/command");
       const requestPayload = endpoint === "/api/ai/chat" ? { message: payload.command || payload.message || "" } : payload;
       const res = await fetch(endpoint, {
@@ -257,7 +257,7 @@
     document.addEventListener("click", event => {
       const commandButton = event.target.closest("[data-command]");
       if (commandButton) {
-        runCommand({ command: commandButton.dataset.command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "Pulse platform", confidence: "Low" }));
+        runCommand({ command: commandButton.dataset.command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "PulseSoc platform", confidence: "Low" }));
         return;
       }
       if (event.target.closest("[data-new-chat]")) {
@@ -283,7 +283,7 @@
         return;
       }
       const button = event.target.closest("[data-action]");
-      if (button) runCommand({ action_key: button.dataset.action }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "Pulse platform", confidence: "Low" }));
+      if (button) runCommand({ action_key: button.dataset.action }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "PulseSoc platform", confidence: "Low" }));
       const chip = event.target.closest("[data-chip]");
       if (chip) {
         const label = chip.dataset.chip || "";
@@ -298,7 +298,7 @@
       event.preventDefault();
       const command = new FormData(event.target).get("command");
       event.target.reset();
-      runCommand({ command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "Pulse platform", confidence: "Low" }));
+      runCommand({ command }).catch(error => renderResult({ ok: true, title: "Command unavailable", summary: error.message, source: "PulseSoc platform", confidence: "Low" }));
     });
     fetch(CHAT_MODE ? "/api/ai/history" : "/api/command/history", { cache: "no-store", credentials: "same-origin" })
       .then(res => res.ok ? res.json() : null)
@@ -310,7 +310,7 @@
         }
         if (!data || !data.ok || !data.history || !data.history.length) return;
         commandHistory.splice(0, commandHistory.length, ...data.history.slice(0, 6).map(item => ({
-          title: item.command_name || "Pulse",
+          title: item.command_name || "PulseSoc",
           time: item.created_at ? new Date(item.created_at).toLocaleString() : ""
         })));
         const historyCard = document.querySelector("[data-history-card]");

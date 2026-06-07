@@ -4,10 +4,10 @@ const STATIC_ASSETS = [
   "/static/analytics.js",
   "/static/notifications.js",
   "/static/sounds/notification-soft.wav",
-  "/static/brand/pulse-logo-20260606.png",
-  "/static/brand/pulse-icon-192-20260606.png",
-  "/static/brand/pulse-icon-512-20260606.png",
-  "/static/brand/pulse-apple-touch-icon-20260606.png"
+  "/static/brand/pulsesoc-logo-20260606.png",
+  "/static/brand/pulsesoc-icon-192-20260606.png",
+  "/static/brand/pulsesoc-icon-512-20260606.png",
+  "/static/brand/pulsesoc-apple-touch-icon-20260606.png"
 ];
 
 function isNeverCachePath(pathname) {
@@ -52,7 +52,7 @@ function isStaticAsset(request, pathname) {
 
 function offlineResponse() {
   return fetch("/offline?ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
-    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>Pulse needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
+    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>PulseSoc needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   ));
 }
@@ -141,13 +141,13 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch (error) {
-    payload = { title: "Pulse Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+    payload = { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
   }
-  const title = payload.title || "Pulse Alert";
+  const title = payload.title || "PulseSoc Alert";
   const options = {
     body: payload.body || payload.message || "New CoinPilotXAI intelligence update.",
-    icon: payload.icon || "/static/brand/pulse-icon-192-20260606.png",
-    badge: payload.badge || "/static/brand/pulse-icon-192-20260606.png",
+    icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
+    badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
     data: payload.data || { url: payload.url || "/pulse/notifications" },
     tag: payload.tag || "coinpilotxai-alert",

@@ -303,7 +303,7 @@ transition: none !important;
 }
 }
 
-/* Pulse video frame repair: Reels always render as a full 9:16 stage. */
+/* PulseSoc video frame repair: Reels always render as a full 9:16 stage. */
 .reels-shell,
 .reels-immersive,
 .reel-card,

@@ -87,7 +87,7 @@ export function NotificationsScreen() {
       ListHeaderComponent={
         <View>
           <Text style={screenStyles.title}>Notifications</Text>
-          <Text style={screenStyles.subtitle}>Replies, comments, messages, and Pulse activity with quick actions.</Text>
+          <Text style={screenStyles.subtitle}>Replies, comments, messages, and PulseSoc activity with quick actions.</Text>
           {error ? <Text style={screenStyles.error}>{error}</Text> : null}
         </View>
       }
@@ -105,8 +105,8 @@ function NotificationCard({ note, onRead, onDelete }: { note: PulseNotification;
   const unread = !note.read && note.status !== "read";
   const canReply = useMemo(() => Boolean(readNumber(note.statusId) || readNumber(note.postId) || readNumber(note.conversationId)), [note]);
   const preview = note.preview_text || note.body || "Reply hidden or unavailable.";
-  const actor = note.actor_name || "Pulse member";
-  const label = note.content_type || note.category || note.type || "Pulse";
+  const actor = note.actor_name || "PulseSoc member";
+  const label = note.content_type || note.category || note.type || "PulseSoc";
 
   async function open() {
     setBusy("open");
@@ -142,7 +142,7 @@ function NotificationCard({ note, onRead, onDelete }: { note: PulseNotification;
     <View style={[screenStyles.card, unread ? { borderColor: colors.accent } : null]}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
         <View style={{ flex: 1 }}>
-          <Text style={screenStyles.cardTitle}>{note.title || "Pulse update"}</Text>
+          <Text style={screenStyles.cardTitle}>{note.title || "PulseSoc update"}</Text>
           <Text style={screenStyles.muted}>{actor} · {label} · {formatTime(note.created_at)}</Text>
         </View>
         {unread ? <Text style={{ color: colors.accent, fontWeight: "800" }}>Unread</Text> : null}

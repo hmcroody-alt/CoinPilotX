@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard | Pulse</title>
-  <meta name="description" content="Private Pulse account dashboard for portfolio tracking, watchlists, alerts, native notifications, and account sync." />
+  <title>Dashboard | PulseSoc</title>
+  <meta name="description" content="Private PulseSoc account dashboard for portfolio tracking, watchlists, alerts, native notifications, and account sync." />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="canonical" href="https://pulsesoc.com/dashboard" />
   <meta name="theme-color" content="#00e5ff" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
@@ -174,14 +174,14 @@
   <header>
     <div class="container">
       <nav>
-        <a class="brand" href="/"><img src="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" alt="Pulse logo"><span>Pulse</span></a>
+        <a class="brand" href="/"><img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo"><span>PulseSoc</span></a>
         <div class="nav-links" data-home-action-group="compact_menu">
           <a class="button" href="/account">Account</a>
           <details>
             <summary class="button">☰ Menu</summary>
             <div class="customize-panel" style="right:0;top:54px">
               <a class="button" href="/account">Account</a>
-              <a class="button" href="/pulse/premium">Pulse Premium</a>
+              <a class="button" href="/pulse/premium">PulseSoc Premium</a>
               <a class="button" href="/command-center">Command Center</a>
               <a class="button" href="/logout">Logout</a>
             </div>
@@ -275,12 +275,12 @@
       </article>
       <article class="card">
         <div class="kicker">Live World Feed</div>
-        <h2>Platform Pulse</h2>
+        <h2>Platform PulseSoc</h2>
         <div class="world-feed" data-world-feed><p class="muted">Connecting live activity...</p></div>
       </article>
       <article class="card">
         <div class="kicker">Daily Intelligence Brief</div>
-        <h2>Today’s Market Pulse</h2>
+        <h2>Today’s Market PulseSoc</h2>
         <p data-daily-brief>Loading daily brief...</p>
         <p class="muted" data-what-changed>Checking what changed since yesterday...</p>
       </article>
@@ -310,7 +310,7 @@
       </article>
       <article class="card">
         <h2>AI Memory Card</h2>
-        <p>Pulse remembers your watchlist, alerts, portfolio, and recent questions for your private account context.</p>
+        <p>PulseSoc remembers your watchlist, alerts, portfolio, and recent questions for your private account context.</p>
         <p class="muted" data-memory-card>Recent saved insights and suggested next actions will appear here.</p>
       </article>
 
@@ -392,7 +392,7 @@
               <strong>Customize Home</strong>
               <p class="muted">Hide or restore dashboard actions and large cards.</p>
               <label class="toggle-row">Account <input type="checkbox" data-pref-toggle="show_account" checked></label>
-              <label class="toggle-row">Pulse Premium <input type="checkbox" data-pref-toggle="show_upgrade_pro" checked></label>
+              <label class="toggle-row">PulseSoc Premium <input type="checkbox" data-pref-toggle="show_upgrade_pro" checked></label>
               <label class="toggle-row">Command Center <input type="checkbox" data-pref-toggle="show_command_center" checked></label>
               <label class="toggle-row">Logout <input type="checkbox" data-pref-toggle="show_logout" checked></label>
               <label class="toggle-row">Saved Insights Library <input type="checkbox" data-pref-toggle="show_saved_insights" checked></label>
@@ -403,7 +403,7 @@
         </div>
         <div class="list">
           <a class="button primary command-glow command-glow-ai" href="/chat?focus=1">Ask AI</a>
-          <a class="button primary command-glow command-glow-market" href="/pulse">Open Pulse Feed</a>
+          <a class="button primary command-glow command-glow-market" href="/pulse">Open PulseSoc Feed</a>
           <a class="button command-glow command-glow-risk" href="/scam-shield/scan">Run Scam Shield</a>
           <a class="button command-glow command-glow-ai" href="/day-signal">Run Day Signal</a>
           {% if dashboard_prefs.show_command_center %}
@@ -413,7 +413,7 @@
           <a class="button command-glow command-glow-portfolio" href="/simulator">Trading Simulator</a>
           <a class="button command-glow command-glow-sports" href="/arena">Play Arena</a>
           {% if dashboard_prefs.show_upgrade_pro %}
-          <a class="button gold command-glow command-glow-account" href="/pulse/premium" data-home-action="show_upgrade_pro" data-analytics="pulse_premium_clicked">Pulse Premium</a>
+          <a class="button gold command-glow command-glow-account" href="/pulse/premium" data-home-action="show_upgrade_pro" data-analytics="pulse_premium_clicked">PulseSoc Premium</a>
           {% endif %}
         </div>
       </article>
@@ -431,7 +431,7 @@
       <header class="private-chat-head">
         <div>
           <strong id="private-chat-title">Private Chat</strong>
-          <small class="muted">Message another Pulse user securely.</small>
+          <small class="muted">Message another PulseSoc user securely.</small>
         </div>
         <div class="private-chat-tools">
           <button class="button" type="button" data-chat-menu-toggle aria-label="Conversation options">...</button>
@@ -462,12 +462,12 @@
       <div class="private-chat-main">
         <div class="private-chat-view" data-chat-list-view>
           <form data-chat-start-form>
-            <input name="query" type="text" placeholder="Search by name or public Pulse ID" maxlength="160" autocomplete="off">
+            <input name="query" type="text" placeholder="Search by name or public PulseSoc ID" maxlength="160" autocomplete="off">
             <button class="button primary" type="submit">Start Chat</button>
             <p class="muted" data-chat-start-message></p>
           </form>
           <div data-chat-conversations>
-            <div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another Pulse user.</div>
+            <div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another PulseSoc user.</div>
           </div>
         </div>
         <div class="private-chat-view" data-chat-thread-view hidden>
@@ -510,7 +510,7 @@
   <nav class="bottom-nav">
     <div class="container">
       <a class="active" href="/dashboard">Home</a>
-      <a href="/pulse">Pulse</a>
+      <a href="/pulse">PulseSoc</a>
       {% if dashboard_prefs.show_command_center %}<a href="/command-center" data-home-action="show_command_center">Intel</a>{% endif %}
       <a href="/live-market">Live</a>
       <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
@@ -619,7 +619,7 @@
       const node = document.querySelector("[data-chat-conversations]");
       const groupNode = document.querySelector("[data-chat-groups]");
       if (!node) return;
-      node.innerHTML = '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another Pulse user.</div>';
+      node.innerHTML = '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another PulseSoc user.</div>';
       if (groupNode) groupNode.innerHTML = '<div class="private-chat-empty">No group chats yet.<br>Create one with friends, creators, or your community.</div>';
       try {
         const response = await fetch("/api/chat/threads", { cache: "no-store", credentials: "same-origin" });
@@ -633,10 +633,10 @@
         }
         node.innerHTML = (data.conversations || []).map(item => `
           <button class="conversation-row" type="button" data-open-conversation="${item.id}" data-other-user-id="${item.other_user_id || ""}">
-            <strong>${escapeHtml(item.title || "Pulse user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
+            <strong>${escapeHtml(item.title || "PulseSoc user")} ${Number(item.unread_count || 0) ? `<span class="private-chat-badge">${Number(item.unread_count || 0)}</span>` : ""}</strong>
             <span>${escapeHtml(item.latest_message || "No messages yet.")}</span>
             <span class="conversation-meta"><span class="online-dot">${item.other_last_seen_at ? "Recently active" : "User"}</span><span>${friendlyTime(item.last_message_at || item.updated_at)}</span></span>
-          </button>`).join("") || '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another Pulse user.</div>';
+          </button>`).join("") || '<div class="private-chat-empty">No conversations yet.<br>Start a secure private chat with another PulseSoc user.</div>';
         if (groupNode) {
           const pulseResponse = await fetch("/api/pulse/messages/conversations", { cache: "no-store", credentials: "same-origin" });
           const pulseData = await pulseResponse.json();
@@ -670,7 +670,7 @@
     function chatMessageHtml(message, optimistic = false) {
       const mine = message.is_mine !== undefined ? !!message.is_mine : Number(message.sender_id || message.sender_user_id) === Number(chatState.currentUserId);
       const id = message.message_id || message.id || "";
-      return `<div class="chat-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><strong>${mine ? "You" : "Pulse user"}</strong><div>${escapeHtml(message.body)}</div><small>${optimistic ? "sending..." : friendlyTime(message.created_at) + " · " + escapeHtml(message.delivery_status || "delivered")}</small></div>`;
+      return `<div class="chat-bubble ${mine ? "me" : "them"}" data-message-id="${escapeHtml(id)}"><strong>${mine ? "You" : "PulseSoc user"}</strong><div>${escapeHtml(message.body)}</div><small>${optimistic ? "sending..." : friendlyTime(message.created_at) + " · " + escapeHtml(message.delivery_status || "delivered")}</small></div>`;
     }
 
     function renderChatMessages(messages) {
@@ -738,7 +738,7 @@
     }
 
     function render(data) {
-      text("[data-user-name]", "Welcome back, " + (data.user.name || "Pulse user"));
+      text("[data-user-name]", "Welcome back, " + (data.user.name || "PulseSoc user"));
       text("[data-plan]", data.user.plan || "Free");
       text("[data-subscription]", data.user.subscription_status || "inactive");
       text("[data-telegram]", data.user.telegram_linked ? "Connected" : "Not connected");
@@ -788,7 +788,7 @@
         return Math.floor(hours / 24) + "d ago";
       };
       const latest = activity[0];
-      text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "Pulse"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
+      text("[data-activity-summary]", latest ? `Latest: ${String(latest.event_type || "activity").replaceAll("_", " ")} · ${latest.event_label || "PulseSoc"} · ${relative(latest.created_at)} · ${activity.length} recent` : "No recent activity yet.");
       setHTML("[data-activity]", activity.slice(0, 10).map(item => `
         <div class="activity-row"><strong>✓ ${String(item.event_type || "activity").replaceAll("_", " ")}</strong><span>${item.event_label || ""}</span><small>${relative(item.created_at)}</small></div>`).join("") || '<p class="muted">Activity will appear here.</p>');
 
@@ -885,7 +885,7 @@
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.message || "Auto Signals could not activate.");
         const alerts = Array.isArray(data.alerts) ? data.alerts : (Array.isArray(data.created) ? data.created : []);
-        if (result) result.textContent = data.message || `Auto Signals activated. Pulse is now monitoring your market alerts. ${alerts.length} signal rules active.`;
+        if (result) result.textContent = data.message || `Auto Signals activated. PulseSoc is now monitoring your market alerts. ${alerts.length} signal rules active.`;
         setHTML("[data-auto-signals-alerts]", alerts.map(item => `
           <div class="alert-row">
             <strong>${escapeHtml(item.symbol || "Signal")}</strong>
@@ -1003,7 +1003,7 @@
         const payload = await response.json();
         console.log("account status parsed payload", payload);
         if (!response.ok || !payload.ok) throw new Error(payload.message || "Account status unavailable");
-        const planLabel = payload.is_paid_pro ? "Pulse Premium" : payload.is_trialing ? "Legacy Trial" : payload.has_pro_access ? "Premium" : "Free Core";
+        const planLabel = payload.is_paid_pro ? "PulseSoc Premium" : payload.is_trialing ? "Legacy Trial" : payload.has_pro_access ? "Premium" : "Free Core";
         const subLabel = payload.is_paid_pro ? "active" : payload.subscription_status || "inactive";
         const telegramLabel = payload.telegram_linked ? ("Connected" + (payload.telegram_username ? " @" + payload.telegram_username : "")) : "Not connected";
         const expiresLabel = payload.is_paid_pro
@@ -1015,7 +1015,7 @@
         text("[data-subscription]", subLabel);
         text("[data-telegram]", telegramLabel);
         text("[data-expires]", expiresLabel);
-        accountSyncText(payload.is_paid_pro ? "Pulse Premium account sync complete." : "Account sync complete.");
+        accountSyncText(payload.is_paid_pro ? "PulseSoc Premium account sync complete." : "Account sync complete.");
         console.log("account status render success");
       } catch (error) {
         console.log("account status render error", error && error.message ? error.message : error);

@@ -77,7 +77,7 @@ export function CreatePulseScreen({ navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScreenScaffold title="Create Pulse" subtitle="Text, photos, videos, hashtags, and mentions.">
+      <ScreenScaffold title="Create PulseSoc" subtitle="Text, photos, videos, hashtags, and mentions.">
         <TextInput
           value={body}
           onChangeText={text => setBody(text.slice(0, MAX_CHARS))}
@@ -103,7 +103,7 @@ export function CreatePulseScreen({ navigation }: Props) {
         </View>
         {uploadProgress > 0 ? <Text style={screenStyles.muted}>Upload progress: {uploadProgress}%</Text> : null}
         <TouchableOpacity style={[screenStyles.button, publishing && { opacity: 0.7 }]} onPress={publish} disabled={publishing}>
-          <Text style={screenStyles.buttonText}>{publishing ? "Publishing..." : "Post Pulse"}</Text>
+          <Text style={screenStyles.buttonText}>{publishing ? "Publishing..." : "Post PulseSoc"}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={screenStyles.secondaryButton} onPress={() => navigation.goBack()}>
           <Text style={screenStyles.secondaryButtonText}>Cancel</Text>

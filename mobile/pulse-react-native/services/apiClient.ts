@@ -44,7 +44,7 @@ export async function pulseApi<T>(path: string, options: ApiRequestOptions = {})
   const data = parseJson(text);
   if (!response.ok || data.ok === false) {
     throw new PulseApiError(
-      String(data.message || "Pulse request failed."),
+      String(data.message || "PulseSoc request failed."),
       response.status,
       typeof data.error === "string" ? data.error : undefined,
       typeof data.trace_id === "string" ? data.trace_id : undefined
@@ -63,7 +63,7 @@ function parseJson(text: string): Record<string, unknown> {
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
-    return { ok: false, message: "Pulse returned a non-JSON response." };
+    return { ok: false, message: "PulseSoc returned a non-JSON response." };
   }
 }
 

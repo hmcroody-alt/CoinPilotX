@@ -1,4 +1,4 @@
-# Pulse Mobile Navigation Map
+# PulseSoc Mobile Navigation Map
 
 ## Auth Stack
 

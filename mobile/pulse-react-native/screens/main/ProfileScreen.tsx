@@ -14,7 +14,7 @@ export function ProfileScreen({ navigation }: Props) {
   return (
     <ScreenScaffold title="Profile" subtitle={user?.username ? `@${user.username}` : "Backed by /api/pulse/profile/me."}>
       <View style={screenStyles.card}>
-        <Text style={screenStyles.cardTitle}>{user?.full_name || "Pulse profile"}</Text>
+        <Text style={screenStyles.cardTitle}>{user?.full_name || "PulseSoc profile"}</Text>
         <Text style={screenStyles.muted}>{user?.email || "Authenticated mobile session"}</Text>
       </View>
       <TouchableOpacity style={screenStyles.secondaryButton} onPress={() => navigation.navigate("Settings")}>

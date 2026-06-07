@@ -230,7 +230,7 @@
     const next = (config.lenses || []).find((lens) => lens.key === key);
     if (!next) return;
     if (next.locked) {
-      setStatus("That lens unlocks with Pulse Premium.");
+      setStatus("That lens unlocks with PulseSoc Premium.");
       return;
     }
     activeLens = next;
@@ -406,17 +406,17 @@
   }
 
   function previewMarkup(destination, sourceUrl, isVideo) {
-    const safeCaption = (previewCaption?.value || "Created with Pulse Camera").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+    const safeCaption = (previewCaption?.value || "Created with PulseSoc Camera").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
     const mediaHtml = isVideo
       ? `<video src="${sourceUrl}" autoplay loop playsinline controls></video>`
-      : `<img src="${sourceUrl}" alt="Pulse Camera preview" decoding="async">`;
+      : `<img src="${sourceUrl}" alt="PulseSoc Camera preview" decoding="async">`;
     if (destination === "status") {
-      return `<article class="pulse-preview-status">${mediaHtml}<div class="pulse-preview-progress"></div><div class="pulse-preview-copy"><strong>Your Pulse Status</strong><span>${safeCaption}</span></div></article>`;
+      return `<article class="pulse-preview-status">${mediaHtml}<div class="pulse-preview-progress"></div><div class="pulse-preview-copy"><strong>Your PulseSoc Status</strong><span>${safeCaption}</span></div></article>`;
     }
     if (destination === "reel") {
-      return `<article class="pulse-preview-reel">${mediaHtml}<aside><span>🔥</span><span>💬</span><span>↗</span></aside><div class="pulse-preview-copy"><strong>@you · Pulse Reel</strong><span>${safeCaption}</span><small>Original Pulse sound</small></div></article>`;
+      return `<article class="pulse-preview-reel">${mediaHtml}<aside><span>🔥</span><span>💬</span><span>↗</span></aside><div class="pulse-preview-copy"><strong>@you · PulseSoc Reel</strong><span>${safeCaption}</span><small>Original PulseSoc sound</small></div></article>`;
     }
-    return `<article class="pulse-preview-feed-card"><header><span class="pulse-preview-avatar">P</span><div><strong>Pulse Camera</strong><small>Public · preview</small></div></header>${mediaHtml}<p>${safeCaption}</p><footer><span>Like</span><span>Comment</span><span>Share</span></footer></article>`;
+    return `<article class="pulse-preview-feed-card"><header><span class="pulse-preview-avatar">P</span><div><strong>PulseSoc Camera</strong><small>Public · preview</small></div></header>${mediaHtml}<p>${safeCaption}</p><footer><span>Like</span><span>Comment</span><span>Share</span></footer></article>`;
   }
 
   async function openPreview(destination) {
@@ -435,7 +435,7 @@
     const isVideo = (fallback?.type || capturedMime || "").startsWith("video/");
     previewFlow?.classList.add("is-on");
     previewFlow?.setAttribute("aria-hidden", "false");
-    previewTitle.textContent = destination === "status" ? "Status Preview" : destination === "reel" ? "Reel Preview" : "Pulse Post Preview";
+    previewTitle.textContent = destination === "status" ? "Status Preview" : destination === "reel" ? "Reel Preview" : "PulseSoc Post Preview";
     previewMeta.textContent = destination === "status" ? "Fullscreen story preview with privacy and duration." : destination === "reel" ? "Immersive vertical preview matching Reels placement." : "Feed card preview before publishing.";
     previewStage.innerHTML = previewMarkup(destination, localPreviewUrl, isVideo);
     setPreviewStatus("Preview ready. Publish when it looks right.");
@@ -456,7 +456,7 @@
         body: JSON.stringify({
           destination,
           media,
-          caption: previewCaption?.value || "Created with Pulse Camera",
+          caption: previewCaption?.value || "Created with PulseSoc Camera",
           privacy: previewPrivacy?.value || "public",
           effect_key: activeLens?.key || "",
           beauty_key: activeBeauty?.key || "",
@@ -469,7 +469,7 @@
       window.PulseUploadManager?.render(processing, { stage: "publishing", percent: 96, message: "Publishing..." });
       const mediaType = media.media_type === "video" ? "video" : "image";
       if (destination === "status") {
-        const payload = { status_type: mediaType, body: previewCaption?.value || "Captured with Pulse Camera", media_ids: [media.id], visibility: previewPrivacy?.value || "public", duration_hours: 24 };
+        const payload = { status_type: mediaType, body: previewCaption?.value || "Captured with PulseSoc Camera", media_ids: [media.id], visibility: previewPrivacy?.value || "public", duration_hours: 24 };
         const response = await fetch("/api/pulse/status", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(data.message || "Status publish failed.");
@@ -481,7 +481,7 @@
         return;
       }
       if (destination === "reel") {
-        const payload = { title: "Camera Reel", caption: previewCaption?.value || "Created with Pulse Camera", category: "Community", visibility: previewPrivacy?.value || "public", post_type: mediaType, media_ids: [media.id] };
+        const payload = { title: "Camera Reel", caption: previewCaption?.value || "Created with PulseSoc Camera", category: "Community", visibility: previewPrivacy?.value || "public", post_type: mediaType, media_ids: [media.id] };
         const response = await fetch("/api/pulse/reels/create", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const data = await response.json();
         if (!response.ok || data.ok === false) throw new Error(data.message || "Reel publish failed.");
@@ -506,10 +506,10 @@
         processing?.classList.remove("is-on");
         return;
       }
-      const payload = { media_id: media.id, media_url: media.media_url, title: "Pulse Camera", body: previewCaption?.value || "Created with Pulse Camera", post_type: mediaType };
+      const payload = { media_id: media.id, media_url: media.media_url, title: "PulseSoc Camera", body: previewCaption?.value || "Created with PulseSoc Camera", post_type: mediaType };
       const response = await fetch("/api/pulse/posts/create-from-camera", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
-      if (!response.ok || data.ok === false) throw new Error(data.message || "Pulse post failed.");
+      if (!response.ok || data.ok === false) throw new Error(data.message || "PulseSoc post failed.");
       await markPreviewPublished("pulse_post", data.post_id || data.id || 0);
       setBusy(true, "Posted successfully");
       window.PulseUploadManager?.render(processing, { stage: "success", percent: 100, message: "Posted successfully" });

@@ -69,7 +69,7 @@ export function ApiPreview({ endpoint, listKeys, emptyLabel }: ApiPreviewProps) 
 
 function PreviewCard({ item }: { item: unknown }) {
   const record = isRecord(item) ? item : {};
-  const title = String(record.title || record.body || record.message || record.name || record.username || "Pulse item");
+  const title = String(record.title || record.body || record.message || record.name || record.username || "PulseSoc item");
   const subtitle = String(record.description || record.preview_text || record.created_at || record.handle || "");
   return (
     <View style={screenStyles.card}>
@@ -98,5 +98,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function readError(error: unknown) {
-  return error instanceof Error ? error.message : "Pulse API request failed.";
+  return error instanceof Error ? error.message : "PulseSoc API request failed.";
 }

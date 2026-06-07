@@ -41,7 +41,7 @@ export function PostCard({ post, onOpenPost, onOpenProfile, onDeleted, onChanged
     try {
       await repostPost(post.id);
       emitFeedHook("repost", { post_id: post.id });
-      Alert.alert("Reposted", "Reposted to Pulse.");
+      Alert.alert("Reposted", "Reposted to PulseSoc.");
     } catch (error) {
       Alert.alert("Repost failed", error instanceof Error ? error.message : "Could not repost.");
     } finally {
@@ -63,7 +63,7 @@ export function PostCard({ post, onOpenPost, onOpenProfile, onDeleted, onChanged
   }
 
   async function remove() {
-    Alert.alert("Delete post", "Delete this Pulse post?", [
+    Alert.alert("Delete post", "Delete this PulseSoc post?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -88,7 +88,7 @@ export function PostCard({ post, onOpenPost, onOpenProfile, onDeleted, onChanged
       <TouchableOpacity style={{ flexDirection: "row", gap: 10, alignItems: "center" }} onPress={() => onOpenProfile(post)}>
         {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceSoft }} /> : <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceSoft }} />}
         <View style={{ flex: 1 }}>
-          <Text style={screenStyles.cardTitle}>{author.display_name || post.author_public_name || "Pulse creator"}</Text>
+          <Text style={screenStyles.cardTitle}>{author.display_name || post.author_public_name || "PulseSoc creator"}</Text>
           <Text style={screenStyles.muted}>@{author.public_player_id || post.author_public_player_id || "pulse"} · {formatDate(post.created_at)}</Text>
         </View>
       </TouchableOpacity>
@@ -134,7 +134,7 @@ function Action({ label, onPress, disabled, danger }: { label: string; onPress: 
 function RepostPreview({ original }: { original: PulsePost }) {
   return (
     <View style={[screenStyles.card, { marginTop: 12, marginBottom: 0, backgroundColor: colors.surfaceSoft }]}>
-      <Text style={screenStyles.cardTitle}>{original.author?.display_name || "Reposted Pulse"}</Text>
+      <Text style={screenStyles.cardTitle}>{original.author?.display_name || "Reposted PulseSoc"}</Text>
       <Text style={screenStyles.muted}>{original.body || original.title || "Original post"}</Text>
     </View>
   );

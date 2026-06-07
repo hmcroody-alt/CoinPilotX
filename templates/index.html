@@ -3,30 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pulse | Creator, Video, Live, Messaging, Premium Intelligence</title>
-  <meta name="description" content="Pulse brings creator tools, video, Reels, live, messaging, Roast Battle, Premium Intelligence, and safety tools into one social platform." />
+  <title>PulseSoc | Creator, Video, Live, Messaging, Premium Intelligence</title>
+  <meta name="description" content="PulseSoc brings creator tools, video, Reels, live, messaging, Roast Battle, Premium Intelligence, and safety tools into one social platform." />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
   <meta name="ai-content-declaration" content="Educational AI intelligence, public-data safety guidance, no financial or betting advice, no guaranteed outcomes." />
-  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable Pulse metadata" />
-  <link rel="alternate" type="application/json" href="/ai-index.json" title="Pulse public AI index" />
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable PulseSoc metadata" />
+  <link rel="alternate" type="application/json" href="/ai-index.json" title="PulseSoc public AI index" />
   {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}" />{% endif %}
   {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="https://pulsesoc.com/" />
-  <meta property="og:title" content="Pulse" />
-  <meta property="og:description" content="Creator, video, live, messaging, Roast Battle, Premium Intelligence, and safety tools in one Pulse platform." />
-  <meta property="og:image" content="https://pulsesoc.com/static/brand/pulse-logo-20260606.png" />
+  <meta property="og:title" content="PulseSoc" />
+  <meta property="og:description" content="Creator, video, live, messaging, Roast Battle, Premium Intelligence, and safety tools in one PulseSoc platform." />
+  <meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://pulsesoc.com/" />
-  <meta property="og:site_name" content="Pulse" />
+  <meta property="og:site_name" content="PulseSoc" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Pulse" />
-  <meta name="twitter:description" content="The main Pulse social platform for creators, video, live, messaging, premium intelligence, and safety." />
-  <meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulse-logo-20260606.png" />
+  <meta name="twitter:title" content="PulseSoc" />
+  <meta name="twitter:description" content="The main PulseSoc social platform for creators, video, live, messaging, premium intelligence, and safety." />
+  <meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png" />
   <meta name="theme-color" content="#020817" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" />
-  <link rel="apple-touch-icon" href="/static/brand/pulse-apple-touch-icon-20260606.png" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
+  <link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="preload" as="image" href="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" />
+  <link rel="preload" as="image" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
   {% if ga_measurement_id or google_ads_id %}
   <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id or google_ads_id }}"></script>
   <script>
@@ -45,12 +45,12 @@
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "Pulse",
+    "name": "PulseSoc",
     "applicationCategory": "SocialNetworkingApplication",
     "operatingSystem": "Web, iOS, Android, PWA",
-    "description": "Pulse is a creator, video, live, messaging, Roast Battle, premium intelligence, and safety platform.",
+    "description": "PulseSoc is a creator, video, live, messaging, Roast Battle, premium intelligence, and safety platform.",
     "url": "https://pulsesoc.com/",
-    "image": "https://pulsesoc.com/static/brand/pulse-logo-20260606.png",
+    "image": "https://pulsesoc.com/static/brand/pulsesoc-logo-20260606.png",
     "publisher": {
       "@type": "Organization",
       "name": "CoinPilotXAI Inc.",
@@ -619,29 +619,29 @@
   <header class="site-header">
     <div class="container">
       <nav class="site-nav" aria-label="Main navigation">
-        <a class="brand" href="/" aria-label="Pulse home">
-          <img src="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" alt="Pulse logo" width="42" height="42" decoding="async" fetchpriority="high" />
+        <a class="brand" href="/" aria-label="PulseSoc home">
+          <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo" width="42" height="42" decoding="async" fetchpriority="high" />
           <span>
-            Pulse
-            <small>Pulse platform</small>
+            PulseSoc
+            <small>PulseSoc platform</small>
           </span>
         </a>
         <div class="nav-links" aria-label="Homepage sections">
           <a href="/">Home</a>
-          <a href="/pulse">Pulse</a>
+          <a href="/pulse">PulseSoc</a>
           <a href="/pulse/premium">Premium</a>
           <a href="/pulse/roast-battle">Roast Battle</a>
           <a href="#safety">Safety</a>
         </div>
         <div class="nav-actions">
           {% if is_authenticated %}
-            <a class="button primary" href="/pulse">Open Pulse</a>
+            <a class="button primary" href="/pulse">Open PulseSoc</a>
             <a class="button ghost" href="/logout">Logout</a>
           {% else %}
-            <a class="button primary" href="/login?next=/pulse">Sign In to Pulse</a>
-            <a class="button gold" href="/signup?next=/pulse">Join Pulse</a>
+            <a class="button primary" href="/login?next=/pulse">Sign In to PulseSoc</a>
+            <a class="button gold" href="/signup?next=/pulse">Join PulseSoc</a>
           {% endif %}
-          <a class="button ghost" href="/pulse">Explore Pulse</a>
+          <a class="button ghost" href="/pulse">Explore PulseSoc</a>
         </div>
       </nav>
     </div>
@@ -651,26 +651,26 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
         <div>
-          <span class="eyebrow">Pulse is the main destination</span>
+          <span class="eyebrow">PulseSoc is the main destination</span>
           <h1 id="hero-title">Your creator, video, live, messaging, and AI intelligence home.</h1>
           <p class="hero-copy">
-            Build, watch, chat, go live, protect your community, and grow with Premium Intelligence in one Pulse platform.
+            Build, watch, chat, go live, protect your community, and grow with Premium Intelligence in one PulseSoc platform.
           </p>
           <p class="hero-copy">
             Creator, video, live, messaging, roast battle, premium intelligence, and safety tools in one platform.
           </p>
           <div class="hero-actions">
             {% if is_authenticated %}
-              <a class="button primary" href="/pulse">Open Pulse</a>
+              <a class="button primary" href="/pulse">Open PulseSoc</a>
               <a class="button" href="/pulse/premium">Explore Premium</a>
             {% else %}
-              <a class="button primary" href="/login?next=/pulse">Sign In to Pulse</a>
-              <a class="button gold" href="/signup?next=/pulse">Join Pulse</a>
-              <a class="button" href="/pulse">Explore Pulse</a>
+              <a class="button primary" href="/login?next=/pulse">Sign In to PulseSoc</a>
+              <a class="button gold" href="/signup?next=/pulse">Join PulseSoc</a>
+              <a class="button" href="/pulse">Explore PulseSoc</a>
               <a class="button ghost" href="/pulse/premium">Explore Premium</a>
             {% endif %}
           </div>
-          <div class="trust-tags" aria-label="Pulse highlights">
+          <div class="trust-tags" aria-label="PulseSoc highlights">
             <span class="tag">Video and Reels</span>
             <span class="tag">Live and replays</span>
             <span class="tag">Messaging</span>
@@ -679,10 +679,10 @@
           </div>
         </div>
 
-        <aside class="hero-preview" aria-label="Pulse product preview">
+        <aside class="hero-preview" aria-label="PulseSoc product preview">
           <div class="app-preview">
             <div class="preview-header">
-              <strong><span class="live-dot" aria-hidden="true"></span> Pulse Command Home</strong>
+              <strong><span class="live-dot" aria-hidden="true"></span> PulseSoc Command Home</strong>
               <span class="tag">Live signals</span>
             </div>
             <div class="preview-stack">
@@ -698,11 +698,11 @@
                   <span class="status-dot"></span>
                 </div>
                 <div class="feed-preview-card">
-                  <strong>Realtime Pulse Discovery</strong>
+                  <strong>Realtime PulseSoc Discovery</strong>
                   <span>Creators, videos, live signals, and safe community moments.</span>
                 </div>
               </article>
-              <article class="preview-card video-tile" aria-label="Pulse video preview">
+              <article class="preview-card video-tile" aria-label="PulseSoc video preview">
                 <span class="play-mark">▶</span>
               </article>
               <article class="preview-card">
@@ -720,18 +720,18 @@
               </article>
             </div>
           </div>
-          <div class="phone-preview" aria-label="Mobile Pulse preview">
+          <div class="phone-preview" aria-label="Mobile PulseSoc preview">
             <div class="phone-screen">
               <div>
                 <span class="tag">Live</span>
-                <h3>Pulse Home</h3>
+                <h3>PulseSoc Home</h3>
               </div>
               <div class="phone-card">Watch • Chat • Create • Go Live</div>
               <div>
                 {% if is_authenticated %}
-                  <a class="button primary" href="/pulse">Open Pulse</a>
+                  <a class="button primary" href="/pulse">Open PulseSoc</a>
                 {% else %}
-                  <a class="button primary" href="/login?next=/pulse">Sign In to Pulse</a>
+                  <a class="button primary" href="/login?next=/pulse">Sign In to PulseSoc</a>
                 {% endif %}
                 <div class="phone-nav" aria-hidden="true">
                   <span>Home</span>
@@ -749,15 +749,15 @@
     <section id="pulse" class="section">
       <div class="container wide-band split">
         <div>
-          <div class="section-kicker">What is Pulse?</div>
-          <h2>The main Pulse experience after login.</h2>
-          <p>Pulse is where the product lives: feed, status, videos, live, messages, groups, marketplace, saved content, creator tools, and Premium Intelligence.</p>
+          <div class="section-kicker">What is PulseSoc?</div>
+          <h2>The main PulseSoc experience after login.</h2>
+          <p>PulseSoc is where the product lives: feed, status, videos, live, messages, groups, marketplace, saved content, creator tools, and Premium Intelligence.</p>
           <div class="section-actions">
-            <a class="button primary" href="/pulse">Explore Pulse</a>
-            <a class="button" href="/signup?next=/pulse">Join Pulse</a>
+            <a class="button primary" href="/pulse">Explore PulseSoc</a>
+            <a class="button" href="/signup?next=/pulse">Join PulseSoc</a>
           </div>
         </div>
-        <ul class="feature-list" aria-label="Pulse core features">
+        <ul class="feature-list" aria-label="PulseSoc core features">
           <li>Feed for text, photo, and video posts</li>
           <li>Status tray and full-screen viewer</li>
           <li>Videos, Reels, Live, and replays</li>
@@ -770,8 +770,8 @@
       <div class="container">
         <div class="section-head">
           <div>
-            <div class="section-kicker">Pulse features</div>
-            <h2>Everything points back to Pulse.</h2>
+            <div class="section-kicker">PulseSoc features</div>
+            <h2>Everything points back to PulseSoc.</h2>
           </div>
           <p>Each feature is presented as part of the same app, not as a disconnected set of old command pages.</p>
         </div>
@@ -786,14 +786,14 @@
           <article class="card">
             <div>
               <h3>Messages</h3>
-              <p>Start direct chats, groups, voice notes, and media conversations from the Pulse communications hub.</p>
+              <p>Start direct chats, groups, voice notes, and media conversations from the PulseSoc communications hub.</p>
             </div>
             <a class="button card-link" href="/pulse/messages-v2">Open Messages</a>
           </article>
           <article class="card">
             <div>
               <h3>Roast Battle</h3>
-              <p>Join a safe entertainment arena inside Pulse with battles, voting, rankings, and replay-ready moments.</p>
+              <p>Join a safe entertainment arena inside PulseSoc with battles, voting, rankings, and replay-ready moments.</p>
             </div>
             <a class="button card-link" href="/pulse/roast-battle">Open Roast Battle</a>
           </article>
@@ -825,8 +825,8 @@
     <section id="premium" class="section">
       <div class="container wide-band split">
         <div>
-          <div class="section-kicker">Pulse Premium</div>
-          <h2>Premium turns Pulse into a growth and intelligence center.</h2>
+          <div class="section-kicker">PulseSoc Premium</div>
+          <h2>Premium turns PulseSoc into a growth and intelligence center.</h2>
           <p>Premium is where deeper creator tools, intelligence, portfolio context, watchlists, alerts, Scam Shield Pro, education, and saved insights belong.</p>
           <div class="section-actions">
             <a class="button primary" href="/pulse/premium">View Premium</a>
@@ -845,9 +845,9 @@
     <section id="roast-battle" class="section">
       <div class="container wide-band split">
         <div>
-          <div class="section-kicker">Pulse entertainment</div>
+          <div class="section-kicker">PulseSoc entertainment</div>
           <h2>Roast Battle is the entertainment feature, not a separate product.</h2>
-          <p>Roast Battle lives inside Pulse with live battles, scheduled matchups, audience voting, rankings, creator battles, replays, clips, and safety moderation.</p>
+          <p>Roast Battle lives inside PulseSoc with live battles, scheduled matchups, audience voting, rankings, creator battles, replays, clips, and safety moderation.</p>
           <div class="section-actions">
             <a class="button primary" href="/pulse/roast-battle">Enter Roast Battle</a>
             <a class="button" href="/roast-battle-preview">Preview Publicly</a>
@@ -869,13 +869,13 @@
             <div class="section-kicker">Safety posture</div>
             <h2>Built for community trust.</h2>
           </div>
-          <p>Pulse is educational, safety-minded, and designed to avoid fake urgency, private key collection, guaranteed outcomes, or unsafe pressure.</p>
+          <p>PulseSoc is educational, safety-minded, and designed to avoid fake urgency, private key collection, guaranteed outcomes, or unsafe pressure.</p>
         </div>
         <div class="grid">
           <article class="card">
             <div>
               <h3>No private keys</h3>
-              <p>Pulse never asks users for seed phrases, private keys, recovery phrases, or wallet passwords.</p>
+              <p>PulseSoc never asks users for seed phrases, private keys, recovery phrases, or wallet passwords.</p>
             </div>
           </article>
           <article class="card">
@@ -887,7 +887,7 @@
           <article class="card">
             <div>
               <h3>Moderated social features</h3>
-              <p>Pulse content, messaging, live, and Roast Battle are built around safer participation and clear reporting paths.</p>
+              <p>PulseSoc content, messaging, live, and Roast Battle are built around safer participation and clear reporting paths.</p>
             </div>
           </article>
         </div>
@@ -896,16 +896,16 @@
 
     <section class="final-cta">
       <div class="container wide-band">
-        <div class="section-kicker">Ready for Pulse?</div>
-        <h2>Make Pulse your Pulse home.</h2>
+        <div class="section-kicker">Ready for PulseSoc?</div>
+        <h2>Make PulseSoc your PulseSoc home.</h2>
         <p>Sign in to continue, join if you are new, or open Premium when you want deeper intelligence and creator growth tools.</p>
         <div class="section-actions" style="justify-content:center">
           {% if is_authenticated %}
-            <a class="button primary" href="/pulse">Open Pulse</a>
+            <a class="button primary" href="/pulse">Open PulseSoc</a>
             <a class="button" href="/logout">Logout</a>
           {% else %}
-            <a class="button primary" href="/login?next=/pulse">Sign In to Pulse</a>
-            <a class="button gold" href="/signup?next=/pulse">Join Pulse</a>
+            <a class="button primary" href="/login?next=/pulse">Sign In to PulseSoc</a>
+            <a class="button gold" href="/signup?next=/pulse">Join PulseSoc</a>
           {% endif %}
           <a class="button ghost" href="/pulse/premium">Explore Premium</a>
         </div>
@@ -916,7 +916,7 @@
   <footer class="container" style="padding:0 0 34px;color:var(--muted);font-weight:800">
     <span>PulseSoc.com</span>
     <span aria-hidden="true"> · </span>
-    <span>Pulse — Powered by CoinPilotXAI</span>
+    <span>PulseSoc — Powered by CoinPilotXAI</span>
   </footer>
 
   <button class="scroll-top" type="button" data-scroll-top aria-label="Back to top">↑</button>

@@ -224,7 +224,7 @@
       embed_type: item.embed_type || "upload",
       source_platform: item.source_platform || "coinpilotx",
       preload_priority: item.preload_priority || "nearby",
-      alt: item.alt || item.title || "Pulse media",
+      alt: item.alt || item.title || "PulseSoc media",
       diag: item.diag || item.diagnostics || "",
     };
   }
@@ -508,7 +508,7 @@
           return;
         } catch (_) {}
       }
-      if (mediaDebugEnabled()) console.warn("Pulse media autoplay blocked", {
+      if (mediaDebugEnabled()) console.warn("PulseSoc media autoplay blocked", {
         src: videoSource(video),
         message: error?.message || String(error),
       });
@@ -688,7 +688,7 @@
         failMedia(wrap, video);
       });
     } catch (error) {
-      if (mediaDebugEnabled()) console.warn("Pulse HLS attach failed", {
+      if (mediaDebugEnabled()) console.warn("PulseSoc HLS attach failed", {
         media_id: wrap?.dataset.mediaId || "",
         src,
         message: error?.message || String(error),
@@ -718,7 +718,7 @@
   function probeVideoRequest(wrap, src, eventName) {
     if (!mediaDebugEnabled() || !src || src.startsWith("blob:") || src.startsWith("data:")) return;
     fetch(src, { method: "HEAD", mode: "cors", cache: "no-store" })
-      .then(response => console.info("Pulse video request HEAD", {
+      .then(response => console.info("PulseSoc video request HEAD", {
         event: eventName,
         media_id: wrap.dataset.mediaId || "",
         src,
@@ -727,7 +727,7 @@
         accept_ranges: response.headers.get("accept-ranges") || "",
         content_length: response.headers.get("content-length") || "",
       }))
-      .catch(error => console.warn("Pulse video request HEAD failed", {
+      .catch(error => console.warn("PulseSoc video request HEAD failed", {
         event: eventName,
         media_id: wrap.dataset.mediaId || "",
         src,
@@ -740,7 +740,7 @@
     if (!mediaDebugEnabled() && !["error", "load_error", "retry_error"].includes(eventName)) return;
     const src = videoSource(video) || mediaUrl(wrap);
     const log = eventName === "error" || eventName.includes("error") ? console.warn : console.info;
-    log("Pulse video diagnostic", {
+    log("PulseSoc video diagnostic", {
       event: eventName,
       media_id: wrap.dataset.mediaId || "",
       src,
@@ -811,7 +811,7 @@
     }
     media.style.visibility = "hidden";
     mark(wrap, BROKEN);
-    console.warn("Pulse media hydration failed", {
+    console.warn("PulseSoc media hydration failed", {
       media_id: wrap.dataset.mediaId || "",
       type: wrap.dataset.mediaType || "",
       src: mediaUrl(wrap),
@@ -826,13 +826,13 @@
     const media = wrap.querySelector("img,video");
     const canonicalSrc = mediaUrl(wrap);
     if (canonicalSrc.includes("r2.cloudflarestorage.com")) {
-      console.warn("Pulse media received private R2 URL; renderer requires CDN URL", {
+      console.warn("PulseSoc media received private R2 URL; renderer requires CDN URL", {
         media_id: wrap.dataset.mediaId || "",
         src: canonicalSrc,
       });
     }
     if (mediaDebugEnabled()) {
-      console.debug("Pulse media render state", {
+      console.debug("PulseSoc media render state", {
         media_id: wrap.dataset.mediaId || "",
         type: wrap.dataset.mediaType || "",
         src: mediaUrl(wrap),
@@ -886,7 +886,7 @@
         width: media.videoWidth || 0,
         height: media.videoHeight || 0,
       });
-      if (mediaDebugEnabled()) console.info("Pulse video metadata loaded", {
+      if (mediaDebugEnabled()) console.info("PulseSoc video metadata loaded", {
         media_id: wrap.dataset.mediaId || "",
         src: videoSource(media) || mediaUrl(wrap),
         duration: media.duration,
@@ -897,7 +897,7 @@
       mark(wrap, LOADED);
     }, { once: true });
     media.addEventListener("canplay", () => {
-      if (mediaDebugEnabled()) console.info("Pulse video canplay", {
+      if (mediaDebugEnabled()) console.info("PulseSoc video canplay", {
         media_id: wrap.dataset.mediaId || "",
         src: videoSource(media) || mediaUrl(wrap),
       });

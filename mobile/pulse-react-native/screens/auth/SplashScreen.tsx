@@ -14,7 +14,7 @@ export function SplashScreen({ navigation }: Props) {
 
   return (
     <View style={layout.centeredScreen}>
-      <Text style={[screenStyles.title, { fontSize: 42 }]}>Pulse</Text>
+      <Text style={[screenStyles.title, { fontSize: 42 }]}>PulseSoc</Text>
       <Text style={screenStyles.subtitle}>CoinPilotX social, ready for mobile.</Text>
     </View>
   );

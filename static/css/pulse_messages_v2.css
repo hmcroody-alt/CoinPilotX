@@ -887,7 +887,7 @@ body[data-comm-v2-enabled="false"] .comm-filter {
   }
 }
 
-/* Premium Pulse V2 skin. Keep the layout two-column: navigator + active thread. */
+/* Premium PulseSoc V2 skin. Keep the layout two-column: navigator + active thread. */
 :root {
   color-scheme: dark;
   --bg: #050b14;

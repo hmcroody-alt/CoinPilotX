@@ -4,10 +4,10 @@ const STATIC_ASSETS = [
   "/static/analytics.js",
   "/static/notifications.js",
   "/static/sounds/notification-soft.wav",
-  "/static/brand/pulse-logo-20260606.png",
-  "/static/brand/pulse-icon-192-20260606.png",
-  "/static/brand/pulse-icon-512-20260606.png",
-  "/static/brand/pulse-apple-touch-icon-20260606.png"
+  "/static/brand/pulsesoc-logo-20260606.png",
+  "/static/brand/pulsesoc-icon-192-20260606.png",
+  "/static/brand/pulsesoc-icon-512-20260606.png",
+  "/static/brand/pulsesoc-apple-touch-icon-20260606.png"
 ];
 
 function isNeverCachePath(pathname) {
@@ -47,13 +47,13 @@ function isStaticAsset(request, pathname) {
 
 function offlineResponse() {
   return fetch("/offline?ts=" + Date.now(), { cache: "no-store" }).catch(() => new Response(
-    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>Pulse needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
+    "<!doctype html><title>Offline</title><main style='font-family:system-ui;padding:24px'><h1>You are offline.</h1><p>PulseSoc needs an internet connection for live intelligence.</p><p><a href='/reset-pwa'>Reset app cache</a></p></main>",
     { headers: { "Content-Type": "text/html; charset=utf-8" } }
   ));
 }
 
 self.addEventListener("install", (event) => {
-  console.log("[Pulse SW] service worker installed", CACHE_NAME);
+  console.log("[PulseSoc SW] service worker installed", CACHE_NAME);
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(STATIC_ASSETS))
@@ -62,12 +62,12 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  console.log("[Pulse SW] service worker activated", CACHE_NAME);
+  console.log("[PulseSoc SW] service worker activated", CACHE_NAME);
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.map((key) => {
         if (key !== CACHE_NAME) {
-          console.log("[Pulse SW] old cache deleted", key);
+          console.log("[PulseSoc SW] old cache deleted", key);
         }
         return key === CACHE_NAME ? Promise.resolve() : caches.delete(key);
       }))
@@ -84,15 +84,15 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    console.log("[Pulse SW] navigation fetch attempted", url.pathname);
+    console.log("[PulseSoc SW] navigation fetch attempted", url.pathname);
     event.respondWith(
       fetch(request, { cache: "no-store" })
         .then((response) => {
-          console.log("[Pulse SW] navigation fetch succeeded", url.pathname, response.status);
+          console.log("[PulseSoc SW] navigation fetch succeeded", url.pathname, response.status);
           return response;
         })
         .catch((error) => {
-          console.log("[Pulse SW] navigation fallback to offline used", url.pathname, error && error.message ? error.message : error);
+          console.log("[PulseSoc SW] navigation fallback to offline used", url.pathname, error && error.message ? error.message : error);
           return offlineResponse();
         })
     );
@@ -101,7 +101,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isNeverCachePath(url.pathname)) {
     event.respondWith(fetch(request, { cache: "no-store" }).catch((error) => {
-      console.log("[Pulse SW] fetch failure", url.pathname, error && error.message ? error.message : error);
+      console.log("[PulseSoc SW] fetch failure", url.pathname, error && error.message ? error.message : error);
       throw error;
     }));
     return;
@@ -120,7 +120,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         }).catch((error) => {
-          console.log("[Pulse SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
+          console.log("[PulseSoc SW] static fetch failure", url.pathname, error && error.message ? error.message : error);
           throw error;
         });
       })
@@ -136,13 +136,13 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch (error) {
-    payload = { title: "Pulse Alert", body: event.data ? event.data.text() : "New intelligence alert." };
+    payload = { title: "PulseSoc Alert", body: event.data ? event.data.text() : "New intelligence alert." };
   }
-  const title = payload.title || "Pulse Alert";
+  const title = payload.title || "PulseSoc Alert";
   const options = {
-    body: payload.body || payload.message || "New Pulse intelligence update.",
-    icon: payload.icon || "/static/brand/pulse-icon-192-20260606.png",
-    badge: payload.badge || "/static/brand/pulse-icon-192-20260606.png",
+    body: payload.body || payload.message || "New PulseSoc intelligence update.",
+    icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260606.png",
+    badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260606.png",
     vibrate: payload.vibrate || [200, 100, 200],
     data: payload.data || { url: payload.url || "/pulse/notifications" },
     tag: payload.tag || "coinpilotxai-alert",

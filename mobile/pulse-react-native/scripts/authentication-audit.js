@@ -48,12 +48,12 @@ for (const [label, relativeDir, pattern] of forbidden) {
 }
 
 if (failures.length > 0) {
-  console.error("Pulse mobile authentication audit failed:");
+  console.error("PulseSoc mobile authentication audit failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("Pulse mobile authentication audit passed.");
+console.log("PulseSoc mobile authentication audit passed.");
 
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];

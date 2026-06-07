@@ -24,12 +24,12 @@ const failures = [];
 });
 
 if (failures.length) {
-  console.error("Pulse mobile notifications audit failed:");
+  console.error("PulseSoc mobile notifications audit failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("Pulse mobile notifications audit passed.");
+console.log("PulseSoc mobile notifications audit passed.");
 
 function read(relativePath) {
   const file = path.join(root, relativePath);

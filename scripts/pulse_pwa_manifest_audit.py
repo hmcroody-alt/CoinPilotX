@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse PWA manifest installability basics."""
+"""Audit PulseSoc PWA manifest installability basics."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ def main():
     manifest_path = ROOT / "static" / "manifest.json"
     require(manifest_path.exists(), "manifest.json exists")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    require(manifest.get("name") == "Pulse", "manifest uses Pulse name")
-    require(manifest.get("short_name") == "Pulse", "manifest uses Pulse short name")
+    require(manifest.get("name") == "PulseSoc", "manifest uses PulseSoc name")
+    require(manifest.get("short_name") == "PulseSoc", "manifest uses PulseSoc short name")
     require(manifest.get("start_url"), "manifest has start_url")
     require(manifest.get("scope") == "/", "manifest scope covers app")
     require(manifest.get("display") in {"standalone", "fullscreen"}, "manifest display is standalone or fullscreen")
@@ -34,7 +34,7 @@ def main():
         src = str(icon.get("src") or "")
         if src.startswith("/static/"):
             require((ROOT / src.lstrip("/")).exists(), f"manifest icon exists: {src}")
-    print("pulse PWA manifest audit ok")
+    print("pulsesoc PWA manifest audit ok")
 
 
 if __name__ == "__main__":

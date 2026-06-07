@@ -1,7 +1,7 @@
 {
-  "name": "Pulse",
-  "short_name": "Pulse",
-  "description": "Pulse social, creator, and AI intelligence platform.",
+  "name": "PulseSoc",
+  "short_name": "PulseSoc",
+  "description": "PulseSoc social, creator, and AI intelligence platform.",
   "id": "/",
   "start_url": "/?source=pwa",
   "scope": "/",
@@ -13,19 +13,19 @@
   "categories": ["finance", "productivity", "education"],
   "icons": [
     {
-      "src": "/static/brand/pulse-icon-192-20260606.png",
+      "src": "/static/brand/pulsesoc-icon-192-20260606.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/brand/pulse-icon-512-20260606.png",
+      "src": "/static/brand/pulsesoc-icon-512-20260606.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/brand/pulse-icon-512-20260606.png",
+      "src": "/static/brand/pulsesoc-icon-512-20260606.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -37,21 +37,21 @@
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Pulse command center"
+      "label": "PulseSoc command center"
     },
     {
       "src": "/static/screenshots/analysis.png",
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Pulse AI market analysis"
+      "label": "PulseSoc AI market analysis"
     },
     {
       "src": "/static/screenshots/portfolio.png",
       "sizes": "930x1198",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Pulse portfolio intelligence"
+      "label": "PulseSoc portfolio intelligence"
     }
   ]
 }

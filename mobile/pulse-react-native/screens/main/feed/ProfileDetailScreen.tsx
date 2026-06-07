@@ -34,7 +34,7 @@ export function ProfileDetailScreen({ navigation, route }: Props) {
   }, [load]);
 
   const firstAuthor = posts[0]?.author;
-  const displayName = route.params.displayName || firstAuthor?.display_name || username || "Pulse profile";
+  const displayName = route.params.displayName || firstAuthor?.display_name || username || "PulseSoc profile";
   const avatarUrl = route.params.avatarUrl || firstAuthor?.avatar_url || "";
 
   return (

@@ -24,7 +24,7 @@ export async function registerPushToken() {
   }
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
-      name: "Pulse",
+      name: "PulseSoc",
       importance: Notifications.AndroidImportance.DEFAULT
     });
   }

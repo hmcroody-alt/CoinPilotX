@@ -1,4 +1,4 @@
-# Pulse Data Safety Draft
+# PulseSoc Data Safety Draft
 
 This draft is for App Store privacy labels and Google Play Data Safety. Final answers must be confirmed against production behavior before submission.
 
@@ -26,7 +26,7 @@ This draft is for App Store privacy labels and Google Play Data Safety. Final an
 
 ## Sharing
 
-Service providers may process data for hosting, email/SMS delivery, payments, media delivery, analytics, and notifications. Pulse should not sell personal data.
+Service providers may process data for hosting, email/SMS delivery, payments, media delivery, analytics, and notifications. PulseSoc should not sell personal data.
 
 ## User Controls
 

@@ -61,7 +61,7 @@
     const src = mediaUrl(media);
     const kind = kindFor(item, media, src);
     const poster = media.poster_url || media.poster || media.thumbnail_url || media.mux_thumbnail_url || media.thumb || "";
-    const text = esc(item.body || item.music?.title || "Pulse Status");
+    const text = esc(item.body || item.music?.title || "PulseSoc Status");
     if (src && window.PulseMediaRenderer) {
       const rendered = window.PulseMediaRenderer.renderMedia({
         ...media,

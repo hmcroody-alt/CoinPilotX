@@ -1,4 +1,4 @@
-/* Pulse lightweight cinematic media ambience.
+/* PulseSoc lightweight cinematic media ambience.
    CSS-first, low-latency glow system for feed and detail media shells. */
 
 .pulse-media-wrap,
@@ -525,7 +525,7 @@ mux-player video {
   object-fit: contain !important;
 }
 
-/* Pulse feed video width fix: media section owns the full post width. */
+/* PulseSoc feed video width fix: media section owns the full post width. */
 .video-post-media,
 .pulse-feed-video,
 .feed-video-container,
@@ -658,7 +658,7 @@ mux-player video {
   }
 }
 
-/* Pulse video frame repair: keep user-facing video frames full and intentional. */
+/* PulseSoc video frame repair: keep user-facing video frames full and intentional. */
 .post:has(.pulse-media-wrap.media-kind-video.is-portrait),
 .post.is-video:has(.pulse-media-wrap.media-kind-video.is-portrait),
 .post.has-media:has(.pulse-media-wrap.media-kind-video.is-portrait) {
@@ -742,7 +742,7 @@ mux-player video {
   }
 }
 
-/* Pulse immersive video stage: reserve height first, then contain media inside it. */
+/* PulseSoc immersive video stage: reserve height first, then contain media inside it. */
 .post .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
 .post.is-video .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
 .post.has-media .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels):not(.pulse-media-surface-status):not(.pulse-media-surface-message):not(.pulse-media-surface-live-preview),
@@ -805,7 +805,7 @@ article.card > .pulse-media-wrap.media-kind-video:not(.pulse-media-surface-reels
   }
 }
 
-/* Pulse all-video full-width contract: this final block intentionally wins over legacy caps. */
+/* PulseSoc all-video full-width contract: this final block intentionally wins over legacy caps. */
 .post:has(.pulse-media-wrap.media-kind-video),
 .post.is-video:has(.pulse-media-wrap.media-kind-video),
 .post.has-media:has(.pulse-media-wrap.media-kind-video),

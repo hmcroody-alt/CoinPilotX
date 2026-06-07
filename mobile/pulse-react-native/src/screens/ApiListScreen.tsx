@@ -27,14 +27,14 @@ export function ApiListScreen({ title, endpoint, listKey, empty = "Nothing here 
 
   useEffect(() => {
     load()
-      .catch(errorValue => setError(errorValue instanceof Error ? errorValue.message : "Pulse could not load this screen."))
+      .catch(errorValue => setError(errorValue instanceof Error ? errorValue.message : "PulseSoc could not load this screen."))
       .finally(() => setLoading(false));
   }, [load]);
 
   async function refresh() {
     setRefreshing(true);
     load()
-      .catch(errorValue => setError(errorValue instanceof Error ? errorValue.message : "Pulse could not refresh."))
+      .catch(errorValue => setError(errorValue instanceof Error ? errorValue.message : "PulseSoc could not refresh."))
       .finally(() => setRefreshing(false));
   }
 
@@ -65,7 +65,7 @@ export function ApiListScreen({ title, endpoint, listKey, empty = "Nothing here 
 }
 
 function PulseItemCard({ item }: { item: ItemRecord }) {
-  const title = String(item.title || item.body || item.message || item.name || item.username || item.display_name || "Pulse item");
+  const title = String(item.title || item.body || item.message || item.name || item.username || item.display_name || "PulseSoc item");
   const subtitle = String(item.description || item.preview_text || item.created_at || item.author_name || item.handle || item.type || "");
   return (
     <View style={screenStyles.card}>

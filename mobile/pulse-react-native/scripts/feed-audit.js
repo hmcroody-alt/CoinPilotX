@@ -47,12 +47,12 @@ for (const [label, relativeDir, pattern] of forbidden) {
 }
 
 if (failures.length > 0) {
-  console.error("Pulse mobile feed audit failed:");
+  console.error("PulseSoc mobile feed audit failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("Pulse mobile feed audit passed.");
+console.log("PulseSoc mobile feed audit passed.");
 
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];

@@ -119,21 +119,21 @@
     prompt.dataset.pulsePwaInstall = kind;
     prompt.setAttribute("role", "dialog");
     prompt.setAttribute("aria-live", "polite");
-    prompt.setAttribute("aria-label", kind === "ios" ? "Add Pulse to your home screen" : "Install Pulse");
+    prompt.setAttribute("aria-label", kind === "ios" ? "Add PulseSoc to your home screen" : "Install PulseSoc");
     const body = kind === "ios"
-      ? "Tap Share, then Add to Home Screen. PulseSoc.com opens faster when Pulse is on your home screen."
-      : "Add Pulse to your home screen for quicker access to PulseSoc.com.";
+      ? "Tap Share, then Add to Home Screen. PulseSoc.com opens faster when PulseSoc is on your home screen."
+      : "Add PulseSoc to your home screen for quicker access to PulseSoc.com.";
     prompt.innerHTML = `
       <div class="pulse-pwa-install__top">
-        <img class="pulse-pwa-install__logo" src="/static/brand/pulse-logo-20260606.png" alt="" width="44" height="44">
+        <img class="pulse-pwa-install__logo" src="/static/brand/pulsesoc-logo-20260606.png" alt="" width="44" height="44">
         <div>
-          <h2>${kind === "ios" ? "Add Pulse to your home screen" : "Install Pulse"}</h2>
+          <h2>${kind === "ios" ? "Add PulseSoc to your home screen" : "Install PulseSoc"}</h2>
           <p>${body}</p>
         </div>
         <button class="pulse-pwa-install__close" type="button" data-pulse-pwa-dismiss aria-label="Close install prompt">×</button>
       </div>
       <div class="pulse-pwa-install__actions">
-        ${kind === "ios" ? "" : '<button class="pulse-pwa-install__primary" type="button" data-pulse-pwa-install-button>Install Pulse</button>'}
+        ${kind === "ios" ? "" : '<button class="pulse-pwa-install__primary" type="button" data-pulse-pwa-install-button>Install PulseSoc</button>'}
         <button class="pulse-pwa-install__later" type="button" data-pulse-pwa-dismiss>Maybe later</button>
       </div>
     `;

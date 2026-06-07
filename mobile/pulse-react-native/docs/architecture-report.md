@@ -1,13 +1,13 @@
-# Pulse Mobile Foundation Architecture Report
+# PulseSoc Mobile Foundation Architecture Report
 
 ## Scope
 
-The `mobile/` workspace is a React Native + Expo + TypeScript application named Pulse. It reuses the existing CoinPilotX backend and does not redesign backend routes, replace the web app, or touch production data.
+The `mobile/` workspace is a React Native + Expo + TypeScript application named PulseSoc. It reuses the existing CoinPilotX backend and does not redesign backend routes, replace the web app, or touch production data.
 
 ## App Structure
 
 - `components/`: shared UI scaffolds and theme primitives.
-- `screens/`: auth and main Pulse surfaces.
+- `screens/`: auth and main PulseSoc surfaces.
 - `services/`: API client, auth API wrappers, secure session storage, push notifications, media upload, and environment config.
 - `hooks/`: reusable data loading helpers.
 - `navigation/`: auth stack, main tabs, profile stack, linking, and route types.

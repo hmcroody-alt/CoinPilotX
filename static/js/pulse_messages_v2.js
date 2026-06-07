@@ -96,13 +96,13 @@
     let data = {};
     try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: "The server returned an unexpected response." }; }
     const durationMs = Math.round(performance.now() - started);
-    console.info("Pulse Communications V2 timing", { metric, path, status: res.status, durationMs, serverTimingMs: data.timing_ms });
+    console.info("PulseSoc Communications V2 timing", { metric, path, status: res.status, durationMs, serverTimingMs: data.timing_ms });
     if (!res.ok || data.ok === false) {
       const trace = data.trace_id ? ` Trace: ${data.trace_id}` : "";
       const mislabeledServerError = res.status >= 500 && /upload failed/i.test(String(data.message || ""));
       const message = mislabeledServerError
         ? `Messenger is temporarily unavailable. Refresh and try again.${trace}`
-        : data.message || (data.status === "disabled" ? "Pulse Communications 2.0 is not public yet." : `This request could not be completed.${trace}`);
+        : data.message || (data.status === "disabled" ? "PulseSoc Communications 2.0 is not public yet." : `This request could not be completed.${trace}`);
       throw Object.assign(new Error(message), { data, status: res.status, durationMs });
     }
     return data;
@@ -269,7 +269,7 @@
       return `
       <article class="member-row">
         <span class="avatar presence-${presenceClass(presence)}">${initials(member.display_name || member.username)}</span>
-        <span><strong>${escapeHtml(member.display_name || "Pulse member")}</strong><small>${escapeHtml(member.role || "member")} / ${escapeHtml(label)}</small></span>
+        <span><strong>${escapeHtml(member.display_name || "PulseSoc member")}</strong><small>${escapeHtml(member.role || "member")} / ${escapeHtml(label)}</small></span>
       </article>
     `; }).join("");
   }
@@ -284,7 +284,7 @@
     }
     target.innerHTML = rooms.map((room) => `
       <button class="room-row" type="button" data-room-id="${Number(room.conversation_id || 0)}">
-        <strong>${escapeHtml(room.title || "Pulse room")}</strong>
+        <strong>${escapeHtml(room.title || "PulseSoc room")}</strong>
         <small>${escapeHtml(room.privacy || "public")} / ${Number(room.member_count || 0)} members</small>
       </button>
     `).join("");
@@ -298,7 +298,7 @@
     const reply = item.reply_preview ? `<button class="reply-preview" type="button" data-jump-message="${Number(item.reply_preview.id || 0)}">Replying to ${escapeHtml(item.reply_preview.sender?.display_name || "message")}: ${escapeHtml(item.reply_preview.body || item.reply_preview.message_type || "")}</button>` : "";
     return `
       <article class="message ${mine ? "is-mine" : ""}" data-message-id="${item.id}">
-        ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "Pulse member")}</strong>` : ""}
+        ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "PulseSoc member")}</strong>` : ""}
         ${reply}
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
@@ -323,7 +323,7 @@
         poster_url: item.poster_url || item.thumbnail_url || "",
         media_type: item.media_type || "file",
         mime_type: item.mime_type || (String(url).includes(".m3u8") ? "application/vnd.apple.mpegurl" : ""),
-        title: item.filename || "Pulse attachment",
+        title: item.filename || "PulseSoc attachment",
       }, { surface: "messages-v2", className: "comm-v2-media-attachment" });
     }
     if ((item.media_type || "").match(/image|gif/)) return `<img src="${escapeAttr(url)}" alt="Attached media">`;
@@ -551,7 +551,7 @@
     const text = await res.text();
     let data = {};
     try { data = JSON.parse(text || "{}"); } catch (_) { data = { ok: false, message: res.status === 403 ? "Attachment upload was blocked by site security." : "Attachment upload returned an unexpected response." }; }
-    console.info("Pulse Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
+    console.info("PulseSoc Communications V2 timing", { metric: "attachment_upload", status: res.status, durationMs: Math.round(performance.now() - started) });
     if (!res.ok || data.ok === false) throw new Error(data.message || "Attachment upload failed.");
     return Number(data.media?.id || 0);
   }
@@ -916,7 +916,7 @@
           : voiceType.includes("mp4") || voiceType.includes("m4a")
             ? "m4a"
             : "webm";
-    console.info("Pulse Communications V2 voice upload", {
+    console.info("PulseSoc Communications V2 voice upload", {
       mimeType: voiceType,
       extension: ext,
       size: state.voice.blob.size,
@@ -1088,7 +1088,7 @@
         if (target.closest("[data-report-last]")) return await reportLast();
         if (target.closest("[data-block-peer]")) return await blockPeer();
       } catch (err) {
-        console.error("Pulse Communications V2 action failed", err);
+        console.error("PulseSoc Communications V2 action failed", err);
         setStatus(err?.message || "That action could not be completed. Please try again.", "error");
       }
     });
@@ -1214,7 +1214,7 @@
       if (result !== false) setStatus("");
       return result;
     } catch (err) {
-      console.error("Pulse Communications V2 action failed", err);
+      console.error("PulseSoc Communications V2 action failed", err);
       setStatus(err?.message || "That action could not be completed. Please try again.", "error");
       return false;
     } finally {
@@ -1256,14 +1256,14 @@
   function personResultHtml(person) {
     const remembered = rememberPerson({
       user_id: Number(person.user_id || 0),
-      display_name: person.display_name || "Pulse member",
+      display_name: person.display_name || "PulseSoc member",
       username: person.username || "",
       avatar_url: person.avatar_url || "",
     });
     return `
       <button class="person-result" type="button" data-person-id="${Number(remembered.user_id || 0)}">
         <span class="avatar">${initials(remembered.display_name || remembered.username)}</span>
-        <span><strong>${escapeHtml(remembered.display_name || "Pulse member")}</strong><small>${escapeHtml(remembered.username ? `@${remembered.username}` : person.matched_email ? "Email match" : "Pulse member")}</small></span>
+        <span><strong>${escapeHtml(remembered.display_name || "PulseSoc member")}</strong><small>${escapeHtml(remembered.username ? `@${remembered.username}` : person.matched_email ? "Email match" : "PulseSoc member")}</small></span>
         <span aria-hidden="true">+</span>
       </button>
     `;
@@ -1315,7 +1315,7 @@
     target.innerHTML = state.groupMembers.length ? state.groupMembers.map((person) => `
       <div class="selected-person">
         <span class="avatar">${initials(person.display_name || person.username)}</span>
-        <span><strong>${escapeHtml(person.display_name || "Pulse member")}</strong><small>${escapeHtml(person.username ? `@${person.username}` : "Selected")}</small></span>
+        <span><strong>${escapeHtml(person.display_name || "PulseSoc member")}</strong><small>${escapeHtml(person.username ? `@${person.username}` : "Selected")}</small></span>
         <button type="button" data-remove-group-member="${Number(person.user_id || 0)}">Remove</button>
       </div>
     `).join("") : `<div class="empty-state">Select at least one person.</div>`;

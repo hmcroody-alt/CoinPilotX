@@ -1,4 +1,4 @@
-# Pulse Mobile State Management Recommendation
+# PulseSoc Mobile State Management Recommendation
 
 ## Recommendation
 

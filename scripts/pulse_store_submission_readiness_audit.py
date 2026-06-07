@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse native App Store and Play Store readiness scaffolding."""
+"""Audit PulseSoc native App Store and Play Store readiness scaffolding."""
 
 import json
 from pathlib import Path
@@ -41,7 +41,7 @@ def main():
             failures.append(f"Missing required file: {path}")
 
     checks = {
-        "app name": app.get("name") == "Pulse",
+        "app name": app.get("name") == "PulseSoc",
         "scheme": app.get("scheme") == "pulse",
         "icon configured": app.get("icon") == "./assets/icon.png",
         "splash configured": (app.get("splash") or {}).get("image") == "./assets/splash.png",
@@ -77,11 +77,11 @@ def main():
                 failures.append(f"{label} missing token: {token}")
 
     if failures:
-        print("Pulse store submission readiness audit FAILED")
+        print("PulseSoc store submission readiness audit FAILED")
         for failure in failures:
             print(f"- {failure}")
         raise SystemExit(1)
-    print("pulse store submission readiness audit ok")
+    print("pulsesoc store submission readiness audit ok")
 
 
 if __name__ == "__main__":

@@ -79,13 +79,13 @@
       first500: rawBody.slice(0, 500),
       rawBody,
     };
-    console.warn("Pulse upload response parse failed", diagnostic);
+    console.warn("PulseSoc upload response parse failed", diagnostic);
     const lower = rawBody.toLowerCase();
     let message = "Upload returned a non-JSON response from the server.";
     if (xhr.status === 403 && (contentType.includes("text/html") || lower.includes("cloudflare") || lower.includes("attention required"))) {
       message = "Upload was blocked by site security. Please try again or contact support.";
     } else if (xhr.status === 524 || lower.includes("cloudflare error 524") || lower.includes("a timeout occurred")) {
-      message = "Upload timed out before Pulse received it. Try a smaller video and retry.";
+      message = "Upload timed out before PulseSoc received it. Try a smaller video and retry.";
     } else if (xhr.status >= 500 && contentType.includes("text/html")) {
       message = "Upload failed on the server. Please retry or contact support if it continues.";
     } else if (xhr.status === 401 || lower.includes("/login") || lower.includes("login")) {
@@ -189,7 +189,7 @@
             let completeData = {};
             try { completeData = JSON.parse(completeText || "{}"); } catch (_) { completeData = { ok: false, message: "Video upload completion returned an unreadable response." }; }
             if (!completeResponse.ok || completeData.ok === false) {
-              throw new Error(completeData.message || "Video uploaded, but Pulse could not finish the media record.");
+              throw new Error(completeData.message || "Video uploaded, but PulseSoc could not finish the media record.");
             }
             const done = { stage: "complete", percent: 100, message: "Video uploaded. Playback is processing.", type };
             render(root, done);
@@ -254,7 +254,7 @@
         let data = {};
         try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) { data = uploadParseError(xhr); }
         if (window.PULSE_UPLOAD_DEBUG) {
-          console.debug("Pulse upload response", {
+          console.debug("PulseSoc upload response", {
             status: xhr.status,
             contentType: xhr.getResponseHeader("content-type") || "",
             headers: responseHeaders(xhr),

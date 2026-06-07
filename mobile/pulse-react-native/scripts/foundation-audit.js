@@ -59,9 +59,9 @@ for (const [label, file, needle] of sourceChecks) {
 }
 
 if (failures.length > 0) {
-  console.error("Pulse mobile foundation audit failed:");
+  console.error("PulseSoc mobile foundation audit failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("Pulse mobile foundation audit passed.");
+console.log("PulseSoc mobile foundation audit passed.");

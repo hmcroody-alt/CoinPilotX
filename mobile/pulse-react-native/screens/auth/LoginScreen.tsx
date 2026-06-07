@@ -44,7 +44,7 @@ export function LoginScreen({ navigation }: Props) {
   }
 
   return (
-    <ScreenScaffold title="Pulse" subtitle="Sign in with your email or username.">
+    <ScreenScaffold title="PulseSoc" subtitle="Sign in with your email or username.">
       <TextInput style={screenStyles.input} value={identifier} onChangeText={setIdentifier} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" placeholder="Email or username" placeholderTextColor="#7890a8" />
       <TextInput style={screenStyles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Password" placeholderTextColor="#7890a8" />
       <View style={{ ...screenStyles.card, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>

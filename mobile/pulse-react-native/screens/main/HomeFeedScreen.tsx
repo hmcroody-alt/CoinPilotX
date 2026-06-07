@@ -103,7 +103,7 @@ function FeedHeader({ onCreate, error }: { onCreate: () => void; error?: string 
     <View style={{ marginBottom: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={screenStyles.title}>Pulse</Text>
+          <Text style={screenStyles.title}>PulseSoc</Text>
           <Text style={screenStyles.subtitle}>Live timeline</Text>
         </View>
         <TouchableOpacity style={[screenStyles.button, { minWidth: 112 }]} onPress={onCreate}>
@@ -119,9 +119,9 @@ function EmptyFeed({ onCreate }: { onCreate: () => void }) {
   return (
     <View style={screenStyles.card}>
       <Text style={screenStyles.cardTitle}>No posts yet</Text>
-      <Text style={screenStyles.muted}>Create the first Pulse or pull to refresh.</Text>
+      <Text style={screenStyles.muted}>Create the first PulseSoc or pull to refresh.</Text>
       <TouchableOpacity style={screenStyles.button} onPress={onCreate}>
-        <Text style={screenStyles.buttonText}>Create Pulse</Text>
+        <Text style={screenStyles.buttonText}>Create PulseSoc</Text>
       </TouchableOpacity>
     </View>
   );

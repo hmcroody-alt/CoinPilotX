@@ -117,11 +117,11 @@
 
   function notificationCard(note, compact) {
     const unread = !note.read && note.status !== "read";
-    const title = note.title || "Pulse update";
+    const title = note.title || "PulseSoc update";
     const body = note.body || "";
     return `
       <article class="pulse-notification-card ${unread ? "unread" : ""}" data-note-id="${Number(note.id || 0)}">
-        <div class="pulse-note-head"><span class="pill">${escapeHtml(note.category || note.type || "Pulse")}</span><small>${escapeHtml(note.created_at || "")}</small></div>
+        <div class="pulse-note-head"><span class="pill">${escapeHtml(note.category || note.type || "PulseSoc")}</span><small>${escapeHtml(note.created_at || "")}</small></div>
         <h${compact ? "3" : "2"}>${escapeHtml(title)}</h${compact ? "3" : "2"}>
         <p>${escapeHtml(body)}</p>
         <div class="actions">
@@ -299,7 +299,7 @@
 
   async function loadPulsePreferences() {
     const response = await fetch("/api/pulse/notifications/preferences", { cache: "no-store", credentials: "same-origin" });
-    if (!response.ok) throw new Error("Pulse notification preferences unavailable.");
+    if (!response.ok) throw new Error("PulseSoc notification preferences unavailable.");
     return response.json();
   }
 

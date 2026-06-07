@@ -21,7 +21,7 @@ export function AuthScreen() {
     try {
       if (mode === "register") {
         await auth.register({ full_name: fullName, username, email, password });
-        setMessage("Check your email to confirm your Pulse account.");
+        setMessage("Check your email to confirm your PulseSoc account.");
       } else if (mode === "recover") {
         await auth.recover(email);
         setMessage("If an account exists, password recovery has been sent.");
@@ -29,7 +29,7 @@ export function AuthScreen() {
         await auth.login(email, password);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Pulse could not complete this action.");
+      setMessage(error instanceof Error ? error.message : "PulseSoc could not complete this action.");
     } finally {
       setBusy(false);
     }
@@ -40,7 +40,7 @@ export function AuthScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={screenStyles.screen}>
       <View style={{ paddingTop: 52 }}>
-        <Text style={screenStyles.title}>Pulse</Text>
+        <Text style={screenStyles.title}>PulseSoc</Text>
         <Text style={screenStyles.subtitle}>Sign in to PulseSoc.com to use your feed, reels, videos, messages, notifications, and profile.</Text>
         {mode === "register" ? (
           <>

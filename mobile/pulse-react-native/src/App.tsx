@@ -61,13 +61,13 @@ function RootNavigator() {
         tabBarInactiveTintColor: colors.muted
       }}
     >
-      <Tab.Screen name="Feed">{() => <ApiListScreen title="Feed" endpoint={pulseApiEndpoints.feed} listKey="posts" empty="Create the first Pulse post." />}</Tab.Screen>
+      <Tab.Screen name="Feed">{() => <ApiListScreen title="Feed" endpoint={pulseApiEndpoints.feed} listKey="posts" empty="Create the first PulseSoc post." />}</Tab.Screen>
       <Tab.Screen name="Reels">{() => <ApiListScreen title="Reels" endpoint={pulseApiEndpoints.reels} listKey="reels" empty="No reels yet." />}</Tab.Screen>
       <Tab.Screen name="Videos">{() => <ApiListScreen title="Videos" endpoint={pulseApiEndpoints.videos} listKey="videos" empty="No videos yet." />}</Tab.Screen>
       <Tab.Screen name="Messages">{() => <ApiListScreen title="Messages" endpoint={pulseApiEndpoints.messages} listKey="conversations" empty="No conversations yet." />}</Tab.Screen>
       <Tab.Screen name="Notifications" component={NotificationsScreen} />
       <Tab.Screen name="Profile">{() => <ProfileScreen />}</Tab.Screen>
-      <Tab.Screen name="Premium">{() => <ApiListScreen title="Premium" endpoint={pulseApiEndpoints.profile} listKey="premium_features" empty="Premium status loads from your Pulse profile." />}</Tab.Screen>
+      <Tab.Screen name="Premium">{() => <ApiListScreen title="Premium" endpoint={pulseApiEndpoints.profile} listKey="premium_features" empty="Premium status loads from your PulseSoc profile." />}</Tab.Screen>
     </Tab.Navigator>
   );
 }
@@ -78,7 +78,7 @@ function ProfileScreen() {
     <View style={screenStyles.screen}>
       <Text style={screenStyles.title}>Profile</Text>
       <View style={screenStyles.card}>
-        <Text style={screenStyles.cardTitle}>{auth.user?.display_name || auth.user?.full_name || auth.user?.username || "Pulse member"}</Text>
+        <Text style={screenStyles.cardTitle}>{auth.user?.display_name || auth.user?.full_name || auth.user?.username || "PulseSoc member"}</Text>
         <Text style={screenStyles.muted}>{auth.user?.email || "PulseSoc.com"}</Text>
       </View>
       <TouchableOpacity onPress={auth.logout} style={screenStyles.button}>

@@ -22,7 +22,7 @@
   }
 
   function chatMessageHtml(message) {
-    const name = message.display_name || message.username || (message.message_type === "system" ? "Pulse" : "Viewer");
+    const name = message.display_name || message.username || (message.message_type === "system" ? "PulseSoc" : "Viewer");
     const initial = String(name || "P").trim().slice(0, 1).toUpperCase() || "P";
     const role = message.message_type === "system" ? "System" : message.pinned ? "Pinned" : "Live";
     return `<article class="live-chat-message" data-message-id="${Number(message.id || 0)}">
@@ -38,7 +38,7 @@
     const feed = qs(root, "[data-live-chat-feed]");
     if (!feed || !Array.isArray(messages)) return;
     const oldScroll = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 80;
-    feed.innerHTML = messages.map(chatMessageHtml).join("") || `<article class="live-chat-message"><div class="live-chat-avatar">P</div><div><strong>Pulse</strong><p>Chat is ready.</p></div></article>`;
+    feed.innerHTML = messages.map(chatMessageHtml).join("") || `<article class="live-chat-message"><div class="live-chat-avatar">P</div><div><strong>PulseSoc</strong><p>Chat is ready.</p></div></article>`;
     if (oldScroll) feed.scrollTop = feed.scrollHeight;
   }
 
@@ -78,7 +78,7 @@
       if (data && data.ok !== false) applyState(root, data);
     } catch (error) {
       setText(root, "[data-live-health]", "reconnecting");
-      console.warn("Pulse Live state recovery", error);
+      console.warn("PulseSoc Live state recovery", error);
     }
   }
 
@@ -163,7 +163,7 @@
       });
       renderReactionBurst(root, [{ emoji: reaction, x: 64, delay_ms: 0 }]);
     } catch (error) {
-      console.warn("Pulse Live reaction failed", error);
+      console.warn("PulseSoc Live reaction failed", error);
     }
   }
 
@@ -263,13 +263,13 @@
     const peerId = root.__pulseLivePublisherPeerId || (root.__pulseLivePublisherPeerId = livePeerId("publisher"));
     const sessions = root.__pulseLivePublisherSessions || (root.__pulseLivePublisherSessions = new Map());
     updateTransportDiagnostics(root, { connection: "publisher", ice: "checking", stream: "local", audio: stream.getAudioTracks().length, video: stream.getVideoTracks().length });
-    console.info("Pulse Live publisher tracks", { live_id: root.dataset.liveId, peer_id: peerId, tracks: trackDiagnostics(stream) });
+    console.info("PulseSoc Live publisher tracks", { live_id: root.dataset.liveId, peer_id: peerId, tracks: trackDiagnostics(stream) });
 
     sessions.forEach((pc) => {
       const senders = pc.getSenders();
       stream.getTracks().forEach((track) => {
         const sender = senders.find((item) => item.track?.kind === track.kind);
-        if (sender) sender.replaceTrack(track).catch((error) => console.warn("Pulse Live replaceTrack failed", error));
+        if (sender) sender.replaceTrack(track).catch((error) => console.warn("PulseSoc Live replaceTrack failed", error));
         else pc.addTrack(track, stream);
       });
     });
@@ -282,7 +282,7 @@
       const pc = new RTCPeerConnection(rtcConfig);
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
       pc.onicecandidate = (event) => {
-        if (event.candidate) postSignal(root, "publisher", peerId, "candidate", { candidate: event.candidate.toJSON() }, viewerPeerId).catch((error) => console.warn("Pulse Live publisher ICE signal failed", error));
+        if (event.candidate) postSignal(root, "publisher", peerId, "candidate", { candidate: event.candidate.toJSON() }, viewerPeerId).catch((error) => console.warn("PulseSoc Live publisher ICE signal failed", error));
       };
       pc.onconnectionstatechange = () => updateTransportDiagnostics(root, {
         connection: pc.connectionState,
@@ -310,14 +310,14 @@
             await pc.setLocalDescription(answer);
             await postSignal(root, "publisher", peerId, "answer", { sdp: pc.localDescription.toJSON() }, viewerPeerId);
           } else if (signal.event_type === "candidate" && signal.payload?.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(signal.payload.candidate)).catch((error) => console.warn("Pulse Live publisher ICE add failed", error));
+            await pc.addIceCandidate(new RTCIceCandidate(signal.payload.candidate)).catch((error) => console.warn("PulseSoc Live publisher ICE add failed", error));
           } else if (signal.event_type === "bye") {
             pc.close();
             sessions.delete(viewerPeerId);
           }
         }
       } catch (error) {
-        console.warn("Pulse Live publisher signaling recovery", error);
+        console.warn("PulseSoc Live publisher signaling recovery", error);
       } finally {
         setTimeout(poll, document.hidden ? 2200 : 900);
       }
@@ -352,14 +352,14 @@
         player.removeAttribute("src");
         player.srcObject = remoteStream;
       }
-      console.info("Pulse Live viewer remote stream", { live_id: root.dataset.liveId, peer_id: peerId, tracks: trackDiagnostics(remoteStream) });
+      console.info("PulseSoc Live viewer remote stream", { live_id: root.dataset.liveId, peer_id: peerId, tracks: trackDiagnostics(remoteStream) });
       try {
         await player.play();
         playbackStarted = true;
         playbackPolicy.audioOut = remoteStream.getAudioTracks().length > 0 && !player.muted;
       } catch (error) {
         playbackPolicy.autoplayBlocked = true;
-        console.warn("Pulse Live viewer autoplay blocked", error);
+        console.warn("PulseSoc Live viewer autoplay blocked", error);
       }
       updateTransportDiagnostics(root, {
         connection: pc.connectionState,
@@ -373,7 +373,7 @@
       });
     };
     pc.onicecandidate = (event) => {
-      if (event.candidate) postSignal(root, "viewer", peerId, "candidate", { candidate: event.candidate.toJSON() }, "publisher").catch((error) => console.warn("Pulse Live viewer ICE signal failed", error));
+      if (event.candidate) postSignal(root, "viewer", peerId, "candidate", { candidate: event.candidate.toJSON() }, "publisher").catch((error) => console.warn("PulseSoc Live viewer ICE signal failed", error));
     };
     const refreshDiagnostics = async () => {
       try {
@@ -401,9 +401,9 @@
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await postSignal(root, "viewer", peerId, "offer", { sdp: pc.localDescription.toJSON() }, "publisher");
-      console.info("Pulse Live viewer offer sent", { live_id: root.dataset.liveId, peer_id: peerId });
+      console.info("PulseSoc Live viewer offer sent", { live_id: root.dataset.liveId, peer_id: peerId });
     } catch (error) {
-      console.warn("Pulse Live viewer offer failed", error);
+      console.warn("PulseSoc Live viewer offer failed", error);
       updateTransportDiagnostics(root, { connection: "failed", ice: pc.iceConnectionState, stream: "offer failed", audio: 0, video: 0 });
       return;
     }
@@ -416,11 +416,11 @@
           if (signal.event_type === "answer" && signal.payload?.sdp && !pc.currentRemoteDescription) {
             await pc.setRemoteDescription(new RTCSessionDescription(signal.payload.sdp));
           } else if (signal.event_type === "candidate" && signal.payload?.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(signal.payload.candidate)).catch((error) => console.warn("Pulse Live viewer ICE add failed", error));
+            await pc.addIceCandidate(new RTCIceCandidate(signal.payload.candidate)).catch((error) => console.warn("PulseSoc Live viewer ICE add failed", error));
           }
         }
       } catch (error) {
-        console.warn("Pulse Live viewer signaling recovery", error);
+        console.warn("PulseSoc Live viewer signaling recovery", error);
       } finally {
         refreshDiagnostics();
         setTimeout(poll, document.hidden ? 2200 : 900);
@@ -459,7 +459,7 @@
           if (!response.ok || data.ok === false) throw new Error(data.message || "Live media publish failed.");
           return data;
         });
-        console.info("Pulse Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
+        console.info("PulseSoc Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
         setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Camera preview ready. Connect OBS/RTMP to broadcast into Mux." : "No tracks detected");
         await initPublisherTransport(root, stream);
         await fetchState(root);
@@ -482,7 +482,7 @@
         video.srcObject = stream;
         root.classList.add("is-camera-active");
         setText(root, "[data-live-camera-state]", "Camera preview ready. Connect OBS/RTMP to broadcast into Mux.");
-        console.info("Pulse Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
+        console.info("PulseSoc Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Camera needs permission");
@@ -503,7 +503,7 @@
         video.style.transform = "none";
         root.classList.add("is-camera-active");
         setText(root, "[data-live-camera-state]", "Screen preview ready. Connect OBS/RTMP to broadcast into Mux.");
-        console.info("Pulse Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
+        console.info("PulseSoc Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("screen_share");
       } catch {
         if (window.toast) window.toast("Screen share was not started.");
@@ -543,10 +543,10 @@
       try {
         await player.play();
         root.__pulseLivePlaybackPolicy.audioOut = true;
-        console.info("Pulse Live viewer unmuted", { live_id: root.dataset.liveId, has_audio: !!player.srcObject?.getAudioTracks?.().length });
+        console.info("PulseSoc Live viewer unmuted", { live_id: root.dataset.liveId, has_audio: !!player.srcObject?.getAudioTracks?.().length });
       } catch (error) {
         root.__pulseLivePlaybackPolicy.autoplayBlocked = true;
-        console.warn("Pulse Live viewer unmute failed", error);
+        console.warn("PulseSoc Live viewer unmute failed", error);
       }
       event.currentTarget.hidden = true;
     });

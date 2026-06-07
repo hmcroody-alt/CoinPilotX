@@ -41,7 +41,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
   }
 
   return (
-    <ScreenScaffold title="Reset Password" subtitle="Create a new Pulse password from your reset link.">
+    <ScreenScaffold title="Reset Password" subtitle="Create a new PulseSoc password from your reset link.">
       {success ? (
         <View style={screenStyles.card}>
           <Text style={screenStyles.cardTitle}>Password reset complete</Text>

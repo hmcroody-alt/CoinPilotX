@@ -1,4 +1,4 @@
-# Pulse Mobile Authentication Phase Report
+# PulseSoc Mobile Authentication Phase Report
 
 ## API Endpoints Used
 
@@ -18,7 +18,7 @@
 
 ## Session Architecture
 
-The mobile app uses the existing CoinPilotX/Pulse server session model. Session cookies are captured by the API client and persisted with Expo SecureStore. Refresh-token storage is present but only populated if the backend returns a refresh token; the current production backend refresh behavior is session validation through `/api/mobile/auth/refresh`.
+The mobile app uses the existing CoinPilotX/PulseSoc server session model. Session cookies are captured by the API client and persisted with Expo SecureStore. Refresh-token storage is present but only populated if the backend returns a refresh token; the current production backend refresh behavior is session validation through `/api/mobile/auth/refresh`.
 
 Logout calls the backend logout endpoint and clears all SecureStore session material. Passwords are never persisted and no auth tokens are logged.
 

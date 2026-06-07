@@ -26,7 +26,7 @@ export function SignupScreen({ navigation }: Props) {
       setMessage(validation.message);
       return;
     }
-    setMessage("Creating your Pulse account...");
+    setMessage("Creating your PulseSoc account...");
     setLoading(true);
     try {
       await signup({ full_name: fullName, username, email, password });
@@ -39,7 +39,7 @@ export function SignupScreen({ navigation }: Props) {
   }
 
   return (
-    <ScreenScaffold title="Signup" subtitle="Create a Pulse account through the existing CoinPilotX auth API.">
+    <ScreenScaffold title="Signup" subtitle="Create a PulseSoc account through the existing CoinPilotX auth API.">
       <TextInput style={screenStyles.input} value={fullName} onChangeText={setFullName} placeholder="Full name" placeholderTextColor="#7890a8" />
       <TextInput style={screenStyles.input} value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="Username" placeholderTextColor="#7890a8" />
       <TextInput style={screenStyles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email" placeholderTextColor="#7890a8" />

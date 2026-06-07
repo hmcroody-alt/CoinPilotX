@@ -15,5 +15,5 @@
   <circle cx="320" cy="178" r="54" fill="#10283d" stroke="#6edff6" stroke-opacity=".35" stroke-width="3"/>
   <path d="M282 190l28-34 30 38 18-22 38 52H244l38-34z" fill="#6edff6" opacity=".72"/>
   <text x="320" y="286" text-anchor="middle" fill="#effcff" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="800">Media is being restored</text>
-  <text x="320" y="322" text-anchor="middle" fill="#a8bdc9" font-family="Inter, Arial, sans-serif" font-size="17">Pulse will retry this asset safely.</text>
+  <text x="320" y="322" text-anchor="middle" fill="#a8bdc9" font-family="Inter, Arial, sans-serif" font-size="17">PulseSoc will retry this asset safely.</text>
 </svg>

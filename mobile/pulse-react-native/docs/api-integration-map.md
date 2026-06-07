@@ -1,4 +1,4 @@
-# Pulse Mobile API Integration Map
+# PulseSoc Mobile API Integration Map
 
 ## Auth
 

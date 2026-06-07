@@ -1,8 +1,8 @@
-# Pulse Mobile Feed Phase Report
+# PulseSoc Mobile Feed Phase Report
 
 ## Scope
 
-Phase 3 builds the first production Pulse social surface in the Expo mobile app. The work is limited to feed and status creation. Reels, Messaging, Marketplace, and Notification Center remain untouched for future phases.
+Phase 3 builds the first production PulseSoc social surface in the Expo mobile app. The work is limited to feed and status creation. Reels, Messaging, Marketplace, and Notification Center remain untouched for future phases.
 
 ## APIs Used
 
@@ -15,7 +15,7 @@ Phase 3 builds the first production Pulse social surface in the Expo mobile app.
 - `POST /api/pulse/posts/:id/react`: like/unlike through the existing reaction endpoint.
 - `GET /api/pulse/posts/:id/comments`: load post comments.
 - `POST /api/pulse/posts/:id/comments`: create comments and replies when `parent_comment_id` is supported.
-- `POST /api/pulse/posts/:id/repost`: repost existing Pulse content.
+- `POST /api/pulse/posts/:id/repost`: repost existing PulseSoc content.
 - `POST /api/pulse/media/upload`: upload image and video media for post creation.
 - `POST /api/track`: mobile analytics event sink.
 

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pulse",
+    "name": "PulseSoc",
     "slug": "pulse",
     "scheme": "pulse",
     "version": "0.1.0",
@@ -23,10 +23,10 @@
         "applinks:www.pulsesoc.com"
       ],
       "infoPlist": {
-        "NSCameraUsageDescription": "Pulse uses the camera when you choose to capture profile media, videos, reels, statuses, or message attachments.",
-        "NSMicrophoneUsageDescription": "Pulse uses the microphone when you choose to record videos, reels, statuses, voice notes, or live content.",
-        "NSPhotoLibraryUsageDescription": "Pulse uses photo library access when you choose media to upload to your profile, posts, messages, videos, reels, or statuses.",
-        "NSUserTrackingUsageDescription": "Pulse does not require cross-app tracking for core features."
+        "NSCameraUsageDescription": "PulseSoc uses the camera when you choose to capture profile media, videos, reels, statuses, or message attachments.",
+        "NSMicrophoneUsageDescription": "PulseSoc uses the microphone when you choose to record videos, reels, statuses, voice notes, or live content.",
+        "NSPhotoLibraryUsageDescription": "PulseSoc uses photo library access when you choose media to upload to your profile, posts, messages, videos, reels, or statuses.",
+        "NSUserTrackingUsageDescription": "PulseSoc does not require cross-app tracking for core features."
       }
     },
     "android": {

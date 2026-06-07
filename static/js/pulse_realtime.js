@@ -20,11 +20,11 @@
   function emit(type, payload) {
     const list = state.listeners.get(type) || [];
     list.forEach((handler) => {
-      try { handler(payload); } catch (error) { console.error("Pulse realtime listener failed", error); }
+      try { handler(payload); } catch (error) { console.error("PulseSoc realtime listener failed", error); }
     });
     const all = state.listeners.get("*") || [];
     all.forEach((handler) => {
-      try { handler(type, payload); } catch (error) { console.error("Pulse realtime wildcard failed", error); }
+      try { handler(type, payload); } catch (error) { console.error("PulseSoc realtime wildcard failed", error); }
     });
   }
 
@@ -91,7 +91,7 @@
         emit("reconnecting", { delay });
       };
     } catch (error) {
-      console.error("Pulse realtime connect failed", error);
+      console.error("PulseSoc realtime connect failed", error);
     }
   }
 

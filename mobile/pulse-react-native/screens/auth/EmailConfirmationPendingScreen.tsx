@@ -67,14 +67,14 @@ export function EmailConfirmationPendingScreen({ navigation, route }: Props) {
   }
 
   function openInbox() {
-    Linking.openURL("mailto:").catch(() => setMessage("Open your email app and look for the Pulse confirmation email."));
+    Linking.openURL("mailto:").catch(() => setMessage("Open your email app and look for the PulseSoc confirmation email."));
   }
 
   return (
     <ScreenScaffold title="Confirm Email" subtitle="Check your email to confirm your account.">
       <View style={screenStyles.card}>
         <Text style={screenStyles.cardTitle}>Check your email to confirm your account.</Text>
-        <Text style={screenStyles.muted}>Open the confirmation link from Pulse, then refresh this screen or return to login.</Text>
+        <Text style={screenStyles.muted}>Open the confirmation link from PulseSoc, then refresh this screen or return to login.</Text>
       </View>
       <TextInput style={screenStyles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email" placeholderTextColor="#7890a8" />
       <TouchableOpacity style={screenStyles.button} onPress={resend} disabled={loading}>

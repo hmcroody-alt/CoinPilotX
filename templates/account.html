@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ title }} | Pulse</title>
-  <meta name="description" content="Pulse account access, settings, subscription profile, and optional Telegram linking." />
+  <title>{{ title }} | PulseSoc</title>
+  <meta name="description" content="PulseSoc account access, settings, subscription profile, and optional Telegram linking." />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="canonical" href="https://pulsesoc.com/{{ page }}" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Pulse" />
+  <meta name="apple-mobile-web-app-title" content="PulseSoc" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="application-name" content="Pulse" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" />
-  <link rel="apple-touch-icon" href="/static/brand/pulse-apple-touch-icon-20260606.png" />
+  <meta name="application-name" content="PulseSoc" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" />
+  <link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260606.png" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
@@ -131,14 +131,14 @@
     <div class="container">
       <nav>
         <a class="brand" href="/">
-          <img src="{{ url_for('static', filename='brand/pulse-logo-20260606.png') }}" alt="Pulse logo" />
-          <span>Pulse</span>
+          <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260606.png') }}" alt="PulseSoc logo" />
+          <span>PulseSoc</span>
         </a>
         <div class="nav-links">
           <a href="/">Home</a>
           <a href="/dashboard">Dashboard</a>
           <a href="/account">Account</a>
-          <a href="/pulse/premium">Pulse Premium</a>
+          <a href="/pulse/premium">PulseSoc Premium</a>
           <a href="/account/settings">Settings</a>
           <a href="/support">Support</a>
           {% if current_user %}<a href="/logout">Logout</a>{% else %}<a href="/login">Login</a>{% endif %}
@@ -150,13 +150,13 @@
   <main>
     <div class="container">
       <article class="panel">
-        <div class="kicker">Pulse Account</div>
+        <div class="kicker">PulseSoc Account</div>
         <h1>{{ title }}</h1>
         {% if message %}<div class="notice">{{ message }}</div>{% endif %}
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
         {% if page == "signup" %}
-          <p>Create your Pulse account. Core tools are free for authenticated users; Pulse Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.</p>
+          <p>Create your PulseSoc account. Core tools are free for authenticated users; PulseSoc Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
@@ -168,14 +168,14 @@
             <input name="country" autocomplete="country-name" placeholder="Country" required />
             <label class="consent-row"><input type="checkbox" name="age_confirmed" required /><span>I confirm I meet the age requirements for my country.</span></label>
             <label class="consent-row"><input type="checkbox" required /><span>I agree to the Terms and Privacy Policy.</span></label>
-            <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from Pulse. I can unsubscribe anytime.</span></label>
-            <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from Pulse. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
+            <label class="consent-row"><input type="checkbox" name="email_opt_in" /><span>I agree to receive promotional emails from PulseSoc. I can unsubscribe anytime.</span></label>
+            <label class="consent-row"><input type="checkbox" name="sms_opt_in" /><span>I agree to receive promotional text messages from PulseSoc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
             <button class="button primary" type="submit">Create Account</button>
           </form>
           <p class="muted">Already have an account? <a href="/login">Log in</a>.</p>
 
         {% elif page == "login" %}
-          <p>Log in to manage your Pulse profile, account, alerts, and optional Telegram companion connection.</p>
+          <p>Log in to manage your PulseSoc profile, account, alerts, and optional Telegram companion connection.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
@@ -192,7 +192,7 @@
           <p class="muted"><a href="/forgot-password">Forgot password?</a> · <a href="/forgot-username">Forgot account email?</a> · <a href="/signup">Create account</a></p>
 
         {% elif page == "forgot" %}
-          <p>Enter your account email. If it exists, Pulse will send a reset link.</p>
+          <p>Enter your account email. If it exists, PulseSoc will send a reset link.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
@@ -201,7 +201,7 @@
           <p class="muted"><a href="/forgot-username">Forgot account email?</a> · <a href="/login">Back to login</a></p>
 
         {% elif page == "forgot_username" %}
-          <p>Enter your email and Pulse will send your account login details if an account exists.</p>
+          <p>Enter your email and PulseSoc will send your account login details if an account exists.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
@@ -210,7 +210,7 @@
           <p class="muted"><a href="/forgot-password">Reset password</a> · <a href="/login">Back to login</a></p>
 
         {% elif page == "reset" %}
-          <p>Choose a new password for your Pulse account.</p>
+          <p>Choose a new password for your PulseSoc account.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="token" value="{{ token }}" />
@@ -232,13 +232,13 @@
               <p><strong>Plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
               {% if access.is_paid_pro %}
-                <p><strong>Pulse Premium:</strong> Active.</p>
+                <p><strong>PulseSoc Premium:</strong> Active.</p>
                 <p><strong>Billing/access date:</strong> {{ access.pro_expires_at }}</p>
               {% elif access.is_trial %}
                 <p><strong>Trial ends:</strong> {{ access.trial_end }}</p>
                 <p><strong>Days remaining:</strong> {{ access.days_remaining }}</p>
               {% elif access.trial_expired %}
-                <p><strong>Trial:</strong> Ended. Core access remains free; Pulse Premium is optional when you want elite identity and creator enhancements.</p>
+                <p><strong>Trial:</strong> Ended. Core access remains free; PulseSoc Premium is optional when you want elite identity and creator enhancements.</p>
               {% endif %}
               <p><strong>Telegram:</strong> {% if current_user.telegram_user_id %}Connected{% else %}Not connected{% endif %}</p>
               <p><strong>Email updates:</strong> {% if current_user.email_opt_in %}Enabled{% else %}Disabled{% endif %}</p>
@@ -247,13 +247,13 @@
           </div>
           <div class="profile-card" style="margin-top:18px">
             <h3>Free Core Ecosystem</h3>
-            <p>Pulse posting, groups, spaces, messenger, reels, livestream basics, marketplace browsing, AI utilities, watchlists, alerts, profile customization, and community participation are available to authenticated users.</p>
-            <p class="muted">Pulse Premium adds prestige identity, creator cosmetics, advanced creator tools, and elite profile enhancements. CoinPilotXAI Inc. provides educational AI intelligence only.</p>
+            <p>PulseSoc posting, groups, spaces, messenger, reels, livestream basics, marketplace browsing, AI utilities, watchlists, alerts, profile customization, and community participation are available to authenticated users.</p>
+            <p class="muted">PulseSoc Premium adds prestige identity, creator cosmetics, advanced creator tools, and elite profile enhancements. CoinPilotXAI Inc. provides educational AI intelligence only.</p>
           </div>
           {% if access.referral_code %}
             <div class="profile-card" style="margin-top:18px">
               <h3>Referral Link</h3>
-              <p>Invite verified users and help grow the free Pulse ecosystem.</p>
+              <p>Invite verified users and help grow the free PulseSoc ecosystem.</p>
               <p><code>https://pulsesoc.com/r/{{ access.referral_code }}</code></p>
             </div>
           {% endif %}
@@ -261,7 +261,7 @@
             <a class="button primary" href="/account/settings">Account Settings</a>
             <a class="button primary" href="/dashboard">Open Dashboard</a>
             {% if not access.is_paid_pro %}
-              <a class="button primary" href="/pulse/premium" data-analytics="dashboard_upgrade_clicked">Pulse Premium</a>
+              <a class="button primary" href="/pulse/premium" data-analytics="dashboard_upgrade_clicked">PulseSoc Premium</a>
             {% endif %}
             <a class="button gold" href="https://t.me/DocShieldX_bot">Connect Telegram Companion</a>
             <a class="button" href="/support">Support</a>
@@ -270,26 +270,26 @@
         {% elif page == "upgrade" %}
           <div class="grid">
             <div class="profile-card">
-              <h3>Pulse Premium</h3>
+              <h3>PulseSoc Premium</h3>
               <p><strong>Positioning:</strong> Optional prestige and creator enhancement.</p>
               <p><strong>Current plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription:</strong> {{ current_user.subscription_status or "inactive" }}</p>
               {% if access.is_paid_pro %}
-                <p><strong>Pulse Premium is active.</strong></p>
+                <p><strong>PulseSoc Premium is active.</strong></p>
                 <p>Your premium identity and creator enhancements are active. Core platform access remains free.</p>
                 <div class="actions">
                   <a class="button primary" href="/dashboard">Open Dashboard</a>
                   <a class="button" href="/account">Account</a>
                 </div>
               {% else %}
-                <p>Core Pulse tools are free. Pulse Premium adds glowing identity, elite profile effects, creator studio enhancements, advanced creator AI, analytics, exclusive badges, and future prestige features.</p>
-                <a class="button primary" href="/pulse/premium" data-analytics="pulse_premium_opened">Explore Pulse Premium</a>
+                <p>Core PulseSoc tools are free. PulseSoc Premium adds glowing identity, elite profile effects, creator studio enhancements, advanced creator AI, analytics, exclusive badges, and future prestige features.</p>
+                <a class="button primary" href="/pulse/premium" data-analytics="pulse_premium_opened">Explore PulseSoc Premium</a>
               {% endif %}
             </div>
             <div class="profile-card">
-              <h3>Free Core vs Pulse Premium</h3>
+              <h3>Free Core vs PulseSoc Premium</h3>
               <p><strong>Free core:</strong> social ecosystem, creator tools, messaging, groups, spaces, livestream basics, reels, AI utilities, marketplace access, alerts, and education.</p>
-              <p><strong>Pulse Premium:</strong> prestige identity, glowing marks, elite profile cosmetics, advanced creator filters, advanced creator AI, analytics, and exclusive Pulse badges.</p>
+              <p><strong>PulseSoc Premium:</strong> prestige identity, glowing marks, elite profile cosmetics, advanced creator filters, advanced creator AI, analytics, and exclusive PulseSoc badges.</p>
               <p><strong>Old trials:</strong> legacy trial states never block core platform access.</p>
               <p class="muted">Arena is educational simulation only. Virtual balances, no real-money trading execution.</p>
             </div>
@@ -297,16 +297,16 @@
               <h3>Optional Telegram Companion</h3>
               <p>After upgrading, you can connect Telegram as an optional command and alert channel. The website dashboard remains the source of truth.</p>
               <p>Generate the code from <a href="/account/settings">Account Settings</a> after login. Codes expire in 10 minutes.</p>
-              <p>If you experience any issue after payment, email <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> and include the email address used for your Pulse account.</p>
+              <p>If you experience any issue after payment, email <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> and include the email address used for your PulseSoc account.</p>
             </div>
           </div>
 
         {% elif page == "upgrade_success" %}
           <div class="profile-card" data-upgrade-session="{{ stripe_session_id or '' }}">
             <h3>Payment Confirmation In Progress</h3>
-            <p data-upgrade-status>Your Pulse Premium activation is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
+            <p data-upgrade-status>Your PulseSoc Premium activation is being confirmed through Stripe. You will receive a confirmation email shortly.</p>
             <p class="muted" data-upgrade-detail>Checking your account status now...</p>
-            <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> and include the email address used for your Pulse account.</p>
+            <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> and include the email address used for your PulseSoc account.</p>
             <div class="actions">
               <a class="button primary" href="/dashboard">Open Dashboard</a>
               <a class="button" href="/account/settings">Get Telegram Activation Code</a>
@@ -322,8 +322,8 @@
               <input name="full_name" value="{{ current_user.full_name or current_user.display_name or '' }}" placeholder="Full name" />
               <input name="phone" value="{{ current_user.phone or '' }}" placeholder="Phone (optional for SMS)" />
               <input name="country" value="{{ current_user.country or '' }}" placeholder="Country" />
-              <label class="consent-row"><input type="checkbox" name="email_opt_in" {% if current_user.email_opt_in %}checked{% endif %} /><span>I agree to receive promotional emails from Pulse. I can unsubscribe anytime.</span></label>
-              <label class="consent-row"><input type="checkbox" name="sms_opt_in" {% if current_user.sms_opt_in %}checked{% endif %} /><span>I agree to receive promotional text messages from Pulse. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
+              <label class="consent-row"><input type="checkbox" name="email_opt_in" {% if current_user.email_opt_in %}checked{% endif %} /><span>I agree to receive promotional emails from PulseSoc. I can unsubscribe anytime.</span></label>
+              <label class="consent-row"><input type="checkbox" name="sms_opt_in" {% if current_user.sms_opt_in %}checked{% endif %} /><span>I agree to receive promotional text messages from PulseSoc. Message and data rates may apply. Reply STOP to unsubscribe.</span></label>
               <button class="button primary" type="submit">Save Settings</button>
             </form>
             <div class="profile-card">
@@ -332,12 +332,12 @@
               <p><strong>Plan:</strong> {{ access.label }}</p>
               <p><strong>Subscription status:</strong> {{ current_user.subscription_status or "inactive" }}</p>
               {% if access.is_paid_pro %}
-                <p><strong>Pulse Premium:</strong> Active.</p>
+                <p><strong>PulseSoc Premium:</strong> Active.</p>
                 <p><strong>Billing/access date:</strong> <span data-friendly-date>{{ access.pro_expires_at or "Active" }}</span></p>
               {% elif access.is_trial %}
                 <p><strong>Trial ends:</strong> <span data-friendly-date>{{ access.trial_end }}</span></p>
               {% elif access.trial_expired %}
-                <p><strong>Trial:</strong> Ended. Core access remains free; Pulse Premium is optional.</p>
+                <p><strong>Trial:</strong> Ended. Core access remains free; PulseSoc Premium is optional.</p>
               {% else %}
                 <p><strong>Core access:</strong> Free.</p>
               {% endif %}
@@ -383,7 +383,7 @@
             <div class="profile-card"><strong>Telegram linked</strong><p>{{ stats.linked }}</p></div>
             <div class="profile-card"><strong>Email / SMS opt-ins</strong><p>{{ stats.email_opt_ins }} / {{ stats.sms_opt_ins }}</p></div>
             <div class="profile-card"><strong>Legacy trial users</strong><p>{{ stats.pro_trial_users }}</p></div>
-            <div class="profile-card"><strong>Pulse Premium users</strong><p>{{ stats.paid_pro_users }}</p></div>
+            <div class="profile-card"><strong>PulseSoc Premium users</strong><p>{{ stats.paid_pro_users }}</p></div>
             <div class="profile-card"><strong>Expired trials</strong><p>{{ stats.expired_trials }}</p></div>
             <div class="profile-card"><strong>Trials expiring 7 days</strong><p>{{ stats.expiring_soon }}</p></div>
           </div>
@@ -401,7 +401,7 @@
         {% endif %}
 
         <div class="notice">CoinPilotXAI Inc. never asks for seed phrases, private keys, or wallet passwords. Educational AI intelligence only, not financial, betting, investment, or legal advice.</div>
-        <button class="button gold install-app-button" type="button" data-install-app hidden>Install Pulse App</button>
+        <button class="button gold install-app-button" type="button" data-install-app hidden>Install PulseSoc App</button>
       </article>
     </div>
   </main>
@@ -409,7 +409,7 @@
 
   <footer>
     <div class="container footer-inner">
-      <div>Pulse — Powered by CoinPilotXAI</div>
+      <div>PulseSoc — Powered by CoinPilotXAI</div>
       <div class="nav-links">
         <a href="/support">Support</a>
         <a href="/privacy">Privacy</a>
@@ -478,7 +478,7 @@
             .then(function (response) { return response.json(); })
             .then(function (data) {
               if (data && data.ok) {
-                upgradeStatus.textContent = "Pulse Premium Active";
+                upgradeStatus.textContent = "PulseSoc Premium Active";
                 upgradeDetail.textContent = "Premium identity and creator enhancements are active. Opening your dashboard...";
                 setTimeout(function () { window.location.href = data.next_url || "/pulse/premium/intelligence?pro=active"; }, 900);
                 return true;
@@ -497,12 +497,12 @@
             .then(function (response) { return response.json(); })
             .then(function (data) {
               if (data && data.ok && data.is_paid_pro) {
-                upgradeStatus.textContent = "Pulse Premium Active";
+                upgradeStatus.textContent = "PulseSoc Premium Active";
                 upgradeDetail.textContent = "Your dashboard, command center, and optional Telegram companion can now use Premium enhancements.";
                 return;
               }
               if (data && data.ok && data.has_pro_access) {
-                upgradeStatus.textContent = "Pulse Premium Active";
+                upgradeStatus.textContent = "PulseSoc Premium Active";
                 upgradeDetail.textContent = "Your dashboard and optional Telegram companion can now use Premium enhancements.";
                 return;
               }
@@ -511,7 +511,7 @@
                   if (!confirmed) setTimeout(pollStatus, 3000);
                 });
               } else {
-                upgradeStatus.textContent = "Payment received. We are activating Pulse Premium.";
+                upgradeStatus.textContent = "Payment received. We are activating PulseSoc Premium.";
                 upgradeDetail.textContent = "If it does not activate in a few minutes, email support@pulsesoc.com with your account email.";
               }
             })
@@ -519,7 +519,7 @@
               if (attempts < 20) {
                 setTimeout(pollStatus, 3000);
               } else {
-                upgradeStatus.textContent = "Payment received. We are activating Pulse Premium.";
+                upgradeStatus.textContent = "Payment received. We are activating PulseSoc Premium.";
                 upgradeDetail.textContent = "If it does not activate in a few minutes, email support@pulsesoc.com with your account email.";
               }
             });

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse PWA install prompt behavior."""
+"""Audit PulseSoc PWA install prompt behavior."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def require(condition, message):
 def main():
     bot = (ROOT / "bot.py").read_text(encoding="utf-8")
     install_js_path = ROOT / "static" / "js" / "pulse_pwa_install.js"
-    require(install_js_path.exists(), "Pulse PWA install script exists")
+    require(install_js_path.exists(), "PulseSoc PWA install script exists")
     source = install_js_path.read_text(encoding="utf-8")
     for token, label in [
         ("PROMPT_DELAY_MS = 60000", "60 second prompt delay"),
@@ -34,7 +34,7 @@ def main():
         ("isIOS()", "iOS detection"),
         ("isSafariLike()", "iOS Safari detection"),
         ("Tap Share, then Add to Home Screen", "iOS Add to Home Screen instructions"),
-        ("Install Pulse", "Pulse install branding"),
+        ("Install PulseSoc", "PulseSoc install branding"),
         ("PulseSoc.com", "PulseSoc.com branding"),
         ("Maybe later", "Maybe later dismissal"),
         ("data-pulse-pwa-dismiss", "dismiss/close controls"),
@@ -47,7 +47,7 @@ def main():
     require("/static/js/pulse_pwa_install.js" in bot, "install script is injected globally")
     require("install-20260606-restore" in bot, "install script cache version is bumped")
     require("coinPilotXTrack" in source or "gtag" in source, "install events are logged safely")
-    print("pulse PWA install prompt audit ok")
+    print("pulsesoc PWA install prompt audit ok")
 
 
 if __name__ == "__main__":

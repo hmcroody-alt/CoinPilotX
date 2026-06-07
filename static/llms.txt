@@ -1,6 +1,6 @@
-# Pulse — Powered by CoinPilotXAI
+# PulseSoc — Powered by CoinPilotXAI
 
-CoinPilotXAI Inc. operates Pulse, an educational AI intelligence platform for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Pro Arena simulation training.
+CoinPilotXAI Inc. operates PulseSoc, an educational AI intelligence platform for crypto market context, scam awareness, wallet safety, portfolio scenarios, Sports Edge, and Pro Arena simulation training.
 
 Primary site: https://pulsesoc.com/
 Support: https://pulsesoc.com/support
@@ -14,15 +14,15 @@ Canonical sitemap: https://pulsesoc.com/sitemap.xml
 
 CoinPilotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.
 
-Pulse never holds user funds and never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.
+PulseSoc never holds user funds and never asks for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.
 
 Sports Edge is informational only and does not provide guaranteed betting outcomes.
 
 ## Core Public Pages
 
 - Live crypto market board: https://pulsesoc.com/live-crypto-market
-- About Pulse: https://pulsesoc.com/about
-- Pulse Arena preview: https://pulsesoc.com/arena-preview
+- About PulseSoc: https://pulsesoc.com/about
+- PulseSoc Arena preview: https://pulsesoc.com/arena-preview
 - Live Quote Market Center: https://pulsesoc.com/quote
 - Bitcoin live quote: https://pulsesoc.com/quote/crypto/BTC
 - Ethereum live quote: https://pulsesoc.com/quote/crypto/ETH
@@ -64,7 +64,7 @@ Sports Edge is informational only and does not provide guaranteed betting outcom
 
 ## AI Search Summary
 
-Pulse helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, Pro Arena virtual-dollar simulations, and Sports Edge context across web, mobile, and optional Telegram alerts. The product emphasizes clarity, safety, public data, user control, privacy-safe Arena identities, and ethical conversion. It avoids gambling mechanics, fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
+PulseSoc helps users understand market signals, wallet risks, scams, whale movement, portfolio decisions, Pro Arena virtual-dollar simulations, and Sports Edge context across web, mobile, and optional Telegram alerts. The product emphasizes clarity, safety, public data, user control, privacy-safe Arena identities, and ethical conversion. It avoids gambling mechanics, fake urgency, fake testimonials, guaranteed profit claims, guaranteed sports picks, and private wallet credential collection.
 
 ## Crawler Guidance
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit Pulse service worker registration and installability support."""
+"""Audit PulseSoc service worker registration and installability support."""
 
 from __future__ import annotations
 
@@ -28,10 +28,10 @@ def main():
         require("self.addEventListener(\"activate\"" in source, f"{label} has activate listener")
         require("self.addEventListener(\"fetch\"" in source, f"{label} has fetch listener")
         require("/manifest.json" in source, f"{label} caches manifest")
-        require("/static/brand/pulse-icon-192-20260606.png" in source, f"{label} caches 192 icon")
-        require("/static/brand/pulse-icon-512-20260606.png" in source, f"{label} caches 512 icon")
+        require("/static/brand/pulsesoc-icon-192-20260606.png" in source, f"{label} caches 192 icon")
+        require("/static/brand/pulsesoc-icon-512-20260606.png" in source, f"{label} caches 512 icon")
         require("offlineResponse" in source, f"{label} has offline fallback")
-    print("pulse service worker audit ok")
+    print("pulsesoc service worker audit ok")
 
 
 if __name__ == "__main__":
