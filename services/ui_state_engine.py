@@ -1,4 +1,4 @@
-"""Pulse operating-system UI state helpers."""
+"""PulseSoc operating-system UI state helpers."""
 
 from __future__ import annotations
 

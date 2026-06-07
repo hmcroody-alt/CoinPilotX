@@ -47,7 +47,7 @@ PLAN_DEFINITIONS = {
         "currency": "usd",
         "billing_interval": "month",
         "status": "active",
-        "description": "Normal Pulse access.",
+        "description": "Normal PulseSoc access.",
     },
     "founder_premium": {
         "name": "Founder Premium",
@@ -56,7 +56,7 @@ PLAN_DEFINITIONS = {
         "currency": "usd",
         "billing_interval": "month",
         "status": "active",
-        "description": "Lifetime locked Founder pricing for early Pulse adopters.",
+        "description": "Lifetime locked Founder pricing for early PulseSoc adopters.",
     },
     "premium_plus": {
         "name": "Premium Plus",
@@ -279,7 +279,7 @@ def ensure_founder_schema() -> None:
     cur.execute(
         """
         INSERT INTO pulse_badges (badge_key, label, description, active, created_at)
-        VALUES ('founder', 'Founder', 'Early Pulse Founder member with lifetime locked Founder pricing.', 1, ?)
+        VALUES ('founder', 'Founder', 'Early PulseSoc Founder member with lifetime locked Founder pricing.', 1, ?)
         ON CONFLICT(badge_key) DO UPDATE SET
             label=excluded.label,
             description=excluded.description,
@@ -643,7 +643,7 @@ def grant_founder_membership(user_id: int, actor_id: int = 0, source: str = "adm
         """
         INSERT INTO founder_wall_entries
         (user_id, founder_number, display_name, headline, avatar_url, status, created_at, updated_at)
-        SELECT user_id, ?, COALESCE(display_name, username, email, 'Pulse Founder'), 'Pulse Founder Member', COALESCE(avatar_url,''), 'visible', ?, ?
+        SELECT user_id, ?, COALESCE(display_name, username, email, 'PulseSoc Founder'), 'PulseSoc Founder Member', COALESCE(avatar_url,''), 'visible', ?, ?
         FROM users WHERE user_id=?
         ON CONFLICT(user_id) DO UPDATE SET
             founder_number=excluded.founder_number,

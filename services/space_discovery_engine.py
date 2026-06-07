@@ -1,4 +1,4 @@
-"""Pulse Spaces discovery and health scoring."""
+"""PulseSoc Spaces discovery and health scoring."""
 
 from __future__ import annotations
 

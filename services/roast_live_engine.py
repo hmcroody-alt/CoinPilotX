@@ -90,7 +90,7 @@ def record_vote(user_id, match_id, target_user_id=0, target_public_player_id="")
     cur.execute(
         """
         SELECT COALESCE(p.call_sign, u.roast_call_sign, 'Arena Pilot #' || p.user_id) AS call_sign,
-               COALESCE(ap.public_player_id, 'Pulse-' || p.user_id) AS public_player_id
+               COALESCE(ap.public_player_id, 'PulseSoc-' || p.user_id) AS public_player_id
         FROM arena_roast_participants p
         LEFT JOIN users u ON u.user_id=p.user_id
         LEFT JOIN arena_profiles ap ON ap.user_id=p.user_id

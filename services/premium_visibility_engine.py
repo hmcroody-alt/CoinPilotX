@@ -1,4 +1,4 @@
-"""Premium placement and prestige logic for Pulse surfaces."""
+"""Premium placement and prestige logic for PulseSoc surfaces."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def contextual_prompt(surface, user=None):
         "surface": surface_key,
         "is_premium": premium,
         "title": "Premium active" if premium else title,
-        "body": "Your premium identity and creator intelligence are enabled across Pulse." if premium else body,
+        "body": "Your premium identity and creator intelligence are enabled across PulseSoc." if premium else body,
         "cta_label": "Open Premium" if premium else "Explore Premium",
         "href": "/pulse/premium",
         "tone": "prestige",
@@ -54,15 +54,15 @@ def contextual_prompt(surface, user=None):
 
 def creator_card_context(user=None, surface="profile"):
     premium = is_premium_user(user)
-    display_name = (user or {}).get("display_name") or (user or {}).get("username") or "Pulse Creator"
+    display_name = (user or {}).get("display_name") or (user or {}).get("username") or "PulseSoc Creator"
     return {
         "display_name": display_name,
         "premium": premium,
         "surface": surface,
-        "badge": "Elite Creator" if premium else "Pulse Creator",
+        "badge": "Elite Creator" if premium else "PulseSoc Creator",
         "aura_class": "premium-aura-frame" if premium else "",
         "energy_label": "Premium Studio Active" if premium else "Creator energy building",
-        "trust_label": "Trust-visible creator" if premium else "Trust-first Pulse identity",
+        "trust_label": "Trust-visible creator" if premium else "Trust-first PulseSoc identity",
         "cta": "Manage Premium" if premium else "Unlock Premium Identity",
         "href": "/pulse/premium",
     }

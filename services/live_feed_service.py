@@ -1,4 +1,4 @@
-"""Bind Pulse Live sessions to first-class Pulse feed posts."""
+"""Bind PulseSoc Live sessions to first-class PulseSoc feed posts."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _row_dict(row) -> dict:
 
 
 def ensure_live_feed_post(cur, *, user_id: int, live_id: int, title: str, category: str, playback_url: str = "", preview_url: str = "", viewer_count: int = 0) -> int:
-    """Create or refresh the Pulse feed post that represents an active live."""
+    """Create or refresh the PulseSoc feed post that represents an active live."""
     now = _now()
     cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
     profile = _row_dict(cur.fetchone())
@@ -94,7 +94,7 @@ def mark_live_feed_ended(cur, *, live_id: int, replay_url: str = "", viewer_coun
             int(viewer_count or 0),
             replay_url or "",
             replay_url or "",
-            f"{row.get('title') or 'Pulse Live'} has ended." + (" Watch the replay." if replay_url else ""),
+            f"{row.get('title') or 'PulseSoc Live'} has ended." + (" Watch the replay." if replay_url else ""),
             now,
             post_id,
         ),

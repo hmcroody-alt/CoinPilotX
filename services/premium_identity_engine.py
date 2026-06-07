@@ -1,4 +1,4 @@
-"""Premium Pulse identity helpers."""
+"""Premium PulseSoc identity helpers."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def identity_mark(row=None, badge_keys=None):
             "type": "founder",
             "badge_key": "founder_badge",
             "symbol": "F",
-            "title": f"Pulse Founder{number_label}",
+            "title": f"PulseSoc Founder{number_label}",
             "founder_number": founder_number,
         }
     if has_active_premium(row):

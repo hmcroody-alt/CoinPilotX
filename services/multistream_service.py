@@ -1,4 +1,4 @@
-"""Ecamm/Restream-style multistream facade for Pulse Live."""
+"""Ecamm/Restream-style multistream facade for PulseSoc Live."""
 
 from __future__ import annotations
 

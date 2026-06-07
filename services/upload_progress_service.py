@@ -1,4 +1,4 @@
-"""Unified upload progress and media staging helpers for Pulse publishing."""
+"""Unified upload progress and media staging helpers for PulseSoc publishing."""
 
 from __future__ import annotations
 

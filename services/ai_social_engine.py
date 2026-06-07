@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 
-DEFAULT_TAGS = ["Pulse", "CryptoEducation", "ScamShield"]
+DEFAULT_TAGS = ["PulseSoc", "CryptoEducation", "ScamShield"]
 
 
 def suggest_hashtags(text="", topic="") -> list[str]:

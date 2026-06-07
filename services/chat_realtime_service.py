@@ -1,4 +1,4 @@
-"""Fast shared chat helpers for dashboard private chat and Pulse redirects."""
+"""Fast shared chat helpers for dashboard private chat and PulseSoc redirects."""
 
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ def _public_profile(cur, user_id):
         (int(user_id),),
     )
     row = _row(cur.fetchone()) or {}
-    public_id = row.get("public_player_id") or f"Pulse-{str(abs(int(row.get('user_id') or 0)))[-4:].rjust(4, '0')}"
-    display = row.get("display_name") or row.get("full_name") or row.get("username") or row.get("arena_name") or f"Pulse user #{int(row.get('user_id') or 0)}"
+    public_id = row.get("public_player_id") or f"PulseSoc-{str(abs(int(row.get('user_id') or 0)))[-4:].rjust(4, '0')}"
+    display = row.get("display_name") or row.get("full_name") or row.get("username") or row.get("arena_name") or f"PulseSoc user #{int(row.get('user_id') or 0)}"
     return {
         "player_id": public_id,
         "display_name": display,
@@ -87,7 +87,7 @@ def list_threads(user_id, limit=80):
     cur.execute(
         """
         SELECT c.id, c.updated_at, ou.user_id AS other_user_id,
-               COALESCE(NULLIF(ou.display_name, ''), NULLIF(ou.full_name, ''), NULLIF(ou.username, ''), NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), 'Pulse user #' || ou.user_id) AS other_name,
+               COALESCE(NULLIF(ou.display_name, ''), NULLIF(ou.full_name, ''), NULLIF(ou.username, ''), NULLIF(ap.display_name, ''), NULLIF(ap.public_player_id, ''), 'PulseSoc user #' || ou.user_id) AS other_name,
                ap.public_player_id AS other_public_player_id, ou.last_seen_at AS other_last_seen_at,
                MAX(pm.created_at) AS last_message_at,
                (

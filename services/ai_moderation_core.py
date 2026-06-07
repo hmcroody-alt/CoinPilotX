@@ -1,4 +1,4 @@
-"""AI moderation core fallbacks for Pulse safety."""
+"""AI moderation core fallbacks for PulseSoc safety."""
 
 from __future__ import annotations
 

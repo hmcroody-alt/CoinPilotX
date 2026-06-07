@@ -1,4 +1,4 @@
-"""Autonomous educational post generation for Pulse Spaces.
+"""Autonomous educational post generation for PulseSoc Spaces.
 
 This engine is intentionally deterministic and safety-first. It creates
 category-aware AI-style community posts without external network calls, so the

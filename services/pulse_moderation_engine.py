@@ -1,4 +1,4 @@
-"""Safety checks for the CoinPilotXAI Pulse Feed."""
+"""Safety checks for the CoinPilotXAI PulseSoc Feed."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def moderate_text(text, post_type="text"):
     sentiment = "positive" if positive > negative else "caution" if negative > positive else "neutral"
     summary = body[:180] + ("..." if len(body) > 180 else "")
     if not summary and post_type != "text":
-        summary = f"{post_type.replace('_', ' ').title()} shared on Pulse."
+        summary = f"{post_type.replace('_', ' ').title()} shared on PulseSoc."
     tags = extract_tags(body)
     for tag in ("scamalert", "alphaarena", "roastbattle", "btc", "eth", "sol"):
         if tag in lowered.replace(" ", "") and tag not in tags:

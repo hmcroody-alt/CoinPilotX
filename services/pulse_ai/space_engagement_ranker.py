@@ -1,4 +1,4 @@
-"""Engagement scoring for Pulse Space AI content."""
+"""Engagement scoring for PulseSoc Space AI content."""
 
 
 def compute_post_scores(post_type, text, trust_score=85, activity_score=75):

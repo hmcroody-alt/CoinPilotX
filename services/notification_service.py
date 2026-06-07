@@ -137,44 +137,44 @@ SECURITY_NOTIFICATION_TYPES = {
 
 BREVO_NOTIFICATION_TEMPLATES = {
     "welcome": {
-        "subject": "Welcome to Pulse",
-        "headline": "Welcome to Pulse",
-        "body": "Your Pulse account is ready. Start connecting, creating, and discovering on PulseSoc.com.",
+        "subject": "Welcome to PulseSoc",
+        "headline": "Welcome to PulseSoc",
+        "body": "Your PulseSoc account is ready. Start connecting, creating, and discovering on PulseSoc.com.",
     },
     "founder_premium_activated": {
         "subject": "Founder Premium is active",
         "headline": "Founder Premium is active",
-        "body": "Your Founder Premium membership is active. Your Founder benefits are now available in Pulse.",
+        "body": "Your Founder Premium membership is active. Your Founder benefits are now available in PulseSoc.",
     },
     "payment_receipt": {
-        "subject": "Pulse payment receipt",
+        "subject": "PulseSoc payment receipt",
         "headline": "Payment received",
-        "body": "We received your Pulse payment. Your account has been updated.",
+        "body": "We received your PulseSoc payment. Your account has been updated.",
     },
     "password_reset": {
-        "subject": "Reset your Pulse password",
-        "headline": "Reset your Pulse password",
-        "body": "Use the secure reset link to update your Pulse password. Ignore this message if you did not request it.",
+        "subject": "Reset your PulseSoc password",
+        "headline": "Reset your PulseSoc password",
+        "body": "Use the secure reset link to update your PulseSoc password. Ignore this message if you did not request it.",
     },
     "new_follower": {
-        "subject": "You have a new Pulse follower",
+        "subject": "You have a new PulseSoc follower",
         "headline": "New follower",
-        "body": "Someone new followed you on Pulse.",
+        "body": "Someone new followed you on PulseSoc.",
     },
     "new_message": {
-        "subject": "New Pulse message",
+        "subject": "New PulseSoc message",
         "headline": "New message",
-        "body": "You received a new direct message on Pulse.",
+        "body": "You received a new direct message on PulseSoc.",
     },
     "crypto_alert": {
-        "subject": "Pulse crypto alert",
+        "subject": "PulseSoc crypto alert",
         "headline": "Crypto alert",
         "body": "A crypto alert you enabled was triggered.",
     },
     "security_alert": {
-        "subject": "Pulse security alert",
+        "subject": "PulseSoc security alert",
         "headline": "Security alert",
-        "body": "We detected an important security event on your Pulse account.",
+        "body": "We detected an important security event on your PulseSoc account.",
     },
 }
 
@@ -299,18 +299,18 @@ def _template_key(note_type, category):
 
 
 def _branded_html(headline, body, deep_link="/pulse/notifications"):
-    headline = str(headline or "Pulse notification")[:180]
+    headline = str(headline or "PulseSoc notification")[:180]
     body = str(body or "")[:2000]
     link = str(deep_link or "https://pulsesoc.com/pulse/notifications")[:700]
     if link.startswith("/"):
         link = f"https://pulsesoc.com{link}"
     return (
         "<div style='font-family:Inter,Arial,sans-serif;line-height:1.55;color:#0f172a'>"
-        "<p style='font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#2563eb'>Pulse</p>"
+        "<p style='font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#2563eb'>PulseSoc</p>"
         f"<h1 style='font-size:24px;margin:0 0 12px'>{headline}</h1>"
         f"<p>{body}</p>"
-        f"<p><a href='{link}' style='color:#2563eb'>Open Pulse</a></p>"
-        "<p style='font-size:12px;color:#64748b'>Pulse is operated by CoinPilotXAI Inc. Visit PulseSoc.com.</p>"
+        f"<p><a href='{link}' style='color:#2563eb'>Open PulseSoc</a></p>"
+        "<p style='font-size:12px;color:#64748b'>PulseSoc is operated by CoinPilotXAI Inc. Visit PulseSoc.com.</p>"
         "</div>"
     )
 
@@ -428,7 +428,7 @@ def create_pulse_notification(
             int(user_id),
             int(actor_user_id or 0),
             str(note_type or "message")[:80],
-            str(title or "Pulse notification")[:180],
+            str(title or "PulseSoc notification")[:180],
             str(body or "")[:2000],
             str(entity_type or "")[:80],
             str(entity_id or "")[:120],

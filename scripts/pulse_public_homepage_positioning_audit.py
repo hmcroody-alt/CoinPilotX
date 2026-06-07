@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Audit Pulse-first positioning on the public homepage."""
+"""Audit PulseSoc-first positioning on the public homepage."""
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 
 required_homepage_tokens = [
-    "Pulse",
-    "Sign In to Pulse",
-    "Join Pulse",
-    "Explore Pulse",
-    "Creator, video, live, messaging, roast battle, premium intelligence, and safety tools in one platform.",
+    "PulseSoc",
+    "Sign In to PulseSoc",
+    "Join PulseSoc",
+    "Explore PulseSoc",
+    "Creator, video, live, messaging, Roast Battle, Premium Intelligence, and safety tools in one PulseSoc platform.",
     "Videos, Reels, and Live",
     "Messages",
     "Roast Battle",
@@ -24,12 +24,12 @@ for token in required_homepage_tokens:
 
 allowed_nav_tokens = [
     ">Home<",
-    ">Pulse<",
+    ">PulseSoc<",
     ">Premium<",
     ">Roast Battle<",
     ">Safety<",
-    "Sign In to Pulse",
-    "Join Pulse",
+    "Sign In to PulseSoc",
+    "Join PulseSoc",
 ]
 for token in allowed_nav_tokens:
     assert token in INDEX, f"simplified nav missing {token}"

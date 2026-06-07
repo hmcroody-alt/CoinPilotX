@@ -126,7 +126,7 @@ def broadcast_user_notification(user_id, notification):
     notification = notification or {}
     return send_push(
         user_id,
-        notification.get("title") or "Pulse Alert",
+        notification.get("title") or "PulseSoc Alert",
         notification.get("message") or notification.get("body") or "New intelligence update.",
         notification.get("data") or {},
         notification.get("push_type") or notification.get("notification_type") or "general",

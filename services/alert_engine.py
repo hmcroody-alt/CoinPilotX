@@ -665,8 +665,8 @@ def dispatch_alert_event(event, rule=None):
     user_id = event.get("user_id") or rule.get("user_id")
     user = _user_record(user_id)
     channels = _normalize_channels(rule.get("channels") or _json_loads(rule.get("channels_json"), {}))
-    title = f"Pulse Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
-    body = event.get("message") or "Your Pulse alert condition was met."
+    title = f"PulseSoc Alert: {_normalize_symbol(rule.get('symbol'))} crossed {_format_money(rule.get('threshold_value'))}"
+    body = event.get("message") or "Your PulseSoc alert condition was met."
     metadata = {
         "url": "/alerts",
         "push_type": "market_alert",

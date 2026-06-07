@@ -1,4 +1,4 @@
-"""Prompt/personality builder for autonomous Pulse Spaces."""
+"""Prompt/personality builder for autonomous PulseSoc Spaces."""
 
 DEFAULT_FORMATS = [
     "quick_insight",
@@ -86,7 +86,7 @@ def build_prompt_context(space, post_type, memory=None, schedule_slot="morning")
     personality = personality_for_space(space)
     return {
         "space_slug": (space or {}).get("slug") or "",
-        "space_name": (space or {}).get("name") or "Pulse Space",
+        "space_name": (space or {}).get("name") or "PulseSoc Space",
         "category": (space or {}).get("category") or "community",
         "region": (space or {}).get("region") or "Global",
         "description": (space or {}).get("description") or "",

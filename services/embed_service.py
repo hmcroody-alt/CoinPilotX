@@ -1,4 +1,4 @@
-"""Deterministic external embed normalization for Pulse surfaces.
+"""Deterministic external embed normalization for PulseSoc surfaces.
 
 This service intentionally avoids live network scraping in hot feed paths. It
 creates a stable, validated media-shaped object from external URLs so desktop,

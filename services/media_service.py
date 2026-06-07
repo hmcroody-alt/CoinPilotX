@@ -1,4 +1,4 @@
-"""Canonical durable media service for Pulse, Messenger, Reels, and uploads."""
+"""Canonical durable media service for PulseSoc, Messenger, Reels, and uploads."""
 
 import mimetypes
 import os
@@ -162,7 +162,7 @@ def _mux_json_request(path, *, method="GET", payload=None, timeout=None):
 
 
 def create_mux_direct_upload(*, media_id=0, filename="", mime_type="", file_size=0, origin="", context_type="", trace_id=""):
-    """Create a browser-to-Mux direct upload URL for large Pulse videos."""
+    """Create a browser-to-Mux direct upload URL for large PulseSoc videos."""
     log_mux_diagnostics_once()
     configured = bool(_mux_auth_header())
     logging.info(

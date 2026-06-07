@@ -24,10 +24,10 @@ for path in PUBLIC_FILES:
 
 index = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 for token in [
-    "<title>Pulse | Creator, Video, Live, Messaging, Premium Intelligence</title>",
-    '<meta property="og:title" content="Pulse" />',
-    '<meta name="twitter:title" content="Pulse" />',
-    '"name": "Pulse"',
+    "<title>PulseSoc | Creator, Video, Live, Messaging, Premium Intelligence</title>",
+    '<meta property="og:title" content="PulseSoc" />',
+    '<meta name="twitter:title" content="PulseSoc" />',
+    '"name": "PulseSoc"',
     "PulseSoc.com",
 ]:
     assert token in index, f"homepage missing PulseSoc branding token: {token}"
@@ -35,13 +35,13 @@ for token in [
 
 bot = (ROOT / "bot.py").read_text(encoding="utf-8")
 for token in [
-    "Pulse Roast Battle",
-    "<span>Pulse</span></a><div class='actions'>",
-    "Pulse Live",
-    "Pulse Post",
-    "Pulse is a community discussion space",
+    "PulseSoc Roast Battle",
+    "<span>PulseSoc</span></a><div class='actions'>",
+    "PulseSoc Live",
+    "PulseSoc Post",
+    "PulseSoc is a community discussion space",
 ]:
-    assert token in bot, f"bot.py missing Pulse-first token: {token}"
+    assert token in bot, f"bot.py missing PulseSoc token: {token}"
     print("PASS: bot", token)
 
 print("pulsesoc branding audit ok")

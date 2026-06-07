@@ -1,4 +1,4 @@
-"""Secure lightweight preview sessions for Pulse Camera publishing flows."""
+"""Secure lightweight preview sessions for PulseSoc Camera publishing flows."""
 
 from __future__ import annotations
 

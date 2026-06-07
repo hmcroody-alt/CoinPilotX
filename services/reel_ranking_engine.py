@@ -1,4 +1,4 @@
-"""Trust-balanced ranking for Pulse Reels.
+"""Trust-balanced ranking for PulseSoc Reels.
 
 This intentionally avoids a pure outrage/retention loop. Reels are scored for
 watch quality, safety, creator trust, and educational value.

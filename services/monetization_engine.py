@@ -5,7 +5,7 @@ from __future__ import annotations
 
 def revenue_layers():
     return [
-        {"layer": "Free Platform", "items": ["Pulse Feed", "basic Scam Shield", "basic Arena", "basic Roast Battle", "basic alerts", "public replays"]},
+        {"layer": "Free Platform", "items": ["PulseSoc Feed", "basic Scam Shield", "basic Arena", "basic Roast Battle", "basic alerts", "public replays"]},
         {"layer": "Pro Subscription", "items": ["advanced alerts", "Auto Signals", "AI market analysis", "advanced Scam Shield", "whale intelligence", "priority Telegram/SMS/push"]},
         {"layer": "Creator Economy", "items": ["creator profiles", "premium rooms foundation", "digital badges", "revenue-share-ready architecture"]},
         {"layer": "Ethical Ads", "items": ["contextual sponsorships", "sponsored educational posts", "trusted partner placements", "no scam token promotions"]},

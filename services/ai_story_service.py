@@ -1,4 +1,4 @@
-"""Pulse AI Story generation facade.
+"""PulseSoc AI Story generation facade.
 
 This module creates deterministic story drafts locally and exposes a clean
 provider seam for image/video generation backends when production keys exist.
@@ -48,12 +48,12 @@ def _style_for_prompt(prompt: str, requested_style: str = "") -> str:
 
 
 def generate_story(prompt: str, style: str = "", duration_seconds: int = 12) -> dict:
-    clean_prompt = (prompt or "Create a Pulse AI story").strip()[:500]
+    clean_prompt = (prompt or "Create a PulseSoc AI story").strip()[:500]
     selected_style = _style_for_prompt(clean_prompt, style)
     digest = hashlib.sha256(f"{clean_prompt}:{selected_style}".encode("utf-8")).hexdigest()[:16]
     preset = STYLE_PRESETS[selected_style]
     caption = clean_prompt if len(clean_prompt) <= 120 else clean_prompt[:117].rstrip() + "..."
-    tags = ["AI Story", selected_style.title(), "Pulse"]
+    tags = ["AI Story", selected_style.title(), "PulseSoc"]
     if "crypto" in clean_prompt.lower():
         tags.append("Crypto")
     if "haiti" in clean_prompt.lower():
@@ -81,9 +81,9 @@ def generate_story(prompt: str, style: str = "", duration_seconds: int = 12) -> 
 
 
 def caption_suggestions(prompt: str) -> list[str]:
-    base = (prompt or "Pulse moment").strip()[:80]
+    base = (prompt or "PulseSoc moment").strip()[:80]
     return [
         base,
-        f"{base} · built with Pulse AI",
+        f"{base} · built with PulseSoc AI",
         f"Signal, story, and momentum: {base}",
     ]

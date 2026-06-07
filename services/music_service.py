@@ -1,6 +1,6 @@
-"""License-safe Pulse music discovery and attachment helpers.
+"""License-safe PulseSoc music discovery and attachment helpers.
 
-Pulse never scrapes or downloads random music. This service only exposes
+PulseSoc never scrapes or downloads random music. This service only exposes
 tracks that are original, internally approved, or imported as licensed metadata
 and approved by an admin.
 """
@@ -42,11 +42,11 @@ LICENSE_REQUIRED_FIELDS = [
 DEFAULT_TRACKS = [
     {
         "id": "pulse-original-rise",
-        "title": "Pulse Rise",
+        "title": "PulseSoc Rise",
         "artist": "CoinPilotXAI Originals",
         "duration_seconds": 28,
         "license": "original_pulse_sound",
-        "license_type": "Pulse original work",
+        "license_type": "PulseSoc original work",
         "source": "original_pulse_sound",
         "commercial_use_allowed": True,
         "remix_edit_allowed": True,
@@ -64,10 +64,10 @@ DEFAULT_TRACKS = [
     {
         "id": "pulse-neon-motion",
         "title": "Neon Motion",
-        "artist": "Pulse Studio",
+        "artist": "PulseSoc Studio",
         "duration_seconds": 31,
         "license": "original_pulse_sound",
-        "license_type": "Pulse original work",
+        "license_type": "PulseSoc original work",
         "source": "original_pulse_sound",
         "commercial_use_allowed": True,
         "remix_edit_allowed": True,
@@ -85,10 +85,10 @@ DEFAULT_TRACKS = [
     {
         "id": "pulse-soft-signal",
         "title": "Soft Signal",
-        "artist": "Pulse Studio",
+        "artist": "PulseSoc Studio",
         "duration_seconds": 24,
         "license": "original_pulse_sound",
-        "license_type": "Pulse original work",
+        "license_type": "PulseSoc original work",
         "source": "original_pulse_sound",
         "commercial_use_allowed": True,
         "remix_edit_allowed": True,
@@ -162,8 +162,8 @@ def _db_track(row) -> dict:
         waveform = []
     return {
         "id": str(item.get("id") or ""),
-        "title": item.get("title") or "Pulse sound",
-        "artist": item.get("artist") or "Pulse Studio",
+        "title": item.get("title") or "PulseSoc sound",
+        "artist": item.get("artist") or "PulseSoc Studio",
         "duration_seconds": float(item.get("duration_seconds") or 0),
         "license": item.get("license_type") or "unknown",
         "license_type": item.get("license_type") or "unknown",
@@ -293,7 +293,7 @@ def attach_music_payload(track_id: str, volume: float = 0.82) -> dict:
         return {
             "track_id": str(track_id or ""),
             "is_creator_safe": False,
-            "message": "Track is not approved for Pulse use.",
+            "message": "Track is not approved for PulseSoc use.",
         }
     return {
         "track_id": match["id"],

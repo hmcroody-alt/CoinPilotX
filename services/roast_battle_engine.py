@@ -98,7 +98,7 @@ def _participants(cur, match_id):
 def _format_participant(row):
     balance = float(row.get("current_balance") or DEFAULT_STAGE_BALANCE)
     status = "Dominating" if balance >= 1_075_000 else "Hot" if balance >= 1_025_000 else "Shaken" if balance < 960_000 else "Recovering"
-    public_id = row.get("public_player_id") or f"Pulse-{int(row.get('user_id') or 0)}"
+    public_id = row.get("public_player_id") or f"PulseSoc-{int(row.get('user_id') or 0)}"
     call_sign = row.get("call_sign") or row.get("roast_call_sign") or f"Arena Pilot #{int(row.get('user_id') or 0)}"
     return {
         "player_id": public_id,
@@ -131,7 +131,7 @@ def ensure_participant(match_id, user_id):
             (match_id, user_id, public_player_id, call_sign, starting_balance, current_balance, crowd_score, safety_score, wit_score, status, joined_at)
             VALUES (?, ?, ?, ?, ?, ?, 0, 100, 0, 'active', ?)
             """,
-            (int(match_id), int(user_id), f"Pulse-{int(user_id)}", call_sign, DEFAULT_STAGE_BALANCE, DEFAULT_STAGE_BALANCE, now),
+            (int(match_id), int(user_id), f"PulseSoc-{int(user_id)}", call_sign, DEFAULT_STAGE_BALANCE, DEFAULT_STAGE_BALANCE, now),
         )
     else:
         cur.execute(
@@ -245,7 +245,7 @@ def submit_message(user_id, match_id, message, target_user_id=None, target_type=
     sender_name = _call_sign_for_user(cur, user_id)
     cur.execute("SELECT public_player_id FROM arena_profiles WHERE user_id=? LIMIT 1", (int(user_id),))
     sender_profile = cur.fetchone()
-    sender_public_id = (sender_profile["public_player_id"] if sender_profile else "") or f"Pulse-{int(user_id)}"
+    sender_public_id = (sender_profile["public_player_id"] if sender_profile else "") or f"PulseSoc-{int(user_id)}"
     if not target_user_id and target_public_player_id:
         target_user_id = _user_id_from_public(cur, target_public_player_id)
     target = _choose_target(cur, match_id, user_id, target_user_id, target_type)

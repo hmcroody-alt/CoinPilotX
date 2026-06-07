@@ -1,4 +1,4 @@
-"""Topic memory for autonomous Pulse Spaces."""
+"""Topic memory for autonomous PulseSoc Spaces."""
 
 import json
 from datetime import datetime

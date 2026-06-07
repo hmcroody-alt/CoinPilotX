@@ -1,4 +1,4 @@
-"""Realtime presence and audience energy helpers for Pulse Live."""
+"""Realtime presence and audience energy helpers for PulseSoc Live."""
 
 from __future__ import annotations
 

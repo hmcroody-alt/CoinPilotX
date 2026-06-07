@@ -28,7 +28,7 @@ def main():
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO users (username, display_name, email, email_verified, avatar_url, bio, signup_time, created_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?)",
-        ("livemultiaudit", "Roody Cherie", "coinpilotxai@gmail.com", "/static/brand/pulse-logo-20260606.png", "Multistream audit creator", now, now),
+        ("livemultiaudit", "Roody Cherie", "coinpilotxai@gmail.com", "/static/brand/pulsesoc-logo-20260606.png", "Multistream audit creator", now, now),
     )
     user_id = int(cur.lastrowid)
     conn.commit()

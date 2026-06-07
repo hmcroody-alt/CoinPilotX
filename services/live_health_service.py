@@ -1,4 +1,4 @@
-"""Compatibility facade for Pulse Live health automation."""
+"""Compatibility facade for PulseSoc Live health automation."""
 
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ VALID_STATES = {"enabled", "disabled", "beta", "internal-only", "premium-only", 
 FEATURE_DEFINITIONS = [
     {
         "feature_key": "pulse_posts",
-        "feature": "Pulse posts",
+        "feature": "PulseSoc posts",
         "state": "enabled",
         "backend_status": "implemented",
         "frontend_status": "production ready",
@@ -44,7 +44,7 @@ FEATURE_DEFINITIONS = [
     },
     {
         "feature_key": "pulse_messenger",
-        "feature": "Pulse Messenger",
+        "feature": "PulseSoc Messenger",
         "state": "enabled",
         "backend_status": "implemented",
         "frontend_status": "production ready",
@@ -58,7 +58,7 @@ FEATURE_DEFINITIONS = [
     },
     {
         "feature_key": "pulse_spaces",
-        "feature": "Pulse Spaces",
+        "feature": "PulseSoc Spaces",
         "state": "enabled",
         "backend_status": "implemented",
         "frontend_status": "production ready",
@@ -72,7 +72,7 @@ FEATURE_DEFINITIONS = [
     },
     {
         "feature_key": "pulse_groups",
-        "feature": "Pulse Groups",
+        "feature": "PulseSoc Groups",
         "state": "enabled",
         "backend_status": "implemented",
         "frontend_status": "production ready",
@@ -86,7 +86,7 @@ FEATURE_DEFINITIONS = [
     },
     {
         "feature_key": "pulse_reels",
-        "feature": "Pulse Reels",
+        "feature": "PulseSoc Reels",
         "state": "beta",
         "backend_status": "partially complete",
         "frontend_status": "beta",
@@ -100,7 +100,7 @@ FEATURE_DEFINITIONS = [
     },
     {
         "feature_key": "pulse_livestream",
-        "feature": "Pulse Live",
+        "feature": "PulseSoc Live",
         "state": "beta",
         "backend_status": "partially complete",
         "frontend_status": "beta",
@@ -163,7 +163,7 @@ FEATURE_DEFINITIONS = [
         "realtime_status": "not required",
         "mobile_status": "mobile-ready",
         "ai_integration": "not required",
-        "monetization_readiness": "Pulse Premium prestige",
+        "monetization_readiness": "PulseSoc Premium prestige",
         "security_review": "reviewed",
         "observability": "traceable",
         "risk_level": "medium",
@@ -177,14 +177,14 @@ FEATURE_DEFINITIONS = [
         "realtime_status": "not required",
         "mobile_status": "mobile-ready",
         "ai_integration": "partial",
-        "monetization_readiness": "Pulse Premium enhancement",
+        "monetization_readiness": "PulseSoc Premium enhancement",
         "security_review": "needs deeper review",
         "observability": "limited",
         "risk_level": "medium",
     },
     {
         "feature_key": "ai_assistant",
-        "feature": "Pulse AI Assistant",
+        "feature": "PulseSoc AI Assistant",
         "state": "beta",
         "backend_status": "implemented",
         "frontend_status": "beta",
@@ -267,7 +267,7 @@ def evaluate_flag(flag: dict | None, user: dict | None = None) -> dict:
     if state == "owner-only" and not user.get("is_owner"):
         return {"visible": False, "usable": False, "state": state, "reason": "Owner-only feature."}
     if state == "premium-only" and not (user.get("is_premium") or user.get("is_owner")):
-        return {"visible": True, "usable": False, "state": state, "reason": "Pulse Premium prestige feature."}
+        return {"visible": True, "usable": False, "state": state, "reason": "PulseSoc Premium prestige feature."}
     return {"visible": True, "usable": True, "state": state, "reason": "Available."}
 
 

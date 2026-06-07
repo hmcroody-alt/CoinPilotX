@@ -76,7 +76,7 @@ def route_text(text, linked_user=None):
 def connect_website_instructions():
     return (
         "CONNECT YOUR WEBSITE ACCOUNT:\n"
-        "1. Open Pulse website\n"
+        "1. Open PulseSoc website\n"
         "2. Go to Account -> Telegram Companion\n"
         "3. Generate link code\n"
         "4. Send this in Telegram:\n"

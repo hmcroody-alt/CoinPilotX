@@ -1,4 +1,4 @@
-"""Mux Live Streaming helpers for Pulse Live."""
+"""Mux Live Streaming helpers for PulseSoc Live."""
 
 from __future__ import annotations
 
@@ -72,13 +72,13 @@ def playback_url(playback_id: str) -> str:
     return f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else ""
 
 
-def create_mux_live_stream(*, title: str = "Pulse Live", record: bool = True, low_latency: bool = True, metadata: dict | None = None) -> dict:
+def create_mux_live_stream(*, title: str = "PulseSoc Live", record: bool = True, low_latency: bool = True, metadata: dict | None = None) -> dict:
     payload = {
         "playback_policy": ["public"],
         "new_asset_settings": {"playback_policy": ["public"]},
         "latency_mode": "low" if low_latency else "standard",
         "reconnect_window": int(os.getenv("MUX_LIVE_RECONNECT_WINDOW_SECONDS", "60")),
-        "metadata": {"title": str(title or "Pulse Live")[:255], **(metadata or {})},
+        "metadata": {"title": str(title or "PulseSoc Live")[:255], **(metadata or {})},
     }
     if not record:
         payload.pop("new_asset_settings", None)

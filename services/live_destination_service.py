@@ -1,4 +1,4 @@
-"""Secure destination records for Pulse Live restreaming."""
+"""Secure destination records for PulseSoc Live restreaming."""
 
 from __future__ import annotations
 

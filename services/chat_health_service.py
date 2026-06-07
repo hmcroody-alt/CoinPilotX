@@ -1,4 +1,4 @@
-"""Self-healing health helpers for Pulse Messenger infrastructure."""
+"""Self-healing health helpers for PulseSoc Messenger infrastructure."""
 
 from __future__ import annotations
 

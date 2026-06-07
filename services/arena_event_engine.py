@@ -7,7 +7,7 @@ from datetime import datetime
 
 def flash_event(world_state=None):
     world_state = world_state or {}
-    title = world_state.get("title") or "Arena Intelligence Pulse"
+    title = world_state.get("title") or "Arena Intelligence PulseSoc"
     return {
         "event_type": "world_pulse",
         "title": title,

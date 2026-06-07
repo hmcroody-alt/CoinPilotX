@@ -1,4 +1,4 @@
-"""Pulse Live stream health scoring and recovery hints."""
+"""PulseSoc Live stream health scoring and recovery hints."""
 
 from __future__ import annotations
 
@@ -42,5 +42,5 @@ def recovery_hints(health=None):
     if int(health.get("fps") or 0) == 0:
         hints.append("Camera preview is ready; stream frames have not reached ingest yet.")
     if int(health.get("score") or 0) < 58:
-        hints.append("Keep the studio open while Pulse stabilizes playback and chat sync.")
+        hints.append("Keep the studio open while PulseSoc stabilizes playback and chat sync.")
     return hints or ["Stream health looks stable."]

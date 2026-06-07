@@ -1,4 +1,4 @@
-"""Professional audio chain primitives for Pulse Live."""
+"""Professional audio chain primitives for PulseSoc Live."""
 
 from __future__ import annotations
 

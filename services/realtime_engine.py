@@ -1,6 +1,6 @@
-"""Reusable realtime foundation for Pulse social activity.
+"""Reusable realtime foundation for PulseSoc social activity.
 
-The web app already persists Pulse events for SSE/polling. This module gives
+The web app already persists PulseSoc events for SSE/polling. This module gives
 the rest of the platform one dependency-light interface that can later sit in
 front of Redis, Socket.IO, or another websocket service without changing
 feature code.

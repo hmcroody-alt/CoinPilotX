@@ -1,4 +1,4 @@
-"""Central registry for Pulse Premium capabilities.
+"""Central registry for PulseSoc Premium capabilities.
 
 The premium page can sound ambitious, but the product should only expose
 features that are active, safely scaffolded, or clearly marked as future work.

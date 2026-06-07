@@ -1,4 +1,4 @@
-"""Pulse Live discovery ranking for homepage LIVE NOW surfaces."""
+"""PulseSoc Live discovery ranking for homepage LIVE NOW surfaces."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def ranked_live_cards(streams: list[dict], limit: int = 8) -> list[dict]:
 def empty_live_card() -> dict:
     return {
         "id": 0,
-        "title": "Pulse Live is ready",
+        "title": "PulseSoc Live is ready",
         "creator_name": "CoinPilotXAI",
         "category": "Live discovery",
         "viewer_count": 0,

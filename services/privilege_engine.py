@@ -98,7 +98,7 @@ def get_user_privileges(user_id=None, trust_score=0, current_level="", referral_
     if referral_count < 30:
         next_steps.append(f"Invite {30 - referral_count} more real members to unlock Live.")
     if trust_score < 50:
-        next_steps.append("Complete your profile and keep posting helpful Pulse content.")
+        next_steps.append("Complete your profile and keep posting helpful PulseSoc content.")
     if "identity" not in verification_types:
         next_steps.append("Earn verified trust with identity, creator, teacher, seller, or safety verification.")
 

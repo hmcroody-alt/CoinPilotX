@@ -1,4 +1,4 @@
-"""Prestige economy helpers for Pulse identity progression."""
+"""Prestige economy helpers for PulseSoc identity progression."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ PRESTIGE_LAYERS = [
     "Teacher Elite",
     "Marketplace Elite",
     "Arena Elite",
-    "Pulse Legend",
+    "PulseSoc Legend",
     "Founder Circle",
 ]
 
@@ -26,7 +26,7 @@ def prestige_for_scores(scores=None, premium=False, owner=False):
     influence = int(scores.get("influence_score") or 0)
     combined = int(trust * 0.45 + creator * 0.35 + influence * 0.2)
     if combined >= 92:
-        layer = "Pulse Legend"
+        layer = "PulseSoc Legend"
     elif combined >= 82:
         layer = "Arena Elite"
     elif combined >= 72:

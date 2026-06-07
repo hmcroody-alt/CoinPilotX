@@ -1,4 +1,4 @@
-"""Quality and safety guardrails for autonomous Pulse Space posts."""
+"""Quality and safety guardrails for autonomous PulseSoc Space posts."""
 
 import re
 

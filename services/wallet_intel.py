@@ -63,7 +63,7 @@ def analyze_public_identifier(value):
         "Risk flags:\n"
         "• Only public wallet/TXID data should be used.\n"
         "• High transaction activity, new approvals, or unknown counterparties should be reviewed carefully.\n\n"
-        "Safety reminder: Pulse will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.\n"
+        "Safety reminder: PulseSoc will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.\n"
         "Educational only — not financial advice."
     )
     return {"ok": True, "chain": chain, "explorer": explorer_link(chain, value), "response": response}

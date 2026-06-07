@@ -15,7 +15,7 @@ def account_summary(user):
     user = user or {}
     return {
         "user_id": user.get("user_id"),
-        "name": user.get("full_name") or user.get("display_name") or "Pulse user",
+        "name": user.get("full_name") or user.get("display_name") or "PulseSoc user",
         "email": user_context.mask_email(user.get("email")),
         "plan": "pro" if pro_access.has_pro_access(user) else "free",
         "subscription_status": user.get("subscription_status") or "inactive",

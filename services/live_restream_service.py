@@ -1,4 +1,4 @@
-"""Multi-destination restream orchestration for Pulse Live."""
+"""Multi-destination restream orchestration for PulseSoc Live."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def normalize_destinations(destinations) -> list[dict]:
             "stream_key": data.get("stream_key") or "",
         })
     if "pulse" not in seen:
-        normalized.insert(0, {"platform": "pulse", "label": "Pulse Live", "rtmp_url": "", "stream_key": ""})
+        normalized.insert(0, {"platform": "pulse", "label": "PulseSoc Live", "rtmp_url": "", "stream_key": ""})
     return normalized
 
 
@@ -81,7 +81,7 @@ def prepare_restream_targets(cur, *, live_id: int, user_id: int, destinations=No
                 "platform": platform,
                 "status": status,
                 "destination_id": destination_id,
-                "message": error or ("Pulse Live is primary." if platform == "pulse" else "Connection is queued."),
+                "message": error or ("PulseSoc Live is primary." if platform == "pulse" else "Connection is queued."),
             })
         except Exception as exc:
             platform = live_destination_service.normalize_platform(destination.get("platform") if isinstance(destination, dict) else destination)

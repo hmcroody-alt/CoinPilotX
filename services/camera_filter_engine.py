@@ -7,7 +7,7 @@ import os
 
 FREE_FILTERS = {
     "clean_hd": {"label": "Clean HD", "css": "brightness(1.06) contrast(1.12) saturate(1.06)", "premium": False},
-    "pulse_neon": {"label": "Pulse Neon", "css": "contrast(1.08) saturate(1.22) brightness(1.04)", "premium": False},
+    "pulse_neon": {"label": "PulseSoc Neon", "css": "contrast(1.08) saturate(1.22) brightness(1.04)", "premium": False},
     "sharp_hd": {"label": "Sharp HD", "css": "contrast(1.12) saturate(1.04)", "premium": False},
     "warm_cinema": {"label": "Warm Cinema", "css": "sepia(.14) saturate(1.12) contrast(1.05)", "premium": False},
     "warm_studio": {"label": "Warm Studio", "css": "sepia(.14) saturate(1.14) brightness(1.06) contrast(1.04)", "premium": False},

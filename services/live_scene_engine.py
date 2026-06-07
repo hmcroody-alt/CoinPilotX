@@ -1,4 +1,4 @@
-"""Scene, overlay, and transition presets for Pulse Live Studio."""
+"""Scene, overlay, and transition presets for PulseSoc Live Studio."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ SCENES = [
 TRANSITIONS = [
     {"key": "soft_cut", "label": "Soft cut", "duration_ms": 180},
     {"key": "cinematic_fade", "label": "Cinematic fade", "duration_ms": 420},
-    {"key": "pulse_sweep", "label": "Pulse sweep", "duration_ms": 520},
+    {"key": "pulse_sweep", "label": "PulseSoc sweep", "duration_ms": 520},
 ]
 
 

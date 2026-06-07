@@ -1,18 +1,18 @@
-"""Discovery payloads for Pulse Live surfaces."""
+"""Discovery payloads for PulseSoc Live surfaces."""
 
 from __future__ import annotations
 
 from . import live_distribution_service
 
 
-def live_card(session: dict, creator_name: str = "Pulse Creator") -> dict:
+def live_card(session: dict, creator_name: str = "PulseSoc Creator") -> dict:
     item = dict(session or {})
     playback = live_distribution_service.playback_manifest(item)
     live_id = int(item.get("id") or item.get("live_id") or 0)
     return {
         "id": live_id,
         "type": "live",
-        "title": item.get("title") or "Pulse Live",
+        "title": item.get("title") or "PulseSoc Live",
         "creator_name": creator_name,
         "thumbnail_url": item.get("preview_url") or item.get("thumbnail_url") or playback.get("poster_url") or "",
         "status": item.get("publish_state") or item.get("status") or "live",

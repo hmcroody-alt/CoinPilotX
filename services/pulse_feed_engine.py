@@ -1,4 +1,4 @@
-"""Global Pulse Feed data and ranking helpers."""
+"""Global PulseSoc Feed data and ranking helpers."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _public_media_url(url):
 
 
 def _canonical_media_payload(item, resolved, *, index=0, embed=None):
-    """Return the one media schema used by all Pulse feed renderers."""
+    """Return the one media schema used by all PulseSoc feed renderers."""
     payload = dict(embed or {})
     media_type = (resolved.get("media_type") or item.get("media_type") or payload.get("media_type") or payload.get("type") or "image")
     media_url = resolved.get("media_url") or payload.get("media_url") or ""
@@ -124,7 +124,7 @@ def _canonical_media_payload(item, resolved, *, index=0, embed=None):
 
 
 def pulse_visibility_decision(post, viewer_user_id=None, include_private=False):
-    """Canonical public Pulse visibility rule used by feeds, audits, and refresh paths."""
+    """Canonical public PulseSoc visibility rule used by feeds, audits, and refresh paths."""
     item = dict(post or {})
     viewer_id = int(viewer_user_id or 0)
     author_id = int(item.get("user_id") or 0)
@@ -168,7 +168,7 @@ def _public_author(row):
         row.get("user_display_name")
         or row.get("display_name")
         or row.get("username")
-        or f"Pulse Member #{str(public_player_id or row.get('user_id') or '000')[-4:]}"
+        or f"PulseSoc Member #{str(public_player_id or row.get('user_id') or '000')[-4:]}"
     )
     avatar_url = row.get("user_avatar_url") or row.get("avatar_url") or ""
     badges = ["Member"]
@@ -199,7 +199,7 @@ def _public_author(row):
     badge_key_set = {str(key) for key in badge_keys}
     label_set = {str(label).strip().lower() for label in badges}
     if premium_identity_engine.is_owner(item) or {"owner", "founder"} & badge_key_set:
-        primary_label = "Founder · Pulse"
+        primary_label = "Founder · PulseSoc"
     elif {"creator", "verified", "partner_creator"} & badge_key_set or "creator" in label_set:
         primary_label = "Verified Creator"
     elif "teacher" in badge_key_set or "teacher" in label_set:
@@ -266,7 +266,7 @@ def _media_for_posts(post_ids):
             media.setdefault(post_id, []).append(_canonical_media_payload(item, resolved, index=len(media.get(post_id, []))))
         return media
     except Exception as exc:
-        logging.warning("Pulse media hydration skipped: %s", exc)
+        logging.warning("PulseSoc media hydration skipped: %s", exc)
         return {}
     finally:
         conn.close()
@@ -472,7 +472,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
     body = _clean_text(body, 5000)
     title = _clean_text(title, 160)
     # Reels keep a compatibility post for the existing social/reaction model, but
-    # reel-only posts must never leak into the regular Pulse feed.
+    # reel-only posts must never leak into the regular PulseSoc feed.
     visibility = visibility if visibility in {"public", "followers", "private", "reel_only"} else "public"
     tags = [str(t).strip("# ").lower()[:32] for t in (tags or []) if str(t).strip("# ")]
     media_ids = _normalize_media_ids(media_ids)
@@ -525,17 +525,17 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
     try:
         media_service.attach_media_to_message(user_id, post_id, media_ids or [], context_type="pulse", context_id=str(post_id))
     except Exception as exc:
-        logging.warning("Pulse media attachment failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
+        logging.warning("PulseSoc media attachment failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
     if enqueue_background:
         try:
             enqueue_post_jobs(post_id, post_type=post_type, has_media=bool(media_ids))
         except Exception as exc:
-            logging.warning("Pulse job enqueue failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
+            logging.warning("PulseSoc job enqueue failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
     next_url = f"/pulse/post/{post_id}"
     try:
         post_payload = get_post(post_id, viewer_user_id=user_id)
     except Exception as exc:
-        logging.warning("Pulse post hydration failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
+        logging.warning("PulseSoc post hydration failed post_id=%s user_id=%s error=%s", post_id, user_id, exc)
         post_payload = {
             "id": post_id,
             "post_type": post_type,
@@ -551,7 +551,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             "engagement_score": 0,
             "created_at": now,
             "updated_at": now,
-            "author": {"display_name": "Pulse creator", "public_player_id": None, "avatar_url": "", "rank": "Member", "badges": ["Member"]},
+            "author": {"display_name": "PulseSoc creator", "public_player_id": None, "avatar_url": "", "rank": "Member", "badges": ["Member"]},
             "media": [],
             "reaction_counts": {},
             "comment_count": 0,
@@ -563,7 +563,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
         "post_id": post_id,
         "next_url": next_url,
         "status": moderation.get("status"),
-        "message": moderation.get("message") or "Pulse post published.",
+        "message": moderation.get("message") or "PulseSoc post published.",
         "post": post_payload,
     }
 
@@ -788,7 +788,7 @@ def _empty_intelligence(topic=""):
         "posts_today": 0,
         "open_reports": 0,
         "community_mood": "Warming up",
-        "suggested_action": "Create the first Pulse for today's crypto conversation.",
+        "suggested_action": "Create the first PulseSoc for today's crypto conversation.",
         "daily_prompt": daily_prompt(),
         "topic": topic or "",
     }
@@ -798,7 +798,7 @@ def safe_intelligence_panel(topic=""):
     try:
         return intelligence_panel(topic)
     except Exception as exc:
-        logging.warning("Pulse intelligence fallback used: %s", exc)
+        logging.warning("PulseSoc intelligence fallback used: %s", exc)
         return _empty_intelligence(topic)
 
 
@@ -827,7 +827,7 @@ def intelligence_panel(topic=""):
     top_posts = [
         {
             "id": row["id"],
-            "title": row["title"] or (row["body"] or "Pulse post")[:80],
+            "title": row["title"] or (row["body"] or "PulseSoc post")[:80],
             "post_type": row["post_type"] or "text",
             "score": float(row["engagement_score"] or 0),
             "permalink": f"/pulse/post/{row['id']}",
@@ -836,7 +836,7 @@ def intelligence_panel(topic=""):
     ]
     cur.execute(
         """
-        SELECT COALESCE(u.display_name, u.username, 'Pulse Creator') AS name,
+        SELECT COALESCE(u.display_name, u.username, 'PulseSoc Creator') AS name,
                COUNT(*) AS total
         FROM pulse_posts p
         LEFT JOIN users u ON u.user_id=p.user_id
@@ -879,7 +879,7 @@ def intelligence_panel(topic=""):
         "posts_today": posts_today,
         "open_reports": open_reports,
         "community_mood": "Protective" if any(t["tag"] == "scamalert" for t in trending) else "Curious",
-        "suggested_action": "Review new Scam Alerts first." if scam_warnings else "Create the first Pulse for today's market conversation.",
+        "suggested_action": "Review new Scam Alerts first." if scam_warnings else "Create the first PulseSoc for today's market conversation.",
         "daily_prompt": daily_prompt(),
     }
 
@@ -991,7 +991,7 @@ def get_comment(comment_id):
 def react(user_id, post_id, reaction_type):
     reaction_type = (reaction_type or "").strip().lower()
     if reaction_type not in REACTIONS:
-        return {"ok": False, "message": "Choose a supported Pulse reaction."}, 400
+        return {"ok": False, "message": "Choose a supported PulseSoc reaction."}, 400
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute("SELECT id FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1", (int(post_id),))
@@ -1132,7 +1132,7 @@ def _process_job(cur, job):
         cur.execute("SELECT body, title, tags_json FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
         post = _row(cur.fetchone()) or {}
         if job_type == "generate_ai_summary":
-            summary = _clean_text(post.get("body") or post.get("title") or "Pulse community update", 220)
+            summary = _clean_text(post.get("body") or post.get("title") or "PulseSoc community update", 220)
             cur.execute("UPDATE pulse_posts SET ai_summary=?, updated_at=? WHERE id=?", (summary, _now(), target_id))
         else:
             tags = _json(post.get("tags_json"), [])

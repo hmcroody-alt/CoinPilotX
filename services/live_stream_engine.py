@@ -1,4 +1,4 @@
-"""Pulse Live engagement and safety primitives."""
+"""PulseSoc Live engagement and safety primitives."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def start_stream(user_id, title="", category="Crypto Education", premium_only=Fa
         "hls_url": f"{playback_base}/{stream_id}.m3u8",
         "webrtc_room_id": f"pulse-webrtc-{stream_id}",
         "channel": f"pulse_live_{int(user_id or 0)}_{uuid4().hex[:10]}",
-        "title": title or "Pulse Live",
+        "title": title or "PulseSoc Live",
         "category": category or "Crypto Education",
         "premium_only": bool(premium_only),
         "provider": "pulse-native",
@@ -47,12 +47,12 @@ def remove_guest(live_id, guest_user_id):
 
 
 def create_clip(live_id, start_ms=0, end_ms=0, title=""):
-    return {"ok": True, "live_id": int(live_id or 0), "clip_id": uuid4().hex[:12], "start_ms": int(start_ms or 0), "end_ms": int(end_ms or 0), "title": title or "Pulse Live Clip"}
+    return {"ok": True, "live_id": int(live_id or 0), "clip_id": uuid4().hex[:12], "start_ms": int(start_ms or 0), "end_ms": int(end_ms or 0), "title": title or "PulseSoc Live Clip"}
 
 
 def generate_live_summary(messages=None, title=""):
     messages = messages or []
-    return {"summary": (title or "Pulse Live") + f" · {len(messages)} chat moments captured.", "highlights": messages[:5]}
+    return {"summary": (title or "PulseSoc Live") + f" · {len(messages)} chat moments captured.", "highlights": messages[:5]}
 
 
 def detect_spam_in_chat(text=""):

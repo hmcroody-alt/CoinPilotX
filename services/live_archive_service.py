@@ -1,4 +1,4 @@
-"""Replay/VOD lifecycle helpers for Pulse Live."""
+"""Replay/VOD lifecycle helpers for PulseSoc Live."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def replay_manifest(session=None, chat_messages=None):
 def publish_replay_payload(session=None, peak_viewers=0, engagement=0):
     session = session or {}
     return {
-        "title": (session.get("title") or "Pulse Live Replay")[:140],
+        "title": (session.get("title") or "PulseSoc Live Replay")[:140],
         "duration_seconds": int(session.get("duration_seconds") or 0),
         "peak_viewers": int(peak_viewers or 0),
         "engagement_score": int(engagement or 0),

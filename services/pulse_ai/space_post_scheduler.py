@@ -1,4 +1,4 @@
-"""Restart-safe scheduler helpers for autonomous Pulse Space posts."""
+"""Restart-safe scheduler helpers for autonomous PulseSoc Space posts."""
 
 from datetime import datetime, timedelta
 import json

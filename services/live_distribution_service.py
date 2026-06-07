@@ -1,4 +1,4 @@
-"""Public playback/distribution helpers for Pulse Live."""
+"""Public playback/distribution helpers for PulseSoc Live."""
 
 from __future__ import annotations
 
@@ -35,12 +35,12 @@ def playback_manifest(session=None):
     }
 
 
-def discovery_card(session=None, creator_name="Pulse Creator"):
+def discovery_card(session=None, creator_name="PulseSoc Creator"):
     session = session or {}
     return {
         "id": int(session.get("id") or 0),
-        "title": session.get("title") or "Pulse Live",
-        "creator_name": creator_name or "Pulse Creator",
+        "title": session.get("title") or "PulseSoc Live",
+        "creator_name": creator_name or "PulseSoc Creator",
         "status": session.get("status") or "starting",
         "viewer_count": int(session.get("viewer_count") or 0),
         "category": session.get("category") or "Community",

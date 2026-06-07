@@ -1,4 +1,4 @@
-"""Pulse Camera lens registry and lightweight AR-ready effect metadata."""
+"""PulseSoc Camera lens registry and lightweight AR-ready effect metadata."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from datetime import datetime
 STARTER_LENSES = [
     {
         "key": "pulse_glow",
-        "label": "Pulse Glow",
+        "label": "PulseSoc Glow",
         "effect_type": "aura",
         "premium": False,
         "css_filter": "brightness(1.08) contrast(1.06) saturate(1.16)",

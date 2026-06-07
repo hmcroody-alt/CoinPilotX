@@ -2,7 +2,7 @@ import json
 import os
 
 SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://pulsesoc.com").rstrip("/")
-LOGO_URL = f"{SITE_URL}/static/brand/pulse-logo-20260606.png"
+LOGO_URL = f"{SITE_URL}/static/brand/pulsesoc-logo-20260606.png"
 SHARE_IMAGE_URL = LOGO_URL
 SUPPORT_EMAIL = "support@pulsesoc.com"
 
@@ -11,7 +11,7 @@ def organization_schema():
     return {
         "@type": "Organization",
         "@id": f"{SITE_URL}/#organization",
-        "name": "Pulse",
+        "name": "PulseSoc",
         "legalName": "CoinPilotXAI Inc.",
         "url": SITE_URL + "/",
         "logo": LOGO_URL,
@@ -31,11 +31,11 @@ def website_schema():
     return {
         "@type": "WebSite",
         "@id": f"{SITE_URL}/#website",
-        "name": "Pulse",
+        "name": "PulseSoc",
         "url": SITE_URL + "/",
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "inLanguage": "en",
-        "description": "Pulse is a social, creator, safety, market-intelligence, and premium community platform powered by CoinPilotXAI.",
+        "description": "PulseSoc is a social, creator, safety, market-intelligence, and premium community platform powered by CoinPilotXAI.",
         "potentialAction": {
             "@type": "SearchAction",
             "target": f"{SITE_URL}/search?q={{search_term_string}}",
@@ -48,7 +48,7 @@ def software_schema():
     return {
         "@type": "SoftwareApplication",
         "@id": f"{SITE_URL}/#software",
-        "name": "Pulse",
+        "name": "PulseSoc",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Telegram, Web, PWA",
         "url": SITE_URL + "/",
@@ -130,9 +130,9 @@ def product_schema():
     return {
         "@type": "Product",
         "@id": f"{SITE_URL}/#product",
-        "name": "Pulse Premium",
+        "name": "PulseSoc Premium",
         "brand": {"@id": f"{SITE_URL}/#organization"},
-        "description": "Pulse Premium adds prestige identity, creator enhancements, advanced safety and intelligence features, and premium community tools.",
+        "description": "PulseSoc Premium adds prestige identity, creator enhancements, advanced safety and intelligence features, and premium community tools.",
         "image": SHARE_IMAGE_URL,
         "offers": {
             "@type": "Offer",
@@ -173,7 +173,7 @@ def related_item_list_schema(page):
     return {
         "@type": "ItemList",
         "@id": page["canonical"] + "#related",
-        "name": f"Related Pulse intelligence pages for {page['h1']}",
+        "name": f"Related PulseSoc intelligence pages for {page['h1']}",
         "itemListElement": [
             {
                 "@type": "ListItem",

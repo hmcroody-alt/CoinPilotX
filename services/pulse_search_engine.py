@@ -1,4 +1,4 @@
-"""Trust-aware Pulse search foundation."""
+"""Trust-aware PulseSoc search foundation."""
 
 from __future__ import annotations
 

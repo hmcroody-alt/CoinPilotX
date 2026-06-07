@@ -16,6 +16,6 @@ def stability_snapshot(metrics=None) -> dict:
         "recommendations": [
             "Prioritize routes returning 500.",
             "Use trace IDs for all failed APIs.",
-            "Keep optional systems from blocking core Pulse.",
+            "Keep optional systems from blocking core PulseSoc.",
         ] if score < 90 else ["Platform stability looks healthy from the sampled audit."],
     }

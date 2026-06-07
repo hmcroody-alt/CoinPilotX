@@ -47,7 +47,7 @@ def snapshot(metrics: dict | None = None) -> dict:
 
     recommendations = []
     if livestream_score < 85:
-        recommendations.append("Keep Pulse Live labeled beta until stream start failures stay low.")
+        recommendations.append("Keep PulseSoc Live labeled beta until stream start failures stay low.")
     if payment_score < 90:
         recommendations.append("Keep checkout and payouts hidden until payment state transitions are verified.")
     if marketplace_score < 85:

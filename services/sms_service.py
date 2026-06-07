@@ -61,7 +61,7 @@ def send_sms(to_phone, message, purpose="alert", user_id=0, alert_rule_id=None, 
         _log_delivery(user_id, "sms", "not_configured", error="Brevo SMS is not configured", alert_rule_id=alert_rule_id, alert_event_id=alert_event_id)
         return {"ok": False, "status": "not_configured", "message": "SMS not configured."}
     api_key = os.getenv("BREVO_SMS_API_KEY") or os.getenv("BREVO_API_KEY", "")
-    payload = {"sender": os.getenv("BREVO_SMS_SENDER", "Pulse")[:11], "recipient": phone, "content": str(message or "")[:480]}
+    payload = {"sender": os.getenv("BREVO_SMS_SENDER", "PulseSoc")[:11], "recipient": phone, "content": str(message or "")[:480]}
     try:
         response = requests.post(
             BREVO_SMS_URL,
@@ -99,7 +99,7 @@ def send_verification_code(user_id, phone):
     )
     conn.commit()
     conn.close()
-    result = send_sms(phone, f"Your Pulse verification code is {code}. It expires in 10 minutes.", purpose="verification", user_id=user_id)
+    result = send_sms(phone, f"Your PulseSoc verification code is {code}. It expires in 10 minutes.", purpose="verification", user_id=user_id)
     if result.get("ok"):
         return {"ok": True, "status": "sent", "message": "Verification code sent."}
     return result
@@ -152,7 +152,7 @@ def send_test_sms(user_id):
     if not readiness.get("ready"):
         _log_delivery(user_id, "sms", readiness.get("status") or "not_configured", error=readiness.get("message"))
         return {"ok": False, **readiness}
-    return send_sms(readiness.get("phone"), "Pulse SMS test: your alert text channel is ready.", purpose="test", user_id=user_id)
+    return send_sms(readiness.get("phone"), "PulseSoc SMS test: your alert text channel is ready.", purpose="test", user_id=user_id)
 
 
 def send_alert_sms(user_id, alert_payload):
@@ -161,5 +161,5 @@ def send_alert_sms(user_id, alert_payload):
         _log_delivery(user_id, "sms", readiness.get("status") or "not_configured", error=readiness.get("message"), alert_rule_id=(alert_payload or {}).get("alert_rule_id"), alert_event_id=(alert_payload or {}).get("alert_event_id"))
         return {"ok": False, **readiness}
     symbol = (alert_payload or {}).get("symbol") or "Market"
-    message = (alert_payload or {}).get("message") or f"Pulse alert: {symbol} condition triggered."
+    message = (alert_payload or {}).get("message") or f"PulseSoc alert: {symbol} condition triggered."
     return send_sms(readiness.get("phone"), message, purpose="alert", user_id=user_id, alert_rule_id=(alert_payload or {}).get("alert_rule_id"), alert_event_id=(alert_payload or {}).get("alert_event_id"))

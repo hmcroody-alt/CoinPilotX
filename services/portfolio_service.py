@@ -311,7 +311,7 @@ def portfolio_insight(portfolio, watchlist, pro=False):
     risk = "Elevated" if concentration >= 65 else "Medium" if concentration >= 40 else "Balanced"
     movement = sorted(holdings, key=lambda x: abs(x.get("change_24h") or 0), reverse=True)[:3]
     moved = ", ".join(f"{item.get('symbol')} {float(item.get('change_24h') or 0):+.2f}%" for item in movement if item.get("change_24h") is not None) or "24h moves unavailable"
-    detail = "Pulse Premium view adds richer creator-grade presentation and prestige context." if pro else "Free core view includes concentration, volatility, alert, and watchlist context."
+    detail = "PulseSoc Premium view adds richer creator-grade presentation and prestige context." if pro else "Free core view includes concentration, volatility, alert, and watchlist context."
     return (
         f"Risk Reminder: {SAFETY}\n\n"
         f"Portfolio concentration: {largest.get('symbol')} is about {concentration:.1f}% of tracked value.\n"
@@ -339,9 +339,9 @@ def get_user_dashboard_data(user_id):
     data = {
         "ok": True,
         "user": {
-            "name": user.get("full_name") or user.get("display_name") or "Pulse user",
+            "name": user.get("full_name") or user.get("display_name") or "PulseSoc user",
             "email": user_context.mask_email(user.get("email")),
-            "plan": "Pulse Premium" if paid_pro else "Legacy Trial" if trialing else "Premium" if pro else "Free Core",
+            "plan": "PulseSoc Premium" if paid_pro else "Legacy Trial" if trialing else "Premium" if pro else "Free Core",
             "subscription_status": user.get("subscription_status") or "inactive",
             "has_pro_access": pro,
             "is_paid_pro": paid_pro,

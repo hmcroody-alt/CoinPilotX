@@ -6,7 +6,7 @@ from __future__ import annotations
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
 FILTERS = [
-    "Pulse Neon",
+    "PulseSoc Neon",
     "Founder Mode",
     "Market Vision",
     "Arena Energy",

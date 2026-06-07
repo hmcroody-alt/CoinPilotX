@@ -1,4 +1,4 @@
-"""Pulse feed ranking signals with safe chronological fallback."""
+"""PulseSoc feed ranking signals with safe chronological fallback."""
 
 from __future__ import annotations
 
