@@ -1,67 +1,70 @@
 const fs = require("fs");
 const path = require("path");
 
-const mobileRoot = path.resolve(__dirname, "..");
-
-const checks = [
-  ["Production app root", "App.tsx", "AppNavigator"],
-  ["Feed tab", "navigation/MainTabs.tsx", "HomeFeedScreen"],
-  ["Reels tab", "navigation/MainTabs.tsx", "ReelsScreen"],
-  ["Videos tab", "navigation/MainTabs.tsx", "VideosScreen"],
-  ["Messages tab", "navigation/MainTabs.tsx", "MessagesScreen"],
-  ["Feed API endpoint", "services/feed/feedApi.ts", "/api/pulse/feed"],
-  ["Reels API endpoint", "screens/main/ReelsScreen.tsx", "/api/pulse/reels/feed"],
-  ["Videos API endpoint", "screens/main/VideosScreen.tsx", "/api/pulse/videos"],
-  ["Messages API endpoint", "src/services/communications.ts", "/api/pulse/communications/v2/conversations"],
-  ["Messages service endpoint", "src/services/communications.ts", "/api/pulse/communications/v2/conversations"],
-  ["Notifications screen", "navigation/MainTabs.tsx", "NotificationsScreen"],
-  ["Notification inbox endpoint", "src/screens/NotificationsScreen.tsx", "/api/pulse/notifications?limit=80"],
-  ["Notification quick status reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/status/${statusId}/reply"],
-  ["Notification quick post reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/posts/${postId}/comments"],
-  ["Notification quick message reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/messages/send"],
-  ["Notification mark read", "src/screens/NotificationsScreen.tsx", "/api/pulse/notifications/${noteId}/read"],
-  ["Profile API", "screens/main/ProfileScreen.tsx", "/api/pulse/profile/me"],
-  ["Pull to refresh", "screens/main/HomeFeedScreen.tsx", "RefreshControl"],
-  ["Post card media", "components/feed/PostCard.tsx", "FeedMedia"],
-  ["Feed phase report", "docs/feed_phase_report.md", "Performance Strategy"]
-];
-
+const root = path.resolve(__dirname, "..");
+const app = read("App.tsx");
+const push = read("services/push.ts");
+const pkg = read("package.json");
 const failures = [];
 
-for (const [label, relativePath, needle] of checks) {
-  const target = path.join(mobileRoot, relativePath);
-  const text = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "";
-  if (!text.includes(needle)) failures.push(`${label} missing in ${relativePath}`);
+const checks = [
+  ["WebView dependency installed", pkg, "react-native-webview"],
+  ["App root uses WebView", app, "react-native-webview"],
+  ["Loads live PulseSoc website by default", app, "https://pulsesoc.com"],
+  ["No native AppNavigator root", app, "AppNavigator", true],
+  ["Shared cookies enabled", app, "sharedCookiesEnabled"],
+  ["DOM storage enabled", app, "domStorageEnabled"],
+  ["Media playback allowed inline", app, "allowsInlineMediaPlayback"],
+  ["Autoplay/user-action config present", app, "mediaPlaybackRequiresUserAction={false}"],
+  ["Pull-to-refresh enabled", app, "pullToRefreshEnabled"],
+  ["External links open outside shell", app, "Linking.openURL(request.url)"],
+  ["PulseSoc internal hosts stay in WebView", app, "PULSESOC_HOSTS"],
+  ["Deep links map to website routes", app, "toPulseSocWebUrl"],
+  ["Offline fallback screen", app, "PulseSoc is offline"],
+  ["Native bridge injected", app, "PulseSocNative"],
+  ["Native share bridge", app, "PULSESOC_SHARE"],
+  ["Native push bridge", app, "PULSESOC_REGISTER_PUSH"],
+  ["Push token can be requested without native navigator", push, "getNativePushToken"],
+  ["Push token posts back through website cookies", app, "credentials: 'include'"],
+  ["Native notification deep links can route into WebView", push, "wireNotificationLinks(onUrl"]
+];
+
+for (const [label, text, needle, shouldBeMissing] of checks) {
+  const found = text.includes(needle);
+  if (shouldBeMissing ? found : !found) failures.push(`${label} failed`);
 }
 
 const forbidden = [
-  ["Token logging", "src", /console\.(log|info|warn|error)\([^)]*token/i],
-  ["Password logging", "src", /console\.(log|info|warn|error)\([^)]*password/i]
+  ["Token logging", /console\.(log|info|warn|error)\([^)]*token/i],
+  ["Password logging", /console\.(log|info|warn|error)\([^)]*password/i]
 ];
 
-for (const [label, relativeDir, pattern] of forbidden) {
-  const dir = path.join(mobileRoot, relativeDir);
-  const files = walk(dir).filter(file => /\.(ts|tsx|js)$/.test(file));
-  for (const file of files) {
+for (const [label, pattern] of forbidden) {
+  for (const file of walk(root).filter(item => /\.(ts|tsx|js)$/.test(item))) {
+    if (file.includes(`${path.sep}node_modules${path.sep}`) || file.includes(`${path.sep}scripts${path.sep}`)) continue;
     const text = fs.readFileSync(file, "utf8");
-    if (pattern.test(text)) failures.push(`${label} found in ${path.relative(mobileRoot, file)}`);
+    if (pattern.test(text)) failures.push(`${label} found in ${path.relative(root, file)}`);
   }
 }
 
 if (failures.length > 0) {
-  console.error("PulseSoc mobile feed audit failed:");
+  console.error("PulseSoc mobile WebView shell audit failed:");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("PulseSoc mobile feed audit passed.");
+console.log("PulseSoc mobile WebView shell audit passed.");
+
+function read(relativePath) {
+  const target = path.join(root, relativePath);
+  return fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "";
+}
 
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  return entries.flatMap(entry => {
-    const fullPath = path.join(dir, entry.name);
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
     if (entry.name === "node_modules" || entry.name === ".expo") return [];
-    return entry.isDirectory() ? walk(fullPath) : [fullPath];
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? walk(full) : [full];
   });
 }

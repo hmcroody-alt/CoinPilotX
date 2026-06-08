@@ -16,6 +16,21 @@ Notifications.setNotificationHandler({
 });
 
 export async function registerForPushNotifications() {
+  const token = await getNativePushToken();
+  if (!token.ok) return token;
+  return pulseApi("/api/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify({
+      endpoint: token.token,
+      provider: "expo",
+      token: token.token,
+      subscription: { expo_push_token: token.token },
+      device_type: "native"
+    })
+  });
+}
+
+export async function getNativePushToken(): Promise<{ ok: true; token: string } | { ok: false; message: string }> {
   if (!Device.isDevice) {
     return { ok: false, message: "Push registration requires a physical device." };
   }
@@ -37,16 +52,7 @@ export async function registerForPushNotifications() {
   }
 
   const token = await Notifications.getExpoPushTokenAsync(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : undefined);
-  return pulseApi("/api/push/subscribe", {
-    method: "POST",
-    body: JSON.stringify({
-      endpoint: token.data,
-      provider: "expo",
-      token: token.data,
-      subscription: { expo_push_token: token.data },
-      device_type: "native"
-    })
-  });
+  return { ok: true, token: token.data };
 }
 
 export async function unregisterPushNotifications() {
@@ -66,11 +72,12 @@ export async function unregisterPushNotifications() {
   });
 }
 
-export function wireNotificationLinks() {
+export function wireNotificationLinks(onUrl?: (url: string) => void) {
   return Notifications.addNotificationResponseReceivedListener(response => {
     const url = response.notification.request.content.data?.url;
     if (typeof url === "string" && url.length > 0) {
-      Linking.openURL(url).catch(() => undefined);
+      if (onUrl) onUrl(url);
+      else Linking.openURL(url).catch(() => undefined);
     }
   });
 }
