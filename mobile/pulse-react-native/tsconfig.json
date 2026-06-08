@@ -12,7 +12,21 @@
   "include": [
     "App.tsx",
     "index.ts",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "navigation/**/*.ts",
+    "navigation/**/*.tsx",
+    "screens/**/*.ts",
+    "screens/**/*.tsx",
+    "services/**/*.ts",
+    "services/**/*.tsx",
     "src/**/*.ts",
-    "src/**/*.tsx"
+    "src/**/*.tsx",
+    "store/**/*.ts",
+    "store/**/*.tsx",
+    "utils/**/*.ts",
+    "utils/**/*.tsx"
   ]
 }

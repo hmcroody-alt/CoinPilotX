@@ -8,6 +8,7 @@ export type AuthStackParamList = {
 };
 
 export type MainStackParamList = {
+  MainTabs: undefined;
   HomeFeed: undefined;
   CreatePulse: undefined;
   PostDetail: { postId: number };
@@ -17,9 +18,9 @@ export type MainStackParamList = {
 export type MainTabParamList = {
   HomeFeed: undefined;
   Reels: undefined;
+  Videos: undefined;
   Messages: undefined;
   Notifications: undefined;
-  Marketplace: undefined;
   ProfileStack: undefined;
 };
 

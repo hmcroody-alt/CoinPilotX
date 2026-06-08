@@ -8,11 +8,11 @@ Built the native communications foundation for Pulse Mobile. Voice and video cal
 
 ## Implemented
 
-- Direct Messaging: loads `/api/pulse/messages/conversations`.
-- Groups: loads `/api/pulse/groups`.
-- Rooms: loads `/api/pulse/rooms`.
-- Communities: loads `/api/pulse/communities`.
-- Channels: loads `/api/pulse/channels`.
+- Direct Messaging: loads `/api/pulse/communications/v2/conversations`.
+- Groups: loaded from Communications V2 conversation type filtering.
+- Rooms: loaded from Communications V2 conversation type filtering.
+- Communities: loaded from Communications V2 conversation type filtering.
+- Channels: loaded from Communications V2 conversation type filtering.
 - Message previews: visible in conversation cards and active conversation panel.
 - Read receipts: local read state and read receipt labels are shown.
 - Typing indicators: typing user labels are shown when returned by the API.

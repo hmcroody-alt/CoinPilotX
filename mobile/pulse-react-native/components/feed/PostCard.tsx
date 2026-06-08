@@ -6,6 +6,7 @@ import { emitFeedHook } from "../../services/feed/events";
 import { trackMobileEvent } from "../../services/analytics";
 import { colors, screenStyles } from "../theme";
 import { FeedMedia } from "./FeedMedia";
+import { compactNumber, formatRelativeTime, initials } from "../../utils/format";
 
 type PostCardProps = {
   post: PulsePost;
@@ -22,6 +23,7 @@ export function PostCard({ post, onOpenPost, onOpenProfile, onDeleted, onChanged
   const author = post.author || {};
   const reactionTotal = useMemo(() => Object.values(post.reaction_counts || {}).reduce((total, value) => total + Number(value || 0), 0) || Number(post.reactions_count || 0), [post]);
   const liked = !!post.viewer_reaction;
+  const authorName = author.display_name || post.author_public_name || "PulseSoc creator";
 
   async function like() {
     setBusy(true);
@@ -86,10 +88,16 @@ export function PostCard({ post, onOpenPost, onOpenProfile, onDeleted, onChanged
   return (
     <View style={screenStyles.card}>
       <TouchableOpacity style={{ flexDirection: "row", gap: 10, alignItems: "center" }} onPress={() => onOpenProfile(post)}>
-        {author.avatar_url ? <Image source={{ uri: author.avatar_url }} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceSoft }} /> : <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceSoft }} />}
+        {author.avatar_url ? (
+          <Image source={{ uri: author.avatar_url }} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceSoft }} />
+        ) : (
+          <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceSoft, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ color: colors.accent, fontWeight: "900" }}>{initials(authorName)}</Text>
+          </View>
+        )}
         <View style={{ flex: 1 }}>
-          <Text style={screenStyles.cardTitle}>{author.display_name || post.author_public_name || "PulseSoc creator"}</Text>
-          <Text style={screenStyles.muted}>@{author.public_player_id || post.author_public_player_id || "pulse"} · {formatDate(post.created_at)}</Text>
+          <Text style={screenStyles.cardTitle}>{authorName}</Text>
+          <Text style={screenStyles.muted}>@{author.public_player_id || post.author_public_player_id || "pulsesoc"} · {formatRelativeTime(post.created_at)}</Text>
         </View>
       </TouchableOpacity>
 
@@ -110,8 +118,8 @@ export function PostCard({ post, onOpenPost, onOpenProfile, onDeleted, onChanged
       </View>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-        <Action label={`${liked ? "Unlike" : "Like"} ${reactionTotal || ""}`} onPress={like} disabled={busy} />
-        <Action label={`Comment ${post.comments_count || post.comment_count || ""}`} onPress={() => onOpenPost(post)} />
+        <Action label={`${liked ? "Unlike" : "Like"} ${compactNumber(reactionTotal)}`} onPress={like} disabled={busy} />
+        <Action label={`Comment ${compactNumber(post.comments_count || post.comment_count)}`} onPress={() => onOpenPost(post)} />
         <Action label="Repost" onPress={repost} disabled={busy} />
         <Action label="Share" onPress={() => sharePost(post)} />
         {post.can_delete && !editing ? <Action label="Edit" onPress={() => setEditing(true)} /> : null}
@@ -138,11 +146,4 @@ function RepostPreview({ original }: { original: PulsePost }) {
       <Text style={screenStyles.muted}>{original.body || original.title || "Original post"}</Text>
     </View>
   );
-}
-
-function formatDate(value?: string) {
-  if (!value) return "now";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString();
 }

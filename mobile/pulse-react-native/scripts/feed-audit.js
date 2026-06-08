@@ -4,24 +4,25 @@ const path = require("path");
 const mobileRoot = path.resolve(__dirname, "..");
 
 const checks = [
-  ["Feed screen", "src/App.tsx", "endpoint={pulseApiEndpoints.feed}"],
-  ["Reels screen", "src/App.tsx", "endpoint={pulseApiEndpoints.reels}"],
-  ["Videos screen", "src/App.tsx", "endpoint={pulseApiEndpoints.videos}"],
-  ["Messages screen", "src/App.tsx", "CommunicationsScreen"],
-  ["Feed API endpoint", "src/App.tsx", "/api/pulse/feed"],
-  ["Reels API endpoint", "src/App.tsx", "/api/pulse/reels/feed"],
-  ["Videos API endpoint", "src/App.tsx", "/api/pulse/videos"],
-  ["Messages API endpoint", "src/App.tsx", "/api/pulse/messages/conversations"],
-  ["Messages service endpoint", "src/services/communications.ts", "/api/pulse/messages/conversations"],
-  ["Notifications screen", "src/App.tsx", "NotificationsScreen"],
+  ["Production app root", "App.tsx", "AppNavigator"],
+  ["Feed tab", "navigation/MainTabs.tsx", "HomeFeedScreen"],
+  ["Reels tab", "navigation/MainTabs.tsx", "ReelsScreen"],
+  ["Videos tab", "navigation/MainTabs.tsx", "VideosScreen"],
+  ["Messages tab", "navigation/MainTabs.tsx", "MessagesScreen"],
+  ["Feed API endpoint", "services/feed/feedApi.ts", "/api/pulse/feed"],
+  ["Reels API endpoint", "screens/main/ReelsScreen.tsx", "/api/pulse/reels/feed"],
+  ["Videos API endpoint", "screens/main/VideosScreen.tsx", "/api/pulse/videos"],
+  ["Messages API endpoint", "src/services/communications.ts", "/api/pulse/communications/v2/conversations"],
+  ["Messages service endpoint", "src/services/communications.ts", "/api/pulse/communications/v2/conversations"],
+  ["Notifications screen", "navigation/MainTabs.tsx", "NotificationsScreen"],
   ["Notification inbox endpoint", "src/screens/NotificationsScreen.tsx", "/api/pulse/notifications?limit=80"],
   ["Notification quick status reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/status/${statusId}/reply"],
   ["Notification quick post reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/posts/${postId}/comments"],
   ["Notification quick message reply", "src/screens/NotificationsScreen.tsx", "/api/pulse/messages/send"],
   ["Notification mark read", "src/screens/NotificationsScreen.tsx", "/api/pulse/notifications/${noteId}/read"],
-  ["Profile API", "src/App.tsx", "/api/pulse/profile/me"],
-  ["Pull to refresh", "src/screens/ApiListScreen.tsx", "RefreshControl"],
-  ["API list reuse", "src/screens/ApiListScreen.tsx", "pulseApi"],
+  ["Profile API", "screens/main/ProfileScreen.tsx", "/api/pulse/profile/me"],
+  ["Pull to refresh", "screens/main/HomeFeedScreen.tsx", "RefreshControl"],
+  ["Post card media", "components/feed/PostCard.tsx", "FeedMedia"],
   ["Feed phase report", "docs/feed_phase_report.md", "Performance Strategy"]
 ];
 

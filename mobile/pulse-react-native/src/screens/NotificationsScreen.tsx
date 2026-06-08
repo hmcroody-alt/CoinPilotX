@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Linking, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { pulseApi } from "../api/client";
 import { colors, screenStyles } from "../styles/theme";
+import { PulseTopBar } from "../../components/PulseChrome";
 
 type PulseNotification = {
   id: number;
@@ -86,6 +87,7 @@ export function NotificationsScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       ListHeaderComponent={
         <View>
+          <PulseTopBar subtitle="Alerts" />
           <Text style={screenStyles.title}>Notifications</Text>
           <Text style={screenStyles.subtitle}>Replies, comments, messages, and PulseSoc activity with quick actions.</Text>
           {error ? <Text style={screenStyles.error}>{error}</Text> : null}

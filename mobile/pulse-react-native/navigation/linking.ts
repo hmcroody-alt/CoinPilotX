@@ -26,6 +26,25 @@ export const linking: LinkingOptions<RootParamList> = {
           token: String
         }
       },
+      MainTabs: {
+        path: "pulse",
+        screens: {
+          HomeFeed: "",
+          Reels: "reels",
+          Videos: "videos",
+          Messages: "messages-v2",
+          Notifications: "notifications",
+          ProfileStack: {
+            path: "profile",
+            screens: {
+              Profile: "",
+              Settings: "settings",
+              Premium: "premium",
+              UNDX: "undx"
+            }
+          }
+        }
+      },
       HomeFeed: "pulse",
       CreatePulse: "create",
       PostDetail: {
@@ -37,18 +56,9 @@ export const linking: LinkingOptions<RootParamList> = {
         parse: { username: String }
       },
       Reels: "pulse/reels",
+      Videos: "pulse/videos",
       Messages: "pulse/messages-v2",
-      Notifications: "pulse/notifications",
-      Marketplace: "pulse/marketplace",
-      ProfileStack: {
-        path: "pulse/profile",
-        screens: {
-          Profile: "",
-          Settings: "settings",
-          Premium: "premium",
-          UNDX: "undx"
-        }
-      }
+      Notifications: "pulse/notifications"
     }
   }
 };

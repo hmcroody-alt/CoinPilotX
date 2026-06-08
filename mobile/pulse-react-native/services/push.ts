@@ -21,8 +21,8 @@ export async function registerForPushNotifications() {
   }
 
   const current = await Notifications.getPermissionsAsync();
-  const permission = current.granted ? current : await Notifications.requestPermissionsAsync();
-  if (!permission.granted) {
+  const permission = hasNotificationPermission(current) ? current : await Notifications.requestPermissionsAsync();
+  if (!hasNotificationPermission(permission)) {
     return { ok: false, message: "Push permission was not granted." };
   }
 
@@ -73,4 +73,9 @@ export function wireNotificationLinks() {
       Linking.openURL(url).catch(() => undefined);
     }
   });
+}
+
+function hasNotificationPermission(permission: unknown) {
+  const value = permission as { granted?: boolean; status?: string };
+  return value.granted === true || value.status === "granted";
 }

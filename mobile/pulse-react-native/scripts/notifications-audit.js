@@ -5,13 +5,15 @@ const root = path.resolve(__dirname, "..");
 const screen = read("src/screens/NotificationsScreen.tsx");
 const communications = read("src/screens/CommunicationsScreen.tsx");
 const communicationsService = read("src/services/communications.ts");
-const app = read("src/App.tsx");
+const tabs = read("navigation/MainTabs.tsx");
+const app = read("App.tsx");
 const push = read("services/push.ts");
 const authStore = read("store/authStore.ts");
 const failures = [];
 
 [
-  ["Notifications tab uses custom screen", app, "NotificationsScreen"],
+  ["Production app root is active", app, "AppNavigator"],
+  ["Notifications tab uses custom screen", tabs, "NotificationsScreen"],
   ["Loads notification API", screen, "/api/pulse/notifications?limit=80"],
   ["Shows preview text", screen, "preview_text"],
   ["Shows original context", screen, "original_preview"],
@@ -23,15 +25,15 @@ const failures = [];
   ["Sends post quick reply", screen, "/api/pulse/posts/${postId}/comments"],
   ["Sends message quick reply", screen, "/api/pulse/messages/send"],
   ["Uses safe fallback for hidden content", screen, "Reply hidden or unavailable."],
-  ["Messages tab uses communications screen", app, "CommunicationsScreen"],
-  ["Direct messages loaded", communicationsService, "/api/pulse/messages/conversations"],
-  ["Groups loaded", communicationsService, "/api/pulse/groups"],
-  ["Rooms loaded", communicationsService, "/api/pulse/rooms"],
-  ["Communities loaded", communicationsService, "/api/pulse/communities"],
-  ["Channels loaded", communicationsService, "/api/pulse/channels"],
+  ["Messages tab uses communications screen", tabs, "MessagesScreen"],
+  ["Communications v2 conversations loaded", communicationsService, "/api/pulse/communications/v2/conversations"],
+  ["Direct messages filtered", communicationsService, "conversationKind(item) === \"direct\""],
+  ["Groups filtered", communicationsService, "conversationKind(item) === \"group\""],
+  ["Rooms filtered", communicationsService, "conversationKind(item) === \"room\""],
+  ["Community channels filtered", communicationsService, "conversationKind(item) === \"community_channel\""],
   ["Message previews shown", communications, "previewText"],
   ["Read receipts shown", communications, "readReceiptText"],
-  ["Typing indicator shown", communications, "typingText"],
+  ["Typing heartbeat wired", communications, "sendTypingHeartbeat"],
   ["Presence shown", communications, "presenceText"],
   ["Offline queue implemented", communicationsService, "OFFLINE_QUEUE_KEY"],
   ["Realtime typing heartbeat prepared", communicationsService, "sendTypingHeartbeat"],

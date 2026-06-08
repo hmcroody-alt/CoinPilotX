@@ -22,11 +22,11 @@
 
 ## Messages
 
-- Conversations: `GET /api/pulse/messages/conversations`
-- Conversation detail: `GET /api/pulse/messages/<conversation_id>`
-- Send message: `POST /api/pulse/messages/<conversation_id>/send`
+- Conversations: `GET /api/pulse/communications/v2/conversations`
+- Conversation history: `GET /api/pulse/communications/v2/conversations/<conversation_id>/messages`
+- Send message: `POST /api/pulse/communications/v2/conversations/<conversation_id>/messages`
 - Media upload: `POST /api/pulse/messages/media/upload`
-- Communications v2 health and conversation APIs: `/api/pulse/comm/v2/*`
+- Communications v2 health and conversation APIs: `/api/pulse/communications/v2/*`
 
 ## Notifications and Push
 

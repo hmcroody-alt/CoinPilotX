@@ -13,7 +13,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#06111f"
+      "backgroundColor": "#050b14"
     },
     "ios": {
       "supportsTablet": true,
@@ -36,7 +36,7 @@
       "googleServicesFile": "./credentials/firebase/google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#06111f"
+        "backgroundColor": "#050b14"
       },
       "permissions": [
         "CAMERA",
@@ -76,18 +76,19 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35,
+            "compileSdkVersion": 36,
             "targetSdkVersion": 35
           }
         }
       ],
       "expo-secure-store",
+      "expo-font",
       "expo-video",
       [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#5ee1b7",
+          "color": "#36e58f",
           "defaultChannel": "default"
         }
       ]

@@ -1,14 +1,18 @@
 import { StyleSheet } from "react-native";
 
 export const colors = {
-  background: "#06111f",
-  surface: "#0d1d30",
+  background: "#050b14",
+  surface: "#0d1627",
+  surfaceStrong: "#111d32",
   surfaceSoft: "#142840",
-  border: "#28435f",
-  text: "#f5fbff",
-  muted: "#9eb2c8",
-  accent: "#5ee1b7",
-  accentAlt: "#66d9ff",
+  border: "#255067",
+  borderSoft: "#163044",
+  text: "#f2fbff",
+  muted: "#9fb5c0",
+  accent: "#36e58f",
+  accentAlt: "#6edff6",
+  gold: "#ffd166",
+  violet: "#9b5cff",
   danger: "#ff6b7a"
 };
 
@@ -16,7 +20,7 @@ export const screenStyles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
-    padding: 16
+    padding: 14
   },
   centered: {
     flex: 1,
@@ -40,7 +44,7 @@ export const screenStyles = StyleSheet.create({
   card: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 18,
     backgroundColor: colors.surface,
     padding: 14,
     marginBottom: 12
@@ -76,7 +80,7 @@ export const screenStyles = StyleSheet.create({
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
+    borderRadius: 999,
     backgroundColor: colors.accent,
     paddingHorizontal: 14,
     marginTop: 4
@@ -90,7 +94,7 @@ export const screenStyles = StyleSheet.create({
     minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 14,

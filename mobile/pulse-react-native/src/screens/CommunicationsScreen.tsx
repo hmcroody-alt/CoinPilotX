@@ -1,69 +1,101 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, screenStyles } from "../styles/theme";
+import { PulseTopBar } from "../../components/PulseChrome";
 import {
+  CommunicationMessage,
   CommunicationsBootstrap,
-  ConversationKind,
   ConversationSummary,
   flushQueuedMessages,
   loadCommunicationsBootstrap,
+  loadConversationMessages,
   markConversationRead,
   sendCommunicationMessage,
   sendTypingHeartbeat
 } from "../services/communications";
+import { useAuthStore } from "../../store/authStore";
 
-const filters: Array<{ key: keyof CommunicationsBootstrap; label: string; kind: ConversationKind }> = [
-  { key: "directs", label: "Direct", kind: "direct" },
-  { key: "groups", label: "Groups", kind: "group" },
-  { key: "rooms", label: "Rooms", kind: "room" },
-  { key: "communities", label: "Communities", kind: "community" },
-  { key: "channels", label: "Channels", kind: "channel" }
+const filters: Array<{ key: keyof CommunicationsBootstrap; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "direct", label: "DM" },
+  { key: "group", label: "Groups" },
+  { key: "room", label: "Rooms" },
+  { key: "community_channel", label: "Channels" }
 ];
 
 const emptyState: CommunicationsBootstrap = {
-  directs: [],
-  groups: [],
-  rooms: [],
-  communities: [],
-  channels: [],
+  all: [],
+  direct: [],
+  group: [],
+  room: [],
+  community_channel: [],
   queued: []
 };
 
 export function CommunicationsScreen() {
   const [data, setData] = useState<CommunicationsBootstrap>(emptyState);
-  const [selected, setSelected] = useState<keyof CommunicationsBootstrap>("directs");
+  const [selected, setSelected] = useState<keyof CommunicationsBootstrap>("all");
   const [active, setActive] = useState<ConversationSummary | null>(null);
+  const [messages, setMessages] = useState<CommunicationMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
+  const [threadLoading, setThreadLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState("");
+  const userId = useAuthStore(state => state.user?.user_id);
 
   const load = useCallback(async () => {
     setStatus("");
     const next = await loadCommunicationsBootstrap();
     setData(next);
-    if (!active) {
-      const first = [...next.directs, ...next.groups, ...next.rooms, ...next.communities, ...next.channels][0];
-      if (first) setActive(first);
-    }
+    const first = active || next.all[0] || null;
+    if (first && (!active || !conversationId(active))) setActive(first);
+    return first;
   }, [active]);
+
+  const loadThread = useCallback(async (conversation: ConversationSummary | null) => {
+    const id = conversation ? conversationId(conversation) : "";
+    if (!id) {
+      setMessages([]);
+      return;
+    }
+    setThreadLoading(true);
+    try {
+      const result = await loadConversationMessages(id);
+      setMessages(result.messages);
+      markConversationRead(id).catch(() => undefined);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Messages could not load yet. Pull to refresh or choose another chat.");
+      setMessages([]);
+    } finally {
+      setThreadLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     load()
+      .then(first => loadThread(first))
       .catch(error => setStatus(error instanceof Error ? error.message : "Communications could not load."))
       .finally(() => setLoading(false));
-  }, [load]);
+  }, []);
 
   async function refresh() {
     setRefreshing(true);
-    await load().finally(() => setRefreshing(false));
+    try {
+      const first = await load();
+      await loadThread(active || first);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function selectConversation(conversation: ConversationSummary) {
     setActive(conversation);
+    setDraft("");
+    await loadThread(conversation);
     const id = conversationId(conversation);
     if (id) {
-      markConversationRead(id).catch(() => undefined);
       setData(current => markLocalRead(current, id));
     }
   }
@@ -73,29 +105,38 @@ export function CommunicationsScreen() {
     const id = active ? conversationId(active) : "";
     if (!body || !id) return;
     setDraft("");
+    const optimistic: CommunicationMessage = {
+      id: `local-${Date.now()}`,
+      conversation_id: id,
+      body,
+      message_type: "text",
+      created_at: new Date().toISOString(),
+      read_at: "",
+      delivered_at: ""
+    };
+    setMessages(current => [...current, optimistic]);
     const result = await sendCommunicationMessage({ conversationId: id, body, kind: active ? conversationKind(active) : "direct" });
-    if (result.queued) setStatus("Offline queue saved this message. It will retry when the app is online.");
-    else setStatus("Message sent.");
+    setStatus(result.queued ? "Offline queue saved this message. It will retry when the app is online." : "");
     const next = await loadCommunicationsBootstrap();
     setData(next);
+    await loadThread(active);
   }
 
   async function flushQueue() {
     const result = await flushQueuedMessages();
     setStatus(`Queue sync: ${result.sent}/${result.attempted} sent, ${result.remaining} pending.`);
-    const next = await loadCommunicationsBootstrap();
-    setData(next);
+    setData(await loadCommunicationsBootstrap());
   }
 
-  async function typing() {
+  function typing(value: string) {
+    setDraft(value);
     const id = active ? conversationId(active) : "";
     if (id) sendTypingHeartbeat(id).catch(() => undefined);
   }
 
   const activeFilter = filters.find(filter => filter.key === selected) || filters[0];
   const items = selected === "queued" ? [] : (data[selected] as ConversationSummary[]);
-  const allCount = filters.reduce((sum, filter) => sum + (data[filter.key] as ConversationSummary[]).length, 0);
-  const activePreview = active ? previewText(active) : "Select a conversation to see previews, read state, presence, and queue controls.";
+  const visibleMessages = useMemo(() => messages.slice(-80), [messages]);
 
   if (loading) {
     return (
@@ -106,95 +147,163 @@ export function CommunicationsScreen() {
   }
 
   return (
-    <View style={screenStyles.screen}>
-      <FlatList
-        data={items}
-        keyExtractor={(item, index) => `${conversationId(item) || index}`}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
-        ListHeaderComponent={
-          <View>
-            <Text style={screenStyles.title}>Messages</Text>
-            <Text style={screenStyles.subtitle}>Direct messages, groups, rooms, communities, and channels with previews, read receipts, typing, presence, offline queue, and notification deep links.</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-              {filters.map(filter => (
-                <FilterButton
-                  key={filter.key}
-                  label={`${filter.label} ${(data[filter.key] as ConversationSummary[]).length}`}
-                  active={selected === filter.key}
-                  onPress={() => setSelected(filter.key)}
-                />
-              ))}
-            </View>
-            <View style={screenStyles.card}>
-              <Text style={screenStyles.cardTitle}>{active ? titleText(active) : "Realtime-ready communications"}</Text>
-              <Text style={screenStyles.muted}>{activePreview}</Text>
-              {active ? (
-                <View style={{ marginTop: 10 }}>
-                  <Text style={screenStyles.muted}>Presence: {presenceText(active)} · Read: {readReceiptText(active)}</Text>
-                  <TextInput
-                    value={draft}
-                    onChangeText={value => {
-                      setDraft(value);
-                      typing();
-                    }}
-                    placeholder="Write a message..."
-                    placeholderTextColor={colors.muted}
-                    style={[screenStyles.input, { marginTop: 10 }]}
-                    multiline
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <View style={screenStyles.screen}>
+        <FlatList
+          data={items}
+          keyExtractor={(item, index) => `${conversationId(item) || index}`}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+          ListHeaderComponent={
+            <View style={{ width: 260, marginRight: 8 }}>
+              <PulseTopBar subtitle="Chats" />
+              <Text style={screenStyles.title}>Messages</Text>
+              <Text style={screenStyles.subtitle}>Direct messages, groups, rooms, and community channels from PulseSoc.</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {filters.map(filter => (
+                  <FilterButton
+                    key={filter.key}
+                    label={`${filter.label} ${(data[filter.key] as ConversationSummary[]).length}`}
+                    active={selected === filter.key}
+                    onPress={() => setSelected(filter.key)}
                   />
-                  <TouchableOpacity onPress={sendDraft} disabled={!draft.trim()} style={[screenStyles.button, { opacity: draft.trim() ? 1 : 0.55 }]}>
-                    <Text style={screenStyles.buttonText}>Send Message</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
+                ))}
+              </View>
             </View>
-            <View style={screenStyles.card}>
-              <Text style={screenStyles.cardTitle}>Offline Queue</Text>
-              <Text style={screenStyles.muted}>{data.queued.length} pending message{data.queued.length === 1 ? "" : "s"} · {allCount} live conversation surface{allCount === 1 ? "" : "s"} loaded.</Text>
-              <TouchableOpacity onPress={flushQueue} style={screenStyles.secondaryButton}>
-                <Text style={screenStyles.secondaryButtonText}>Retry Queue</Text>
-              </TouchableOpacity>
-              {status ? <Text style={[screenStyles.muted, { marginTop: 8 }]}>{status}</Text> : null}
+          }
+          ListEmptyComponent={<EmptyConversations label={activeFilter.label} queued={data.queued.length} onRetry={flushQueue} />}
+          renderItem={({ item }) => (
+            <ConversationPill
+              conversation={item}
+              selected={Boolean(active && conversationId(active) === conversationId(item))}
+              onPress={() => selectConversation(item)}
+            />
+          )}
+          style={{ maxHeight: 142, flexGrow: 0, marginBottom: 10 }}
+        />
+
+        <View style={[screenStyles.card, { flex: 1, padding: 0, overflow: "hidden" }]}>
+          <ThreadHeader conversation={active} />
+          {threadLoading ? (
+            <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+              <ActivityIndicator color={colors.accent} />
             </View>
-            <Text style={[screenStyles.muted, { marginBottom: 8 }]}>{activeFilter.label}</Text>
-          </View>
-        }
-        ListEmptyComponent={<Text style={screenStyles.muted}>No {activeFilter.label.toLowerCase()} conversations yet.</Text>}
-        renderItem={({ item }) => (
-          <ConversationCard
-            conversation={item}
-            selected={Boolean(active && conversationId(active) === conversationId(item))}
-            onPress={() => selectConversation(item)}
-          />
-        )}
-        contentContainerStyle={{ paddingBottom: 28 }}
-      />
+          ) : (
+            <FlatList
+              data={visibleMessages}
+              keyExtractor={(item, index) => String(item.id || item.message_id || index)}
+              renderItem={({ item }) => <MessageBubble message={item} mine={isMine(item, userId)} />}
+              ListEmptyComponent={<Text style={[screenStyles.muted, { padding: 16 }]}>No messages yet. Start with a quick hello or attach media from the web Messages V2 composer.</Text>}
+              contentContainerStyle={{ padding: 12, flexGrow: 1, justifyContent: visibleMessages.length ? "flex-end" : "center" }}
+            />
+          )}
+          <Composer value={draft} onChange={typing} onSend={sendDraft} disabled={!active || !draft.trim()} />
+        </View>
+        {status ? <Text style={[screenStyles.muted, { marginTop: 8 }]}>{status}</Text> : null}
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function ThreadHeader({ conversation }: { conversation: ConversationSummary | null }) {
+  const title = conversation ? titleText(conversation) : "Select a conversation";
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <Avatar label={title} />
+      <View style={{ flex: 1 }}>
+        <Text style={screenStyles.cardTitle}>{title}</Text>
+        <Text style={screenStyles.muted}>{conversation ? `${presenceText(conversation)} · ${conversationKind(conversation)}` : "Choose a chat to start."}</Text>
+      </View>
+      <MaterialCommunityIcons name="magnify" color={colors.muted} size={22} />
+      <MaterialCommunityIcons name="information-outline" color={colors.muted} size={22} />
     </View>
   );
 }
 
-function ConversationCard({ conversation, selected, onPress }: { conversation: ConversationSummary; selected: boolean; onPress: () => void }) {
-  const unread = Number(conversation.unread_count || 0);
+function Composer({ value, onChange, onSend, disabled }: { value: string; onChange: (value: string) => void; onSend: () => void; disabled: boolean }) {
   return (
-    <TouchableOpacity onPress={onPress} style={[screenStyles.card, selected ? { borderColor: colors.accent } : null]}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, padding: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+      <TouchableOpacity style={circleButtonStyle}>
+        <MaterialCommunityIcons name="plus" color={colors.accent} size={24} />
+      </TouchableOpacity>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder="Type a message"
+        placeholderTextColor={colors.muted}
+        style={[screenStyles.input, { flex: 1, marginBottom: 0, borderRadius: 999 }]}
+        multiline
+      />
+      <TouchableOpacity style={circleButtonStyle}>
+        <MaterialCommunityIcons name="microphone" color={colors.accent} size={22} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onSend} disabled={disabled} style={[circleButtonStyle, { backgroundColor: colors.accent, opacity: disabled ? 0.55 : 1 }]}>
+        <MaterialCommunityIcons name="send" color={colors.background} size={22} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ConversationPill({ conversation, selected, onPress }: { conversation: ConversationSummary; selected: boolean; onPress: () => void }) {
+  const unread = Number(conversation.unread_count || 0);
+  const title = titleText(conversation);
+  return (
+    <TouchableOpacity onPress={onPress} style={[screenStyles.card, { width: 190, marginRight: 8, padding: 10 }, selected ? { borderColor: colors.accent } : null]}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Avatar label={title} />
         <View style={{ flex: 1 }}>
-          <Text style={screenStyles.cardTitle}>{titleText(conversation)}</Text>
-          <Text style={screenStyles.muted}>{conversationKind(conversation)} · {presenceText(conversation)}</Text>
+          <Text style={screenStyles.cardTitle} numberOfLines={1}>{title}</Text>
+          <Text style={screenStyles.muted} numberOfLines={1}>{previewText(conversation)}</Text>
         </View>
-        {unread > 0 ? <Text style={{ color: colors.accent, fontWeight: "800" }}>{unread}</Text> : null}
+        {unread > 0 ? <Text style={{ color: colors.accent, fontWeight: "900" }}>{unread}</Text> : null}
       </View>
-      <Text style={[screenStyles.muted, { marginTop: 8 }]}>{previewText(conversation)}</Text>
-      <Text style={[screenStyles.muted, { marginTop: 6 }]}>{readReceiptText(conversation)} · Typing: {typingText(conversation)}</Text>
+      <Text style={[screenStyles.muted, { marginTop: 8 }]}>{presenceText(conversation)} · {typingText(conversation)} · {readReceiptText(conversation)}</Text>
     </TouchableOpacity>
+  );
+}
+
+function MessageBubble({ message, mine }: { message: CommunicationMessage; mine: boolean }) {
+  const body = String(message.body || message.content || "");
+  const attachments = message.attachments || [];
+  return (
+    <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginVertical: 5 }}>
+      <View style={{ maxWidth: "84%", borderRadius: 18, padding: 12, backgroundColor: mine ? "#126f5b" : colors.surfaceSoft }}>
+        {body ? <Text style={{ color: colors.text, fontSize: 15, lineHeight: 21 }}>{body}</Text> : null}
+        {attachments.length ? <Text style={[screenStyles.muted, { color: mine ? "#d8fff2" : colors.muted, marginTop: body ? 6 : 0 }]}>{attachments.length} attachment{attachments.length === 1 ? "" : "s"}</Text> : null}
+        <Text style={{ color: mine ? "#bdf7e5" : colors.muted, fontSize: 11, marginTop: 5 }}>{formatTime(message.created_at)}{mine && message.read_at ? " / read" : mine && message.delivered_at ? " / delivered" : ""}</Text>
+      </View>
+    </View>
+  );
+}
+
+function EmptyConversations({ label, queued, onRetry }: { label: string; queued: number; onRetry: () => void }) {
+  return (
+    <View style={[screenStyles.card, { width: 220 }]}>
+      <Text style={screenStyles.cardTitle}>No {label.toLowerCase()} yet</Text>
+      <Text style={screenStyles.muted}>{queued} queued message{queued === 1 ? "" : "s"} waiting to retry.</Text>
+      {queued ? (
+        <TouchableOpacity onPress={onRetry} style={screenStyles.secondaryButton}>
+          <Text style={screenStyles.secondaryButtonText}>Retry Queue</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
   );
 }
 
 function FilterButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <TouchableOpacity onPress={onPress} style={[screenStyles.secondaryButton, { minHeight: 38, marginTop: 0, paddingHorizontal: 10 }, active ? { borderColor: colors.accent } : null]}>
-      <Text style={[screenStyles.secondaryButtonText, active ? { color: colors.accent } : null]}>{label}</Text>
+    <TouchableOpacity onPress={onPress} style={[screenStyles.secondaryButton, { minHeight: 34, marginTop: 0, paddingHorizontal: 10 }, active ? { borderColor: colors.accent } : null]}>
+      <Text style={[screenStyles.secondaryButtonText, { fontSize: 12 }, active ? { color: colors.accent } : null]}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+function Avatar({ label }: { label: string }) {
+  return (
+    <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceSoft, alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ color: colors.accent, fontWeight: "900" }}>{label.slice(0, 2).toUpperCase()}</Text>
+    </View>
   );
 }
 
@@ -211,7 +320,7 @@ function previewText(conversation: ConversationSummary) {
 }
 
 function conversationKind(conversation: ConversationSummary) {
-  return String(conversation.kind || conversation.type || "direct");
+  return String(conversation.conversation_type || conversation.kind || conversation.type || "direct").replace("_", " ");
 }
 
 function presenceText(conversation: ConversationSummary) {
@@ -221,24 +330,48 @@ function presenceText(conversation: ConversationSummary) {
 }
 
 function typingText(conversation: ConversationSummary) {
-  const typing = conversation.typing_users || [];
-  return typing.length ? typing.join(", ") : "none";
+  const typingUsers = Array.isArray(conversation.typing_users) ? conversation.typing_users : [];
+  if (typingUsers.length === 1) return "typing now";
+  if (typingUsers.length > 1) return `${typingUsers.length} typing`;
+  return "typing ready";
 }
 
 function readReceiptText(conversation: ConversationSummary) {
-  if (conversation.read_at) return `read ${conversation.read_at}`;
-  if (conversation.delivered_at) return `delivered ${conversation.delivered_at}`;
-  return "read receipt pending";
+  if (conversation.read_at) return "read";
+  if (conversation.delivered_at) return "delivered";
+  return "read receipts";
+}
+
+function isMine(message: CommunicationMessage, userId: unknown) {
+  return Boolean(userId && String(message.sender_user_id || "") === String(userId));
+}
+
+function formatTime(value?: string) {
+  if (!value) return "now";
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return "now";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(time));
 }
 
 function markLocalRead(data: CommunicationsBootstrap, id: string) {
   const mapItems = (items: ConversationSummary[]) => items.map(item => (conversationId(item) === id ? { ...item, unread_count: 0, read_at: new Date().toISOString() } : item));
   return {
     ...data,
-    directs: mapItems(data.directs),
-    groups: mapItems(data.groups),
-    rooms: mapItems(data.rooms),
-    communities: mapItems(data.communities),
-    channels: mapItems(data.channels)
+    all: mapItems(data.all),
+    direct: mapItems(data.direct),
+    group: mapItems(data.group),
+    room: mapItems(data.room),
+    community_channel: mapItems(data.community_channel)
   };
 }
+
+const circleButtonStyle = {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
+  alignItems: "center" as const,
+  justifyContent: "center" as const,
+  borderWidth: 1,
+  borderColor: colors.border,
+  backgroundColor: colors.surfaceSoft
+};
