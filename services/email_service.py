@@ -18,6 +18,24 @@ def _coalesce(*values):
     return ""
 
 
+def brevo_api_key_config():
+    candidates = [
+        ("BREVO_API_KEY", os.getenv("BREVO_API_KEY")),
+        ("SENDINBLUE_API_KEY", os.getenv("SENDINBLUE_API_KEY")),
+        ("BREVO_SMTP_API_KEY", os.getenv("BREVO_SMTP_API_KEY")),
+    ]
+    for source, raw_value in candidates:
+        if raw_value:
+            value = raw_value.strip()
+            return {
+                "value": value,
+                "source": source,
+                "configured": bool(value),
+                "has_surrounding_whitespace": raw_value != value,
+            }
+    return {"value": "", "source": "", "configured": False, "has_surrounding_whitespace": False}
+
+
 def sender_config(channel="transactional", from_email=None, from_name=None):
     channel = (channel or "transactional").lower()
     if channel == "support":
@@ -68,8 +86,8 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
 
 def provider_status():
     config = sender_config()
-    raw_api_key = os.getenv("BREVO_API_KEY") or ""
-    api_key = raw_api_key.strip()
+    api_key_config = brevo_api_key_config()
+    api_key = api_key_config["value"]
     missing = []
     if not api_key:
         missing.append("BREVO_API_KEY")
@@ -81,7 +99,8 @@ def provider_status():
         "ready": not missing and _truthy_env("BREVO_EMAIL_ENABLED", True),
         "enabled": _truthy_env("BREVO_EMAIL_ENABLED", True),
         "api_key_configured": bool(api_key),
-        "api_key_has_surrounding_whitespace": bool(raw_api_key and raw_api_key != api_key),
+        "api_key_source": api_key_config["source"],
+        "api_key_has_surrounding_whitespace": bool(api_key_config["has_surrounding_whitespace"]),
         "sender_email_configured": bool(config.get("email")),
         "sender_name_configured": bool(config.get("name")),
         "default_from_email_configured": bool(os.getenv("DEFAULT_FROM_EMAIL")),
@@ -98,7 +117,7 @@ def provider_status():
 
 
 def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None, from_name=None, channel="transactional"):
-    api_key = (os.getenv("BREVO_API_KEY") or "").strip()
+    api_key = brevo_api_key_config()["value"]
     config = sender_config(channel=channel, from_email=from_email, from_name=from_name)
     if not _truthy_env("BREVO_EMAIL_ENABLED", True):
         return {
