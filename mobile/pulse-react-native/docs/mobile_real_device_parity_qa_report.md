@@ -19,6 +19,16 @@ This report tracks the real-device proof step for PulseSoc mobile web parity. No
 
 Build 12 must be replaced by a corrected build because real-device screenshots showed safe-area and session-state defects.
 
+Corrected build after defects:
+
+- EAS build ID: `a14a6e47-69f8-452f-9d5d-e7c3f83552a8`
+- Build number: `13`
+- Status: finished
+- IPA artifact: `https://expo.dev/artifacts/eas/kVbm7ycHPEJyfKBLvebRdd.ipa`
+- App Store Connect upload: completed through EAS Submit
+- Submission ID: `098a1e18-8fb7-4ec9-94ac-03ba3f81b273`
+- Next step: wait for Apple processing, then install/update build 13 from TestFlight on the iPhone.
+
 ### Android
 
 - Platform: Android
@@ -28,6 +38,13 @@ Build 12 must be replaced by a corrected build because real-device screenshots s
 - AAB artifact: `https://expo.dev/artifacts/eas/aGykrL2Ha521PC4Wjg3YJw.aab`
 - CLI Play submission status: blocked because `mobile/pulse-react-native/credentials/google-play-service-account.json` is not present locally.
 - Next step: upload the AAB to the Play Console internal testing track, or provide a safe Play service account key through the approved local credential path.
+
+Corrected build after defects:
+
+- EAS build ID: `934f0e48-2d6e-4672-9a22-38c0e16c6824`
+- Version code: `9`
+- Status: in progress at last check
+- Next step: when finished, upload the AAB to Play Console internal testing, or provide the approved Play service account key for CLI submission.
 
 ## Web Reference State
 
