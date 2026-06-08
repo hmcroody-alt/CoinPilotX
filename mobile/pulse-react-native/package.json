@@ -10,7 +10,7 @@
     "web": "expo start --web",
     "eas-build-pre-install": "node scripts/prepare-firebase-config.js",
     "typecheck": "tsc --noEmit",
-    "audit": "npm run audit:foundation && npm run audit:authentication && npm run audit:feed && npm run audit:notifications && npm run audit:production-parity && npm run audit:android-ui && npm run audit:mobile-web-parity && npm run audit:firebase && npm run audit:store",
+    "audit": "npm run audit:foundation && npm run audit:authentication && npm run audit:feed && npm run audit:notifications && npm run audit:production-parity && npm run audit:android-ui && npm run audit:mobile-web-parity && npm run audit:mobile-performance && npm run audit:firebase && npm run audit:store",
     "audit:foundation": "node scripts/foundation-audit.js",
     "audit:authentication": "node scripts/authentication-audit.js",
     "audit:feed": "node scripts/feed-audit.js",
@@ -18,6 +18,7 @@
     "audit:production-parity": "node scripts/production-parity-audit.js",
     "audit:android-ui": "node scripts/android-ui-quality-audit.js",
     "audit:mobile-web-parity": "node scripts/mobile-web-parity-audit.js",
+    "audit:mobile-performance": "node scripts/mobile_performance_audit.js",
     "audit:firebase": "node scripts/firebase-audit.js",
     "audit:store": "cd ../.. && .venv/bin/python scripts/pulse_store_submission_readiness_audit.py"
   },

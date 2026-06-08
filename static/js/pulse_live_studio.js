@@ -427,7 +427,9 @@
       }
     };
     poll();
-    setInterval(refreshDiagnostics, 2000);
+    setInterval(() => {
+      if (!document.hidden) refreshDiagnostics();
+    }, 15000);
     window.addEventListener("pagehide", () => {
       postSignal(root, "viewer", peerId, "bye", {}, "publisher").catch(() => {});
       pc.close();

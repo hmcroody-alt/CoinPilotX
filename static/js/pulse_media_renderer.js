@@ -12,6 +12,7 @@
   const processingPolls = new Map();
   let hlsLoaderPromise = null;
   let activeHlsVideo = null;
+  let lastScrollAt = 0;
 
   function ensurePortalStyles() {
     if (document.getElementById(PORTAL_CSS_ID)) return;
@@ -134,6 +135,16 @@
     }
   }
 
+  function mobilePerformanceMode() {
+    try {
+      if (window.PulseSocNative) return true;
+      if (window.matchMedia?.("(max-width: 768px)")?.matches) return true;
+      const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (connection?.saveData) return true;
+    } catch (_) {}
+    return false;
+  }
+
   function setSoundEnabled(enabled) {
     try {
       window.localStorage?.setItem(SOUND_KEY, String(!!enabled));
@@ -230,6 +241,9 @@
   }
 
   function layersHtml() {
+    if (mobilePerformanceMode()) {
+      return '<div class="pulse-media-backdrop" aria-hidden="true"></div><div class="pulse-media-vignette" aria-hidden="true"></div>';
+    }
     return '<div class="pulse-media-backdrop" aria-hidden="true"></div><div class="pulse-media-soft-glow" aria-hidden="true"></div><div class="pulse-media-color-orb" aria-hidden="true"></div><div class="pulse-media-depth-layer" aria-hidden="true"></div><div class="pulse-media-aura" aria-hidden="true"></div><div class="pulse-media-vignette" aria-hidden="true"></div>';
   }
 
@@ -350,7 +364,7 @@
         }
       } catch (_) {}
     };
-    processingPolls.set(mediaId, setInterval(poll, 12000));
+    processingPolls.set(mediaId, setInterval(poll, 18000));
     setTimeout(poll, 800);
   }
 
@@ -362,6 +376,13 @@
 
   function applyAmbientColor(wrap, media, force = false) {
     if (!wrap || !media || (!force && wrap.dataset.mediaAmbient === "1")) return;
+    if (mobilePerformanceMode()) {
+      wrap.dataset.mediaAmbient = "1";
+      wrap.style.setProperty("--pulse-media-rgb", "110, 223, 246");
+      wrap.style.setProperty("--pulse-media-secondary-rgb", "54, 229, 143");
+      wrap.style.setProperty("--pulse-media-accent-rgb", "155, 92, 255");
+      return;
+    }
     wrap.dataset.mediaAmbient = "1";
     try {
       const canvas = document.createElement("canvas");
@@ -445,6 +466,8 @@
   let activeVideo = null;
   let hoverVideo = null;
   let playbackObserver = null;
+  let playbackRaf = 0;
+  let pendingBestEntry = null;
 
   function mediaVideoWrap(video) {
     return video?.closest?.(".pulse-media-wrap") || video?.closest?.(".reel-card") || video?.parentElement || null;
@@ -464,9 +487,8 @@
   }
 
   function pauseOtherVideos(except) {
-    document.querySelectorAll("video").forEach(video => {
-      if (video !== except && !video.paused) video.pause();
-    });
+    if (activeVideo && activeVideo !== except && !activeVideo.paused) activeVideo.pause();
+    if (hoverVideo && hoverVideo !== except && !hoverVideo.paused) hoverVideo.pause();
   }
 
   function destroyHls(video) {
@@ -529,6 +551,33 @@
     } catch (_) {}
   }
 
+  function scheduleVisiblePlayback(entry) {
+    if (!entry?.target) return;
+    if (!pendingBestEntry || entry.intersectionRatio > pendingBestEntry.intersectionRatio) {
+      pendingBestEntry = entry;
+    }
+    if (playbackRaf) return;
+    playbackRaf = requestAnimationFrame(() => {
+      const best = pendingBestEntry;
+      pendingBestEntry = null;
+      playbackRaf = 0;
+      if (!best?.target || !best.isIntersecting || best.intersectionRatio < .58) return;
+      const vid = best.target;
+      if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
+      const run = () => {
+        const targetWrap = mediaVideoWrap(vid);
+        targetWrap?.classList.add("is-active-media");
+        playVisibleVideo(vid, soundEnabled());
+        preloadNextVideo(vid);
+      };
+      if (mobilePerformanceMode() && Date.now() - lastScrollAt < 120) {
+        setTimeout(run, 120);
+      } else {
+        run();
+      }
+    });
+  }
+
   function bindAutoplayVideo(wrap, video) {
     if (!wrap || !video || video.dataset.pulseAutoplayBound === "1") return;
     video.dataset.pulseAutoplayBound = "1";
@@ -582,7 +631,6 @@
     if (!("IntersectionObserver" in window)) return;
     if (!playbackObserver) {
       playbackObserver = new IntersectionObserver(entries => {
-        let best = null;
         entries.forEach(entry => {
           const vid = entry.target;
           const targetWrap = mediaVideoWrap(vid);
@@ -592,15 +640,8 @@
             targetWrap?.classList.remove("is-active-media");
             return;
           }
-          if (!best || entry.intersectionRatio > best.intersectionRatio) best = entry;
+          scheduleVisiblePlayback(entry);
         });
-        if (!best) return;
-        const vid = best.target;
-        if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
-        const targetWrap = mediaVideoWrap(vid);
-        targetWrap?.classList.add("is-active-media");
-        playVisibleVideo(vid, soundEnabled());
-        preloadNextVideo(vid);
       }, { threshold: [0, .25, .58, .75, 1], rootMargin: "0px" });
     }
     playbackObserver.observe(video);
@@ -765,6 +806,11 @@
     setBackdrop(wrap);
     applyAmbientColor(wrap, img);
     const full = img.dataset.fullSrc || mediaUrl(wrap) || img.currentSrc || img.src;
+    if (mobilePerformanceMode()) {
+      img.style.visibility = "";
+      mark(wrap, LOADED);
+      return;
+    }
     if (full && img.src !== new URL(full, location.origin).href) {
       const upgraded = new Image();
       upgraded.decoding = "async";
@@ -935,7 +981,7 @@
             observer.unobserve(entry.target);
             hydrateWrap(entry.target);
           });
-        }, { rootMargin: "420px 0px" });
+        }, { rootMargin: mobilePerformanceMode() ? "220px 0px" : "420px 0px" });
       }
       wraps.forEach(wrap => observer.observe(wrap));
     } else {
@@ -987,6 +1033,10 @@
         }, 2200);
       });
   });
+
+  window.addEventListener("scroll", () => {
+    lastScrollAt = Date.now();
+  }, { passive: true });
 
   window.addEventListener("pagehide", () => {
     document.querySelectorAll("video").forEach(video => destroyHls(video));

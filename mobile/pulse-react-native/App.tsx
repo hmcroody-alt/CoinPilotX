@@ -125,6 +125,14 @@ function PulseSocWebShell() {
         domStorageEnabled
         sharedCookiesEnabled
         thirdPartyCookiesEnabled
+        cacheEnabled
+        androidLayerType="hardware"
+        decelerationRate={Platform.OS === "ios" ? "normal" : undefined}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+        bounces
+        overScrollMode="always"
+        nestedScrollEnabled
         allowsBackForwardNavigationGestures
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}

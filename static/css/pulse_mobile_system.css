@@ -113,6 +113,21 @@ a[role="button"] {
     contain-intrinsic-size: auto 240px;
   }
 
+  .pulse-media-soft-glow,
+  .pulse-media-color-orb,
+  .pulse-media-depth-layer,
+  .pulse-media-aura {
+    display: none !important;
+  }
+
+  .pulse-media-wrap,
+  .pulse-cinematic-media-shell,
+  .pulse-unified-video-player {
+    box-shadow: none !important;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
   .actions {
     display: grid !important;
     grid-template-columns: 1fr !important;

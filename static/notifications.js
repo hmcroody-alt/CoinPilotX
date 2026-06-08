@@ -7,6 +7,7 @@
     pollTimer: null,
     listLoaded: false,
     realtimeBound: false,
+    lastScrollAt: 0,
     channel: "BroadcastChannel" in window ? new BroadcastChannel("pulse-notifications") : null
   };
 
@@ -180,6 +181,10 @@
 
   async function pollNotifications(options = {}) {
     try {
+      if (!options.force && Date.now() - STATE.lastScrollAt < 900) {
+        schedulePolling(1800);
+        return;
+      }
       if (!STATE.prefs) await loadPreferences();
       const count = await unreadCount();
       if (count === null) return;
@@ -194,7 +199,7 @@
     window.clearTimeout(STATE.pollTimer);
     STATE.pollTimer = window.setTimeout(async () => {
       if (!document.hidden) await pollNotifications({ refreshList: true });
-      schedulePolling(document.hidden ? 45000 : 12000);
+      schedulePolling(document.hidden ? 60000 : 30000);
     }, delay);
   }
 
@@ -347,9 +352,12 @@
     if (event.key === "pulseNotificationRefresh") pollNotifications({ refreshList: true });
   });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) pollNotifications({ refreshList: true });
-    schedulePolling(document.hidden ? 45000 : 12000);
+    if (!document.hidden) pollNotifications({ refreshList: true, force: true });
+    schedulePolling(document.hidden ? 60000 : 30000);
   });
+  window.addEventListener("scroll", () => {
+    STATE.lastScrollAt = Date.now();
+  }, { passive: true });
 
   window.CoinPilotNotifications = { loadPreferences, loadPulsePreferences, subscribePush, unsubscribePush, testNotification, playSound, vibrate, pollNotifications, refreshNotificationList, handleLiveNotification };
 
@@ -358,7 +366,7 @@
     await loadPreferences().then(renderSettings).catch(() => {});
     bindRealtime();
     window.setTimeout(bindRealtime, 500);
-    pollNotifications({ refreshList: true });
-    schedulePolling(12000);
+    pollNotifications({ refreshList: true, force: true });
+    schedulePolling(30000);
   });
 })();
