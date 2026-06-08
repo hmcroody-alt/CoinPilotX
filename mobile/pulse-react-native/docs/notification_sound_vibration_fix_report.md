@@ -42,7 +42,17 @@ Real-device QA showed PulseSoc notifications appearing without ringing or vibrat
 
 ## Real Device QA Needed
 
-A new iOS TestFlight build and Android internal testing build are required. Install the new builds, then test:
+New builds were created from commit `d71dc3010d6f07286e03eb6ffe6cf1ae72247777`.
+
+- iOS build number: `16`
+- iOS EAS build: `bb555c70-3afd-41f1-9afd-bde5c398d794`
+- iOS artifact: `https://expo.dev/artifacts/eas/p8GvBvMsHkYPLmF74DWME5.ipa`
+- iOS App Store Connect submission: uploaded successfully and processing for TestFlight.
+- Android versionCode: `12`
+- Android EAS build: `00d19c22-e843-45e1-a94e-dcc7395150ef`
+- Android artifact: `https://expo.dev/artifacts/eas/6S8hQLw2C9anMwYRZ2QAB.aab`
+
+Install the new builds, then test:
 
 - Notification Settings > test push.
 - Notification Settings > test sound.
