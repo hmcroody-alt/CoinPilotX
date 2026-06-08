@@ -149,6 +149,10 @@ function PulseSocWebShell() {
     }
   }, []);
 
+  const runSessionCheckScript = useCallback(() => {
+    webViewRef.current?.injectJavaScript(createSessionCheckScript());
+  }, []);
+
   const shouldStartLoad = useCallback((request: { url: string }) => {
     if (request.url === "about:blank") return true;
     const nextUrl = normalizeUrl(request.url);
@@ -182,6 +186,7 @@ function PulseSocWebShell() {
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <LoadingOverlay />
         <WebView
+          ref={webViewRef}
           source={{ uri: SESSION_CHECK_URL }}
           style={{ width: 1, height: 1, opacity: 0 }}
           sharedCookiesEnabled
@@ -191,6 +196,7 @@ function PulseSocWebShell() {
           onMessage={handleSessionCheckMessage}
           onError={() => setLaunchState("welcome")}
           onHttpError={() => setLaunchState("welcome")}
+          onLoadEnd={runSessionCheckScript}
           injectedJavaScript={createSessionCheckScript()}
         />
       </View>

@@ -1,6 +1,6 @@
 # Premium PulseSoc Welcome Screen Report
 
-Updated: 2026-06-08T21:43:58Z
+Updated: 2026-06-08T23:18:00Z
 
 ## Summary
 
@@ -35,6 +35,32 @@ The welcome screen is intentionally lightweight: it uses native layout, the exis
 - Startup session check against the live PulseSoc mobile session endpoint using WebView cookies.
 - Users with a valid saved website session skip the welcome screen and go directly to the live PulseSoc website.
 - Logged-out users see the premium welcome screen first.
+
+## Android Follow-Up
+
+Android was not intentionally excluded from the welcome screen. The welcome screen lives in the shared React Native app shell and renders on both iOS and Android.
+
+The Android issue was release and timing related:
+
+- The Play Console internal testing release still had an older Android bundle before the premium welcome work.
+- Android WebView can finish loading the hidden session check page after the injected startup script runs, which can make the first-launch decision inconsistent.
+
+Fix applied:
+
+- The hidden session WebView now reruns the session-check script on load completion, so Android reliably decides between:
+  - valid saved session -> open the PulseSoc feed
+  - no valid saved session -> show the premium welcome screen
+
+The same welcome UI is now confirmed in code for Android:
+
+- language selector
+- centered glowing PulseSoc logo
+- `Join PulseSoc`
+- `Connect. Create. Discover. Pulse the World.`
+- premium feature strip
+- `Create Your PulseSoc Account`
+- `Sign In to PulseSoc`
+- `PulseSoc(TM) • Built by CoinPilotXAI Inc.`
 
 ## Performance Notes
 
