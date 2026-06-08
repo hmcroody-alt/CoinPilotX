@@ -17,6 +17,7 @@ __pycache__/
 
 node_modules/
 .expo/
+mobile/pulse-react-native/builds/
 
 .DS_Store
 */.DS_Store
