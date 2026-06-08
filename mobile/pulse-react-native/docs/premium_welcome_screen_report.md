@@ -65,3 +65,8 @@ The welcome screen is intentionally lightweight: it uses native layout, the exis
 ## Store Screenshot Impact
 
 New App Store screenshots should include the premium first-launch screen plus live web product screens after the next build is available.
+
+Generated welcome screenshots:
+
+- `mobile/pulse-react-native/store-metadata/screenshots/appstore/iphone-65-welcome-1284x2778.png`
+- `mobile/pulse-react-native/store-metadata/screenshots/appstore/ipad-13-welcome-2048x2732.png`
