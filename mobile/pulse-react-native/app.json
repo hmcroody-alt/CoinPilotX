@@ -26,8 +26,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "PulseSoc uses the camera when you choose to capture profile media, videos, reels, statuses, or message attachments.",
         "NSMicrophoneUsageDescription": "PulseSoc uses the microphone when you choose to record videos, reels, statuses, voice notes, or live content.",
-        "NSPhotoLibraryUsageDescription": "PulseSoc uses photo library access when you choose media to upload to your profile, posts, messages, videos, reels, or statuses.",
-        "NSUserTrackingUsageDescription": "PulseSoc does not require cross-app tracking for core features.",
+        "NSPhotoLibraryUsageDescription": "PulseSoc uses photo library access when you choose media to upload to your profile, posts, messages, videos, reels, statuses, or message attachments.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
