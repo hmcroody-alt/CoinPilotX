@@ -28,8 +28,10 @@
 ## Current QA
 
 - Mobile performance source audit: passed.
-- iOS export: pending after final validation.
-- Android export: pending after final validation.
+- iOS export: passed.
+- Android export: passed.
+- iOS EAS build: `061174a9-0dc1-4c7c-a3a9-4c7713d2261d`, build number `15`, uploaded to App Store Connect processing.
+- Android EAS build: `e5bc979b-e09a-4b6c-baac-8c994b395bec`, versionCode `11`, AAB ready.
 - Real-device scroll QA: pending new TestFlight/Internal Testing install.
 
 ## Remaining Performance Work

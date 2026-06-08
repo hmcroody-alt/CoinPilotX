@@ -2,12 +2,18 @@
 
 ## Current Status
 
-Android real-device QA is pending a fresh build that includes the scroll-performance changes.
+Android real-device QA is pending Play Internal Testing upload/install or manual AAB install.
+
+Latest scroll-performance build:
+
+- Build ID: `e5bc979b-e09a-4b6c-baac-8c994b395bec`
+- Version code: `11`
+- AAB: `https://expo.dev/artifacts/eas/unoS8dwQwNwgydMAFFLmDb.aab`
 
 ## Build Requirements
 
 - Package: `com.pulsesoc.app`
-- Version code: higher than previous Play upload
+- Version code: `11`, higher than previous versionCode `10`
 - Distribution: Google Play Internal Testing or Internal App Sharing
 
 ## Checklist

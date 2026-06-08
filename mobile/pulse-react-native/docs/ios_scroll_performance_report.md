@@ -48,6 +48,6 @@ After:
 
 ## Remaining Risks
 
-- Real iPhone FPS must still be judged in TestFlight after the rebuilt IPA is installed.
+- iOS build `15` was uploaded to App Store Connect/TestFlight processing. Real iPhone FPS must still be judged after Apple finishes processing and the build is installed.
 - Communications API still performs 244 DB queries in the local audit; latency is low locally, but it remains a future backend optimization target.
 - WebView smoothness can vary by device, battery state, and network media cache warmth.
