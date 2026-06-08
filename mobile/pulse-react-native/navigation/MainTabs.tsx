@@ -17,7 +17,7 @@ export function MainTabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, minHeight: 76, paddingTop: 7, paddingBottom: 9 },
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, minHeight: 94, paddingTop: 8, paddingBottom: 24 },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: { fontSize: 11, fontWeight: "800" }

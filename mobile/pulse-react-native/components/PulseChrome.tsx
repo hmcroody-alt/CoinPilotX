@@ -1,13 +1,15 @@
 import React from "react";
 import { Linking, Text, TouchableOpacity, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, screenStyles } from "./theme";
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
 
-export function PulseTopBar({ subtitle }: { subtitle?: string }) {
+export function PulseTopBar({ subtitle, safeTop }: { subtitle?: string; safeTop?: boolean }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: safeTop ? insets.top + 6 : 0, marginBottom: 14 }}>
       <TouchableOpacity accessibilityLabel="Open PulseSoc menu" style={iconButton}>
         <MaterialCommunityIcons name="menu" color={colors.text} size={22} />
       </TouchableOpacity>

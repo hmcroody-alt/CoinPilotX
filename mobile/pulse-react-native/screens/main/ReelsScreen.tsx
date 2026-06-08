@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, FlatList, Image, RefreshControl, Text, TouchableOpacity, View, ViewToken } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pulseApi } from "../../services/apiClient";
 import { colors, screenStyles } from "../../components/theme";
 import { PulsePill } from "../../components/PulseChrome";
@@ -70,6 +71,7 @@ export function ReelsScreen() {
 }
 
 function ReelCard({ reel, active }: { reel: PulseVideoItem; active: boolean }) {
+  const insets = useSafeAreaInsets();
   const [muted, setMuted] = useState(true);
   const playbackUrl = readPlaybackUrl(reel);
   const poster = readPoster(reel);
@@ -101,7 +103,7 @@ function ReelCard({ reel, active }: { reel: PulseVideoItem; active: boolean }) {
         </View>
       )}
 
-      <View style={{ position: "absolute", top: 52, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+      <View style={{ position: "absolute", top: insets.top + 12, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <PulsePill icon="star-four-points" label="For You" accent={colors.accent} />
         <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
           <TouchableOpacity style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: colors.border, backgroundColor: "rgba(5,11,20,0.72)", alignItems: "center", justifyContent: "center" }}>

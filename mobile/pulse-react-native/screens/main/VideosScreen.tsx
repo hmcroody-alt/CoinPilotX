@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Image, RefreshControl, Text, TouchableOpacity, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { pulseApi } from "../../services/apiClient";
+import { PulseApiError, pulseApi } from "../../services/apiClient";
 import { colors, screenStyles } from "../../components/theme";
 import { PulseHeroCard, PulseTopBar } from "../../components/PulseChrome";
 import { compactNumber, formatDuration, formatRelativeTime } from "../../utils/format";
 import { PulseVideoItem, isFailed, isProcessing, readCreator, readDescription, readPlaybackUrl, readPoster, readTitle } from "../../services/pulseMedia";
+import { useAuthStore } from "../../store/authStore";
 
 type VideosResponse = {
   ok?: boolean;
@@ -15,6 +16,7 @@ type VideosResponse = {
 };
 
 export function VideosScreen() {
+  const logout = useAuthStore(state => state.logout);
   const [videos, setVideos] = useState<PulseVideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,9 +30,15 @@ export function VideosScreen() {
 
   useEffect(() => {
     load()
-      .catch(value => setError(value instanceof Error ? value.message : "Videos could not load."))
+      .catch(value => {
+        if (value instanceof PulseApiError && value.status === 401) {
+          logout().catch(() => undefined);
+          return;
+        }
+        setError(value instanceof Error ? value.message : "Videos could not load.");
+      })
       .finally(() => setLoading(false));
-  }, [load]);
+  }, [load, logout]);
 
   async function refresh() {
     setRefreshing(true);
@@ -53,7 +61,7 @@ export function VideosScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       ListHeaderComponent={
         <View>
-          <PulseTopBar subtitle="Videos" />
+          <PulseTopBar subtitle="Videos" safeTop />
           <PulseHeroCard
             eyebrow="PulseSoc Videos"
             title="Videos"

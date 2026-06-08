@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, RefreshCon
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors, screenStyles } from "../styles/theme";
 import { PulseTopBar } from "../../components/PulseChrome";
+import { PulseApiError } from "../api/client";
 import {
   CommunicationMessage,
   CommunicationsBootstrap,
@@ -44,6 +45,7 @@ export function CommunicationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState("");
   const userId = useAuthStore(state => state.user?.user_id);
+  const logout = useAuthStore(state => state.logout);
 
   const load = useCallback(async () => {
     setStatus("");
@@ -76,7 +78,13 @@ export function CommunicationsScreen() {
   useEffect(() => {
     load()
       .then(first => loadThread(first))
-      .catch(error => setStatus(error instanceof Error ? error.message : "Communications could not load."))
+      .catch(error => {
+        if (error instanceof PulseApiError && error.status === 401) {
+          logout().catch(() => undefined);
+          return;
+        }
+        setStatus(error instanceof Error ? error.message : "Communications could not load.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -149,39 +157,38 @@ export function CommunicationsScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={screenStyles.screen}>
-        <FlatList
-          data={items}
-          keyExtractor={(item, index) => `${conversationId(item) || index}`}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
-          ListHeaderComponent={
-            <View style={{ width: 260, marginRight: 8 }}>
-              <PulseTopBar subtitle="Chats" />
-              <Text style={screenStyles.title}>Messages</Text>
-              <Text style={screenStyles.subtitle}>Direct messages, groups, rooms, and community channels from PulseSoc.</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {filters.map(filter => (
-                  <FilterButton
-                    key={filter.key}
-                    label={`${filter.label} ${(data[filter.key] as ConversationSummary[]).length}`}
-                    active={selected === filter.key}
-                    onPress={() => setSelected(filter.key)}
-                  />
-                ))}
-              </View>
-            </View>
-          }
-          ListEmptyComponent={<EmptyConversations label={activeFilter.label} queued={data.queued.length} onRetry={flushQueue} />}
-          renderItem={({ item }) => (
-            <ConversationPill
-              conversation={item}
-              selected={Boolean(active && conversationId(active) === conversationId(item))}
-              onPress={() => selectConversation(item)}
+        <PulseTopBar subtitle="Chats" safeTop />
+        <Text style={screenStyles.title}>Messages</Text>
+        <Text style={screenStyles.subtitle}>Direct messages, groups, rooms, and community channels from PulseSoc.</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+          {filters.map(filter => (
+            <FilterButton
+              key={filter.key}
+              label={`${filter.label} ${(data[filter.key] as ConversationSummary[]).length}`}
+              active={selected === filter.key}
+              onPress={() => setSelected(filter.key)}
             />
-          )}
-          style={{ maxHeight: 142, flexGrow: 0, marginBottom: 10 }}
-        />
+          ))}
+        </View>
+        {items.length ? (
+          <FlatList
+            data={items}
+            keyExtractor={(item, index) => `${conversationId(item) || index}`}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+            renderItem={({ item }) => (
+              <ConversationPill
+                conversation={item}
+                selected={Boolean(active && conversationId(active) === conversationId(item))}
+                onPress={() => selectConversation(item)}
+              />
+            )}
+            style={{ maxHeight: 112, flexGrow: 0, marginBottom: 10 }}
+          />
+        ) : (
+          <EmptyConversations label={activeFilter.label} queued={data.queued.length} onRetry={flushQueue} />
+        )}
 
         <View style={[screenStyles.card, { flex: 1, padding: 0, overflow: "hidden" }]}>
           <ThreadHeader conversation={active} />
@@ -279,7 +286,7 @@ function MessageBubble({ message, mine }: { message: CommunicationMessage; mine:
 
 function EmptyConversations({ label, queued, onRetry }: { label: string; queued: number; onRetry: () => void }) {
   return (
-    <View style={[screenStyles.card, { width: 220 }]}>
+    <View style={[screenStyles.card, { width: "100%", marginBottom: 10 }]}>
       <Text style={screenStyles.cardTitle}>No {label.toLowerCase()} yet</Text>
       <Text style={screenStyles.muted}>{queued} queued message{queued === 1 ? "" : "s"} waiting to retry.</Text>
       {queued ? (

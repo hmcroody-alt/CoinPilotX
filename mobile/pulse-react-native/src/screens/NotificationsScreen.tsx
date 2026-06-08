@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Linking, RefreshControl, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { pulseApi } from "../api/client";
+import { useAuthStore } from "../../store/authStore";
+import { PulseApiError, pulseApi } from "../api/client";
 import { colors, screenStyles } from "../styles/theme";
 import { PulseTopBar } from "../../components/PulseChrome";
 
@@ -37,6 +38,7 @@ type NotificationsResponse = {
 };
 
 export function NotificationsScreen() {
+  const logout = useAuthStore(state => state.logout);
   const [items, setItems] = useState<PulseNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -50,9 +52,15 @@ export function NotificationsScreen() {
 
   useEffect(() => {
     load()
-      .catch(value => setError(value instanceof Error ? value.message : "Notifications could not load."))
+      .catch(value => {
+        if (value instanceof PulseApiError && value.status === 401) {
+          logout().catch(() => undefined);
+          return;
+        }
+        setError(value instanceof Error ? value.message : "Notifications could not load.");
+      })
       .finally(() => setLoading(false));
-  }, [load]);
+  }, [load, logout]);
 
   async function refresh() {
     setRefreshing(true);
@@ -87,7 +95,7 @@ export function NotificationsScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       ListHeaderComponent={
         <View>
-          <PulseTopBar subtitle="Alerts" />
+          <PulseTopBar subtitle="Alerts" safeTop />
           <Text style={screenStyles.title}>Notifications</Text>
           <Text style={screenStyles.subtitle}>Replies, comments, messages, and PulseSoc activity with quick actions.</Text>
           {error ? <Text style={screenStyles.error}>{error}</Text> : null}

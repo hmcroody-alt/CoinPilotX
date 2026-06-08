@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { pulseApi } from "../../services/apiClient";
+import { PulseApiError, pulseApi } from "../../services/apiClient";
 import { colors, screenStyles } from "../../components/theme";
 import { PulseHeroCard, PulseTopBar } from "../../components/PulseChrome";
 import { useAuthStore } from "../../store/authStore";
@@ -21,6 +21,7 @@ type AccountStatus = {
 
 export function PremiumScreen() {
   const bootstrap = useAuthStore(state => state.bootstrap);
+  const logout = useAuthStore(state => state.logout);
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,9 +35,15 @@ export function PremiumScreen() {
 
   useEffect(() => {
     load()
-      .catch(value => setError(value instanceof Error ? value.message : "Premium status could not load."))
+      .catch(value => {
+        if (value instanceof PulseApiError && value.status === 401) {
+          logout().catch(() => undefined);
+          return;
+        }
+        setError(value instanceof Error ? value.message : "Premium status could not load.");
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [logout]);
 
   async function refresh() {
     setRefreshing(true);

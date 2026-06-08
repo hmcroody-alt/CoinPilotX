@@ -105,7 +105,7 @@ export function HomeFeedScreen({ navigation }: Props) {
 function FeedHeader({ onCreate, error }: { onCreate: () => void; error?: string }) {
   return (
     <View style={{ marginBottom: 12 }}>
-      <PulseTopBar subtitle="PulseSoc.com" />
+      <PulseTopBar subtitle="PulseSoc.com" safeTop />
       <PulseHeroCard
         eyebrow="Global Pulse Feed"
         title="Global Pulse Feed"

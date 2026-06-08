@@ -1,6 +1,6 @@
 # PulseSoc Mobile Real Device Parity QA Report
 
-Status: in progress, not complete.
+Status: in progress, defects found in iOS build 12.
 
 This report tracks the real-device proof step for PulseSoc mobile web parity. No new feature phase has started.
 
@@ -11,11 +11,13 @@ This report tracks the real-device proof step for PulseSoc mobile web parity. No
 - Platform: iOS
 - EAS build ID: `61fe9d0f-5aba-4f89-bfd4-53231b1483aa`
 - Build number: `12`
-- Status: finished
+- Status: installed and screenshot-tested by user; parity defects found
 - IPA artifact: `https://expo.dev/artifacts/eas/d6R49rE5bLbmnKaHvWKsFU.ipa`
 - App Store Connect upload: completed through EAS Submit
 - Submission ID: `94bb3e74-8f92-42dd-b552-c8b7a4027da9`
 - Next step: wait for Apple processing, then install build 12 from TestFlight on the iPhone.
+
+Build 12 must be replaced by a corrected build because real-device screenshots showed safe-area and session-state defects.
 
 ### Android
 
@@ -45,13 +47,13 @@ Existing web reference screenshots available in the repo:
 
 | Screen | iPhone build 12 screenshot | Android build 8 screenshot | Web comparison | Status |
 |---|---:|---:|---:|---|
-| Feed | Pending | Pending | Pending authenticated browser login | Blocked |
+| Feed | Received | Pending | Pending authenticated browser login | Defects found |
 | Reels | Pending | Pending | Pending authenticated browser login | Blocked |
-| Videos | Pending | Pending | Pending authenticated browser login | Blocked |
-| Messages | Pending | Pending | Pending authenticated browser login | Blocked |
-| Notifications | Pending | Pending | Pending authenticated browser login | Blocked |
+| Videos | Received | Pending | Pending authenticated browser login | Defects found |
+| Messages | Received | Pending | Pending authenticated browser login | Defects found |
+| Notifications | Received | Pending | Pending authenticated browser login | Defects found |
 | Profile | Pending | Pending | Pending authenticated browser login | Blocked |
-| Premium | Pending | Pending | Pending authenticated browser login | Blocked |
+| Premium | Received | Pending | Pending authenticated browser login | Defects found |
 
 ## Verification Checklist
 
@@ -103,7 +105,12 @@ Scores are intentionally not assigned yet because real-device screenshots have n
 
 - Android install path is not complete from CLI because the Play service account key is not available locally.
 - Authenticated web comparison is blocked because the in-app browser is logged out.
-- Real-device screenshots are not yet available.
+- iOS build 12 Feed: top chrome and hero content overlap the iPhone Dynamic Island/status area.
+- iOS build 12 Messages: header is clipped, and the empty conversations card bleeds sideways into the top area.
+- iOS build 12 Videos: protected endpoint returned `Login required`, leaving a red API error on a product surface.
+- iOS build 12 Notifications: protected endpoint returned `Login required`, leaving a red API error on a product surface.
+- iOS build 12 Premium: protected endpoint returned `Login required`, while still rendering stale plan fallback data.
+- iOS build 12 bottom navigation: iPhone home indicator overlaps the tab labels/spacing.
 
 ## Fixes Applied Before This QA Phase
 
@@ -116,9 +123,19 @@ Scores are intentionally not assigned yet because real-device screenshots have n
 - Notifications use real notification APIs and user-facing cards.
 - Profile and Premium bind to real account APIs.
 
+## Fixes Applied After iOS Build 12 Screenshots
+
+- Added explicit top safe-area support to `PulseTopBar` and enabled it on Feed, Videos, Messages, and Notifications.
+- Moved the Reels overlay below the iPhone safe area.
+- Increased bottom tab height and bottom padding so the iPhone home indicator no longer overlaps tab labels.
+- Rebuilt Messages header layout from a horizontal header/list hybrid into a contained vertical header with a separate conversation strip.
+- Changed empty Messages conversation state to full-width contained card instead of a sideways clipped panel.
+- Protected Videos, Messages, Notifications, and Premium now force a clean login transition on stale/expired session errors instead of showing raw `Login required` product errors.
+
 ## Remaining Work Before Declaring Success
 
 - Install iOS build 12 on a real iPhone through TestFlight after Apple processing.
+- Build and install corrected iOS build 13 or later after the safe-area/session fixes.
 - Upload Android build 8 AAB to internal testing or provide the Play service account key for CLI submission.
 - Install Android build 8 on a real Android device.
 - Sign in to PulseSoc in the in-app browser so authenticated web references can be captured.
