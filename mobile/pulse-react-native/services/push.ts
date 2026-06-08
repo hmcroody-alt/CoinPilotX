@@ -1,7 +1,7 @@
 import * as Device from "expo-device";
 import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { Platform, Vibration } from "react-native";
 import { pulseApi } from "./apiClient";
 import { EXPO_PROJECT_ID } from "./config";
 
@@ -14,6 +14,9 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true
   })
 });
+
+const ANDROID_CHANNEL_ID = "default";
+const NOTIFICATION_VIBRATION_PATTERN = [0, 250, 120, 250];
 
 export async function registerForPushNotifications() {
   const token = await getNativePushToken();
@@ -41,18 +44,24 @@ export async function getNativePushToken(): Promise<{ ok: true; token: string } 
     return { ok: false, message: "Push permission was not granted." };
   }
 
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "PulseSoc",
-      importance: Notifications.AndroidImportance.HIGH,
-      sound: "default",
-      enableVibrate: true,
-      vibrationPattern: [0, 250, 250, 250]
-    });
-  }
+  await ensureNotificationPresentation();
 
   const token = await Notifications.getExpoPushTokenAsync(EXPO_PROJECT_ID ? { projectId: EXPO_PROJECT_ID } : undefined);
   return { ok: true, token: token.data };
+}
+
+export async function ensureNotificationPresentation() {
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+      name: "PulseSoc",
+      importance: Notifications.AndroidImportance.MAX,
+      sound: "default",
+      enableVibrate: true,
+      vibrationPattern: NOTIFICATION_VIBRATION_PATTERN,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: false
+    });
+  }
 }
 
 export async function unregisterPushNotifications() {
@@ -80,6 +89,39 @@ export function wireNotificationLinks(onUrl?: (url: string) => void) {
       else Linking.openURL(url).catch(() => undefined);
     }
   });
+}
+
+export function wireNotificationPresentation() {
+  ensureNotificationPresentation().catch(() => undefined);
+  return Notifications.addNotificationReceivedListener(() => {
+    vibrateForNotification();
+  });
+}
+
+export async function presentNativeDeviceAlert(payload: Record<string, unknown>) {
+  await ensureNotificationPresentation().catch(() => undefined);
+  vibrateForNotification();
+  const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "PulseSoc";
+  const body = typeof payload.body === "string" && payload.body.trim() ? payload.body : "New PulseSoc activity.";
+  const url = typeof payload.url === "string" && payload.url.trim() ? payload.url : "/pulse/notifications";
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body,
+      data: { url },
+      sound: "default",
+      priority: Notifications.AndroidNotificationPriority.HIGH
+    },
+    trigger: null
+  });
+}
+
+function vibrateForNotification() {
+  if (Platform.OS === "ios") {
+    Vibration.vibrate([0, 350]);
+    return;
+  }
+  Vibration.vibrate(NOTIFICATION_VIBRATION_PATTERN);
 }
 
 function hasNotificationPermission(permission: unknown) {

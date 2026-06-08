@@ -86,8 +86,21 @@
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
   }
 
-  function alertUser() {
+  function nativeDeviceAlert(payload) {
+    const bridge = window.PulseSocNative;
+    if (!bridge || typeof bridge.notify !== "function") return;
+    try {
+      bridge.notify({
+        title: payload?.title || "PulseSoc",
+        body: payload?.body || payload?.message || "New PulseSoc activity.",
+        url: payload?.url || payload?.deep_link || payload?.target_url || "/pulse/notifications"
+      });
+    } catch (_) {}
+  }
+
+  function alertUser(payload) {
     if (!canAlert(STATE.prefs || {})) return;
+    nativeDeviceAlert(payload || {});
     playSound();
     vibrate();
     STATE.lastAlertAt = Date.now();
@@ -171,7 +184,7 @@
   async function handleLiveNotification(payload) {
     const count = Number(payload?.unread_count || 0);
     if (count || count === 0) {
-      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser();
+      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser(payload);
       STATE.lastUnread = count;
       setBadges(count);
     }
@@ -188,7 +201,7 @@
       if (!STATE.prefs) await loadPreferences();
       const count = await unreadCount();
       if (count === null) return;
-      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser();
+      if (STATE.lastUnread !== null && count > STATE.lastUnread) alertUser({ title: "PulseSoc", body: "New PulseSoc activity.", url: "/pulse/notifications" });
       STATE.lastUnread = count;
       setBadges(count);
       if (options.refreshList || !STATE.listLoaded) await refreshNotificationList().catch(() => {});
@@ -221,6 +234,11 @@
   }
 
   async function subscribePush() {
+    if (window.PulseSocNative && typeof window.PulseSocNative.registerPush === "function") {
+      window.PulseSocNative.registerPush();
+      await saveExperience({ ...(STATE.prefs || {}), enable_push_notifications: true });
+      return { ok: true, provider: "native", message: "PulseSoc mobile push registration started." };
+    }
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
       throw new Error("This browser does not support web push here.");
     }
@@ -268,7 +286,7 @@
     const response = await fetch("/api/notifications/test", { method: "POST", credentials: "same-origin", cache: "no-store" });
     const payload = await response.json();
     if (!response.ok || payload.ok === false) throw new Error(payload.message || "Test notification failed.");
-    alertUser();
+    alertUser({ title: "PulseSoc test notification", body: "Your notification sound and vibration are ready to test.", url: "/pulse/notifications" });
     return payload;
   }
 
@@ -327,8 +345,8 @@
         if (action.dataset.notificationAction === "test-push") await testChannel("push");
         if (action.dataset.notificationAction === "test-sms") await testChannel("sms");
         if (action.dataset.notificationAction === "test-telegram") await testChannel("telegram");
-        if (action.dataset.notificationAction === "test-sound") { STATE.interacted = true; playSound(); }
-        if (action.dataset.notificationAction === "test-vibration") vibrate();
+        if (action.dataset.notificationAction === "test-sound") { STATE.interacted = true; nativeDeviceAlert({ title: "PulseSoc sound test", body: "Sound test is running.", url: "/pulse/notifications" }); playSound(); }
+        if (action.dataset.notificationAction === "test-vibration") { nativeDeviceAlert({ title: "PulseSoc vibration test", body: "Vibration test is running.", url: "/pulse/notifications" }); vibrate(); }
         if (action.dataset.notificationAction === "test-notification") await testNotification();
         renderMessage("Notification test completed.");
       } catch (error) {

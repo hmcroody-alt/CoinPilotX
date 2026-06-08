@@ -15,8 +15,13 @@ const failures = [];
   ["Push registration uses website cookies", app, "credentials: 'include'"],
   ["Notification tap deep links route into WebView", app, "wireNotificationLinks(url => navigateToAppUrl(url))"],
   ["Foreground notifications can play sound", push, "shouldPlaySound: true"],
-  ["Android notification channel is high importance", push, "AndroidImportance.HIGH"],
+  ["Notification presentation is configured on app startup", app, "ensureNotificationPresentation().catch"],
+  ["Android notification channel is max importance", push, "AndroidImportance.MAX"],
+  ["Android notification channel uses default sound", push, "sound: \"default\""],
   ["Android notification channel can vibrate", push, "enableVibrate: true"],
+  ["Foreground notification listener vibrates device", push, "addNotificationReceivedListener"],
+  ["Website notification bridge can trigger native alert", app, "PULSESOC_NOTIFY_DEVICE"],
+  ["Native alert bridge schedules a sounding notification", push, "scheduleNotificationAsync"],
   ["Native unsubscribe support retained", push, "unregisterPushNotifications"],
   ["Native share bridge exists", app, "PULSESOC_SHARE"]
 ].forEach(([label, text, needle]) => {

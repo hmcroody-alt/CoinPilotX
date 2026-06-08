@@ -4,7 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import WebView, { WebViewMessageEvent, WebViewNavigation } from "react-native-webview";
 import type { WebView as WebViewType } from "react-native-webview";
 import { colors, screenStyles } from "./components/theme";
-import { getNativePushToken, wireNotificationLinks } from "./services/push";
+import { ensureNotificationPresentation, getNativePushToken, presentNativeDeviceAlert, wireNotificationLinks, wireNotificationPresentation } from "./services/push";
 
 const PULSESOC_ORIGIN = "https://pulsesoc.com";
 const PULSESOC_HOSTS = new Set(["pulsesoc.com", "www.pulsesoc.com"]);
@@ -35,15 +35,18 @@ function PulseSocWebShell() {
   }, []);
 
   useEffect(() => {
+    ensureNotificationPresentation().catch(() => undefined);
     Linking.getInitialURL().then(url => {
       if (url) navigateToAppUrl(url);
     }).catch(() => undefined);
 
     const linkSubscription = Linking.addEventListener("url", event => navigateToAppUrl(event.url));
     const notificationSubscription = wireNotificationLinks(url => navigateToAppUrl(url));
+    const presentationSubscription = wireNotificationPresentation();
     return () => {
       linkSubscription.remove();
       notificationSubscription.remove();
+      presentationSubscription.remove();
     };
   }, [navigateToAppUrl]);
 
@@ -82,6 +85,11 @@ function PulseSocWebShell() {
       const title = typeof payload.title === "string" ? payload.title : "PulseSoc";
       const text = typeof payload.text === "string" ? payload.text : title;
       await Share.share({ title, message: `${text}\n${url}`, url }).catch(() => undefined);
+      return;
+    }
+
+    if (payload.type === "PULSESOC_NOTIFY_DEVICE") {
+      await presentNativeDeviceAlert(payload).catch(() => undefined);
     }
   }, [sourceUrl]);
 
@@ -251,7 +259,8 @@ function createInjectedBridge() {
       }
       window.PulseSocNative = {
         registerPush: function () { post({ type: 'PULSESOC_REGISTER_PUSH' }); },
-        share: function (payload) { post(Object.assign({ type: 'PULSESOC_SHARE' }, payload || {})); }
+        share: function (payload) { post(Object.assign({ type: 'PULSESOC_SHARE' }, payload || {})); },
+        notify: function (payload) { post(Object.assign({ type: 'PULSESOC_NOTIFY_DEVICE' }, payload || {})); }
       };
       window.dispatchEvent(new CustomEvent('PulseSocNativeReady'));
       true;
