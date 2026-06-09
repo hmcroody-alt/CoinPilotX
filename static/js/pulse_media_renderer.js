@@ -567,7 +567,8 @@
       const run = () => {
         const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
-        playVisibleVideo(vid, soundEnabled());
+        if (soundEnabled()) playVisibleVideo(vid, true);
+        else playVisibleVideo(vid, false);
         preloadNextVideo(vid);
       };
       if (mobilePerformanceMode() && Date.now() - lastScrollAt < 120) {
@@ -1000,7 +1001,7 @@
       event.stopPropagation();
       setSoundEnabled(true);
       const video = soundButton.closest(".pulse-media-wrap")?.querySelector("video") || activeVideo;
-      if (video) playVisibleVideo(video, true);
+      if (video) window.PulseMediaRenderer?.playVisibleVideo?.(video, true);
       return;
     }
     const button = event.target.closest("[data-retry-media]");

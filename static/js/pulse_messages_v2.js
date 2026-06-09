@@ -745,7 +745,7 @@
     panel.hidden = voiceState === "idle";
     panel.dataset.state = voiceState;
     el("[data-voice-start]")?.classList.toggle("is-recording", voiceState === "recording");
-    if (stateLabel) stateLabel.textContent = voiceState === "recording" ? "Recording voice" : voiceState === "paused" ? "Paused" : voiceState === "ready" ? "Voice ready" : "Ready to record";
+    if (stateLabel) stateLabel.textContent = voiceState === "recording" ? "Recording..." : voiceState === "paused" ? "Paused" : voiceState === "ready" ? "Ready to send" : "Ready to record";
     if (timer) timer.textContent = formatDuration((state.voice.elapsedMs || 0) / 1000);
     if (pause) pause.hidden = voiceState !== "recording";
     if (resume) resume.hidden = voiceState !== "paused";

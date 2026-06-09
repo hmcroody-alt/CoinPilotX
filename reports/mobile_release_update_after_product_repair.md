@@ -11,8 +11,20 @@ Date: 2026-06-09
 ## EAS Build IDs
 
 - iOS production/TestFlight-targeted build: `f75204fb-f46e-4300-8367-ddedef75d06e`
+  - Status: `finished`
+  - Version/build: `0.1.1` / build number `21`
+  - IPA: `https://expo.dev/artifacts/eas/wxk9P7vUMNPopcQzerPbEA.ipa`
+  - Build page: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/f75204fb-f46e-4300-8367-ddedef75d06e`
 - Android production AAB build: `dd1e3743-747a-4234-9d22-ba5b11dd4789`
+  - Status: `in queue` as of the latest check on 2026-06-09
+  - Version/versionCode: `0.1.1` / `17`
+  - Artifact URL: pending EAS completion
+  - Build page: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/dd1e3743-747a-4234-9d22-ba5b11dd4789`
 - Android QA APK build: `71c34c21-bb46-4ed3-8531-cf3a9274c1f7`
+  - Status: `in queue` as of the latest check on 2026-06-09
+  - Version/versionCode: `0.1.1` / `16`
+  - Artifact URL: pending EAS completion
+  - Build page: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/71c34c21-bb46-4ed3-8531-cf3a9274c1f7`
 
 ## EAS Remote Versioning
 
@@ -32,4 +44,11 @@ Builds were submitted with:
 - `npx eas-cli build --platform android --profile production`
 - `npx eas-cli build --platform android --profile qa-apk`
 
-Final downloadable artifact paths are available from the EAS build pages after cloud build completion.
+Validation after the follow-up pass:
+
+- `npm run typecheck`
+- `npm run audit`
+- `npx expo-doctor`
+- `npx expo config --type public`
+
+Final Android downloadable artifact paths are available from the EAS build pages after cloud build completion.
