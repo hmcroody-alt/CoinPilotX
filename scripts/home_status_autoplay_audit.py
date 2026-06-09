@@ -6,7 +6,7 @@ viewer = (root / "static/js/pulse_status_viewer.js").read_text(encoding="utf-8")
 
 for token in [
     "data-status-home-video",
-    "autoplay loop playsinline webkit-playsinline preload=\"metadata\"",
+    "autoplay muted loop playsinline webkit-playsinline preload=\"metadata\"",
     "openStatusViewerFeed('global'",
     "PulseStatusViewer?.render",
 ]:

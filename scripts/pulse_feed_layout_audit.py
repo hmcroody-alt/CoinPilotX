@@ -82,11 +82,11 @@ def main():
     require(".composer-type-row" in desktop_css and ".composer-publish-button" in desktop_css, "desktop composer has ordered type row and publish control")
     require("@media (max-width: 1023px)" in desktop_css and ".composer-primary-actions" in desktop_css and "overflow-x: auto" in desktop_css, "mobile composer media row stays responsive")
 
-    require("data-live-now-hub" in html and "Realtime Pulse Discovery" in html, "Live Now card renders on homepage")
+    require("data-live-now-hub" not in html, "disruptive Live Now card is removed from homepage middle")
     live = client.get("/api/pulse/live-now")
     live_payload = live.get_json() or {}
-    require(live.status_code == 200 and live_payload.get("ok") and isinstance(live_payload.get("items"), list), "Live Now card has real data endpoint")
-    require("No creators live yet. Start the first broadcast." in html or "Pulse Live is ready" in html or "Watch Live" in html, "Live Now has useful empty/live state")
+    require(live.status_code == 200 and live_payload.get("ok") and isinstance(live_payload.get("items"), list), "Live discovery keeps a real data endpoint")
+    require("ensure_live_feed_post" in source and "post_type='live'" in (ROOT / "services" / "live_feed_service.py").read_text(), "active live sessions surface as LIVE feed posts")
     print("pulse feed layout audit ok")
 
 

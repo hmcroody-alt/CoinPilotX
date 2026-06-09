@@ -33,7 +33,7 @@ def main() -> None:
     expect("_pulseSoundProgrammaticUntil" not in combined, "no timeout-based sound guard remains")
     expect("data-pulse-video-player muted" not in renderer + "\n" + feed_block + "\n" + videos_block, "shared playback video markup is not default muted")
     expect("<video muted playsinline" not in videos_block, "videos page playback is not default muted")
-    expect("controls autoplay muted playsinline" not in status, "status viewer fallback is not default muted")
+    expect("controls autoplay muted playsinline" in status, "status viewer fallback is default muted by status-only policy")
     print("pulse video no forced mute audit ok")
 
 

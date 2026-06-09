@@ -57,7 +57,9 @@ def main():
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
     html = client.get("/pulse").get_data(as_text=True)
-    require("data-live-now-hub" in html and "Realtime Pulse Discovery" in html, "homepage renders Live Now discovery hub")
+    require("data-live-now-hub" not in html, "homepage omits disruptive middle Live Now discovery hub")
+    live_service = (ROOT / "services" / "live_feed_service.py").read_text()
+    require("ensure_live_feed_post" in live_service and "post_type='live'" in live_service, "live discovery is routed through first-class feed posts")
     require("pulse_environment_engine.js" in html, "homepage loads ambient environment engine")
     live_now = client.get("/api/pulse/live-now")
     live_payload = live_now.get_json() or {}

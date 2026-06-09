@@ -7,6 +7,7 @@ import { colors, screenStyles } from "./components/theme";
 import { ensureNotificationPresentation, getNativePushToken, presentNativeDeviceAlert, wireNotificationLinks, wireNotificationPresentation } from "./services/push";
 
 const PULSESOC_ORIGIN = "https://pulsesoc.com";
+const PULSESOC_START_URL = `${PULSESOC_ORIGIN}/login?next=/pulse`;
 const PULSESOC_HOSTS = new Set(["pulsesoc.com", "www.pulsesoc.com"]);
 
 export default function PulseSocMobileApp() {
@@ -20,7 +21,7 @@ export default function PulseSocMobileApp() {
 
 function PulseSocWebShell() {
   const webViewRef = useRef<WebViewType>(null);
-  const [sourceUrl, setSourceUrl] = useState(PULSESOC_ORIGIN);
+  const [sourceUrl, setSourceUrl] = useState(PULSESOC_START_URL);
   const [canGoBack, setCanGoBack] = useState(false);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
