@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Latest completed Android build with the fixed premium welcome auth and language flow:
+Superseded on 2026-06-09. The previous Android build below must not be uploaded because Android needs the direct WebView mirror behavior:
 
 - Build ID: `e50dad9c-28ec-4f22-b1ca-b7eb23143ae0`
 - Version code: `16`
@@ -13,7 +13,7 @@ Latest completed Android build with the fixed premium welcome auth and language 
 
 This AAB includes commit `6a7d9d0 Fix PulseSoc welcome auth and language flow`.
 
-The build includes:
+The build included:
 
 - Logged-out users default to the premium welcome screen.
 - `Create Your PulseSoc Account` opens the live PulseSoc signup flow.
@@ -21,17 +21,19 @@ The build includes:
 - Language selection updates the welcome screen text and persists locally.
 - Same behavior is implemented in the shared app shell for iOS and Android.
 
+That behavior is now intentionally replaced by the WebView mirror strategy. A new Android build must be created and uploaded after commit `Remove Android native welcome gate for WebView mirror` or equivalent.
+
 ## Upload Status
 
-As of 2026-06-08 evening, Google Play Console release draft 3 is open at Internal Testing, but versionCode `16` has not been uploaded yet.
+As of 2026-06-09, Google Play Console release draft 3 is open at Internal Testing, but versionCode `16` has not been uploaded and should no longer be uploaded.
 
 Play upload through EAS was attempted. It is blocked because the Google Play service account JSON is not available at:
 
 `mobile/pulse-react-native/credentials/google-play-service-account.json`
 
-This file is a secret and should not be committed. Once it is provided locally or configured through EAS submit credentials, the versionCode 16 AAB can be uploaded to Google Play Internal Testing.
+This file is a secret and should not be committed. Once it is provided locally or configured through EAS submit credentials, the next WebView mirror AAB can be uploaded to Google Play Internal Testing.
 
-Manual Play Console upload was also attempted from the browser again on 2026-06-08. The Play Console page exposes the AAB upload control, but the Codex in-app browser reports that file uploads are not supported. The draft Play release must not be advanced with any older bundle.
+Manual Play Console upload was also attempted from the browser again on 2026-06-08. The Play Console page exposes the AAB upload control, but the Codex in-app browser reports that file uploads are not supported. The draft Play release must not be advanced with any older or superseded bundle.
 
 Production access is not available yet in Google Play Console. The Production page says the account does not have access to production and must apply from the Dashboard. Internal Testing remains the available Android publishing lane.
 
@@ -39,7 +41,7 @@ Production access is not available yet in Google Play Console. The Production pa
 
 Use these release notes for the Internal Testing release:
 
-PulseSoc Android internal QA build with premium welcome screen, signup, sign-in, language selection, performance updates, and web-aligned mobile UI.
+PulseSoc Android internal QA build with direct PulseSoc WebView mirror behavior, performance updates, native push/share bridge, media permissions, and web-aligned mobile UI.
 
 ## Tester List Status
 
@@ -49,11 +51,11 @@ Internal Testing should include:
 
 ## Opt-In Link Status
 
-Pending versionCode 16 internal testing release upload.
+Pending new WebView mirror Android build upload.
 
 ## Real-Device QA Status
 
-Pending Play Internal Testing upload/install of versionCode 16.
+Pending Play Internal Testing upload/install of the next WebView mirror Android build.
 
 ## iOS Status
 
@@ -64,20 +66,20 @@ iOS App Version 1.0 was resubmitted to Apple App Review on 2026-06-08 with build
 - The version was saved, added for review, and submitted.
 - App Store Connect status after submission: `Waiting for Review`.
 
-Build 20 includes the fixed logged-out welcome behavior, working signup/sign-in CTAs, persisted language selection, and localized welcome text on both iOS and Android.
+Build 20 remains the current iOS submission. Android now requires a newer build so it opens the live PulseSoc website directly instead of showing the native welcome screen.
 
 ## Android Next Action
 
-Upload `/tmp/pulsesoc-play/pulsesoc-android-v16.aab` to Google Play Internal Testing release draft 3, or provide a local Google Play service-account JSON at `mobile/pulse-react-native/credentials/google-play-service-account.json` so EAS Submit can upload it without the browser file picker.
+Create a new Android AAB after the WebView mirror fix, then upload that new AAB to Google Play Internal Testing release draft 3. Alternatively, provide a local Google Play service-account JSON at `mobile/pulse-react-native/credentials/google-play-service-account.json` so EAS Submit can upload it without the browser file picker.
 
-Do not upload or release older bundles. VersionCode `16` is the current Android build that matches the submitted iOS build behavior.
+Do not upload or release older bundles. VersionCode `16` is superseded and should not be used.
 
 Manual upload steps:
 
 1. In Google Play Console, keep PulseSoc on Testing -> Internal testing -> release draft 3.
 2. In App bundles, click `Upload`.
-3. Select `/tmp/pulsesoc-play/pulsesoc-android-v16.aab`.
-4. Confirm Google Play shows app version `0.1.0`, versionCode `16`, package `com.pulsesoc.app`.
+3. Select the new WebView mirror AAB generated after this fix.
+4. Confirm Google Play shows package `com.pulsesoc.app` and a versionCode higher than `16`.
 5. Add the release notes above.
 6. Save the draft, continue to preview, and keep the release on Internal Testing only.
 7. Add/confirm tester `hmcroody@gmail.com`.

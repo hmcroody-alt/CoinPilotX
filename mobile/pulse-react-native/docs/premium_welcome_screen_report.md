@@ -1,103 +1,51 @@
 # Premium PulseSoc Welcome Screen Report
 
-Updated: 2026-06-08T23:18:00Z
+Updated: 2026-06-09
 
 ## Summary
 
-PulseSoc Mobile now opens with a premium native first-launch welcome screen for logged-out users before loading the live PulseSoc website shell.
+Superseded by the WebView mirror strategy on 2026-06-09.
 
-The welcome screen is intentionally lightweight: it uses native layout, the existing optimized PulseSoc app icon, a simple native fade/scale animation, and a rotating neon ring. It does not replace any product screens. Feed, Reels, Videos, Messages, Notifications, Profile, and Premium still come from `https://pulsesoc.com` through the WebView shell.
+PulseSoc Mobile should mirror the live PulseSoc website. The native premium welcome screen has been removed from the app launch path so Android and iOS both open the live website directly in the WebView shell.
+
+The live website is now responsible for logged-out welcome, signup, sign-in, language, and product presentation. This prevents Android from drifting away from the iOS/web experience.
 
 ## Implemented
 
-- Language selector in the top safe area with:
-  - English
-  - Francais
-  - Kreyol Ayisyen
-  - Espanol
-  - Portugues
-- Saved language preference using local app storage.
-- Centered PulseSoc logo with neon green/cyan glow and smooth fade/scale entrance.
-- Headline: `Join PulseSoc`
-- Slogan: `Connect. Create. Discover. Pulse the World.`
-- Horizontal premium feature strip:
-  - Join Communities
-  - Watch Videos & Reels
-  - Chat in Real Time
-  - AI-Powered Discovery
-  - Exclusive Premium
-  - Privacy First
-- Primary CTA: `Create Your PulseSoc Account`
-- Secondary CTA: `Sign In to PulseSoc`
-- Footer: `PulseSoc(TM) • Built by CoinPilotXAI Inc.`
-- Signup routes into the live website at `/signup?next=/pulse`.
-- Sign-in routes into the live website at `/login?next=/pulse`.
-- Startup session check against the live PulseSoc mobile session endpoint using WebView cookies.
-- Users with a valid saved website session skip the welcome screen and go directly to the live PulseSoc website.
-- Logged-out users see the premium welcome screen first.
-- If the live website sends the app to `/login` outside of a user-started login/signup flow, the native shell returns to the premium welcome screen.
-- User-started signup and sign-in flows are allowed to continue through the live website auth pages, so both welcome screen buttons work.
-- Language selection changes the welcome screen text immediately and saves the selected language locally.
+- Native welcome screen launch branch removed from `App.tsx`.
+- Hidden native session-check gate removed from startup.
+- App launches `https://pulsesoc.com` directly.
+- Internal PulseSoc navigation stays inside WebView.
+- External links open outside the shell.
+- Cookies, DOM storage, media playback, pull-to-refresh, push bridge, native share bridge, offline fallback, and Android hardware back remain intact.
 
 ## Android Follow-Up
 
-Android was not intentionally excluded from the welcome screen. The welcome screen lives in the shared React Native app shell and renders on both iOS and Android.
-
-The Android issue was release and timing related:
-
-- The Play Console internal testing release still had an older Android bundle before the premium welcome work.
-- Android WebView can finish loading the hidden session check page after the injected startup script runs, which can make the first-launch decision inconsistent.
-
-Fix applied:
-
-- The hidden session WebView now reruns the session-check script on load completion, so Android reliably decides between:
-  - valid saved session -> open the PulseSoc feed
-  - no valid saved session -> show the premium welcome screen
-- Auth navigation now distinguishes between ordinary logged-out redirects and welcome-screen CTA flows, so `Create Your PulseSoc Account` and `Sign In to PulseSoc` both open the correct live website screens on iOS and Android.
-- Language selection is backed by localized welcome copy for English, French, Haitian Creole, Spanish, and Portuguese.
-
-The same welcome UI is now confirmed in code for Android:
-
-- language selector
-- centered glowing PulseSoc logo
-- `Join PulseSoc`
-- `Connect. Create. Discover. Pulse the World.`
-- premium feature strip
-- `Create Your PulseSoc Account`
-- `Sign In to PulseSoc`
-- `PulseSoc(TM) • Built by CoinPilotXAI Inc.`
+Android must not show a separate native welcome screen. The next Android build should open the live website directly, matching iOS WebView behavior and the production website.
 
 ## Performance Notes
 
-- No heavy video, Lottie, blur, or large new asset was added.
-- Animation uses React Native native-driver compatible opacity/scale/rotation.
-- Product screens are still the WebView shell, preserving the web parity strategy.
-- The hidden session check is a one-shot lightweight load of `/api/mobile/auth/session`.
+- Removing the native welcome/session-check gate reduces startup complexity.
+- The WebView cache and hardware composition remain enabled.
+- Website performance is now the source of truth for Feed, Reels, Videos, Messages, Notifications, Profile, Premium, signup, sign-in, and welcome.
 
 ## QA Results
 
 - `npm run typecheck`: PASS
-- `npm run audit`: PASS
-- `npx expo-doctor`: PASS
-- `npx expo config --type public`: PASS
+- `npm run audit:mobile-web-parity`: PASS
+- `npm run audit:android-ui`: PASS
+- `npm run audit:feed`: PASS
+- `npm run audit:mobile-performance`: PASS
 
 ## Real Device Validation Still Needed
 
-- Install the next iOS TestFlight build and verify:
-  - Logged-out first launch shows the welcome screen.
-  - Saved logged-in session skips to the feed.
-  - Create account opens the website signup flow.
-  - Sign in opens the website login flow.
-  - Language selector saves and restores.
-  - No Dynamic Island/status bar overlap.
-  - Animation feels smooth.
-- Install the next Android internal testing build and repeat the same checks on a small Android phone.
+- Install the next Android internal testing build.
+- Confirm first screen is the live `https://pulsesoc.com` website in the native shell.
+- Confirm signup/sign-in/language behavior comes from the website, not native React Native screens.
+- Confirm Feed, Reels, Videos, Messages, Notifications, Profile, and Premium are web surfaces.
+- Confirm cookies persist after restart.
+- Confirm push bridge, native share bridge, file upload, media playback, and Android back button still work.
 
 ## Store Screenshot Impact
 
-New App Store screenshots should include the premium first-launch screen plus live web product screens after the next build is available.
-
-Generated welcome screenshots:
-
-- `mobile/pulse-react-native/store-metadata/screenshots/appstore/iphone-65-welcome-1284x2778.png`
-- `mobile/pulse-react-native/store-metadata/screenshots/appstore/ipad-13-welcome-2048x2732.png`
+Future store screenshots should show the live PulseSoc website experience inside the app shell.
