@@ -27,6 +27,18 @@ def _json(value, default=None):
 
 
 PULSE_NOTIFICATION_CATEGORIES = {
+    "chat_message": {"in_app": True, "push": True, "email": False, "sms": False},
+    "group_message": {"in_app": True, "push": True, "email": False, "sms": False},
+    "room_message": {"in_app": True, "push": True, "email": False, "sms": False},
+    "comment": {"in_app": True, "push": True, "email": False, "sms": False},
+    "reply": {"in_app": True, "push": True, "email": False, "sms": False},
+    "reaction": {"in_app": True, "push": True, "email": False, "sms": False},
+    "follow": {"in_app": True, "push": True, "email": False, "sms": False},
+    "status_view": {"in_app": True, "push": True, "email": False, "sms": False},
+    "live_invite": {"in_app": True, "push": True, "email": False, "sms": False},
+    "marketplace_order": {"in_app": True, "push": True, "email": True, "sms": False},
+    "teacher_order": {"in_app": True, "push": True, "email": True, "sms": False},
+    "system_security": {"in_app": True, "push": True, "email": True, "sms": False},
     "account": {"in_app": True, "push": True, "email": True, "sms": False},
     "premium": {"in_app": True, "push": True, "email": True, "sms": False},
     "social": {"in_app": True, "push": True, "email": False, "sms": False},
@@ -46,8 +58,12 @@ PULSE_NOTIFICATION_CATEGORIES = {
 }
 
 PULSE_TYPE_TO_CATEGORY = {
+    "chat_message": "chat_message",
+    "group_message": "group_message",
+    "room_message": "room_message",
     "like": "likes",
     "post_like": "social",
+    "reaction": "reaction",
     "comment": "comments",
     "post_comment": "social",
     "reply": "comments",
@@ -59,12 +75,12 @@ PULSE_TYPE_TO_CATEGORY = {
     "status_mention": "mentions",
     "follow": "follows",
     "follow_accept": "follows",
-    "message": "messages",
-    "voice_message": "messages",
-    "group_invite": "messages",
+    "message": "chat_message",
+    "voice_message": "chat_message",
+    "group_invite": "group_message",
     "community_invite": "social",
-    "room_invite": "messages",
-    "status_view": "likes",
+    "room_invite": "room_message",
+    "status_view": "status_view",
     "status_reaction": "status",
     "status_reply": "status",
     "reel_like": "likes",
@@ -78,7 +94,7 @@ PULSE_TYPE_TO_CATEGORY = {
     "video_save": "likes",
     "live_started": "live",
     "live_reminder": "live",
-    "live_invite": "live",
+    "live_invite": "live_invite",
     "live_ended": "live",
     "live_ended_summary": "live",
     "live_replay_ready": "live",
@@ -98,7 +114,7 @@ PULSE_TYPE_TO_CATEGORY = {
     "phone_verification": "account",
     "password_reset": "account",
     "account_recovery": "account",
-    "security_alert": "security",
+    "security_alert": "system_security",
     "account_login": "security",
     "suspicious_login": "security",
     "new_device": "security",
@@ -110,7 +126,8 @@ PULSE_TYPE_TO_CATEGORY = {
     "teacher_update": "messages",
     "student_update": "messages",
     "marketplace_update": "marketplace",
-    "marketplace_order": "marketplace",
+    "marketplace_order": "marketplace_order",
+    "teacher_order": "teacher_order",
     "order_accepted": "marketplace",
     "order_shipped": "marketplace",
     "order_delivered": "marketplace",
@@ -450,7 +467,37 @@ def create_pulse_notification(
     )
     conn.commit()
     conn.close()
-    return {"ok": True, "notification_id": notification_id}
+    push_result = {"status": "skipped"}
+    try:
+        category = _pulse_category(note_type)
+        defaults = PULSE_NOTIFICATION_CATEGORIES.get(category, PULSE_NOTIFICATION_CATEGORIES.get("messages", {}))
+        if defaults.get("push"):
+            push_metadata = {
+                **(metadata or {}),
+                "url": deep_link or "/pulse",
+                "type": note_type,
+                "push_type": category,
+                "notification_id": int(notification_id),
+            }
+            push_result = push_service.send_push(
+                int(user_id),
+                str(title or "PulseSoc notification"),
+                str(body or ""),
+                push_metadata,
+                push_type=category,
+            )
+            _log_pulse_delivery(
+                notification_id,
+                user_id,
+                "push",
+                "web_expo_push",
+                push_result.get("status") or ("sent" if push_result.get("ok") else "failed"),
+                push_result,
+                push_result.get("message") or "; ".join(push_result.get("failures") or []),
+            )
+    except Exception as exc:
+        logging.warning("PULSE_PUSH_DELIVERY_FAILED notification_id=%s user_id=%s error=%s", notification_id, user_id, type(exc).__name__)
+    return {"ok": True, "notification_id": notification_id, "push": push_result}
 
 
 def list_pulse_notifications(user_id, limit=50, category="all", unread_only=False):
@@ -462,8 +509,8 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
     if unread_only:
         clauses.append("(is_read=0 OR read_at IS NULL)")
     category_types = {
-        "messages": ["message", "voice_message", "group_invite", "room_invite", "teacher_update", "student_update"],
-        "social": ["like", "comment", "reply", "save", "share", "mention", "status_mention", "follow", "follow_accept", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_mention", "reel_share", "video_like", "video_comment", "video_mention", "video_share", "video_save"],
+        "messages": ["message", "chat_message", "voice_message", "group_message", "room_message", "group_invite", "room_invite", "teacher_update", "student_update"],
+        "social": ["like", "reaction", "comment", "reply", "save", "share", "mention", "status_mention", "follow", "follow_accept", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_mention", "reel_share", "video_like", "video_comment", "video_mention", "video_share", "video_save"],
         "security": ["security_alert", "account_login", "new_device"],
         "premium": ["premium_alert", "marketplace_update"],
     }.get(str(category or "all").lower())
