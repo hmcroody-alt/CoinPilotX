@@ -21,7 +21,18 @@ The build included:
 - Language selection updates the welcome screen text and persists locally.
 - Same behavior is implemented in the shared app shell for iOS and Android.
 
-That behavior is now intentionally replaced by the WebView mirror strategy. A new Android build must be created and uploaded after commit `Remove Android native welcome gate for WebView mirror` or equivalent.
+That behavior is now intentionally replaced by the WebView mirror strategy.
+
+New Android WebView mirror build:
+
+- Build ID: `db5a5e8b-34b4-4716-9b9b-d69abf1058de`
+- Version code: `18`
+- Package: `com.pulsesoc.app`
+- Profile: production/store
+- Commit: `474d291 Make PulseSoc Android mirror website WebView`
+- Status: `IN_QUEUE` as of the latest check on 2026-06-09
+- Build URL: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/db5a5e8b-34b4-4716-9b9b-d69abf1058de`
+- Local AAB: pending build completion
 
 ## Upload Status
 
@@ -70,7 +81,7 @@ Build 20 remains the current iOS submission. Android now requires a newer build 
 
 ## Android Next Action
 
-Create a new Android AAB after the WebView mirror fix, then upload that new AAB to Google Play Internal Testing release draft 3. Alternatively, provide a local Google Play service-account JSON at `mobile/pulse-react-native/credentials/google-play-service-account.json` so EAS Submit can upload it without the browser file picker.
+Wait for build `db5a5e8b-34b4-4716-9b9b-d69abf1058de` to finish, download its AAB, then upload that new AAB to Google Play Internal Testing release draft 3. Alternatively, provide a local Google Play service-account JSON at `mobile/pulse-react-native/credentials/google-play-service-account.json` so EAS Submit can upload it without the browser file picker.
 
 Do not upload or release older bundles. VersionCode `16` is superseded and should not be used.
 
@@ -78,8 +89,8 @@ Manual upload steps:
 
 1. In Google Play Console, keep PulseSoc on Testing -> Internal testing -> release draft 3.
 2. In App bundles, click `Upload`.
-3. Select the new WebView mirror AAB generated after this fix.
-4. Confirm Google Play shows package `com.pulsesoc.app` and a versionCode higher than `16`.
+3. Select the new WebView mirror AAB from build `db5a5e8b-34b4-4716-9b9b-d69abf1058de` after it finishes.
+4. Confirm Google Play shows package `com.pulsesoc.app` and versionCode `18`.
 5. Add the release notes above.
 6. Save the draft, continue to preview, and keep the release on Internal Testing only.
 7. Add/confirm tester `hmcroody@gmail.com`.
