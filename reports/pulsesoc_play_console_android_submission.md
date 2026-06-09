@@ -23,19 +23,23 @@ The build includes:
 
 ## Upload Status
 
+As of 2026-06-08 evening, Google Play Console release draft 3 is open at Internal Testing, but versionCode `16` has not been uploaded yet.
+
 Play upload through EAS was attempted. It is blocked because the Google Play service account JSON is not available at:
 
 `mobile/pulse-react-native/credentials/google-play-service-account.json`
 
 This file is a secret and should not be committed. Once it is provided locally or configured through EAS submit credentials, the versionCode 16 AAB can be uploaded to Google Play Internal Testing.
 
-Manual Play Console upload was also attempted from the browser. The Play Console upload control did not accept a file handoff from the in-app browser automation session, and macOS assistive click automation is blocked by local Accessibility permissions. The draft Play release must not be advanced with the older versionCode 11 bundle.
+Manual Play Console upload was also attempted from the browser again on 2026-06-08. The Play Console page exposes the AAB upload control, but the Codex in-app browser reports that file uploads are not supported. The draft Play release must not be advanced with any older bundle.
 
 Production access is not available yet in Google Play Console. The Production page says the account does not have access to production and must apply from the Dashboard. Internal Testing remains the available Android publishing lane.
 
 ## Release Notes
 
-PulseSoc real-device QA build for feed, reels, videos, messaging, notifications, profile, premium, auth, scrolling, and push notification validation.
+Use these release notes for the Internal Testing release:
+
+PulseSoc Android internal QA build with premium welcome screen, signup, sign-in, language selection, performance updates, and web-aligned mobile UI.
 
 ## Tester List Status
 
@@ -67,3 +71,16 @@ Build 20 includes the fixed logged-out welcome behavior, working signup/sign-in 
 Upload `/tmp/pulsesoc-play/pulsesoc-android-v16.aab` to Google Play Internal Testing release draft 3, or provide a local Google Play service-account JSON at `mobile/pulse-react-native/credentials/google-play-service-account.json` so EAS Submit can upload it without the browser file picker.
 
 Do not upload or release older bundles. VersionCode `16` is the current Android build that matches the submitted iOS build behavior.
+
+Manual upload steps:
+
+1. In Google Play Console, keep PulseSoc on Testing -> Internal testing -> release draft 3.
+2. In App bundles, click `Upload`.
+3. Select `/tmp/pulsesoc-play/pulsesoc-android-v16.aab`.
+4. Confirm Google Play shows app version `0.1.0`, versionCode `16`, package `com.pulsesoc.app`.
+5. Add the release notes above.
+6. Save the draft, continue to preview, and keep the release on Internal Testing only.
+7. Add/confirm tester `hmcroody@gmail.com`.
+8. Generate/copy the Internal Testing opt-in link.
+
+Do not roll out to production without explicit approval.
