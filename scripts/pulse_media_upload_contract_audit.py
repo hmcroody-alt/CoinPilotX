@@ -25,6 +25,7 @@ PNG_BYTES = base64.b64decode(
 WEBM_BYTES = b"\x1aE\xdf\xa3\x9fB\x86\x81\x01B\xf7\x81\x01B\xf2\x81\x04B\xf3\x81\x08B\x82\x84webm"
 MOV_BYTES = b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00qt  "
 OGG_BYTES = b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00"
+MP3_BYTES = b"ID3\x04\x00\x00\x00\x00\x00\x15TIT2\x00\x00\x00\x05\x00\x00Audit"
 
 
 def expect(ok: bool, label: str, details: str = "") -> None:
@@ -212,9 +213,10 @@ def main() -> None:
     sound_response = client.post(
         "/api/pulse/reels/sounds/upload",
         data={
-            "file": (BytesIO(OGG_BYTES), "pulse-original.ogg", "audio/ogg"),
+            "file": (BytesIO(MP3_BYTES), "pulse-original.mp3", "audio/mpeg"),
             "title": "Pulse Audit Original",
             "artist": "Pulse Audit",
+            "rights_confirmed": "1",
         },
         content_type="multipart/form-data",
     )

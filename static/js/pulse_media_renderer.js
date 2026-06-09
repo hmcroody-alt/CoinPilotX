@@ -759,7 +759,7 @@
   function probeVideoRequest(wrap, src, eventName) {
     if (!mediaDebugEnabled() || !src || src.startsWith("blob:") || src.startsWith("data:")) return;
     fetch(src, { method: "HEAD", mode: "cors", cache: "no-store" })
-      .then(response => console.info("PulseSoc video request HEAD", {
+      .then(response => console.info("Pulse video request HEAD", {
         event: eventName,
         media_id: wrap.dataset.mediaId || "",
         src,
@@ -768,7 +768,7 @@
         accept_ranges: response.headers.get("accept-ranges") || "",
         content_length: response.headers.get("content-length") || "",
       }))
-      .catch(error => console.warn("PulseSoc video request HEAD failed", {
+      .catch(error => console.warn("Pulse video request HEAD failed", {
         event: eventName,
         media_id: wrap.dataset.mediaId || "",
         src,
@@ -781,7 +781,7 @@
     if (!mediaDebugEnabled() && !["error", "load_error", "retry_error"].includes(eventName)) return;
     const src = videoSource(video) || mediaUrl(wrap);
     const log = eventName === "error" || eventName.includes("error") ? console.warn : console.info;
-    log("PulseSoc video diagnostic", {
+    log("Pulse video diagnostic", {
       event: eventName,
       media_id: wrap.dataset.mediaId || "",
       src,

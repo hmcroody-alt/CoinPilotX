@@ -164,6 +164,7 @@ def _db_track(row) -> dict:
         "id": str(item.get("id") or ""),
         "title": item.get("title") or "PulseSoc sound",
         "artist": item.get("artist") or "PulseSoc Studio",
+        "artist_user_id": int(item.get("uploader_user_id") or 0),
         "duration_seconds": float(item.get("duration_seconds") or 0),
         "license": item.get("license_type") or "unknown",
         "license_type": item.get("license_type") or "unknown",
@@ -180,10 +181,21 @@ def _db_track(row) -> dict:
         "genre": item.get("genre") or "",
         "bpm": int(item.get("bpm") or 0),
         "preview_url": item.get("audio_url") or "",
+        "audio_url": item.get("audio_url") or "",
+        "cover_art_url": item.get("cover_art_url") or "",
         "waveform": waveform,
         "tags": tags,
+        "language": item.get("language") or "",
+        "description": item.get("description") or "",
+        "rights_confirmed": _bool(item.get("rights_confirmed")),
+        "moderation_status": item.get("safety_status") or "approved",
         "usage_count": int(item.get("usage_count") or 0),
         "trend_score": int(item.get("trend_score") or 0),
+        "play_count": int(item.get("play_count") or 0),
+        "reel_use_count": int(item.get("reel_use_count") or 0),
+        "video_use_count": int(item.get("video_use_count") or 0),
+        "save_count": int(item.get("save_count") or 0),
+        "share_count": int(item.get("share_count") or 0),
     }
 
 
@@ -229,6 +241,7 @@ def _score(track: dict, query: str = "", mood: str = "", genre: str = "", topic:
     haystack = " ".join([
         track.get("title", ""),
         track.get("artist", ""),
+        track.get("language", ""),
         track.get("mood", ""),
         track.get("genre", ""),
         " ".join(track.get("tags") or []),
@@ -278,6 +291,10 @@ def trending_tracks(limit: int = 10) -> list[dict]:
         track["momentum_score"] = max(10, 100 - index * 9)
         track["usage_hint"] = "Approved for Status, Reels, Videos, and Posts."
     return tracks
+
+
+def public_track(track_id: str) -> dict:
+    return next((track for track in _catalog_tracks() if str(track.get("id")) == str(track_id)), {})
 
 
 def waveform_for_track(track_id: str) -> list[float]:
