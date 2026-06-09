@@ -1,55 +1,48 @@
 # PulseSoc Store Submission Status
 
+Date: 2026-06-09
+
 ## iOS App Store
 
-Status checked: 2026-06-08 evening.
-
 - App: PulseSoc
-- iOS version: `1.0`
-- Attached build: `0.1.0 (20)`
-- App Store Connect status: `Waiting for Review`
-- Action taken: no new iOS build submitted; build 20 remains attached.
-- Current review issue status: no rejection or request for information shown at the time of this check.
-
-Do not submit another iOS build unless Apple rejects the current submission or requests a required change.
+- Bundle ID: `com.pulsesoc.app`
+- App Store Connect app ID: `6777591572`
+- Current submitted build: `0.1.1 (24)`
+- EAS build ID: `f5e215cf-db45-4963-bd92-2a4f790b5b33`
+- Source commit: `23e52d457be3952345fc76af6e93f415417af455`
+- IPA: `https://expo.dev/artifacts/eas/wn37Wf7kShLrRWSqwF4yQK.ipa`
+- Local IPA: `/tmp/pulsesoc-ios/pulsesoc-ios-build24-home-status-live.ipa`
+- EAS submission ID: `5c8f8e08-7677-4676-a77d-5827b857715c`
+- Submission result: uploaded successfully to App Store Connect.
+- Apple status: processing after upload. Apple usually takes several minutes before the build appears in App Store Connect/TestFlight.
 
 ## Android Google Play
 
-Status checked: 2026-06-09.
-
 - App: PulseSoc
 - Package: `com.pulsesoc.app`
-- Track: Internal Testing
-- Release draft: draft 3
-- Correct AAB: `/tmp/pulsesoc-play/pulsesoc-android-v18-webview-mirror.aab`
-- New EAS build ID: `db5a5e8b-34b4-4716-9b9b-d69abf1058de`
-- New versionCode: `18`
-- New build status: `FINISHED`
-- New build URL: `https://expo.dev/accounts/hmcroody/projects/pulsesoc/builds/db5a5e8b-34b4-4716-9b9b-d69abf1058de`
-- New AAB URL: `https://expo.dev/artifacts/eas/t62tk2i5cVyh5kGpKTTJ1N.aab`
-- New build source commit: `474d291 Make PulseSoc Android mirror website WebView`
-- Previous EAS build ID: `e50dad9c-28ec-4f22-b1ca-b7eb23143ae0`
-- Previous app version: `0.1.0`
-- Previous versionCode: `16`
-- Previous build source commit: `6a7d9d0 Fix PulseSoc welcome auth and language flow`
-- Upload status: pending manual upload or EAS Submit with a Google Play service account.
-- Opt-in link status: pending new Android WebView mirror upload.
-
-The Play Console draft must not be advanced with older bundles. VersionCode `16` is now superseded because Android must open the same WebView mirror as iOS and the live website.
+- Track target: Internal Testing
+- Current AAB: `0.1.1`, versionCode `21`
+- EAS build ID: `842e860f-ce36-4b67-a99f-c088efe8f247`
+- Source commit: `23e52d457be3952345fc76af6e93f415417af455`
+- AAB: `https://expo.dev/artifacts/eas/hjGr55ZtvTHc789S5x6JEc.aab`
+- Local AAB: `/tmp/pulsesoc-play/pulsesoc-android-v21-home-status-live.aab`
+- EAS Submit status: blocked because `mobile/pulse-react-native/credentials/google-play-service-account.json` is not present.
 
 ## Manual Android Upload Instructions
 
-1. Open Google Play Console -> PulseSoc -> Testing -> Internal testing -> release draft 3.
-2. Click `Upload` under App bundles.
-3. Select `/tmp/pulsesoc-play/pulsesoc-android-v18-webview-mirror.aab`.
-4. Confirm the uploaded bundle shows package `com.pulsesoc.app` and versionCode `18`.
-5. Add release notes:
+Use Google Play Console -> PulseSoc -> Testing -> Internal testing -> create/edit release.
 
-   `PulseSoc Android internal QA build with direct PulseSoc WebView mirror behavior, performance updates, native push/share bridge, media permissions, and web-aligned mobile UI.`
+Upload:
 
-6. Add/confirm tester `hmcroody@gmail.com`.
-7. Save and continue through preview.
-8. Keep the release on Internal Testing only.
-9. Copy the tester opt-in link after the release is available.
+`/tmp/pulsesoc-play/pulsesoc-android-v21-home-status-live.aab`
 
-Do not roll out Android to production without explicit approval.
+Confirm:
+
+- Package: `com.pulsesoc.app`
+- VersionCode: `21`
+
+Release notes:
+
+`PulseSoc Android internal QA build with permanent premium logged-out welcome/auth screen, fixed Home status rail media, muted status autoplay, removed disruptive Live block, live feed-post flow, WebView mirror behavior, native push/share bridge, and media permissions.`
+
+Keep Android on Internal Testing unless production rollout is explicitly approved.
