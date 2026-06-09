@@ -30,11 +30,14 @@ The welcome screen is intentionally lightweight: it uses native layout, the exis
 - Primary CTA: `Create Your PulseSoc Account`
 - Secondary CTA: `Sign In to PulseSoc`
 - Footer: `PulseSoc(TM) • Built by CoinPilotXAI Inc.`
-- Signup routes into the live website at `/register`.
+- Signup routes into the live website at `/signup?next=/pulse`.
 - Sign-in routes into the live website at `/login?next=/pulse`.
 - Startup session check against the live PulseSoc mobile session endpoint using WebView cookies.
 - Users with a valid saved website session skip the welcome screen and go directly to the live PulseSoc website.
 - Logged-out users see the premium welcome screen first.
+- If the live website sends the app to `/login` outside of a user-started login/signup flow, the native shell returns to the premium welcome screen.
+- User-started signup and sign-in flows are allowed to continue through the live website auth pages, so both welcome screen buttons work.
+- Language selection changes the welcome screen text immediately and saves the selected language locally.
 
 ## Android Follow-Up
 
@@ -50,6 +53,8 @@ Fix applied:
 - The hidden session WebView now reruns the session-check script on load completion, so Android reliably decides between:
   - valid saved session -> open the PulseSoc feed
   - no valid saved session -> show the premium welcome screen
+- Auth navigation now distinguishes between ordinary logged-out redirects and welcome-screen CTA flows, so `Create Your PulseSoc Account` and `Sign In to PulseSoc` both open the correct live website screens on iOS and Android.
+- Language selection is backed by localized welcome copy for English, French, Haitian Creole, Spanish, and Portuguese.
 
 The same welcome UI is now confirmed in code for Android:
 

@@ -20,16 +20,95 @@ const LANGUAGE_OPTIONS = [
   { label: "Kreyòl Ayisyen", value: "ht" },
   { label: "Español", value: "es" },
   { label: "Português", value: "pt" }
-];
+] as const;
 
-const WELCOME_FEATURES = [
-  { icon: "C", label: "Join Communities" },
-  { icon: "V", label: "Watch Videos & Reels" },
-  { icon: "RT", label: "Chat in Real Time" },
-  { icon: "AI", label: "AI-Powered Discovery" },
-  { icon: "EX", label: "Exclusive Premium" },
-  { icon: "PF", label: "Privacy First" }
-];
+type LanguageValue = typeof LANGUAGE_OPTIONS[number]["value"];
+type LanguageOption = typeof LANGUAGE_OPTIONS[number];
+
+const WELCOME_COPY: Record<LanguageValue, {
+  headline: string;
+  slogan: string;
+  createAccount: string;
+  signIn: string;
+  footer: string;
+  features: Array<{ icon: string; label: string }>;
+}> = {
+  en: {
+    headline: "Join PulseSoc",
+    slogan: "Connect. Create. Discover. Pulse the World.",
+    createAccount: "Create Your PulseSoc Account",
+    signIn: "Sign In to PulseSoc",
+    footer: "PulseSoc™ • Built by CoinPilotXAI Inc.",
+    features: [
+      { icon: "C", label: "Join Communities" },
+      { icon: "V", label: "Watch Videos & Reels" },
+      { icon: "RT", label: "Chat in Real Time" },
+      { icon: "AI", label: "AI-Powered Discovery" },
+      { icon: "EX", label: "Exclusive Premium" },
+      { icon: "PF", label: "Privacy First" }
+    ]
+  },
+  fr: {
+    headline: "Rejoignez PulseSoc",
+    slogan: "Connectez. Créez. Découvrez. Faites vibrer le monde.",
+    createAccount: "Créer votre compte PulseSoc",
+    signIn: "Se connecter à PulseSoc",
+    footer: "PulseSoc™ • Conçu par CoinPilotXAI Inc.",
+    features: [
+      { icon: "C", label: "Rejoindre des communautés" },
+      { icon: "V", label: "Voir vidéos et reels" },
+      { icon: "RT", label: "Discuter en direct" },
+      { icon: "AI", label: "Découverte par IA" },
+      { icon: "EX", label: "Premium exclusif" },
+      { icon: "PF", label: "Confidentialité d'abord" }
+    ]
+  },
+  ht: {
+    headline: "Antre nan PulseSoc",
+    slogan: "Konekte. Kreye. Dekouvri. Fè mond lan bat.",
+    createAccount: "Kreye kont PulseSoc ou",
+    signIn: "Konekte sou PulseSoc",
+    footer: "PulseSoc™ • Bati pa CoinPilotXAI Inc.",
+    features: [
+      { icon: "C", label: "Antre nan kominote" },
+      { icon: "V", label: "Gade videyo ak reels" },
+      { icon: "RT", label: "Pale an tan reyèl" },
+      { icon: "AI", label: "Dekouvèt ak IA" },
+      { icon: "EX", label: "Premium eksklizif" },
+      { icon: "PF", label: "Konfidansyalite avan tout" }
+    ]
+  },
+  es: {
+    headline: "Únete a PulseSoc",
+    slogan: "Conecta. Crea. Descubre. Haz latir el mundo.",
+    createAccount: "Crear tu cuenta PulseSoc",
+    signIn: "Iniciar sesión en PulseSoc",
+    footer: "PulseSoc™ • Creado por CoinPilotXAI Inc.",
+    features: [
+      { icon: "C", label: "Únete a comunidades" },
+      { icon: "V", label: "Mira videos y reels" },
+      { icon: "RT", label: "Chatea en tiempo real" },
+      { icon: "AI", label: "Descubrimiento con IA" },
+      { icon: "EX", label: "Premium exclusivo" },
+      { icon: "PF", label: "Privacidad primero" }
+    ]
+  },
+  pt: {
+    headline: "Entre no PulseSoc",
+    slogan: "Conecte. Crie. Descubra. Pulse o mundo.",
+    createAccount: "Criar sua conta PulseSoc",
+    signIn: "Entrar no PulseSoc",
+    footer: "PulseSoc™ • Criado por CoinPilotXAI Inc.",
+    features: [
+      { icon: "C", label: "Entre em comunidades" },
+      { icon: "V", label: "Assista vídeos e reels" },
+      { icon: "RT", label: "Converse em tempo real" },
+      { icon: "AI", label: "Descoberta com IA" },
+      { icon: "EX", label: "Premium exclusivo" },
+      { icon: "PF", label: "Privacidade primeiro" }
+    ]
+  }
+};
 
 export default function PulseSocMobileApp() {
   return (
@@ -43,6 +122,7 @@ export default function PulseSocMobileApp() {
 function PulseSocWebShell() {
   const webViewRef = useRef<WebViewType>(null);
   const sessionCheckDoneRef = useRef(false);
+  const authFlowRef = useRef<"login" | "signup" | null>(null);
   const [sourceUrl, setSourceUrl] = useState(PULSESOC_ORIGIN);
   const [canGoBack, setCanGoBack] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -60,6 +140,7 @@ function PulseSocWebShell() {
 
   const openWebFlow = useCallback((path: string) => {
     const next = `${PULSESOC_ORIGIN}${path}`;
+    authFlowRef.current = path.startsWith("/signup") ? "signup" : path.startsWith("/login") ? "login" : null;
     setSourceUrl(next);
     setOffline(false);
     setLoading(true);
@@ -172,6 +253,20 @@ function PulseSocWebShell() {
 
   function handleNavigation(navState: WebViewNavigation) {
     setCanGoBack(navState.canGoBack);
+    const parsed = normalizeUrl(navState.url);
+    if (!parsed || !PULSESOC_HOSTS.has(parsed.hostname)) return;
+    if (parsed.pathname.startsWith("/pulse")) {
+      authFlowRef.current = null;
+      return;
+    }
+    if (parsed.pathname === "/logout") {
+      authFlowRef.current = null;
+      setLaunchState("welcome");
+      return;
+    }
+    if (parsed.pathname === "/login" && authFlowRef.current === null) {
+      setLaunchState("welcome");
+    }
   }
 
   if (offline) {
@@ -206,7 +301,7 @@ function PulseSocWebShell() {
   if (launchState === "welcome") {
     return (
       <PremiumWelcomeScreen
-        onCreateAccount={() => openWebFlow("/register")}
+        onCreateAccount={() => openWebFlow("/signup?next=/pulse")}
         onSignIn={() => openWebFlow("/login?next=/pulse")}
       />
     );
@@ -259,8 +354,9 @@ function PremiumWelcomeScreen({ onCreateAccount, onSignIn }: { onCreateAccount: 
   const fade = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
   const ring = useRef(new Animated.Value(0)).current;
-  const [language, setLanguage] = useState(LANGUAGE_OPTIONS[0]);
+  const [language, setLanguage] = useState<LanguageOption>(LANGUAGE_OPTIONS[0]);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const copy = WELCOME_COPY[language.value];
 
   useEffect(() => {
     AsyncStorage.getItem(LANGUAGE_STORAGE_KEY).then(saved => {
@@ -297,7 +393,7 @@ function PremiumWelcomeScreen({ onCreateAccount, onSignIn }: { onCreateAccount: 
     outputRange: ["0deg", "360deg"]
   });
 
-  const chooseLanguage = (next: typeof LANGUAGE_OPTIONS[number]) => {
+  const chooseLanguage = (next: LanguageOption) => {
     setLanguage(next);
     setLanguageOpen(false);
     AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, next.value).catch(() => undefined);
@@ -332,15 +428,15 @@ function PremiumWelcomeScreen({ onCreateAccount, onSignIn }: { onCreateAccount: 
           <Image source={require("./assets/icon.png")} style={welcomeStyles.logo} resizeMode="contain" />
         </Animated.View>
 
-        <Text style={welcomeStyles.headline}>Join PulseSoc</Text>
-        <Text style={welcomeStyles.slogan}>Connect. Create. Discover. Pulse the World.</Text>
+        <Text style={welcomeStyles.headline}>{copy.headline}</Text>
+        <Text style={welcomeStyles.slogan}>{copy.slogan}</Text>
 
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={welcomeStyles.featureStrip}
         >
-          {WELCOME_FEATURES.map(feature => (
+          {copy.features.map(feature => (
             <View key={feature.label} style={welcomeStyles.featurePill}>
               <View style={welcomeStyles.featureIcon}>
                 <Text style={welcomeStyles.featureIconText}>{feature.icon}</Text>
@@ -351,14 +447,14 @@ function PremiumWelcomeScreen({ onCreateAccount, onSignIn }: { onCreateAccount: 
         </ScrollView>
 
         <TouchableOpacity style={welcomeStyles.primaryButton} onPress={onCreateAccount} activeOpacity={0.86}>
-          <Text style={welcomeStyles.primaryButtonText}>Create Your PulseSoc Account</Text>
+          <Text style={welcomeStyles.primaryButtonText}>{copy.createAccount}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={welcomeStyles.secondaryButton} onPress={onSignIn} activeOpacity={0.86}>
-          <Text style={welcomeStyles.secondaryButtonText}>Sign In to PulseSoc</Text>
+          <Text style={welcomeStyles.secondaryButtonText}>{copy.signIn}</Text>
         </TouchableOpacity>
 
-        <Text style={welcomeStyles.footer}>PulseSoc™ • Built by CoinPilotXAI Inc.</Text>
+        <Text style={welcomeStyles.footer}>{copy.footer}</Text>
       </ScrollView>
 
       <Modal visible={languageOpen} transparent animationType="fade" onRequestClose={() => setLanguageOpen(false)}>
