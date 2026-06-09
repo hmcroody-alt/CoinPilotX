@@ -53,4 +53,17 @@ Pending Play Internal Testing upload/install of versionCode 16.
 
 ## iOS Status
 
-iOS App Version 1.0 build 19 was submitted to Apple App Review on 2026-06-08. After the welcome CTA/language fix, iOS build 20 was built and uploaded successfully to App Store Connect for processing.
+iOS App Version 1.0 was resubmitted to Apple App Review on 2026-06-08 with build 20 attached.
+
+- Previous submitted build 19 was removed from review after the welcome CTA/language fixes.
+- Build 20 (`0.1.0 (20)`) was selected on the iOS App Version 1.0 draft.
+- The version was saved, added for review, and submitted.
+- App Store Connect status after submission: `Waiting for Review`.
+
+Build 20 includes the fixed logged-out welcome behavior, working signup/sign-in CTAs, persisted language selection, and localized welcome text on both iOS and Android.
+
+## Android Next Action
+
+Upload `/tmp/pulsesoc-play/pulsesoc-android-v16.aab` to Google Play Internal Testing release draft 3, or provide a local Google Play service-account JSON at `mobile/pulse-react-native/credentials/google-play-service-account.json` so EAS Submit can upload it without the browser file picker.
+
+Do not upload or release older bundles. VersionCode `16` is the current Android build that matches the submitted iOS build behavior.
