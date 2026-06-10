@@ -63,6 +63,8 @@
     setText(root, "[data-live-fps]", `${health.fps || 0} FPS`);
     setText(root, "[data-live-latency]", health.latency_ms ? `${health.latency_ms} ms` : "ready");
     setText(root, "[data-live-pulse]", pulse.label || "ready");
+    if (data.mux?.live_status) setText(root, "[data-mux-live-status]", `Status ${data.mux.live_status}`);
+    if (data.livekit?.egress_status) setText(root, "[data-live-camera-state]", data.livekit.egress_error || `LiveKit egress ${data.livekit.egress_status}`);
     const score = qs(root, ".live-health-score");
     if (score) score.style.setProperty("--score", Math.max(0, Math.min(100, Number(health.score || 0))));
     renderChat(root, data.messages || []);
@@ -118,7 +120,8 @@
   }
 
   async function copyLiveValue(button) {
-    const value = button?.parentElement?.querySelector("[data-copy-value]")?.textContent || "";
+    const valueNode = button?.parentElement?.querySelector("[data-copy-value]");
+    const value = valueNode?.dataset?.copyValue || valueNode?.textContent || "";
     if (!value) return;
     await navigator.clipboard?.writeText(value).catch(() => {});
     if (window.toast) window.toast("Copied.");
@@ -440,6 +443,73 @@
     const video = qs(root, "[data-live-camera]");
     if (!video || !navigator.mediaDevices?.getUserMedia) return;
     let stream = null;
+    let livekitRoom = null;
+    let livekitTracks = [];
+    function livekitClient() {
+      return window.LiveKitClient || window.livekitClient || null;
+    }
+    function tracksToMediaStream(tracks) {
+      const mediaStream = new MediaStream();
+      tracks.forEach((track) => {
+        const mediaTrack = track?.mediaStreamTrack || track?.track;
+        if (mediaTrack) mediaStream.addTrack(mediaTrack);
+      });
+      return mediaStream;
+    }
+    function detachLiveKitTracks() {
+      livekitTracks.forEach((track) => {
+        try { track.detach?.().forEach((element) => element.remove?.()); } catch (_) {}
+        try { track.stop?.(); } catch (_) {}
+      });
+      livekitTracks = [];
+    }
+    async function connectLiveKitRoom() {
+      const LK = livekitClient();
+      const id = root?.dataset?.liveId;
+      if (!LK) throw new Error("LiveKit browser client is still loading. Try Start Camera again in a moment.");
+      if (!id) throw new Error("Live session is missing.");
+      if (livekitRoom?.state === "connected") return livekitRoom;
+      const tokenResponse = await fetch(`/api/pulse/live/${id}/livekit/token`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "publisher" }),
+      });
+      const tokenData = await tokenResponse.json().catch(() => ({}));
+      if (!tokenResponse.ok || tokenData.ok === false) throw new Error(tokenData.message || "LiveKit host token could not be created.");
+      livekitRoom = new LK.Room({ adaptiveStream: true, dynacast: true });
+      await livekitRoom.connect(tokenData.livekit_url, tokenData.token);
+      root.dataset.livekitRoom = tokenData.room || "";
+      return livekitRoom;
+    }
+    async function publishToLiveKit(kind) {
+      const LK = livekitClient();
+      const room = await connectLiveKitRoom();
+      detachLiveKitTracks();
+      const trackOptions = kind === "screen_share"
+        ? await LK.createLocalScreenTracks({ audio: true, video: true })
+        : await LK.createLocalTracks({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
+          });
+      livekitTracks = trackOptions;
+      stream = tracksToMediaStream(livekitTracks);
+      const videoTrack = livekitTracks.find((track) => track.kind === "video");
+      if (videoTrack?.attach) {
+        try {
+          videoTrack.attach(video);
+        } catch (_) {
+          video.srcObject = stream;
+        }
+      } else {
+        video.srcObject = stream;
+      }
+      await Promise.all(livekitTracks.map((track) => room.localParticipant.publishTrack(track).catch((error) => {
+        console.warn("PulseSoc LiveKit publishTrack failed", error);
+        throw error;
+      })));
+      return stream;
+    }
     async function publishTracks(kind) {
       const id = root?.dataset?.liveId;
       if (!id || !stream) return;
@@ -462,8 +532,7 @@
           return data;
         });
         console.info("PulseSoc Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
-        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Camera preview ready. Connect OBS/RTMP to broadcast into Mux." : "No tracks detected");
-        await initPublisherTransport(root, stream);
+        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Browser Live is publishing through LiveKit and forwarding to Mux." : "No tracks detected");
         await fetchState(root);
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Publishing needs attention");
@@ -471,44 +540,55 @@
       }
     }
     const stop = () => {
+      detachLiveKitTracks();
+      try { livekitRoom?.disconnect?.(); } catch (_) {}
+      livekitRoom = null;
       if (stream) stream.getTracks().forEach((track) => track.stop());
       stream = null;
     };
     const start = async () => {
       try {
         stop();
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        });
-        video.srcObject = stream;
+        root.classList.add("is-connecting");
+        setText(root, "[data-live-camera-state]", "Connecting Browser Live to LiveKit...");
+        stream = await publishToLiveKit("browser_camera");
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Camera preview ready. Connect OBS/RTMP to broadcast into Mux.");
+        setText(root, "[data-live-camera-state]", "Browser Live is publishing through LiveKit and forwarding to Mux.");
         console.info("PulseSoc Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Camera needs permission");
         if (window.toast) window.toast(error.message);
+      } finally {
+        root.classList.remove("is-connecting");
       }
     };
     qs(root, "[data-live-start-camera]")?.addEventListener("click", start);
     qs(root, "[data-live-mute]")?.addEventListener("click", (event) => {
-      stream?.getAudioTracks().forEach((track) => { track.enabled = !track.enabled; });
+      const currentlyEnabled = stream?.getAudioTracks().some((track) => track.enabled) !== false;
+      const nextEnabled = !currentlyEnabled;
+      stream?.getAudioTracks().forEach((track) => { track.enabled = nextEnabled; });
+      livekitTracks.filter((track) => track.kind === "audio").forEach((track) => {
+        try { track.mediaStreamTrack.enabled = nextEnabled; } catch (_) {}
+      });
       const enabled = stream?.getAudioTracks().some((track) => track.enabled);
       event.currentTarget.textContent = enabled ? "Mute Mic" : "Unmute Mic";
     });
     qs(root, "[data-live-screen]")?.addEventListener("click", async () => {
       try {
         stop();
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        video.srcObject = stream;
+        root.classList.add("is-connecting");
+        setText(root, "[data-live-camera-state]", "Connecting screen share through LiveKit...");
+        stream = await publishToLiveKit("screen_share");
         video.style.transform = "none";
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Screen preview ready. Connect OBS/RTMP to broadcast into Mux.");
+        setText(root, "[data-live-camera-state]", "Screen is publishing through LiveKit and forwarding to Mux.");
         console.info("PulseSoc Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("screen_share");
       } catch {
         if (window.toast) window.toast("Screen share was not started.");
+      } finally {
+        root.classList.remove("is-connecting");
       }
     });
     window.addEventListener("pagehide", stop);

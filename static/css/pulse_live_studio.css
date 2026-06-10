@@ -211,6 +211,33 @@
   z-index: 2;
 }
 
+.is-camera-active .live-preview-stage .live-ready-state {
+  display: none;
+}
+
+.live-camera-toast {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 5;
+  max-width: min(86%, 520px);
+  border: 1px solid rgba(110, 223, 246, 0.24);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: rgba(225, 252, 255, 0.9);
+  background: rgba(3, 10, 18, 0.6);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.live-preview-stage:not(.is-connecting) .live-camera-toast:empty {
+  display: none;
+}
+
 .live-ready-orb {
   width: 124px;
   height: 124px;

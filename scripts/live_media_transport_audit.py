@@ -47,8 +47,17 @@ def main():
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
+    original_egress = bot.pulse_livekit_start_mux_egress
+    bot.pulse_livekit_start_mux_egress = lambda live, trace_id="": {
+        "ok": True,
+        "egress_id": "EG_TRANSPORT",
+        "status": "EGRESS_STARTING",
+        "room": live.get("webrtc_room_id") or "pulse-webrtc-transportaudit",
+    }
     publish = client.post(f"/api/pulse/live/{live_id}/browser-publish", json={"audio_tracks": 1, "video_tracks": 1}).get_json() or {}
+    bot.pulse_livekit_start_mux_egress = original_egress
     require(publish.get("ok"), "browser media publish accepts audio and video tracks")
+    require(publish.get("publish_path") == "livekit_mux_egress", "browser media publish starts LiveKit to Mux bridge")
     require(publish.get("playback", {}).get("supports_hls"), "HLS fallback remains available")
     require(publish.get("playback", {}).get("supports_webrtc"), "WebRTC fallback remains available")
     viewer = client.get(f"/pulse/live/{live_id}")
@@ -57,12 +66,11 @@ def main():
     require("live-ready-orb" not in html, "active viewer does not show fake placeholder avatar")
     source = (ROOT / "static/js/pulse_live_studio.js").read_text(encoding="utf-8")
     bot_source = (ROOT / "bot.py").read_text(encoding="utf-8")
-    require("/webrtc/signal" in bot_source and "/webrtc/signals" in bot_source, "WebRTC signaling endpoints exist")
-    require("RTCPeerConnection" in source, "browser transport creates real peer connections")
+    require("pulse_livekit_start_mux_egress" in bot_source, "backend starts LiveKit egress to Mux")
+    require("connectLiveKitRoom" in source, "browser transport connects to LiveKit room")
     require("getAudioTracks" in source and "getVideoTracks" in source, "publisher diagnostics inspect audio and video tracks")
-    require("addTrack(track, stream)" in source, "publisher attaches media tracks to peer connections")
-    require("srcObject = remoteStream" in source, "viewer attaches remote media stream to video element")
-    require("getStats()" in source and "bytesReceived" in source, "viewer diagnostics track received media bytes")
+    require("publishTrack(track)" in source, "publisher sends media tracks to LiveKit")
+    require("StartRoomCompositeEgress" in bot_source, "server bridges LiveKit room to Mux")
     print("live media transport audit ok")
 
 

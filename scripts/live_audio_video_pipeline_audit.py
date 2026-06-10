@@ -59,14 +59,24 @@ def main():
     client = bot.webhook_app.test_client()
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
+    original_egress = bot.pulse_livekit_start_mux_egress
+    bot.pulse_livekit_start_mux_egress = lambda live, trace_id="": {
+        "ok": True,
+        "egress_id": "EG_AUDIT",
+        "status": "EGRESS_STARTING",
+        "room": live.get("webrtc_room_id") or "pulse-webrtc-avaudit",
+    }
     publish = client.post(f"/api/pulse/live/{live_id}/browser-publish", json={"audio_tracks": 1, "video_tracks": 1}).get_json() or {}
+    bot.pulse_livekit_start_mux_egress = original_egress
     require(publish.get("ok"), "browser publish endpoint accepts real audio and video tracks")
-    require(publish.get("publish_path") == "preview_only", "browser publish stays in preview-only path before RTMP/Mux broadcast")
-    require(publish.get("requires_rtmp_encoder") is True, "browser publish declares RTMP encoder requirement")
+    require(publish.get("publish_path") == "livekit_mux_egress", "browser publish starts LiveKit to Mux egress")
+    require(publish.get("requires_rtmp_encoder") is False, "browser publish no longer requires OBS/RTMP encoder")
+    require(publish.get("egress", {}).get("egress_id") == "EG_AUDIT", "browser publish returns LiveKit egress id")
     require(publish.get("playback", {}).get("supports_hls"), "browser publish response exposes HLS fallback")
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
-    require(state.get("status") == "publishing", "browser preview keeps session in publishing state")
-    require(state.get("publish_state") == "browser_preview", "publish state machine records browser preview")
+    require(state.get("status") == "live", "browser live marks session live after egress start")
+    require(state.get("publish_state") == "browser_live_egress", "publish state machine records LiveKit egress")
+    require(state.get("livekit", {}).get("egress_id") == "EG_AUDIT", "viewer state exposes LiveKit egress id")
     require(state.get("playback", {}).get("supports_hls"), "viewer state exposes playable HLS")
     conn = db_service.connect()
     conn.row_factory = bot.sqlite3.Row
