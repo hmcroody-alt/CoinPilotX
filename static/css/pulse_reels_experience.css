@@ -275,6 +275,36 @@ object-fit: cover !important;
 .reels-media-stage .pulse-media-vignette {
 display: none !important;
 }
+
+.reel-action {
+position: relative;
+transition: transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease, filter .14s ease;
+}
+.reel-action:active {
+transform: scale(.92) !important;
+filter: brightness(1.25) saturate(1.25);
+}
+.reel-action.active,
+.reel-action[aria-pressed="true"] {
+background: radial-gradient(circle at 50% 20%, rgba(255,255,255,.26), transparent 34%), linear-gradient(135deg, rgba(54,229,143,.95), rgba(110,223,246,.92)) !important;
+border-color: rgba(110,223,246,.82) !important;
+box-shadow: 0 0 0 1px rgba(255,255,255,.16) inset, 0 0 24px rgba(54,229,143,.46), 0 0 54px rgba(110,223,246,.28) !important;
+color: #06111f !important;
+}
+.reel-action.active::after,
+.reel-action[aria-pressed="true"]::after {
+content: "";
+position: absolute;
+inset: -8px;
+border-radius: inherit;
+border: 1px solid rgba(110,223,246,.4);
+animation: reelReactionGlow .72s ease-out;
+pointer-events: none;
+}
+@keyframes reelReactionGlow {
+0% { opacity: .86; transform: scale(.8); }
+100% { opacity: 0; transform: scale(1.28); }
+}
 .reels-caption-overlay,
 .reel-caption {
 left: 13px !important;

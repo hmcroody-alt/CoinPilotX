@@ -3,6 +3,7 @@ import { ActivityIndicator, BackHandler, Linking, Platform, Share, StatusBar, Te
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import WebView, { WebViewMessageEvent, WebViewNavigation } from "react-native-webview";
 import type { WebView as WebViewType } from "react-native-webview";
+import { NativeLiveBroadcast } from "./components/NativeLiveBroadcast";
 import { colors, screenStyles } from "./components/theme";
 import { ensureNotificationPresentation, getNativePushToken, presentNativeDeviceAlert, wireNotificationLinks, wireNotificationPresentation } from "./services/push";
 
@@ -21,10 +22,12 @@ export default function PulseSocMobileApp() {
 
 function PulseSocWebShell() {
   const webViewRef = useRef<WebViewType>(null);
+  const webRequestRef = useRef(new Map<string, { resolve: (value: Record<string, unknown>) => void; reject: (reason?: unknown) => void }>());
   const [sourceUrl, setSourceUrl] = useState(PULSESOC_START_URL);
   const [canGoBack, setCanGoBack] = useState(false);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
+  const [nativeLiveOpen, setNativeLiveOpen] = useState(false);
 
   const injectedJavaScript = useMemo(() => createInjectedBridge(), []);
 
@@ -33,6 +36,53 @@ function PulseSocWebShell() {
     setOffline(false);
     setSourceUrl(next);
     webViewRef.current?.injectJavaScript(`window.location.href = ${JSON.stringify(next)}; true;`);
+  }, []);
+
+  const callWebApi = useCallback((path: string, options?: { method?: string; body?: unknown }) => {
+    const requestId = `native-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const method = options?.method || "GET";
+    const body = options?.body === undefined ? null : JSON.stringify(options.body);
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      webRequestRef.current.set(requestId, { resolve, reject });
+      webViewRef.current?.injectJavaScript(`
+        (async function () {
+          try {
+            var response = await fetch(${JSON.stringify(path)}, {
+              method: ${JSON.stringify(method)},
+              credentials: 'include',
+              cache: 'no-store',
+              headers: { 'Content-Type': 'application/json' },
+              body: ${body === null ? "undefined" : JSON.stringify(body)}
+            });
+            var text = await response.text();
+            var data = {};
+            try { data = text ? JSON.parse(text) : {}; } catch (parseError) { data = { ok: response.ok, text: text }; }
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'PULSESOC_WEB_API_RESULT',
+              requestId: ${JSON.stringify(requestId)},
+              ok: response.ok && data.ok !== false,
+              status: response.status,
+              data: data
+            }));
+          } catch (error) {
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'PULSESOC_WEB_API_RESULT',
+              requestId: ${JSON.stringify(requestId)},
+              ok: false,
+              status: 0,
+              message: error && error.message ? error.message : 'Native bridge request failed.'
+            }));
+          }
+        })();
+        true;
+      `);
+      setTimeout(() => {
+        const pending = webRequestRef.current.get(requestId);
+        if (!pending) return;
+        webRequestRef.current.delete(requestId);
+        pending.reject(new Error("PulseSoc website did not answer the native live request in time."));
+      }, 30000);
+    });
   }, []);
 
   useEffect(() => {
@@ -78,6 +128,25 @@ function PulseSocWebShell() {
         return;
       }
       injectPushTokenRegistration(webViewRef.current, result.token);
+      return;
+    }
+
+    if (payload.type === "PULSESOC_WEB_API_RESULT") {
+      const requestId = typeof payload.requestId === "string" ? payload.requestId : "";
+      const pending = webRequestRef.current.get(requestId);
+      if (!pending) return;
+      webRequestRef.current.delete(requestId);
+      if (payload.ok) {
+        pending.resolve((payload.data || {}) as Record<string, unknown>);
+      } else {
+        const data = (payload.data || {}) as Record<string, unknown>;
+        pending.reject(new Error(String(data.message || data.error || payload.message || "PulseSoc request failed.")));
+      }
+      return;
+    }
+
+    if (payload.type === "PULSESOC_OPEN_NATIVE_LIVE") {
+      setNativeLiveOpen(true);
       return;
     }
 
@@ -161,6 +230,16 @@ function PulseSocWebShell() {
         renderLoading={() => <LoadingOverlay />}
       />
       {loading ? <LoadingOverlay compact /> : null}
+      {nativeLiveOpen ? (
+        <NativeLiveBroadcast
+          apiRequest={callWebApi}
+          onClose={() => setNativeLiveOpen(false)}
+          onOpenWebPath={(path) => {
+            setNativeLiveOpen(false);
+            navigateToAppUrl(`${PULSESOC_ORIGIN}${path}`);
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -260,9 +339,17 @@ function createInjectedBridge() {
       }
       window.PulseSocNative = {
         registerPush: function () { post({ type: 'PULSESOC_REGISTER_PUSH' }); },
+        goLive: function (payload) { post(Object.assign({ type: 'PULSESOC_OPEN_NATIVE_LIVE' }, payload || {})); },
+        openNativeLive: function (payload) { post(Object.assign({ type: 'PULSESOC_OPEN_NATIVE_LIVE' }, payload || {})); },
         share: function (payload) { post(Object.assign({ type: 'PULSESOC_SHARE' }, payload || {})); },
         notify: function (payload) { post(Object.assign({ type: 'PULSESOC_NOTIFY_DEVICE' }, payload || {})); }
       };
+      document.addEventListener('click', function (event) {
+        var target = event.target && event.target.closest && event.target.closest('[data-go-live-native],[data-open-native-live],[href="/pulse/live"][data-native-live]');
+        if (!target) return;
+        event.preventDefault();
+        post({ type: 'PULSESOC_OPEN_NATIVE_LIVE', source: 'web-click' });
+      }, true);
       window.dispatchEvent(new CustomEvent('PulseSocNativeReady'));
       true;
     })();

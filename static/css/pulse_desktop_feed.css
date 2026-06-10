@@ -930,11 +930,55 @@ padding: 2px 0;
 }
 .reaction-pill {
 position: relative;
-transition: transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease;
+transition: transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease, filter .14s ease;
 }
 .reaction-pill:hover {
 transform: translateY(-2px) scale(1.03);
 background: rgba(110, 223, 246, .1);
+}
+.reaction-pill:active,
+.quick-action:active,
+[data-react]:active,
+[data-status-story-react]:active,
+[data-status-viewer-react]:active,
+[data-video-like]:active,
+[data-reel-react]:active,
+[data-live-reaction]:active {
+transform: translateY(0) scale(.94);
+filter: brightness(1.2) saturate(1.2);
+}
+.reaction-pill.active,
+.reaction-pill[aria-pressed="true"],
+.quick-action.active,
+[data-react].active,
+[data-status-story-react].active,
+[data-status-viewer-react].active,
+[data-video-like].active,
+[data-video-like][aria-pressed="true"],
+[data-reel-react].active,
+[data-reel-react][aria-pressed="true"],
+[data-live-reaction].active {
+background:
+radial-gradient(circle at 50% 20%, rgba(255,255,255,.26), transparent 34%),
+linear-gradient(135deg, rgba(54,229,143,.34), rgba(110,223,246,.3)) !important;
+border-color: rgba(110,223,246,.76) !important;
+box-shadow:
+0 0 0 1px rgba(255,255,255,.1) inset,
+0 0 22px rgba(54,229,143,.42),
+0 0 44px rgba(110,223,246,.24) !important;
+color: #f7fffb !important;
+}
+.reaction-pill.active::before,
+[data-react].active::before,
+[data-video-like].active::before,
+[data-reel-react].active::before {
+content: "";
+position: absolute;
+inset: -8px;
+border-radius: inherit;
+background: radial-gradient(circle, rgba(54,229,143,.22), transparent 68%);
+animation: pulseReactionGlow .72s ease-out;
+pointer-events: none;
 }
 .reaction-pill.active::after {
 content: "";
@@ -943,6 +987,10 @@ inset: -4px;
 border-radius: inherit;
 border: 1px solid rgba(54, 229, 143, .24);
 pointer-events: none;
+}
+@keyframes pulseReactionGlow {
+0% { opacity: .85; transform: scale(.82); }
+100% { opacity: 0; transform: scale(1.28); }
 }
 .post.reaction-heat-high .reaction-strip {
 border-radius: 999px;

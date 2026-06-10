@@ -822,6 +822,29 @@ to {
 transform: rotate(1turn);
 }
 }
+
+.pulse-status-story-actions button,
+[data-status-viewer] button[data-status-viewer-react],
+[data-status-story-react] {
+position: relative;
+transition: transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease, filter .14s ease;
+}
+.pulse-status-story-actions button:active,
+[data-status-viewer] button[data-status-viewer-react]:active,
+[data-status-story-react]:active {
+transform: scale(.94);
+filter: brightness(1.2) saturate(1.2);
+}
+.pulse-status-story-actions button.active,
+.pulse-status-story-actions button[aria-pressed="true"],
+[data-status-viewer] button[data-status-viewer-react].active,
+[data-status-viewer] button[data-status-viewer-react][aria-pressed="true"],
+[data-status-story-react].active {
+background: radial-gradient(circle at 50% 20%, rgba(255,255,255,.24), transparent 34%), linear-gradient(135deg, rgba(54,229,143,.34), rgba(110,223,246,.3)) !important;
+border-color: rgba(110,223,246,.76) !important;
+box-shadow: 0 0 0 1px rgba(255,255,255,.1) inset, 0 0 24px rgba(54,229,143,.38), 0 0 46px rgba(110,223,246,.22) !important;
+color: #f7fffb !important;
+}
 @keyframes pulseStatusOrb {
 0%, 100% {
 transform: scale(.96);
