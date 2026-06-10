@@ -57,6 +57,29 @@ This work is not launch-complete until a real two-account device test verifies:
 - Mux recording completes.
 - Replay appears in Videos.
 
+## iOS Build and Submission
+
+- Commit: `b3d39eaf Add PulseSoc native live camera broadcasting`
+- EAS iOS build ID: `1344654f-0816-4dff-ac35-2fc5c08098dc`
+- App version: `0.1.1`
+- iOS build number: `25`
+- IPA: `https://expo.dev/artifacts/eas/3nZAZeXswQN5AgcJKvRsAG.ipa`
+- EAS submission ID: `6455fc6d-a874-43cf-8980-a39648882119`
+- App Store Connect status at submit time: binary uploaded successfully and processing by Apple.
+- Android: intentionally deferred until tomorrow per launch direction.
+
+## Validation
+
+- Python compile: passed for `bot.py`, `services/live_feed_service.py`, and `services/live_stream_engine.py`.
+- Git diff whitespace check: passed.
+- Mobile typecheck: passed.
+- Mobile audit suite: passed, including native live, Firebase, notifications, performance, web parity, and store readiness audits.
+- Expo config: passed and resolves package `com.pulsesoc.app`, bundle `com.pulsesoc.app`, SDK 55, and production Xcode 26.2 image.
+- Expo Doctor: 17/19 checks passed. Remaining warnings are:
+  - `@expo/config-plugins` is installed directly because the LiveKit Expo plugin imports it directly during config resolution.
+  - React Native Directory has no metadata for `@livekit/react-native-expo-plugin`, and `react-native-nitro-image` is untested on New Architecture.
+  These warnings did not block the successful iOS production build.
+
 ## Security Notes
 
 - No LiveKit, Mux, APNs, FCM, or Stripe secrets were committed.
@@ -73,6 +96,6 @@ This work is not launch-complete until a real two-account device test verifies:
 - `mobile/pulse-react-native/index.ts`
 - `mobile/pulse-react-native/app.json`
 - `mobile/pulse-react-native/package.json`
+- `mobile/pulse-react-native/package-lock.json`
 - `mobile/pulse-react-native/components/NativeLiveBroadcast.tsx`
 - `mobile/pulse-react-native/scripts/native-live-audit.js`
-
