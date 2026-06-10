@@ -446,7 +446,7 @@
     let livekitRoom = null;
     let livekitTracks = [];
     function livekitClient() {
-      return window.LiveKitClient || window.livekitClient || null;
+      return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
     }
     function tracksToMediaStream(tracks) {
       const mediaStream = new MediaStream();
