@@ -455,7 +455,7 @@
     function liveStartMessage(error) {
       const name = error?.name || "";
       const message = error?.message || "Browser Live could not start.";
-      if (name === "NotAllowedError" || name === "SecurityError") return "Camera/microphone permission is blocked in Chrome.";
+      if (name === "NotAllowedError" || name === "SecurityError") return "Camera/microphone permission is blocked in Chrome. Click the site controls icon in the address bar, allow camera and microphone, then reload.";
       if (name === "NotFoundError" || name === "OverconstrainedError") return "No available camera or microphone matched this device.";
       if (error?.pulseStage === "livekit-connect") return `LiveKit connection failed: ${message}`;
       if (error?.pulseStage === "livekit-publish") return `LiveKit track publish failed: ${message}`;
