@@ -452,6 +452,16 @@
     function livekitClient() {
       return window.LivekitClient || window.LiveKitClient || window.livekitClient || null;
     }
+    function liveStartMessage(error) {
+      const name = error?.name || "";
+      const message = error?.message || "Browser Live could not start.";
+      if (name === "NotAllowedError" || name === "SecurityError") return "Camera/microphone permission is blocked in Chrome.";
+      if (name === "NotFoundError" || name === "OverconstrainedError") return "No available camera or microphone matched this device.";
+      if (error?.pulseStage === "livekit-connect") return `LiveKit connection failed: ${message}`;
+      if (error?.pulseStage === "livekit-publish") return `LiveKit track publish failed: ${message}`;
+      if (error?.pulseStage === "media-capture") return `Camera/microphone capture failed: ${message}`;
+      return message;
+    }
     function tracksToMediaStream(tracks) {
       const mediaStream = new MediaStream();
       tracks.forEach((track) => {
@@ -488,14 +498,21 @@
     }
     async function publishToLiveKit(kind) {
       const LK = livekitClient();
-      const room = await connectLiveKitRoom();
+      if (!LK) throw new Error("LiveKit browser client is still loading. Try Start Camera again in a moment.");
       detachLiveKitTracks();
-      const trackOptions = kind === "screen_share"
-        ? await LK.createLocalScreenTracks({ audio: true, video: true })
-        : await LK.createLocalTracks({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
-          });
+      setText(root, "[data-live-camera-state]", kind === "screen_share" ? "Requesting screen share permission..." : "Requesting camera/microphone permission...");
+      let trackOptions;
+      try {
+        trackOptions = kind === "screen_share"
+          ? await LK.createLocalScreenTracks({ audio: true, video: true })
+          : await LK.createLocalTracks({
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 60 } },
+            });
+      } catch (error) {
+        error.pulseStage = "media-capture";
+        throw error;
+      }
       livekitTracks = trackOptions;
       stream = tracksToMediaStream(livekitTracks);
       const videoTrack = livekitTracks.find((track) => track.kind === "video");
@@ -508,10 +525,23 @@
       } else {
         video.srcObject = stream;
       }
-      await Promise.all(livekitTracks.map((track) => room.localParticipant.publishTrack(track).catch((error) => {
-        console.warn("PulseSoc LiveKit publishTrack failed", error);
+      root.classList.add("is-camera-active");
+      setText(root, "[data-live-camera-state]", "Camera ready. Connecting to LiveKit...");
+      let room;
+      try {
+        room = await connectLiveKitRoom();
+      } catch (error) {
+        error.pulseStage = "livekit-connect";
         throw error;
-      })));
+      }
+      setText(root, "[data-live-camera-state]", "Publishing camera and microphone to LiveKit...");
+      try {
+        await Promise.all(livekitTracks.map((track) => room.localParticipant.publishTrack(track)));
+      } catch (error) {
+        console.warn("PulseSoc LiveKit publishTrack failed", error);
+        error.pulseStage = "livekit-publish";
+        throw error;
+      }
       return stream;
     }
     async function publishTracks(kind) {
@@ -561,8 +591,10 @@
         console.info("PulseSoc Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
-        setText(root, "[data-live-camera-state]", "Camera needs permission");
-        notify(error.message);
+        const message = liveStartMessage(error);
+        setText(root, "[data-live-camera-state]", message);
+        console.warn("PulseSoc Browser Live start failed", { stage: error?.pulseStage || error?.name || "unknown", message: error?.message || String(error) });
+        notify(message);
       } finally {
         root.classList.remove("is-connecting");
       }
