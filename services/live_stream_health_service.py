@@ -8,6 +8,8 @@ from datetime import datetime
 def score_stream(session=None, viewer_count=0, chat_count=0):
     session = session or {}
     status = (session.get("status") or "starting").lower()
+    mux_status = (session.get("mux_live_status") or "").lower()
+    ingest_active = status == "live" or mux_status in {"active", "live"}
     bitrate = max(0, int(session.get("bitrate_kbps") or 0))
     fps = max(0, int(session.get("fps") or 0))
     if status in {"ended", "offline"}:
@@ -17,6 +19,10 @@ def score_stream(session=None, viewer_count=0, chat_count=0):
         score = 46
         score += 24 if bitrate >= 2500 else 14 if bitrate >= 1000 else 5 if bitrate else 0
         score += 18 if fps >= 30 else 10 if fps else 0
+        if ingest_active and not bitrate:
+            score += 12
+        if ingest_active and not fps:
+            score += 10
         score += min(12, max(0, int(viewer_count or 0)) * 2)
         score += min(8, max(0, int(chat_count or 0)))
         score = min(100, score)
@@ -26,6 +32,10 @@ def score_stream(session=None, viewer_count=0, chat_count=0):
         "level": level,
         "bitrate_kbps": bitrate,
         "fps": fps,
+        "bitrate_label": f"{bitrate} kbps" if bitrate else ("Mux active" if ingest_active else "0 kbps"),
+        "fps_label": f"{fps} FPS" if fps else ("Mux active" if ingest_active else "0 FPS"),
+        "ingest_active": ingest_active,
+        "ingest_source": "mux" if mux_status in {"active", "live"} else "local",
         "latency_ms": 1800 if bitrate else 0,
         "dropped_frames": 0 if fps else None,
         "cdn_health": "ready" if status not in {"ended", "offline"} else "archived",
@@ -36,6 +46,8 @@ def score_stream(session=None, viewer_count=0, chat_count=0):
 
 def recovery_hints(health=None):
     health = health or {}
+    if health.get("ingest_active"):
+        return ["Mux ingest is active and public HLS playback is available."]
     hints = []
     if int(health.get("bitrate_kbps") or 0) == 0:
         hints.append("Start browser camera or connect OBS to begin broadcast output.")

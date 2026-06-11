@@ -63,8 +63,8 @@
     setText(root, "[data-live-viewers]", data.viewer_count ?? 0);
     setText(root, "[data-live-health]", health.level || data.status || "ready");
     setText(root, "[data-live-score]", health.score ?? 0);
-    setText(root, "[data-live-bitrate]", `${health.bitrate_kbps || 0} kbps`);
-    setText(root, "[data-live-fps]", `${health.fps || 0} FPS`);
+    setText(root, "[data-live-bitrate]", health.bitrate_label || `${health.bitrate_kbps || 0} kbps`);
+    setText(root, "[data-live-fps]", health.fps_label || `${health.fps || 0} FPS`);
     setText(root, "[data-live-latency]", health.latency_ms ? `${health.latency_ms} ms` : "ready");
     setText(root, "[data-live-pulse]", pulse.label || "ready");
     if (data.mux?.live_status) setText(root, "[data-mux-live-status]", `Status ${data.mux.live_status}`);
@@ -102,6 +102,8 @@
       if (data.mux_live_status === "active" || data.mux_live_status === "live") {
         setText(root, "[data-live-health]", "live");
         setText(root, "[data-live-pulse]", "broadcasting");
+        setText(root, "[data-live-bitrate]", data.bitrate_label || "Mux active");
+        setText(root, "[data-live-fps]", data.fps_label || "Mux active");
       }
       notify(`Mux status: ${data.mux_live_status || "idle"}`);
       return data;
@@ -335,6 +337,18 @@
   async function initViewerTransport(root) {
     const player = qs(root, "[data-live-player]");
     if (!player || !window.RTCPeerConnection) return;
+    const playerSource = String(player.currentSrc || player.getAttribute("src") || "").toLowerCase();
+    if (playerSource.includes("stream.mux.com") || playerSource.includes(".m3u8")) {
+      updateTransportDiagnostics(root, {
+        connection: "mux-hls",
+        ice: "not-needed",
+        stream: "mux hls",
+        audio: "hls",
+        video: "hls",
+        playback: !player.paused,
+      });
+      return;
+    }
     const peerId = root.__pulseLiveViewerPeerId || (root.__pulseLiveViewerPeerId = livePeerId("viewer"));
     if (root.__pulseLiveViewerStarted) return;
     root.__pulseLiveViewerStarted = true;
