@@ -21,6 +21,10 @@
     if (node) node.textContent = value;
   }
 
+  function notify(message) {
+    if (typeof window.toast === "function") window.toast(message);
+  }
+
   function chatMessageHtml(message) {
     const name = message.display_name || message.username || (message.message_type === "system" ? "PulseSoc" : "Viewer");
     const initial = String(name || "P").trim().slice(0, 1).toUpperCase() || "P";
@@ -87,7 +91,7 @@
   async function checkMuxStatus(root) {
     const muxId = qs(root, "[data-check-mux-status]")?.dataset?.muxLiveId || "";
     if (!muxId) {
-      if (window.toast) window.toast("Mux Live stream id is not available for this session.");
+      notify("Mux Live stream id is not available for this session.");
       return null;
     }
     try {
@@ -99,10 +103,10 @@
         setText(root, "[data-live-health]", "live");
         setText(root, "[data-live-pulse]", "broadcasting");
       }
-      if (window.toast) window.toast(`Mux status: ${data.mux_live_status || "idle"}`);
+      notify(`Mux status: ${data.mux_live_status || "idle"}`);
       return data;
     } catch (error) {
-      if (window.toast) window.toast(error.message);
+      notify(error.message);
       return null;
     }
   }
@@ -124,7 +128,7 @@
     const value = valueNode?.dataset?.copyValue || valueNode?.textContent || "";
     if (!value) return;
     await navigator.clipboard?.writeText(value).catch(() => {});
-    if (window.toast) window.toast("Copied.");
+    notify("Copied.");
   }
 
   async function sendChat(root) {
@@ -148,7 +152,7 @@
       input.value = "";
       await fetchState(root);
     } catch (error) {
-      if (window.toast) window.toast(error.message);
+      notify(error.message);
     } finally {
       if (button) button.disabled = false;
     }
@@ -536,7 +540,7 @@
         await fetchState(root);
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Publishing needs attention");
-        if (window.toast) window.toast(error.message);
+        notify(error.message);
       }
     }
     const stop = () => {
@@ -558,7 +562,7 @@
         await publishTracks("browser_camera");
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Camera needs permission");
-        if (window.toast) window.toast(error.message);
+        notify(error.message);
       } finally {
         root.classList.remove("is-connecting");
       }
@@ -586,7 +590,7 @@
         console.info("PulseSoc Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("screen_share");
       } catch {
-        if (window.toast) window.toast("Screen share was not started.");
+        notify("Screen share was not started.");
       } finally {
         root.classList.remove("is-connecting");
       }
