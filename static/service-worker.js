@@ -1,4 +1,4 @@
-const CACHE_NAME = "coinpilotx-cache-v13";
+const CACHE_NAME = "coinpilotx-cache-v14-livekit";
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
@@ -29,6 +29,8 @@ function isNeverCachePath(pathname) {
     pathname.startsWith("/chat") ||
     pathname.startsWith("/messages") ||
     pathname.startsWith("/pulse/notifications") ||
+    pathname.startsWith("/static/js/pulse_live_studio") ||
+    pathname.startsWith("/static/vendor/livekit-client") ||
     pathname.startsWith("/alerts") ||
     pathname.startsWith("/upgrade") ||
     pathname.startsWith("/forgot-password") ||

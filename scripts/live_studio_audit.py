@@ -68,7 +68,7 @@ def main():
     html = res.get_data(as_text=True)
     require(res.status_code == 200, "studio route loads")
     require("pulse_live_studio.css" in html, "studio uses dedicated live stylesheet")
-    require("pulse_live_studio.js" in html, "studio uses dedicated live script")
+    require("pulse_live_studio_runtime.js" in html or "pulse_live_studio.js" in html, "studio uses dedicated live script")
     require("live-command-shell" in html, "creator command shell renders")
     require("live-preview-stage" in html, "cinematic preview stage renders")
     require("Camera off" in html and "Camera preview ready" not in html, "idle camera state does not cover the real feed with the old R overlay")
