@@ -93,7 +93,7 @@
           duration_seconds: item.duration_seconds || item.duration || 0,
         }, { surface: "status", loop: true })}${item.body ? `<p>${text}</p>` : ""}`;
       }
-      return `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ""} controls autoplay muted playsinline webkit-playsinline preload="metadata"></video>${item.body ? `<p>${text}</p>` : ""}`;
+      return `<video src="${esc(src)}" ${poster ? `poster="${esc(poster)}"` : ""} autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video>${item.body ? `<p>${text}</p>` : ""}`;
     }
     if (src && kind === "image") return `<img src="${esc(src)}" alt="${text}" loading="eager" decoding="async">${item.body ? `<p>${text}</p>` : ""}`;
     return `<div class="pulse-status-story-text style-${esc(item.status_style?.card_style || item.status_tools?.status_style?.card_style || "soft")}" style="${esc(styleFor(item))}"><strong>${text}</strong></div>`;

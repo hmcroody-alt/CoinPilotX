@@ -314,7 +314,8 @@
     if (media.type === "video") {
       const poster = media.poster ? ` poster="${esc(media.poster)}"` : "";
       const type = media.mime ? ` type="${esc(media.mime)}"` : "";
-      const controls = options.controls === false ? "" : " controls";
+      const cleanSurface = ["reels", "video-detail"].includes(String(surface || "").toLowerCase());
+      const controls = options.controls === false || cleanSurface ? "" : " controls";
       const loop = options.loop ? " loop" : "";
       return `<div class="${shellClass}" data-fit="smart" data-open-media-lightbox ${data}${style ? ` style="${style}"` : ""}>${layersHtml()}<video data-pulse-video-player${controls}${loop} playsinline webkit-playsinline x-webkit-airplay="allow" preload="metadata"${poster}><source src="${esc(media.playback_url || media.valid_url || media.url)}"${type}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${fallback}</div>`;
     }
@@ -582,6 +583,12 @@
   function bindAutoplayVideo(wrap, video) {
     if (!wrap || !video || video.dataset.pulseAutoplayBound === "1") return;
     video.dataset.pulseAutoplayBound = "1";
+    if (["reels", "video-detail"].includes(String(wrap.dataset.mediaSurface || "").toLowerCase()) || wrap.closest?.(".reel-card,.video-detail-player")) {
+      video.controls = false;
+      video.removeAttribute("controls");
+      video.setAttribute("disablepictureinpicture", "");
+      video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
+    }
     ensureSoundButton(wrap);
     const canHoverPreview = desktopPointer();
     if (canHoverPreview) {
@@ -603,6 +610,7 @@
     video.addEventListener("pause", () => wrap.classList.remove("is-playing"));
     video.addEventListener("click", event => {
       if (event.defaultPrevented || event.target.closest?.("button,a")) return;
+      if (String(wrap.dataset.mediaSurface || "").toLowerCase() === "reels" || wrap.closest?.(".reel-card")) return;
       const nextMuted = !(video.muted || Number(video.volume || 0) === 0);
       setVideoMuted(video, nextMuted, "user-toggle");
       setSoundEnabled(!nextMuted);

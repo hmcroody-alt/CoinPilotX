@@ -96,7 +96,7 @@
       return;
     }
     const reactions = qs(player, "[data-live-reactions]")?.outerHTML || "<div class='live-floating-reactions' data-live-reactions></div>";
-    player.innerHTML = `<video class="live-public-video" data-live-player src="${escapeHtml(playbackUrl)}" controls autoplay muted playsinline webkit-playsinline preload="metadata"></video><button class="live-unmute-button" type="button" data-live-unmute aria-label="Enable live audio">Tap to unmute</button>${reactions}`;
+    player.innerHTML = `<video class="live-public-video" data-live-player src="${escapeHtml(playbackUrl)}" autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video><button class="live-unmute-button" type="button" data-live-unmute aria-label="Enable live audio">Tap to unmute</button>${reactions}`;
   }
 
   function applyState(root, data) {
@@ -584,8 +584,6 @@
       video.srcObject = stream;
       }
       video.muted = true;
-      video.defaultMuted = true;
-      video.volume = 0;
       setCameraSurfaceActive(root, true);
       showCameraState(root, "Camera ready. Connecting to LiveKit...");
       let room;
@@ -734,8 +732,6 @@
     });
     if (livePlayer?.dataset?.liveHostViewer === "1") {
       livePlayer.muted = true;
-      livePlayer.defaultMuted = true;
-      livePlayer.volume = 0;
       unmuteButton?.setAttribute("hidden", "");
     } else if (unmuteButton) {
       window.setTimeout(() => {
