@@ -70,7 +70,9 @@ def main():
     require("connectLiveKitRoom" in source, "browser transport connects to LiveKit room")
     require("getAudioTracks" in source and "getVideoTracks" in source, "publisher diagnostics inspect audio and video tracks")
     require("publishTrack(track)" in source, "publisher sends media tracks to LiveKit")
-    require("StartRoomCompositeEgress" in bot_source, "server bridges LiveKit room to Mux")
+    require("StartParticipantEgress" in bot_source, "server bridges host participant to Mux first")
+    require("StartRoomCompositeEgress" in bot_source, "server keeps room composite fallback to Mux")
+    require("participant_error" in bot_source and "room_composite_error" in bot_source, "server exposes safe bridge failure diagnostics")
     print("live media transport audit ok")
 
 

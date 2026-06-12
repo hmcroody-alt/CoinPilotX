@@ -145,11 +145,16 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
       await withTimeout((room.localParticipant as any).setCameraEnabled(true), 15000, "Starting live camera");
       await withTimeout((room.localParticipant as any).setMicrophoneEnabled(!micMuted), 8000, "Starting live microphone");
       setConnected(true);
-      setStatus("You are live. A LIVE post is now in the feed.");
-      await withTimeout(apiRequest(`/api/pulse/live/${nextLiveId}/browser-publish`, {
-        method: "POST",
-        body: { audio_tracks: micMuted ? 0 : 1, video_tracks: 1, source: "native_livekit" }
-      }), 12000, "Forwarding live stream to Mux").catch(() => undefined);
+      setStatus("Forwarding live stream to Mux...");
+      try {
+        await withTimeout(apiRequest(`/api/pulse/live/${nextLiveId}/browser-publish`, {
+          method: "POST",
+          body: { audio_tracks: micMuted ? 0 : 1, video_tracks: 1, source: "native_livekit" }
+        }), 12000, "Forwarding live stream to Mux");
+        setStatus("You are live. A LIVE post is now in the feed.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "LiveKit connected, but Mux forwarding needs attention.");
+      }
     } catch (error) {
       await disconnectRoom();
       setIsBroadcasting(false);

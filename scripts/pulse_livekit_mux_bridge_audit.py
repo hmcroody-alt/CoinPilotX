@@ -19,7 +19,11 @@ def require(condition, message):
 
 def main():
     require("pulse_livekit_start_mux_egress" in BOT, "backend has LiveKit egress starter")
-    require("StartRoomCompositeEgress" in BOT, "backend calls LiveKit room composite egress")
+    require("StartParticipantEgress" in BOT, "backend tries host participant egress first")
+    require("StartRoomCompositeEgress" in BOT, "backend keeps LiveKit room composite egress fallback")
+    require("pulse_livekit_post_egress" in BOT, "backend captures sanitized LiveKit egress failures")
+    require("participant_error" in BOT and "room_composite_error" in BOT, "backend returns safe egress rejection diagnostics")
+    require("rtmps?://[^\\s\\\"'<>]+" in BOT and "[redacted]" in BOT, "backend redacts RTMP destinations from egress errors")
     require("roomRecord" in BOT, "egress token includes roomRecord permission")
     require("pulse_livekit_mux_destination" in BOT and "MUX_RTMP_INGEST_URL" in BOT, "backend builds Mux RTMP destination safely")
     require("browser_live_egress" in BOT, "browser publish records LiveKit egress state")
