@@ -88,7 +88,7 @@
     }
   }
 
-  async function checkMuxStatus(root) {
+  async function checkMuxStatus(root, options = {}) {
     const muxId = qs(root, "[data-check-mux-status]")?.dataset?.muxLiveId || "";
     if (!muxId) {
       notify("Mux Live stream id is not available for this session.");
@@ -105,7 +105,7 @@
         setText(root, "[data-live-bitrate]", data.bitrate_label || "Mux active");
         setText(root, "[data-live-fps]", data.fps_label || "Mux active");
       }
-      notify(`Mux status: ${data.mux_live_status || "idle"}`);
+      if (!options.silent) notify(`Mux status: ${data.mux_live_status || "idle"}`);
       return data;
     } catch (error) {
       notify(error.message);
@@ -119,7 +119,7 @@
     const interval = Math.max(10000, Number(root?.dataset?.muxPollMs || 12000));
     const tick = async () => {
       if (!root?.isConnected) return;
-      await checkMuxStatus(root);
+      await checkMuxStatus(root, { silent: true });
       setTimeout(tick, interval);
     };
     setTimeout(tick, interval);
@@ -221,6 +221,7 @@
   }
 
   function updateTransportDiagnostics(root, state) {
+    if (root?.dataset?.liveDebug !== "1") return;
     const node = ensureTransportDiagnostics(root);
     const parts = [
       `connection ${state.connection || "new"}`,
@@ -532,13 +533,16 @@
       const videoTrack = livekitTracks.find((track) => track.kind === "video");
       if (videoTrack?.attach) {
         try {
-          videoTrack.attach(video);
+      videoTrack.attach(video);
         } catch (_) {
-          video.srcObject = stream;
+      video.srcObject = stream;
         }
       } else {
-        video.srcObject = stream;
+      video.srcObject = stream;
       }
+      video.muted = true;
+      video.defaultMuted = true;
+      video.volume = 0;
       root.classList.add("is-camera-active");
       setText(root, "[data-live-camera-state]", "Camera ready. Connecting to LiveKit...");
       let room;
@@ -580,7 +584,7 @@
           return data;
         });
         console.info("PulseSoc Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
-        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Browser Live is publishing through LiveKit and forwarding to Mux." : "No tracks detected");
+        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Live." : "No tracks detected");
         await fetchState(root);
       } catch (error) {
         setText(root, "[data-live-camera-state]", "Publishing needs attention");
@@ -601,7 +605,7 @@
         setText(root, "[data-live-camera-state]", "Connecting Browser Live to LiveKit...");
         stream = await publishToLiveKit("browser_camera");
         root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Browser Live is publishing through LiveKit and forwarding to Mux.");
+        setText(root, "[data-live-camera-state]", "Live.");
         console.info("PulseSoc Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
@@ -661,10 +665,25 @@
       button.addEventListener("click", () => copyLiveValue(button));
     });
     qsa(root, "[data-check-mux-status]").forEach((button) => {
-      button.addEventListener("click", () => checkMuxStatus(root));
+        button.addEventListener("click", () => checkMuxStatus(root));
     });
     scheduleMuxPolling(root);
-    qs(root, "[data-live-unmute]")?.addEventListener("click", async (event) => {
+    const unmuteButton = qs(root, "[data-live-unmute]");
+    const livePlayer = qs(root, "[data-live-player]");
+    if (livePlayer?.dataset?.liveHostViewer === "1") {
+      livePlayer.muted = true;
+      livePlayer.defaultMuted = true;
+      livePlayer.volume = 0;
+      unmuteButton?.setAttribute("hidden", "");
+    } else if (unmuteButton) {
+      window.setTimeout(() => {
+        if (!unmuteButton.hidden) unmuteButton.classList.add("is-subtle");
+      }, 5200);
+      livePlayer?.addEventListener("volumechange", () => {
+        if (!livePlayer.muted && Number(livePlayer.volume || 0) > 0) unmuteButton.hidden = true;
+      });
+    }
+    unmuteButton?.addEventListener("click", async (event) => {
       const player = qs(root, "[data-live-player]");
       if (!player) return;
       player.defaultMuted = false;

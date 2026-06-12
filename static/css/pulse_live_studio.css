@@ -136,16 +136,34 @@
 
 .live-unmute-button {
   position: absolute;
-  right: 18px;
-  bottom: 18px;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
   z-index: 5;
   border: 0;
   color: #06101b;
   background: linear-gradient(135deg, #36e58f, #6edff6);
   box-shadow: 0 14px 36px rgba(54, 229, 143, 0.26);
+  width: auto;
+  max-width: calc(100% - 36px);
+  min-height: 44px;
+  border-radius: 999px;
+  padding: 11px 18px;
+  font-size: clamp(14px, 3.5vw, 17px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.live-unmute-button.is-subtle {
+  opacity: 0.46;
+  transform: translateX(-50%) translateY(8px) scale(0.94);
 }
 
 .live-transport-diagnostics {
+  display: none;
+}
+
+[data-live-debug="1"] .live-transport-diagnostics {
+  display: block;
   position: absolute;
   left: 14px;
   bottom: 14px;
@@ -274,14 +292,7 @@
 .live-waveform span:nth-child(5) { animation-delay: 400ms; }
 
 .live-stage-overlay {
-  position: absolute;
-  inset: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  z-index: 4;
-  pointer-events: none;
+  display: none;
 }
 
 .live-floating-reactions {
@@ -394,9 +405,22 @@
 
 .live-chat-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, auto);
   gap: 8px;
   margin-top: 10px;
+}
+
+.live-chat-composer textarea {
+  min-height: 54px;
+  max-height: 112px;
+  resize: vertical;
+  border-radius: 16px;
+}
+
+.live-chat-composer button {
+  min-height: 54px;
+  align-self: stretch;
+  border-radius: 16px;
 }
 
 .live-analytics-grid {
@@ -468,7 +492,15 @@
   .live-preview-stage,
   .live-public-player {
     border-radius: 0;
-    min-height: calc(58dvh - env(safe-area-inset-top));
+    min-height: calc(56dvh - env(safe-area-inset-top));
+  }
+  .live-view-shell .live-public-player {
+    min-height: min(58dvh, 520px);
+  }
+  .live-unmute-button {
+    bottom: 14px;
+    min-height: 40px;
+    padding: 9px 15px;
   }
   .live-command-panel,
   .live-chat-panel,
@@ -479,6 +511,13 @@
   }
   .live-chat-feed {
     min-height: 280px;
+  }
+  .live-chat-composer {
+    grid-template-columns: minmax(0, 1fr) 74px;
+  }
+  .live-chat-composer textarea,
+  .live-chat-composer button {
+    min-height: 48px;
   }
   .live-analytics-grid {
     grid-template-columns: 1fr;
