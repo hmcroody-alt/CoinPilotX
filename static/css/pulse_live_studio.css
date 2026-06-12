@@ -233,6 +233,11 @@
   display: none;
 }
 
+.live-ready-state[hidden],
+[data-live-idle-overlay][hidden] {
+  display: none !important;
+}
+
 .live-camera-toast {
   position: absolute;
   left: 14px;
@@ -250,6 +255,17 @@
   font-weight: 900;
   line-height: 1.2;
   pointer-events: none;
+}
+
+.live-camera-toast[hidden],
+.is-camera-active .live-camera-toast:not(.is-error) {
+  display: none !important;
+}
+
+.live-camera-toast.is-error {
+  color: #ffd8df;
+  border-color: rgba(255, 107, 122, 0.45);
+  background: rgba(55, 8, 18, 0.72);
 }
 
 .live-preview-stage:not(.is-connecting) .live-camera-toast:empty {

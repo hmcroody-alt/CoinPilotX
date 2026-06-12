@@ -21,6 +21,28 @@
     if (node) node.textContent = value;
   }
 
+  function setCameraSurfaceActive(root, active) {
+    if (!root) return;
+    root.classList.toggle("is-camera-active", Boolean(active));
+    qsa(root, "[data-live-idle-overlay]").forEach((node) => {
+      node.hidden = Boolean(active);
+      node.setAttribute("aria-hidden", active ? "true" : "false");
+    });
+    const state = qs(root, "[data-live-camera-state]");
+    if (state && active && !state.classList.contains("is-error")) {
+      state.hidden = true;
+      state.textContent = "";
+    }
+  }
+
+  function showCameraState(root, message, mode = "info") {
+    const state = qs(root, "[data-live-camera-state]");
+    if (!state) return;
+    state.textContent = message || "";
+    state.hidden = !message || (mode !== "error" && root.classList.contains("is-camera-active"));
+    state.classList.toggle("is-error", mode === "error");
+  }
+
   function notify(message) {
     if (typeof window.toast === "function") window.toast(message);
   }
@@ -57,6 +79,26 @@
     }).join("");
   }
 
+  function ensurePublicPlayback(root, data) {
+    if (!root || root.dataset.liveRole !== "viewer") return;
+    const player = qs(root, ".live-public-player");
+    if (!player) return;
+    const playback = data.playback || {};
+    const mux = data.mux || {};
+    const playbackUrl = playback.playback_url || playback.hls_url || mux.playback_url || "";
+    const muxStatus = String(mux.live_status || "").toLowerCase();
+    const status = String(data.status || "").toLowerCase();
+    const active = ["live", "publishing", "reconnecting"].includes(status) || ["active", "live", "egress_active", "egress_starting"].includes(muxStatus);
+    if (!active || !playbackUrl) return;
+    const existing = qs(player, "[data-live-player]");
+    if (existing) {
+      if (!existing.getAttribute("src")) existing.setAttribute("src", playbackUrl);
+      return;
+    }
+    const reactions = qs(player, "[data-live-reactions]")?.outerHTML || "<div class='live-floating-reactions' data-live-reactions></div>";
+    player.innerHTML = `<video class="live-public-video" data-live-player src="${escapeHtml(playbackUrl)}" controls autoplay muted playsinline webkit-playsinline preload="metadata"></video><button class="live-unmute-button" type="button" data-live-unmute aria-label="Enable live audio">Tap to unmute</button>${reactions}`;
+  }
+
   function applyState(root, data) {
     const health = data.health || {};
     const pulse = data.presence?.pulse || data.presence || {};
@@ -68,11 +110,12 @@
     setText(root, "[data-live-latency]", health.latency_ms ? `${health.latency_ms} ms` : "ready");
     setText(root, "[data-live-pulse]", pulse.label || "ready");
     if (data.mux?.live_status) setText(root, "[data-mux-live-status]", `Status ${data.mux.live_status}`);
-    if (data.livekit?.egress_status) setText(root, "[data-live-camera-state]", data.livekit.egress_error || `LiveKit egress ${data.livekit.egress_status}`);
+    if (data.livekit?.egress_error) showCameraState(root, data.livekit.egress_error, "error");
     const score = qs(root, ".live-health-score");
     if (score) score.style.setProperty("--score", Math.max(0, Math.min(100, Number(health.score || 0))));
     renderChat(root, data.messages || []);
     renderReactionBurst(root, data.reaction_cloud || []);
+    ensurePublicPlayback(root, data);
   }
 
   async function fetchState(root) {
@@ -102,8 +145,8 @@
       if (data.mux_live_status === "active" || data.mux_live_status === "live") {
         setText(root, "[data-live-health]", "live");
         setText(root, "[data-live-pulse]", "broadcasting");
-        setText(root, "[data-live-bitrate]", data.bitrate_label || "Mux active");
-        setText(root, "[data-live-fps]", data.fps_label || "Mux active");
+      setText(root, "[data-live-bitrate]", data.bitrate_label || "Live");
+      setText(root, "[data-live-fps]", data.fps_label || "Live");
       }
       if (!options.silent) notify(`Mux status: ${data.mux_live_status || "idle"}`);
       return data;
@@ -515,7 +558,7 @@
       const LK = livekitClient();
       if (!LK) throw new Error("LiveKit browser client is still loading. Try Start Camera again in a moment.");
       detachLiveKitTracks();
-      setText(root, "[data-live-camera-state]", kind === "screen_share" ? "Requesting screen share permission..." : "Requesting camera/microphone permission...");
+      showCameraState(root, kind === "screen_share" ? "Requesting screen share permission..." : "Requesting camera/microphone permission...");
       let trackOptions;
       try {
         trackOptions = kind === "screen_share"
@@ -543,8 +586,8 @@
       video.muted = true;
       video.defaultMuted = true;
       video.volume = 0;
-      root.classList.add("is-camera-active");
-      setText(root, "[data-live-camera-state]", "Camera ready. Connecting to LiveKit...");
+      setCameraSurfaceActive(root, true);
+      showCameraState(root, "Camera ready. Connecting to LiveKit...");
       let room;
       try {
         room = await connectLiveKitRoom();
@@ -552,7 +595,7 @@
         error.pulseStage = "livekit-connect";
         throw error;
       }
-      setText(root, "[data-live-camera-state]", "Publishing camera and microphone to LiveKit...");
+      showCameraState(root, "Publishing camera and microphone to LiveKit...");
       try {
         await Promise.all(livekitTracks.map((track) => room.localParticipant.publishTrack(track)));
       } catch (error) {
@@ -584,10 +627,15 @@
           return data;
         });
         console.info("PulseSoc Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
-        setText(root, "[data-live-camera-state]", audioTracks || videoTracks ? "Live." : "No tracks detected");
+        if (audioTracks || videoTracks) {
+          setCameraSurfaceActive(root, true);
+          showCameraState(root, "");
+        } else {
+          showCameraState(root, "No tracks detected", "error");
+        }
         await fetchState(root);
       } catch (error) {
-        setText(root, "[data-live-camera-state]", "Publishing needs attention");
+        showCameraState(root, "Publishing needs attention", "error");
         notify(error.message);
       }
     }
@@ -597,20 +645,22 @@
       livekitRoom = null;
       if (stream) stream.getTracks().forEach((track) => track.stop());
       stream = null;
+      setCameraSurfaceActive(root, false);
     };
     const start = async () => {
       try {
         stop();
         root.classList.add("is-connecting");
-        setText(root, "[data-live-camera-state]", "Connecting Browser Live to LiveKit...");
+        showCameraState(root, "Connecting Browser Live to LiveKit...");
         stream = await publishToLiveKit("browser_camera");
-        root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Live.");
+        setCameraSurfaceActive(root, true);
+        showCameraState(root, "");
         console.info("PulseSoc Live publisher local stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("browser_camera");
       } catch (error) {
         const message = liveStartMessage(error);
-        setText(root, "[data-live-camera-state]", message);
+        setCameraSurfaceActive(root, false);
+        showCameraState(root, message, "error");
         console.warn("PulseSoc Browser Live start failed", { stage: error?.pulseStage || error?.name || "unknown", message: error?.message || String(error) });
         notify(message);
       } finally {
@@ -632,11 +682,11 @@
       try {
         stop();
         root.classList.add("is-connecting");
-        setText(root, "[data-live-camera-state]", "Connecting screen share through LiveKit...");
+        showCameraState(root, "Connecting screen share through LiveKit...");
         stream = await publishToLiveKit("screen_share");
         video.style.transform = "none";
-        root.classList.add("is-camera-active");
-        setText(root, "[data-live-camera-state]", "Screen is publishing through LiveKit and forwarding to Mux.");
+        setCameraSurfaceActive(root, true);
+        showCameraState(root, "");
         console.info("PulseSoc Live publisher screen stream", { live_id: root.dataset.liveId, tracks: trackDiagnostics(stream) });
         await publishTracks("screen_share");
       } catch {
@@ -670,6 +720,18 @@
     scheduleMuxPolling(root);
     const unmuteButton = qs(root, "[data-live-unmute]");
     const livePlayer = qs(root, "[data-live-player]");
+    root.addEventListener("click", async (event) => {
+      const target = event.target?.closest?.("[data-live-unmute]");
+      if (!target || !root.contains(target)) return;
+      const player = qs(root, "[data-live-player]");
+      if (!player) return;
+      player.defaultMuted = false;
+      player.removeAttribute("muted");
+      player.muted = false;
+      player.volume = 1;
+      target.hidden = true;
+      await player.play?.().catch(() => {});
+    });
     if (livePlayer?.dataset?.liveHostViewer === "1") {
       livePlayer.muted = true;
       livePlayer.defaultMuted = true;

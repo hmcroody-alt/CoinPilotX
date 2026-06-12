@@ -20,6 +20,20 @@ type LiveChatMessage = {
   message_type?: string;
 };
 
+function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out. Check connection and try again.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  }) as Promise<T>;
+}
+
 export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: NativeLiveBroadcastProps) {
   const [facing, setFacing] = useState<"front" | "back">("front");
   const [micMuted, setMicMuted] = useState(false);
@@ -100,20 +114,20 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
     setBusy(true);
     setStatus("Creating LIVE feed post...");
     try {
-      const created = await apiRequest("/api/pulse/live/start", {
+      const created = await withTimeout(apiRequest("/api/pulse/live/start", {
         method: "POST",
         body: { title, category: "PulseSoc Mobile", source: "native_livekit" }
-      });
+      }), 12000, "Creating live session");
       const nextLiveId = Number(created.live_id || 0);
       if (!nextLiveId) throw new Error("Live session was not created.");
       setLiveId(nextLiveId);
       setViewerCount(Number(created.viewer_count || 0));
 
       setStatus("Connecting camera to LiveKit...");
-      const tokenResponse = await apiRequest(`/api/pulse/live/${nextLiveId}/livekit/token`, {
+      const tokenResponse = await withTimeout(apiRequest(`/api/pulse/live/${nextLiveId}/livekit/token`, {
         method: "POST",
         body: { role: "publisher" }
-      });
+      }), 12000, "Creating LiveKit token");
       const livekitUrl = String(tokenResponse.livekit_url || "");
       const token = String(tokenResponse.token || "");
       if (!livekitUrl || !token) throw new Error("LiveKit token is unavailable.");
@@ -123,19 +137,22 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
         dynacast: true
       });
       roomRef.current = room;
-      await AudioSession.startAudioSession();
-      await room.connect(livekitUrl, token);
-      await (room.localParticipant as any).setCameraEnabled(true);
-      await (room.localParticipant as any).setMicrophoneEnabled(!micMuted);
-      setConnected(true);
       setIsBroadcasting(true);
+      setStatus("Starting broadcast camera...");
+      await delay(300);
+      await withTimeout(AudioSession.startAudioSession(), 6000, "Starting audio session");
+      await withTimeout(room.connect(livekitUrl, token), 15000, "Connecting to LiveKit");
+      await withTimeout((room.localParticipant as any).setCameraEnabled(true), 15000, "Starting live camera");
+      await withTimeout((room.localParticipant as any).setMicrophoneEnabled(!micMuted), 8000, "Starting live microphone");
+      setConnected(true);
       setStatus("You are live. A LIVE post is now in the feed.");
-      await apiRequest(`/api/pulse/live/${nextLiveId}/browser-publish`, {
+      await withTimeout(apiRequest(`/api/pulse/live/${nextLiveId}/browser-publish`, {
         method: "POST",
         body: { audio_tracks: micMuted ? 0 : 1, video_tracks: 1, source: "native_livekit" }
-      }).catch(() => undefined);
+      }), 12000, "Forwarding live stream to Mux").catch(() => undefined);
     } catch (error) {
       await disconnectRoom();
+      setIsBroadcasting(false);
       setStatus(error instanceof Error ? error.message : "Live could not start.");
     } finally {
       setBusy(false);
@@ -143,12 +160,12 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
   }, [apiRequest, busy, canPreview, disconnectRoom, micMuted, requestPermissions, title]);
 
   const endLive = useCallback(async () => {
-    if (!liveId || busy) return;
+    if (!liveId) return;
     setBusy(true);
     setStatus("Ending live and preparing replay...");
     try {
       await disconnectRoom();
-      await apiRequest(`/api/pulse/live/${liveId}/end`, { method: "POST", body: {} });
+      await withTimeout(apiRequest(`/api/pulse/live/${liveId}/end`, { method: "POST", body: {} }), 12000, "Ending live");
       setIsBroadcasting(false);
       setStatus("Live ended. Replay will appear in Videos when Mux recording is ready.");
       onOpenWebPath(`/pulse/live/${liveId}`);
@@ -157,7 +174,7 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
     } finally {
       setBusy(false);
     }
-  }, [apiRequest, busy, disconnectRoom, liveId, onOpenWebPath]);
+  }, [apiRequest, disconnectRoom, liveId, onOpenWebPath]);
 
   const toggleMic = useCallback(async () => {
     const next = !micMuted;
@@ -190,7 +207,7 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
             <Text style={styles.kicker}>PulseSoc Native Live</Text>
             <Text style={styles.title}>{isBroadcasting ? "You are LIVE" : "Go Live"}</Text>
           </View>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose} disabled={busy && isBroadcasting}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeText}>Close</Text>
           </TouchableOpacity>
         </View>
@@ -235,7 +252,7 @@ export function NativeLiveBroadcast({ onClose, onOpenWebPath, apiRequest }: Nati
               {busy ? <ActivityIndicator color="#06111f" /> : <Text style={styles.goLiveText}>Start Live</Text>}
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.endButton} onPress={endLive} disabled={busy}>
+            <TouchableOpacity style={styles.endButton} onPress={endLive} disabled={!liveId}>
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.endText}>End Live</Text>}
             </TouchableOpacity>
           )}
