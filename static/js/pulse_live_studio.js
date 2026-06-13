@@ -206,16 +206,34 @@
   async function sendReaction(root, reaction) {
     const id = root?.dataset?.liveId;
     if (!id) return;
+    const button = root.querySelector(`[data-live-reaction="${CSS.escape(String(reaction))}"]`);
+    if (button?.dataset.busy === "1") return;
+    if (button) {
+      button.dataset.busy = "1";
+      button.classList.add("active", "is-popping", "is-pending");
+      button.setAttribute("aria-pressed", "true");
+    }
+    renderReactionBurst(root, [{ emoji: reaction, x: 64, delay_ms: 0 }]);
     try {
-      await fetch(`/api/pulse/live/${id}/react`, {
+      const response = await fetch(`/api/pulse/live/${id}/react`, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reaction_type: reaction }),
       });
-      renderReactionBurst(root, [{ emoji: reaction, x: 64, delay_ms: 0 }]);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.message || "Reaction failed.");
     } catch (error) {
+      if (button) {
+        button.classList.remove("active");
+        button.setAttribute("aria-pressed", "false");
+      }
       console.warn("PulseSoc Live reaction failed", error);
+    } finally {
+      if (button) {
+        button.classList.remove("is-popping", "is-pending");
+        delete button.dataset.busy;
+      }
     }
   }
 

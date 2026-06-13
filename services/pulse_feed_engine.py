@@ -13,7 +13,26 @@ from pathlib import Path
 from . import embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_moderation_engine, user_context
 
 
-REACTIONS = {"fire", "smart", "scam_alert", "whale", "bullish", "bearish", "funny", "elite", "brutal", "fast_signal"}
+REACTIONS = {
+    "like",
+    "love",
+    "fire",
+    "funny",
+    "wow",
+    "rocket",
+    "clap",
+    "hundred",
+    "target",
+    "smart",
+    "fast_signal",
+    "shield",
+    "scam_alert",
+    "whale",
+    "bullish",
+    "bearish",
+    "elite",
+    "brutal",
+}
 FEEDS = {
     "for_you",
     "following",

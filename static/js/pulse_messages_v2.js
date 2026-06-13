@@ -294,8 +294,15 @@
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const attachments = (item.attachments || []).map(attachmentHtml).join("");
-    const reactions = ["heart", "fire", "check"].map((reaction) => `<button type="button" data-react="${reaction}" data-message-id="${item.id}">${reaction}</button>`).join("");
-    const reactionSummary = (item.reactions || []).map((reaction) => `<span>${escapeHtml(reaction.reaction_type)} ${Number(reaction.count || 0)}</span>`).join("");
+    const reactionLabels = { heart: "❤️", fire: "🔥", check: "✓" };
+    const reactionKeys = { "❤️": "heart", "♥️": "heart", "🔥": "fire", "✓": "check", "✅": "check", heart: "heart", fire: "fire", check: "check" };
+    const normalizeReaction = value => reactionKeys[String(value || "").trim()] || String(value || "").trim();
+    const activeReaction = normalizeReaction(item.my_reaction || item.viewer_reaction || "");
+    const reactions = ["heart", "fire", "check"].map((reaction) => `<button type="button" class="${activeReaction === reaction ? "active" : ""}" aria-pressed="${activeReaction === reaction ? "true" : "false"}" data-react="${reaction}" data-message-id="${item.id}">${reactionLabels[reaction] || reaction}</button>`).join("");
+    const summaryEntries = Array.isArray(item.reactions)
+      ? item.reactions.map((reaction) => [reaction.reaction_type, reaction.count])
+      : Object.entries(item.reactions || {});
+    const reactionSummary = summaryEntries.filter(([reaction, count]) => reaction && Number(count || 0) > 0).map(([reaction, count]) => `<span>${escapeHtml(reactionLabels[normalizeReaction(reaction)] || reaction)} ${Number(count || 0)}</span>`).join("");
     const reply = item.reply_preview ? `<button class="reply-preview" type="button" data-jump-message="${Number(item.reply_preview.id || 0)}">Replying to ${escapeHtml(item.reply_preview.sender?.display_name || "message")}: ${escapeHtml(item.reply_preview.body || item.reply_preview.message_type || "")}</button>` : "";
     return `
       <article class="message ${mine ? "is-mine" : ""}" data-message-id="${item.id}">
@@ -414,9 +421,9 @@
     if (messages) messages.scrollTop = Math.max(0, messages.scrollHeight - previousHeight);
   }
 
-  function updateNotificationBadges(count) {
+  function updateChatBadges(count) {
     if (!(count || count === 0)) return;
-    document.querySelectorAll("[data-notification-unread]").forEach((node) => {
+    document.querySelectorAll("[data-chat-unread]").forEach((node) => {
       node.textContent = Number(count || 0);
       node.hidden = Number(count || 0) <= 0;
     });
@@ -469,7 +476,7 @@
     mergeRealtimeConversation(payload);
     if (type === "message_created" || type === "message_notification" || type === "notification_created") {
       appendRealtimeMessage(payload.message);
-      updateNotificationBadges(payload.unread_count);
+      updateChatBadges(payload.chat_unread_count ?? payload.unread_count);
       if (!options.fromBroadcast) broadcastCommEvent(envelope);
     }
   }
@@ -486,7 +493,7 @@
       const data = await api(`/realtime?${params.toString()}`, {}, "realtime_delivery");
       state.realtimeAfterId = Math.max(state.realtimeAfterId, Number(data.latest_event_id || 0));
       (data.events || []).forEach(handleRealtimeEvent);
-      updateNotificationBadges(data.unread_count);
+      updateChatBadges(data.chat_unread_count ?? data.unread_count);
     } catch (_) {
     } finally {
       state.realtimePolling = false;
@@ -1426,10 +1433,41 @@
   }
 
   async function reactToMessage(messageId, reaction) {
-    const data = await api(`/messages/${messageId}/reactions`, { method: "POST", body: JSON.stringify({ reaction }) }, "reaction");
-    if (data.message) {
-      state.messages = state.messages.map((item) => Number(item.id) === Number(messageId) ? data.message : item);
+    const id = Number(messageId || 0);
+    const index = state.messages.findIndex((item) => Number(item.id) === id);
+    if (index < 0 || state.messages[index]._reactionPending) return;
+    const previous = { ...state.messages[index], reactions: { ...(state.messages[index].reactions || {}) } };
+    const current = state.messages[index];
+    const normalizeReaction = value => ({ "❤️": "heart", "♥️": "heart", "🔥": "fire", "✓": "check", "✅": "check", heart: "heart", fire: "fire", check: "check" }[String(value || "").trim()] || String(value || "").trim());
+    const currentReaction = normalizeReaction(current.my_reaction || current.viewer_reaction || "");
+    const wasActive = currentReaction === reaction;
+    const nextReactions = { ...(current.reactions || {}) };
+    if (currentReaction) {
+      const currentLabel = { heart: "❤️", fire: "🔥", check: "✓" }[currentReaction] || currentReaction;
+      if (nextReactions[currentReaction]) nextReactions[currentReaction] = Math.max(0, Number(nextReactions[currentReaction] || 0) - 1);
+      if (nextReactions[currentLabel]) nextReactions[currentLabel] = Math.max(0, Number(nextReactions[currentLabel] || 0) - 1);
+    }
+    if (!wasActive) nextReactions[reaction] = Number(nextReactions[reaction] || 0) + 1;
+    state.messages[index] = { ...current, reactions: nextReactions, my_reaction: wasActive ? "" : reaction, viewer_reaction: wasActive ? "" : reaction, _reactionPending: true };
+    renderMessages();
+    const button = document.querySelector(`[data-message-id="${id}"][data-react="${reaction}"]`);
+    animateReactionButton(button, reaction === "fire" ? "🔥" : reaction === "check" ? "✓" : "❤️");
+    try {
+      const response = await fetch(`/api/pulse/messages/${id}/react`, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reaction_type: reaction })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.message || "Reaction failed.");
+      state.messages[index] = { ...state.messages[index], reactions: data.reactions || {}, my_reaction: normalizeReaction(data.my_reaction || ""), viewer_reaction: normalizeReaction(data.my_reaction || ""), _reactionPending: false };
       renderMessages();
+    } catch (error) {
+      state.messages[index] = previous;
+      renderMessages();
+      setStatus(error.message || "Reaction failed.", "error");
     }
   }
 
@@ -1542,6 +1580,23 @@
 
   function escapeAttr(value) {
     return escapeHtml(value).replace(/`/g, "&#96;");
+  }
+
+  function animateReactionButton(button, emoji = "❤️") {
+    if (!button) return;
+    button.classList.remove("is-popping");
+    void button.offsetWidth;
+    button.classList.add("is-popping");
+    window.setTimeout(() => button.classList.remove("is-popping"), 360);
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    const rect = button.getBoundingClientRect();
+    const floater = document.createElement("span");
+    floater.className = "pulse-reaction-float";
+    floater.textContent = emoji;
+    floater.style.left = `${rect.left + rect.width / 2}px`;
+    floater.style.top = `${rect.top + rect.height / 2}px`;
+    document.body.appendChild(floater);
+    window.setTimeout(() => floater.remove(), 900);
   }
 
   bind();
