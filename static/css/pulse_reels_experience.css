@@ -988,14 +988,14 @@ top: 0 !important;
 left: 0 !important;
 right: 0 !important;
 display: grid !important;
-grid-template-columns: minmax(0, 1fr) 42px !important;
+grid-template-columns: minmax(0, 1fr) !important;
 align-items: center !important;
 padding: calc(8px + env(safe-area-inset-top)) 12px 6px !important;
 background: linear-gradient(180deg, rgba(0,0,0,.62), rgba(0,0,0,0)) !important;
 }
 
 .reels-top::before {
-content: "Reels";
+content: none;
 position: absolute;
 left: 16px;
 top: calc(15px + env(safe-area-inset-top));
@@ -1007,11 +1007,15 @@ text-shadow: 0 3px 20px rgba(0,0,0,.6);
 
 .reels-rail,
 .reels-tabs {
-justify-content: center;
-width: min(232px, calc(100vw - 86px)) !important;
+display: grid !important;
+grid-template-columns: .8fr 1.12fr .96fr 1.02fr !important;
+justify-content: stretch !important;
+align-items: center !important;
+width: min(370px, calc(100vw - 16px)) !important;
+max-width: calc(100vw - 16px) !important;
 margin-inline: auto !important;
 padding: 0 !important;
-gap: 14px !important;
+gap: 6px !important;
 background: transparent !important;
 border: 0 !important;
 backdrop-filter: none !important;
@@ -1019,6 +1023,9 @@ overflow: hidden !important;
 }
 
 .reels-rail button {
+display: flex !important;
+width: 100% !important;
+min-width: 0 !important;
 height: 36px !important;
 min-height: 36px !important;
 padding: 0 2px !important;
@@ -1030,9 +1037,15 @@ color: rgba(255,255,255,.72);
 font-size: 15px !important;
 font-weight: 900 !important;
 text-shadow: 0 2px 18px rgba(0,0,0,.66);
+overflow: hidden !important;
+text-overflow: ellipsis !important;
 }
 
-.reels-rail button:not([data-reel-lane="for_you"]):not([data-reel-lane="following"]):not(.active) {
+.reels-rail button[data-reels-title] {
+display: flex !important;
+}
+
+.reels-rail button:not([data-reels-title]):not([data-reel-lane="following"]):not([data-reel-lane="for_you"]):not([data-reel-lane="trending"]) {
 display: none !important;
 }
 

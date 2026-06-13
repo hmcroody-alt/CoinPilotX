@@ -28,7 +28,9 @@ def main():
     for token in ["data-frame-mode", "reel-frame-toggle"]:
         expect(token not in source, f"dev frame control removed: {token}")
     expect("--reels-tabs-height" in css and "--safe-top" in css, "safe-zone CSS variables exist")
-    expect(".reel-search-button" in css, "minimal search action is positioned")
+    expect("<a class='icon-btn reel-search-button'" not in source, "Reels viewer search action is not rendered")
+    for token in ["['following','Following']", "['for_you','For You']", "['trending','Trending']"]:
+        expect(token in source, f"Reels viewer tab exists: {token}")
     client = bot.webhook_app.test_client()
     response = client.get("/pulse/reels")
     html = response.get_data(as_text=True)

@@ -48,11 +48,14 @@ def main():
         "reel-caption",
         "data-reels-fullscreen",
         "data-reels-topbar",
-        "reel-search-button",
         "playsinline",
         "preload=\"metadata\"",
     ]:
         expect(token in html, f"Reels HTML contains {token}")
+    expect("<a class='icon-btn reel-search-button'" not in html, "Reels viewer search button is removed")
+    for token in ["data-reels-title>Reels", "['following','Following']", "['for_you','For You']", "['trending','Trending']"]:
+        expect(token in html, f"Reels mobile top nav contains {token}")
+    expect("reelsLoadVersion" in html, "Stale Reels lane responses cannot overwrite the active tab")
     for token in ["Adaptive " + "playback", "poster " + "first", "HLS enabled", "CDN ready", "ffmpeg processing", "Mux playback", "Media diagnostics"]:
         expect(token not in html, f"internal Reel text is hidden: {token}")
     api = client.get("/api/pulse/reels/feed?tab=for_you&limit=3")
