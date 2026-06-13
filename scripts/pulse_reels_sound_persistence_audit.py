@@ -31,15 +31,22 @@ def main() -> None:
         "playReelVideo(v,true)",
         "video.addEventListener('volumechange'",
         "showReelSoundPrompt(card,true)",
-        "window.PulseMediaRenderer.setVideoMuted(video,muted,'reels-autoplay')",
-        "window.PulseMediaRenderer.setVideoMuted(video,true,'reels-autoplay-fallback')",
+        "function setReelVideoMuted",
+        "setReelVideoMuted(card,video,muted,'restore_state',false)",
+        "setReelVideoMuted(card,video,true,'browser_policy_fallback',false)",
+        "reelUserSoundUnlocked",
+        "reelSuppressMutedFallbackUntil",
+        "blockedByUserSound:true",
+        "source:'volumechange-auto-remute'",
     ]:
         expect(token in reels_block, f"Reels sound persistence includes {token}")
 
     expect("setReelsSound(false)" not in play_block, "blocked unmuted Reels autoplay does not persist muted preference")
-    expect("video.defaultMuted=false" in play_block and "video.removeAttribute('muted')" in play_block, "Reels autoplay clears muted default before play")
-    expect("setVideoMuted(video,true,'reels-autoplay-fallback')" in play_block, "blocked unmuted Reels autoplay has per-attempt fallback")
+    expect("setReelVideoMuted(card,video,muted,'restore_state',false)" in play_block, "Reels autoplay uses the guarded mute setter before play")
+    expect("setReelVideoMuted(card,video,true,'browser_policy_fallback',false)" in play_block, "blocked unmuted Reels autoplay has per-attempt fallback")
+    expect("if(userUnlocked){showReelSoundPrompt(card,true);updateReelControls(card);return}" in play_block, "user-unmuted Reels never remute through browser fallback")
     expect("playReelVideo(v,reelsSoundEnabled)" not in reels_block, "Reels scroll playback does not reuse stale sound state")
+    expect("setVideoMuted(video,true,'reels-autoplay-fallback')" not in play_block, "Reels no longer bypass guarded remute prevention")
     print("pulse reels sound persistence audit ok")
 
 

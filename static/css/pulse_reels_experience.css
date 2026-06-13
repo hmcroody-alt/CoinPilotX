@@ -267,6 +267,12 @@ height: 100% !important;
 object-fit: cover !important;
 }
 
+.reel-card.is-media-ready .reel-fallback,
+.reel-card:not(.is-broken) .reel-fallback,
+.reel-card .pulse-media-wrap.is-ready .pulse-media-fallback {
+display: none !important;
+}
+
 .reels-media-stage .pulse-media-backdrop,
 .reels-media-stage .pulse-media-soft-glow,
 .reels-media-stage .pulse-media-color-orb,

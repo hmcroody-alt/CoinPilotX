@@ -501,12 +501,25 @@
     return video?.closest?.(".pulse-media-wrap") || video?.closest?.(".reel-card") || video?.parentElement || null;
   }
 
+  function isManagedReelVideo(video) {
+    if (!video) return false;
+    const wrap = mediaVideoWrap(video);
+    return video.dataset.reelsManaged === "1"
+      || !!video.closest?.(".reel-card")
+      || String(wrap?.dataset?.mediaSurface || "").toLowerCase() === "reels"
+      || !!wrap?.closest?.(".reel-card");
+  }
+
   function prepareMobileVideo(video) {
     if (!video) return;
     video.playsInline = true;
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
     video.setAttribute("x-webkit-airplay", "allow");
+    if (isManagedReelVideo(video)) {
+      if (!video.preload || video.preload === "none") video.preload = "metadata";
+      return;
+    }
     video.defaultMuted = false;
     video.removeAttribute("muted");
     video.volume = Number(video.dataset.pulsePreferredVolume || video.volume || 1) || 1;
@@ -531,6 +544,7 @@
 
   async function playVisibleVideo(video, preferSound = false) {
     if (!video || !autoplayAllowed()) return;
+    if (isManagedReelVideo(video)) return;
     const wrap = mediaVideoWrap(video);
     pauseOtherVideos(video);
     activeVideo = video;
@@ -582,8 +596,9 @@
       playbackRaf = 0;
       if (!best?.target || !best.isIntersecting || best.intersectionRatio < .58) return;
       const vid = best.target;
+      if (isManagedReelVideo(vid)) return;
       const targetWrap = mediaVideoWrap(vid);
-      const isReelSurface = String(targetWrap?.dataset?.mediaSurface || "").toLowerCase() === "reels" || targetWrap?.closest?.(".reel-card");
+      const isReelSurface = isManagedReelVideo(vid);
       if (!isReelSurface && desktopPointer() && hoverVideo && hoverVideo !== vid) return;
       const run = () => {
         targetWrap?.classList.add("is-active-media");
@@ -609,7 +624,11 @@
       video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
     }
     ensureSoundButton(wrap);
-    const isReelSurface = String(wrap.dataset.mediaSurface || "").toLowerCase() === "reels" || wrap.closest?.(".reel-card");
+    const isReelSurface = isManagedReelVideo(video);
+    if (isReelSurface || video.dataset.reelsManaged === "1") {
+      video.dataset.reelsManaged = "1";
+      return;
+    }
     const canHoverPreview = desktopPointer() && !isReelSurface;
     if (canHoverPreview) {
       wrap.addEventListener("pointerenter", () => {
@@ -662,6 +681,7 @@
       playbackObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
           const vid = entry.target;
+          if (isManagedReelVideo(vid)) return;
           const targetWrap = mediaVideoWrap(vid);
           if (!entry.isIntersecting || entry.intersectionRatio < .58) {
             if (!vid.paused) vid.pause();
@@ -755,6 +775,7 @@
 
   function warmVideo(wrap, video, priority = "nearby") {
     if (!video || !wrap) return;
+    if (isManagedReelVideo(video)) return;
     const key = preloadKey(wrap, video);
     if (predictiveMediaCache.has(key) && priority !== "current") return;
     video.preload = connectionConstrained() && priority !== "current" ? "metadata" : "auto";
@@ -781,6 +802,7 @@
     if (poster) warmImage(poster, `poster:${poster}`, signal);
     if (!media) return;
     if (media.tagName === "VIDEO") {
+      if (isManagedReelVideo(media)) return;
       warmVideo(wrap, media, priority);
       return;
     }
@@ -803,9 +825,13 @@
   }
 
   function mediaPreloadItems(scope) {
-    return Array.from((scope || document).querySelectorAll(".pulse-media-wrap, [data-status-home-video], .reel-card video.reel-media"))
+    return Array.from((scope || document).querySelectorAll(".pulse-media-wrap, [data-status-home-video]"))
       .map(node => node.closest?.(".pulse-media-wrap") || node)
       .filter(Boolean)
+      .filter(node => {
+        const video = node.tagName === "VIDEO" ? node : node.querySelector?.("video");
+        return !isManagedReelVideo(video);
+      })
       .filter((node, index, list) => list.indexOf(node) === index);
   }
 
