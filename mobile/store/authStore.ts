@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   PulseUser,
+  changeEmailConfirmation,
   checkEmailConfirmationStatus,
   confirmEmailToken,
   createAccount,
@@ -14,6 +15,7 @@ import {
 } from "../services/auth";
 import { PulseApiError, isOfflineError } from "../services/apiClient";
 import { ProfileBootstrap, loadProfileBootstrap } from "../services/profileBootstrap";
+import { unregisterPushNotifications } from "../services/push";
 import { clearPersistedSessionCookie, clearRefreshToken, clearSecureSession, getRefreshToken, getSessionCookie, setRefreshToken } from "../services/secureSession";
 
 type AuthState = {
@@ -30,6 +32,7 @@ type AuthState = {
   signup: (payload: { full_name: string; username: string; email: string; password: string }) => Promise<void>;
   recover: (email: string) => Promise<void>;
   resendConfirmation: (email?: string) => Promise<string>;
+  changeConfirmationEmail: (oldEmail: string, newEmail: string, password: string) => Promise<string>;
   refreshConfirmationStatus: (email?: string) => Promise<boolean>;
   confirmEmail: (token: string) => Promise<string>;
   resetPassword: (token: string, password: string) => Promise<string>;
@@ -107,6 +110,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ pendingConfirmationEmail: target, error: "" });
     return result.message;
   },
+  async changeConfirmationEmail(oldEmail, newEmail, password) {
+    const result = await changeEmailConfirmation(oldEmail, newEmail, password);
+    const target = result.email || newEmail;
+    set({ pendingConfirmationEmail: target, error: "" });
+    return result.message;
+  },
   async refreshConfirmationStatus(email) {
     const target = email || useAuthStore.getState().pendingConfirmationEmail;
     const result = await checkEmailConfirmationStatus(target);
@@ -130,6 +139,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ bootstrap, user: bootstrap.user || current, offline: false });
   },
   async logout() {
+    await unregisterPushNotifications().catch(() => undefined);
     await logoutMobileSession().catch(() => undefined);
     await clearSecureSession();
     set({ signedIn: false, user: null, bootstrap: null, pendingConfirmationEmail: "" });

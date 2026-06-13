@@ -117,7 +117,8 @@
     [data-home-hidden="true"] { display:none!important; }
     .private-chat-launcher { position:fixed; right:20px; bottom:calc(env(safe-area-inset-bottom) + 88px); z-index:65; width:clamp(160px,42vw,220px); min-width:0; border:1px solid rgba(110,223,246,.34); border-radius:999px; box-shadow:0 14px 40px rgba(0,0,0,.3),0 0 24px rgba(110,223,246,.16); backdrop-filter:blur(10px); white-space:nowrap; }
     .private-chat-launcher-icon { font-size:20px; line-height:1; }
-    .private-chat-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#06101b; background:linear-gradient(135deg,var(--gold),var(--green)); font-size:12px; font-weight:950; box-shadow:0 0 18px rgba(255,209,102,.5); }
+    .private-chat-badge,
+    .nav-badge { min-width:22px; height:22px; display:inline-grid; place-items:center; border-radius:999px; color:#fff; background:#ff335d; font-size:12px; font-weight:950; box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 18px rgba(255,51,93,.55); }
     .private-chat-badge:not([hidden]) { animation:chatUnreadPulse 1.7s ease-in-out infinite; }
     .private-chat-shell { position:fixed; inset:0; z-index:64; pointer-events:none; }
     .private-chat-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.42); backdrop-filter:blur(7px); opacity:0; transition:opacity .2s ease; pointer-events:none; }
@@ -422,7 +423,7 @@
     <p class="notice">Portfolio tracker is educational only. CoinPilotXAI Inc. does not hold funds, does not ask for seed phrases/private keys, and does not provide financial advice.</p>
   </main>
   <button class="button primary private-chat-launcher" type="button" data-private-chat-open aria-expanded="false" aria-label="Open Private Chat">
-    <span class="private-chat-launcher-icon" aria-hidden="true">💬</span><span class="private-chat-launcher-label">Private Chat</span><span class="private-chat-badge" data-private-chat-unread hidden>0</span>
+    <span class="private-chat-launcher-icon" aria-hidden="true">💬</span><span class="private-chat-launcher-label">Private Chat</span><span class="private-chat-badge" data-private-chat-unread data-chat-unread hidden>0</span>
   </button>
   <section class="private-chat-shell" data-private-chat-shell aria-label="Private chat room" aria-hidden="true">
     <div class="private-chat-backdrop" data-private-chat-close></div>
@@ -513,7 +514,7 @@
       <a href="/pulse">PulseSoc</a>
       {% if dashboard_prefs.show_command_center %}<a href="/command-center" data-home-action="show_command_center">Intel</a>{% endif %}
       <a href="/live-market">Live</a>
-      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
+      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts <span class="nav-badge" data-alert-unread data-notification-unread hidden>0</span></a>
       <a href="/account">Account</a>
     </div>
   </nav>

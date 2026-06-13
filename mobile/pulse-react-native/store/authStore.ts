@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   PulseUser,
+  changeEmailConfirmation,
   checkEmailConfirmationStatus,
   confirmEmailToken,
   createAccount,
@@ -31,6 +32,7 @@ type AuthState = {
   signup: (payload: { full_name: string; username: string; email: string; password: string }) => Promise<void>;
   recover: (email: string) => Promise<void>;
   resendConfirmation: (email?: string) => Promise<string>;
+  changeConfirmationEmail: (oldEmail: string, newEmail: string, password: string) => Promise<string>;
   refreshConfirmationStatus: (email?: string) => Promise<boolean>;
   confirmEmail: (token: string) => Promise<string>;
   resetPassword: (token: string, password: string) => Promise<string>;
@@ -105,6 +107,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   async resendConfirmation(email) {
     const target = email || useAuthStore.getState().pendingConfirmationEmail;
     const result = await resendEmailConfirmation(target);
+    set({ pendingConfirmationEmail: target, error: "" });
+    return result.message;
+  },
+  async changeConfirmationEmail(oldEmail, newEmail, password) {
+    const result = await changeEmailConfirmation(oldEmail, newEmail, password);
+    const target = result.email || newEmail;
     set({ pendingConfirmationEmail: target, error: "" });
     return result.message;
   },

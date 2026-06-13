@@ -19,6 +19,7 @@ export type SessionResponse = {
   requires_email_confirmation?: boolean;
   message?: string;
   refresh_token?: string;
+  email_delivery_failed?: boolean;
 };
 
 export function getMobileSession() {
@@ -63,6 +64,13 @@ export function resendEmailConfirmation(email: string) {
   return pulseApi<{ ok: boolean; message: string }>("/api/mobile/auth/resend-confirmation", {
     method: "POST",
     body: JSON.stringify({ email })
+  });
+}
+
+export function changeEmailConfirmation(old_email: string, new_email: string, password: string) {
+  return pulseApi<{ ok: boolean; message: string; email?: string }>("/api/mobile/auth/change-confirmation-email", {
+    method: "POST",
+    body: JSON.stringify({ old_email, new_email, password })
   });
 }
 

@@ -60,6 +60,16 @@ def main():
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
     original_egress = bot.pulse_livekit_start_mux_egress
+    original_ready = bot.pulse_livekit_wait_for_host_tracks
+    bot.pulse_livekit_wait_for_host_tracks = lambda live, trace_id="": {
+        "ready": True,
+        "room": live.get("webrtc_room_id") or "pulse-webrtc-avaudit",
+        "host_joined": True,
+        "participant_count": 1,
+        "audio_tracks": 1,
+        "video_tracks": 1,
+        "published_tracks": [{"type": "audio"}, {"type": "video"}],
+    }
     bot.pulse_livekit_start_mux_egress = lambda live, trace_id="": {
         "ok": True,
         "egress_id": "EG_AUDIT",
@@ -68,16 +78,18 @@ def main():
     }
     publish = client.post(f"/api/pulse/live/{live_id}/browser-publish", json={"audio_tracks": 1, "video_tracks": 1}).get_json() or {}
     bot.pulse_livekit_start_mux_egress = original_egress
+    bot.pulse_livekit_wait_for_host_tracks = original_ready
     require(publish.get("ok"), "browser publish endpoint accepts real audio and video tracks")
     require(publish.get("publish_path") == "livekit_mux_egress", "browser publish starts LiveKit to Mux egress")
     require(publish.get("requires_rtmp_encoder") is False, "browser publish no longer requires OBS/RTMP encoder")
     require(publish.get("egress", {}).get("egress_id") == "EG_AUDIT", "browser publish returns LiveKit egress id")
-    require(publish.get("playback", {}).get("supports_hls"), "browser publish response exposes HLS fallback")
+    require(publish.get("mux_waiting") is True, "browser publish waits for Mux active before public playback")
+    require(publish.get("playback", {}).get("supports_hls") is False, "browser publish suppresses HLS until Mux active")
     state = client.get(f"/api/pulse/live/{live_id}/state").get_json() or {}
-    require(state.get("status") == "live", "browser live marks session live after egress start")
+    require(state.get("status") == "starting", "browser live does not mark session live after egress start")
     require(state.get("publish_state") == "browser_live_egress", "publish state machine records LiveKit egress")
     require(state.get("livekit", {}).get("egress_id") == "EG_AUDIT", "viewer state exposes LiveKit egress id")
-    require(state.get("playback", {}).get("supports_hls"), "viewer state exposes playable HLS")
+    require(state.get("playback", {}).get("supports_hls") is False, "viewer state waits for Mux active before HLS")
     conn = db_service.connect()
     conn.row_factory = bot.sqlite3.Row
     cur = conn.cursor()

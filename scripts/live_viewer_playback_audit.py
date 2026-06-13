@@ -38,8 +38,8 @@ def main():
     cur.execute(
         """
         INSERT INTO pulse_live_sessions
-        (user_id,title,category,status,publish_state,stream_key,viewer_count,created_at,started_at,stream_uuid,hls_url,playback_url,webrtc_room_id,stream_health,audio_tracks,video_tracks,updated_at)
-        VALUES (?, 'Playback Live', 'Creator QA', 'live', 'live', 'play_key', 3, ?, ?, 'playaudit', 'https://live.coinpilotxai.app/hls/playaudit.m3u8', 'https://live.coinpilotxai.app/hls/playaudit.m3u8', 'pulse-webrtc-playaudit', 'stable', 1, 1, ?)
+        (user_id,title,category,status,publish_state,stream_key,viewer_count,created_at,started_at,stream_uuid,hls_url,playback_url,webrtc_room_id,stream_health,audio_tracks,video_tracks,mux_live_status,mux_playback_id,updated_at)
+        VALUES (?, 'Playback Live', 'Creator QA', 'live', 'mux_live', 'play_key', 3, ?, ?, 'playaudit', 'https://stream.mux.com/playbackaudit.m3u8', 'https://stream.mux.com/playbackaudit.m3u8', 'pulse-webrtc-playaudit', 'stable', 1, 1, 'active', 'playbackaudit', ?)
         """,
         (user_id, now, now, now),
     )

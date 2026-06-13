@@ -49,6 +49,8 @@ def sender_config(channel="transactional", from_email=None, from_name=None):
         default_name = "PulseSoc"
     sender_candidates = [
         ("explicit", from_email),
+        ("BREVO_FROM_EMAIL", os.getenv("BREVO_FROM_EMAIL")),
+        ("BREVO_SENDER", os.getenv("BREVO_SENDER")),
         ("BREVO_SENDER_EMAIL", os.getenv("BREVO_SENDER_EMAIL")),
         ("MAIL_FROM_ADDRESS", os.getenv("MAIL_FROM_ADDRESS")),
         ("DEFAULT_FROM_EMAIL", os.getenv("DEFAULT_FROM_EMAIL")),
@@ -171,7 +173,14 @@ def send_brevo_email(to_email, subject, text_body, html_body="", from_email=None
             error = ""
         elif response.status_code == 401:
             body_message = str(body.get("message") or "")
-            if "unrecognised IP address" in body_message or "unrecognized IP address" in body_message:
+            lower_message = body_message.lower()
+            if (
+                "unrecognised ip address" in lower_message
+                or "unrecognized ip address" in lower_message
+                or "ip blocked" in lower_message
+                or ("not authorized" in lower_message and "ip" in lower_message)
+                or ("not authorised" in lower_message and "ip" in lower_message)
+            ):
                 error = "Brevo rejected the request because the Railway server IP is not authorized in Brevo."
                 error_code = "brevo_unauthorized_ip"
             else:

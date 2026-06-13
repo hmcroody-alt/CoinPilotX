@@ -140,6 +140,14 @@ PULSE_TYPE_TO_CATEGORY = {
     "custom_crypto_alert": "crypto",
 }
 
+MESSAGE_NOTIFICATION_TYPES = {
+    "message",
+    "chat_message",
+    "voice_message",
+    "group_message",
+    "room_message",
+}
+
 SECURITY_NOTIFICATION_TYPES = {
     "security_alert",
     "account_login",
@@ -508,15 +516,18 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
     params = [int(user_id)]
     if unread_only:
         clauses.append("(is_read=0 OR read_at IS NULL)")
+    normalized_category = str(category or "all").lower()
     category_types = {
-        "messages": ["message", "chat_message", "voice_message", "group_message", "room_message", "group_invite", "room_invite", "teacher_update", "student_update"],
         "social": ["like", "reaction", "comment", "reply", "save", "share", "mention", "status_mention", "follow", "follow_accept", "status_view", "status_reaction", "reel_like", "reel_comment", "reel_mention", "reel_share", "video_like", "video_comment", "video_mention", "video_share", "video_save"],
         "security": ["security_alert", "account_login", "new_device"],
         "premium": ["premium_alert", "marketplace_update"],
-    }.get(str(category or "all").lower())
+    }.get(normalized_category)
     if category_types:
         clauses.append("type IN (%s)" % ",".join("?" for _ in category_types))
         params.extend(category_types)
+    else:
+        clauses.append(f"NOT ({_message_notification_where_clause()})")
+        params.extend(_message_notification_params())
     params.append(max(1, min(int(limit or 50), 100)))
     cur.execute(
         f"""
@@ -533,13 +544,82 @@ def list_pulse_notifications(user_id, limit=50, category="all", unread_only=Fals
     return {"ok": True, "notifications": rows}
 
 
-def pulse_unread_count(user_id):
+def _message_notification_where_clause():
+    type_placeholders = ",".join("?" for _ in MESSAGE_NOTIFICATION_TYPES)
+    return (
+        f"LOWER(COALESCE(type,'')) IN ({type_placeholders}) "
+        "OR LOWER(COALESCE(entity_type,'')) IN ('message','messages','chat','conversation','pulse_message','pulse_conversation') "
+        "OR LOWER(COALESCE(deep_link,'')) LIKE '/pulse/messages%' "
+        "OR LOWER(COALESCE(deep_link,'')) LIKE '/messages%' "
+        "OR LOWER(COALESCE(deep_link,'')) LIKE '/chat%' "
+        "OR LOWER(COALESCE(target_url,'')) LIKE '/pulse/messages%' "
+        "OR LOWER(COALESCE(target_url,'')) LIKE '/messages%' "
+        "OR LOWER(COALESCE(target_url,'')) LIKE '/chat%'"
+    )
+
+
+def _message_notification_params():
+    return sorted(MESSAGE_NOTIFICATION_TYPES)
+
+
+def _table_exists(cur, table_name):
+    cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (str(table_name or ""),))
+    return bool(cur.fetchone())
+
+
+def pulse_badge_counts(user_id):
     conn = user_context.connect()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM pulse_notifications WHERE user_id=? AND (is_read=0 OR read_at IS NULL)", (int(user_id),))
-    count = int(cur.fetchone()[0] or 0)
+    params = [int(user_id), *_message_notification_params()]
+    cur.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM pulse_notifications
+        WHERE user_id=?
+          AND (is_read=0 OR read_at IS NULL)
+          AND NOT ({_message_notification_where_clause()})
+        """,
+        tuple(params),
+    )
+    alert_count = int(cur.fetchone()[0] or 0)
+
+    chat_count = 0
+    if _table_exists(cur, "pulse_conversation_participants"):
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
+            FROM pulse_conversation_participants
+            WHERE user_id=? AND COALESCE(left_at,'')=''
+            """,
+            (int(user_id),),
+        )
+        chat_count += int(cur.fetchone()[0] or 0)
+    if _table_exists(cur, "conversations") and _table_exists(cur, "conversation_members") and _table_exists(cur, "private_messages"):
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM private_messages pm
+            JOIN conversation_members cm ON cm.conversation_id=pm.conversation_id AND cm.user_id=?
+            WHERE pm.sender_user_id != ?
+              AND pm.deleted_at IS NULL
+              AND pm.created_at > COALESCE(cm.last_read_at, '')
+            """,
+            (int(user_id), int(user_id)),
+        )
+        chat_count += int(cur.fetchone()[0] or 0)
     conn.close()
-    return {"ok": True, "count": count, "unread_count": count}
+    return {
+        "ok": True,
+        "alert_unread_count": alert_count,
+        "chat_unread_count": chat_count,
+        "total_unread_count": alert_count + chat_count,
+        "count": alert_count,
+        "unread_count": alert_count,
+    }
+
+
+def pulse_unread_count(user_id):
+    return pulse_badge_counts(user_id)
 
 
 def mark_pulse_read(user_id, notification_id):

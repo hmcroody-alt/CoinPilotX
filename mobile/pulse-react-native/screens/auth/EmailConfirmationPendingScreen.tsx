@@ -15,8 +15,11 @@ export function EmailConfirmationPendingScreen({ navigation, route }: Props) {
   const token = route.params?.token;
   const confirmEmail = useAuthStore(state => state.confirmEmail);
   const resendConfirmation = useAuthStore(state => state.resendConfirmation);
+  const changeConfirmationEmail = useAuthStore(state => state.changeConfirmationEmail);
   const refreshConfirmationStatus = useAuthStore(state => state.refreshConfirmationStatus);
   const [email, setEmail] = useState(initialEmail || "");
+  const [newEmail, setNewEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [message, setMessage] = useState(token ? "Verifying email..." : "Check your email to confirm your account.");
   const [loading, setLoading] = useState(false);
 
@@ -66,6 +69,35 @@ export function EmailConfirmationPendingScreen({ navigation, route }: Props) {
     }
   }
 
+  async function changeEmail() {
+    const currentValidation = validateEmail(email);
+    if (!currentValidation.valid) {
+      setMessage(currentValidation.message);
+      return;
+    }
+    const newValidation = validateEmail(newEmail);
+    if (!newValidation.valid) {
+      setMessage(newValidation.message);
+      return;
+    }
+    if (!password) {
+      setMessage("Enter your account password to change the email address.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const text = await changeConfirmationEmail(email, newEmail, password);
+      setEmail(newEmail);
+      setNewEmail("");
+      setPassword("");
+      setMessage(text);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not change email address.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function openInbox() {
     Linking.openURL("mailto:").catch(() => setMessage("Open your email app and look for the PulseSoc confirmation email."));
   }
@@ -79,6 +111,11 @@ export function EmailConfirmationPendingScreen({ navigation, route }: Props) {
       <TextInput style={screenStyles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email" placeholderTextColor="#7890a8" />
       <TouchableOpacity style={screenStyles.button} onPress={resend} disabled={loading}>
         <Text style={screenStyles.buttonText}>{loading ? "Working..." : "Resend confirmation"}</Text>
+      </TouchableOpacity>
+      <TextInput style={screenStyles.input} value={newEmail} onChangeText={setNewEmail} autoCapitalize="none" keyboardType="email-address" placeholder="New email address" placeholderTextColor="#7890a8" />
+      <TextInput style={screenStyles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="Account password" placeholderTextColor="#7890a8" />
+      <TouchableOpacity style={screenStyles.secondaryButton} onPress={changeEmail} disabled={loading}>
+        <Text style={screenStyles.secondaryButtonText}>Change Email Address</Text>
       </TouchableOpacity>
       <TouchableOpacity style={screenStyles.secondaryButton} onPress={openInbox}>
         <Text style={screenStyles.secondaryButtonText}>Open email app</Text>

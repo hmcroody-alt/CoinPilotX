@@ -69,7 +69,10 @@
     .meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; color:var(--muted); font-size:13px; }
     .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:30; min-height:calc(64px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom); background:rgba(5,11,20,.94); border-top:1px solid rgba(255,255,255,.08); backdrop-filter:blur(10px); overflow:hidden; }
     .bottom-nav .shell { display:flex; gap:2px; padding:6px; align-items:center; justify-content:space-around; }
-    .bottom-nav a { min-width:0; flex:1 1 0; min-height:50px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:10px; line-height:1; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:9px; }
+    .bottom-nav a { min-width:0; flex:1 1 0; min-height:50px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:10px; line-height:1; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:9px; position:relative; }
+    .nav-badge { min-width:20px; height:20px; display:inline-grid; place-items:center; border-radius:999px; color:#fff; background:#ff335d; font-size:11px; font-weight:950; padding:0 6px; box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 18px rgba(255,51,93,.55); }
+    .bottom-nav .nav-badge { position:absolute; right:10px; top:5px; }
+    .nav-badge[hidden] { display:none!important; }
     @media (max-width:860px){ .hero{grid-template-columns:1fr}.command-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.command-bar{top:72px}.button{width:100%} nav .button{width:auto}.chat-message{max-width:94%} }
     @media (max-width:420px){ .command-grid{grid-template-columns:1fr}.command-bar{grid-template-columns:1fr}.bottom-nav .shell{padding:6px}.bottom-nav a{font-size:11px}.chat-avatar{display:none}.chat-window{max-height:58vh} }
     @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;scroll-behavior:auto!important} }
@@ -83,7 +86,7 @@
         {% if is_guest %}
           <a class="button primary" href="/signup?next=/app">Start Free</a>
         {% else %}
-          <a class="button alerts-dance" href="/notifications" aria-label="Notifications" data-alerts-button>Alerts</a>
+          <a class="button alerts-dance" href="/notifications" aria-label="Notifications" data-alerts-button>Alerts <span class="nav-badge" data-alert-unread data-notification-unread hidden>0</span></a>
           <a class="button" href="/dashboard">Dashboard</a>
         {% endif %}
       </nav>
@@ -186,7 +189,7 @@
       <a href="/dashboard">Home</a>
       <a href="/app">Intel</a>
       <a href="/live-market">Live</a>
-      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts</a>
+      <a class="alerts-dance" href="/alerts" data-alerts-button>Alerts <span class="nav-badge" data-alert-unread data-notification-unread hidden>0</span></a>
       <a href="/account">Account</a>
     </div>
   </nav>

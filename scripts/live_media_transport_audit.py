@@ -48,6 +48,16 @@ def main():
     with client.session_transaction() as sess:
         sess["account_user_id"] = user_id
     original_egress = bot.pulse_livekit_start_mux_egress
+    original_ready = bot.pulse_livekit_wait_for_host_tracks
+    bot.pulse_livekit_wait_for_host_tracks = lambda live, trace_id="": {
+        "ready": True,
+        "room": live.get("webrtc_room_id") or "pulse-webrtc-transportaudit",
+        "host_joined": True,
+        "participant_count": 1,
+        "audio_tracks": 1,
+        "video_tracks": 1,
+        "published_tracks": [{"type": "audio"}, {"type": "video"}],
+    }
     bot.pulse_livekit_start_mux_egress = lambda live, trace_id="": {
         "ok": True,
         "egress_id": "EG_TRANSPORT",
@@ -56,22 +66,25 @@ def main():
     }
     publish = client.post(f"/api/pulse/live/{live_id}/browser-publish", json={"audio_tracks": 1, "video_tracks": 1}).get_json() or {}
     bot.pulse_livekit_start_mux_egress = original_egress
+    bot.pulse_livekit_wait_for_host_tracks = original_ready
     require(publish.get("ok"), "browser media publish accepts audio and video tracks")
     require(publish.get("publish_path") == "livekit_mux_egress", "browser media publish starts LiveKit to Mux bridge")
-    require(publish.get("playback", {}).get("supports_hls"), "HLS fallback remains available")
+    require(publish.get("mux_waiting") is True, "Mux playback waits for active ingest")
+    require(publish.get("playback", {}).get("supports_hls") is False, "HLS is hidden until Mux is active")
     require(publish.get("playback", {}).get("supports_webrtc"), "WebRTC fallback remains available")
     viewer = client.get(f"/pulse/live/{live_id}")
     html = viewer.get_data(as_text=True)
-    require("data-live-player" in html, "active viewer uses real media player")
-    require("live-ready-orb" not in html, "active viewer does not show fake placeholder avatar")
+    require("data-live-player" not in html, "viewer does not render public player before Mux active")
+    require("live-ready-orb" in html, "viewer shows waiting state before Mux active")
     source = (ROOT / "static/js/pulse_live_studio.js").read_text(encoding="utf-8")
     bot_source = (ROOT / "bot.py").read_text(encoding="utf-8")
     require("pulse_livekit_start_mux_egress" in bot_source, "backend starts LiveKit egress to Mux")
     require("connectLiveKitRoom" in source, "browser transport connects to LiveKit room")
     require("getAudioTracks" in source and "getVideoTracks" in source, "publisher diagnostics inspect audio and video tracks")
     require("publishTrack(track)" in source, "publisher sends media tracks to LiveKit")
-    require("StartParticipantEgress" in bot_source, "server bridges host participant to Mux first")
-    require("StartRoomCompositeEgress" in bot_source, "server keeps room composite fallback to Mux")
+    require("StartRoomCompositeEgress" in bot_source, "server bridges LiveKit room composite to Mux first")
+    require("StartParticipantEgress" in bot_source, "server keeps host participant fallback to Mux")
+    require(bot_source.find('strategy="room_composite"') < bot_source.find('strategy="participant_fallback"'), "room composite is preferred before participant fallback")
     require("participant_error" in bot_source and "room_composite_error" in bot_source, "server exposes safe bridge failure diagnostics")
     print("live media transport audit ok")
 
