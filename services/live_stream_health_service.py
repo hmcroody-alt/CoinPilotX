@@ -9,7 +9,15 @@ def score_stream(session=None, viewer_count=0, chat_count=0):
     session = session or {}
     status = (session.get("status") or "starting").lower()
     mux_status = (session.get("mux_live_status") or "").lower()
-    ingest_active = status == "live" or mux_status in {"active", "live"}
+    stream_health = (session.get("stream_health") or "").lower()
+    publish_state = (session.get("publish_state") or "").lower()
+    mux_ingest_active = mux_status in {"active", "live", "egress_active"}
+    livekit_direct = (
+        mux_status in {"egress_quota_exhausted", "livekit_direct"}
+        or stream_health in {"livekit_direct", "egress_quota_exhausted"}
+        or publish_state in {"browser_live_livekit_direct", "livekit_direct"}
+    )
+    ingest_active = mux_ingest_active or livekit_direct
     bitrate = max(0, int(session.get("bitrate_kbps") or 0))
     fps = max(0, int(session.get("fps") or 0))
     if status in {"ended", "offline"}:
@@ -32,10 +40,10 @@ def score_stream(session=None, viewer_count=0, chat_count=0):
         "level": level,
         "bitrate_kbps": bitrate,
         "fps": fps,
-        "bitrate_label": f"{bitrate} kbps" if bitrate else ("Mux active" if ingest_active else "0 kbps"),
-        "fps_label": f"{fps} FPS" if fps else ("Mux active" if ingest_active else "0 FPS"),
+        "bitrate_label": f"{bitrate} kbps" if bitrate else ("LiveKit direct" if livekit_direct else "Mux active" if mux_ingest_active else "0 kbps"),
+        "fps_label": f"{fps} FPS" if fps else ("LiveKit direct" if livekit_direct else "Mux active" if mux_ingest_active else "0 FPS"),
         "ingest_active": ingest_active,
-        "ingest_source": "mux" if mux_status in {"active", "live"} else "local",
+        "ingest_source": "mux" if mux_ingest_active else "livekit-direct" if livekit_direct else "local",
         "latency_ms": 1800 if bitrate else 0,
         "dropped_frames": 0 if fps else None,
         "cdn_health": "ready" if status not in {"ended", "offline"} else "archived",
@@ -47,6 +55,8 @@ def score_stream(session=None, viewer_count=0, chat_count=0):
 def recovery_hints(health=None):
     health = health or {}
     if health.get("ingest_active"):
+        if health.get("ingest_source") == "livekit-direct":
+            return ["LiveKit direct playback is active. Mux replay resumes after egress minutes are available."]
         return ["Mux ingest is active and public HLS playback is available."]
     hints = []
     if int(health.get("bitrate_kbps") or 0) == 0:

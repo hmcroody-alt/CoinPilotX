@@ -39,7 +39,7 @@
     const state = qs(root, "[data-live-camera-state]");
     if (!state) return;
     state.textContent = message || "";
-    state.hidden = !message || (mode !== "error" && root.classList.contains("is-camera-active"));
+    state.hidden = !message || root.classList.contains("is-camera-active");
     state.classList.toggle("is-error", mode === "error");
   }
 
@@ -86,17 +86,22 @@
     const playback = data.playback || {};
     const mux = data.mux || {};
     const playbackUrl = playback.playback_url || playback.hls_url || mux.playback_url || "";
+    const hasDirectRoom = Boolean(playback.webrtc_room_id || data.livekit?.room);
     const muxStatus = String(mux.live_status || "").toLowerCase();
     const status = String(data.status || "").toLowerCase();
-    const active = ["live", "publishing", "reconnecting"].includes(status) || ["active", "live", "egress_active", "egress_starting"].includes(muxStatus);
-    if (!active || !playbackUrl) return;
+    const active = ["live", "publishing", "reconnecting"].includes(status) || ["active", "live", "egress_active", "egress_starting", "egress_quota_exhausted", "livekit_direct"].includes(muxStatus) || Boolean(data.direct_mode);
+    if (!active || (!playbackUrl && !hasDirectRoom)) return;
     const existing = qs(player, "[data-live-player]");
     if (existing) {
-      if (!existing.getAttribute("src")) existing.setAttribute("src", playbackUrl);
+      if (playbackUrl && !existing.getAttribute("src") && !existing.srcObject) existing.setAttribute("src", playbackUrl);
+      if (!playbackUrl && existing.getAttribute("src")) existing.removeAttribute("src");
+      initViewerTransport(root);
       return;
     }
     const reactions = qs(player, "[data-live-reactions]")?.outerHTML || "<div class='live-floating-reactions' data-live-reactions></div>";
-    player.innerHTML = `<video class="live-public-video" data-live-player src="${escapeHtml(playbackUrl)}" autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video><button class="live-unmute-button" type="button" data-live-unmute aria-label="Enable live audio">Tap to unmute</button>${reactions}`;
+    const srcAttr = playbackUrl ? ` src="${escapeHtml(playbackUrl)}"` : "";
+    player.innerHTML = `<video class="live-public-video" data-live-player${srcAttr} autoplay muted playsinline webkit-playsinline preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video><button class="live-unmute-button" type="button" data-live-unmute aria-label="Enable live audio">Tap to unmute</button>${reactions}`;
+    initViewerTransport(root);
   }
 
   function applyState(root, data) {
@@ -110,7 +115,11 @@
     setText(root, "[data-live-latency]", health.latency_ms ? `${health.latency_ms} ms` : "ready");
     setText(root, "[data-live-pulse]", pulse.label || "ready");
     if (data.mux?.live_status) setText(root, "[data-mux-live-status]", `Status ${data.mux.live_status}`);
-    if (data.livekit?.egress_error) showCameraState(root, data.livekit.egress_error, "error");
+    if (data.livekit?.egress_error) {
+      const direct = data.direct_mode || data.mux?.quota_exhausted;
+      setText(root, "[data-live-egress-message]", direct ? "LiveKit direct mode is active. Mux replay resumes when egress minutes are available." : "Mux bridge needs attention. Camera remains local until forwarding recovers.");
+      setText(root, "[data-live-transport-summary]", direct ? "LiveKit direct playback is active. Mux metrics resume when egress quota is available." : "Mux bridge needs attention. LiveKit publishing remains available.");
+    }
     const score = qs(root, ".live-health-score");
     if (score) score.style.setProperty("--score", Math.max(0, Math.min(100, Number(health.score || 0))));
     renderChat(root, data.messages || []);
@@ -145,8 +154,8 @@
       if (data.mux_live_status === "active" || data.mux_live_status === "live") {
         setText(root, "[data-live-health]", "live");
         setText(root, "[data-live-pulse]", "broadcasting");
-        setText(root, "[data-live-bitrate]", data.bitrate_label || "Live");
-        setText(root, "[data-live-fps]", data.fps_label || "Live");
+      setText(root, "[data-live-bitrate]", data.bitrate_label || "Live");
+      setText(root, "[data-live-fps]", data.fps_label || "Live");
       }
       if (!options.silent) notify(`Mux status: ${data.mux_live_status || "idle"}`);
       return data;
@@ -423,8 +432,9 @@
     root.__pulseLivePlaybackPolicy = playbackPolicy;
     pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTransceiver("audio", { direction: "recvonly" });
-    player.defaultMuted = false;
-    player.removeAttribute("muted");
+    player.defaultMuted = true;
+    player.muted = true;
+    player.setAttribute("muted", "");
     player.playsInline = true;
     player.preload = "metadata";
     pc.ontrack = async (event) => {
@@ -594,12 +604,12 @@
       const videoTrack = livekitTracks.find((track) => track.kind === "video");
       if (videoTrack?.attach) {
         try {
-          videoTrack.attach(video);
+      videoTrack.attach(video);
         } catch (_) {
-          video.srcObject = stream;
+      video.srcObject = stream;
         }
       } else {
-        video.srcObject = stream;
+      video.srcObject = stream;
       }
       video.muted = true;
       setCameraSurfaceActive(root, true);
@@ -627,7 +637,7 @@
       const audioTracks = stream.getAudioTracks().filter((track) => track.readyState === "live").length;
       const videoTracks = stream.getVideoTracks().filter((track) => track.readyState === "live").length;
       try {
-        await fetch(`/api/pulse/live/${id}/browser-publish`, {
+        const publishData = await fetch(`/api/pulse/live/${id}/browser-publish`, {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
@@ -642,6 +652,9 @@
           if (!response.ok || data.ok === false) throw new Error(data.message || "Live media publish failed.");
           return data;
         });
+        if (publishData.publish_path === "livekit_direct") {
+          notify(publishData.message || "LiveKit direct mode is active. Mux replay will resume when egress minutes are available.");
+        }
         console.info("PulseSoc Live publisher publish acknowledged", { live_id: id, tracks: trackDiagnostics(stream) });
         if (audioTracks || videoTracks) {
           setCameraSurfaceActive(root, true);
@@ -651,7 +664,6 @@
         }
         await fetchState(root);
       } catch (error) {
-        showCameraState(root, "Publishing needs attention", "error");
         notify(error.message);
       }
     }
@@ -731,7 +743,7 @@
       button.addEventListener("click", () => copyLiveValue(button));
     });
     qsa(root, "[data-check-mux-status]").forEach((button) => {
-      button.addEventListener("click", () => checkMuxStatus(root));
+        button.addEventListener("click", () => checkMuxStatus(root));
     });
     scheduleMuxPolling(root);
     const unmuteButton = qs(root, "[data-live-unmute]");
@@ -750,11 +762,23 @@
     });
     if (livePlayer?.dataset?.liveHostViewer === "1") {
       livePlayer.muted = true;
+      livePlayer.defaultMuted = true;
+      livePlayer.volume = 0;
       unmuteButton?.setAttribute("hidden", "");
     } else if (unmuteButton) {
-      window.setTimeout(() => {
-        if (!unmuteButton.hidden) unmuteButton.classList.add("is-subtle");
+      let hideUnmuteTimer = window.setTimeout(() => {
+        if (!unmuteButton.hidden) unmuteButton.hidden = true;
       }, 5200);
+      const revealUnmute = () => {
+        if (!livePlayer?.muted) return;
+        unmuteButton.hidden = false;
+        unmuteButton.classList.remove("is-subtle");
+        window.clearTimeout(hideUnmuteTimer);
+        hideUnmuteTimer = window.setTimeout(() => {
+          if (livePlayer?.muted) unmuteButton.hidden = true;
+        }, 3600);
+      };
+      livePlayer?.addEventListener("click", revealUnmute);
       livePlayer?.addEventListener("volumechange", () => {
         if (!livePlayer.muted && Number(livePlayer.volume || 0) > 0) unmuteButton.hidden = true;
       });

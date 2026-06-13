@@ -11,11 +11,21 @@ def playback_manifest(session=None):
     session = session or {}
     mux_playback_id = session.get("mux_playback_id") or ""
     mux_url = mux_live_service.playback_url(mux_playback_id)
-    hls_url = mux_url or session.get("playback_url") or session.get("hls_url") or ""
+    mux_status = (session.get("mux_live_status") or "").lower()
+    publish_state = (session.get("publish_state") or session.get("status") or "idle").lower()
+    direct_mode = (
+        publish_state in {"browser_live_livekit_direct", "livekit_direct"}
+        or mux_status in {"egress_quota_exhausted", "livekit_direct"}
+        or (session.get("stream_health") or "").lower() in {"livekit_direct", "egress_quota_exhausted"}
+    )
+    explicit_hls = mux_url or session.get("playback_url") or session.get("hls_url") or ""
+    hls_url = "" if direct_mode and mux_status not in {"active", "live", "egress_active"} else explicit_hls
     stream_uuid = session.get("stream_uuid") or ""
-    if not hls_url and stream_uuid:
+    if not hls_url and stream_uuid and mux_status in {"active", "live", "egress_active", "egress_starting"}:
         base = os.getenv("PULSE_HLS_PLAYBACK_URL", "https://live.coinpilotxai.app/hls").rstrip("/")
         hls_url = f"{base}/{stream_uuid}.m3u8"
+    supports_webrtc = bool(session.get("webrtc_room_id"))
+    preferred_transport = "hls" if hls_url else "webrtc" if supports_webrtc else "waiting"
     return {
         "ok": True,
         "live_id": int(session.get("id") or session.get("live_id") or 0),
@@ -28,7 +38,9 @@ def playback_manifest(session=None):
         "rtmp_url": session.get("rtmp_url") or "",
         "poster_url": session.get("thumbnail_url") or "",
         "supports_hls": bool(hls_url),
-        "supports_webrtc": bool(session.get("webrtc_room_id")),
+        "supports_webrtc": supports_webrtc,
+        "preferred_transport": preferred_transport,
+        "direct_mode": direct_mode,
         "latency_mode": "low-latency",
         "fallback_mode": "ambient-ready-state",
         "state_machine": session.get("publish_state") or session.get("status") or "idle",

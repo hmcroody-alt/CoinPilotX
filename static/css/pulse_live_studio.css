@@ -258,7 +258,7 @@
 }
 
 .live-camera-toast[hidden],
-.is-camera-active .live-camera-toast:not(.is-error) {
+.is-camera-active .live-camera-toast {
   display: none !important;
 }
 
