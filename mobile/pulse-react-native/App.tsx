@@ -10,6 +10,7 @@ import { ensureNotificationPresentation, getNativePushToken, presentNativeDevice
 const PULSESOC_ORIGIN = "https://pulsesoc.com";
 const PULSESOC_START_URL = `${PULSESOC_ORIGIN}/login?next=/pulse`;
 const PULSESOC_HOSTS = new Set(["pulsesoc.com", "www.pulsesoc.com"]);
+const PULSESOC_NATIVE_USER_AGENT = `PulseSocNativeApp/1.0 (${Platform.OS}; com.pulsesoc.app)`;
 
 export default function PulseSocMobileApp() {
   return (
@@ -196,6 +197,7 @@ function PulseSocWebShell() {
       <WebView
         ref={webViewRef}
         source={{ uri: sourceUrl }}
+        applicationNameForUserAgent={PULSESOC_NATIVE_USER_AGENT}
         style={{ flex: 1, backgroundColor: colors.background }}
         containerStyle={{ backgroundColor: colors.background }}
         originWhitelist={["https://*", "http://*", "pulse://*"]}

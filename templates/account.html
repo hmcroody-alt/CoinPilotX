@@ -287,6 +287,14 @@
       font-weight: 900;
       text-align: center;
     }
+    .danger-zone {
+      border-color: rgba(255,107,122,.34);
+      background: rgba(255,107,122,.055);
+    }
+    .danger-zone .button {
+      border-color: rgba(255,107,122,.56);
+      color: #ffd1d6;
+    }
     @keyframes authSpin { to { transform: rotate(360deg); } }
     @keyframes authFloat { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.02); } }
     @keyframes authLogoIn { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
@@ -294,6 +302,23 @@
     th, td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
     th { color: var(--cyan); }
     code { color: #c8ffe2; font-weight: 900; word-break: break-word; }
+    @media (min-width: 761px) and (max-width: 1180px) {
+      html, body { overflow-x: hidden; }
+      .premium-auth-main {
+        align-items: start;
+        padding: max(24px, env(safe-area-inset-top)) 0 max(28px, env(safe-area-inset-bottom));
+      }
+      .auth-container { width: min(100% - 36px, 900px); }
+      .panel.auth-shell { grid-template-columns: 1fr; gap: 18px; }
+      .auth-hero { min-height: auto; padding: 72px 0 12px; }
+      .auth-lang { top: 0; right: max(0px, env(safe-area-inset-right)); }
+      .auth-orbit { width: min(48vw, 390px); }
+      .auth-logo { width: min(26vw, 200px); }
+      .auth-hero h2 { font-size: clamp(58px, 8vw, 82px); }
+      .auth-hero p { max-width: 720px; font-size: clamp(25px, 3.6vw, 34px); }
+      .auth-feature-strip { grid-auto-columns: minmax(190px, 220px); max-width: 100%; }
+      .auth-content { width: min(100%, 720px); justify-self: center; }
+    }
     @media (max-width: 760px) {
       main { padding-top: 42px; }
       .grid { grid-template-columns: 1fr; }
@@ -601,6 +626,29 @@
             </div>
             <p class="muted" data-notification-status></p>
             <p class="muted" data-notification-message></p>
+          </div>
+          <div class="settings-card danger-zone">
+            <h3>Delete Account</h3>
+            <p>Permanently delete your PulseSoc account and remove your personal profile data. This cannot be undone.</p>
+            <a class="button" href="/account/delete">Delete my account</a>
+          </div>
+
+        {% elif page == "delete_account" %}
+          <div class="settings-card danger-zone">
+            <h2>Permanently delete your account</h2>
+            <p>This removes your PulseSoc profile, signs you out on this device, revokes notification access, and removes or anonymizes content tied to your identity.</p>
+            <form method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <input name="password" type="password" autocomplete="current-password" placeholder="Confirm your password" required />
+              <label class="consent-row">
+                <input type="checkbox" name="confirm_delete" required />
+                <span>I understand this action is permanent and I want to delete my PulseSoc account.</span>
+              </label>
+              <div class="actions">
+                <button class="button" type="submit">Permanently Delete Account</button>
+                <a class="button primary" href="/account/settings">Cancel</a>
+              </div>
+            </form>
           </div>
 
         {% elif page == "admin_users" %}
