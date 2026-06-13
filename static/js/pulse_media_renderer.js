@@ -582,9 +582,10 @@
       playbackRaf = 0;
       if (!best?.target || !best.isIntersecting || best.intersectionRatio < .58) return;
       const vid = best.target;
-      if (desktopPointer() && hoverVideo && hoverVideo !== vid) return;
+      const targetWrap = mediaVideoWrap(vid);
+      const isReelSurface = String(targetWrap?.dataset?.mediaSurface || "").toLowerCase() === "reels" || targetWrap?.closest?.(".reel-card");
+      if (!isReelSurface && desktopPointer() && hoverVideo && hoverVideo !== vid) return;
       const run = () => {
-        const targetWrap = mediaVideoWrap(vid);
         targetWrap?.classList.add("is-active-media");
         if (soundEnabled()) playVisibleVideo(vid, true);
         else playVisibleVideo(vid, false);
@@ -608,7 +609,8 @@
       video.setAttribute("controlsList", "nodownload noplaybackrate noremoteplayback");
     }
     ensureSoundButton(wrap);
-    const canHoverPreview = desktopPointer();
+    const isReelSurface = String(wrap.dataset.mediaSurface || "").toLowerCase() === "reels" || wrap.closest?.(".reel-card");
+    const canHoverPreview = desktopPointer() && !isReelSurface;
     if (canHoverPreview) {
       wrap.addEventListener("pointerenter", () => {
         hoverVideo = video;
@@ -720,7 +722,6 @@
       } catch (_) {}
     }
   }
-
 
   function preloadKey(wrap, media) {
     const source = mediaSource(media) || mediaUrl(wrap) || wrap?.dataset.mediaPoster || wrap?.dataset.mediaThumb || "";
@@ -1184,9 +1185,171 @@
       if (video) bindAutoplayVideo(wrap, video);
     });
     observePredictivePreload(wraps);
+    enhanceMobileReels(scope);
+  }
+
+  const mobileReelsQuery = window.matchMedia?.("(max-width: 900px)");
+
+  function mobileReelsActive() {
+    return !!(mobileReelsQuery?.matches && document.querySelector(".reels-shell[data-reels-mobile-shell]"));
+  }
+
+  function compactCount(value) {
+    const count = Number(String(value || "0").replace(/[^\d.-]/g, "")) || 0;
+    if (count >= 1000000) return `${(count / 1000000).toFixed(count >= 10000000 ? 0 : 1)}M`;
+    if (count >= 1000) return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}K`;
+    return String(count);
+  }
+
+  function formatReelTime(seconds) {
+    const value = Math.max(0, Number(seconds || 0));
+    const mins = Math.floor(value / 60);
+    const secs = Math.floor(value % 60);
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  }
+
+  function reelPrimaryVideo(card) {
+    return card?.querySelector?.(".reels-media-stage video:not(.reel-blur-bg), video.reel-media");
+  }
+
+  function ensureReelProgress(card) {
+    const progress = card?.querySelector?.(".reel-progress");
+    if (!progress || progress.dataset.mobileProgressReady === "1") return;
+    progress.dataset.mobileProgressReady = "1";
+    progress.insertAdjacentHTML("afterbegin", '<span class="reel-time-current">0:00</span><span class="reel-time-duration">0:00</span>');
+    const video = reelPrimaryVideo(card);
+    const update = () => {
+      const current = progress.querySelector(".reel-time-current");
+      const duration = progress.querySelector(".reel-time-duration");
+      if (current) current.textContent = formatReelTime(video?.currentTime || 0);
+      if (duration) duration.textContent = video?.duration && Number.isFinite(video.duration) ? formatReelTime(video.duration) : "0:00";
+    };
+    if (video) {
+      ["loadedmetadata", "durationchange", "timeupdate"].forEach(eventName => video.addEventListener(eventName, update, { passive: true }));
+      update();
+    }
+  }
+
+  function seekReelProgress(event) {
+    const progress = event.target.closest?.(".reel-progress");
+    if (!progress || !mobileReelsActive()) return;
+    const card = progress.closest(".reel-card");
+    const video = reelPrimaryVideo(card);
+    if (!video || !video.duration || !Number.isFinite(video.duration)) return;
+    const rect = progress.getBoundingClientRect();
+    const start = rect.left + 42;
+    const width = Math.max(1, rect.width - 90);
+    const x = Math.min(width, Math.max(0, event.clientX - start));
+    video.currentTime = (x / width) * video.duration;
+  }
+
+  function actionLabel(button, fallback) {
+    const small = button?.querySelector?.("small");
+    if (!small) return;
+    const current = small.textContent?.trim() || "";
+    if (!current || /^(share|more|save|remix)$/i.test(current)) small.textContent = fallback;
+  }
+
+  function cloneCreatorAvatar(card) {
+    const rail = card.querySelector(".reel-actions");
+    if (!rail || rail.querySelector(".reel-action-avatar")) return;
+    const avatar = card.querySelector(".reel-caption-creator .reel-avatar")?.cloneNode(true);
+    if (!avatar) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "reel-action reel-action-avatar";
+    button.dataset.followCreator = card.dataset.authorId || "";
+    button.setAttribute("aria-label", "Follow creator");
+    button.appendChild(avatar);
+    const plus = document.createElement("small");
+    plus.textContent = "+";
+    button.appendChild(plus);
+    rail.insertBefore(button, rail.firstChild);
+  }
+
+  function ensureRemixAction(card) {
+    const rail = card.querySelector(".reel-actions");
+    if (!rail || rail.querySelector("[data-reel-remix]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "reel-action reel-remix-action";
+    button.dataset.reelRemix = card.dataset.reelId || "";
+    button.setAttribute("aria-label", "Remix");
+    button.innerHTML = '⟳<small>Remix</small>';
+    rail.appendChild(button);
+  }
+
+  function enhanceMobileReelCard(card) {
+    if (!card || card.dataset.mobileReelsEnhanced === "1") return;
+    card.dataset.mobileReelsEnhanced = "1";
+    cloneCreatorAvatar(card);
+    ensureRemixAction(card);
+    actionLabel(card.querySelector("[data-share-reel]"), compactCount(card.querySelector(".reel-details-stats span:nth-child(3) strong")?.textContent || "Share"));
+    actionLabel(card.querySelector("[data-reel-save]"), "Save");
+    actionLabel(card.querySelector("[data-open-comments]"), compactCount(card.querySelector("[data-comment-count]")?.textContent || "0"));
+    actionLabel(card.querySelector("[data-reel-react]"), compactCount(card.querySelector("[data-fire-count]")?.textContent || "0"));
+    ensureReelProgress(card);
+    card.querySelectorAll("video").forEach(video => {
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      if (!card.classList.contains("is-active")) video.preload = "metadata";
+    });
+  }
+
+  function enhanceMobileReels(root = document) {
+    if (!mobileReelsActive()) return;
+    root.querySelectorAll?.(".reel-card")?.forEach(enhanceMobileReelCard);
+  }
+
+  function burstReelEmoji(target, emoji = "❤️") {
+    if (!mobileReelsActive()) return;
+    const rect = target.getBoundingClientRect();
+    const floater = document.createElement("span");
+    floater.className = "reel-floating-emoji";
+    floater.textContent = emoji;
+    floater.style.left = `${rect.left + rect.width / 2}px`;
+    floater.style.top = `${rect.top + rect.height / 2}px`;
+    document.body.appendChild(floater);
+    setTimeout(() => floater.remove(), 760);
+  }
+
+  function optimisticReelAction(event) {
+    const button = event.target.closest?.("[data-reel-react], [data-reel-save], [data-share-reel], [data-reel-remix], [data-follow-creator]");
+    if (!button || !mobileReelsActive()) return;
+    button.classList.remove("is-popping");
+    void button.offsetWidth;
+    button.classList.add("is-popping");
+    setTimeout(() => button.classList.remove("is-popping"), 320);
+    if (button.matches("[data-reel-react]")) {
+      button.classList.add("active");
+      button.setAttribute("aria-pressed", "true");
+      const count = button.querySelector("small,[data-fire-count]");
+      if (count && button.dataset.optimisticReact !== "1") {
+        count.textContent = compactCount((Number(String(count.textContent || "0").replace(/[^\d.-]/g, "")) || 0) + 1);
+        button.dataset.optimisticReact = "1";
+      }
+      burstReelEmoji(button, "❤️");
+    } else if (button.matches("[data-reel-save]")) {
+      button.classList.add("active");
+      button.setAttribute("aria-pressed", "true");
+      burstReelEmoji(button, "✓");
+    } else if (button.matches("[data-share-reel]")) {
+      burstReelEmoji(button, "↗");
+    } else if (button.matches("[data-follow-creator]")) {
+      const small = button.querySelector("small");
+      if (small) small.textContent = "✓";
+      const text = button.childNodes.length === 1 ? button : null;
+      if (text) text.textContent = "Following";
+    } else if (button.matches("[data-reel-remix]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = button.dataset.reelRemix || button.closest(".reel-card")?.dataset.reelId || "";
+      window.location.href = `/pulse/camera/reel${id ? `?remix=${encodeURIComponent(id)}` : ""}`;
+    }
   }
 
   document.addEventListener("click", event => {
+    optimisticReelAction(event);
     const soundButton = event.target.closest("[data-pulse-media-sound]");
     if (soundButton) {
       event.preventDefault();
@@ -1226,6 +1389,11 @@
         }, 2200);
       });
   });
+
+  document.addEventListener("pointerdown", seekReelProgress, { passive: true });
+  document.addEventListener("pointermove", event => {
+    if (event.buttons === 1) seekReelProgress(event);
+  }, { passive: true });
 
   window.addEventListener("scroll", () => {
     lastScrollAt = Date.now();

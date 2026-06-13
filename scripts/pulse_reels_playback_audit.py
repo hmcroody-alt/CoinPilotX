@@ -38,8 +38,11 @@ def main() -> None:
         expect(token in bot, f"Reels playback includes {token}")
 
     expect("if(visible&&v===primaryReelVideo(card))" in bot, "only active visible Reel video plays")
+    expect("playReelVideo(v,true)" in bot, "visible Reel autoplay requests sound by default")
     expect("else{v.pause();v.preload='metadata'}" in bot, "offscreen Reel videos pause and drop to metadata preload")
-    expect("next.dataset.reelLightPreloaded==='1'" in bot, "next Reel preload is light and single-shot")
+    expect("active.nextElementSibling?.nextElementSibling" in bot and "reelLightPreloaded'+(idx+1)" in bot, "next two Reels are preloaded")
+    tap_block = bot[bot.find("function handleReelMediaTap"):bot.find("reelsFeed.addEventListener('dblclick'")]
+    expect("setReelsSound(!reelsSoundEnabled)" in tap_block and "video.pause()" not in tap_block, "single tap toggles sound instead of play/pause")
     expect("Pulse reel stream failed without cache-busting retry" in bot, "stream URL retry spam is blocked")
     expect("reel-sound-badge.is-hidden" in bot + reels_css, "Reels sound badge can be hidden")
     expect("reels-media-stage" in bot and "reel-details-panel" in bot, "mobile stage and desktop details panel exist")

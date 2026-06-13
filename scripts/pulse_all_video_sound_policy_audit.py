@@ -24,11 +24,11 @@ def main() -> None:
     live_js = LIVE_JS.read_text(encoding="utf-8")
     messages_js = MESSAGES_JS.read_text(encoding="utf-8")
     status_viewer = STATUS_VIEWER.read_text(encoding="utf-8")
-    combined = "\n".join([bot, renderer, live_js, messages_js, status_viewer])
-
     play_visible = renderer[renderer.find("async function playVisibleVideo"):renderer.find("function preloadNextVideo")]
     reels_play = bot[bot.find("async function playReelVideo"):bot.find("function scheduleReelRetry")]
     reels_block = bot[bot.find("const reelsFeed=document.getElementById('reelsFeed')"):bot.find("function renderRail(activeLane")]
+    status_play = bot[bot.find("async function playStatusViewerVideo"):bot.find("function renderStatusViewer")]
+    status_previews = bot[bot.find("function hydrateStatusCardVideos"):bot.find("function renderStatusCard")]
 
     expect('const SOUND_KEY = "pulseMediaSoundEnabled"' in renderer, "shared sound key is pulseMediaSoundEnabled")
     expect("return true;" in renderer[renderer.find("function soundEnabled"):renderer.find("function autoplayAllowed")], "shared default sound preference is true")
@@ -39,10 +39,13 @@ def main() -> None:
     expect("playReelVideo(v,false)" not in bot, "Reels never request muted autoplay for active cards")
     expect("setSoundEnabled(false);" not in play_visible, "browser fallback never saves muted preference")
     expect("reels-autoplay-fallback" in reels_play and "setReelsSound(false)" not in reels_play, "Reels fallback is temporary")
-    expect("data-pulse-video-player muted" not in combined, "Pulse video player markup is not muted by default")
-    expect("controls autoplay muted playsinline" not in combined, "public/live/status autoplay markup is not muted by default")
-    expect("defaultMuted=true" not in combined and "defaultMuted = true" not in combined, "no playback code sets defaultMuted true")
-    expect("volume=0" not in combined and "volume = 0" not in combined, "no playback code forces volume to zero")
+    expect("data-pulse-video-player muted" not in renderer, "shared video player markup is not muted by default")
+    expect("window.PulseMediaRenderer?.soundEnabled?.()!==false" in status_play, "Status viewer follows saved sound preference when actively opened")
+    expect("video.defaultMuted=false" in status_play and "video.removeAttribute('muted')" in status_play, "Status viewer clears muted default before active playback")
+    expect("player.defaultMuted=true" in status_previews and "player.muted=true" in status_previews, "Status card previews autoplay muted")
+    expect("status-media-tap" in bot, "Status viewer tap explicitly enables sound")
+    expect("video.defaultMuted = true" in live_js and "video.volume = 0" in live_js, "Live host preview is the required silent exception")
+    expect('livePlayer?.dataset?.liveHostViewer === "1"' in live_js and "livePlayer.volume = 0" in live_js, "Live host viewer playback remains silent")
     expect("<video src=\"${escapeAttr(item.previewUrl)}\" muted" not in messages_js, "message video previews are not muted by default")
     print("pulse all video sound policy audit ok")
 

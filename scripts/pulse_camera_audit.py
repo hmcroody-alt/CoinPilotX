@@ -41,6 +41,19 @@ def main():
         expect(token in source, f"camera integration token present: {token}")
     for token in ["navigator.mediaDevices.getUserMedia", "MediaRecorder", "data-preview-destination=\"status\"", "pulseCameraConfig"]:
         expect(token in source + js, f"camera engine token present: {token}")
+    for token in [
+        "width: { ideal: 1920 }",
+        "height: { ideal: 1080 }",
+        "width: { ideal: 1280 }",
+        "height: { ideal: 720 }",
+        "safeTrackSettings",
+        "maskDeviceId",
+        "Banuba Active",
+        "Banuba Failed / Using Native Camera",
+        "Camera HD Active",
+        "video.style.objectFit = \"cover\"",
+    ]:
+        expect(token in js + source, f"camera quality token present: {token}")
     for token in ["100dvh", "env(safe-area-inset-bottom", "pulse-camera-capture", "pulse-camera-lenses"]:
         expect(token in css, f"camera CSS token present: {token}")
     client = bot.webhook_app.test_client()
