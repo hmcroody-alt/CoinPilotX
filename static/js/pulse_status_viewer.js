@@ -123,6 +123,8 @@
 
   function hardenStatusCloseButton(button) {
     if (!button) return;
+    if (button.dataset.statusCloseHardened === "1") return;
+    button.dataset.statusCloseHardened = "1";
     button.style.zIndex = "10090";
     button.style.width = "56px";
     button.style.height = "56px";
@@ -217,7 +219,7 @@
         });
       });
     });
-    statusObserver.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+    statusObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   window.PulseStatusViewer = { render, styleFor, kindFor, decorateStatusActions };

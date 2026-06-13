@@ -45,6 +45,7 @@ def main() -> int:
     check(re.search(r"\.reel-card\.show-controls\s+\.reel-center-play[\s\S]{0,220}display:\s*none\s*!important", reels_css) is not None, "Reels CSS keeps center overlay hidden", failures)
     check("decorateStatusActions" in status and "pulse-status-action-icon" in status, "Status action buttons are decorated with icons", failures)
     check("pointerdown" in status and "closeStatusViewerNow" in status, "Status close uses immediate pointer handler", failures)
+    check("statusCloseHardened" in status and "attributeFilter" not in status, "Status close observer cannot loop on style mutations", failures)
     check("z-index: 10090" in status_css and "width: 56px" in status_css, "Status close target is large and top-layered", failures)
     check(".pulse-status-story-actions .pulse-status-action" in status_css, "Status actions have compact reaction styling", failures)
     check("::-webkit-media-controls" in cinematic_css and "display: none !important" in cinematic_css, "native webkit controls are hidden by CSS", failures)
